@@ -47,6 +47,11 @@
                 android:id="@+id/subtitleCard"
                 style="@style/ShowHabit.Subtitle" />
 
+            <org.isoron.uhabits.activities.habits.show.views.TimerCardView
+                android:id="@+id/timerCard"
+                style="@style/Card"
+                android:visibility="gone" />
+
             <org.isoron.uhabits.activities.habits.show.views.NotesCardView
                 android:id="@+id/notesCard"
                 style="@style/Card"

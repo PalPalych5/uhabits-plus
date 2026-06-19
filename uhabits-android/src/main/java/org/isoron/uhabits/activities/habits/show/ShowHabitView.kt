@@ -22,15 +22,19 @@ package org.isoron.uhabits.activities.habits.show
 import android.content.Context
 import android.view.LayoutInflater
 import android.widget.FrameLayout
+import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitPresenter
 import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitState
 import org.isoron.uhabits.databinding.ShowHabitBinding
 import org.isoron.uhabits.utils.applyBottomInset
 import org.isoron.uhabits.utils.applyToolbarInsets
 import org.isoron.uhabits.utils.setupToolbar
+import org.isoron.platform.gui.toInt
+import android.view.View
 
 class ShowHabitView(context: Context) : FrameLayout(context) {
     private val binding = ShowHabitBinding.inflate(LayoutInflater.from(context))
+    private var habitUnit: String = ""
 
     init {
         binding.toolbar.applyToolbarInsets()
@@ -53,6 +57,11 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
         binding.frequencyCard.setState(data.frequency)
         binding.historyCard.setState(data.history)
         binding.barCard.setState(data.bar)
+
+        binding.timerCard.setColor(data.theme.color(data.color).toInt())
+        val isTimerVisible = data.isNumerical && (habitUnit.trim().lowercase() in setOf("min", "mins", "minute", "minutes", "мин", "минута", "минуты", "минут"))
+        binding.timerCard.visibility = if (isTimerVisible) View.VISIBLE else View.GONE
+
         if (data.isNumerical) {
             binding.overviewCard.visibility = GONE
         } else {
@@ -65,5 +74,10 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
         binding.scoreCard.setListener(presenter.scoreCardPresenter)
         binding.historyCard.setListener(presenter.historyCardPresenter)
         binding.barCard.setListener(presenter.barCardPresenter)
+    }
+
+    fun initTimer(habit: Habit, onSave: (Long) -> Unit) {
+        habitUnit = habit.unit
+        binding.timerCard.setHabit(habit, onSave)
     }
 }

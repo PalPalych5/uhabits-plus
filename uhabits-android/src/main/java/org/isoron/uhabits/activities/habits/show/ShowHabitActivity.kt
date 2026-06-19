@@ -38,6 +38,9 @@ import org.isoron.uhabits.activities.common.dialogs.CheckmarkDialog
 import org.isoron.uhabits.activities.common.dialogs.ConfirmDeleteDialog
 import org.isoron.uhabits.activities.common.dialogs.HistoryEditorDialog
 import org.isoron.uhabits.activities.common.dialogs.NumberDialog
+import org.isoron.platform.time.getToday
+import org.isoron.uhabits.core.commands.CreateRepetitionCommand
+import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.commands.Command
 import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.models.Habit
@@ -110,6 +113,9 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
             preferences = preferences
         )
 
+        view.initTimer(habit) { elapsedSeconds ->
+            saveTimerDuration(elapsedSeconds)
+        }
         view.setListener(presenter)
         view.applyRootViewInsets()
         setContentView(view)
@@ -140,6 +146,27 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
 
     override fun onCommandFinished(command: Command) {
         screen.refresh()
+    }
+
+    private fun saveTimerDuration(elapsedSeconds: Long) {
+        val today = getToday()
+        val todayEntry = habit.computedEntries.get(today)
+        val oldValue = if (todayEntry.value == Entry.UNKNOWN || todayEntry.value == Entry.SKIP) {
+            0.0
+        } else {
+            todayEntry.value / 1000.0
+        }
+        val elapsedMinutes = elapsedSeconds / 60.0
+        val newValue = oldValue + elapsedMinutes
+        val newScaledValue = Math.round(newValue * 1000.0).toInt()
+        val command = CreateRepetitionCommand(
+            presenter.habitList,
+            habit,
+            today,
+            newScaledValue,
+            todayEntry.notes
+        )
+        commandRunner.run(command)
     }
 
     inner class Screen : ShowHabitMenuPresenter.Screen, ShowHabitPresenter.Screen {
