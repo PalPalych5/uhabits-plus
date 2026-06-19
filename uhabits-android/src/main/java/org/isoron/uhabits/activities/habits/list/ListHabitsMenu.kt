@@ -110,6 +110,11 @@ class ListHabitsMenu(
                 return true
             }
 
+            R.id.actionToday -> {
+                behavior.onViewToday()
+                return true
+            }
+
             R.id.actionHideArchived -> {
                 behavior.onToggleShowArchived()
                 activity.invalidateOptionsMenu()

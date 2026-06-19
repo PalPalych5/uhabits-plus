@@ -73,6 +73,14 @@
         </activity>
 
         <activity
+            android:name=".activities.habits.today.TodayActivity"
+            android:label="@string/today">
+            <meta-data
+                android:name="android.support.PARENT_ACTIVITY"
+                android:value=".activities.habits.list.ListHabitsActivity" />
+        </activity>
+
+        <activity
             android:name=".activities.settings.SettingsActivity"
             android:label="@string/settings">
             <meta-data

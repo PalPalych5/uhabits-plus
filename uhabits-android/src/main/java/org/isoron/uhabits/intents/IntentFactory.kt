@@ -27,6 +27,7 @@ import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.about.AboutActivity
 import org.isoron.uhabits.activities.habits.edit.EditHabitActivity
 import org.isoron.uhabits.activities.habits.show.ShowHabitActivity
+import org.isoron.uhabits.activities.habits.today.TodayActivity
 import org.isoron.uhabits.activities.intro.IntroActivity
 import org.isoron.uhabits.activities.settings.SettingsActivity
 import org.isoron.uhabits.core.models.Habit
@@ -59,6 +60,9 @@ class IntentFactory() {
 
     fun startSettingsActivity(context: Context) =
         Intent(context, SettingsActivity::class.java)
+
+    fun startTodayActivity(context: Context) =
+        Intent(context, TodayActivity::class.java)
 
     fun startShowHabitActivity(context: Context, habit: Habit) =
         Intent(context, ShowHabitActivity::class.java).apply {
