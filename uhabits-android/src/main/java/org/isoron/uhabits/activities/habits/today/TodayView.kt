@@ -51,9 +51,7 @@ import org.isoron.uhabits.utils.toFixedAndroidColor
 class TodayView(
     private val activity: AppCompatActivity,
     context: Context,
-    private val onHabitClick: (Long) -> Unit,
-    private val onQuickAction: (Long, Double) -> Unit,
-    private val onManualEdit: (Long) -> Unit
+    private val onHabitClick: (Long) -> Unit
 ) : LinearLayout(context) {
     private val toolbar = buildToolbar()
     private val content = LinearLayout(context).apply {
@@ -169,49 +167,6 @@ class TodayView(
             if (item.notes.isNotBlank()) {
                 addView(bodyText(item.notes, muted = true))
             }
-            if (item.habitType == HabitType.NUMERICAL) {
-                addView(actionsView(item))
-            }
-        }
-    }
-
-    private fun actionsView(item: TodayHabitItem): View {
-        return LinearLayout(context).apply {
-            orientation = HORIZONTAL
-            setPadding(0, dp(8f).toInt(), 0, 0)
-            item.habitId?.let { habitId ->
-                item.quickActions.forEach { action ->
-                    addView(actionChip(action.delta.formatQuickDelta(), item.color) {
-                        onQuickAction(habitId, action.delta)
-                    })
-                }
-                addView(actionChip(resources.getString(R.string.edit), item.color) {
-                    onManualEdit(habitId)
-                })
-            }
-        }
-    }
-
-    private fun actionChip(text: String, color: PaletteColor, onClick: () -> Unit): View {
-        return TextView(context).apply {
-            this.text = text
-            gravity = android.view.Gravity.CENTER
-            setTextSize(12f)
-            setTypeface(typeface, Typeface.BOLD)
-            setTextColor(color.toFixedAndroidColor())
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(16f)
-                setColor(sres.getColor(R.attr.contrast20))
-                setStroke(dp(1f).toInt(), sres.getColor(R.attr.contrast40))
-            }
-            setPadding(dp(12f).toInt(), 0, dp(12f).toInt(), 0)
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { onClick() }
-            layoutParams = LayoutParams(WRAP_CONTENT, dp(32f).toInt()).apply {
-                rightMargin = dp(6f).toInt()
-            }
         }
     }
 
@@ -265,9 +220,4 @@ class TodayView(
             if (bold) setTypeface(typeface, Typeface.BOLD)
         }
     }
-}
-
-private fun Double.formatQuickDelta(): String {
-    val value = kotlin.math.abs(this).formatTodayValue()
-    return if (this >= 0) "+$value" else "-$value"
 }

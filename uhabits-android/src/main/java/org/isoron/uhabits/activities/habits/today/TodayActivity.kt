@@ -21,22 +21,15 @@ package org.isoron.uhabits.activities.habits.today
 import android.os.Bundle
 import android.view.MenuItem
 import androidx.appcompat.app.AppCompatActivity
-import org.isoron.platform.time.getToday
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
-import org.isoron.uhabits.activities.common.dialogs.NumberDialog
 import org.isoron.uhabits.core.commands.Command
 import org.isoron.uhabits.core.commands.CommandRunner
-import org.isoron.uhabits.core.commands.CreateRepetitionCommand
-import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.ui.screens.habits.today.TodayScreenStateBuilder
 import org.isoron.uhabits.intents.IntentFactory
 import org.isoron.uhabits.utils.applyRootViewInsets
-import org.isoron.uhabits.utils.dismissCurrentAndShow
-import kotlin.math.max
-import kotlin.math.roundToInt
 
 class TodayActivity : AppCompatActivity(), CommandRunner.Listener {
     private lateinit var view: TodayView
@@ -55,9 +48,7 @@ class TodayActivity : AppCompatActivity(), CommandRunner.Listener {
             onHabitClick = { habitId ->
                 val habit = component.habitList.getById(habitId) ?: return@TodayView
                 startActivity(IntentFactory().startShowHabitActivity(this, habit))
-            },
-            onQuickAction = { habitId, delta -> onQuickAction(habitId, delta) },
-            onManualEdit = { habitId -> showManualEdit(habitId) }
+            }
         )
         view.applyRootViewInsets()
         setContentView(view)
@@ -86,47 +77,7 @@ class TodayActivity : AppCompatActivity(), CommandRunner.Listener {
         refresh()
     }
 
-    private fun onQuickAction(habitId: Long, delta: Double) {
-        val habit = component.habitList.getById(habitId) ?: return
-        val entry = habit.computedEntries.get(getToday())
-        val currentValue = if (entry.value == Entry.UNKNOWN || entry.value == Entry.SKIP) {
-            0.0
-        } else {
-            entry.value / 1000.0
-        }
-        saveNumericalValue(habit, max(0.0, currentValue + delta), entry.notes)
-    }
 
-    private fun showManualEdit(habitId: Long) {
-        val habit = component.habitList.getById(habitId) ?: return
-        val entry = habit.computedEntries.get(getToday())
-        val currentValue = if (entry.value == Entry.UNKNOWN || entry.value == Entry.SKIP) {
-            0.0
-        } else {
-            entry.value / 1000.0
-        }
-        val dialog = NumberDialog()
-        dialog.arguments = Bundle().apply {
-            putDouble("value", currentValue)
-            putString("notes", entry.notes)
-        }
-        dialog.onToggle = { value, notes ->
-            saveNumericalValue(habit, value, notes)
-        }
-        dialog.dismissCurrentAndShow(supportFragmentManager, "numberDialog")
-    }
-
-    private fun saveNumericalValue(habit: Habit, value: Double, notes: String) {
-        component.commandRunner.run(
-            CreateRepetitionCommand(
-                component.habitList,
-                habit,
-                getToday(),
-                (value * 1000).roundToInt(),
-                notes
-            )
-        )
-    }
 
     private fun refresh() {
         view.setState(TodayScreenStateBuilder.build(component.habitList))
