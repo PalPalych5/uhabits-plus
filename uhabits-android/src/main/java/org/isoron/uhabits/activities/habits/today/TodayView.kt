@@ -20,12 +20,14 @@ package org.isoron.uhabits.activities.habits.today
 
 import android.content.Context
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
 import org.isoron.platform.gui.toInt
 import org.isoron.uhabits.R
 import org.isoron.uhabits.core.models.HabitType
@@ -35,14 +37,17 @@ import org.isoron.uhabits.core.ui.screens.habits.today.TodayHabitStatus
 import org.isoron.uhabits.core.ui.screens.habits.today.TodayScreenState
 import org.isoron.uhabits.core.ui.screens.habits.today.TodaySectionState
 import org.isoron.uhabits.core.ui.screens.habits.today.formatTodayValue
+import org.isoron.uhabits.utils.InterfaceUtils
+import org.isoron.uhabits.utils.StyledResources
+import org.isoron.uhabits.utils.applyToolbarInsets
 import org.isoron.uhabits.utils.buildToolbar
 import org.isoron.uhabits.utils.currentTheme
 import org.isoron.uhabits.utils.dp
-import org.isoron.uhabits.utils.setupToolbar
 import org.isoron.uhabits.utils.sres
 import org.isoron.uhabits.utils.toFixedAndroidColor
 
 class TodayView(
+    private val activity: AppCompatActivity,
     context: Context,
     private val onHabitClick: (Long) -> Unit
 ) : LinearLayout(context) {
@@ -55,13 +60,7 @@ class TodayView(
     init {
         orientation = VERTICAL
         setBackgroundColor(sres.getColor(R.attr.windowBackgroundColor))
-        toolbar.setupToolbar(
-            toolbar = toolbar,
-            title = resources.getString(R.string.today),
-            color = PaletteColor(17),
-            displayHomeAsUpEnabled = true,
-            theme = currentTheme()
-        )
+        setupToolbar()
         addView(toolbar, MATCH_PARENT, WRAP_CONTENT)
         addView(
             ScrollView(context).apply {
@@ -70,6 +69,22 @@ class TodayView(
             MATCH_PARENT,
             MATCH_PARENT
         )
+    }
+
+    private fun setupToolbar() {
+        toolbar.elevation = InterfaceUtils.dpToPixels(context, 2f)
+        toolbar.title = resources.getString(R.string.today)
+        val res = StyledResources(context)
+        val toolbarColor = if (!res.getBoolean(R.attr.useHabitColorAsPrimary)) {
+            res.getColor(R.attr.colorPrimary)
+        } else {
+            currentTheme().color(PaletteColor(17)).toInt()
+        }
+        toolbar.background = ColorDrawable(toolbarColor)
+        toolbar.applyToolbarInsets()
+        activity.window.statusBarColor = toolbarColor
+        activity.setSupportActionBar(toolbar)
+        activity.supportActionBar?.setDisplayHomeAsUpEnabled(true)
     }
 
     fun setState(state: TodayScreenState) {

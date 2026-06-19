@@ -38,7 +38,7 @@ class TodayActivity : AppCompatActivity() {
         themeSwitcher = AndroidThemeSwitcher(this, component.preferences)
         themeSwitcher.apply()
 
-        view = TodayView(this) { habitId ->
+        view = TodayView(this, this) { habitId ->
             val habit = component.habitList.getById(habitId) ?: return@TodayView
             startActivity(IntentFactory().startShowHabitActivity(this, habit))
         }
