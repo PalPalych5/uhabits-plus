@@ -117,9 +117,10 @@ class TodayView(
     }
 
     private fun addSection(section: TodaySectionState) {
+        val sectionName = resources.getString(R.string.today_section_color, section.paletteIndex)
         val title = resources.getString(
             R.string.today_section_title,
-            section.title,
+            sectionName,
             section.completedCount,
             section.totalCount,
             section.focusMinutes.formatTodayValue()
@@ -147,10 +148,12 @@ class TodayView(
                 TodayHabitStatus.COMPLETED -> R.string.today_status_done
                 TodayHabitStatus.REMAINING -> R.string.today_status_remaining
                 TodayHabitStatus.UNKNOWN -> R.string.today_status_unknown
+                TodayHabitStatus.SKIPPED -> R.string.today_status_skipped
                 TodayHabitStatus.EXCEEDED -> R.string.today_status_exceeded
             }
         )
         if (habitType != HabitType.NUMERICAL) return status
+        if (this.status == TodayHabitStatus.SKIPPED) return status
         val current = currentValue?.formatTodayValue() ?: "0"
         val target = targetValue?.formatTodayValue() ?: "0"
         return resources.getString(R.string.today_numerical_progress, current, target, unit, status)

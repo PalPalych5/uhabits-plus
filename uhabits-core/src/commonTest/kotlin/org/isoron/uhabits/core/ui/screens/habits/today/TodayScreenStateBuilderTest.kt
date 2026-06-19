@@ -37,18 +37,22 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
         val completed = booleanHabit("Checked", Entry.YES_MANUAL)
         val missed = booleanHabit("Missed", Entry.NO)
         val unknown = booleanHabit("Unknown", Entry.UNKNOWN)
+        val skipped = booleanHabit("Skipped", Entry.SKIP)
         habitList.add(completed)
         habitList.add(missed)
         habitList.add(unknown)
+        habitList.add(skipped)
 
         val state = TodayScreenStateBuilder.build(habitList, today)
 
         assertEquals(1, state.completedCount)
-        assertEquals(3, state.totalCount)
-        assertEquals(
-            listOf(TodayHabitStatus.COMPLETED, TodayHabitStatus.REMAINING, TodayHabitStatus.UNKNOWN),
-            state.sections.single().items.map { it.status }
-        )
+        assertEquals(4, state.totalCount)
+        val statusesByName = state.sections.single().items.associate { it.name to it.status }
+        assertEquals(TodayHabitStatus.COMPLETED, statusesByName["Checked"])
+        assertEquals(TodayHabitStatus.REMAINING, statusesByName["Missed"])
+        assertEquals(TodayHabitStatus.UNKNOWN, statusesByName["Unknown"])
+        assertEquals(TodayHabitStatus.SKIPPED, statusesByName["Skipped"])
+        assertEquals(listOf("Missed", "Unknown"), state.remaining.map { it.name })
     }
 
     @Test
@@ -61,6 +65,19 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
         assertEquals(45.0, item.currentValue)
         assertEquals(30.0, item.targetValue)
         assertEquals(45.0, TodayScreenStateBuilder.build(habitList, today).focusMinutes)
+    }
+
+    @Test
+    fun buildsNumericalSkipWithoutScaling() {
+        habitList.add(numericalHabit("Rest day", Entry.SKIP, targetValue = 30.0, unit = "min"))
+
+        val state = TodayScreenStateBuilder.build(habitList, today)
+        val item = state.sections.single().items.single()
+
+        assertEquals(TodayHabitStatus.SKIPPED, item.status)
+        assertEquals(null, item.currentValue)
+        assertEquals(0.0, state.focusMinutes)
+        assertEquals(emptyList(), state.remaining)
     }
 
     @Test
@@ -116,10 +133,19 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
     }
 
     @Test
-    fun sumsOnlyMinuteUnitsForFocusMinutes() {
+    fun sumsOnlyAtLeastMinuteUnitsForFocusMinutes() {
         habitList.add(numericalHabit("Reading", 30_000, targetValue = 30.0, unit = "min"))
         habitList.add(numericalHabit("Speech", 25_000, targetValue = 25.0, unit = "мин"))
         habitList.add(numericalHabit("Kegel", 3_000, targetValue = 3.0, unit = "sets"))
+        habitList.add(
+            numericalHabit(
+                name = "Social media",
+                value = 12_000,
+                targetValue = 15.0,
+                unit = "min",
+                targetType = NumericalHabitType.AT_MOST
+            )
+        )
 
         val state = TodayScreenStateBuilder.build(habitList, today)
 
@@ -135,7 +161,7 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
         val sections = TodayScreenStateBuilder.build(habitList, today).sections
 
         assertEquals(listOf(0, 7, 11), sections.map { it.color.paletteIndex })
-        assertEquals(listOf("Color 0", "Color 7", "Color 11"), sections.map { it.title })
+        assertEquals(listOf(0, 7, 11), sections.map { it.paletteIndex })
     }
 
     private fun booleanHabit(

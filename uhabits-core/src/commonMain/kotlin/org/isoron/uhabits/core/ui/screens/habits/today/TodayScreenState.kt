@@ -34,7 +34,7 @@ data class TodayScreenState(
 
 data class TodaySectionState(
     val color: PaletteColor,
-    val title: String,
+    val paletteIndex: Int,
     val completedCount: Int,
     val totalCount: Int,
     val focusMinutes: Double,
@@ -60,5 +60,6 @@ enum class TodayHabitStatus {
     COMPLETED,
     REMAINING,
     UNKNOWN,
+    SKIPPED,
     EXCEEDED
 }

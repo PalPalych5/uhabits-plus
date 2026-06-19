@@ -44,7 +44,7 @@ object TodayScreenStateBuilder {
             .map { sectionItems ->
                 TodaySectionState(
                     color = sectionItems.first().color,
-                    title = "Color ${sectionItems.first().color.paletteIndex}",
+                    paletteIndex = sectionItems.first().color.paletteIndex,
                     completedCount = sectionItems.count { it.isCompleted },
                     totalCount = sectionItems.size,
                     focusMinutes = sectionItems.sumOf { it.focusMinutes },
@@ -57,14 +57,14 @@ object TodayScreenStateBuilder {
             completedCount = items.count { it.isCompleted },
             totalCount = items.size,
             focusMinutes = items.sumOf { it.focusMinutes },
-            remaining = items.filter { !it.isCompleted },
+            remaining = items.filter { !it.isCompleted && it.status != TodayHabitStatus.SKIPPED },
             sections = sections
         )
     }
 
     private fun Habit.toTodayItem(date: LocalDate): TodayHabitItem {
         val entry = computedEntries.get(date)
-        val currentValue = if (isNumerical && entry.value != Entry.UNKNOWN) {
+        val currentValue = if (isNumerical && entry.value != Entry.UNKNOWN && entry.value != Entry.SKIP) {
             entry.value / 1000.0
         } else {
             null
@@ -83,6 +83,8 @@ object TodayScreenStateBuilder {
     }
 
     private fun Habit.todayStatus(entry: Entry): TodayHabitStatus {
+        if (entry.value == Entry.SKIP) return TodayHabitStatus.SKIPPED
+
         if (type == HabitType.NUMERICAL) {
             if (entry.value == Entry.UNKNOWN) return TodayHabitStatus.UNKNOWN
             val value = entry.value / 1000.0
@@ -106,6 +108,7 @@ object TodayScreenStateBuilder {
     private val TodayHabitItem.focusMinutes: Double
         get() {
             if (habitType != HabitType.NUMERICAL) return 0.0
+            if (targetType != NumericalHabitType.AT_LEAST) return 0.0
             if (unit.trim().lowercase() !in minuteUnits) return 0.0
             return currentValue ?: 0.0
         }
