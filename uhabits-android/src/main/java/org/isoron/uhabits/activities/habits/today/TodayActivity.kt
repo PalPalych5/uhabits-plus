@@ -45,10 +45,12 @@ class TodayActivity : AppCompatActivity(), CommandRunner.Listener {
         view = TodayView(
             activity = this,
             context = this,
+            preferences = component.preferences,
             onHabitClick = { habitId ->
                 val habit = component.habitList.getById(habitId) ?: return@TodayView
                 startActivity(IntentFactory().startShowHabitActivity(this, habit))
-            }
+            },
+            onRefresh = { refresh() }
         )
         view.applyRootViewInsets()
         setContentView(view)

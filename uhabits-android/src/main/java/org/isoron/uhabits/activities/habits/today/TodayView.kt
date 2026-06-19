@@ -33,6 +33,7 @@ import org.isoron.platform.gui.toInt
 import org.isoron.uhabits.R
 import org.isoron.uhabits.core.models.HabitType
 import org.isoron.uhabits.core.models.PaletteColor
+import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.ui.screens.habits.today.TodayHabitItem
 import org.isoron.uhabits.core.ui.screens.habits.today.TodayHabitStatus
 import org.isoron.uhabits.core.ui.screens.habits.today.TodayScreenState
@@ -51,7 +52,9 @@ import org.isoron.uhabits.utils.toFixedAndroidColor
 class TodayView(
     private val activity: AppCompatActivity,
     context: Context,
-    private val onHabitClick: (Long) -> Unit
+    private val preferences: Preferences,
+    private val onHabitClick: (Long) -> Unit,
+    private val onRefresh: () -> Unit
 ) : LinearLayout(context) {
     private val toolbar = buildToolbar()
     private val content = LinearLayout(context).apply {
@@ -131,16 +134,26 @@ class TodayView(
     }
 
     private fun addSection(section: TodaySectionState) {
+        val isCollapsed = preferences.isTodaySectionCollapsed(section.id.name)
+        val indicator = if (isCollapsed) "▸ " else "▾ "
         val sectionName = resources.getString(section.id.titleResId)
-        val title = resources.getString(
+        val title = indicator + resources.getString(
             R.string.today_section_title,
             sectionName,
             section.completedCount,
             section.totalCount,
             section.focusMinutes.formatTodayValue()
         )
-        content.addView(sectionTitle(title, topMargin = 24f, color = section.color.toFixedAndroidColor()))
-        section.items.forEach { content.addView(rowView(it)) }
+        val titleView = sectionTitle(title, topMargin = 24f, color = section.color.toFixedAndroidColor())
+        titleView.isClickable = true
+        titleView.setOnClickListener {
+            preferences.setTodaySectionCollapsed(section.id.name, !isCollapsed)
+            onRefresh()
+        }
+        content.addView(titleView)
+        if (!isCollapsed) {
+            section.items.forEach { content.addView(rowView(it)) }
+        }
     }
 
     private val TodaySectionId.titleResId: Int
@@ -157,7 +170,7 @@ class TodayView(
     private fun rowView(item: TodayHabitItem): View {
         return LinearLayout(context).apply {
             orientation = VERTICAL
-            setPadding(0, dp(10f).toInt(), 0, dp(10f).toInt())
+            setPadding(dp(16f).toInt(), dp(10f).toInt(), 0, dp(10f).toInt())
             item.habitId?.let { id ->
                 isClickable = true
                 setOnClickListener { onHabitClick(id) }

@@ -200,41 +200,6 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
     }
 
     @Test
-    fun givesMinuteAtLeastHabitsQuickMinuteActions() {
-        habitList.add(numericalHabit("Reading", 10_000, targetValue = 30.0, unit = "min"))
-
-        val item = TodayScreenStateBuilder.build(habitList, today).sections.single().items.single()
-
-        assertEquals(listOf(5.0, 10.0, 25.0), item.quickActions.map { it.delta })
-    }
-
-    @Test
-    fun givesNonMinuteAtLeastHabitsStepActions() {
-        habitList.add(numericalHabit("Kegel", 2_000, targetValue = 3.0, unit = "sets"))
-
-        val item = TodayScreenStateBuilder.build(habitList, today).sections.single().items.single()
-
-        assertEquals(listOf(1.0, -1.0), item.quickActions.map { it.delta })
-    }
-
-    @Test
-    fun doesNotGiveAtMostHabitsQuickActions() {
-        habitList.add(
-            numericalHabit(
-                name = "Social media",
-                value = 12_000,
-                targetValue = 15.0,
-                unit = "min",
-                targetType = NumericalHabitType.AT_MOST
-            )
-        )
-
-        val item = TodayScreenStateBuilder.build(habitList, today).sections.single().items.single()
-
-        assertEquals(emptyList(), item.quickActions)
-    }
-
-    @Test
     fun sortsSectionsByPrototypeOrderAndKeepsItemsStable() {
         habitList.add(booleanHabit("Intellect B", Entry.YES_MANUAL, color = PaletteColor(11)).apply { position = 2 })
         habitList.add(booleanHabit("Limits", Entry.YES_MANUAL, color = PaletteColor(0)).apply { position = 0 })

@@ -280,6 +280,14 @@ open class Preferences(private val storage: Storage) {
         }
     }
 
+    open fun isTodaySectionCollapsed(sectionId: String): Boolean {
+        return storage.getBoolean("today_section_collapsed_$sectionId", false)
+    }
+
+    open fun setTodaySectionCollapsed(sectionId: String, collapsed: Boolean) {
+        storage.putBoolean("today_section_collapsed_$sectionId", collapsed)
+    }
+
     init {
         listeners = mutableListOf()
         storage.onAttached(this)

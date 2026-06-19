@@ -83,24 +83,7 @@ object TodayScreenStateBuilder {
             currentValue = currentValue,
             targetValue = if (isNumerical) targetValue else null,
             unit = if (isNumerical) unit else "",
-            notes = entry.notes,
-            quickActions = quickActions()
-        )
-    }
-
-    private fun Habit.quickActions(): List<TodayQuickAction> {
-        if (type != HabitType.NUMERICAL) return emptyList()
-        if (targetType != NumericalHabitType.AT_LEAST) return emptyList()
-        if (unit.isMinuteUnit()) {
-            return listOf(
-                TodayQuickAction(5.0),
-                TodayQuickAction(10.0),
-                TodayQuickAction(25.0)
-            )
-        }
-        return listOf(
-            TodayQuickAction(1.0),
-            TodayQuickAction(-1.0)
+            notes = entry.notes
         )
     }
 

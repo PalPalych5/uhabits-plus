@@ -51,16 +51,11 @@ data class TodayHabitItem(
     val currentValue: Double?,
     val targetValue: Double?,
     val unit: String,
-    val notes: String,
-    val quickActions: List<TodayQuickAction>
+    val notes: String
 ) {
     val isCompleted: Boolean
         get() = status == TodayHabitStatus.COMPLETED
 }
-
-data class TodayQuickAction(
-    val delta: Double
-)
 
 enum class TodayHabitStatus {
     COMPLETED,
