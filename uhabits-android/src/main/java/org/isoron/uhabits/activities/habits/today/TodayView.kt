@@ -21,6 +21,7 @@ package org.isoron.uhabits.activities.habits.today
 import android.content.Context
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
@@ -35,6 +36,7 @@ import org.isoron.uhabits.core.models.PaletteColor
 import org.isoron.uhabits.core.ui.screens.habits.today.TodayHabitItem
 import org.isoron.uhabits.core.ui.screens.habits.today.TodayHabitStatus
 import org.isoron.uhabits.core.ui.screens.habits.today.TodayScreenState
+import org.isoron.uhabits.core.ui.screens.habits.today.TodaySectionId
 import org.isoron.uhabits.core.ui.screens.habits.today.TodaySectionState
 import org.isoron.uhabits.core.ui.screens.habits.today.formatTodayValue
 import org.isoron.uhabits.utils.InterfaceUtils
@@ -49,12 +51,14 @@ import org.isoron.uhabits.utils.toFixedAndroidColor
 class TodayView(
     private val activity: AppCompatActivity,
     context: Context,
-    private val onHabitClick: (Long) -> Unit
+    private val onHabitClick: (Long) -> Unit,
+    private val onQuickAction: (Long, Double) -> Unit,
+    private val onManualEdit: (Long) -> Unit
 ) : LinearLayout(context) {
     private val toolbar = buildToolbar()
     private val content = LinearLayout(context).apply {
         orientation = VERTICAL
-        setPadding(dp(16f).toInt(), dp(16f).toInt(), dp(16f).toInt(), dp(24f).toInt())
+        setPadding(dp(16f).toInt(), dp(14f).toInt(), dp(16f).toInt(), dp(24f).toInt())
     }
 
     init {
@@ -109,17 +113,14 @@ class TodayView(
                 )
             )
         )
-        content.addView(
-            bodyText(
-                resources.getString(
-                    R.string.today_summary_focus_minutes,
-                    state.focusMinutes.formatTodayValue()
-                )
-            )
-        )
-        content.addView(
-            bodyText(resources.getString(R.string.today_summary_remaining, state.remaining.size))
-        )
+        val summaryDetails = listOf(
+            resources.getString(
+                R.string.today_summary_focus_minutes,
+                state.focusMinutes.formatTodayValue()
+            ),
+            resources.getString(R.string.today_summary_remaining, state.remaining.size)
+        ).joinToString("  |  ")
+        content.addView(bodyText(summaryDetails, muted = true))
     }
 
     private fun addRemaining(items: List<TodayHabitItem>) {
@@ -132,7 +133,7 @@ class TodayView(
     }
 
     private fun addSection(section: TodaySectionState) {
-        val sectionName = resources.getString(R.string.today_section_color, section.paletteIndex)
+        val sectionName = resources.getString(section.id.titleResId)
         val title = resources.getString(
             R.string.today_section_title,
             sectionName,
@@ -144,6 +145,17 @@ class TodayView(
         section.items.forEach { content.addView(rowView(it)) }
     }
 
+    private val TodaySectionId.titleResId: Int
+        get() = when (this) {
+            TodaySectionId.LIMITS -> R.string.today_section_limits
+            TodaySectionId.ROUTINE -> R.string.today_section_routine
+            TodaySectionId.BODY -> R.string.today_section_body
+            TodaySectionId.CARE -> R.string.today_section_care
+            TodaySectionId.INTELLECT -> R.string.today_section_intellect
+            TodaySectionId.SPEECH -> R.string.today_section_speech
+            TodaySectionId.OTHER -> R.string.today_section_other
+        }
+
     private fun rowView(item: TodayHabitItem): View {
         return LinearLayout(context).apply {
             orientation = VERTICAL
@@ -154,6 +166,52 @@ class TodayView(
             }
             addView(bodyText(item.name, bold = true))
             addView(bodyText(item.subtitle()))
+            if (item.notes.isNotBlank()) {
+                addView(bodyText(item.notes, muted = true))
+            }
+            if (item.habitType == HabitType.NUMERICAL) {
+                addView(actionsView(item))
+            }
+        }
+    }
+
+    private fun actionsView(item: TodayHabitItem): View {
+        return LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            setPadding(0, dp(8f).toInt(), 0, 0)
+            item.habitId?.let { habitId ->
+                item.quickActions.forEach { action ->
+                    addView(actionChip(action.delta.formatQuickDelta(), item.color) {
+                        onQuickAction(habitId, action.delta)
+                    })
+                }
+                addView(actionChip(resources.getString(R.string.edit), item.color) {
+                    onManualEdit(habitId)
+                })
+            }
+        }
+    }
+
+    private fun actionChip(text: String, color: PaletteColor, onClick: () -> Unit): View {
+        return TextView(context).apply {
+            this.text = text
+            gravity = android.view.Gravity.CENTER
+            setTextSize(12f)
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(color.toFixedAndroidColor())
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(16f)
+                setColor(sres.getColor(R.attr.contrast20))
+                setStroke(dp(1f).toInt(), sres.getColor(R.attr.contrast40))
+            }
+            setPadding(dp(12f).toInt(), 0, dp(12f).toInt(), 0)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { onClick() }
+            layoutParams = LayoutParams(WRAP_CONTENT, dp(32f).toInt()).apply {
+                rightMargin = dp(6f).toInt()
+            }
         }
     }
 
@@ -189,16 +247,27 @@ class TodayView(
         }
     }
 
-    private fun bodyText(text: String, bold: Boolean = false): TextView {
-        return textView(text, size = 14f, bold = bold)
+    private fun bodyText(text: String, bold: Boolean = false, muted: Boolean = false): TextView {
+        return textView(text, size = 14f, bold = bold, muted = muted)
     }
 
-    private fun textView(text: String, size: Float, bold: Boolean): TextView {
+    private fun textView(text: String, size: Float, bold: Boolean, muted: Boolean = false): TextView {
         return TextView(context).apply {
             this.text = text
             setTextSize(size)
-            setTextColor(sres.getColor(android.R.attr.textColorPrimary))
+            setTextColor(
+                if (muted) {
+                    sres.getColor(R.attr.contrast60)
+                } else {
+                    sres.getColor(android.R.attr.textColorPrimary)
+                }
+            )
             if (bold) setTypeface(typeface, Typeface.BOLD)
         }
     }
+}
+
+private fun Double.formatQuickDelta(): String {
+    val value = kotlin.math.abs(this).formatTodayValue()
+    return if (this >= 0) "+$value" else "-$value"
 }

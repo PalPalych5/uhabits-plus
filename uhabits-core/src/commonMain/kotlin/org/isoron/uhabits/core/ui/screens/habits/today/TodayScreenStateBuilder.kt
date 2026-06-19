@@ -25,6 +25,7 @@ import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.HabitType
 import org.isoron.uhabits.core.models.NumericalHabitType
+import org.isoron.uhabits.core.models.PaletteColor
 import kotlin.math.roundToInt
 
 object TodayScreenStateBuilder {
@@ -34,17 +35,20 @@ object TodayScreenStateBuilder {
         val items = habitList
             .toList()
             .filter { !it.isArchived }
-            .sortedWith(compareBy<Habit> { it.color.paletteIndex }.thenBy { it.position }.thenBy { it.name })
+            .sortedWith(
+                compareBy<Habit> { it.color.toTodaySectionId().order }
+                    .thenBy { it.position }
+                    .thenBy { it.name }
+            )
             .map { it.toTodayItem(date) }
 
         val sections = items
-            .groupBy { it.color.paletteIndex }
-            .toSortedMap()
-            .values
-            .map { sectionItems ->
+            .groupBy { it.color.toTodaySectionId() }
+            .toSortedMap(compareBy { it.order })
+            .map { (sectionId, sectionItems) ->
                 TodaySectionState(
+                    id = sectionId,
                     color = sectionItems.first().color,
-                    paletteIndex = sectionItems.first().color.paletteIndex,
                     completedCount = sectionItems.count { it.isCompleted },
                     totalCount = sectionItems.size,
                     focusMinutes = sectionItems.sumOf { it.focusMinutes },
@@ -78,7 +82,25 @@ object TodayScreenStateBuilder {
             status = todayStatus(entry),
             currentValue = currentValue,
             targetValue = if (isNumerical) targetValue else null,
-            unit = if (isNumerical) unit else ""
+            unit = if (isNumerical) unit else "",
+            notes = entry.notes,
+            quickActions = quickActions()
+        )
+    }
+
+    private fun Habit.quickActions(): List<TodayQuickAction> {
+        if (type != HabitType.NUMERICAL) return emptyList()
+        if (targetType != NumericalHabitType.AT_LEAST) return emptyList()
+        if (unit.isMinuteUnit()) {
+            return listOf(
+                TodayQuickAction(5.0),
+                TodayQuickAction(10.0),
+                TodayQuickAction(25.0)
+            )
+        }
+        return listOf(
+            TodayQuickAction(1.0),
+            TodayQuickAction(-1.0)
         )
     }
 
@@ -109,9 +131,23 @@ object TodayScreenStateBuilder {
         get() {
             if (habitType != HabitType.NUMERICAL) return 0.0
             if (targetType != NumericalHabitType.AT_LEAST) return 0.0
-            if (unit.trim().lowercase() !in minuteUnits) return 0.0
+            if (!unit.isMinuteUnit()) return 0.0
             return currentValue ?: 0.0
         }
+
+    private fun String.isMinuteUnit(): Boolean = trim().lowercase() in minuteUnits
+
+    private fun PaletteColor.toTodaySectionId(): TodaySectionId {
+        return when (paletteIndex) {
+            0, 1, 15 -> TodaySectionId.LIMITS
+            2, 3, 4 -> TodaySectionId.ROUTINE
+            5, 6, 7 -> TodaySectionId.BODY
+            8 -> TodaySectionId.CARE
+            9, 10, 11, 12 -> TodaySectionId.INTELLECT
+            13, 14 -> TodaySectionId.SPEECH
+            else -> TodaySectionId.OTHER
+        }
+    }
 }
 
 fun Double.formatTodayValue(): String {

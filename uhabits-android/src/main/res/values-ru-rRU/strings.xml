@@ -224,8 +224,14 @@
     <string name="today_remaining">Осталось</string>
     <string name="today_empty_remaining">Все привычки на сегодня закрыты.</string>
     <string name="today_empty">Активных привычек не найдено.</string>
-    <string name="today_section_color">Цвет %1$d</string>
     <string name="today_section_title">%1$s - %2$d/%3$d - %4$s мин</string>
+    <string name="today_section_limits">Ограничения / самоконтроль</string>
+    <string name="today_section_routine">Режим / рефлексия</string>
+    <string name="today_section_body">Тело</string>
+    <string name="today_section_care">Уход / гигиена</string>
+    <string name="today_section_intellect">Интеллект / обучение</string>
+    <string name="today_section_speech">Речь / мышление</string>
+    <string name="today_section_other">Прочее</string>
     <string name="today_status_done">Готово</string>
     <string name="today_status_remaining">Осталось</string>
     <string name="today_status_unknown">Нет данных</string>

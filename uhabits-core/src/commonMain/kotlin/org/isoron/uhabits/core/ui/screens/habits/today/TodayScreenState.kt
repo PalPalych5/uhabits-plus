@@ -33,8 +33,8 @@ data class TodayScreenState(
 )
 
 data class TodaySectionState(
+    val id: TodaySectionId,
     val color: PaletteColor,
-    val paletteIndex: Int,
     val completedCount: Int,
     val totalCount: Int,
     val focusMinutes: Double,
@@ -50,11 +50,17 @@ data class TodayHabitItem(
     val status: TodayHabitStatus,
     val currentValue: Double?,
     val targetValue: Double?,
-    val unit: String
+    val unit: String,
+    val notes: String,
+    val quickActions: List<TodayQuickAction>
 ) {
     val isCompleted: Boolean
         get() = status == TodayHabitStatus.COMPLETED
 }
+
+data class TodayQuickAction(
+    val delta: Double
+)
 
 enum class TodayHabitStatus {
     COMPLETED,
@@ -62,4 +68,14 @@ enum class TodayHabitStatus {
     UNKNOWN,
     SKIPPED,
     EXCEEDED
+}
+
+enum class TodaySectionId(val order: Int) {
+    LIMITS(0),
+    ROUTINE(1),
+    BODY(2),
+    CARE(3),
+    INTELLECT(4),
+    SPEECH(5),
+    OTHER(6)
 }

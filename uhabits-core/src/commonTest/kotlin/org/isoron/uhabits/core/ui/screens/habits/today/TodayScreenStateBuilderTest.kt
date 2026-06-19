@@ -57,13 +57,22 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
 
     @Test
     fun buildsNumericalAtLeastProgressUsingScaledValues() {
-        habitList.add(numericalHabit("Reading", 45_000, targetValue = 30.0, unit = "min"))
+        habitList.add(
+            numericalHabit(
+                "Reading",
+                45_000,
+                targetValue = 30.0,
+                unit = "min",
+                notes = "Focused session"
+            )
+        )
 
         val item = TodayScreenStateBuilder.build(habitList, today).sections.single().items.single()
 
         assertEquals(TodayHabitStatus.COMPLETED, item.status)
         assertEquals(45.0, item.currentValue)
         assertEquals(30.0, item.targetValue)
+        assertEquals("Focused session", item.notes)
         assertEquals(45.0, TodayScreenStateBuilder.build(habitList, today).focusMinutes)
     }
 
@@ -153,15 +162,110 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
     }
 
     @Test
-    fun groupsSectionsByColorDeterministically() {
-        habitList.add(booleanHabit("Green", Entry.YES_MANUAL, color = PaletteColor(7)))
-        habitList.add(booleanHabit("Red", Entry.YES_MANUAL, color = PaletteColor(0)))
-        habitList.add(booleanHabit("Blue", Entry.NO, color = PaletteColor(11)))
+    fun mapsPaletteColorsToPrototypeSections() {
+        val expectedSections = mapOf(
+            0 to TodaySectionId.LIMITS,
+            1 to TodaySectionId.LIMITS,
+            15 to TodaySectionId.LIMITS,
+            2 to TodaySectionId.ROUTINE,
+            3 to TodaySectionId.ROUTINE,
+            4 to TodaySectionId.ROUTINE,
+            5 to TodaySectionId.BODY,
+            6 to TodaySectionId.BODY,
+            7 to TodaySectionId.BODY,
+            8 to TodaySectionId.CARE,
+            9 to TodaySectionId.INTELLECT,
+            10 to TodaySectionId.INTELLECT,
+            11 to TodaySectionId.INTELLECT,
+            12 to TodaySectionId.INTELLECT,
+            13 to TodaySectionId.SPEECH,
+            14 to TodaySectionId.SPEECH,
+            16 to TodaySectionId.OTHER,
+            17 to TodaySectionId.OTHER,
+            18 to TodaySectionId.OTHER,
+            19 to TodaySectionId.OTHER
+        )
+        expectedSections.keys.forEach { index ->
+            habitList.add(booleanHabit("Color $index", Entry.YES_MANUAL, color = PaletteColor(index)))
+        }
+
+        val sections = TodayScreenStateBuilder.build(habitList, today).sections
+        val sectionByName = sections.flatMap { section ->
+            section.items.map { item -> item.name to section.id }
+        }.toMap()
+
+        expectedSections.forEach { (paletteIndex, sectionId) ->
+            assertEquals(sectionId, sectionByName["Color $paletteIndex"])
+        }
+    }
+
+    @Test
+    fun givesMinuteAtLeastHabitsQuickMinuteActions() {
+        habitList.add(numericalHabit("Reading", 10_000, targetValue = 30.0, unit = "min"))
+
+        val item = TodayScreenStateBuilder.build(habitList, today).sections.single().items.single()
+
+        assertEquals(listOf(5.0, 10.0, 25.0), item.quickActions.map { it.delta })
+    }
+
+    @Test
+    fun givesNonMinuteAtLeastHabitsStepActions() {
+        habitList.add(numericalHabit("Kegel", 2_000, targetValue = 3.0, unit = "sets"))
+
+        val item = TodayScreenStateBuilder.build(habitList, today).sections.single().items.single()
+
+        assertEquals(listOf(1.0, -1.0), item.quickActions.map { it.delta })
+    }
+
+    @Test
+    fun doesNotGiveAtMostHabitsQuickActions() {
+        habitList.add(
+            numericalHabit(
+                name = "Social media",
+                value = 12_000,
+                targetValue = 15.0,
+                unit = "min",
+                targetType = NumericalHabitType.AT_MOST
+            )
+        )
+
+        val item = TodayScreenStateBuilder.build(habitList, today).sections.single().items.single()
+
+        assertEquals(emptyList(), item.quickActions)
+    }
+
+    @Test
+    fun sortsSectionsByPrototypeOrderAndKeepsItemsStable() {
+        habitList.add(booleanHabit("Intellect B", Entry.YES_MANUAL, color = PaletteColor(11)).apply { position = 2 })
+        habitList.add(booleanHabit("Limits", Entry.YES_MANUAL, color = PaletteColor(0)).apply { position = 0 })
+        habitList.add(booleanHabit("Body", Entry.NO, color = PaletteColor(7)).apply { position = 0 })
+        habitList.add(booleanHabit("Intellect A", Entry.NO, color = PaletteColor(10)).apply { position = 1 })
 
         val sections = TodayScreenStateBuilder.build(habitList, today).sections
 
-        assertEquals(listOf(0, 7, 11), sections.map { it.color.paletteIndex })
-        assertEquals(listOf(0, 7, 11), sections.map { it.paletteIndex })
+        assertEquals(
+            listOf(TodaySectionId.LIMITS, TodaySectionId.BODY, TodaySectionId.INTELLECT),
+            sections.map { it.id }
+        )
+        assertEquals(listOf("Intellect A", "Intellect B"), sections.last().items.map { it.name })
+    }
+
+    @Test
+    fun calculatesSectionAggregatesAfterPrototypeGrouping() {
+        habitList.add(numericalHabit("Reading", 30_000, targetValue = 30.0, unit = "min", color = PaletteColor(11)))
+        habitList.add(numericalHabit("Speech", 20_000, targetValue = 25.0, unit = "мин", color = PaletteColor(13)))
+        habitList.add(booleanHabit("Care", Entry.YES_MANUAL, color = PaletteColor(8)))
+
+        val sectionsById = TodayScreenStateBuilder.build(habitList, today).sections.associateBy { it.id }
+
+        assertEquals(1, sectionsById[TodaySectionId.INTELLECT]?.completedCount)
+        assertEquals(1, sectionsById[TodaySectionId.INTELLECT]?.totalCount)
+        assertEquals(30.0, sectionsById[TodaySectionId.INTELLECT]?.focusMinutes)
+        assertEquals(0, sectionsById[TodaySectionId.SPEECH]?.completedCount)
+        assertEquals(1, sectionsById[TodaySectionId.SPEECH]?.totalCount)
+        assertEquals(20.0, sectionsById[TodaySectionId.SPEECH]?.focusMinutes)
+        assertEquals(1, sectionsById[TodaySectionId.CARE]?.completedCount)
+        assertEquals(1, sectionsById[TodaySectionId.CARE]?.totalCount)
     }
 
     private fun booleanHabit(
@@ -189,7 +293,8 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
         targetValue: Double,
         unit: String,
         targetType: NumericalHabitType = NumericalHabitType.AT_LEAST,
-        color: PaletteColor = PaletteColor(8)
+        color: PaletteColor = PaletteColor(8),
+        notes: String = ""
     ): Habit {
         return Habit(
             name = name,
@@ -203,7 +308,7 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
             scores = modelFactory.buildScoreList(),
             streaks = modelFactory.buildStreakList()
         ).apply {
-            if (value != Entry.UNKNOWN) originalEntries.add(Entry(today, value))
+            if (value != Entry.UNKNOWN) originalEntries.add(Entry(today, value, notes))
             recompute()
         }
     }
