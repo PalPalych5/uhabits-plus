@@ -250,7 +250,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <action android:name="org.isoron.uhabits.ACTION_SET_NUMERICAL_VALUE" />
                 <data
-                    android:host="org.isoron.uhabits"
+                    android:host="org.isoron.uhabits.plus"
                     android:scheme="content" />
             </intent-filter>
             <intent-filter>
@@ -259,7 +259,7 @@
                 <action android:name="org.isoron.uhabits.ACTION_TOGGLE_REPETITION" />
 
                 <data
-                    android:host="org.isoron.uhabits"
+                    android:host="org.isoron.uhabits.plus"
                     android:scheme="content" />
             </intent-filter>
             <intent-filter>
@@ -268,7 +268,7 @@
                 <action android:name="org.isoron.uhabits.ACTION_ADD_REPETITION" />
 
                 <data
-                    android:host="org.isoron.uhabits"
+                    android:host="org.isoron.uhabits.plus"
                     android:scheme="content" />
             </intent-filter>
             <intent-filter>
@@ -277,7 +277,7 @@
                 <action android:name="org.isoron.uhabits.ACTION_REMOVE_REPETITION" />
 
                 <data
-                    android:host="org.isoron.uhabits"
+                    android:host="org.isoron.uhabits.plus"
                     android:scheme="content" />
             </intent-filter>
         </receiver>
@@ -304,7 +304,7 @@
 
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="org.isoron.uhabits"
+            android:authorities="org.isoron.uhabits.plus"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
