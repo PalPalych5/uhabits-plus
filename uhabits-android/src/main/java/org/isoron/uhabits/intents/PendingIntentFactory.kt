@@ -32,6 +32,8 @@ import android.os.Build
 import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.activities.habits.list.ListHabitsActivity
+import org.isoron.uhabits.activities.main.MainActivity
+import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.activities.habits.show.ShowHabitActivity
 import org.isoron.uhabits.core.AppScope
 import org.isoron.uhabits.core.models.Habit
@@ -160,7 +162,7 @@ class PendingIntentFactory(
         return getActivity(
             context,
             (habit.id!! % Integer.MAX_VALUE).toInt() + 1,
-            Intent(context, ListHabitsActivity::class.java).apply {
+            MainActivity.intent(context, MainDestination.HABITS).apply {
                 action = ListHabitsActivity.ACTION_EDIT
                 putExtra("habit", habit.id)
                 putExtra("timestamp", date.unixTime)
@@ -173,7 +175,7 @@ class PendingIntentFactory(
         return getActivity(
             context,
             1,
-            Intent(context, ListHabitsActivity::class.java).apply {
+            MainActivity.intent(context, MainDestination.HABITS).apply {
                 action = ListHabitsActivity.ACTION_EDIT
             },
             getIntentTemplateFlags()

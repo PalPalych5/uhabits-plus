@@ -40,11 +40,8 @@ import org.isoron.platform.time.DayOfWeek
 import org.isoron.platform.time.JavaLocalDateFormatter
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
-import org.isoron.uhabits.activities.habits.list.RESULT_BUG_REPORT
-import org.isoron.uhabits.activities.habits.list.RESULT_EXPORT_CSV
-import org.isoron.uhabits.activities.habits.list.RESULT_EXPORT_DB
-import org.isoron.uhabits.activities.habits.list.RESULT_IMPORT_DATA
-import org.isoron.uhabits.activities.habits.list.RESULT_REPAIR_DB
+import org.isoron.uhabits.activities.main.SettingsAction
+import org.isoron.uhabits.activities.main.SettingsActionHandler
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.ui.NotificationTray
 import org.isoron.uhabits.notifications.AndroidNotificationTray.Companion.createAndroidNotificationChannel
@@ -90,11 +87,11 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
             prefs = appContext.component.preferences
             widgetUpdater = appContext.component.widgetUpdater
         }
-        setResultOnPreferenceClick("importData", RESULT_IMPORT_DATA)
-        setResultOnPreferenceClick("exportCSV", RESULT_EXPORT_CSV)
-        setResultOnPreferenceClick("exportDB", RESULT_EXPORT_DB)
-        setResultOnPreferenceClick("repairDB", RESULT_REPAIR_DB)
-        setResultOnPreferenceClick("bugReport", RESULT_BUG_REPORT)
+        setActionOnPreferenceClick("importData", SettingsAction.IMPORT_DATA)
+        setActionOnPreferenceClick("exportCSV", SettingsAction.EXPORT_CSV)
+        setActionOnPreferenceClick("exportDB", SettingsAction.EXPORT_DATABASE)
+        setActionOnPreferenceClick("repairDB", SettingsAction.REPAIR_DATABASE)
+        setActionOnPreferenceClick("bugReport", SettingsAction.BUG_REPORT)
     }
 
     override fun onCreatePreferences(bundle: Bundle?, s: String?) {
@@ -151,6 +148,14 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
                 startActivityForResult(intent, PUBLIC_BACKUP_REQUEST_CODE)
                 return true
             }
+            "configureSpheres" -> {
+                actionHandler().onSettingsAction(SettingsAction.MANAGE_SPHERES)
+                return true
+            }
+            "openArchive" -> {
+                actionHandler().onSettingsAction(SettingsAction.OPEN_ARCHIVE)
+                return true
+            }
         }
         return super.onPreferenceTreeClick(preference)
     }
@@ -193,15 +198,17 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
         updateWeekdayPreference()
     }
 
-    private fun setResultOnPreferenceClick(key: String, result: Int) {
+    private fun setActionOnPreferenceClick(key: String, action: SettingsAction) {
         val pref = findPreference(key)
         pref.onPreferenceClickListener =
             Preference.OnPreferenceClickListener {
-                requireActivity().setResult(result)
-                requireActivity().finish()
+                actionHandler().onSettingsAction(action)
                 true
             }
     }
+
+    private fun actionHandler(): SettingsActionHandler =
+        requireActivity() as SettingsActionHandler
 
     private fun showRingtonePicker() {
         val existingRingtoneUri = ringtoneManager!!.getURI()

@@ -23,71 +23,100 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.view.Gravity
-import android.view.MenuItem
+import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.fragment.app.Fragment
 import com.google.android.material.tabs.TabLayout
 import org.isoron.platform.time.*
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
+import org.isoron.uhabits.activities.main.MainActivity
+import org.isoron.uhabits.activities.main.MainDestination
+import org.isoron.uhabits.activities.main.MainNavigationHost
 import org.isoron.uhabits.core.models.*
 import org.isoron.uhabits.core.ui.screens.habits.today.formatTodayValue
 import org.isoron.uhabits.databinding.ActivityReportsBinding
 import org.isoron.platform.gui.toInt
-import org.isoron.uhabits.utils.applyRootViewInsets
 import org.isoron.uhabits.utils.applyToolbarInsets
-import org.isoron.uhabits.utils.currentTheme
 import org.isoron.uhabits.utils.dp
 import org.isoron.uhabits.utils.sres
 import java.util.Locale
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-class ReportsActivity : AppCompatActivity() {
+class ReportsFragment : Fragment() {
     private lateinit var themeSwitcher: AndroidThemeSwitcher
-    private lateinit var binding: ActivityReportsBinding
+    private var viewBinding: ActivityReportsBinding? = null
+    private val binding get() = viewBinding!!
     private val component
-        get() = (applicationContext as HabitsApplication).component
+        get() = (requireContext().applicationContext as HabitsApplication).component
+    private val sres get() = binding.root.sres
 
     private enum class ReportTab { DAY, WEEK, MONTH }
     private var currentTab = ReportTab.DAY
     private lateinit var currentAnchorDate: LocalDate
     private lateinit var dateFormatter: JavaLocalDateFormatter
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        themeSwitcher = AndroidThemeSwitcher(this, component.preferences)
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View {
+        themeSwitcher = AndroidThemeSwitcher(requireActivity(), component.preferences)
         themeSwitcher.apply()
 
-        binding = ActivityReportsBinding.inflate(layoutInflater)
-        binding.root.applyRootViewInsets()
+        viewBinding = ActivityReportsBinding.inflate(inflater, container, false)
         binding.toolbar.applyToolbarInsets()
-        setContentView(binding.root)
 
-        setSupportActionBar(binding.toolbar)
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        supportActionBar?.setDisplayShowHomeEnabled(true)
+        val activity = requireActivity() as AppCompatActivity
+        activity.setSupportActionBar(binding.toolbar)
+        activity.supportActionBar?.setDisplayHomeAsUpEnabled(false)
 
         dateFormatter = JavaLocalDateFormatter(Locale.getDefault())
-        currentAnchorDate = getToday()
+        currentTab = ReportTab.entries.getOrElse(
+            savedInstanceState?.getInt(STATE_TAB) ?: 0
+        ) { ReportTab.DAY }
+        currentAnchorDate = savedInstanceState?.let {
+            LocalDate(
+                it.getInt(STATE_YEAR),
+                it.getInt(STATE_MONTH),
+                it.getInt(STATE_DAY)
+            )
+        } ?: getToday()
 
         setupTabs()
         setupListeners()
         updateReport()
+        binding.tabLayout.getTabAt(currentTab.ordinal)?.select()
+        return binding.root
     }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            android.R.id.home -> {
-                finish()
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
+    override fun onResume() {
+        super.onResume()
+        viewBinding?.let {
+            (requireActivity() as AppCompatActivity).setSupportActionBar(it.toolbar)
+            (requireActivity() as AppCompatActivity).supportActionBar
+                ?.setDisplayHomeAsUpEnabled(false)
         }
+        (activity as? MainNavigationHost)?.setHabitCreationAvailable(false)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putInt(STATE_TAB, currentTab.ordinal)
+        outState.putInt(STATE_YEAR, currentAnchorDate.year)
+        outState.putInt(STATE_MONTH, currentAnchorDate.month)
+        outState.putInt(STATE_DAY, currentAnchorDate.day)
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onDestroyView() {
+        viewBinding = null
+        super.onDestroyView()
     }
 
     private fun setupTabs() {
@@ -242,7 +271,7 @@ class ReportsActivity : AppCompatActivity() {
 
         // Card 1: Results Summary
         val (summaryCard, summaryContent) = createCard(getString(R.string.overview))
-        val summaryText = TextView(this).apply {
+        val summaryText = TextView(requireContext()).apply {
             text = buildString {
                 append(getString(R.string.today_summary_completed, completedCount, totalCount))
                 val percentage = if (totalCount > 0) (completedCount * 100f / totalCount).roundToInt() else 0
@@ -272,7 +301,7 @@ class ReportsActivity : AppCompatActivity() {
         // Card 3: Missed Targets
         val (missedCard, missedContent) = createCard(getString(R.string.reports_missed_targets))
         if (remainingHabits.isEmpty()) {
-            val congratsText = TextView(this).apply {
+            val congratsText = TextView(requireContext()).apply {
                 text = "Все цели выполнены! 🎉"
                 textSize = 15f
                 setTextColor(themeSwitcher.currentTheme.color(PaletteColor(6)).toInt()) // Green
@@ -379,7 +408,7 @@ class ReportsActivity : AppCompatActivity() {
 
         // Card 1: General Stats
         val (summaryCard, summaryContent) = createCard(getString(R.string.overview))
-        val summaryText = TextView(this).apply {
+        val summaryText = TextView(requireContext()).apply {
             text = buildString {
                 val percentage = if (totalDaysCount > 0) (completedDaysCount * 100f / totalDaysCount).roundToInt() else 0
                 append("Успешность выполнения: $percentage%\n")
@@ -456,12 +485,12 @@ class ReportsActivity : AppCompatActivity() {
     }
 
     private fun createSphereRow(color: PaletteColor, name: String, valueText: String): View {
-        val row = LinearLayout(this).apply {
+        val row = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(6f).toInt(), 0, dp(6f).toInt())
         }
 
-        val dot = View(this).apply {
+        val dot = View(requireContext()).apply {
             val size = dp(12f).toInt()
             layoutParams = LinearLayout.LayoutParams(size, size).apply {
                 gravity = Gravity.CENTER_VERTICAL
@@ -473,14 +502,14 @@ class ReportsActivity : AppCompatActivity() {
             }
         }
 
-        val nameView = TextView(this).apply {
+        val nameView = TextView(requireContext()).apply {
             text = name
             textSize = 15f
             setTextColor(sres.getColor(android.R.attr.textColorPrimary))
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
 
-        val valueView = TextView(this).apply {
+        val valueView = TextView(requireContext()).apply {
             text = valueText
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
@@ -494,12 +523,12 @@ class ReportsActivity : AppCompatActivity() {
     }
 
     private fun createHabitStatusRow(color: PaletteColor, name: String, statusIcon: String, valueText: String): View {
-        val row = LinearLayout(this).apply {
+        val row = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(6f).toInt(), 0, dp(6f).toInt())
         }
 
-        val iconView = TextView(this).apply {
+        val iconView = TextView(requireContext()).apply {
             text = statusIcon
             textSize = 14f
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
@@ -507,14 +536,14 @@ class ReportsActivity : AppCompatActivity() {
             }
         }
 
-        val nameView = TextView(this).apply {
+        val nameView = TextView(requireContext()).apply {
             text = name
             textSize = 15f
             setTextColor(sres.getColor(android.R.attr.textColorPrimary))
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
 
-        val valueView = TextView(this).apply {
+        val valueView = TextView(requireContext()).apply {
             text = valueText
             textSize = 14f
             setTextColor(themeSwitcher.currentTheme.color(PaletteColor(18)).toInt()) // grey text color
@@ -529,12 +558,12 @@ class ReportsActivity : AppCompatActivity() {
     }
 
     private fun createHabitDetailRow(color: PaletteColor, name: String, subtitle: String): View {
-        val row = LinearLayout(this).apply {
+        val row = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(8f).toInt(), 0, dp(8f).toInt())
         }
 
-        val dot = View(this).apply {
+        val dot = View(requireContext()).apply {
             val size = dp(10f).toInt()
             layoutParams = LinearLayout.LayoutParams(size, size).apply {
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
@@ -547,18 +576,18 @@ class ReportsActivity : AppCompatActivity() {
             }
         }
 
-        val textContainer = LinearLayout(this).apply {
+        val textContainer = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
 
-        val titleView = TextView(this).apply {
+        val titleView = TextView(requireContext()).apply {
             text = name
             textSize = 15f
             setTextColor(sres.getColor(android.R.attr.textColorPrimary))
         }
 
-        val subtitleView = TextView(this).apply {
+        val subtitleView = TextView(requireContext()).apply {
             text = subtitle
             textSize = 13f
             setTextColor(themeSwitcher.currentTheme.color(PaletteColor(18)).toInt()) // grey text color
@@ -573,7 +602,7 @@ class ReportsActivity : AppCompatActivity() {
     }
 
     private fun createCard(titleText: String): Pair<LinearLayout, LinearLayout> {
-        val cardContainer = LinearLayout(this).apply {
+        val cardContainer = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
             val lp = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -588,7 +617,7 @@ class ReportsActivity : AppCompatActivity() {
             val padding = dp(16f).toInt()
             setPadding(padding, padding, padding, padding)
 
-            val typedArray = obtainStyledAttributes(intArrayOf(R.attr.cardBgColor))
+            val typedArray = requireContext().obtainStyledAttributes(intArrayOf(R.attr.cardBgColor))
             val cardBg = typedArray.getColor(0, sres.getColor(android.R.color.white))
             typedArray.recycle()
 
@@ -598,11 +627,11 @@ class ReportsActivity : AppCompatActivity() {
             }
         }
 
-        val titleView = TextView(this).apply {
+        val titleView = TextView(requireContext()).apply {
             text = titleText
             textSize = 16f
             setTypeface(null, Typeface.BOLD)
-            val typedArray = obtainStyledAttributes(intArrayOf(android.R.attr.textColorSecondary))
+            val typedArray = requireContext().obtainStyledAttributes(intArrayOf(android.R.attr.textColorSecondary))
             val titleColor = typedArray.getColor(0, sres.getColor(android.R.color.black))
             typedArray.recycle()
             setTextColor(titleColor)
@@ -617,7 +646,7 @@ class ReportsActivity : AppCompatActivity() {
 
         cardContainer.addView(titleView)
 
-        val contentLayout = LinearLayout(this).apply {
+        val contentLayout = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -634,4 +663,22 @@ class ReportsActivity : AppCompatActivity() {
         val completedDays: Int,
         val totalDays: Int
     )
+
+    private fun dp(value: Float) = binding.root.dp(value)
+
+    companion object {
+        private const val STATE_TAB = "reports.tab"
+        private const val STATE_YEAR = "reports.year"
+        private const val STATE_MONTH = "reports.month"
+        private const val STATE_DAY = "reports.day"
+    }
+}
+
+/** Compatibility entry point for existing internal intents. */
+class ReportsActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        startActivity(MainActivity.intent(this, MainDestination.REPORTS))
+        finish()
+    }
 }

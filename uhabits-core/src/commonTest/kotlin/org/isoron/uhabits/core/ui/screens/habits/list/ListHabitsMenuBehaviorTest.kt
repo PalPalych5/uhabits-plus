@@ -163,6 +163,12 @@ class ListHabitsMenuBehaviorTest : BaseUnitTest() {
     }
 
     @Test
+    fun testOnViewReports() {
+        behavior.onViewReports()
+        verify { screen.showReportsScreen() }
+    }
+
+    @Test
     fun testOnToggleNightMode() {
         behavior.onToggleNightMode()
         verify { themeSwitcher.toggleNightMode() }

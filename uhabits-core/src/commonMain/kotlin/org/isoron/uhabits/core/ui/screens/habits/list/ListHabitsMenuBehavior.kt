@@ -54,6 +54,10 @@ class ListHabitsMenuBehavior(
         screen.showTodayScreen()
     }
 
+    fun onViewReports() {
+        screen.showReportsScreen()
+    }
+
     fun onToggleShowArchived() {
         showArchived = !showArchived
         preferences.showArchived = showArchived
@@ -139,6 +143,7 @@ class ListHabitsMenuBehavior(
         fun showSettingsScreen()
         fun showSelectHabitTypeDialog()
         fun showTodayScreen()
+        fun showReportsScreen()
     }
 
     init {

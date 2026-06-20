@@ -97,7 +97,7 @@ class ListHabitsRootView(
         }
         rootView.setupToolbar(
             toolbar = tbar,
-            title = resources.getString(R.string.main_activity_title),
+            title = resources.getString(R.string.habits_title),
             color = PaletteColor(17),
             displayHomeAsUpEnabled = false,
             theme = currentTheme()
@@ -157,5 +157,9 @@ class ListHabitsRootView(
         } else {
             llEmpty.hide()
         }
+    }
+
+    fun setScreenTitle(title: String) {
+        tbar.title = title
     }
 }

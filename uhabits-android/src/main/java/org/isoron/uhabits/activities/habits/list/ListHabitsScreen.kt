@@ -36,6 +36,9 @@ import org.isoron.uhabits.activities.common.dialogs.CheckmarkDialog
 import org.isoron.uhabits.activities.common.dialogs.ColorPickerDialogFactory
 import org.isoron.uhabits.activities.common.dialogs.ConfirmDeleteDialog
 import org.isoron.uhabits.activities.common.dialogs.NumberDialog
+import org.isoron.uhabits.activities.main.MainActivity
+import org.isoron.uhabits.activities.main.MainDestination
+import org.isoron.uhabits.activities.main.MainNavigationHost
 import org.isoron.uhabits.activities.habits.edit.HabitTypeDialog
 import org.isoron.uhabits.activities.habits.list.views.HabitCardListAdapter
 import org.isoron.uhabits.core.commands.ArchiveHabitsCommand
@@ -128,7 +131,7 @@ class ListHabitsScreen(
     fun onResult(requestCode: Int, resultCode: Int, data: Intent?) {
         when (requestCode) {
             REQUEST_OPEN_DOCUMENT -> onOpenDocumentResult(resultCode, data)
-            REQUEST_SETTINGS -> onSettingsResult(resultCode)
+            REQUEST_SETTINGS -> handleSettingsAction(resultCode)
         }
     }
 
@@ -147,7 +150,7 @@ class ListHabitsScreen(
         }
     }
 
-    private fun onSettingsResult(resultCode: Int) {
+    fun handleSettingsAction(resultCode: Int) {
         when (resultCode) {
             RESULT_IMPORT_DATA -> showImportScreen()
             RESULT_EXPORT_CSV -> behavior.value.onExportCSV()
@@ -159,7 +162,7 @@ class ListHabitsScreen(
 
     override fun applyTheme() {
         themeSwitcher.apply()
-        activity.restartWithFade(ListHabitsActivity::class.java)
+        activity.restartWithFade(MainActivity::class.java)
     }
 
     override fun showAboutScreen() {
@@ -259,13 +262,15 @@ class ListHabitsScreen(
     }
 
     override fun showSettingsScreen() {
-        val intent = intentFactory.startSettingsActivity(activity)
-        activity.startActivityForResult(intent, REQUEST_SETTINGS)
+        (activity as MainNavigationHost).navigate(MainDestination.SETTINGS)
     }
 
     override fun showTodayScreen() {
-        val intent = intentFactory.startTodayActivity(activity)
-        activity.startActivity(intent)
+        (activity as MainNavigationHost).navigate(MainDestination.TODAY)
+    }
+
+    override fun showReportsScreen() {
+        (activity as MainNavigationHost).navigate(MainDestination.REPORTS)
     }
 
     override fun showColorPicker(defaultColor: PaletteColor, callback: OnColorPickedCallback) {

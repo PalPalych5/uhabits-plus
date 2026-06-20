@@ -26,11 +26,10 @@ import me.tatarka.inject.annotations.Inject
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.about.AboutActivity
 import org.isoron.uhabits.activities.habits.edit.EditHabitActivity
-import org.isoron.uhabits.activities.habits.list.ListHabitsActivity
 import org.isoron.uhabits.activities.habits.show.ShowHabitActivity
-import org.isoron.uhabits.activities.habits.today.TodayActivity
 import org.isoron.uhabits.activities.intro.IntroActivity
-import org.isoron.uhabits.activities.settings.SettingsActivity
+import org.isoron.uhabits.activities.main.MainActivity
+import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.core.models.Habit
 
 @Inject
@@ -60,15 +59,16 @@ class IntentFactory() {
         Intent(context, IntroActivity::class.java)
 
     fun startSettingsActivity(context: Context) =
-        Intent(context, SettingsActivity::class.java)
+        MainActivity.intent(context, MainDestination.SETTINGS)
 
     fun startHabitsActivity(context: Context) =
-        Intent(context, ListHabitsActivity::class.java)
+        MainActivity.intent(context, MainDestination.HABITS)
+
+    fun startReportsActivity(context: Context) =
+        MainActivity.intent(context, MainDestination.REPORTS)
 
     fun startTodayActivity(context: Context) =
-        Intent(context, TodayActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        }
+        MainActivity.intent(context, MainDestination.TODAY)
 
     fun startShowHabitActivity(context: Context, habit: Habit) =
         Intent(context, ShowHabitActivity::class.java).apply {

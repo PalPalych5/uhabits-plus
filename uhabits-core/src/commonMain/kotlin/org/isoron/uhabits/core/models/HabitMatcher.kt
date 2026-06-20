@@ -20,11 +20,13 @@ package org.isoron.uhabits.core.models
 
 data class HabitMatcher(
     val isArchivedAllowed: Boolean = false,
+    val isArchivedRequired: Boolean = false,
     val isReminderRequired: Boolean = false,
     val isCompletedAllowed: Boolean = true,
     val isEnteredAllowed: Boolean = true
 ) {
     fun matches(habit: Habit): Boolean {
+        if (isArchivedRequired && !habit.isArchived) return false
         if (!isArchivedAllowed && habit.isArchived) return false
         if (isReminderRequired && !habit.hasReminder()) return false
         if (!isCompletedAllowed && habit.isCompletedToday()) return false

@@ -21,6 +21,24 @@
         xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <PreferenceCategory
+        android:key="organizationCategory"
+        android:title="@string/organization">
+
+        <Preference
+            android:key="configureSpheres"
+            android:summary="@string/configure_spheres_summary"
+            android:title="@string/configure_spheres"
+            app:iconSpaceReserved="false" />
+
+        <Preference
+            android:key="openArchive"
+            android:summary="@string/open_archive_summary"
+            android:title="@string/open_archive"
+            app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
             android:key="interfaceCategory"
             android:title="@string/interface_preferences">
 

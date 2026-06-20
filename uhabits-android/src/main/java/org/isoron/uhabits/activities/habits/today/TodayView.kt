@@ -27,6 +27,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ProgressBar
@@ -59,6 +60,7 @@ class TodayView(
     context: Context,
     private val preferences: Preferences,
     private val onHabitClick: (Long) -> Unit,
+    private val onCreateHabit: () -> Unit,
     private val onRefresh: () -> Unit
 ) : LinearLayout(context) {
     private val toolbar = buildToolbar()
@@ -95,8 +97,12 @@ class TodayView(
         toolbar.background = ColorDrawable(toolbarColor)
         toolbar.applyToolbarInsets()
         activity.window.statusBarColor = toolbarColor
+        activateToolbar()
+    }
+
+    fun activateToolbar() {
         activity.setSupportActionBar(toolbar)
-        activity.supportActionBar?.setDisplayHomeAsUpEnabled(true)
+        activity.supportActionBar?.setDisplayHomeAsUpEnabled(false)
     }
 
     fun setState(state: TodayScreenState) {
@@ -146,9 +152,18 @@ class TodayView(
                 bottomMargin = dp(4f).toInt()
             }
         }
+        val createButton = Button(context).apply {
+            text = resources.getString(R.string.today_create_habit)
+            isAllCaps = false
+            setOnClickListener { onCreateHabit() }
+            layoutParams = LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
+                topMargin = dp(16f).toInt()
+            }
+        }
         container.addView(emoji)
         container.addView(title)
         container.addView(subtitle)
+        container.addView(createButton)
         content.addView(container)
     }
 

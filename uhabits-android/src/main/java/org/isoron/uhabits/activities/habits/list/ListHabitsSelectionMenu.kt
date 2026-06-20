@@ -51,6 +51,7 @@ class ListHabitsSelectionMenu(
     val activity = (context as AppCompatActivity)
 
     var activeActionMode: ActionMode? = null
+    var onSelectionModeChanged: (Boolean) -> Unit = {}
 
     fun onSelectionStart() {
         activity.startSupportActionMode(this)
@@ -66,6 +67,7 @@ class ListHabitsSelectionMenu(
 
     override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
         activeActionMode = mode
+        onSelectionModeChanged(true)
         activity.menuInflater.inflate(R.menu.list_habits_selection, menu)
         return true
     }
@@ -86,6 +88,8 @@ class ListHabitsSelectionMenu(
         return true
     }
     override fun onDestroyActionMode(mode: ActionMode?) {
+        activeActionMode = null
+        onSelectionModeChanged(false)
         listController.value.onSelectionFinished()
     }
 

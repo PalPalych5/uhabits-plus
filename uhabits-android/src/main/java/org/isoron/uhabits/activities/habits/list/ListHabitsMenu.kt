@@ -90,11 +90,6 @@ class ListHabitsMenu(
                 return true
             }
 
-            R.id.actionCreateHabit -> {
-                behavior.onCreateHabit()
-                return true
-            }
-
             R.id.actionFAQ -> {
                 behavior.onViewFAQ()
                 return true
@@ -102,16 +97,6 @@ class ListHabitsMenu(
 
             R.id.actionAbout -> {
                 behavior.onViewAbout()
-                return true
-            }
-
-            R.id.actionSettings -> {
-                behavior.onViewSettings()
-                return true
-            }
-
-            R.id.actionToday -> {
-                behavior.onViewToday()
                 return true
             }
 
