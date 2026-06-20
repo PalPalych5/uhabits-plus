@@ -227,6 +227,37 @@
                 </LinearLayout>
             </FrameLayout>
 
+            <FrameLayout style="@style/FormOuterBox">
+                <LinearLayout style="@style/FormInnerBox">
+                    <TextView
+                        style="@style/FormLabel"
+                        android:text="@string/day_tier" />
+                    <TextView
+                        android:id="@+id/dayTierPicker"
+                        style="@style/FormDropdown"
+                        android:textColor="?attr/contrast100" />
+                </LinearLayout>
+            </FrameLayout>
+
+            <FrameLayout
+                android:id="@+id/timerEnabledOuterBox"
+                style="@style/FormOuterBox">
+                <LinearLayout style="@style/FormInnerBox">
+                    <TextView
+                        style="@style/FormLabel"
+                        android:text="@string/habit_timer" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/timerEnabledSwitch"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingStart="16dp"
+                        android:paddingEnd="16dp"
+                        android:paddingTop="12dp"
+                        android:paddingBottom="12dp"
+                        android:text="@string/timer_enabled" />
+                </LinearLayout>
+            </FrameLayout>
+
 
             <!-- Reminder -->
             <FrameLayout style="@style/FormOuterBox">

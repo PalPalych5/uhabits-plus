@@ -45,12 +45,14 @@ import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.commands.CreateHabitCommand
 import org.isoron.uhabits.core.commands.EditHabitCommand
 import org.isoron.uhabits.core.models.Frequency
+import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitType
 import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.PaletteColor
 import org.isoron.uhabits.core.models.Reminder
 import org.isoron.uhabits.core.models.WeekdayList
+import org.isoron.uhabits.core.models.isMinuteUnit
 import org.isoron.uhabits.databinding.ActivityEditHabitBinding
 import org.isoron.uhabits.utils.applyRootViewInsets
 import org.isoron.uhabits.utils.applyToolbarInsets
@@ -85,6 +87,8 @@ class EditHabitActivity : AppCompatActivity() {
     var reminderMin = -1
     var reminderDays: WeekdayList = WeekdayList.EVERY_DAY
     var targetType = NumericalHabitType.AT_LEAST
+    var dayTier = DayTier.NORMAL
+    var timerEnabled = false
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -107,6 +111,8 @@ class EditHabitActivity : AppCompatActivity() {
             freqNum = habit.frequency.numerator
             freqDen = habit.frequency.denominator
             targetType = habit.targetType
+            dayTier = habit.dayTier
+            timerEnabled = habit.timerEnabled
             habit.reminder?.let {
                 reminderHour = it.hour
                 reminderMin = it.minute
@@ -119,6 +125,7 @@ class EditHabitActivity : AppCompatActivity() {
             binding.targetInput.setText(habit.targetValue.toString())
         } else {
             habitType = HabitType.fromInt(intent.getIntExtra("habitType", HabitType.YES_NO.value))
+            timerEnabled = habitType == HabitType.NUMERICAL
         }
 
         if (state != null) {
@@ -130,6 +137,8 @@ class EditHabitActivity : AppCompatActivity() {
             reminderHour = state.getInt("reminderHour")
             reminderMin = state.getInt("reminderMin")
             reminderDays = WeekdayList(state.getInt("reminderDays"))
+            dayTier = DayTier.fromString(state.getString("dayTier", DayTier.NORMAL.name))
+            timerEnabled = state.getBoolean("timerEnabled")
         }
 
         updateColors()
@@ -139,6 +148,7 @@ class EditHabitActivity : AppCompatActivity() {
                 binding.unitOuterBox.visibility = View.GONE
                 binding.targetOuterBox.visibility = View.GONE
                 binding.targetTypeOuterBox.visibility = View.GONE
+                binding.timerEnabledOuterBox.visibility = View.GONE
             }
             HabitType.NUMERICAL -> {
                 binding.nameInput.hint = getString(R.string.measurable_short_example)
@@ -190,6 +200,20 @@ class EditHabitActivity : AppCompatActivity() {
             val dialog = builder.create()
             dialog.dismissCurrentAndShow()
         }
+
+        populateDayTier()
+        binding.dayTierPicker.setOnClickListener {
+            val tiers = DayTier.entries
+            val labels = tiers.map { getString(it.labelResId) }.toTypedArray()
+            AlertDialog.Builder(this)
+                .setItems(labels) { dialog, which ->
+                    dayTier = tiers[which]
+                    populateDayTier()
+                    dialog.dismiss()
+                }
+                .show()
+        }
+        binding.timerEnabledSwitch.isChecked = timerEnabled
 
         binding.numericalFrequencyPicker.setOnClickListener {
             val builder = AlertDialog.Builder(this)
@@ -279,10 +303,14 @@ class EditHabitActivity : AppCompatActivity() {
         }
 
         habit.frequency = Frequency(freqNum, freqDen)
+        habit.dayTier = dayTier
         if (habitType == HabitType.NUMERICAL) {
             habit.targetValue = binding.targetInput.text.toString().toDouble()
             habit.targetType = targetType
             habit.unit = binding.unitInput.text.trim().toString()
+            habit.timerEnabled = binding.timerEnabledSwitch.isChecked && habit.unit.isMinuteUnit()
+        } else {
+            habit.timerEnabled = false
         }
         habit.type = habitType
 
@@ -350,6 +378,18 @@ class EditHabitActivity : AppCompatActivity() {
         }
     }
 
+    private fun populateDayTier() {
+        binding.dayTierPicker.text = getString(dayTier.labelResId)
+    }
+
+    private val DayTier.labelResId: Int
+        get() = when (this) {
+            DayTier.MINIMUM -> R.string.day_tier_minimum
+            DayTier.NORMAL -> R.string.day_tier_normal
+            DayTier.IDEAL -> R.string.day_tier_ideal
+            DayTier.OPTIONAL -> R.string.day_tier_optional
+        }
+
     private fun updateColors() {
         androidColor = themeSwitcher.currentTheme.color(color).toInt()
         binding.colorButton.backgroundTintList = ColorStateList.valueOf(androidColor)
@@ -376,6 +416,8 @@ class EditHabitActivity : AppCompatActivity() {
             putInt("reminderHour", reminderHour)
             putInt("reminderMin", reminderMin)
             putInt("reminderDays", reminderDays.toInteger())
+            putString("dayTier", dayTier.name)
+            putBoolean("timerEnabled", binding.timerEnabledSwitch.isChecked)
         }
     }
 }

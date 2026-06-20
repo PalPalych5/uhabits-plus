@@ -223,8 +223,11 @@
     <string name="today_summary_completed">Completed: %1$d/%2$d</string>
     <string name="today_summary_focus_minutes">Focus time: %1$s min</string>
     <string name="today_summary_remaining">Remaining: %1$d</string>
-    <string name="today_remaining">Remaining</string>
-    <string name="today_empty_remaining">All habits are done for today.</string>
+    <string name="today_remaining">Remaining to minimum</string>
+    <string name="today_empty_remaining">The daily minimum is complete.</string>
+    <string name="today_tier_minimum">Daily minimum: %1$d/%2$d</string>
+    <string name="today_tier_normal">Normal day: %1$d/%2$d</string>
+    <string name="today_tier_ideal">Ideal day: %1$d/%2$d</string>
     <string name="today_empty">No active habits found.</string>
     <string name="today_section_title">%1$s - %2$d/%3$d - %4$s min</string>
     <string name="today_section_limits">Limits / self-control</string>
@@ -263,4 +266,20 @@
     <string name="timer_resume">Resume</string>
     <string name="timer_reset">Reset</string>
     <string name="timer_save">Save</string>
+    <string name="timer_mode_stopwatch">Stopwatch</string>
+    <string name="timer_mode_pomodoro">Pomodoro</string>
+    <string name="pomodoro_focus_title">Focus</string>
+    <string name="pomodoro_break_title">Break</string>
+    <string name="pomodoro_focus_completed">Focus session completed! Time to rest.</string>
+    <string name="pomodoro_break_completed">Break completed! Time to work.</string>
+    <string name="day_tier">Day tier</string>
+    <string name="day_tier_minimum">Daily minimum</string>
+    <string name="day_tier_normal">Normal</string>
+    <string name="day_tier_ideal">Ideal day</string>
+    <string name="day_tier_optional">Optional</string>
+    <string name="habit_timer">Habit timer</string>
+    <string name="timer_enabled">Enable timer and Pomodoro</string>
+    <string name="timer_finish">Finish</string>
+    <string name="timer_active_for_other">Timer active: %1$s</string>
+    <string name="timer_pomodoro_phase">Pomodoro - %1$s</string>
 </resources>
