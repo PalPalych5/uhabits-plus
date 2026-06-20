@@ -132,7 +132,7 @@
     <string name="best_streaks">Лучшие серии</string>
     <string name="every_day">Каждый день</string>
     <string name="every_week">Каждую неделю</string>
-    <string name="help">Помощь и FAQ</string>
+    <string name="help">Помощь и руководство</string>
     <string name="could_not_export">Ошибка экспорта данных.</string>
     <string name="could_not_import">Ошибка импорта данных.</string>
     <string name="file_not_recognized">Невозможно определить тип файла.</string>
@@ -312,4 +312,14 @@
     <string name="motivation_comeback">Ты вернулся к привычке «%1$s» после пропуска — это важнее идеальной серии!</string>
     <string name="pref_animations_title">Отключить анимации</string>
     <string name="pref_animations_description">Отключить анимацию конфетти при отметке привычки.</string>
+
+    <string name="theme">Тема</string>
+    <string name="appearance">Внешний вид</string>
+    <string name="data_preferences">Данные</string>
+    <string name="help_category">Справка</string>
+    <string-array name="pref_theme_entries">
+        <item>Системная</item>
+        <item>Светлая</item>
+        <item>Тёмная</item>
+    </string-array>
 </resources>

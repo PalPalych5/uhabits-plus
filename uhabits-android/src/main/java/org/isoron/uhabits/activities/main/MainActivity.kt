@@ -39,6 +39,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     private val appComponent get() = (applicationContext as HabitsApplication).component
     private val prefs get() = appComponent.preferences
     private var pureBlack = false
+    private var currentTheme = 0
     private var permissionAlreadyRequested = false
     private var updatingBottomNavigation = false
 
@@ -51,6 +52,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         super.onCreate(savedInstanceState)
         AndroidThemeSwitcher(this, prefs).apply()
         pureBlack = prefs.isPureBlackEnabled
+        currentTheme = prefs.theme
         prefs.addListener(this)
         Thread.setDefaultUncaughtExceptionHandler(BaseExceptionHandler(this))
 
@@ -156,7 +158,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         }
         updateBottomSelection(destination)
         setHabitCreationAvailable(
-            destination == MainDestination.TODAY || destination == MainDestination.HABITS
+            destination == MainDestination.HABITS
         )
     }
 
@@ -237,7 +239,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                 Log.e("MainActivity", "Startup maintenance failed", e)
             }
         }
-        if (prefs.theme == THEME_DARK && prefs.isPureBlackEnabled != pureBlack) {
+        if (prefs.theme != currentTheme || prefs.isPureBlackEnabled != pureBlack) {
             restartWithFade(MainActivity::class.java)
         }
     }

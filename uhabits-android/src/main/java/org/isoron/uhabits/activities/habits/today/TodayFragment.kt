@@ -45,7 +45,7 @@ class TodayFragment : Fragment(), CommandRunner.Listener {
         super.onResume()
         todayView?.activateToolbar()
         component.commandRunner.addListener(this)
-        (activity as? MainNavigationHost)?.setHabitCreationAvailable(true)
+        (activity as? MainNavigationHost)?.setHabitCreationAvailable(false)
         refresh()
     }
 

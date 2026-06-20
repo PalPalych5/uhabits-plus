@@ -94,9 +94,9 @@ class PreferencesTest : BaseUnitTest() {
         assertEquals(ThemeSwitcher.THEME_AUTOMATIC, prefs.theme)
         prefs.theme = ThemeSwitcher.THEME_DARK
         assertEquals(ThemeSwitcher.THEME_DARK, prefs.theme)
-        assertFalse(prefs.isPureBlackEnabled)
-        prefs.isPureBlackEnabled = true
         assertTrue(prefs.isPureBlackEnabled)
+        prefs.isPureBlackEnabled = false
+        assertFalse(prefs.isPureBlackEnabled)
     }
 
     @Test
@@ -121,12 +121,12 @@ class PreferencesTest : BaseUnitTest() {
 
     @Test
     fun testCheckmarks() {
-        assertFalse(prefs.isCheckmarkSequenceReversed)
-        prefs.isCheckmarkSequenceReversed = true
         assertTrue(prefs.isCheckmarkSequenceReversed)
-        assertFalse(prefs.isShortToggleEnabled)
-        prefs.isShortToggleEnabled = true
+        prefs.isCheckmarkSequenceReversed = false
+        assertFalse(prefs.isCheckmarkSequenceReversed)
         assertTrue(prefs.isShortToggleEnabled)
+        prefs.isShortToggleEnabled = false
+        assertFalse(prefs.isShortToggleEnabled)
     }
 
     @Test
@@ -148,8 +148,8 @@ class PreferencesTest : BaseUnitTest() {
 
     @Test
     fun testMidnightDelay() {
-        assertFalse(prefs.isMidnightDelayEnabled)
-        prefs.isMidnightDelayEnabled = true
         assertTrue(prefs.isMidnightDelayEnabled)
+        prefs.isMidnightDelayEnabled = false
+        assertFalse(prefs.isMidnightDelayEnabled)
     }
 }

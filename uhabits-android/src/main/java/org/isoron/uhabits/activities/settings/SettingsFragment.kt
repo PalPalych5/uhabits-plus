@@ -25,6 +25,7 @@ import android.content.SharedPreferences.OnSharedPreferenceChangeListener
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
@@ -40,10 +41,14 @@ import org.isoron.platform.time.DayOfWeek
 import org.isoron.platform.time.JavaLocalDateFormatter
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.AndroidThemeSwitcher
+import org.isoron.uhabits.activities.main.MainActivity
+import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.activities.main.SettingsAction
 import org.isoron.uhabits.activities.main.SettingsActionHandler
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.ui.NotificationTray
+import org.isoron.uhabits.intents.IntentFactory
 import org.isoron.uhabits.notifications.AndroidNotificationTray.Companion.createAndroidNotificationChannel
 import org.isoron.uhabits.notifications.RingtoneManager
 import org.isoron.uhabits.utils.StyledResources
@@ -56,6 +61,7 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
     private var sharedPrefs: SharedPreferences? = null
     private var ringtoneManager: RingtoneManager? = null
     private lateinit var prefs: Preferences
+    private lateinit var intentFactory: IntentFactory
     private var widgetUpdater: WidgetUpdater? = null
 
     @Deprecated("Deprecated in Java")
@@ -86,6 +92,7 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
         if (appContext is HabitsApplication) {
             prefs = appContext.component.preferences
             widgetUpdater = appContext.component.widgetUpdater
+            intentFactory = appContext.component.intentFactory
         }
         setActionOnPreferenceClick("importData", SettingsAction.IMPORT_DATA)
         setActionOnPreferenceClick("exportCSV", SettingsAction.EXPORT_CSV)
@@ -156,6 +163,14 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
                 actionHandler().onSettingsAction(SettingsAction.OPEN_ARCHIVE)
                 return true
             }
+            "about" -> {
+                startActivity(intentFactory.startAboutActivity(requireContext()))
+                return true
+            }
+            "help" -> {
+                activity?.startActivitySafely(intentFactory.viewFAQ(requireContext()))
+                return true
+            }
         }
         return super.onPreferenceTreeClick(preference)
     }
@@ -193,6 +208,16 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
         if (key == "pref_widget_opacity" && widgetUpdater != null) {
             Log.d("SettingsFragment", "updating widgets")
             widgetUpdater!!.updateWidgets()
+        }
+        if (key == "pref_theme" || key == "pref_pure_black") {
+            val switcher = AndroidThemeSwitcher(requireContext(), prefs)
+            switcher.apply()
+            val intent = MainActivity.intent(requireContext(), MainDestination.SETTINGS)
+            Handler().postDelayed({
+                activity?.finish()
+                activity?.overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+                startActivity(intent)
+            }, 500)
         }
         BackupManager.dataChanged("org.isoron.uhabits.plus")
         updateWeekdayPreference()

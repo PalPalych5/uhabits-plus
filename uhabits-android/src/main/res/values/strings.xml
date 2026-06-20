@@ -134,7 +134,7 @@
     <string name="best_streaks">Best streaks</string>
     <string name="every_day">Every day</string>
     <string name="every_week">Every week</string>
-    <string name="help">Help &amp; FAQ</string>
+    <string name="help">Help &amp; guide</string>
     <string name="could_not_export">Failed to export data.</string>
     <string name="could_not_import">Failed to import data.</string>
     <string name="file_not_recognized">File not recognized.</string>
@@ -315,4 +315,9 @@
     <string name="motivation_minimum_completed">Well done: daily minimum completed!</string>
     <string name="motivation_streak_milestone">Streak of %2$d days for %1$s!</string>
     <string name="motivation_comeback">You returned to %1$s after a skip — this is more important than a perfect streak!</string>
+
+    <string name="theme">Theme</string>
+    <string name="appearance">Appearance</string>
+    <string name="data_preferences">Data</string>
+    <string name="help_category">Help</string>
 </resources>

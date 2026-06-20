@@ -21,6 +21,63 @@
         xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <PreferenceCategory
+            android:key="appearanceCategory"
+            android:title="@string/appearance">
+
+        <org.isoron.uhabits.activities.settings.IntListPreference
+                android:key="pref_theme"
+                android:title="@string/theme"
+                android:entries="@array/pref_theme_entries"
+                android:entryValues="@array/pref_theme_values"
+                android:defaultValue="0"
+                android:summary="%s"
+                app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+                android:defaultValue="true"
+                android:key="pref_pure_black"
+                android:summary="@string/pure_black_description"
+                android:title="@string/use_pure_black"
+                app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+                android:defaultValue="true"
+                android:key="pref_short_toggle"
+                android:summary="@string/pref_toggle_description_2"
+                android:title="@string/pref_toggle_title"
+                app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+                android:defaultValue="true"
+                android:key="pref_checkmark_reverse_order"
+                android:summary="@string/reverse_days_description"
+                android:title="@string/reverse_days"
+                app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+                android:defaultValue="false"
+                android:key="pref_disable_animation"
+                android:summary="@string/pref_animations_description"
+                android:title="@string/pref_animations_title"
+                app:iconSpaceReserved="false" />
+
+        <ListPreference
+                android:defaultValue="255"
+                android:entries="@array/widget_opacity_entries"
+                android:entryValues="@array/widget_opacity_values"
+                android:key="pref_widget_opacity"
+                android:summary="@string/widget_opacity_description"
+                android:title="@string/widget_opacity_title"
+                app:iconSpaceReserved="false" />
+
+        <ListPreference
+                android:key="pref_first_weekday"
+                android:title="@string/first_day_of_the_week"
+                app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
         android:key="organizationCategory"
         android:title="@string/organization">
 
@@ -35,19 +92,6 @@
             android:summary="@string/open_archive_summary"
             android:title="@string/open_archive"
             app:iconSpaceReserved="false" />
-
-    </PreferenceCategory>
-
-    <PreferenceCategory
-            android:key="interfaceCategory"
-            android:title="@string/interface_preferences">
-
-        <SwitchPreferenceCompat
-                android:defaultValue="true"
-                android:key="pref_short_toggle"
-                android:summary="@string/pref_toggle_description_2"
-                android:title="@string/pref_toggle_title"
-                app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
             android:defaultValue="true"
@@ -69,42 +113,6 @@
             android:summary="@string/pref_unknown_description"
             android:title="@string/pref_unknown_title"
             app:iconSpaceReserved="false" />
-
-        <SwitchPreferenceCompat
-                android:defaultValue="true"
-                android:key="pref_checkmark_reverse_order"
-                android:summary="@string/reverse_days_description"
-                android:title="@string/reverse_days"
-                app:iconSpaceReserved="false" />
-
-
-        <SwitchPreferenceCompat
-                android:defaultValue="true"
-                android:key="pref_pure_black"
-                android:summary="@string/pure_black_description"
-                android:title="@string/use_pure_black"
-                app:iconSpaceReserved="false" />
-
-        <SwitchPreferenceCompat
-            android:defaultValue="false"
-            android:key="pref_disable_animation"
-            android:summary="@string/pref_animations_description"
-            android:title="@string/pref_animations_title"
-            app:iconSpaceReserved="false" />
-
-        <ListPreference
-                android:defaultValue="255"
-                android:entries="@array/widget_opacity_entries"
-                android:entryValues="@array/widget_opacity_values"
-                android:key="pref_widget_opacity"
-                android:summary="@string/widget_opacity_description"
-                android:title="@string/widget_opacity_title"
-                app:iconSpaceReserved="false" />
-
-        <ListPreference
-                android:key="pref_first_weekday"
-                android:title="@string/first_day_of_the_week"
-                app:iconSpaceReserved="false" />
 
     </PreferenceCategory>
 
@@ -133,8 +141,8 @@
     </PreferenceCategory>
 
     <PreferenceCategory
-            android:key="databaseCategory"
-            android:title="@string/database">
+            android:key="dataCategory"
+            android:title="@string/data_preferences">
 
         <Preference
                 android:key="exportDB"
@@ -160,6 +168,11 @@
                 android:summary="@string/no_public_backup_folder_selected"
                 app:iconSpaceReserved="false" />
 
+        <Preference
+                android:key="repairDB"
+                android:title="@string/repair_database"
+                app:iconSpaceReserved="false" />
+
     </PreferenceCategory>
 
     <PreferenceCategory
@@ -171,39 +184,26 @@
                 android:title="@string/generate_bug_report"
                 app:iconSpaceReserved="false" />
 
-        <Preference
-                android:key="repairDB"
-                android:title="@string/repair_database"
-                app:iconSpaceReserved="false" />
-
     </PreferenceCategory>
 
     <PreferenceCategory
             android:key="linksCategory"
-            android:title="@string/links">
+            android:title="@string/help_category">
 
         <Preference
+                android:key="help"
                 android:title="@string/help"
-                app:iconSpaceReserved="false">
-            <intent
-                    android:action="android.intent.action.VIEW"
-                    android:data="@string/helpURL" />
-        </Preference>
+                app:iconSpaceReserved="false" />
 
         <Preference
                 android:key="rateApp"
                 android:title="@string/pref_rate_this_app"
-                app:iconSpaceReserved="false">
-        </Preference>
+                app:iconSpaceReserved="false" />
 
         <Preference
+                android:key="about"
                 android:title="@string/about"
-                app:iconSpaceReserved="false">
-            <intent
-                    android:action="android.intent.action.VIEW"
-                    android:targetClass="org.isoron.uhabits.activities.about.AboutActivity"
-                    android:targetPackage="org.isoron.uhabits.plus" />
-        </Preference>
+                app:iconSpaceReserved="false" />
 
     </PreferenceCategory>
 
