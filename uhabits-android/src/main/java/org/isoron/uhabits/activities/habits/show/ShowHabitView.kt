@@ -23,6 +23,8 @@ import android.content.Context
 import android.view.LayoutInflater
 import android.widget.FrameLayout
 import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.models.isMinuteUnit
+import org.isoron.uhabits.activities.habits.show.timer.TimerSessionManager
 import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitPresenter
 import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitState
 import org.isoron.uhabits.databinding.ShowHabitBinding
@@ -35,6 +37,7 @@ import android.view.View
 class ShowHabitView(context: Context) : FrameLayout(context) {
     private val binding = ShowHabitBinding.inflate(LayoutInflater.from(context))
     private var habitUnit: String = ""
+    private var isTimerEnabled: Boolean = false
 
     init {
         binding.toolbar.applyToolbarInsets()
@@ -59,7 +62,7 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
         binding.barCard.setState(data.bar)
 
         binding.timerCard.setColor(data.theme.color(data.color).toInt())
-        val isTimerVisible = data.isNumerical && (habitUnit.trim().lowercase() in setOf("min", "mins", "minute", "minutes", "мин", "минута", "минуты", "минут"))
+        val isTimerVisible = data.isNumerical && isTimerEnabled && habitUnit.isMinuteUnit()
         binding.timerCard.visibility = if (isTimerVisible) View.VISIBLE else View.GONE
 
         if (data.isNumerical) {
@@ -76,8 +79,9 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
         binding.barCard.setListener(presenter.barCardPresenter)
     }
 
-    fun initTimer(habit: Habit, onSave: (Long) -> Unit) {
+    fun initTimer(habit: Habit, manager: TimerSessionManager) {
         habitUnit = habit.unit
-        binding.timerCard.setHabit(habit, onSave)
+        isTimerEnabled = habit.timerEnabled
+        binding.timerCard.setHabit(habit, manager)
     }
 }

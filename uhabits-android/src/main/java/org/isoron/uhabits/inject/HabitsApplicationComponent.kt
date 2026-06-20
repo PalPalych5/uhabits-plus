@@ -26,6 +26,7 @@ import org.isoron.platform.io.AndroidFileOpener
 import org.isoron.platform.io.DatabaseOpener
 import org.isoron.platform.io.FileOpener
 import org.isoron.uhabits.core.AppScope
+import org.isoron.uhabits.activities.habits.show.timer.TimerSessionManager
 import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.io.GenericImporter
 import org.isoron.uhabits.core.io.Logging
@@ -80,6 +81,7 @@ abstract class HabitsApplicationComponent(
     abstract val reminderScheduler: ReminderScheduler
     abstract val reminderController: ReminderController
     abstract val taskRunner: TaskRunner
+    abstract val timerSessionManager: TimerSessionManager
     abstract val widgetPreferences: WidgetPreferences
     abstract val widgetUpdater: WidgetUpdater
 
@@ -127,6 +129,14 @@ abstract class HabitsApplicationComponent(
     @AppScope
     @Provides
     open fun habitList(list: SQLiteHabitList): HabitList = list
+
+    @AppScope
+    @Provides
+    open fun timerSessionManager(
+        @AppContext context: Context,
+        habitList: HabitList,
+        commandRunner: CommandRunner
+    ): TimerSessionManager = TimerSessionManager(context, habitList, commandRunner)
 
     @AppScope
     @Provides
