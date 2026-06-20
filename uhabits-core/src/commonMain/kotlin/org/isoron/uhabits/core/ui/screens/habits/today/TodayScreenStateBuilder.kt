@@ -28,28 +28,47 @@ import org.isoron.uhabits.core.models.HabitType
 import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.PaletteColor
 import org.isoron.uhabits.core.models.isMinuteUnit
+import org.isoron.uhabits.core.models.HabitBlock
 import kotlin.math.roundToInt
 
 object TodayScreenStateBuilder {
     fun build(habitList: HabitList, date: LocalDate = getToday()): TodayScreenState {
+        val blocks = habitList.getBlocks()
+        val blocksMap = blocks.associateBy { it.id }
+        val fallbackBlock = HabitBlock(
+            id = null,
+            name = "Прочее",
+            color = PaletteColor(18),
+            icon = "more_horiz",
+            position = 1000
+        )
+
         val items = habitList
             .toList()
             .filter { !it.isArchived }
             .sortedWith(
-                compareBy<Habit> { it.color.toTodaySectionId().order }
-                    .thenBy { it.position }
-                    .thenBy { it.name }
+                compareBy<Habit> { h ->
+                    val block = blocksMap[h.blockId] ?: fallbackBlock
+                    block.position
+                }
+                .thenBy { it.position }
+                .thenBy { it.name }
             )
             .map { it.toTodayItem(date) }
 
         val sections = items
-            .groupBy { it.color.toTodaySectionId() }
-            .toSortedMap(compareBy { it.order })
-            .map { (sectionId, sectionItems) ->
+            .groupBy { item ->
+                val habit = habitList.getById(item.habitId ?: -1)
+                blocksMap[habit?.blockId] ?: fallbackBlock
+            }
+            .toSortedMap(compareBy { it.position })
+            .map { (block, sectionItems) ->
                 val countableSectionItems = sectionItems.filter { it.status != TodayHabitStatus.SKIPPED }
                 TodaySectionState(
-                    id = sectionId,
-                    color = sectionItems.first().color,
+                    blockId = block.id,
+                    blockName = block.name,
+                    blockPosition = block.position,
+                    color = block.color,
                     completedCount = countableSectionItems.count { it.isCompleted },
                     totalCount = countableSectionItems.size,
                     focusMinutes = sectionItems.sumOf { it.focusMinutes },
@@ -130,18 +149,6 @@ object TodayScreenStateBuilder {
             completedCount = included.count { it.isCompleted },
             totalCount = included.size
         )
-    }
-
-    private fun PaletteColor.toTodaySectionId(): TodaySectionId {
-        return when (paletteIndex) {
-            0, 1, 15 -> TodaySectionId.LIMITS
-            2, 3, 4 -> TodaySectionId.ROUTINE
-            5, 6, 7 -> TodaySectionId.BODY
-            8 -> TodaySectionId.CARE
-            9, 10, 11, 12 -> TodaySectionId.INTELLECT
-            13, 14 -> TodaySectionId.SPEECH
-            else -> TodaySectionId.OTHER
-        }
     }
 }
 

@@ -163,75 +163,45 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
     }
 
     @Test
-    fun mapsPaletteColorsToPrototypeSections() {
-        val expectedSections = mapOf(
-            0 to TodaySectionId.LIMITS,
-            1 to TodaySectionId.LIMITS,
-            15 to TodaySectionId.LIMITS,
-            2 to TodaySectionId.ROUTINE,
-            3 to TodaySectionId.ROUTINE,
-            4 to TodaySectionId.ROUTINE,
-            5 to TodaySectionId.BODY,
-            6 to TodaySectionId.BODY,
-            7 to TodaySectionId.BODY,
-            8 to TodaySectionId.CARE,
-            9 to TodaySectionId.INTELLECT,
-            10 to TodaySectionId.INTELLECT,
-            11 to TodaySectionId.INTELLECT,
-            12 to TodaySectionId.INTELLECT,
-            13 to TodaySectionId.SPEECH,
-            14 to TodaySectionId.SPEECH,
-            16 to TodaySectionId.OTHER,
-            17 to TodaySectionId.OTHER,
-            18 to TodaySectionId.OTHER,
-            19 to TodaySectionId.OTHER
-        )
-        expectedSections.keys.forEach { index ->
-            habitList.add(booleanHabit("Color $index", Entry.YES_MANUAL, color = PaletteColor(index)))
-        }
+    fun groupsHabitsByBlocksAndSortsByPosition() {
+        val block1 = org.isoron.uhabits.core.models.HabitBlock(id = 1, name = "Intellect", color = PaletteColor(11), position = 2)
+        val block2 = org.isoron.uhabits.core.models.HabitBlock(id = 2, name = "Limits", color = PaletteColor(0), position = 0)
+        val block3 = org.isoron.uhabits.core.models.HabitBlock(id = 3, name = "Body", color = PaletteColor(7), position = 1)
+        (habitList as org.isoron.uhabits.core.models.memory.MemoryHabitList).setBlocks(listOf(block1, block2, block3))
 
-        val sections = TodayScreenStateBuilder.build(habitList, today).sections
-        val sectionByName = sections.flatMap { section ->
-            section.items.map { item -> item.name to section.id }
-        }.toMap()
-
-        expectedSections.forEach { (paletteIndex, sectionId) ->
-            assertEquals(sectionId, sectionByName["Color $paletteIndex"])
-        }
-    }
-
-    @Test
-    fun sortsSectionsByPrototypeOrderAndKeepsItemsStable() {
-        habitList.add(booleanHabit("Intellect B", Entry.YES_MANUAL, color = PaletteColor(11)).apply { position = 2 })
-        habitList.add(booleanHabit("Limits", Entry.YES_MANUAL, color = PaletteColor(0)).apply { position = 0 })
-        habitList.add(booleanHabit("Body", Entry.NO, color = PaletteColor(7)).apply { position = 0 })
-        habitList.add(booleanHabit("Intellect A", Entry.NO, color = PaletteColor(10)).apply { position = 1 })
+        habitList.add(booleanHabit("Intellect B", Entry.YES_MANUAL).apply { blockId = 1; position = 2 })
+        habitList.add(booleanHabit("Limits", Entry.YES_MANUAL).apply { blockId = 2; position = 0 })
+        habitList.add(booleanHabit("Body", Entry.NO).apply { blockId = 3; position = 0 })
+        habitList.add(booleanHabit("Intellect A", Entry.NO).apply { blockId = 1; position = 1 })
+        habitList.add(booleanHabit("Unassigned", Entry.NO)) // fallback to "Прочее" (position = 1000)
 
         val sections = TodayScreenStateBuilder.build(habitList, today).sections
 
-        assertEquals(
-            listOf(TodaySectionId.LIMITS, TodaySectionId.BODY, TodaySectionId.INTELLECT),
-            sections.map { it.id }
-        )
-        assertEquals(listOf("Intellect A", "Intellect B"), sections.last().items.map { it.name })
+        assertEquals(4, sections.size)
+        assertEquals(listOf("Limits", "Body", "Intellect", "Прочее"), sections.map { it.blockName })
+        assertEquals(listOf("Intellect A", "Intellect B"), sections[2].items.map { it.name })
     }
 
     @Test
-    fun calculatesSectionAggregatesAfterPrototypeGrouping() {
-        habitList.add(numericalHabit("Reading", 30_000, targetValue = 30.0, unit = "min", color = PaletteColor(11)))
-        habitList.add(numericalHabit("Speech", 20_000, targetValue = 25.0, unit = "мин", color = PaletteColor(13)))
-        habitList.add(booleanHabit("Care", Entry.YES_MANUAL, color = PaletteColor(8)))
+    fun calculatesSectionAggregatesAfterGrouping() {
+        val block1 = org.isoron.uhabits.core.models.HabitBlock(id = 1, name = "Intellect", color = PaletteColor(11), position = 0)
+        val block2 = org.isoron.uhabits.core.models.HabitBlock(id = 2, name = "Speech", color = PaletteColor(13), position = 1)
+        (habitList as org.isoron.uhabits.core.models.memory.MemoryHabitList).setBlocks(listOf(block1, block2))
 
-        val sectionsById = TodayScreenStateBuilder.build(habitList, today).sections.associateBy { it.id }
+        habitList.add(numericalHabit("Reading", 30_000, targetValue = 30.0, unit = "min").apply { blockId = 1 })
+        habitList.add(numericalHabit("Speech", 20_000, targetValue = 25.0, unit = "мин").apply { blockId = 2 })
+        habitList.add(booleanHabit("Unassigned", Entry.YES_MANUAL))
 
-        assertEquals(1, sectionsById[TodaySectionId.INTELLECT]?.completedCount)
-        assertEquals(1, sectionsById[TodaySectionId.INTELLECT]?.totalCount)
-        assertEquals(30.0, sectionsById[TodaySectionId.INTELLECT]?.focusMinutes)
-        assertEquals(0, sectionsById[TodaySectionId.SPEECH]?.completedCount)
-        assertEquals(1, sectionsById[TodaySectionId.SPEECH]?.totalCount)
-        assertEquals(20.0, sectionsById[TodaySectionId.SPEECH]?.focusMinutes)
-        assertEquals(1, sectionsById[TodaySectionId.CARE]?.completedCount)
-        assertEquals(1, sectionsById[TodaySectionId.CARE]?.totalCount)
+        val sectionsByName = TodayScreenStateBuilder.build(habitList, today).sections.associateBy { it.blockName }
+
+        assertEquals(1, sectionsByName["Intellect"]?.completedCount)
+        assertEquals(1, sectionsByName["Intellect"]?.totalCount)
+        assertEquals(30.0, sectionsByName["Intellect"]?.focusMinutes)
+        assertEquals(0, sectionsByName["Speech"]?.completedCount)
+        assertEquals(1, sectionsByName["Speech"]?.totalCount)
+        assertEquals(20.0, sectionsByName["Speech"]?.focusMinutes)
+        assertEquals(1, sectionsByName["Прочее"]?.completedCount)
+        assertEquals(1, sectionsByName["Прочее"]?.totalCount)
     }
 
     @Test

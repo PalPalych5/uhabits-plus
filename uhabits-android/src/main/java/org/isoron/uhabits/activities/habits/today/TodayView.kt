@@ -37,7 +37,6 @@ import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.ui.screens.habits.today.TodayHabitItem
 import org.isoron.uhabits.core.ui.screens.habits.today.TodayHabitStatus
 import org.isoron.uhabits.core.ui.screens.habits.today.TodayScreenState
-import org.isoron.uhabits.core.ui.screens.habits.today.TodaySectionId
 import org.isoron.uhabits.core.ui.screens.habits.today.TodaySectionState
 import org.isoron.uhabits.core.ui.screens.habits.today.TodayTierProgress
 import org.isoron.uhabits.core.ui.screens.habits.today.formatTodayValue
@@ -143,9 +142,19 @@ class TodayView(
     }
 
     private fun addSection(section: TodaySectionState) {
-        val isCollapsed = preferences.isTodaySectionCollapsed(section.id.name)
+        val sectionKey = section.blockId?.let { "block_$it" } ?: "block_null"
+        val isCollapsed = preferences.isTodaySectionCollapsed(sectionKey)
         val indicator = if (isCollapsed) "▸ " else "▾ "
-        val sectionName = resources.getString(section.id.titleResId)
+        val sectionName = when (section.blockId) {
+            1L -> resources.getString(R.string.today_section_intellect)
+            2L -> resources.getString(R.string.today_section_speech)
+            3L -> resources.getString(R.string.today_section_body)
+            4L -> resources.getString(R.string.today_section_care)
+            5L -> resources.getString(R.string.today_section_routine)
+            6L -> resources.getString(R.string.today_section_limits)
+            7L -> resources.getString(R.string.today_section_other)
+            else -> section.blockName
+        }
         val title = indicator + resources.getString(
             R.string.today_section_title,
             sectionName,
@@ -156,7 +165,7 @@ class TodayView(
         val titleView = sectionTitle(title, topMargin = 24f, color = section.color.toFixedAndroidColor())
         titleView.isClickable = true
         titleView.setOnClickListener {
-            preferences.setTodaySectionCollapsed(section.id.name, !isCollapsed)
+            preferences.setTodaySectionCollapsed(sectionKey, !isCollapsed)
             onRefresh()
         }
         content.addView(titleView)
@@ -164,17 +173,6 @@ class TodayView(
             section.items.forEach { content.addView(rowView(it)) }
         }
     }
-
-    private val TodaySectionId.titleResId: Int
-        get() = when (this) {
-            TodaySectionId.LIMITS -> R.string.today_section_limits
-            TodaySectionId.ROUTINE -> R.string.today_section_routine
-            TodaySectionId.BODY -> R.string.today_section_body
-            TodaySectionId.CARE -> R.string.today_section_care
-            TodaySectionId.INTELLECT -> R.string.today_section_intellect
-            TodaySectionId.SPEECH -> R.string.today_section_speech
-            TodaySectionId.OTHER -> R.string.today_section_other
-        }
 
     private fun rowView(item: TodayHabitItem): View {
         return LinearLayout(context).apply {

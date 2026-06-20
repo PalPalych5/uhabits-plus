@@ -39,7 +39,9 @@ data class TodayScreenState(
 data class TodayTierProgress(val completedCount: Int, val totalCount: Int)
 
 data class TodaySectionState(
-    val id: TodaySectionId,
+    val blockId: Long?,
+    val blockName: String,
+    val blockPosition: Int,
     val color: PaletteColor,
     val completedCount: Int,
     val totalCount: Int,
@@ -70,14 +72,4 @@ enum class TodayHabitStatus {
     UNKNOWN,
     SKIPPED,
     EXCEEDED
-}
-
-enum class TodaySectionId(val order: Int) {
-    LIMITS(0),
-    ROUTINE(1),
-    BODY(2),
-    CARE(3),
-    INTELLECT(4),
-    SPEECH(5),
-    OTHER(6)
 }
