@@ -299,4 +299,9 @@
     <string name="reports_missed_targets">Missed targets</string>
     <string name="reports_limit_violations">Limit violations</string>
     <string name="reports_min_unit">min</string>
+    <string name="today_weekly_quota_boolean">%1$s (%2$s / %3$s per week)</string>
+    <string name="today_weekly_quota_numerical">%1$s (%2$s / %3$s %4$s per week)</string>
+    <string name="motivation_minimum_completed">Well done: daily minimum completed!</string>
+    <string name="motivation_streak_milestone">Streak of %2$d days for %1$s!</string>
+    <string name="motivation_comeback">You returned to %1$s after a skip — this is more important than a perfect streak!</string>
 </resources>

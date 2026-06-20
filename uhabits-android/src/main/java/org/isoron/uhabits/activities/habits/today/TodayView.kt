@@ -40,6 +40,7 @@ import org.isoron.uhabits.core.ui.screens.habits.today.TodayScreenState
 import org.isoron.uhabits.core.ui.screens.habits.today.TodaySectionState
 import org.isoron.uhabits.core.ui.screens.habits.today.TodayTierProgress
 import org.isoron.uhabits.core.ui.screens.habits.today.formatTodayValue
+import org.isoron.uhabits.core.ui.views.DarkTheme
 import org.isoron.uhabits.utils.InterfaceUtils
 import org.isoron.uhabits.utils.StyledResources
 import org.isoron.uhabits.utils.applyToolbarInsets
@@ -100,6 +101,7 @@ class TodayView(
         }
 
         addSummary(state)
+        addMotivations(state.motivations)
         addRemaining(state.remaining)
         state.sections.forEach { addSection(it) }
     }
@@ -200,11 +202,26 @@ class TodayView(
                 TodayHabitStatus.EXCEEDED -> R.string.today_status_exceeded
             }
         )
-        if (habitType != HabitType.NUMERICAL) return status
-        if (this.status == TodayHabitStatus.SKIPPED) return status
-        val current = currentValue?.formatTodayValue() ?: "0"
-        val target = targetValue?.formatTodayValue() ?: "0"
-        return resources.getString(R.string.today_numerical_progress, current, target, unit, status)
+        val dailyProgress = if (habitType == HabitType.NUMERICAL && this.status != TodayHabitStatus.SKIPPED) {
+            val current = currentValue?.formatTodayValue() ?: "0"
+            val target = targetValue?.formatTodayValue() ?: "0"
+            resources.getString(R.string.today_numerical_progress, current, target, unit, status)
+        } else {
+            status
+        }
+
+        val actual = weeklyProgressActual
+        val target = weeklyProgressTarget
+        if (isWeeklyQuota && actual != null && target != null) {
+            val actualStr = actual.formatTodayValue()
+            val targetStr = target.formatTodayValue()
+            return if (habitType == HabitType.NUMERICAL) {
+                resources.getString(R.string.today_weekly_quota_numerical, dailyProgress, actualStr, targetStr, unit)
+            } else {
+                resources.getString(R.string.today_weekly_quota_boolean, dailyProgress, actualStr, targetStr)
+            }
+        }
+        return dailyProgress
     }
 
     private fun titleText(text: String): TextView {
@@ -238,6 +255,93 @@ class TodayView(
                 }
             )
             if (bold) setTypeface(typeface, Typeface.BOLD)
+        }
+    }
+
+    private fun addMotivations(motivations: List<String>) {
+        if (motivations.isEmpty()) return
+
+        val container = LinearLayout(context).apply {
+            orientation = VERTICAL
+            layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                topMargin = dp(16f).toInt()
+                bottomMargin = dp(8f).toInt()
+            }
+        }
+
+        motivations.forEach { rawMotivation ->
+            val formatted = formatMotivation(rawMotivation)
+            if (formatted.isBlank()) return@forEach
+
+            val parts = rawMotivation.split("|")
+            val type = parts[0]
+            val emoji = when (type) {
+                "minimum_completed" -> "🎉"
+                "streak_milestone" -> "🔥"
+                "comeback" -> "✨"
+                else -> "🌟"
+            }
+
+            val card = LinearLayout(context).apply {
+                orientation = HORIZONTAL
+                setPadding(dp(12f).toInt(), dp(12f).toInt(), dp(12f).toInt(), dp(12f).toInt())
+                layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                    bottomMargin = dp(8f).toInt()
+                }
+
+                val isDark = currentTheme() is DarkTheme
+                val bgColor = if (isDark) {
+                    0x20FFFFFF.toInt()
+                } else {
+                    0x10000000.toInt()
+                }
+
+                background = GradientDrawable().apply {
+                    setColor(bgColor)
+                    cornerRadius = dp(8f)
+                    setStroke(dp(1f).toInt(), if (isDark) 0x15FFFFFF.toInt() else 0x15000000.toInt())
+                }
+            }
+
+            val emojiView = TextView(context).apply {
+                text = emoji
+                textSize = 18f
+                layoutParams = LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
+                    rightMargin = dp(10f).toInt()
+                }
+            }
+
+            val textView = TextView(context).apply {
+                text = formatted
+                textSize = 14f
+                setTypeface(null, Typeface.ITALIC)
+                setTextColor(sres.getColor(android.R.attr.textColorPrimary))
+                layoutParams = LayoutParams(0, WRAP_CONTENT, 1f)
+            }
+
+            card.addView(emojiView)
+            card.addView(textView)
+            container.addView(card)
+        }
+
+        content.addView(container)
+    }
+
+    private fun formatMotivation(motivation: String): String {
+        val parts = motivation.split("|")
+        val key = parts[0]
+        return when (key) {
+            "minimum_completed" -> resources.getString(R.string.motivation_minimum_completed)
+            "streak_milestone" -> {
+                val name = parts[1]
+                val length = parts[2].toInt()
+                resources.getString(R.string.motivation_streak_milestone, name, length)
+            }
+            "comeback" -> {
+                val name = parts[1]
+                resources.getString(R.string.motivation_comeback, name)
+            }
+            else -> ""
         }
     }
 }

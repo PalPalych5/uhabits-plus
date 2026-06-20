@@ -294,4 +294,9 @@
     <string name="reports_missed_targets">Невыполненные цели</string>
     <string name="reports_limit_violations">Нарушения лимитов</string>
     <string name="reports_min_unit">мин</string>
+    <string name="today_weekly_quota_boolean">%1$s (%2$s / %3$s в неделю)</string>
+    <string name="today_weekly_quota_numerical">%1$s (%2$s / %3$s %4$s в неделю)</string>
+    <string name="motivation_minimum_completed">Молодец: минимум дня выполнен!</string>
+    <string name="motivation_streak_milestone">Серия из %2$d дней по привычке «%1$s»!</string>
+    <string name="motivation_comeback">Ты вернулся к привычке «%1$s» после пропуска — это важнее идеальной серии!</string>
 </resources>
