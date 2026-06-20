@@ -79,6 +79,10 @@ class TodayActivity : AppCompatActivity(), CommandRunner.Listener {
                 startActivity(IntentFactory().startHabitsActivity(this))
                 true
             }
+            R.id.actionReports -> {
+                startActivity(android.content.Intent(this, org.isoron.uhabits.activities.reports.ReportsActivity::class.java))
+                true
+            }
             R.id.actionSettings -> {
                 startActivity(IntentFactory().startSettingsActivity(this))
                 true
