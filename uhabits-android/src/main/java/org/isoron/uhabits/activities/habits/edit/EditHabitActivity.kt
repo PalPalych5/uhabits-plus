@@ -231,12 +231,17 @@ class EditHabitActivity : AppCompatActivity() {
                 .setItems(items.toTypedArray()) { dialog, which ->
                     if (which == 0) {
                         blockId = null
+                        color = PaletteColor(11) // Default color when unassigned
                         populateHabitBlock()
+                        updateColors()
                     } else if (which == items.size - 1) {
                         startActivity(android.content.Intent(this, org.isoron.uhabits.activities.blocks.ManageBlocksActivity::class.java))
                     } else {
-                        blockId = blocks[which - 1].id
+                        val selectedBlock = blocks[which - 1]
+                        blockId = selectedBlock.id
+                        color = selectedBlock.color
                         populateHabitBlock()
+                        updateColors()
                     }
                     dialog.dismiss()
                 }
