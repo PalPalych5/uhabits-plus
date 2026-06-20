@@ -282,4 +282,21 @@
     <string name="timer_finish">Finish</string>
     <string name="timer_active_for_other">Timer active: %1$s</string>
     <string name="timer_pomodoro_phase">Pomodoro - %1$s</string>
+    <string name="habit_block">Habit Sphere</string>
+    <string name="habit_block_unassigned">No Sphere (Other)</string>
+    <string name="manage_blocks">Manage Spheres</string>
+    <string name="add_block">Add Sphere</string>
+    <string name="edit_block">Edit Sphere</string>
+    <string name="delete_block">Delete Sphere</string>
+    <string name="block_name">Sphere Name</string>
+    <string name="save_block">Save</string>
+    <string name="block_name_validation">Name cannot be blank</string>
+    <string name="reports_title">Reports</string>
+    <string name="reports_tab_day">Day</string>
+    <string name="reports_tab_week">Week</string>
+    <string name="reports_tab_month">Month</string>
+    <string name="reports_focus_by_sphere">Focus time by sphere</string>
+    <string name="reports_missed_targets">Missed targets</string>
+    <string name="reports_limit_violations">Limit violations</string>
+    <string name="reports_min_unit">min</string>
 </resources>

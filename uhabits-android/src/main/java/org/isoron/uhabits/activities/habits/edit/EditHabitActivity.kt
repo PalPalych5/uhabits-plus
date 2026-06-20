@@ -89,6 +89,7 @@ class EditHabitActivity : AppCompatActivity() {
     var targetType = NumericalHabitType.AT_LEAST
     var dayTier = DayTier.NORMAL
     var timerEnabled = false
+    var blockId: Long? = null
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -113,6 +114,7 @@ class EditHabitActivity : AppCompatActivity() {
             targetType = habit.targetType
             dayTier = habit.dayTier
             timerEnabled = habit.timerEnabled
+            blockId = habit.blockId
             habit.reminder?.let {
                 reminderHour = it.hour
                 reminderMin = it.minute
@@ -139,6 +141,8 @@ class EditHabitActivity : AppCompatActivity() {
             reminderDays = WeekdayList(state.getInt("reminderDays"))
             dayTier = DayTier.fromString(state.getString("dayTier", DayTier.NORMAL.name))
             timerEnabled = state.getBoolean("timerEnabled")
+            val savedBlockId = state.getLong("blockId", -1L)
+            blockId = if (savedBlockId == -1L) null else savedBlockId
         }
 
         updateColors()
@@ -214,6 +218,30 @@ class EditHabitActivity : AppCompatActivity() {
                 .show()
         }
         binding.timerEnabledSwitch.isChecked = timerEnabled
+
+        binding.habitBlockPicker.setOnClickListener {
+            val component = (application as HabitsApplication).component
+            val blocks = component.habitList.getBlocks()
+            val items = mutableListOf<String>()
+            items.add(getString(R.string.habit_block_unassigned))
+            blocks.forEach { items.add(it.name) }
+            items.add(getString(R.string.manage_blocks))
+
+            AlertDialog.Builder(this)
+                .setItems(items.toTypedArray()) { dialog, which ->
+                    if (which == 0) {
+                        blockId = null
+                        populateHabitBlock()
+                    } else if (which == items.size - 1) {
+                        startActivity(android.content.Intent(this, org.isoron.uhabits.activities.blocks.ManageBlocksActivity::class.java))
+                    } else {
+                        blockId = blocks[which - 1].id
+                        populateHabitBlock()
+                    }
+                    dialog.dismiss()
+                }
+                .show()
+        }
 
         binding.numericalFrequencyPicker.setOnClickListener {
             val builder = AlertDialog.Builder(this)
@@ -304,6 +332,7 @@ class EditHabitActivity : AppCompatActivity() {
 
         habit.frequency = Frequency(freqNum, freqDen)
         habit.dayTier = dayTier
+        habit.blockId = blockId
         if (habitType == HabitType.NUMERICAL) {
             habit.targetValue = binding.targetInput.text.toString().toDouble()
             habit.targetType = targetType
@@ -418,6 +447,19 @@ class EditHabitActivity : AppCompatActivity() {
             putInt("reminderDays", reminderDays.toInteger())
             putString("dayTier", dayTier.name)
             putBoolean("timerEnabled", binding.timerEnabledSwitch.isChecked)
+            putLong("blockId", blockId ?: -1L)
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        populateHabitBlock()
+    }
+
+    private fun populateHabitBlock() {
+        val component = (application as HabitsApplication).component
+        val blocks = component.habitList.getBlocks()
+        val currentBlock = blocks.firstOrNull { it.id == blockId }
+        binding.habitBlockPicker.text = currentBlock?.name ?: getString(R.string.habit_block_unassigned)
     }
 }

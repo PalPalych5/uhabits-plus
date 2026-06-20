@@ -277,4 +277,21 @@
     <string name="timer_finish">Завершить</string>
     <string name="timer_active_for_other">Активен таймер: %1$s</string>
     <string name="timer_pomodoro_phase">Pomodoro — %1$s</string>
+    <string name="habit_block">Сфера привычки</string>
+    <string name="habit_block_unassigned">Без сферы (Прочее)</string>
+    <string name="manage_blocks">Управление сферами</string>
+    <string name="add_block">Добавить сферу</string>
+    <string name="edit_block">Редактировать сферу</string>
+    <string name="delete_block">Удалить сферу</string>
+    <string name="block_name">Название сферы</string>
+    <string name="save_block">Сохранить</string>
+    <string name="block_name_validation">Название не может быть пустым</string>
+    <string name="reports_title">Отчёты</string>
+    <string name="reports_tab_day">День</string>
+    <string name="reports_tab_week">Неделя</string>
+    <string name="reports_tab_month">Месяц</string>
+    <string name="reports_focus_by_sphere">Время фокуса по сферам</string>
+    <string name="reports_missed_targets">Невыполненные цели</string>
+    <string name="reports_limit_violations">Нарушения лимитов</string>
+    <string name="reports_min_unit">мин</string>
 </resources>

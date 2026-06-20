@@ -95,6 +95,22 @@
             android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
 
         <activity
+            android:name=".activities.blocks.ManageBlocksActivity"
+            android:label="@string/manage_blocks">
+            <meta-data
+                android:name="android.support.PARENT_ACTIVITY"
+                android:value=".activities.habits.edit.EditHabitActivity" />
+        </activity>
+
+        <activity
+            android:name=".activities.reports.ReportsActivity"
+            android:label="@string/reports_title">
+            <meta-data
+                android:name="android.support.PARENT_ACTIVITY"
+                android:value=".activities.habits.today.TodayActivity" />
+        </activity>
+
+        <activity
             android:name=".widgets.activities.HabitPickerDialog"
             android:exported="true"
             android:theme="@style/Theme.AppCompat.Light.Dialog">

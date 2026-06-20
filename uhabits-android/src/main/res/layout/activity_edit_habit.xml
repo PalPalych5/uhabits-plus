@@ -239,6 +239,18 @@
                 </LinearLayout>
             </FrameLayout>
 
+            <FrameLayout style="@style/FormOuterBox">
+                <LinearLayout style="@style/FormInnerBox">
+                    <TextView
+                        style="@style/FormLabel"
+                        android:text="@string/habit_block" />
+                    <TextView
+                        android:id="@+id/habitBlockPicker"
+                        style="@style/FormDropdown"
+                        android:textColor="?attr/contrast100" />
+                </LinearLayout>
+            </FrameLayout>
+
             <FrameLayout
                 android:id="@+id/timerEnabledOuterBox"
                 style="@style/FormOuterBox">
