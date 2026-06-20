@@ -20,6 +20,7 @@ package org.isoron.uhabits.activities.habits.today
 
 import android.os.Bundle
 import android.view.MenuItem
+import android.view.Menu
 import androidx.appcompat.app.AppCompatActivity
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
@@ -54,6 +55,7 @@ class TodayActivity : AppCompatActivity(), CommandRunner.Listener {
         )
         view.applyRootViewInsets()
         setContentView(view)
+        supportActionBar?.setDisplayHomeAsUpEnabled(!isTaskRoot)
         component.commandRunner.addListener(this)
     }
 
@@ -62,12 +64,27 @@ class TodayActivity : AppCompatActivity(), CommandRunner.Listener {
         refresh()
     }
 
+    override fun onCreateOptionsMenu(menu: Menu): Boolean {
+        menuInflater.inflate(R.menu.today, menu)
+        return true
+    }
+
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        if (item.itemId == android.R.id.home) {
-            finish()
-            return true
+        return when (item.itemId) {
+            android.R.id.home -> {
+                finish()
+                true
+            }
+            R.id.actionHabits -> {
+                startActivity(IntentFactory().startHabitsActivity(this))
+                true
+            }
+            R.id.actionSettings -> {
+                startActivity(IntentFactory().startSettingsActivity(this))
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
         }
-        return super.onOptionsItemSelected(item)
     }
 
     override fun onDestroy() {
@@ -78,9 +95,6 @@ class TodayActivity : AppCompatActivity(), CommandRunner.Listener {
     override fun onCommandFinished(command: Command) {
         refresh()
     }
-
-
-
     private fun refresh() {
         view.setState(TodayScreenStateBuilder.build(component.habitList))
     }

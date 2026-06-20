@@ -39,6 +39,7 @@ import org.isoron.uhabits.core.ui.screens.habits.today.TodayHabitStatus
 import org.isoron.uhabits.core.ui.screens.habits.today.TodayScreenState
 import org.isoron.uhabits.core.ui.screens.habits.today.TodaySectionId
 import org.isoron.uhabits.core.ui.screens.habits.today.TodaySectionState
+import org.isoron.uhabits.core.ui.screens.habits.today.TodayTierProgress
 import org.isoron.uhabits.core.ui.screens.habits.today.formatTodayValue
 import org.isoron.uhabits.utils.InterfaceUtils
 import org.isoron.uhabits.utils.StyledResources
@@ -122,7 +123,15 @@ class TodayView(
             resources.getString(R.string.today_summary_remaining, state.remaining.size)
         ).joinToString("  |  ")
         content.addView(bodyText(summaryDetails, muted = true))
+        content.addView(tierText(R.string.today_tier_minimum, state.minimum))
+        content.addView(tierText(R.string.today_tier_normal, state.normal))
+        content.addView(tierText(R.string.today_tier_ideal, state.ideal))
     }
+
+    private fun tierText(labelResId: Int, progress: TodayTierProgress): TextView = bodyText(
+        resources.getString(labelResId, progress.completedCount, progress.totalCount),
+        muted = true
+    )
 
     private fun addRemaining(items: List<TodayHabitItem>) {
         content.addView(sectionTitle(resources.getString(R.string.today_remaining), topMargin = 24f))

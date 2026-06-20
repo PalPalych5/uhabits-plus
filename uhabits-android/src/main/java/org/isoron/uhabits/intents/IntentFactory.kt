@@ -26,6 +26,7 @@ import me.tatarka.inject.annotations.Inject
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.about.AboutActivity
 import org.isoron.uhabits.activities.habits.edit.EditHabitActivity
+import org.isoron.uhabits.activities.habits.list.ListHabitsActivity
 import org.isoron.uhabits.activities.habits.show.ShowHabitActivity
 import org.isoron.uhabits.activities.habits.today.TodayActivity
 import org.isoron.uhabits.activities.intro.IntroActivity
@@ -61,8 +62,13 @@ class IntentFactory() {
     fun startSettingsActivity(context: Context) =
         Intent(context, SettingsActivity::class.java)
 
+    fun startHabitsActivity(context: Context) =
+        Intent(context, ListHabitsActivity::class.java)
+
     fun startTodayActivity(context: Context) =
-        Intent(context, TodayActivity::class.java)
+        Intent(context, TodayActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
 
     fun startShowHabitActivity(context: Context, habit: Habit) =
         Intent(context, ShowHabitActivity::class.java).apply {
