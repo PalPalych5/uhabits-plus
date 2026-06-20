@@ -19,6 +19,7 @@
 package org.isoron.uhabits.activities.about
 
 import android.os.Bundle
+import android.view.MenuItem
 import androidx.appcompat.app.AppCompatActivity
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
@@ -38,5 +39,15 @@ class AboutActivity : AppCompatActivity() {
         )
         AndroidThemeSwitcher(this, app.component.preferences).apply()
         setContentView(AboutView(this, screen))
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            android.R.id.home -> {
+                finish()
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
     }
 }

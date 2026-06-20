@@ -125,22 +125,9 @@ class ManageBlocksActivity : AppCompatActivity() {
             }
 
             val nameView = TextView(this).apply {
-                text = if (block.id in 1L..7L) {
-                    when (block.id) {
-                        1L -> getString(R.string.today_section_intellect)
-                        2L -> getString(R.string.today_section_speech)
-                        3L -> getString(R.string.today_section_body)
-                        4L -> getString(R.string.today_section_care)
-                        5L -> getString(R.string.today_section_routine)
-                        6L -> getString(R.string.today_section_limits)
-                        7L -> getString(R.string.today_section_other)
-                        else -> block.name
-                    }
-                } else {
-                    block.name
-                }
+                text = getBlockDisplayName(block)
                 textSize = 16f
-                setTextColor(sres.getColor(android.R.attr.textColorPrimary))
+                setTextColor(sres.getColor(R.attr.contrast100))
                 layoutParams = LayoutParams(0, WRAP_CONTENT, 1f)
             }
 
@@ -159,7 +146,7 @@ class ManageBlocksActivity : AppCompatActivity() {
         }
 
         val nameInput = EditText(this).apply {
-            setText(block.name)
+            setText(getBlockDisplayName(block))
             hint = getString(R.string.block_name)
             maxLines = 1
         }
@@ -284,6 +271,23 @@ class ManageBlocksActivity : AppCompatActivity() {
             (component.habitList as SQLiteHabitList).reload()
             refreshBlocks()
             dialog.dismiss()
+        }
+    }
+
+    private fun getBlockDisplayName(block: HabitBlock): String {
+        return if (block.id in 1L..7L) {
+            when (block.id) {
+                1L -> getString(R.string.today_section_intellect)
+                2L -> getString(R.string.today_section_speech)
+                3L -> getString(R.string.today_section_body)
+                4L -> getString(R.string.today_section_care)
+                5L -> getString(R.string.today_section_routine)
+                6L -> getString(R.string.today_section_limits)
+                7L -> getString(R.string.today_section_other)
+                else -> block.name
+            }
+        } else {
+            block.name
         }
     }
 }

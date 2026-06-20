@@ -110,6 +110,7 @@
         <item name="windowBackgroundColor">@color/grey_900</item>
         <item name="buttonBarNegativeButtonStyle">@style/DialogButtonStyle</item>
         <item name="buttonBarPositiveButtonStyle">@style/DialogButtonStyle</item>
+        <item name="buttonBarNeutralButtonStyle">@style/DialogButtonStyle</item>
         <item name="android:textColorAlertDialogListItem">@color/grey_100</item>
         <item name="singleLineTitle">false</item>
         <item name="dialogFormLabelColor">@color/grey_800</item>

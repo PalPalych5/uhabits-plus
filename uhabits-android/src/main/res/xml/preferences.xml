@@ -25,21 +25,21 @@
             android:title="@string/interface_preferences">
 
         <SwitchPreferenceCompat
-                android:defaultValue="false"
+                android:defaultValue="true"
                 android:key="pref_short_toggle"
                 android:summary="@string/pref_toggle_description_2"
                 android:title="@string/pref_toggle_title"
                 app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
-            android:defaultValue="false"
+            android:defaultValue="true"
             android:key="pref_midnight_delay"
             android:summary="@string/pref_midnight_delay_description"
             android:title="@string/pref_midnight_delay_title"
             app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
-            android:defaultValue="false"
+            android:defaultValue="true"
             android:key="pref_skip_enabled"
             android:summary="@string/pref_skip_description"
             android:title="@string/pref_skip_title"
@@ -53,7 +53,7 @@
             app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
-                android:defaultValue="false"
+                android:defaultValue="true"
                 android:key="pref_checkmark_reverse_order"
                 android:summary="@string/reverse_days_description"
                 android:title="@string/reverse_days"
@@ -61,7 +61,7 @@
 
 
         <SwitchPreferenceCompat
-                android:defaultValue="false"
+                android:defaultValue="true"
                 android:key="pref_pure_black"
                 android:summary="@string/pure_black_description"
                 android:title="@string/use_pure_black"

@@ -205,7 +205,7 @@
     <string name="example_notes">(Необязательно)</string>
     <string name="yes_or_no_example">Например, вы рано проснулись сегодня? Вы занимались спортом? Вы играли в шахматы?</string>
     <string name="measurable">Измеримый</string>
-    <string name="measurable_example">напр.: Сколько км вы пробежали сегодня? Сколько страниц прочитали?</string>
+    <string name="measurable_example">Например, сколько км вы пробежали сегодня? Сколько страниц прочитали?</string>
     <string name="x_times_per_week">%d раз в неделю</string>
     <string name="x_times_per_month">%d раз в месяц</string>
     <string name="x_times_per_y_days">%d раз в %d дней</string>
@@ -221,19 +221,22 @@
     <string name="today_summary_completed">Выполнено: %1$d/%2$d</string>
     <string name="today_summary_focus_minutes">Фокус-время: %1$s мин</string>
     <string name="today_summary_remaining">Осталось: %1$d</string>
+    <string name="today_summary_remaining_habits">Осталось привычек: %1$d</string>
     <string name="today_remaining">Осталось до минимума</string>
     <string name="today_empty_remaining">Минимум дня выполнен.</string>
     <string name="today_tier_minimum">Минимум дня: %1$d/%2$d</string>
     <string name="today_tier_normal">Норма дня: %1$d/%2$d</string>
     <string name="today_tier_ideal">Идеальный день: %1$d/%2$d</string>
     <string name="today_empty">Активных привычек не найдено.</string>
+    <string name="today_empty_title">Привычек пока нет</string>
+    <string name="today_empty_subtitle">Добавь привычки в основном списке — они появятся здесь в твоем плане дня.</string>
     <string name="today_section_title">%1$s - %2$d/%3$d - %4$s мин</string>
-    <string name="today_section_limits">Ограничения / самоконтроль</string>
-    <string name="today_section_routine">Режим / рефлексия</string>
+    <string name="today_section_limits">Ограничения</string>
+    <string name="today_section_routine">Режим</string>
     <string name="today_section_body">Тело</string>
-    <string name="today_section_care">Уход / гигиена</string>
-    <string name="today_section_intellect">Интеллект / обучение</string>
-    <string name="today_section_speech">Речь / мышление</string>
+    <string name="today_section_care">Уход</string>
+    <string name="today_section_intellect">Учёба</string>
+    <string name="today_section_speech">Речь</string>
     <string name="today_section_other">Прочее</string>
     <string name="today_status_done">Готово</string>
     <string name="today_status_remaining">Осталось</string>
@@ -278,7 +281,7 @@
     <string name="timer_active_for_other">Активен таймер: %1$s</string>
     <string name="timer_pomodoro_phase">Pomodoro — %1$s</string>
     <string name="habit_block">Сфера привычки</string>
-    <string name="habit_block_unassigned">Без сферы (Прочее)</string>
+    <string name="habit_block_unassigned">Прочее</string>
     <string name="manage_blocks">Управление сферами</string>
     <string name="add_block">Добавить сферу</string>
     <string name="edit_block">Редактировать сферу</string>
@@ -299,4 +302,6 @@
     <string name="motivation_minimum_completed">Молодец: минимум дня выполнен!</string>
     <string name="motivation_streak_milestone">Серия из %2$d дней по привычке «%1$s»!</string>
     <string name="motivation_comeback">Ты вернулся к привычке «%1$s» после пропуска — это важнее идеальной серии!</string>
+    <string name="pref_animations_title">Отключить анимации</string>
+    <string name="pref_animations_description">Отключить анимацию конфетти при отметке привычки.</string>
 </resources>

@@ -26,6 +26,7 @@ import android.os.Bundle
 import android.text.Html
 import android.text.Spanned
 import android.text.format.DateFormat
+import android.view.MenuItem
 import android.view.View
 import android.widget.ArrayAdapter
 import androidx.annotation.StringRes
@@ -79,7 +80,7 @@ class EditHabitActivity : AppCompatActivity() {
     var habitId = -1L
     lateinit var habitType: HabitType
     var unit = ""
-    var color = PaletteColor(11)
+    var color = PaletteColor(18)
     var androidColor = 0
     var freqNum = 1
     var freqDen = 1
@@ -89,7 +90,7 @@ class EditHabitActivity : AppCompatActivity() {
     var targetType = NumericalHabitType.AT_LEAST
     var dayTier = DayTier.NORMAL
     var timerEnabled = false
-    var blockId: Long? = null
+    var blockId: Long? = 7L
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -158,6 +159,15 @@ class EditHabitActivity : AppCompatActivity() {
                 binding.nameInput.hint = getString(R.string.measurable_short_example)
                 binding.questionInput.hint = getString(R.string.measurable_question_example)
                 binding.frequencyOuterBox.visibility = View.GONE
+
+                binding.unitInput.addTextChangedListener(object : android.text.TextWatcher {
+                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                    override fun afterTextChanged(s: android.text.Editable?) {
+                        updateTimerVisibility()
+                    }
+                })
+                updateTimerVisibility()
             }
         }
 
@@ -222,27 +232,20 @@ class EditHabitActivity : AppCompatActivity() {
         binding.habitBlockPicker.setOnClickListener {
             val component = (application as HabitsApplication).component
             val blocks = component.habitList.getBlocks()
-            val items = mutableListOf<String>()
-            items.add(getString(R.string.habit_block_unassigned))
-            blocks.forEach { items.add(it.name) }
-            items.add(getString(R.string.manage_blocks))
+            val items = blocks.map { getBlockDisplayName(it) }.toTypedArray()
 
             AlertDialog.Builder(this)
-                .setItems(items.toTypedArray()) { dialog, which ->
-                    if (which == 0) {
-                        blockId = null
-                        color = PaletteColor(11) // Default color when unassigned
-                        populateHabitBlock()
-                        updateColors()
-                    } else if (which == items.size - 1) {
-                        startActivity(android.content.Intent(this, org.isoron.uhabits.activities.blocks.ManageBlocksActivity::class.java))
-                    } else {
-                        val selectedBlock = blocks[which - 1]
-                        blockId = selectedBlock.id
-                        color = selectedBlock.color
-                        populateHabitBlock()
-                        updateColors()
-                    }
+                .setTitle(R.string.habit_block)
+                .setItems(items) { dialog, which ->
+                    val selectedBlock = blocks[which]
+                    blockId = selectedBlock.id
+                    color = selectedBlock.color
+                    populateHabitBlock()
+                    updateColors()
+                    dialog.dismiss()
+                }
+                .setNeutralButton(R.string.manage_blocks) { dialog, _ ->
+                    startActivity(android.content.Intent(this, org.isoron.uhabits.activities.blocks.ManageBlocksActivity::class.java))
                     dialog.dismiss()
                 }
                 .show()
@@ -465,6 +468,38 @@ class EditHabitActivity : AppCompatActivity() {
         val component = (application as HabitsApplication).component
         val blocks = component.habitList.getBlocks()
         val currentBlock = blocks.firstOrNull { it.id == blockId }
-        binding.habitBlockPicker.text = currentBlock?.name ?: getString(R.string.habit_block_unassigned)
+        binding.habitBlockPicker.text = currentBlock?.let { getBlockDisplayName(it) } ?: getString(R.string.habit_block_unassigned)
+    }
+
+    private fun getBlockDisplayName(block: org.isoron.uhabits.core.models.HabitBlock): String {
+        return if (block.id in 1L..7L) {
+            when (block.id) {
+                1L -> getString(R.string.today_section_intellect)
+                2L -> getString(R.string.today_section_speech)
+                3L -> getString(R.string.today_section_body)
+                4L -> getString(R.string.today_section_care)
+                5L -> getString(R.string.today_section_routine)
+                6L -> getString(R.string.today_section_limits)
+                7L -> getString(R.string.today_section_other)
+                else -> block.name
+            }
+        } else {
+            block.name
+        }
+    }
+
+    private fun updateTimerVisibility() {
+        val isMinute = binding.unitInput.text.toString().isMinuteUnit()
+        binding.timerEnabledOuterBox.visibility = if (isMinute) View.VISIBLE else View.GONE
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            android.R.id.home -> {
+                finish()
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
     }
 }

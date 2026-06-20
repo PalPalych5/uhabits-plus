@@ -22,10 +22,14 @@ import android.content.Context
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -60,8 +64,10 @@ class TodayView(
     private val toolbar = buildToolbar()
     private val content = LinearLayout(context).apply {
         orientation = VERTICAL
-        setPadding(dp(16f).toInt(), dp(14f).toInt(), dp(16f).toInt(), dp(24f).toInt())
+        setPadding(dp(16f).toInt(), dp(12f).toInt(), dp(16f).toInt(), dp(32f).toInt())
     }
+
+    private val isDark: Boolean get() = currentTheme() is DarkTheme
 
     init {
         orientation = VERTICAL
@@ -96,57 +102,224 @@ class TodayView(
     fun setState(state: TodayScreenState) {
         content.removeAllViews()
         if (state.totalCount == 0) {
-            content.addView(bodyText(resources.getString(R.string.today_empty)))
+            addEmptyState()
             return
         }
 
-        addSummary(state)
+        addSummaryCard(state)
         addMotivations(state.motivations)
-        addRemaining(state.remaining)
-        state.sections.forEach { addSection(it) }
+        addRemainingSection(state.remaining)
+        state.sections.forEach { addSectionCard(it) }
     }
 
-    private fun addSummary(state: TodayScreenState) {
-        content.addView(
-            titleText(
+    // ── Empty state ───────────────────────────────────────────────────────────
+
+    private fun addEmptyState() {
+        val container = LinearLayout(context).apply {
+            orientation = VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                topMargin = dp(48f).toInt()
+            }
+        }
+        val emoji = TextView(context).apply {
+            text = "📋"
+            textSize = 48f
+            gravity = Gravity.CENTER
+        }
+        val title = textView(
+            resources.getString(R.string.today_empty_title),
+            size = 18f, bold = true
+        ).apply {
+            gravity = Gravity.CENTER
+            layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                topMargin = dp(12f).toInt()
+            }
+        }
+        val subtitle = textView(
+            resources.getString(R.string.today_empty_subtitle),
+            size = 14f, bold = false, muted = true
+        ).apply {
+            gravity = Gravity.CENTER
+            layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                topMargin = dp(8f).toInt()
+                bottomMargin = dp(4f).toInt()
+            }
+        }
+        container.addView(emoji)
+        container.addView(title)
+        container.addView(subtitle)
+        content.addView(container)
+    }
+
+    // ── Summary card ──────────────────────────────────────────────────────────
+
+    private fun addSummaryCard(state: TodayScreenState) {
+        val card = buildCard(cornerRadius = 16f, elevation = 3f).apply {
+            layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                bottomMargin = dp(16f).toInt()
+            }
+        }
+        val inner = LinearLayout(context).apply {
+            orientation = VERTICAL
+            setPadding(dp(16f).toInt(), dp(16f).toInt(), dp(16f).toInt(), dp(16f).toInt())
+        }
+
+        // Main counter: "Выполнено 1/5"
+        inner.addView(
+            textView(
                 resources.getString(
                     R.string.today_summary_completed,
                     state.completedCount,
                     state.totalCount
-                )
+                ),
+                size = 24f, bold = true
             )
         )
-        val summaryDetails = listOf(
-            resources.getString(
-                R.string.today_summary_focus_minutes,
-                state.focusMinutes.formatTodayValue()
-            ),
-            resources.getString(R.string.today_summary_remaining, state.remaining.size)
-        ).joinToString("  |  ")
-        content.addView(bodyText(summaryDetails, muted = true))
-        content.addView(tierText(R.string.today_tier_minimum, state.minimum))
-        content.addView(tierText(R.string.today_tier_normal, state.normal))
-        content.addView(tierText(R.string.today_tier_ideal, state.ideal))
-    }
 
-    private fun tierText(labelResId: Int, progress: TodayTierProgress): TextView = bodyText(
-        resources.getString(labelResId, progress.completedCount, progress.totalCount),
-        muted = true
-    )
+        // Focus time row (always shown)
+        val focusStr = resources.getString(
+            R.string.today_summary_focus_minutes,
+            state.focusMinutes.formatTodayValue()
+        )
+        inner.addView(
+            textView(focusStr, size = 13f, bold = false, muted = true).apply {
+                layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                    topMargin = dp(4f).toInt()
+                }
+            }
+        )
 
-    private fun addRemaining(items: List<TodayHabitItem>) {
-        content.addView(sectionTitle(resources.getString(R.string.today_remaining), topMargin = 24f))
-        if (items.isEmpty()) {
-            content.addView(bodyText(resources.getString(R.string.today_empty_remaining)))
-            return
+        // Remaining habits (only when > 0)
+        val remainingCount = state.remaining.size
+        if (remainingCount > 0) {
+            inner.addView(
+                textView(
+                    resources.getString(R.string.today_summary_remaining_habits, remainingCount),
+                    size = 13f, bold = false, muted = true
+                )
+            )
         }
-        items.forEach { content.addView(rowView(it)) }
+
+        // Divider
+        inner.addView(dividerView().apply {
+            layoutParams = LayoutParams(MATCH_PARENT, dp(1f).toInt()).apply {
+                topMargin = dp(12f).toInt()
+                bottomMargin = dp(10f).toInt()
+            }
+        })
+
+        // Tier rows (skip if totalCount == 0)
+        if (state.minimum.totalCount > 0) {
+            inner.addView(tierRow(R.string.today_tier_minimum, state.minimum))
+        }
+        if (state.normal.totalCount > 0) {
+            inner.addView(tierRow(R.string.today_tier_normal, state.normal))
+        }
+        if (state.ideal.totalCount > 0) {
+            inner.addView(tierRow(R.string.today_tier_ideal, state.ideal))
+        }
+
+        card.addView(inner)
+        content.addView(card)
     }
 
-    private fun addSection(section: TodaySectionState) {
+    private fun tierRow(labelResId: Int, progress: TodayTierProgress): LinearLayout {
+        val row = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                topMargin = dp(3f).toInt()
+            }
+        }
+        val label = textView(
+            resources.getString(labelResId, progress.completedCount, progress.totalCount),
+            size = 12f, bold = false, muted = true
+        ).apply {
+            layoutParams = LayoutParams(0, WRAP_CONTENT, 1f)
+        }
+        val isComplete = progress.completedCount >= progress.totalCount && progress.totalCount > 0
+        val badge = buildBadge(
+            text = if (isComplete) "✓" else "${progress.completedCount}/${progress.totalCount}",
+            completed = isComplete
+        )
+        row.addView(label)
+        row.addView(badge)
+        return row
+    }
+
+    // ── "Remaining to minimum" section ────────────────────────────────────────
+
+    private fun addRemainingSection(items: List<TodayHabitItem>) {
+        val header = textView(
+            resources.getString(R.string.today_remaining),
+            size = 13f, bold = true
+        ).apply {
+            layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                topMargin = dp(4f).toInt()
+                bottomMargin = dp(4f).toInt()
+            }
+            alpha = 0.7f
+        }
+        content.addView(header)
+
+        if (items.isEmpty()) {
+            content.addView(
+                textView(
+                    resources.getString(R.string.today_empty_remaining),
+                    size = 13f, bold = false, muted = true
+                ).apply {
+                    layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                        bottomMargin = dp(12f).toInt()
+                    }
+                }
+            )
+        } else {
+            items.forEach { content.addView(habitRowView(it, sectionColor = null)) }
+        }
+    }
+
+    // ── Section (sphere) card ─────────────────────────────────────────────────
+
+    private fun addSectionCard(section: TodaySectionState) {
         val sectionKey = section.blockId?.let { "block_$it" } ?: "block_null"
         val isCollapsed = preferences.isTodaySectionCollapsed(sectionKey)
-        val indicator = if (isCollapsed) "▸ " else "▾ "
+        val sectionColor = section.color.toFixedAndroidColor()
+
+        // Outer card with left color stripe
+        val cardWrapper = FrameLayout(context).apply {
+            layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                topMargin = dp(12f).toInt()
+            }
+        }
+
+        // Left stripe
+        val stripe = View(context).apply {
+            layoutParams = FrameLayout.LayoutParams(dp(4f).toInt(), MATCH_PARENT).apply {
+                gravity = Gravity.START
+            }
+            background = GradientDrawable().apply {
+                setColor(sectionColor)
+                cornerRadii = floatArrayOf(
+                    dp(12f), dp(12f), // top-left
+                    0f, 0f,           // top-right
+                    0f, 0f,           // bottom-right
+                    dp(12f), dp(12f)  // bottom-left
+                )
+            }
+        }
+
+        val card = buildCard(cornerRadius = 12f, elevation = 2f).apply {
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                marginStart = dp(4f).toInt() // shift right to show stripe
+            }
+        }
+        val inner = LinearLayout(context).apply {
+            orientation = VERTICAL
+            setPadding(dp(14f).toInt(), dp(12f).toInt(), dp(14f).toInt(), dp(12f).toInt())
+        }
+
+        // Section header
         val sectionName = when (section.blockId) {
             1L -> resources.getString(R.string.today_section_intellect)
             2L -> resources.getString(R.string.today_section_speech)
@@ -157,106 +330,268 @@ class TodayView(
             7L -> resources.getString(R.string.today_section_other)
             else -> section.blockName
         }
-        val title = indicator + resources.getString(
-            R.string.today_section_title,
-            sectionName,
-            section.completedCount,
-            section.totalCount,
-            section.focusMinutes.formatTodayValue()
+
+        val headerRow = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            isClickable = true
+            setOnClickListener {
+                preferences.setTodaySectionCollapsed(sectionKey, !isCollapsed)
+                onRefresh()
+            }
+        }
+
+        val indicator = if (isCollapsed) "▸ " else "▾ "
+        val titleView = textView("$indicator$sectionName", size = 15f, bold = true).apply {
+            setTextColor(sectionColor)
+            layoutParams = LayoutParams(0, WRAP_CONTENT, 1f)
+        }
+
+        // Section progress badge: "1/3"
+        val progressBadge = buildBadge(
+            text = "${section.completedCount}/${section.totalCount}",
+            completed = section.completedCount >= section.totalCount && section.totalCount > 0,
+            colorInt = sectionColor
         )
-        val titleView = sectionTitle(title, topMargin = 24f, color = section.color.toFixedAndroidColor())
-        titleView.isClickable = true
-        titleView.setOnClickListener {
-            preferences.setTodaySectionCollapsed(sectionKey, !isCollapsed)
-            onRefresh()
-        }
-        content.addView(titleView)
+
+        // Focus minutes for section (only if > 0)
+        val focusMinsText = if (section.focusMinutes > 0) {
+            textView(
+                "${section.focusMinutes.formatTodayValue()} мин",
+                size = 12f, bold = false, muted = true
+            ).apply {
+                layoutParams = LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
+                    marginStart = dp(8f).toInt()
+                }
+            }
+        } else null
+
+        headerRow.addView(titleView)
+        headerRow.addView(progressBadge)
+        focusMinsText?.let { headerRow.addView(it) }
+        inner.addView(headerRow)
+
+        // Habit rows (if not collapsed)
         if (!isCollapsed) {
-            section.items.forEach { content.addView(rowView(it)) }
+            section.items.forEach { item ->
+                inner.addView(dividerView().apply {
+                    layoutParams = LayoutParams(MATCH_PARENT, dp(1f).toInt()).apply {
+                        topMargin = dp(8f).toInt()
+                        bottomMargin = dp(4f).toInt()
+                    }
+                })
+                inner.addView(habitRowView(item, sectionColor = sectionColor))
+            }
         }
+
+        card.addView(inner)
+        cardWrapper.addView(card)
+        cardWrapper.addView(stripe)
+        content.addView(cardWrapper)
     }
 
-    private fun rowView(item: TodayHabitItem): View {
-        return LinearLayout(context).apply {
+    // ── Habit row ─────────────────────────────────────────────────────────────
+
+    private fun habitRowView(item: TodayHabitItem, sectionColor: Int?): View {
+        val row = LinearLayout(context).apply {
             orientation = VERTICAL
-            setPadding(dp(16f).toInt(), dp(10f).toInt(), 0, dp(10f).toInt())
+            setPadding(dp(4f).toInt(), dp(6f).toInt(), dp(4f).toInt(), dp(6f).toInt())
             item.habitId?.let { id ->
                 isClickable = true
+                isFocusable = true
                 setOnClickListener { onHabitClick(id) }
-            }
-            addView(bodyText(item.name, bold = true))
-            addView(bodyText(item.subtitle()))
-            if (item.notes.isNotBlank()) {
-                addView(bodyText(item.notes, muted = true))
-            }
-        }
-    }
-
-    private fun TodayHabitItem.subtitle(): String {
-        val status = resources.getString(
-            when (this.status) {
-                TodayHabitStatus.COMPLETED -> R.string.today_status_done
-                TodayHabitStatus.REMAINING -> R.string.today_status_remaining
-                TodayHabitStatus.UNKNOWN -> R.string.today_status_unknown
-                TodayHabitStatus.SKIPPED -> R.string.today_status_skipped
-                TodayHabitStatus.EXCEEDED -> R.string.today_status_exceeded
-            }
-        )
-        val dailyProgress = if (habitType == HabitType.NUMERICAL && this.status != TodayHabitStatus.SKIPPED) {
-            val current = currentValue?.formatTodayValue() ?: "0"
-            val target = targetValue?.formatTodayValue() ?: "0"
-            resources.getString(R.string.today_numerical_progress, current, target, unit, status)
-        } else {
-            status
-        }
-
-        val actual = weeklyProgressActual
-        val target = weeklyProgressTarget
-        if (isWeeklyQuota && actual != null && target != null) {
-            val actualStr = actual.formatTodayValue()
-            val targetStr = target.formatTodayValue()
-            return if (habitType == HabitType.NUMERICAL) {
-                resources.getString(R.string.today_weekly_quota_numerical, dailyProgress, actualStr, targetStr, unit)
-            } else {
-                resources.getString(R.string.today_weekly_quota_boolean, dailyProgress, actualStr, targetStr)
+                // Ripple-like background
+                val rippleColor = if (isDark) 0x10FFFFFF.toInt() else 0x10000000.toInt()
+                background = GradientDrawable().apply {
+                    setColor(0)
+                    cornerRadius = dp(8f)
+                }
+                foreground = android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(rippleColor),
+                    null, null
+                )
             }
         }
-        return dailyProgress
-    }
 
-    private fun titleText(text: String): TextView {
-        return textView(text, size = 20f, bold = true).apply {
-            setPadding(0, 0, 0, dp(4f).toInt())
+        // Name + badge row
+        val nameRow = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
         }
-    }
 
-    private fun sectionTitle(text: String, topMargin: Float, color: Int? = null): TextView {
-        return textView(text, size = 16f, bold = true).apply {
-            color?.let { setTextColor(it) }
-            layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
-                this.topMargin = dp(topMargin).toInt()
+        val nameView = textView(item.name, size = 14f, bold = true).apply {
+            layoutParams = LayoutParams(0, WRAP_CONTENT, 1f)
+        }
+        val statusBadge = buildStatusBadge(item.status, sectionColor)
+
+        nameRow.addView(nameView)
+        nameRow.addView(statusBadge)
+        row.addView(nameRow)
+
+        // Progress line for numerical habits
+        if (item.habitType == HabitType.NUMERICAL && item.status != TodayHabitStatus.SKIPPED) {
+            val current = item.currentValue ?: 0.0
+            val target = item.targetValue ?: 0.0
+            val unit = item.unit
+
+            val progressRow = LinearLayout(context).apply {
+                orientation = HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                    topMargin = dp(4f).toInt()
+                }
             }
-        }
-    }
 
-    private fun bodyText(text: String, bold: Boolean = false, muted: Boolean = false): TextView {
-        return textView(text, size = 14f, bold = bold, muted = muted)
-    }
+            val progressLabel = textView(
+                "${current.formatTodayValue()} / ${target.formatTodayValue()} $unit".trim(),
+                size = 12f, bold = false, muted = true
+            ).apply {
+                layoutParams = LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
+                    marginEnd = dp(8f).toInt()
+                }
+            }
 
-    private fun textView(text: String, size: Float, bold: Boolean, muted: Boolean = false): TextView {
-        return TextView(context).apply {
-            this.text = text
-            setTextSize(size)
-            setTextColor(
-                if (muted) {
-                    sres.getColor(R.attr.contrast60)
-                } else {
-                    sres.getColor(android.R.attr.textColorPrimary)
+            val progressBar = ProgressBar(
+                context, null,
+                android.R.attr.progressBarStyleHorizontal
+            ).apply {
+                layoutParams = LayoutParams(0, dp(4f).toInt(), 1f)
+                max = 1000
+                val progressFraction = if (target > 0) (current / target).coerceIn(0.0, 1.0) else 0.0
+                progress = (progressFraction * 1000).toInt()
+                val barColor = sectionColor ?: item.color.toFixedAndroidColor()
+                progressDrawable = GradientDrawable().apply {
+                    setColor(barColor)
+                    cornerRadius = dp(2f)
+                }.let { filled ->
+                    val track = GradientDrawable().apply {
+                        setColor(if (isDark) 0x20FFFFFF.toInt() else 0x15000000.toInt())
+                        cornerRadius = dp(2f)
+                    }
+                    // Use LayerDrawable to mimic progress bar with track + fill
+                    val ld = android.graphics.drawable.LayerDrawable(
+                        arrayOf(track, filled)
+                    )
+                    ld.setId(0, android.R.id.background)
+                    ld.setId(1, android.R.id.progress)
+                    ld
+                }
+            }
+
+            progressRow.addView(progressLabel)
+            progressRow.addView(progressBar)
+            row.addView(progressRow)
+        } else if (item.habitType == HabitType.YES_NO && item.status == TodayHabitStatus.UNKNOWN) {
+            // No-data note for boolean habits
+            row.addView(
+                textView(
+                    resources.getString(R.string.today_status_unknown),
+                    size = 12f, bold = false, muted = true
+                ).apply {
+                    layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                        topMargin = dp(2f).toInt()
+                    }
                 }
             )
-            if (bold) setTypeface(typeface, Typeface.BOLD)
+        }
+
+        // Notes
+        if (item.notes.isNotBlank()) {
+            row.addView(
+                textView(item.notes, size = 12f, bold = false, muted = true).apply {
+                    layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                        topMargin = dp(2f).toInt()
+                    }
+                }
+            )
+        }
+
+        return row
+    }
+
+    // ── Status badge ──────────────────────────────────────────────────────────
+
+    private fun buildStatusBadge(status: TodayHabitStatus, sectionColor: Int?): TextView {
+        val (label, bgAlpha, textAlpha) = when (status) {
+            TodayHabitStatus.COMPLETED -> Triple("✓ Готово", 0.15f, 1.0f)
+            TodayHabitStatus.REMAINING -> Triple("○ Осталось", 0.08f, 0.7f)
+            TodayHabitStatus.UNKNOWN   -> Triple("— Нет данных", 0.06f, 0.5f)
+            TodayHabitStatus.SKIPPED   -> Triple("⊘ Пропущено", 0.06f, 0.5f)
+            TodayHabitStatus.EXCEEDED  -> Triple("⚠ Превышено", 0.15f, 1.0f)
+        }
+
+        val baseColor = when (status) {
+            TodayHabitStatus.COMPLETED -> 0xFF4CAF50.toInt()  // green
+            TodayHabitStatus.REMAINING -> sectionColor ?: 0xFF9E9E9E.toInt()
+            TodayHabitStatus.UNKNOWN   -> 0xFF9E9E9E.toInt()  // gray
+            TodayHabitStatus.SKIPPED   -> 0xFF9E9E9E.toInt()  // gray
+            TodayHabitStatus.EXCEEDED  -> 0xFFFF5722.toInt()  // orange-red
+        }
+
+        val bgColor = applyAlpha(baseColor, bgAlpha)
+
+        return TextView(context).apply {
+            text = label
+            textSize = 11f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(applyAlpha(baseColor, textAlpha))
+            setPadding(dp(7f).toInt(), dp(3f).toInt(), dp(7f).toInt(), dp(3f).toInt())
+            background = GradientDrawable().apply {
+                setColor(bgColor)
+                cornerRadius = dp(10f)
+            }
+            layoutParams = LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
+                marginStart = dp(8f).toInt()
+            }
         }
     }
+
+    // ── Small rounded badge (tier / section progress) ─────────────────────────
+
+    private fun buildBadge(text: String, completed: Boolean, colorInt: Int? = null): TextView {
+        val baseColor = colorInt ?: if (completed) 0xFF4CAF50.toInt() else 0xFF9E9E9E.toInt()
+        val bgColor = applyAlpha(baseColor, if (completed) 0.15f else 0.1f)
+        return TextView(context).apply {
+            this.text = text
+            textSize = 11f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(baseColor)
+            setPadding(dp(6f).toInt(), dp(2f).toInt(), dp(6f).toInt(), dp(2f).toInt())
+            background = GradientDrawable().apply {
+                setColor(bgColor)
+                cornerRadius = dp(8f)
+            }
+            layoutParams = LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
+                marginStart = dp(6f).toInt()
+            }
+        }
+    }
+
+    // ── Card container ────────────────────────────────────────────────────────
+
+    private fun buildCard(cornerRadius: Float, elevation: Float): LinearLayout {
+        val bgColor = if (isDark) 0x10FFFFFF.toInt() else 0x08000000.toInt()
+        return LinearLayout(context).apply {
+            orientation = VERTICAL
+            background = GradientDrawable().apply {
+                setColor(bgColor)
+                this.cornerRadius = dp(cornerRadius)
+                setStroke(
+                    dp(0.5f).toInt(),
+                    if (isDark) 0x18FFFFFF.toInt() else 0x12000000.toInt()
+                )
+            }
+            this.elevation = dp(elevation)
+        }
+    }
+
+    // ── Divider ───────────────────────────────────────────────────────────────
+
+    private fun dividerView(): View = View(context).apply {
+        setBackgroundColor(if (isDark) 0x15FFFFFF.toInt() else 0x10000000.toInt())
+    }
+
+    // ── Motivations (existing, unchanged) ─────────────────────────────────────
 
     private fun addMotivations(motivations: List<String>) {
         if (motivations.isEmpty()) return
@@ -264,7 +599,7 @@ class TodayView(
         val container = LinearLayout(context).apply {
             orientation = VERTICAL
             layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
-                topMargin = dp(16f).toInt()
+                topMargin = dp(4f).toInt()
                 bottomMargin = dp(8f).toInt()
             }
         }
@@ -277,25 +612,18 @@ class TodayView(
             val type = parts[0]
             val emoji = when (type) {
                 "minimum_completed" -> "🎉"
-                "streak_milestone" -> "🔥"
-                "comeback" -> "✨"
-                else -> "🌟"
+                "streak_milestone"  -> "🔥"
+                "comeback"          -> "✨"
+                else                -> "🌟"
             }
 
+            val bgColor = if (isDark) 0x20FFFFFF.toInt() else 0x10000000.toInt()
             val card = LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 setPadding(dp(12f).toInt(), dp(12f).toInt(), dp(12f).toInt(), dp(12f).toInt())
                 layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
                     bottomMargin = dp(8f).toInt()
                 }
-
-                val isDark = currentTheme() is DarkTheme
-                val bgColor = if (isDark) {
-                    0x20FFFFFF.toInt()
-                } else {
-                    0x10000000.toInt()
-                }
-
                 background = GradientDrawable().apply {
                     setColor(bgColor)
                     cornerRadius = dp(8f)
@@ -343,5 +671,26 @@ class TodayView(
             }
             else -> ""
         }
+    }
+
+    // ── Text helpers ──────────────────────────────────────────────────────────
+
+    private fun textView(
+        text: String, size: Float, bold: Boolean, muted: Boolean = false
+    ): TextView = TextView(context).apply {
+        this.text = text
+        setTextSize(size)
+        setTextColor(
+            if (muted) sres.getColor(R.attr.contrast60)
+            else sres.getColor(android.R.attr.textColorPrimary)
+        )
+        if (bold) setTypeface(typeface, Typeface.BOLD)
+    }
+
+    // ── Color helpers ─────────────────────────────────────────────────────────
+
+    private fun applyAlpha(color: Int, alpha: Float): Int {
+        val a = (alpha * 255).toInt().coerceIn(0, 255)
+        return (color and 0x00FFFFFF) or (a shl 24)
     }
 }

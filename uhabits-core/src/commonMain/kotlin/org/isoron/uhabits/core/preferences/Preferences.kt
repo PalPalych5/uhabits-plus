@@ -125,12 +125,12 @@ open class Preferences(private val storage: Storage) {
             storage.putBoolean("pref_first_run", isFirstRun)
         }
     open var isPureBlackEnabled: Boolean
-        get() = storage.getBoolean("pref_pure_black", false)
+        get() = storage.getBoolean("pref_pure_black", true)
         set(enabled) {
             storage.putBoolean("pref_pure_black", enabled)
         }
     open var isShortToggleEnabled: Boolean
-        get() = storage.getBoolean("pref_short_toggle", false)
+        get() = storage.getBoolean("pref_short_toggle", true)
         set(enabled) {
             storage.putBoolean("pref_short_toggle", enabled)
         }
@@ -166,7 +166,7 @@ open class Preferences(private val storage: Storage) {
         get() {
             if (shouldReverseCheckmarks == null) {
                 shouldReverseCheckmarks =
-                    storage.getBoolean("pref_checkmark_reverse_order", false)
+                    storage.getBoolean("pref_checkmark_reverse_order", true)
             }
             return shouldReverseCheckmarks!!
         }
@@ -177,7 +177,7 @@ open class Preferences(private val storage: Storage) {
         }
 
     open var isMidnightDelayEnabled: Boolean
-        get() = storage.getBoolean("pref_midnight_delay", false)
+        get() = storage.getBoolean("pref_midnight_delay", true)
         set(enabled) {
             storage.putBoolean("pref_midnight_delay", enabled)
             for (l in listeners) l.onCheckmarkSequenceChanged()
@@ -206,7 +206,7 @@ open class Preferences(private val storage: Storage) {
             storage.putString("pref_widget_opacity", value.toString())
         }
     open var isSkipEnabled: Boolean
-        get() = storage.getBoolean("pref_skip_enabled", false)
+        get() = storage.getBoolean("pref_skip_enabled", true)
         set(value) {
             storage.putBoolean("pref_skip_enabled", value)
         }
