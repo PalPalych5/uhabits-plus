@@ -21,16 +21,16 @@ package org.isoron.uhabits.core.ui.screens.habits.today
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.core.models.Entry
+import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.HabitType
 import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.PaletteColor
+import org.isoron.uhabits.core.models.isMinuteUnit
 import kotlin.math.roundToInt
 
 object TodayScreenStateBuilder {
-    private val minuteUnits = setOf("min", "mins", "minute", "minutes", "мин", "минута", "минуты", "минут")
-
     fun build(habitList: HabitList, date: LocalDate = getToday()): TodayScreenState {
         val items = habitList
             .toList()
@@ -46,23 +46,28 @@ object TodayScreenStateBuilder {
             .groupBy { it.color.toTodaySectionId() }
             .toSortedMap(compareBy { it.order })
             .map { (sectionId, sectionItems) ->
+                val countableSectionItems = sectionItems.filter { it.status != TodayHabitStatus.SKIPPED }
                 TodaySectionState(
                     id = sectionId,
                     color = sectionItems.first().color,
-                    completedCount = sectionItems.count { it.isCompleted },
-                    totalCount = sectionItems.size,
+                    completedCount = countableSectionItems.count { it.isCompleted },
+                    totalCount = countableSectionItems.size,
                     focusMinutes = sectionItems.sumOf { it.focusMinutes },
                     items = sectionItems
                 )
             }
 
+        val countableItems = items.filter { it.status != TodayHabitStatus.SKIPPED }
         return TodayScreenState(
             date = date,
-            completedCount = items.count { it.isCompleted },
-            totalCount = items.size,
+            completedCount = countableItems.count { it.isCompleted },
+            totalCount = countableItems.size,
             focusMinutes = items.sumOf { it.focusMinutes },
-            remaining = items.filter { !it.isCompleted && it.status != TodayHabitStatus.SKIPPED },
-            sections = sections
+            remaining = countableItems.filter { it.dayTier == DayTier.MINIMUM && !it.isCompleted },
+            sections = sections,
+            minimum = countableItems.progressFor(setOf(DayTier.MINIMUM)),
+            normal = countableItems.progressFor(setOf(DayTier.MINIMUM, DayTier.NORMAL)),
+            ideal = countableItems.progressFor(setOf(DayTier.MINIMUM, DayTier.NORMAL, DayTier.IDEAL))
         )
     }
 
@@ -83,7 +88,8 @@ object TodayScreenStateBuilder {
             currentValue = currentValue,
             targetValue = if (isNumerical) targetValue else null,
             unit = if (isNumerical) unit else "",
-            notes = entry.notes
+            notes = entry.notes,
+            dayTier = dayTier
         )
     }
 
@@ -118,7 +124,13 @@ object TodayScreenStateBuilder {
             return currentValue ?: 0.0
         }
 
-    private fun String.isMinuteUnit(): Boolean = trim().lowercase() in minuteUnits
+    private fun List<TodayHabitItem>.progressFor(tiers: Set<DayTier>): TodayTierProgress {
+        val included = filter { it.dayTier in tiers }
+        return TodayTierProgress(
+            completedCount = included.count { it.isCompleted },
+            totalCount = included.size
+        )
+    }
 
     private fun PaletteColor.toTodaySectionId(): TodaySectionId {
         return when (paletteIndex) {

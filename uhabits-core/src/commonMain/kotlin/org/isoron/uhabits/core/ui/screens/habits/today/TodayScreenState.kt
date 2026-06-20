@@ -20,6 +20,7 @@ package org.isoron.uhabits.core.ui.screens.habits.today
 
 import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.models.HabitType
+import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.PaletteColor
 
@@ -29,8 +30,13 @@ data class TodayScreenState(
     val totalCount: Int,
     val focusMinutes: Double,
     val remaining: List<TodayHabitItem>,
-    val sections: List<TodaySectionState>
+    val sections: List<TodaySectionState>,
+    val minimum: TodayTierProgress,
+    val normal: TodayTierProgress,
+    val ideal: TodayTierProgress
 )
+
+data class TodayTierProgress(val completedCount: Int, val totalCount: Int)
 
 data class TodaySectionState(
     val id: TodaySectionId,
@@ -51,7 +57,8 @@ data class TodayHabitItem(
     val currentValue: Double?,
     val targetValue: Double?,
     val unit: String,
-    val notes: String
+    val notes: String,
+    val dayTier: DayTier
 ) {
     val isCompleted: Boolean
         get() = status == TodayHabitStatus.COMPLETED

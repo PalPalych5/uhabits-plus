@@ -21,6 +21,7 @@ package org.isoron.uhabits.core.ui.screens.habits.today
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.core.BaseUnitTest
 import org.isoron.uhabits.core.models.Entry
+import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitType
 import org.isoron.uhabits.core.models.NumericalHabitType
@@ -35,8 +36,8 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
     @Test
     fun buildsBooleanStatuses() {
         val completed = booleanHabit("Checked", Entry.YES_MANUAL)
-        val missed = booleanHabit("Missed", Entry.NO)
-        val unknown = booleanHabit("Unknown", Entry.UNKNOWN)
+        val missed = booleanHabit("Missed", Entry.NO, dayTier = DayTier.MINIMUM)
+        val unknown = booleanHabit("Unknown", Entry.UNKNOWN, dayTier = DayTier.MINIMUM)
         val skipped = booleanHabit("Skipped", Entry.SKIP)
         habitList.add(completed)
         habitList.add(missed)
@@ -46,7 +47,7 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
         val state = TodayScreenStateBuilder.build(habitList, today)
 
         assertEquals(1, state.completedCount)
-        assertEquals(4, state.totalCount)
+        assertEquals(3, state.totalCount)
         val statusesByName = state.sections.single().items.associate { it.name to it.status }
         assertEquals(TodayHabitStatus.COMPLETED, statusesByName["Checked"])
         assertEquals(TodayHabitStatus.REMAINING, statusesByName["Missed"])
@@ -233,10 +234,42 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
         assertEquals(1, sectionsById[TodaySectionId.CARE]?.totalCount)
     }
 
+    @Test
+    fun buildsCumulativeTierProgressAndMinimumRemaining() {
+        habitList.add(booleanHabit("Minimum done", Entry.YES_MANUAL, dayTier = DayTier.MINIMUM))
+        habitList.add(booleanHabit("Minimum left", Entry.NO, dayTier = DayTier.MINIMUM))
+        habitList.add(booleanHabit("Normal done", Entry.YES_MANUAL, dayTier = DayTier.NORMAL))
+        habitList.add(booleanHabit("Ideal left", Entry.NO, dayTier = DayTier.IDEAL))
+        habitList.add(booleanHabit("Optional done", Entry.YES_MANUAL, dayTier = DayTier.OPTIONAL))
+
+        val state = TodayScreenStateBuilder.build(habitList, today)
+
+        assertEquals(TodayTierProgress(1, 2), state.minimum)
+        assertEquals(TodayTierProgress(2, 3), state.normal)
+        assertEquals(TodayTierProgress(2, 4), state.ideal)
+        assertEquals(listOf("Minimum left"), state.remaining.map { it.name })
+    }
+
+    @Test
+    fun excludesSkippedItemsFromAllCounters() {
+        habitList.add(booleanHabit("Skipped minimum", Entry.SKIP, dayTier = DayTier.MINIMUM))
+        habitList.add(booleanHabit("Done normal", Entry.YES_MANUAL, dayTier = DayTier.NORMAL))
+
+        val state = TodayScreenStateBuilder.build(habitList, today)
+
+        assertEquals(1, state.completedCount)
+        assertEquals(1, state.totalCount)
+        assertEquals(TodayTierProgress(0, 0), state.minimum)
+        assertEquals(TodayTierProgress(1, 1), state.normal)
+        assertEquals(TodayTierProgress(1, 1), state.ideal)
+        assertEquals(1, state.sections.single().totalCount)
+    }
+
     private fun booleanHabit(
         name: String,
         value: Int,
-        color: PaletteColor = PaletteColor(8)
+        color: PaletteColor = PaletteColor(8),
+        dayTier: DayTier = DayTier.NORMAL
     ): Habit {
         return Habit(
             name = name,
@@ -247,6 +280,7 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
             scores = modelFactory.buildScoreList(),
             streaks = modelFactory.buildStreakList()
         ).apply {
+            this.dayTier = dayTier
             if (value != Entry.UNKNOWN) originalEntries.add(Entry(today, value))
             recompute()
         }
