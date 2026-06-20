@@ -25,6 +25,7 @@ import org.isoron.uhabits.core.database.HabitRepository
 import org.isoron.uhabits.core.database.HabitExtensionData
 import org.isoron.uhabits.core.database.HabitExtensionRepository
 import org.isoron.uhabits.core.models.DayTier
+import org.isoron.uhabits.core.models.HabitBlock
 import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
@@ -61,6 +62,7 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
             extensionRepository.findByHabitId(rec.id!!)?.let { extension ->
                 h.dayTier = DayTier.fromString(extension.dayTier)
                 h.timerEnabled = extension.timerEnabled
+                h.blockId = extension.blockId
             }
             (h.originalEntries as SQLiteEntryList).habitId = h.id
             list.add(h)
@@ -223,11 +225,26 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
         loaded = false
     }
 
+    override fun getBlocks(): List<HabitBlock> {
+        val blockRepository = (modelFactory as SQLModelFactory).habitBlockRepository
+        return blockRepository.findAll().map {
+            HabitBlock(
+                id = it.id,
+                name = it.name,
+                color = PaletteColor(it.color),
+                icon = it.icon,
+                position = it.position,
+                isArchived = it.isArchived
+            )
+        }
+    }
+
     companion object {
         private fun Habit.toExtensionData(): HabitExtensionData = HabitExtensionData(
             habitId = id!!,
             dayTier = dayTier.name,
-            timerEnabled = timerEnabled
+            timerEnabled = timerEnabled,
+            blockId = blockId
         )
 
         fun copyFrom(habit: Habit): HabitData {

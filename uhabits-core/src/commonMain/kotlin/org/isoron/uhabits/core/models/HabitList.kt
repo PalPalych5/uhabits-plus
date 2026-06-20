@@ -203,6 +203,7 @@ abstract class HabitList : Iterable<Habit> {
     }
 
     abstract fun resort()
+    open fun getBlocks(): List<HabitBlock> = emptyList()
     enum class Order {
         BY_NAME_ASC,
         BY_NAME_DESC,

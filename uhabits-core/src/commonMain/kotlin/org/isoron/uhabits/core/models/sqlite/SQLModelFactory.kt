@@ -22,6 +22,7 @@ import me.tatarka.inject.annotations.Inject
 import org.isoron.uhabits.core.database.EntryRepository
 import org.isoron.uhabits.core.database.HabitRepository
 import org.isoron.uhabits.core.database.HabitExtensionRepository
+import org.isoron.uhabits.core.database.HabitBlockRepository
 import org.isoron.uhabits.core.models.EntryList
 import org.isoron.uhabits.core.models.ModelFactory
 import org.isoron.uhabits.core.models.ScoreList
@@ -36,6 +37,7 @@ class SQLModelFactory(
 ) : ModelFactory {
     val habitRepository = HabitRepository(database)
     val habitExtensionRepository = HabitExtensionRepository(database)
+    val habitBlockRepository = HabitBlockRepository(database)
     val entryRepository = EntryRepository(database)
 
     override fun buildOriginalEntries() = SQLiteEntryList(entryRepository)

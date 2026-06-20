@@ -20,6 +20,7 @@ package org.isoron.uhabits.core.models.memory
 
 import org.isoron.platform.Synchronized
 import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.models.HabitBlock
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.HabitMatcher
 
@@ -28,6 +29,14 @@ import org.isoron.uhabits.core.models.HabitMatcher
  */
 open class MemoryHabitList : HabitList {
     private val list = mutableListOf<Habit>()
+    private val blocksList = mutableListOf<HabitBlock>()
+
+    override fun getBlocks(): List<HabitBlock> = blocksList
+
+    fun setBlocks(blocks: List<HabitBlock>) {
+        blocksList.clear()
+        blocksList.addAll(blocks)
+    }
 
     @get:Synchronized
     override var primaryOrder = Order.BY_POSITION

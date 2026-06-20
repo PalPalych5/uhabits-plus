@@ -40,6 +40,7 @@ data class Habit(
     var uuid: String? = null,
     var dayTier: DayTier = DayTier.NORMAL,
     var timerEnabled: Boolean = false,
+    var blockId: Long? = null,
     val computedEntries: EntryList,
     val originalEntries: EntryList,
     val scores: ScoreList,
@@ -128,6 +129,7 @@ data class Habit(
         this.uuid = other.uuid
         this.dayTier = other.dayTier
         this.timerEnabled = other.timerEnabled
+        this.blockId = other.blockId
     }
 
     override fun equals(other: Any?): Boolean {
@@ -150,6 +152,7 @@ data class Habit(
         if (uuid != other.uuid) return false
         if (dayTier != other.dayTier) return false
         if (timerEnabled != other.timerEnabled) return false
+        if (blockId != other.blockId) return false
 
         return true
     }
@@ -171,6 +174,7 @@ data class Habit(
         result = 31 * result + (uuid?.hashCode() ?: 0)
         result = 31 * result + dayTier.hashCode()
         result = 31 * result + timerEnabled.hashCode()
+        result = 31 * result + (blockId?.hashCode() ?: 0)
         return result
     }
 }

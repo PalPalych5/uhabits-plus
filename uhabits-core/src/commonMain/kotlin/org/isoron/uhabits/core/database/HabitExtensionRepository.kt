@@ -6,19 +6,20 @@ import org.isoron.platform.io.StepResult
 data class HabitExtensionData(
     val habitId: Long,
     val dayTier: String = "NORMAL",
-    val timerEnabled: Boolean = false
+    val timerEnabled: Boolean = false,
+    val blockId: Long? = null
 )
 
 class HabitExtensionRepository(private val db: Database) {
     private val findByHabitIdStmt by lazy {
         db.prepareStatement(
-            "SELECT habit_id, day_tier, timer_enabled FROM HabitExtensions WHERE habit_id = ?"
+            "SELECT habit_id, day_tier, timer_enabled, block_id FROM HabitExtensions WHERE habit_id = ?"
         )
     }
     private val upsertStmt by lazy {
         db.prepareStatement(
-            """INSERT OR REPLACE INTO HabitExtensions(habit_id, day_tier, timer_enabled)
-               VALUES (?, ?, ?)"""
+            """INSERT OR REPLACE INTO HabitExtensions(habit_id, day_tier, timer_enabled, block_id)
+               VALUES (?, ?, ?, ?)"""
         )
     }
     private val deleteStmt by lazy {
@@ -35,7 +36,8 @@ class HabitExtensionRepository(private val db: Database) {
         return HabitExtensionData(
             habitId = findByHabitIdStmt.getLong(0),
             dayTier = findByHabitIdStmt.getText(1),
-            timerEnabled = findByHabitIdStmt.getInt(2) != 0
+            timerEnabled = findByHabitIdStmt.getInt(2) != 0,
+            blockId = findByHabitIdStmt.getLongOrNull(3)
         )
     }
 
@@ -44,6 +46,11 @@ class HabitExtensionRepository(private val db: Database) {
         upsertStmt.bindLong(1, data.habitId)
         upsertStmt.bindText(2, data.dayTier)
         upsertStmt.bindInt(3, if (data.timerEnabled) 1 else 0)
+        if (data.blockId != null) {
+            upsertStmt.bindLong(4, data.blockId)
+        } else {
+            upsertStmt.bindNull(4)
+        }
         upsertStmt.step()
     }
 
