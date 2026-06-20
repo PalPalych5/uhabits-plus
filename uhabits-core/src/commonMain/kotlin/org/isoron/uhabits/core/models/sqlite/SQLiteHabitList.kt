@@ -22,6 +22,9 @@ import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.Synchronized
 import org.isoron.uhabits.core.database.HabitData
 import org.isoron.uhabits.core.database.HabitRepository
+import org.isoron.uhabits.core.database.HabitExtensionData
+import org.isoron.uhabits.core.database.HabitExtensionRepository
+import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
@@ -40,6 +43,8 @@ import org.isoron.uhabits.core.models.memory.MemoryHabitList
 @Inject
 class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
     private val repository: HabitRepository = (modelFactory as SQLModelFactory).habitRepository
+    private val extensionRepository: HabitExtensionRepository =
+        (modelFactory as SQLModelFactory).habitExtensionRepository
     private val list: MemoryHabitList = MemoryHabitList()
     private var loaded = false
 
@@ -53,6 +58,10 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
             if (rec.position != expectedPosition) shouldRebuildOrder = true
             val h = modelFactory.buildHabit()
             copyTo(rec, h)
+            extensionRepository.findByHabitId(rec.id!!)?.let { extension ->
+                h.dayTier = DayTier.fromString(extension.dayTier)
+                h.timerEnabled = extension.timerEnabled
+            }
             (h.originalEntries as SQLiteEntryList).habitId = h.id
             list.add(h)
         }
@@ -67,6 +76,7 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
         val data = copyFrom(habit)
         val id = repository.insert(data)
         habit.id = id
+        extensionRepository.upsert(habit.toExtensionData())
         (habit.originalEntries as SQLiteEntryList).habitId = id
         list.add(habit)
         observable.notifyListeners()
@@ -140,6 +150,7 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
         loadRecords()
         list.remove(h)
         h.originalEntries.clear()
+        extensionRepository.delete(h.id!!)
         repository.delete(h.id!!)
         rebuildOrder()
         observable.notifyListeners()
@@ -148,6 +159,7 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
     @Synchronized
     override fun removeAll() {
         list.removeAll()
+        extensionRepository.deleteAll()
         repository.execSQL("delete from habits")
         repository.execSQL("delete from repetitions")
         observable.notifyListeners()
@@ -196,6 +208,7 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
         for (h in habits) {
             val data = copyFrom(h)
             repository.update(data)
+            extensionRepository.upsert(h.toExtensionData())
         }
         observable.notifyListeners()
     }
@@ -211,6 +224,12 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
     }
 
     companion object {
+        private fun Habit.toExtensionData(): HabitExtensionData = HabitExtensionData(
+            habitId = id!!,
+            dayTier = dayTier.name,
+            timerEnabled = timerEnabled
+        )
+
         fun copyFrom(habit: Habit): HabitData {
             val (numerator, denominator) = habit.frequency
             return HabitData(

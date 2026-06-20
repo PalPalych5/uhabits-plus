@@ -24,6 +24,7 @@ import kotlinx.coroutines.test.runTest
 import org.isoron.uhabits.core.BaseUnitTest
 import org.isoron.uhabits.core.database.HabitRepository
 import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.HabitMatcher
 import org.isoron.uhabits.core.models.ModelObservable
@@ -111,6 +112,26 @@ class SQLiteHabitListTest : BaseUnitTest() {
         val all = repository.findAll()
         val record = all.find { it.id == habit.id }
         assertEquals(habit.name, record!!.name)
+    }
+
+    @Test
+    fun testMetadataSurvivesReloadAndDelete() = dbTest {
+        val habit = modelFactory.buildHabit().apply {
+            name = "Timed minimum"
+            dayTier = DayTier.MINIMUM
+            timerEnabled = true
+        }
+        habitList.add(habit)
+        val id = habit.id!!
+
+        (habitList as SQLiteHabitList).reload()
+        val reloaded = habitList.getById(id)!!
+        assertEquals(DayTier.MINIMUM, reloaded.dayTier)
+        assertEquals(true, reloaded.timerEnabled)
+
+        habitList.remove(reloaded)
+        val extension = (modelFactory as SQLModelFactory).habitExtensionRepository.findByHabitId(id)
+        assertNull(extension)
     }
 
     @Test
