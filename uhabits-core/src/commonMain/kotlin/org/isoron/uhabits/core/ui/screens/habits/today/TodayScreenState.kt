@@ -33,7 +33,8 @@ data class TodayScreenState(
     val sections: List<TodaySectionState>,
     val minimum: TodayTierProgress,
     val normal: TodayTierProgress,
-    val ideal: TodayTierProgress
+    val ideal: TodayTierProgress,
+    val motivations: List<String> = emptyList()
 )
 
 data class TodayTierProgress(val completedCount: Int, val totalCount: Int)
@@ -60,7 +61,10 @@ data class TodayHabitItem(
     val targetValue: Double?,
     val unit: String,
     val notes: String,
-    val dayTier: DayTier
+    val dayTier: DayTier,
+    val isWeeklyQuota: Boolean = false,
+    val weeklyProgressActual: Double? = null,
+    val weeklyProgressTarget: Double? = null
 ) {
     val isCompleted: Boolean
         get() = status == TodayHabitStatus.COMPLETED

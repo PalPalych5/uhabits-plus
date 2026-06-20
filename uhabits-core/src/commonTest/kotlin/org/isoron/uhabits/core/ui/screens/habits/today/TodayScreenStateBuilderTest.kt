@@ -26,6 +26,7 @@ import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitType
 import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.PaletteColor
+import org.isoron.uhabits.core.models.Frequency
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -233,6 +234,114 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
         assertEquals(TodayTierProgress(1, 1), state.normal)
         assertEquals(TodayTierProgress(1, 1), state.ideal)
         assertEquals(1, state.sections.single().totalCount)
+    }
+
+    @Test
+    fun calculatesWeeklyQuotaProgress() {
+        // Boolean weekly habit: 3 times a week (Frequency(3, 7))
+        val weeklyBool = Habit(
+            name = "Workout",
+            type = HabitType.YES_NO,
+            frequency = Frequency(3, 7),
+            computedEntries = modelFactory.buildComputedEntries(),
+            originalEntries = modelFactory.buildOriginalEntries(),
+            scores = modelFactory.buildScoreList(),
+            streaks = modelFactory.buildStreakList()
+        ).apply {
+            originalEntries.add(Entry(today, Entry.YES_MANUAL))
+            originalEntries.add(Entry(today.minus(2), Entry.YES_MANUAL))
+            recompute()
+        }
+        habitList.add(weeklyBool)
+
+        // Numerical weekly habit: 2 times a week, 10 units each (Frequency(2, 7), targetValue = 10.0)
+        val weeklyNum = Habit(
+            name = "Reading",
+            type = HabitType.NUMERICAL,
+            targetValue = 10.0,
+            frequency = Frequency(2, 7),
+            computedEntries = modelFactory.buildComputedEntries(),
+            originalEntries = modelFactory.buildOriginalEntries(),
+            scores = modelFactory.buildScoreList(),
+            streaks = modelFactory.buildStreakList()
+        ).apply {
+            originalEntries.add(Entry(today, 5_000))
+            originalEntries.add(Entry(today.minus(1), 8_000))
+            recompute()
+        }
+        habitList.add(weeklyNum)
+
+        val state = TodayScreenStateBuilder.build(habitList, today)
+        val itemsByName = state.sections.single().items.associateBy { it.name }
+
+        val boolItem = itemsByName["Workout"]!!
+        assertEquals(true, boolItem.isWeeklyQuota)
+        assertEquals(2.0, boolItem.weeklyProgressActual)
+        assertEquals(3.0, boolItem.weeklyProgressTarget)
+
+        val numItem = itemsByName["Reading"]!!
+        assertEquals(true, numItem.isWeeklyQuota)
+        assertEquals(13.0, numItem.weeklyProgressActual)
+        assertEquals(20.0, numItem.weeklyProgressTarget)
+    }
+
+    @Test
+    fun generatesMotivationsCorrectly() {
+        // 1. Return after skip (comeback)
+        val comebackHabit = Habit(
+            name = "Comeback",
+            type = HabitType.YES_NO,
+            computedEntries = modelFactory.buildComputedEntries(),
+            originalEntries = modelFactory.buildOriginalEntries(),
+            scores = modelFactory.buildScoreList(),
+            streaks = modelFactory.buildStreakList()
+        ).apply {
+            originalEntries.add(Entry(today, Entry.YES_MANUAL))
+            originalEntries.add(Entry(today.minus(1), Entry.SKIP))
+            recompute()
+        }
+        habitList.add(comebackHabit)
+
+        // 2. Minimum Completed today
+        val minHabit = Habit(
+            name = "Min Habit",
+            type = HabitType.YES_NO,
+            computedEntries = modelFactory.buildComputedEntries(),
+            originalEntries = modelFactory.buildOriginalEntries(),
+            scores = modelFactory.buildScoreList(),
+            streaks = modelFactory.buildStreakList()
+        ).apply {
+            dayTier = DayTier.MINIMUM
+            originalEntries.add(Entry(today, Entry.YES_MANUAL))
+            recompute()
+        }
+        habitList.add(minHabit)
+
+        val state = TodayScreenStateBuilder.build(habitList, today)
+
+        assertEquals(true, state.motivations.contains("minimum_completed"))
+        assertEquals(true, state.motivations.contains("comeback|Comeback"))
+    }
+
+    @Test
+    fun generatesStreakMilestoneMotivations() {
+        val streakHabit = Habit(
+            name = "Streak Habit",
+            type = HabitType.YES_NO,
+            computedEntries = modelFactory.buildComputedEntries(),
+            originalEntries = modelFactory.buildOriginalEntries(),
+            scores = modelFactory.buildScoreList(),
+            streaks = modelFactory.buildStreakList()
+        ).apply {
+            originalEntries.add(Entry(today, Entry.YES_MANUAL))
+            originalEntries.add(Entry(today.minus(1), Entry.YES_MANUAL))
+            originalEntries.add(Entry(today.minus(2), Entry.YES_MANUAL))
+            recompute()
+        }
+        habitList.add(streakHabit)
+
+        val state = TodayScreenStateBuilder.build(habitList, today)
+        assertEquals(true, state.motivations.contains("streak_milestone|Streak Habit|3"))
     }
 
     private fun booleanHabit(

@@ -20,6 +20,9 @@ package org.isoron.uhabits.core.ui.screens.habits.today
 
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
+import org.isoron.platform.time.DayOfWeek
+import org.isoron.platform.time.TruncateField
+import org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.Habit
@@ -29,7 +32,9 @@ import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.PaletteColor
 import org.isoron.uhabits.core.models.isMinuteUnit
 import org.isoron.uhabits.core.models.HabitBlock
+import org.isoron.uhabits.core.models.groupedSum
 import kotlin.math.roundToInt
+import kotlin.math.max
 
 object TodayScreenStateBuilder {
     fun build(habitList: HabitList, date: LocalDate = getToday()): TodayScreenState {
@@ -77,6 +82,7 @@ object TodayScreenStateBuilder {
             }
 
         val countableItems = items.filter { it.status != TodayHabitStatus.SKIPPED }
+        val motivations = buildMotivations(habitList, date, items)
         return TodayScreenState(
             date = date,
             completedCount = countableItems.count { it.isCompleted },
@@ -86,7 +92,8 @@ object TodayScreenStateBuilder {
             sections = sections,
             minimum = countableItems.progressFor(setOf(DayTier.MINIMUM)),
             normal = countableItems.progressFor(setOf(DayTier.MINIMUM, DayTier.NORMAL)),
-            ideal = countableItems.progressFor(setOf(DayTier.MINIMUM, DayTier.NORMAL, DayTier.IDEAL))
+            ideal = countableItems.progressFor(setOf(DayTier.MINIMUM, DayTier.NORMAL, DayTier.IDEAL)),
+            motivations = motivations
         )
     }
 
@@ -97,6 +104,30 @@ object TodayScreenStateBuilder {
         } else {
             null
         }
+
+        val isWeekly = frequency.denominator == 7
+        var weeklyActual: Double? = null
+        var weeklyTarget: Double? = null
+
+        if (isWeekly) {
+            val firstWeekdayNum = getFirstWeekdayNumberAccordingToLocale()
+            val firstWeekdayEnum = DayOfWeek.values()[firstWeekdayNum - 1]
+            val startOfWeek = date.startOfWeek(firstWeekdayEnum)
+            val endOfWeek = startOfWeek.plus(6)
+            val weekEntries = computedEntries.getByInterval(startOfWeek, endOfWeek)
+            val weekSum = weekEntries.groupedSum(
+                truncateField = TruncateField.WEEK_NUMBER,
+                firstWeekday = firstWeekdayNum,
+                isNumerical = isNumerical
+            ).firstOrNull()?.value ?: 0
+            weeklyActual = weekSum / 1000.0
+            weeklyTarget = if (isNumerical) {
+                frequency.numerator * targetValue
+            } else {
+                frequency.numerator.toDouble()
+            }
+        }
+
         return TodayHabitItem(
             habitId = id,
             name = name,
@@ -108,8 +139,50 @@ object TodayScreenStateBuilder {
             targetValue = if (isNumerical) targetValue else null,
             unit = if (isNumerical) unit else "",
             notes = entry.notes,
-            dayTier = dayTier
+            dayTier = dayTier,
+            isWeeklyQuota = isWeekly,
+            weeklyProgressActual = weeklyActual,
+            weeklyProgressTarget = weeklyTarget
         )
+    }
+
+    private fun buildMotivations(habitList: HabitList, date: LocalDate, items: List<TodayHabitItem>): List<String> {
+        val motivations = mutableListOf<String>()
+
+        val minimumItems = items.filter { it.dayTier == DayTier.MINIMUM && it.status != TodayHabitStatus.SKIPPED }
+        if (minimumItems.isNotEmpty() && minimumItems.all { it.isCompleted }) {
+            motivations.add("minimum_completed")
+        }
+
+        for (habit in habitList.toList()) {
+            if (habit.isArchived) continue
+
+            val streaks = habit.streaks.getBest(100)
+            val activeStreak = streaks.firstOrNull { it.end == date || it.end == date.minus(1) }
+
+            if (activeStreak != null && (activeStreak.end == date || habit.isCompletedToday())) {
+                val len = activeStreak.length
+                if (len in setOf(3, 5, 7, 14, 30) || (len > 30 && len % 30 == 0)) {
+                    motivations.add("streak_milestone|${habit.name}|$len")
+                }
+            }
+
+            val todayItem = items.firstOrNull { it.habitId == habit.id }
+            if (todayItem != null && todayItem.isCompleted) {
+                val yesterdayEntry = habit.computedEntries.get(date.minus(1))
+                val yesterdayCompleted = if (habit.isNumerical) {
+                    yesterdayEntry.value != Entry.UNKNOWN && yesterdayEntry.value != Entry.SKIP &&
+                        (yesterdayEntry.value / 1000.0 >= habit.targetValue)
+                } else {
+                    yesterdayEntry.value == Entry.YES_MANUAL || yesterdayEntry.value == Entry.YES_AUTO
+                }
+                if (!yesterdayCompleted) {
+                    motivations.add("comeback|${habit.name}")
+                }
+            }
+        }
+
+        return motivations
     }
 
     private fun Habit.todayStatus(entry: Entry): TodayHabitStatus {
