@@ -47,6 +47,8 @@ import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.activities.main.SettingsAction
 import org.isoron.uhabits.activities.main.SettingsActionHandler
 import org.isoron.uhabits.core.preferences.Preferences
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
 import org.isoron.uhabits.core.ui.NotificationTray
 import org.isoron.uhabits.intents.IntentFactory
 import org.isoron.uhabits.notifications.AndroidNotificationTray.Companion.createAndroidNotificationChannel
@@ -212,6 +214,18 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
         if (key == "pref_theme" || key == "pref_pure_black") {
             val switcher = AndroidThemeSwitcher(requireContext(), prefs)
             switcher.apply()
+            val intent = MainActivity.intent(requireContext(), MainDestination.SETTINGS)
+            Handler().postDelayed({
+                activity?.finish()
+                activity?.overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+                startActivity(intent)
+            }, 500)
+        }
+        if (key == "pref_app_language") {
+            val languageTag = sharedPreferences.getString("pref_app_language", "ru-RU") ?: "ru-RU"
+            AppCompatDelegate.setApplicationLocales(
+                LocaleListCompat.forLanguageTags(languageTag)
+            )
             val intent = MainActivity.intent(requireContext(), MainDestination.SETTINGS)
             Handler().postDelayed({
                 activity?.finish()

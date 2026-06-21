@@ -92,4 +92,27 @@ class TimerSessionEngineTest {
         assertEquals(0.1, elapsedMillisToTenthsMinutes(3_000))
         assertEquals(1.5, elapsedMillisToTenthsMinutes(90_000))
     }
+
+    @Test
+    fun restoresEngineState() {
+        engine.restore(
+            habitId = 42L,
+            habitName = "Running",
+            mode = TimerMode.POMODORO,
+            phase = PomodoroPhase.BREAK,
+            isRunning = true,
+            accumulatedMillis = 15_000,
+            startedAtMillis = 100L,
+            focusDurationMillis = 50_000,
+            breakDurationMillis = 20_000
+        )
+        val snap = engine.snapshot()
+        assertEquals(42L, snap.habitId)
+        assertEquals("Running", snap.habitName)
+        assertEquals(TimerMode.POMODORO, snap.mode)
+        assertEquals(PomodoroPhase.BREAK, snap.phase)
+        assertTrue(snap.isRunning)
+        assertEquals(50_000, snap.focusDurationMillis)
+        assertEquals(20_000, snap.breakDurationMillis)
+    }
 }

@@ -333,4 +333,15 @@
         <item>Светлая</item>
         <item>Тёмная</item>
     </string-array>
+    <string name="language">Язык</string>
+    <string name="pref_app_language_system">По умолчанию</string>
+    <string name="reports_all_goals_completed">Все цели выполнены! 🎉</string>
+    <string name="reports_completion_success">Успешность выполнения: %1$d%%</string>
+    <string name="reports_total_completed_days">Всего отметок: %1$d из %2$d дней</string>
+    <string name="reports_total_focus_time">Общее время фокуса: %1$s ч</string>
+    <string name="reports_limit_violations_count">Превышений лимитов: %1$d</string>
+    <string name="reports_frequency_title">Частота выполнения привычек</string>
+    <string name="reports_hour_unit">ч</string>
+    <string name="reports_days_unit">дн.</string>
+    <string name="timer_notification_permission_denied">Разрешение на уведомления отклонено. Таймер будет запущен, но уведомления не будут отображаться.</string>
 </resources>

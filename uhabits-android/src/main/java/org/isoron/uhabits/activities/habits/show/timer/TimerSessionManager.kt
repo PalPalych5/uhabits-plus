@@ -17,6 +17,7 @@ import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.timer.PomodoroCompletion
+import org.isoron.uhabits.core.timer.PomodoroPhase
 import org.isoron.uhabits.core.timer.TimerMode
 import org.isoron.uhabits.core.timer.TimerSessionEngine
 import org.isoron.uhabits.core.timer.TimerSessionSnapshot
@@ -46,10 +47,47 @@ class TimerSessionManager(
             val completion = engine.tick()
             if (completion != null) {
                 handleCompletion(completion)
+                persistState()
                 syncForegroundService()
             }
             notifyListeners()
             if (engine.snapshot().isRunning) handler.postDelayed(this, TICK_INTERVAL_MILLIS)
+        }
+    }
+
+    init {
+        val savedHabitId = preferences.getLong("pref_timer_habit_id", -1L)
+        if (savedHabitId != -1L) {
+            val habitId = savedHabitId
+            val habitName = preferences.getString("pref_timer_habit_name", "") ?: ""
+            val modeStr = preferences.getString("pref_timer_mode", "STOPWATCH") ?: "STOPWATCH"
+            val mode = runCatching { TimerMode.valueOf(modeStr) }.getOrDefault(TimerMode.STOPWATCH)
+            val phaseStr = preferences.getString("pref_timer_phase", "FOCUS") ?: "FOCUS"
+            val phase = runCatching { PomodoroPhase.valueOf(phaseStr) }.getOrDefault(PomodoroPhase.FOCUS)
+            val isRunning = preferences.getBoolean("pref_timer_is_running", false)
+            val accumulatedMillis = preferences.getLong("pref_timer_accumulated_elapsed_millis", 0L)
+            val startedAtWallClock = preferences.getLong("pref_timer_started_at_wall_clock_millis", 0L)
+            val focusDuration = preferences.getLong("pref_timer_focus_duration_millis", 25 * 60 * 1000L)
+            val breakDuration = preferences.getLong("pref_timer_break_duration_millis", 5 * 60 * 1000L)
+
+            val startedAt = if (isRunning) startedAtWallClock else 0L
+
+            engine.restore(
+                habitId = habitId,
+                habitName = habitName,
+                mode = mode,
+                phase = phase,
+                isRunning = isRunning,
+                accumulatedMillis = accumulatedMillis,
+                startedAtMillis = startedAt,
+                focusDurationMillis = focusDuration,
+                breakDurationMillis = breakDuration
+            )
+
+            restartTickerIfNeeded()
+            if (engine.snapshot().hasActiveSession) {
+                syncForegroundService()
+            }
         }
     }
 
@@ -82,6 +120,7 @@ class TimerSessionManager(
             .putInt("${key}_focus", focusMinutes)
             .putInt("${key}_break", breakMinutes)
             .apply()
+        persistState()
         notifyListeners()
         return true
     }
@@ -98,6 +137,7 @@ class TimerSessionManager(
     fun switchMode(habit: Habit, mode: TimerMode): Boolean {
         if (mode == TimerMode.POMODORO) applyStoredDurations(habit)
         val changed = engine.switchMode(habit.id!!, habit.name, mode)
+        persistState()
         notifyListeners()
         return changed
     }
@@ -111,6 +151,7 @@ class TimerSessionManager(
             engine.start(id, habit.name)
         }
         restartTickerIfNeeded()
+        persistState()
         syncForegroundService()
         notifyListeners()
         return changed
@@ -120,6 +161,7 @@ class TimerSessionManager(
         val elapsed = engine.finish(habit.id!!)
         handler.removeCallbacks(ticker)
         if (elapsed > 0) saveElapsed(habit.id!!, elapsed)
+        persistState()
         syncForegroundService()
         notifyListeners()
     }
@@ -127,6 +169,7 @@ class TimerSessionManager(
     fun reset(habit: Habit) {
         if (engine.reset(habit.id!!)) {
             handler.removeCallbacks(ticker)
+            persistState()
             syncForegroundService()
             notifyListeners()
         }
@@ -189,6 +232,33 @@ class TimerSessionManager(
         } else {
             TimerForegroundService.stop(context)
         }
+    }
+
+    private fun persistState() {
+        val state = engine.snapshot()
+        val editor = preferences.edit()
+        if (state.hasActiveSession) {
+            editor.putLong("pref_timer_habit_id", state.habitId ?: -1L)
+            editor.putString("pref_timer_habit_name", state.habitName)
+            editor.putString("pref_timer_mode", state.mode.name)
+            editor.putString("pref_timer_phase", state.phase.name)
+            editor.putBoolean("pref_timer_is_running", state.isRunning)
+            editor.putLong("pref_timer_accumulated_elapsed_millis", state.accumulatedMillis)
+            editor.putLong("pref_timer_started_at_wall_clock_millis", state.startedAtMillis)
+            editor.putLong("pref_timer_focus_duration_millis", state.focusDurationMillis)
+            editor.putLong("pref_timer_break_duration_millis", state.breakDurationMillis)
+        } else {
+            editor.remove("pref_timer_habit_id")
+            editor.remove("pref_timer_habit_name")
+            editor.remove("pref_timer_mode")
+            editor.remove("pref_timer_phase")
+            editor.remove("pref_timer_is_running")
+            editor.remove("pref_timer_accumulated_elapsed_millis")
+            editor.remove("pref_timer_started_at_wall_clock_millis")
+            editor.remove("pref_timer_focus_duration_millis")
+            editor.remove("pref_timer_break_duration_millis")
+        }
+        editor.apply()
     }
 
     private fun applyStoredDurations(habit: Habit): Boolean {

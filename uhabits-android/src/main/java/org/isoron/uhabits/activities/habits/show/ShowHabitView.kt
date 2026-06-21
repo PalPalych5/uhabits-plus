@@ -82,7 +82,7 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
     fun initTimer(
         habit: Habit,
         manager: TimerSessionManager,
-        requestNotificationPermission: () -> Unit
+        requestNotificationPermission: (onReady: () -> Unit) -> Unit
     ) {
         habitUnit = habit.unit
         isTimerEnabled = habit.timerEnabled

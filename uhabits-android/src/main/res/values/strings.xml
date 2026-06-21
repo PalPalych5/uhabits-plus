@@ -331,4 +331,15 @@
     <string name="appearance">Appearance</string>
     <string name="data_preferences">Data</string>
     <string name="help_category">Help</string>
+    <string name="language">Language</string>
+    <string name="pref_app_language_system">System default</string>
+    <string name="reports_all_goals_completed">All goals completed! 🎉</string>
+    <string name="reports_completion_success">Completion success: %1$d%%</string>
+    <string name="reports_total_completed_days">Total checkmarks: %1$d of %2$d days</string>
+    <string name="reports_total_focus_time">Total focus time: %1$s h</string>
+    <string name="reports_limit_violations_count">Limit violations: %1$d</string>
+    <string name="reports_frequency_title">Habit completion frequency</string>
+    <string name="reports_hour_unit">h</string>
+    <string name="reports_days_unit">d.</string>
+    <string name="timer_notification_permission_denied">Notification permission denied. Timer notifications will not be shown.</string>
 </resources>

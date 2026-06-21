@@ -175,7 +175,7 @@ class ManageBlocksActivity : AppCompatActivity() {
             .setTitle(R.string.edit_block)
             .setView(dialogView)
             .setPositiveButton(R.string.save, null)
-            .setNegativeButton(R.string.clear_label, null)
+            .setNegativeButton(android.R.string.cancel, null)
 
         if (block.id ?: 0L > 7L) {
             builder.setNeutralButton(R.string.delete) { dialog, _ ->
@@ -249,7 +249,7 @@ class ManageBlocksActivity : AppCompatActivity() {
             .setTitle(R.string.add_block)
             .setView(dialogView)
             .setPositiveButton(R.string.save, null)
-            .setNegativeButton(R.string.clear_label, null)
+            .setNegativeButton(android.R.string.cancel, null)
             .create()
 
         dialog.show()

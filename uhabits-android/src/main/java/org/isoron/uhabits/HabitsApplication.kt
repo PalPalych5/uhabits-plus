@@ -21,6 +21,9 @@ package org.isoron.uhabits
 
 import android.app.Application
 import android.content.Context
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
+import androidx.preference.PreferenceManager
 import org.isoron.platform.time.computeToday
 import org.isoron.platform.time.setToday
 import org.isoron.uhabits.core.database.UnsupportedDatabaseVersionException
@@ -45,6 +48,19 @@ class HabitsApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         context = this
+
+        val sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this)
+        if (!sharedPrefs.contains("pref_app_language")) {
+            sharedPrefs.edit().putString("pref_app_language", "ru-RU").apply()
+            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("ru-RU"))
+        } else {
+            val appLanguage = sharedPrefs.getString("pref_app_language", "ru-RU") ?: "ru-RU"
+            val locales = AppCompatDelegate.getApplicationLocales()
+            val currentLanguageTag = if (locales.isEmpty) "" else locales.toLanguageTags()
+            if (currentLanguageTag != appLanguage) {
+                AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(appLanguage))
+            }
+        }
 
         if (isTestMode()) {
             val db = DatabaseUtils.getDatabaseFile(context)

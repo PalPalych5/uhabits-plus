@@ -15,7 +15,9 @@ data class TimerSessionSnapshot(
     val elapsedMillis: Long = 0,
     val displayMillis: Long = 0,
     val focusDurationMillis: Long = 25 * 60 * 1000L,
-    val breakDurationMillis: Long = 5 * 60 * 1000L
+    val breakDurationMillis: Long = 5 * 60 * 1000L,
+    val startedAtMillis: Long = 0,
+    val accumulatedMillis: Long = 0
 ) {
     val hasActiveSession: Boolean
         get() = isRunning || elapsedMillis > 0 || phase == PomodoroPhase.BREAK
@@ -47,8 +49,32 @@ class TimerSessionEngine(private val clock: () -> Long) {
             elapsedMillis = elapsed,
             displayMillis = display,
             focusDurationMillis = focusDurationMillis,
-            breakDurationMillis = breakDurationMillis
+            breakDurationMillis = breakDurationMillis,
+            startedAtMillis = startedAtMillis,
+            accumulatedMillis = accumulatedMillis
         )
+    }
+
+    fun restore(
+        habitId: Long?,
+        habitName: String,
+        mode: TimerMode,
+        phase: PomodoroPhase,
+        isRunning: Boolean,
+        accumulatedMillis: Long,
+        startedAtMillis: Long,
+        focusDurationMillis: Long,
+        breakDurationMillis: Long
+    ) {
+        this.habitId = habitId
+        this.habitName = habitName
+        this.mode = mode
+        this.phase = phase
+        this.isRunning = isRunning
+        this.accumulatedMillis = accumulatedMillis
+        this.startedAtMillis = startedAtMillis
+        this.focusDurationMillis = focusDurationMillis
+        this.breakDurationMillis = breakDurationMillis
     }
 
     fun configurePomodoro(

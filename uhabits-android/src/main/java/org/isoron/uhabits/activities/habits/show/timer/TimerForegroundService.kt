@@ -44,7 +44,7 @@ class TimerForegroundService : Service() {
             if (command != null) handleCommand(command, intent.getLongExtra(EXTRA_HABIT_ID, -1L))
         }
         syncNotification(force = true)
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     override fun onDestroy() {

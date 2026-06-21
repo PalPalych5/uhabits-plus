@@ -48,7 +48,7 @@ class TimerCardView : LinearLayout {
     private var isEditingBreak = false
     private var transitionInProgress = false
     private var sceneAnimator: ValueAnimator? = null
-    private var requestNotificationPermission: (() -> Unit)? = null
+    private var requestNotificationPermission: ((onReady: () -> Unit) -> Unit)? = null
 
     constructor(context: Context) : super(context) { initView() }
     constructor(context: Context, attrs: AttributeSet) : super(context, attrs) { initView() }
@@ -152,7 +152,7 @@ class TimerCardView : LinearLayout {
         if (isAttachedToWindow) manager.addListener(listener) else updateUIState()
     }
 
-    fun setNotificationPermissionRequester(requester: () -> Unit) {
+    fun setNotificationPermissionRequester(requester: (onReady: () -> Unit) -> Unit) {
         requestNotificationPermission = requester
     }
 
@@ -171,8 +171,15 @@ class TimerCardView : LinearLayout {
     private fun toggleTimer() {
         val currentHabit = habit ?: return
         val currentManager = manager ?: return
-        if (!currentManager.snapshot().hasActiveSession) requestNotificationPermission?.invoke()
-        currentManager.startOrPause(currentHabit)
+        val action: () -> Unit = {
+            currentManager.startOrPause(currentHabit)
+        }
+        val requester = requestNotificationPermission
+        if (requester != null && !currentManager.snapshot().hasActiveSession) {
+            requester(action)
+        } else {
+            action()
+        }
     }
 
     private fun updateUIState() {

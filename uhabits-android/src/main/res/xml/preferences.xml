@@ -33,6 +33,15 @@
                 android:summary="%s"
                 app:iconSpaceReserved="false" />
 
+        <ListPreference
+                android:key="pref_app_language"
+                android:title="@string/language"
+                android:entries="@array/pref_app_language_entries"
+                android:entryValues="@array/pref_app_language_values"
+                android:defaultValue="ru-RU"
+                android:summary="%s"
+                app:iconSpaceReserved="false" />
+
         <SwitchPreferenceCompat
                 android:defaultValue="true"
                 android:key="pref_pure_black"

@@ -302,7 +302,7 @@ class ReportsFragment : Fragment() {
         val (missedCard, missedContent) = createCard(getString(R.string.reports_missed_targets))
         if (remainingHabits.isEmpty()) {
             val congratsText = TextView(requireContext()).apply {
-                text = "Все цели выполнены! 🎉"
+                text = getString(R.string.reports_all_goals_completed)
                 textSize = 15f
                 setTextColor(themeSwitcher.currentTheme.color(PaletteColor(6)).toInt()) // Green
                 setTypeface(null, Typeface.ITALIC)
@@ -411,14 +411,17 @@ class ReportsFragment : Fragment() {
         val summaryText = TextView(requireContext()).apply {
             text = buildString {
                 val percentage = if (totalDaysCount > 0) (completedDaysCount * 100f / totalDaysCount).roundToInt() else 0
-                append("Успешность выполнения: $percentage%\n")
-                append("Всего отметок: $completedDaysCount из $totalDaysCount дней\n")
+                append(getString(R.string.reports_completion_success, percentage))
+                append("\n")
+                append(getString(R.string.reports_total_completed_days, completedDaysCount, totalDaysCount))
+                append("\n")
                 if (totalFocusHours > 0) {
                     val formattedHours = String.format(Locale.US, "%.1f", totalFocusHours)
-                    append("Общее время фокуса: $formattedHours ч\n")
+                    append(getString(R.string.reports_total_focus_time, formattedHours))
+                    append("\n")
                 }
                 if (limitViolationsCount > 0) {
-                    append("Превышений лимитов: $limitViolationsCount раз")
+                    append(getString(R.string.reports_limit_violations_count, limitViolationsCount))
                 }
             }
             textSize = 16f
@@ -434,7 +437,7 @@ class ReportsFragment : Fragment() {
                 val block = blocksMap[blockId] ?: fallbackBlock
                 val blockName = getLocalizedBlockName(block)
                 val formattedHours = String.format(Locale.US, "%.1f", hours)
-                val row = createSphereRow(block.color, blockName, "$formattedHours ч")
+                val row = createSphereRow(block.color, blockName, "$formattedHours ${getString(R.string.reports_hour_unit)}")
                 focusContent.addView(row)
             }
             binding.reportContentContainer.addView(focusCard)
@@ -442,11 +445,11 @@ class ReportsFragment : Fragment() {
 
         // Card 3: Habits Details
         if (habitCompletionStats.isNotEmpty()) {
-            val (detailsCard, detailsContent) = createCard("Частота выполнения привычек")
+            val (detailsCard, detailsContent) = createCard(getString(R.string.reports_frequency_title))
             for (stat in habitCompletionStats.sortedByDescending { it.completedDays * 100f / it.totalDays }) {
                 val block = blocksMap[stat.habit.blockId] ?: fallbackBlock
                 val percentage = (stat.completedDays * 100f / stat.totalDays).roundToInt()
-                val subtitle = "${getLocalizedBlockName(block)} • ${stat.completedDays} / ${stat.totalDays} дн. ($percentage%)"
+                val subtitle = "${getLocalizedBlockName(block)} • ${stat.completedDays} / ${stat.totalDays} ${getString(R.string.reports_days_unit)} ($percentage%)"
                 val row = createHabitDetailRow(block.color, stat.habit.name, subtitle)
                 detailsContent.addView(row)
             }

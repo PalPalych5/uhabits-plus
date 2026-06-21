@@ -76,9 +76,19 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
     private val scope = CoroutineScope(Dispatchers.Main)
     private lateinit var presenter: ShowHabitPresenter
     private val screen = Screen()
+    private var pendingTimerStart: (() -> Unit)? = null
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { }
+    ) { isGranted ->
+        val action = pendingTimerStart
+        pendingTimerStart = null
+        if (isGranted) {
+            action?.invoke()
+        } else {
+            action?.invoke()
+            showMessage(getString(R.string.timer_notification_permission_denied))
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -121,7 +131,7 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
         view.initTimer(
             habit,
             appComponent.timerSessionManager,
-            ::requestTimerNotificationPermission
+            ::ensureTimerNotificationPermission
         )
         view.setListener(presenter)
         view.applyRootViewInsets()
@@ -159,12 +169,19 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
         screen.refresh()
     }
 
-    private fun requestTimerNotificationPermission() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
-        ) return
-        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    private fun ensureTimerNotificationPermission(onReady: () -> Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                onReady()
+            } else {
+                pendingTimerStart = onReady
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        } else {
+            onReady()
+        }
     }
 
     inner class Screen : ShowHabitMenuPresenter.Screen, ShowHabitPresenter.Screen {

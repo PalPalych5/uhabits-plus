@@ -106,4 +106,108 @@
         <item>2</item>
         <item>1</item>
     </string-array>
+
+    <string-array name="pref_app_language_entries">
+        <item>@string/pref_app_language_system</item>
+        <item>Afrikaans</item>
+        <item>العربية</item>
+        <item>Български</item>
+        <item>Català</item>
+        <item>Čeština</item>
+        <item>Dansk</item>
+        <item>Deutsch</item>
+        <item>Ελληνικά</item>
+        <item>English</item>
+        <item>Esperanto</item>
+        <item>Español</item>
+        <item>Euskara</item>
+        <item>فارسی</item>
+        <item>Suomi</item>
+        <item>Français</item>
+        <item>ગુજરાતી</item>
+        <item>हिन्दी</item>
+        <item>Hrvatski</item>
+        <item>Magyar</item>
+        <item>Հայերեն</item>
+        <item>Bahasa Indonesia</item>
+        <item>Íslenska</item>
+        <item>Italiano</item>
+        <item>עברית</item>
+        <item>日本語</item>
+        <item>ქართული</item>
+        <item>한국어</item>
+        <item>മലയാളം</item>
+        <item>Nederlands</item>
+        <item>Norsk</item>
+        <item>Polski</item>
+        <item>Português (Brasil)</item>
+        <item>Português (Portugal)</item>
+        <item>Română</item>
+        <item>Русский</item>
+        <item>Slovenčina</item>
+        <item>Slovenščina</item>
+        <item>Српски (Montenegro)</item>
+        <item>Српски</item>
+        <item>Svenska</item>
+        <item>தமிழ்</item>
+        <item>తెలుగు</item>
+        <item>Türkçe</item>
+        <item>ئۇيغۇرچه</item>
+        <item>Українська</item>
+        <item>Tiếng Việt</item>
+        <item>简体中文</item>
+        <item>繁體中文</item>
+    </string-array>
+
+    <string-array name="pref_app_language_values" translatable="false">
+        <item></item>
+        <item>af-ZA</item>
+        <item>ar-SA</item>
+        <item>bg-BG</item>
+        <item>ca-ES</item>
+        <item>cs-CZ</item>
+        <item>da-DK</item>
+        <item>de-DE</item>
+        <item>el-GR</item>
+        <item>en</item>
+        <item>eo-UY</item>
+        <item>es-ES</item>
+        <item>eu-ES</item>
+        <item>fa-IR</item>
+        <item>fi-FI</item>
+        <item>fr-FR</item>
+        <item>gu-IN</item>
+        <item>hi-IN</item>
+        <item>hr-HR</item>
+        <item>hu-HU</item>
+        <item>hy-AM</item>
+        <item>in-ID</item>
+        <item>is-IS</item>
+        <item>it-IT</item>
+        <item>iw-IL</item>
+        <item>ja-JP</item>
+        <item>ka-GE</item>
+        <item>ko-KR</item>
+        <item>ml-IN</item>
+        <item>nl-NL</item>
+        <item>no-NO</item>
+        <item>pl-PL</item>
+        <item>pt-BR</item>
+        <item>pt-PT</item>
+        <item>ro-RO</item>
+        <item>ru-RU</item>
+        <item>sk-SK</item>
+        <item>sl-SI</item>
+        <item>sr-CS</item>
+        <item>sr-SP</item>
+        <item>sv-SE</item>
+        <item>ta-IN</item>
+        <item>te-IN</item>
+        <item>tr-TR</item>
+        <item>ug-CN</item>
+        <item>uk-UA</item>
+        <item>vi-VN</item>
+        <item>zh-CN</item>
+        <item>zh-TW</item>
+    </string-array>
 </resources>
