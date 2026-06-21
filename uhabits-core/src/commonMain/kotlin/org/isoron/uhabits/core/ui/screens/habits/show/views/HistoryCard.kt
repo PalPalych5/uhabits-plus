@@ -160,13 +160,37 @@ class HistoryCardPresenter(
             val today = getToday()
             val oldest = habit.computedEntries.getKnown().lastOrNull()?.date ?: today
             val entries = habit.computedEntries.getByInterval(oldest, today)
+            val firstWeekdayNum = firstWeekday.daysSinceSunday + 1
             val series = if (habit.isNumerical) {
                 entries.map {
+                    val value = it.value
                     when {
-                        it.value == Entry.UNKNOWN -> OFF
-                        it.value == SKIP -> HATCHED
-                        (habit.targetType == AT_MOST) && (it.value / 1000.0 <= habit.targetValue) -> ON
-                        (habit.targetType == AT_LEAST) && (it.value / 1000.0 >= habit.targetValue) -> ON
+                        value == Entry.UNKNOWN -> OFF
+                        value == SKIP -> HATCHED
+                        (habit.targetType == AT_MOST) -> {
+                            val denominator = habit.frequency.denominator
+                            if (denominator == 7 || denominator == 30) {
+                                val isWithinLimit = if (denominator == 7) {
+                                    val wStart = it.date.startOfWeek(firstWeekday)
+                                    val wEnd = wStart.plus(6)
+                                    val weekEntries = habit.computedEntries.getByInterval(wStart, wEnd)
+                                    val weekSum = weekEntries.filter { entry -> entry.value != SKIP }
+                                        .sumOf { entry -> kotlin.math.max(0, entry.value) } / 1000.0
+                                    weekSum <= habit.targetValue
+                                } else { // denominator == 30
+                                    val mStart = it.date.startOfMonth()
+                                    val mEnd = mStart.plus(it.date.monthLength - 1)
+                                    val monthEntries = habit.computedEntries.getByInterval(mStart, mEnd)
+                                    val monthSum = monthEntries.filter { entry -> entry.value != SKIP }
+                                        .sumOf { entry -> kotlin.math.max(0, entry.value) } / 1000.0
+                                    monthSum <= habit.targetValue
+                                }
+                                if (isWithinLimit) ON else GREY
+                            } else {
+                                if (value / 1000.0 <= habit.targetValue) ON else GREY
+                            }
+                        }
+                        (habit.targetType == AT_LEAST) && (value / 1000.0 >= habit.targetValue) -> ON
                         else -> GREY
                     }
                 }

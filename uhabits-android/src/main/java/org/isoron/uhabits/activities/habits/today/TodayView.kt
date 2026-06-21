@@ -435,7 +435,7 @@ class TodayView(
         val nameView = textView(item.name, size = 14f, bold = true).apply {
             layoutParams = LayoutParams(0, WRAP_CONTENT, 1f)
         }
-        val statusBadge = buildStatusBadge(item.status, sectionColor)
+        val statusBadge = buildStatusBadge(item, sectionColor)
 
         nameRow.addView(nameView)
         nameRow.addView(statusBadge)
@@ -443,8 +443,8 @@ class TodayView(
 
         // Progress line for numerical habits
         if (item.habitType == HabitType.NUMERICAL && item.status != TodayHabitStatus.SKIPPED) {
-            val current = item.currentValue ?: 0.0
-            val target = item.targetValue ?: 0.0
+            val current = if (item.isLimitHabit) (item.periodProgressActual ?: 0.0) else (item.currentValue ?: 0.0)
+            val target = if (item.isLimitHabit) (item.periodProgressTarget ?: 0.0) else (item.targetValue ?: 0.0)
             val unit = item.unit
 
             val progressRow = LinearLayout(context).apply {
@@ -455,8 +455,19 @@ class TodayView(
                 }
             }
 
+            val periodStr = if (item.isLimitHabit) {
+                val pText = when (item.periodLabel) {
+                    org.isoron.uhabits.core.ui.screens.habits.today.PeriodLabel.WEEK -> resources.getString(R.string.per_week)
+                    org.isoron.uhabits.core.ui.screens.habits.today.PeriodLabel.MONTH -> resources.getString(R.string.per_month)
+                    else -> resources.getString(R.string.per_day)
+                }
+                " $pText"
+            } else {
+                ""
+            }
+
             val progressLabel = textView(
-                "${current.formatTodayValue()} / ${target.formatTodayValue()} $unit".trim(),
+                "${current.formatTodayValue()} / ${target.formatTodayValue()} $unit$periodStr".trim(),
                 size = 12f, bold = false, muted = true
             ).apply {
                 layoutParams = LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
@@ -524,13 +535,28 @@ class TodayView(
 
     // ── Status badge ──────────────────────────────────────────────────────────
 
-    private fun buildStatusBadge(status: TodayHabitStatus, sectionColor: Int?): TextView {
+    private fun buildStatusBadge(item: TodayHabitItem, sectionColor: Int?): TextView {
+        val status = item.status
+        val isAtMost = item.isLimitHabit
+
         val (label, bgAlpha, textAlpha) = when (status) {
-            TodayHabitStatus.COMPLETED -> Triple("✓ Готово", 0.15f, 1.0f)
-            TodayHabitStatus.REMAINING -> Triple("○ Осталось", 0.08f, 0.7f)
-            TodayHabitStatus.UNKNOWN   -> Triple("— Нет данных", 0.06f, 0.5f)
-            TodayHabitStatus.SKIPPED   -> Triple("⊘ Пропущено", 0.06f, 0.5f)
-            TodayHabitStatus.EXCEEDED  -> Triple("⚠ Превышено", 0.15f, 1.0f)
+            TodayHabitStatus.COMPLETED -> {
+                if (isAtMost) {
+                    Triple(resources.getString(R.string.today_status_within_limit), 0.15f, 1.0f)
+                } else {
+                    Triple("✓ " + resources.getString(R.string.today_status_done), 0.15f, 1.0f)
+                }
+            }
+            TodayHabitStatus.REMAINING -> Triple("○ " + resources.getString(R.string.today_status_remaining), 0.08f, 0.7f)
+            TodayHabitStatus.UNKNOWN   -> Triple("— " + resources.getString(R.string.today_status_unknown), 0.06f, 0.5f)
+            TodayHabitStatus.SKIPPED   -> Triple("⊘ " + resources.getString(R.string.today_status_skipped), 0.06f, 0.5f)
+            TodayHabitStatus.EXCEEDED  -> {
+                if (isAtMost) {
+                    Triple(resources.getString(R.string.today_status_limit_exceeded), 0.15f, 1.0f)
+                } else {
+                    Triple("⚠ " + resources.getString(R.string.today_status_exceeded), 0.15f, 1.0f)
+                }
+            }
         }
 
         val baseColor = when (status) {

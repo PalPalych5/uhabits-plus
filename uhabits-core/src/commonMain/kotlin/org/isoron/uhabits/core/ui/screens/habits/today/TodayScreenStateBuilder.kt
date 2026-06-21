@@ -106,8 +106,12 @@ object TodayScreenStateBuilder {
         }
 
         val isWeekly = frequency.denominator == 7
-        var weeklyActual: Double? = null
-        var weeklyTarget: Double? = null
+        val isMonthly = frequency.denominator == 30
+        val isLimit = isNumerical && targetType == NumericalHabitType.AT_MOST
+
+        var periodProgressActual: Double? = null
+        var periodProgressTarget: Double? = null
+        var periodLabel = PeriodLabel.DAY
 
         if (isWeekly) {
             val firstWeekdayNum = getFirstWeekdayNumberAccordingToLocale()
@@ -120,12 +124,32 @@ object TodayScreenStateBuilder {
                 firstWeekday = firstWeekdayNum,
                 isNumerical = isNumerical
             ).firstOrNull()?.value ?: 0
-            weeklyActual = weekSum / 1000.0
-            weeklyTarget = if (isNumerical) {
+            periodProgressActual = weekSum / 1000.0
+            periodProgressTarget = if (isNumerical) {
                 frequency.numerator * targetValue
             } else {
                 frequency.numerator.toDouble()
             }
+            periodLabel = PeriodLabel.WEEK
+        } else if (isMonthly) {
+            val startOfMonth = date.startOfMonth()
+            val endOfMonth = startOfMonth.plus(date.monthLength - 1)
+            val monthEntries = computedEntries.getByInterval(startOfMonth, endOfMonth)
+            val monthSum = monthEntries.groupedSum(
+                truncateField = TruncateField.MONTH,
+                isNumerical = isNumerical
+            ).firstOrNull()?.value ?: 0
+            periodProgressActual = monthSum / 1000.0
+            periodProgressTarget = if (isNumerical) {
+                frequency.numerator * targetValue
+            } else {
+                frequency.numerator.toDouble()
+            }
+            periodLabel = PeriodLabel.MONTH
+        } else {
+            periodProgressActual = currentValue
+            periodProgressTarget = targetValue
+            periodLabel = PeriodLabel.DAY
         }
 
         return TodayHabitItem(
@@ -134,15 +158,16 @@ object TodayScreenStateBuilder {
             color = color,
             habitType = type,
             targetType = targetType,
-            status = todayStatus(entry),
+            status = todayStatus(entry, periodProgressActual, periodProgressTarget),
             currentValue = currentValue,
             targetValue = if (isNumerical) targetValue else null,
             unit = if (isNumerical) unit else "",
             notes = entry.notes,
             dayTier = dayTier,
-            isWeeklyQuota = isWeekly,
-            weeklyProgressActual = weeklyActual,
-            weeklyProgressTarget = weeklyTarget
+            isLimitHabit = isLimit,
+            periodProgressActual = periodProgressActual,
+            periodProgressTarget = periodProgressTarget,
+            periodLabel = periodLabel
         )
     }
 
@@ -185,19 +210,28 @@ object TodayScreenStateBuilder {
         return motivations
     }
 
-    private fun Habit.todayStatus(entry: Entry): TodayHabitStatus {
+    private fun Habit.todayStatus(
+        entry: Entry,
+        periodActual: Double?,
+        periodTarget: Double?
+    ): TodayHabitStatus {
         if (entry.value == Entry.SKIP) return TodayHabitStatus.SKIPPED
 
         if (type == HabitType.NUMERICAL) {
-            if (entry.value == Entry.UNKNOWN) return TodayHabitStatus.UNKNOWN
-            val value = entry.value / 1000.0
-            return when (targetType) {
-                NumericalHabitType.AT_LEAST -> {
-                    if (value >= targetValue) TodayHabitStatus.COMPLETED else TodayHabitStatus.REMAINING
+            if (targetType == NumericalHabitType.AT_MOST) {
+                if (periodActual != null && periodTarget != null) {
+                    if (periodActual > periodTarget) return TodayHabitStatus.EXCEEDED
+                } else if (entry.value != Entry.UNKNOWN) {
+                    val value = entry.value / 1000.0
+                    if (value > targetValue) return TodayHabitStatus.EXCEEDED
                 }
-                NumericalHabitType.AT_MOST -> {
-                    if (value <= targetValue) TodayHabitStatus.COMPLETED else TodayHabitStatus.EXCEEDED
-                }
+
+                if (entry.value == Entry.UNKNOWN) return TodayHabitStatus.UNKNOWN
+                return TodayHabitStatus.COMPLETED
+            } else {
+                if (entry.value == Entry.UNKNOWN) return TodayHabitStatus.UNKNOWN
+                val value = entry.value / 1000.0
+                return if (value >= targetValue) TodayHabitStatus.COMPLETED else TodayHabitStatus.REMAINING
             }
         }
 

@@ -192,8 +192,8 @@
     <string name="calendar">Календарь</string>
     <string name="unit">Ед. изм.</string>
     <string name="target_type">Тип цели</string>
-    <string name="target_type_at_least">Не меньше</string>
-    <string name="target_type_at_most">Не больше</string>
+    <string name="target_type_at_least">Набрать минимум</string>
+    <string name="target_type_at_most">Не превысить лимит</string>
     <string name="example_question_boolean">напр.: Вы упражнялись сегодня?</string>
     <string name="question">Вопрос</string>
     <string name="target">Цель</string>
@@ -251,6 +251,11 @@
     <string name="today_status_unknown">Нет данных</string>
     <string name="today_status_skipped">Пропущено</string>
     <string name="today_status_exceeded">Превышено</string>
+    <string name="today_status_within_limit">В пределах лимита</string>
+    <string name="today_status_limit_exceeded">Лимит превышен</string>
+    <string name="per_day">за день</string>
+    <string name="per_week">за неделю</string>
+    <string name="per_month">за месяц</string>
     <string name="today_numerical_progress">%1$s / %2$s %3$s · %4$s</string>
     <string name="enter">Ввести</string>
     <string name="no_habits">Привычек не найдено</string>

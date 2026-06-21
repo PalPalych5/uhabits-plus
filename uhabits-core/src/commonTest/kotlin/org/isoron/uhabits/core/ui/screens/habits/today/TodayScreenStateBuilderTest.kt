@@ -93,43 +93,155 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
 
     @Test
     fun buildsNumericalAtMostStatuses() {
-        habitList.add(
-            numericalHabit(
-                name = "Social media",
-                value = 12_000,
-                targetValue = 15.0,
-                unit = "min",
-                targetType = NumericalHabitType.AT_MOST
-            )
+        // 1. Daily AT_MOST within limit (target: <= 30 min/day, today: 20 min)
+        val dailyWithin = numericalHabit(
+            name = "Daily within",
+            value = 20_000,
+            targetValue = 30.0,
+            unit = "min",
+            targetType = NumericalHabitType.AT_MOST
         )
-        habitList.add(
-            numericalHabit(
-                name = "Music",
-                value = 20_000,
-                targetValue = 15.0,
-                unit = "min",
-                targetType = NumericalHabitType.AT_MOST
-            )
-        )
-        habitList.add(
-            numericalHabit(
-                name = "Phone",
-                value = Entry.UNKNOWN,
-                targetValue = 30.0,
-                unit = "min",
-                targetType = NumericalHabitType.AT_MOST
-            )
-        )
+        habitList.add(dailyWithin)
 
-        val statusesByName = TodayScreenStateBuilder.build(habitList, today)
-            .sections
-            .single()
-            .items
-            .associate { it.name to it.status }
+        // 2. Daily AT_MOST exceeded (target: <= 30 min/day, today: 45 min)
+        val dailyExceeded = numericalHabit(
+            name = "Daily exceeded",
+            value = 45_000,
+            targetValue = 30.0,
+            unit = "min",
+            targetType = NumericalHabitType.AT_MOST
+        )
+        habitList.add(dailyExceeded)
 
-        assertEquals(TodayHabitStatus.COMPLETED, statusesByName["Social media"])
-        assertEquals(TodayHabitStatus.EXCEEDED, statusesByName["Music"])
-        assertEquals(TodayHabitStatus.UNKNOWN, statusesByName["Phone"])
+        // 3. Weekly AT_MOST within limit (target: <= 2 times/week, Mon: 1, Thu: 1)
+        val weeklyWithin = Habit(
+            name = "Weekly within",
+            type = HabitType.NUMERICAL,
+            targetValue = 2.0,
+            targetType = NumericalHabitType.AT_MOST,
+            frequency = Frequency(1, 7),
+            computedEntries = modelFactory.buildComputedEntries(),
+            originalEntries = modelFactory.buildOriginalEntries(),
+            scores = modelFactory.buildScoreList(),
+            streaks = modelFactory.buildStreakList()
+        ).apply {
+            originalEntries.add(Entry(today, 1000))
+            originalEntries.add(Entry(today.minus(3), 1000))
+            recompute()
+        }
+        habitList.add(weeklyWithin)
+
+        // 4. Weekly AT_MOST exceeded (target: <= 2 times/week, Mon: 1, Tue: 1, Wed: 1)
+        val weeklyExceeded = Habit(
+            name = "Weekly exceeded",
+            type = HabitType.NUMERICAL,
+            targetValue = 2.0,
+            targetType = NumericalHabitType.AT_MOST,
+            frequency = Frequency(1, 7),
+            computedEntries = modelFactory.buildComputedEntries(),
+            originalEntries = modelFactory.buildOriginalEntries(),
+            scores = modelFactory.buildScoreList(),
+            streaks = modelFactory.buildStreakList()
+        ).apply {
+            originalEntries.add(Entry(today, 1000))
+            originalEntries.add(Entry(today.minus(1), 1000))
+            originalEntries.add(Entry(today.minus(2), 1000))
+            recompute()
+        }
+        habitList.add(weeklyExceeded)
+
+        // 5. AT_LEAST remains unchanged (target: >= 30 min/day, today: 20 min -> REMAINING; today: 45 min -> COMPLETED)
+        val atLeastRemaining = numericalHabit(
+            name = "At least remaining",
+            value = 20_000,
+            targetValue = 30.0,
+            unit = "min",
+            targetType = NumericalHabitType.AT_LEAST
+        )
+        val atLeastDone = numericalHabit(
+            name = "At least done",
+            value = 45_000,
+            targetValue = 30.0,
+            unit = "min",
+            targetType = NumericalHabitType.AT_LEAST
+        )
+        habitList.add(atLeastRemaining)
+        habitList.add(atLeastDone)
+
+        // 6. 30-day AT_MOST within limit (target: <= 2.0 per 30 days, actual: 2.0)
+        val monthlyWithin = Habit(
+            name = "Monthly within",
+            type = HabitType.NUMERICAL,
+            targetValue = 2.0,
+            targetType = NumericalHabitType.AT_MOST,
+            frequency = Frequency(1, 30),
+            computedEntries = modelFactory.buildComputedEntries(),
+            originalEntries = modelFactory.buildOriginalEntries(),
+            scores = modelFactory.buildScoreList(),
+            streaks = modelFactory.buildStreakList()
+        ).apply {
+            originalEntries.add(Entry(today, 1000))
+            originalEntries.add(Entry(today.minus(5), 1000))
+            recompute()
+        }
+        habitList.add(monthlyWithin)
+
+        // 7. 30-day AT_MOST exceeded limit (target: <= 2.0 per 30 days, actual: 3.0)
+        val monthlyExceeded = Habit(
+            name = "Monthly exceeded",
+            type = HabitType.NUMERICAL,
+            targetValue = 2.0,
+            targetType = NumericalHabitType.AT_MOST,
+            frequency = Frequency(1, 30),
+            computedEntries = modelFactory.buildComputedEntries(),
+            originalEntries = modelFactory.buildOriginalEntries(),
+            scores = modelFactory.buildScoreList(),
+            streaks = modelFactory.buildStreakList()
+        ).apply {
+            originalEntries.add(Entry(today, 1000))
+            originalEntries.add(Entry(today.minus(5), 1000))
+            originalEntries.add(Entry(today.minus(10), 1000))
+            recompute()
+        }
+        habitList.add(monthlyExceeded)
+
+        val items = TodayScreenStateBuilder.build(habitList, today).sections.single().items
+        val statusesByName = items.associate { it.name to it.status }
+        val itemMap = items.associateBy { it.name }
+
+        // Assert 1. Daily within
+        assertEquals(TodayHabitStatus.COMPLETED, statusesByName["Daily within"])
+        assertEquals(20.0, itemMap["Daily within"]?.periodProgressActual)
+        assertEquals(30.0, itemMap["Daily within"]?.periodProgressTarget)
+
+        // Assert 2. Daily exceeded
+        assertEquals(TodayHabitStatus.EXCEEDED, statusesByName["Daily exceeded"])
+
+        // Assert 3. Weekly within
+        assertEquals(TodayHabitStatus.COMPLETED, statusesByName["Weekly within"])
+        assertEquals(2.0, itemMap["Weekly within"]?.periodProgressActual)
+        assertEquals(2.0, itemMap["Weekly within"]?.periodProgressTarget)
+
+        // Assert 4. Weekly exceeded
+        assertEquals(TodayHabitStatus.EXCEEDED, statusesByName["Weekly exceeded"])
+        assertEquals(3.0, itemMap["Weekly exceeded"]?.periodProgressActual)
+        assertEquals(2.0, itemMap["Weekly exceeded"]?.periodProgressTarget)
+
+        // Assert 5. AT_LEAST
+        assertEquals(TodayHabitStatus.REMAINING, statusesByName["At least remaining"])
+        assertEquals(TodayHabitStatus.COMPLETED, statusesByName["At least done"])
+
+        // Assert 6. 30-day within (total == target)
+        assertEquals(TodayHabitStatus.COMPLETED, statusesByName["Monthly within"])
+        assertEquals(2.0, itemMap["Monthly within"]?.periodProgressActual)
+        assertEquals(2.0, itemMap["Monthly within"]?.periodProgressTarget)
+        assertEquals(PeriodLabel.MONTH, itemMap["Monthly within"]?.periodLabel)
+
+        // Assert 7. 30-day exceeded (total > target)
+        assertEquals(TodayHabitStatus.EXCEEDED, statusesByName["Monthly exceeded"])
+        assertEquals(3.0, itemMap["Monthly exceeded"]?.periodProgressActual)
+        assertEquals(2.0, itemMap["Monthly exceeded"]?.periodProgressTarget)
+        assertEquals(PeriodLabel.MONTH, itemMap["Monthly exceeded"]?.periodLabel)
     }
 
     @Test
@@ -276,13 +388,13 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
 
         val boolItem = itemsByName["Workout"]!!
         assertEquals(true, boolItem.isWeeklyQuota)
-        assertEquals(2.0, boolItem.weeklyProgressActual)
-        assertEquals(3.0, boolItem.weeklyProgressTarget)
+        assertEquals(2.0, boolItem.periodProgressActual)
+        assertEquals(3.0, boolItem.periodProgressTarget)
 
         val numItem = itemsByName["Reading"]!!
         assertEquals(true, numItem.isWeeklyQuota)
-        assertEquals(13.0, numItem.weeklyProgressActual)
-        assertEquals(20.0, numItem.weeklyProgressTarget)
+        assertEquals(13.0, numItem.periodProgressActual)
+        assertEquals(20.0, numItem.periodProgressTarget)
     }
 
     @Test

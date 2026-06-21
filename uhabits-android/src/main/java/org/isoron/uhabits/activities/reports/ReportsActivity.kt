@@ -39,6 +39,7 @@ import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.activities.main.MainNavigationHost
 import org.isoron.uhabits.core.models.*
+import org.isoron.uhabits.core.models.Entry.Companion.SKIP
 import org.isoron.uhabits.core.ui.screens.habits.today.formatTodayValue
 import org.isoron.uhabits.databinding.ActivityReportsBinding
 import org.isoron.platform.gui.toInt
@@ -249,16 +250,26 @@ class ReportsFragment : Fragment() {
 
             // Missing Targets & Limit Violations list
             if (habit.isNumerical) {
-                if (entry.value == Entry.UNKNOWN) {
-                    remainingHabits.add(habit)
+                val denominator = habit.frequency.denominator
+                if (habit.targetType == NumericalHabitType.AT_MOST && (denominator == 7 || denominator == 30)) {
+                    val (periodActual, periodTarget) = getPeriodTotalAndTarget(habit, date)
+                    if (periodActual > periodTarget) {
+                        exceededHabits.add(habit)
+                    } else if (entry.value == Entry.UNKNOWN) {
+                        remainingHabits.add(habit)
+                    }
                 } else {
-                    val value = entry.value / 1000.0
-                    when (habit.targetType) {
-                        NumericalHabitType.AT_LEAST -> {
-                            if (value < habit.targetValue) remainingHabits.add(habit)
-                        }
-                        NumericalHabitType.AT_MOST -> {
-                            if (value > habit.targetValue) exceededHabits.add(habit)
+                    if (entry.value == Entry.UNKNOWN) {
+                        remainingHabits.add(habit)
+                    } else {
+                        val value = entry.value / 1000.0
+                        when (habit.targetType) {
+                            NumericalHabitType.AT_LEAST -> {
+                                if (value < habit.targetValue) remainingHabits.add(habit)
+                            }
+                            NumericalHabitType.AT_MOST -> {
+                                if (value > habit.targetValue) exceededHabits.add(habit)
+                            }
                         }
                     }
                 }
@@ -313,8 +324,19 @@ class ReportsFragment : Fragment() {
                 val block = blocksMap[habit.blockId] ?: fallbackBlock
                 val entry = habit.computedEntries.get(date)
                 val textValue = if (habit.isNumerical) {
-                    val actual = if (entry.value != Entry.UNKNOWN) (entry.value / 1000.0).formatTodayValue() else "0"
-                    "$actual / ${habit.targetValue.formatTodayValue()} ${habit.unit}"
+                    val denominator = habit.frequency.denominator
+                    if (habit.targetType == NumericalHabitType.AT_MOST && (denominator == 7 || denominator == 30)) {
+                        val (periodActual, periodTarget) = getPeriodTotalAndTarget(habit, date)
+                        val periodStr = when (denominator) {
+                            7 -> " " + getString(R.string.per_week)
+                            30 -> " " + getString(R.string.per_month)
+                            else -> ""
+                        }
+                        "${periodActual.formatTodayValue()} / ${periodTarget.formatTodayValue()} ${habit.unit}$periodStr"
+                    } else {
+                        val actual = if (entry.value != Entry.UNKNOWN) (entry.value / 1000.0).formatTodayValue() else "0"
+                        "$actual / ${habit.targetValue.formatTodayValue()} ${habit.unit}"
+                    }
                 } else {
                     ""
                 }
@@ -330,8 +352,19 @@ class ReportsFragment : Fragment() {
             for (habit in exceededHabits) {
                 val block = blocksMap[habit.blockId] ?: fallbackBlock
                 val entry = habit.computedEntries.get(date)
-                val actual = (entry.value / 1000.0).formatTodayValue()
-                val textValue = "$actual / ${habit.targetValue.formatTodayValue()} ${habit.unit}"
+                val denominator = habit.frequency.denominator
+                val textValue = if (habit.targetType == NumericalHabitType.AT_MOST && (denominator == 7 || denominator == 30)) {
+                    val (periodActual, periodTarget) = getPeriodTotalAndTarget(habit, date)
+                    val periodStr = when (denominator) {
+                        7 -> " " + getString(R.string.per_week)
+                        30 -> " " + getString(R.string.per_month)
+                        else -> ""
+                    }
+                    "${periodActual.formatTodayValue()} / ${periodTarget.formatTodayValue()} ${habit.unit}$periodStr"
+                } else {
+                    val actual = (entry.value / 1000.0).formatTodayValue()
+                    "$actual / ${habit.targetValue.formatTodayValue()} ${habit.unit}"
+                }
                 val row = createHabitStatusRow(block.color, habit.name, "⚠️", textValue)
                 exceededContent.addView(row)
             }
@@ -367,36 +400,87 @@ class ReportsFragment : Fragment() {
             var habitTotalDays = 0
             var habitCompletedDays = 0
 
-            var current = rangeStart
-            while (current <= end) {
-                val entry = habit.computedEntries.get(current)
-                if (entry.value != Entry.SKIP) {
-                    habitTotalDays++
-                    val isCompleted = isHabitCompleted(habit, entry)
-                    if (isCompleted) {
-                        habitCompletedDays++
-                    }
+            val denominator = habit.frequency.denominator
+            if (habit.isNumerical && habit.targetType == NumericalHabitType.AT_MOST && (denominator == 7 || denominator == 30)) {
+                // Period-by-period evaluation for AT_MOST limits
+                if (denominator == 7) {
+                    val firstWeekdayNum = getFirstWeekdayNumberAccordingToLocale()
+                    val firstWeekday = DayOfWeek.entries[firstWeekdayNum - 1]
+                    var wStart = rangeStart.startOfWeek(firstWeekday)
+                    while (wStart <= end) {
+                        val weekEntries = habit.computedEntries.getByInterval(wStart, wStart.plus(6))
+                        // A week is skipped if all its entries in the range are SKIP
+                        if (weekEntries.isNotEmpty() && weekEntries.all { it.value == SKIP }) {
+                            wStart = wStart.plus(7)
+                            continue
+                        }
 
-                    // Focus minutes to hours
-                    if (habit.isNumerical && habit.targetType == NumericalHabitType.AT_LEAST && habit.unit.isMinuteUnit()) {
-                        val valDouble = if (entry.value != Entry.UNKNOWN) entry.value / 1000.0 else 0.0
-                        val hours = valDouble / 60.0
-                        totalFocusHours += hours
-                        val blockId = habit.blockId
-                        sphereFocusHours[blockId] = (sphereFocusHours[blockId] ?: 0.0) + hours
-                    }
+                        habitTotalDays++
 
-                    // Limit violations check
-                    if (habit.isNumerical && habit.targetType == NumericalHabitType.AT_MOST) {
-                        if (entry.value != Entry.UNKNOWN) {
-                            val value = entry.value / 1000.0
-                            if (value > habit.targetValue) {
-                                limitViolationsCount++
+                        val weekSum = weekEntries.filter { it.value != SKIP }.sumOf { max(0, it.value) } / 1000.0
+                        if (weekSum > habit.targetValue) {
+                            limitViolationsCount++
+                        } else if (weekEntries.any { it.value != Entry.UNKNOWN }) {
+                            habitCompletedDays++
+                        }
+
+                        wStart = wStart.plus(7)
+                    }
+                } else { // denominator == 30
+                    var mStart = rangeStart.startOfMonth()
+                    while (mStart <= end) {
+                        val monthLength = mStart.monthLength
+                        val monthEntries = habit.computedEntries.getByInterval(mStart, mStart.plus(monthLength - 1))
+                        if (monthEntries.isNotEmpty() && monthEntries.all { it.value == SKIP }) {
+                            mStart = mStart.plus(monthLength)
+                            continue
+                        }
+
+                        habitTotalDays++
+
+                        val monthSum = monthEntries.filter { it.value != SKIP }.sumOf { max(0, it.value) } / 1000.0
+                        if (monthSum > habit.targetValue) {
+                            limitViolationsCount++
+                        } else if (monthEntries.any { it.value != Entry.UNKNOWN }) {
+                            habitCompletedDays++
+                        }
+
+                        mStart = mStart.plus(monthLength)
+                    }
+                }
+            } else {
+                // Day-by-day evaluation for YES_NO and AT_LEAST habits
+                var current = rangeStart
+                while (current <= end) {
+                    val entry = habit.computedEntries.get(current)
+                    if (entry.value != Entry.SKIP) {
+                        habitTotalDays++
+                        val isCompleted = isHabitCompleted(habit, entry)
+                        if (isCompleted) {
+                            habitCompletedDays++
+                        }
+
+                        // Focus minutes to hours (only for AT_LEAST minute-based habits)
+                        if (habit.isNumerical && habit.targetType == NumericalHabitType.AT_LEAST && habit.unit.isMinuteUnit()) {
+                            val valDouble = if (entry.value != Entry.UNKNOWN) entry.value / 1000.0 else 0.0
+                            val hours = valDouble / 60.0
+                            totalFocusHours += hours
+                            val blockId = habit.blockId
+                            sphereFocusHours[blockId] = (sphereFocusHours[blockId] ?: 0.0) + hours
+                        }
+
+                        // Daily AT_MOST limits check (not weekly/monthly)
+                        if (habit.isNumerical && habit.targetType == NumericalHabitType.AT_MOST) {
+                            if (entry.value != Entry.UNKNOWN) {
+                                val value = entry.value / 1000.0
+                                if (value > habit.targetValue) {
+                                    limitViolationsCount++
+                                }
                             }
                         }
                     }
+                    current = current.plus(1)
                 }
-                current = current.plus(1)
             }
 
             if (habitTotalDays > 0) {
@@ -449,11 +533,51 @@ class ReportsFragment : Fragment() {
             for (stat in habitCompletionStats.sortedByDescending { it.completedDays * 100f / it.totalDays }) {
                 val block = blocksMap[stat.habit.blockId] ?: fallbackBlock
                 val percentage = (stat.completedDays * 100f / stat.totalDays).roundToInt()
-                val subtitle = "${getLocalizedBlockName(block)} • ${stat.completedDays} / ${stat.totalDays} ${getString(R.string.reports_days_unit)} ($percentage%)"
+                val unitText = when (stat.habit.frequency.denominator) {
+                    7 -> getString(R.string.per_week)
+                    30 -> getString(R.string.per_month)
+                    else -> getString(R.string.reports_days_unit)
+                }
+                val subtitle = "${getLocalizedBlockName(block)} • ${stat.completedDays} / ${stat.totalDays} $unitText ($percentage%)"
                 val row = createHabitDetailRow(block.color, stat.habit.name, subtitle)
                 detailsContent.addView(row)
             }
             binding.reportContentContainer.addView(detailsCard)
+        }
+    }
+
+    private fun getPeriodTotalAndTarget(habit: Habit, date: LocalDate): Pair<Double, Double> {
+        val denominator = habit.frequency.denominator
+        val targetValue = habit.targetValue
+        return when (denominator) {
+            7 -> {
+                val firstWeekdayNum = getFirstWeekdayNumberAccordingToLocale()
+                val firstWeekday = DayOfWeek.entries[firstWeekdayNum - 1]
+                val startOfWeek = date.startOfWeek(firstWeekday)
+                val endOfWeek = startOfWeek.plus(6)
+                val weekEntries = habit.computedEntries.getByInterval(startOfWeek, endOfWeek)
+                val weekSum = weekEntries.groupedSum(
+                    truncateField = TruncateField.WEEK_NUMBER,
+                    firstWeekday = firstWeekdayNum,
+                    isNumerical = true
+                ).firstOrNull()?.value ?: 0
+                Pair(weekSum / 1000.0, targetValue)
+            }
+            30 -> {
+                val startOfMonth = date.startOfMonth()
+                val endOfMonth = startOfMonth.plus(date.monthLength - 1)
+                val monthEntries = habit.computedEntries.getByInterval(startOfMonth, endOfMonth)
+                val monthSum = monthEntries.groupedSum(
+                    truncateField = TruncateField.MONTH,
+                    isNumerical = true
+                ).firstOrNull()?.value ?: 0
+                Pair(monthSum / 1000.0, targetValue)
+            }
+            else -> {
+                val entry = habit.computedEntries.get(date)
+                val valDouble = if (entry.value != Entry.UNKNOWN && entry.value != Entry.SKIP) entry.value / 1000.0 else 0.0
+                Pair(valDouble, targetValue)
+            }
         }
     }
 
@@ -463,7 +587,15 @@ class ReportsFragment : Fragment() {
             val value = entry.value / 1000.0
             return when (habit.targetType) {
                 NumericalHabitType.AT_LEAST -> value >= habit.targetValue
-                NumericalHabitType.AT_MOST -> value <= habit.targetValue
+                NumericalHabitType.AT_MOST -> {
+                    val denominator = habit.frequency.denominator
+                    if (denominator == 7 || denominator == 30) {
+                        val (periodActual, periodTarget) = getPeriodTotalAndTarget(habit, entry.date)
+                        periodActual <= periodTarget
+                    } else {
+                        value <= habit.targetValue
+                    }
+                }
             }
         } else {
             return entry.value == Entry.YES_MANUAL || entry.value == Entry.YES_AUTO

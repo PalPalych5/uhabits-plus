@@ -50,6 +50,13 @@ data class TodaySectionState(
     val items: List<TodayHabitItem>
 )
 
+enum class PeriodLabel {
+    DAY,
+    WEEK,
+    MONTH,
+    CUSTOM
+}
+
 data class TodayHabitItem(
     val habitId: Long?,
     val name: String,
@@ -62,12 +69,16 @@ data class TodayHabitItem(
     val unit: String,
     val notes: String,
     val dayTier: DayTier,
-    val isWeeklyQuota: Boolean = false,
-    val weeklyProgressActual: Double? = null,
-    val weeklyProgressTarget: Double? = null
+    val isLimitHabit: Boolean = false,
+    val periodProgressActual: Double? = null,
+    val periodProgressTarget: Double? = null,
+    val periodLabel: PeriodLabel = PeriodLabel.DAY
 ) {
     val isCompleted: Boolean
         get() = status == TodayHabitStatus.COMPLETED
+
+    val isWeeklyQuota: Boolean
+        get() = periodLabel == PeriodLabel.WEEK
 }
 
 enum class TodayHabitStatus {

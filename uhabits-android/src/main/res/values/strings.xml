@@ -194,8 +194,8 @@
     <string name="calendar">Calendar</string>
     <string name="unit">Unit</string>
     <string name="target_type">Target Type</string>
-    <string name="target_type_at_least">At least</string>
-    <string name="target_type_at_most">At most</string>
+    <string name="target_type_at_least">Reach at least</string>
+    <string name="target_type_at_most">Stay under limit</string>
     <string name="example_question_boolean">e.g. Did you exercise today?</string>
     <string name="question">Question</string>
     <string name="target">Target</string>
@@ -253,6 +253,11 @@
     <string name="today_status_unknown">Unknown</string>
     <string name="today_status_skipped">Skipped</string>
     <string name="today_status_exceeded">Exceeded</string>
+    <string name="today_status_within_limit">Within limit</string>
+    <string name="today_status_limit_exceeded">Limit exceeded</string>
+    <string name="per_day">per day</string>
+    <string name="per_week">per week</string>
+    <string name="per_month">per month</string>
     <string name="today_numerical_progress">%1$s / %2$s %3$s · %4$s</string>
     <string name="enter">Enter</string>
     <string name="no_habits">No habits found</string>
