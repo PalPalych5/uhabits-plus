@@ -114,8 +114,15 @@ class TodayView(
 
         addSummaryCard(state)
         addMotivations(state.motivations)
-        addRemainingSection(state.remaining)
-        state.sections.forEach { addSectionCard(it) }
+        if (preferences.isDayTiersEnabled) {
+            addRemainingSection(state.remaining)
+        }
+        if (preferences.isHabitSpheresEnabled) {
+            state.sections.forEach { addSectionCard(it) }
+        } else {
+            val allItems = state.sections.flatMap { it.items }
+            addFlatHabitsCard(allItems)
+        }
     }
 
     // ── Empty state ───────────────────────────────────────────────────────────
@@ -205,9 +212,9 @@ class TodayView(
             }
         )
 
-        // Remaining habits (only when > 0)
+        // Remaining habits (only when > 0 and tiers enabled)
         val remainingCount = state.remaining.size
-        if (remainingCount > 0) {
+        if (preferences.isDayTiersEnabled && remainingCount > 0) {
             inner.addView(
                 textView(
                     resources.getString(R.string.today_summary_remaining_habits, remainingCount),
@@ -216,23 +223,77 @@ class TodayView(
             )
         }
 
-        // Divider
-        inner.addView(dividerView().apply {
-            layoutParams = LayoutParams(MATCH_PARENT, dp(1f).toInt()).apply {
-                topMargin = dp(12f).toInt()
-                bottomMargin = dp(10f).toInt()
-            }
-        })
+        val showTiers = preferences.isDayTiersEnabled &&
+            (state.minimum.totalCount > 0 || state.normal.totalCount > 0 || state.ideal.totalCount > 0)
 
-        // Tier rows (skip if totalCount == 0)
-        if (state.minimum.totalCount > 0) {
-            inner.addView(tierRow(R.string.today_tier_minimum, state.minimum))
+        // Divider
+        if (showTiers) {
+            inner.addView(dividerView().apply {
+                layoutParams = LayoutParams(MATCH_PARENT, dp(1f).toInt()).apply {
+                    topMargin = dp(12f).toInt()
+                    bottomMargin = dp(10f).toInt()
+                }
+            })
+
+            // Tier rows (skip if totalCount == 0)
+            if (state.minimum.totalCount > 0) {
+                inner.addView(tierRow(R.string.today_tier_minimum, state.minimum))
+            }
+            if (state.normal.totalCount > 0) {
+                inner.addView(tierRow(R.string.today_tier_normal, state.normal))
+            }
+            if (state.ideal.totalCount > 0) {
+                inner.addView(tierRow(R.string.today_tier_ideal, state.ideal))
+            }
         }
-        if (state.normal.totalCount > 0) {
-            inner.addView(tierRow(R.string.today_tier_normal, state.normal))
+
+        card.addView(inner)
+        content.addView(card)
+    }
+
+    private fun addFlatHabitsCard(items: List<TodayHabitItem>) {
+        if (items.isEmpty()) return
+
+        val card = buildCard(cornerRadius = 12f, elevation = 2f).apply {
+            layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                topMargin = dp(12f).toInt()
+            }
         }
-        if (state.ideal.totalCount > 0) {
-            inner.addView(tierRow(R.string.today_tier_ideal, state.ideal))
+        val inner = LinearLayout(context).apply {
+            orientation = VERTICAL
+            setPadding(dp(14f).toInt(), dp(12f).toInt(), dp(14f).toInt(), dp(12f).toInt())
+        }
+
+        val headerRow = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val titleView = textView(resources.getString(R.string.habits_title), size = 15f, bold = true).apply {
+            layoutParams = LayoutParams(0, WRAP_CONTENT, 1f)
+        }
+
+        val countable = items.filter { it.status != TodayHabitStatus.SKIPPED }
+        val completedCount = countable.count { it.isCompleted }
+        val totalCount = countable.size
+
+        val progressBadge = buildBadge(
+            text = "$completedCount/$totalCount",
+            completed = completedCount >= totalCount && totalCount > 0
+        )
+
+        headerRow.addView(titleView)
+        headerRow.addView(progressBadge)
+        inner.addView(headerRow)
+
+        items.forEach { item ->
+            inner.addView(dividerView().apply {
+                layoutParams = LayoutParams(MATCH_PARENT, dp(1f).toInt()).apply {
+                    topMargin = dp(8f).toInt()
+                    bottomMargin = dp(4f).toInt()
+                }
+            })
+            inner.addView(habitRowView(item, sectionColor = null))
         }
 
         card.addView(inner)
@@ -561,7 +622,7 @@ class TodayView(
 
         val baseColor = when (status) {
             TodayHabitStatus.COMPLETED -> 0xFF4CAF50.toInt()  // green
-            TodayHabitStatus.REMAINING -> sectionColor ?: 0xFF9E9E9E.toInt()
+            TodayHabitStatus.REMAINING -> sectionColor ?: item.color.toFixedAndroidColor()
             TodayHabitStatus.UNKNOWN   -> 0xFF9E9E9E.toInt()  // gray
             TodayHabitStatus.SKIPPED   -> 0xFF9E9E9E.toInt()  // gray
             TodayHabitStatus.EXCEEDED  -> 0xFFFF5722.toInt()  // orange-red
@@ -633,7 +694,8 @@ class TodayView(
     // ── Motivations (existing, unchanged) ─────────────────────────────────────
 
     private fun addMotivations(motivations: List<String>) {
-        if (motivations.isEmpty()) return
+        val filtered = if (preferences.isDayTiersEnabled) motivations else motivations.filter { !it.startsWith("minimum_completed") }
+        if (filtered.isEmpty()) return
 
         val container = LinearLayout(context).apply {
             orientation = VERTICAL
@@ -643,7 +705,7 @@ class TodayView(
             }
         }
 
-        motivations.forEach { rawMotivation ->
+        filtered.forEach { rawMotivation ->
             val formatted = formatMotivation(rawMotivation)
             if (formatted.isBlank()) return@forEach
 

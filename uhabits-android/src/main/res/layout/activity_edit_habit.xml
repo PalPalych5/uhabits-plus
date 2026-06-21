@@ -227,7 +227,9 @@
                 </LinearLayout>
             </FrameLayout>
 
-            <FrameLayout style="@style/FormOuterBox">
+            <FrameLayout
+                android:id="@+id/dayTierOuterBox"
+                style="@style/FormOuterBox">
                 <LinearLayout style="@style/FormInnerBox">
                     <TextView
                         style="@style/FormLabel"
@@ -239,7 +241,9 @@
                 </LinearLayout>
             </FrameLayout>
 
-            <FrameLayout style="@style/FormOuterBox">
+            <FrameLayout
+                android:id="@+id/habitBlockOuterBox"
+                style="@style/FormOuterBox">
                 <LinearLayout style="@style/FormInnerBox">
                     <TextView
                         style="@style/FormLabel"

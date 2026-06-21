@@ -62,7 +62,7 @@ abstract class Theme {
             17 -> Color(0x424242)
             18 -> Color(0x757575)
             19 -> Color(0x9E9E9E)
-            else -> Color(0x000000)
+            else -> Color(paletteIndex)
         }
     }
 
@@ -109,7 +109,7 @@ open class DarkTheme : Theme() {
             17 -> Color(0xF5F5F5)
             18 -> Color(0xE0E0E0)
             19 -> Color(0x9E9E9E)
-            else -> Color(0xFFFFFF)
+            else -> Color(paletteIndex)
         }
     }
 }
@@ -148,7 +148,7 @@ class WidgetTheme : LightTheme() {
             17 -> Color(0x757575)
             18 -> Color(0x757575)
             19 -> Color(0x9E9E9E)
-            else -> Color(0x000000)
+            else -> Color(paletteIndex)
         }
     }
 }

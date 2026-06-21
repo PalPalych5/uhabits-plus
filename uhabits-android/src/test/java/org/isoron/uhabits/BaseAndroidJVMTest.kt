@@ -18,7 +18,7 @@
  */
 package org.isoron.uhabits
 
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.Dispatchers
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.setToday
 import org.isoron.uhabits.core.commands.CommandRunner
@@ -45,8 +45,8 @@ open class BaseAndroidJVMTest {
         habitList = modelFactory.buildHabitList()
         fixtures = HabitFixtures(modelFactory, habitList)
         taskRunner = CoroutineTaskRunner(
-            mainDispatcher = UnconfinedTestDispatcher(),
-            ioDispatcher = UnconfinedTestDispatcher()
+            mainDispatcher = Dispatchers.Unconfined,
+            ioDispatcher = Dispatchers.Unconfined
         )
         commandRunner = CommandRunner(taskRunner)
     }

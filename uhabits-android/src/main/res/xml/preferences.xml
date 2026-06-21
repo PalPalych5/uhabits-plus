@@ -96,6 +96,20 @@
             android:title="@string/configure_spheres"
             app:iconSpaceReserved="false" />
 
+        <SwitchPreferenceCompat
+            android:defaultValue="true"
+            android:key="pref_enable_day_tiers"
+            android:summary="@string/pref_enable_day_tiers_summary"
+            android:title="@string/pref_enable_day_tiers_title"
+            app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+            android:defaultValue="true"
+            android:key="pref_enable_habit_spheres"
+            android:summary="@string/pref_enable_habit_spheres_summary"
+            android:title="@string/pref_enable_habit_spheres_title"
+            app:iconSpaceReserved="false" />
+
         <Preference
             android:key="openArchive"
             android:summary="@string/open_archive_summary"
@@ -212,6 +226,24 @@
         <Preference
                 android:key="about"
                 android:title="@string/about"
+                app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
+            android:key="demoCategory"
+            android:title="@string/demo_data_category_title">
+
+        <Preference
+                android:key="seedDemoData"
+                android:title="@string/demo_data_seed_title"
+                android:summary="@string/demo_data_seed_summary"
+                app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="resetDemoData"
+                android:title="@string/demo_data_reset_title"
+                android:summary="@string/demo_data_reset_summary"
                 app:iconSpaceReserved="false" />
 
     </PreferenceCategory>

@@ -148,6 +148,13 @@ class EditHabitActivity : AppCompatActivity() {
 
         updateColors()
 
+        if (!component.preferences.isDayTiersEnabled) {
+            binding.dayTierOuterBox.visibility = View.GONE
+        }
+        if (!component.preferences.isHabitSpheresEnabled) {
+            binding.habitBlockOuterBox.visibility = View.GONE
+        }
+
         when (habitType) {
             HabitType.YES_NO -> {
                 binding.unitOuterBox.visibility = View.GONE

@@ -298,7 +298,7 @@ class ReportsFragment : Fragment() {
         binding.reportContentContainer.addView(summaryCard)
 
         // Card 2: Focus by sphere
-        if (sphereFocus.isNotEmpty()) {
+        if (component.preferences.isHabitSpheresEnabled && sphereFocus.isNotEmpty()) {
             val (focusCard, focusContent) = createCard(getString(R.string.reports_focus_by_sphere))
             for ((blockId, minutes) in sphereFocus.entries.sortedByDescending { it.value }) {
                 val block = blocksMap[blockId] ?: fallbackBlock
@@ -340,7 +340,8 @@ class ReportsFragment : Fragment() {
                 } else {
                     ""
                 }
-                val row = createHabitStatusRow(block.color, habit.name, "❌", textValue)
+                val rowColor = if (component.preferences.isHabitSpheresEnabled) block.color else habit.color
+                val row = createHabitStatusRow(rowColor, habit.name, "❌", textValue)
                 missedContent.addView(row)
             }
         }
@@ -365,7 +366,8 @@ class ReportsFragment : Fragment() {
                     val actual = (entry.value / 1000.0).formatTodayValue()
                     "$actual / ${habit.targetValue.formatTodayValue()} ${habit.unit}"
                 }
-                val row = createHabitStatusRow(block.color, habit.name, "⚠️", textValue)
+                val rowColor = if (component.preferences.isHabitSpheresEnabled) block.color else habit.color
+                val row = createHabitStatusRow(rowColor, habit.name, "⚠️", textValue)
                 exceededContent.addView(row)
             }
             binding.reportContentContainer.addView(exceededCard)
@@ -515,7 +517,7 @@ class ReportsFragment : Fragment() {
         binding.reportContentContainer.addView(summaryCard)
 
         // Card 2: Focus by sphere
-        if (sphereFocusHours.isNotEmpty()) {
+        if (component.preferences.isHabitSpheresEnabled && sphereFocusHours.isNotEmpty()) {
             val (focusCard, focusContent) = createCard(getString(R.string.reports_focus_by_sphere))
             for ((blockId, hours) in sphereFocusHours.entries.sortedByDescending { it.value }) {
                 val block = blocksMap[blockId] ?: fallbackBlock
@@ -538,8 +540,13 @@ class ReportsFragment : Fragment() {
                     30 -> getString(R.string.per_month)
                     else -> getString(R.string.reports_days_unit)
                 }
-                val subtitle = "${getLocalizedBlockName(block)} • ${stat.completedDays} / ${stat.totalDays} $unitText ($percentage%)"
-                val row = createHabitDetailRow(block.color, stat.habit.name, subtitle)
+                val subtitle = if (component.preferences.isHabitSpheresEnabled) {
+                    "${getLocalizedBlockName(block)} • ${stat.completedDays} / ${stat.totalDays} $unitText ($percentage%)"
+                } else {
+                    "${stat.completedDays} / ${stat.totalDays} $unitText ($percentage%)"
+                }
+                val rowColor = if (component.preferences.isHabitSpheresEnabled) block.color else stat.habit.color
+                val row = createHabitDetailRow(rowColor, stat.habit.name, subtitle)
                 detailsContent.addView(row)
             }
             binding.reportContentContainer.addView(detailsCard)

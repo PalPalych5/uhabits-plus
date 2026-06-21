@@ -141,6 +141,18 @@ open class Preferences(private val storage: Storage) {
             storage.putBoolean("pref_disable_animation", enabled)
         }
 
+    open var isDayTiersEnabled: Boolean
+        get() = storage.getBoolean("pref_enable_day_tiers", true)
+        set(enabled) {
+            storage.putBoolean("pref_enable_day_tiers", enabled)
+        }
+
+    open var isHabitSpheresEnabled: Boolean
+        get() = storage.getBoolean("pref_enable_habit_spheres", true)
+        set(enabled) {
+            storage.putBoolean("pref_enable_habit_spheres", enabled)
+        }
+
     open fun removeListener(listener: Listener) {
         listeners.remove(listener)
     }

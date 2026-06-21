@@ -58,6 +58,15 @@ import org.isoron.uhabits.utils.applyBottomInset
 import org.isoron.uhabits.utils.startActivitySafely
 import org.isoron.uhabits.widgets.WidgetUpdater
 import java.util.Locale
+import androidx.appcompat.app.AlertDialog
+import android.widget.Toast
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.isoron.uhabits.BuildConfig
+import org.isoron.uhabits.core.models.sqlite.SQLModelFactory
+import org.isoron.uhabits.utils.DemoDataGenerator
 
 class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeListener {
     private var sharedPrefs: SharedPreferences? = null
@@ -173,6 +182,14 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
                 activity?.startActivitySafely(intentFactory.viewFAQ(requireContext()))
                 return true
             }
+            "seedDemoData" -> {
+                showSeedConfirmationDialog(isReset = false)
+                return true
+            }
+            "resetDemoData" -> {
+                showSeedConfirmationDialog(isReset = true)
+                return true
+            }
         }
         return super.onPreferenceTreeClick(preference)
     }
@@ -186,6 +203,8 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
             val devCategory = findPreference("devCategory") as PreferenceCategory
             devCategory.isVisible = false
         }
+        findPreference("demoCategory")?.isVisible = BuildConfig.DEBUG
+        findPreference("configureSpheres")?.isVisible = prefs.isHabitSpheresEnabled
         updateWeekdayPreference()
         updatePublicBackupFolderSummary()
 
@@ -207,6 +226,9 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
         sharedPreferences: SharedPreferences,
         key: String?
     ) {
+        if (key == "pref_enable_habit_spheres") {
+            findPreference("configureSpheres")?.isVisible = prefs.isHabitSpheresEnabled
+        }
         if (key == "pref_widget_opacity" && widgetUpdater != null) {
             Log.d("SettingsFragment", "updating widgets")
             widgetUpdater!!.updateWidgets()
@@ -305,6 +327,47 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
             "file" -> java.io.File(uri.path!!).absolutePath
             else -> null
         }
+    }
+
+    private fun showSeedConfirmationDialog(isReset: Boolean) {
+        val title = if (isReset) getString(R.string.demo_data_confirm_reset_title) else getString(R.string.demo_data_confirm_title)
+        val message = if (isReset) getString(R.string.demo_data_confirm_reset_message) else getString(R.string.demo_data_confirm_message)
+        AlertDialog.Builder(requireContext())
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton(R.string.demo_data_confirm_proceed) { _, _ ->
+                val habitsApp = requireContext().applicationContext as HabitsApplication
+                val component = habitsApp.component
+                
+                // Show a loading toast
+                Toast.makeText(requireContext(), R.string.demo_data_generating, Toast.LENGTH_SHORT).show()
+                
+                CoroutineScope(Dispatchers.Main).launch {
+                    val success = withContext(Dispatchers.IO) {
+                        try {
+                            DemoDataGenerator.generate(
+                                context = requireContext(),
+                                modelFactory = component.modelFactory as SQLModelFactory,
+                                habitList = component.habitList,
+                                widgetUpdater = component.widgetUpdater,
+                                cache = component.habitCardListCache,
+                                isReset = isReset
+                            )
+                            true
+                        } catch (e: Exception) {
+                            Log.e("SettingsFragment", "Failed to generate demo data", e)
+                            false
+                        }
+                    }
+                    if (success) {
+                        Toast.makeText(requireContext(), R.string.demo_data_generated_success, Toast.LENGTH_LONG).show()
+                    } else {
+                        Toast.makeText(requireContext(), R.string.could_not_import, Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
     }
 
     companion object {

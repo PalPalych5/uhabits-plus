@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:gravity="center_horizontal">
+
+    <!-- Color Preview Row -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="24dp">
+
+        <View
+            android:id="@+id/colorPreview"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_marginEnd="16dp" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/custom_color_hex"
+                android:textStyle="bold"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp" />
+
+            <EditText
+                android:id="@+id/hexInput"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:hint="#FFFFFF"
+                android:inputType="textCapCharacters"
+                android:maxLength="7"
+                android:textSize="16sp"
+                android:background="@drawable/dialog_bg_input_box"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:singleLine="true" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Saturation/Value Square -->
+    <org.isoron.uhabits.activities.common.dialogs.SatValView
+        android:id="@+id/satValView"
+        android:layout_width="280dp"
+        android:layout_height="200dp"
+        android:layout_marginBottom="24dp" />
+
+    <!-- Hue Slider -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Hue"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp" />
+
+    <SeekBar
+        android:id="@+id/hueSeekBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:max="360"
+        android:layout_marginBottom="12dp"
+        android:splitTrack="false"
+        android:maxHeight="12dp"
+        android:minHeight="12dp" />
+</LinearLayout>

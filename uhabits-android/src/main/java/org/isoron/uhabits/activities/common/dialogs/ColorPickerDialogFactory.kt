@@ -19,7 +19,7 @@
 package org.isoron.uhabits.activities.common.dialogs
 
 import android.content.Context
-import com.android.colorpicker.ColorPickerDialog.SIZE_SMALL
+import com.android.colorpicker.ColorPickerDialog.Companion.SIZE_SMALL
 import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.gui.toInt
 import org.isoron.uhabits.R
