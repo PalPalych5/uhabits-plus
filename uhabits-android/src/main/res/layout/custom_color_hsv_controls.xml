@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView style="@style/ColorPicker.SliderLabel" android:text="H" />
+        <com.google.android.material.slider.Slider
+            android:id="@+id/custom_color_hue"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:stepSize="1"
+            android:valueFrom="0"
+            android:valueTo="360"
+            app:labelBehavior="gone" />
+        <TextView android:id="@+id/custom_color_hue_value" style="@style/ColorPicker.SliderValue" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView style="@style/ColorPicker.SliderLabel" android:text="S" />
+        <com.google.android.material.slider.Slider
+            android:id="@+id/custom_color_saturation"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:stepSize="1"
+            android:valueFrom="0"
+            android:valueTo="100"
+            app:labelBehavior="gone" />
+        <TextView android:id="@+id/custom_color_saturation_value" style="@style/ColorPicker.SliderValue" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <TextView style="@style/ColorPicker.SliderLabel" android:text="V" />
+        <com.google.android.material.slider.Slider
+            android:id="@+id/custom_color_value"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:stepSize="1"
+            android:valueFrom="0"
+            android:valueTo="100"
+            app:labelBehavior="gone" />
+        <TextView android:id="@+id/custom_color_value_value" style="@style/ColorPicker.SliderValue" />
+    </LinearLayout>
+</merge>

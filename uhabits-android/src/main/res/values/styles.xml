@@ -427,4 +427,90 @@
         <item name="android:windowAnimationStyle">@null</item>
     </style>
 
+    <style name="ColorPickerFullScreenTheme" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">false</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Activity</item>
+        <item name="android:windowBackground">@color/color_picker_background_light</item>
+        <item name="colorPickerBackground">@color/color_picker_background_light</item>
+        <item name="colorPickerSurface">@color/color_picker_surface_light</item>
+        <item name="colorPickerSurfaceVariant">@color/color_picker_surface_variant_light</item>
+        <item name="colorPickerOnSurface">@color/color_picker_on_surface_light</item>
+        <item name="colorPickerOnSurfaceVariant">@color/color_picker_on_surface_variant_light</item>
+        <item name="colorPickerBorder">@color/color_picker_border_light</item>
+        <item name="colorPickerDanger">@color/color_picker_danger_light</item>
+    </style>
+
+    <style name="ColorPickerFullScreenTheme.Dark" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">false</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Activity</item>
+        <item name="android:windowBackground">@color/color_picker_background_dark</item>
+        <item name="colorPickerBackground">@color/color_picker_background_dark</item>
+        <item name="colorPickerSurface">@color/color_picker_surface_dark</item>
+        <item name="colorPickerSurfaceVariant">@color/color_picker_surface_variant_dark</item>
+        <item name="colorPickerOnSurface">@color/color_picker_on_surface_dark</item>
+        <item name="colorPickerOnSurfaceVariant">@color/color_picker_on_surface_variant_dark</item>
+        <item name="colorPickerBorder">@color/color_picker_border_dark</item>
+        <item name="colorPickerDanger">@color/color_picker_danger_dark</item>
+    </style>
+
+    <style name="ColorPickerFullScreenTheme.Amoled" parent="ColorPickerFullScreenTheme.Dark">
+        <item name="android:windowBackground">@color/color_picker_background_amoled</item>
+        <item name="colorPickerBackground">@color/color_picker_background_amoled</item>
+        <item name="colorPickerSurface">@color/color_picker_surface_amoled</item>
+        <item name="colorPickerSurfaceVariant">@color/color_picker_surface_variant_amoled</item>
+        <item name="colorPickerOnSurface">@color/color_picker_on_surface_amoled</item>
+        <item name="colorPickerOnSurfaceVariant">@color/color_picker_on_surface_variant_amoled</item>
+        <item name="colorPickerBorder">@color/color_picker_border_amoled</item>
+    </style>
+
+    <style name="ColorPickerBottomSheetTheme" parent="Theme.MaterialComponents.Light.BottomSheetDialog">
+        <item name="colorPickerBackground">@color/color_picker_background_light</item>
+        <item name="colorPickerSurface">@color/color_picker_surface_light</item>
+        <item name="colorPickerSurfaceVariant">@color/color_picker_surface_variant_light</item>
+        <item name="colorPickerOnSurface">@color/color_picker_on_surface_light</item>
+        <item name="colorPickerOnSurfaceVariant">@color/color_picker_on_surface_variant_light</item>
+        <item name="colorPickerBorder">@color/color_picker_border_light</item>
+        <item name="colorPickerDanger">@color/color_picker_danger_light</item>
+    </style>
+
+    <style name="ColorPickerBottomSheetTheme.Dark" parent="Theme.MaterialComponents.BottomSheetDialog">
+        <item name="colorPickerBackground">@color/color_picker_background_dark</item>
+        <item name="colorPickerSurface">@color/color_picker_surface_dark</item>
+        <item name="colorPickerSurfaceVariant">@color/color_picker_surface_variant_dark</item>
+        <item name="colorPickerOnSurface">@color/color_picker_on_surface_dark</item>
+        <item name="colorPickerOnSurfaceVariant">@color/color_picker_on_surface_variant_dark</item>
+        <item name="colorPickerBorder">@color/color_picker_border_dark</item>
+        <item name="colorPickerDanger">@color/color_picker_danger_dark</item>
+    </style>
+
+    <style name="ColorPickerBottomSheetTheme.Amoled" parent="ColorPickerBottomSheetTheme.Dark">
+        <item name="colorPickerBackground">@color/color_picker_background_amoled</item>
+        <item name="colorPickerSurface">@color/color_picker_surface_amoled</item>
+        <item name="colorPickerSurfaceVariant">@color/color_picker_surface_variant_amoled</item>
+        <item name="colorPickerOnSurface">@color/color_picker_on_surface_amoled</item>
+        <item name="colorPickerOnSurfaceVariant">@color/color_picker_on_surface_variant_amoled</item>
+        <item name="colorPickerBorder">@color/color_picker_border_amoled</item>
+        <item name="colorPickerDanger">@color/color_picker_danger_dark</item>
+    </style>
+
+    <style name="ColorPicker.SliderLabel" parent="@android:style/Widget.TextView">
+        <item name="android:layout_width">32dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">?attr/colorPickerOnSurfaceVariant</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="ColorPicker.SliderValue" parent="@android:style/Widget.TextView">
+        <item name="android:layout_width">52dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:gravity">end</item>
+        <item name="android:textColor">?attr/colorPickerOnSurface</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
 </resources>

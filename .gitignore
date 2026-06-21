@@ -20,3 +20,4 @@ crowdin.yml
 kotlin-js-store
 *.md
 .kotlin
+docs/design/*

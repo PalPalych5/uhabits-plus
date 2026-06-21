@@ -351,9 +351,9 @@
     <string name="pref_enable_day_tiers_summary">Show and track daily minimum/normal/ideal goals</string>
     <string name="pref_enable_habit_spheres_title">Enable habit areas/spheres</string>
     <string name="pref_enable_habit_spheres_summary">Group habits by blocks/spheres on the Today screen and in reports</string>
-    <string name="custom_color">Custom Color</string>
-    <string name="reset_to_default_color">Reset to Default</string>
-    <string name="custom_color_picker_title">Custom Color</string>
+    <string name="custom_color">Custom color</string>
+    <string name="reset_to_default_color">Reset to default color</string>
+    <string name="custom_color_picker_title">Custom color</string>
     <string name="custom_color_red">Red</string>
     <string name="custom_color_green">Green</string>
     <string name="custom_color_blue">Blue</string>
@@ -371,4 +371,23 @@
     <string name="demo_data_confirm_proceed">Proceed</string>
     <string name="demo_data_generating">Generating demo data...</string>
     <string name="demo_data_generated_success">Demo data successfully generated!</string>
+
+    <string name="color_picker_title">Color</string>
+    <string name="color_picker_back">Back</string>
+    <string name="color_picker_habit_preview_fallback">Habit</string>
+    <string name="color_picker_preview_subtitle">Habit color</string>
+    <string name="color_picker_preview_description">Habit color preview: %1$s</string>
+    <string name="color_picker_palette">Palette</string>
+    <string name="color_picker_swatch">Color %1$s, not selected</string>
+    <string name="color_picker_swatch_selected">Color %1$s, selected</string>
+    <string name="color_picker_apply">Apply</string>
+    <string name="color_picker_apply_dirty">Apply selected color</string>
+    <string name="custom_color_modes">HEX · HSV · RGB</string>
+    <string name="custom_color_close">Close custom color editor</string>
+    <string name="custom_color_tab_hex">HEX</string>
+    <string name="custom_color_tab_hsv">HSV</string>
+    <string name="custom_color_tab_rgb">RGB</string>
+    <string name="custom_color_invalid_hex_detail">Enter exactly 6 HEX characters, for example #55B868</string>
+    <string name="custom_color_degrees">%1$d°</string>
+    <string name="custom_color_percent">%1$d%%</string>
 </resources>

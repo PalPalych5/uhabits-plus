@@ -353,9 +353,9 @@
     <string name="pref_enable_day_tiers_summary">Показывать и отслеживать минимум, норму и идеальный день</string>
     <string name="pref_enable_habit_spheres_title">Включить сферы привычек</string>
     <string name="pref_enable_habit_spheres_summary">Группировать привычки по сферам на экране «Сегодня» и в отчётах</string>
-    <string name="custom_color">Пользовательский цвет</string>
-    <string name="reset_to_default_color">Сбросить на стандартный</string>
-    <string name="custom_color_picker_title">Пользовательский цвет</string>
+    <string name="custom_color">Свой цвет</string>
+    <string name="reset_to_default_color">Сбросить на цвет по умолчанию</string>
+    <string name="custom_color_picker_title">Свой цвет</string>
     <string name="custom_color_red">Красный</string>
     <string name="custom_color_green">Зелёный</string>
     <string name="custom_color_blue">Синий</string>
@@ -373,4 +373,23 @@
     <string name="demo_data_confirm_proceed">Продолжить</string>
     <string name="demo_data_generating">Генерация демо-данных...</string>
     <string name="demo_data_generated_success">Демо-данные успешно созданы!</string>
+
+    <string name="color_picker_title">Цвет</string>
+    <string name="color_picker_back">Назад</string>
+    <string name="color_picker_habit_preview_fallback">Привычка</string>
+    <string name="color_picker_preview_subtitle">Цвет привычки</string>
+    <string name="color_picker_preview_description">Предпросмотр цвета привычки: %1$s</string>
+    <string name="color_picker_palette">Палитра</string>
+    <string name="color_picker_swatch">Цвет %1$s, не выбран</string>
+    <string name="color_picker_swatch_selected">Цвет %1$s, выбран</string>
+    <string name="color_picker_apply">Применить</string>
+    <string name="color_picker_apply_dirty">Применить выбранный цвет</string>
+    <string name="custom_color_modes">HEX · HSV · RGB</string>
+    <string name="custom_color_close">Закрыть настройку цвета</string>
+    <string name="custom_color_tab_hex">HEX</string>
+    <string name="custom_color_tab_hsv">HSV</string>
+    <string name="custom_color_tab_rgb">RGB</string>
+    <string name="custom_color_invalid_hex_detail">Введите ровно 6 HEX-символов, например #55B868</string>
+    <string name="custom_color_degrees">%1$d°</string>
+    <string name="custom_color_percent">%1$d%%</string>
 </resources>

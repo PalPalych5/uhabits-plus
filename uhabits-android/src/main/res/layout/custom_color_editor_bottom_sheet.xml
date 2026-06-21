@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/color_picker_sheet_background"
+    android:clipToPadding="false"
+    android:fillViewport="true"
+    android:paddingStart="20dp"
+    android:paddingTop="10dp"
+    android:paddingEnd="20dp"
+    android:paddingBottom="20dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <View
+            android:layout_width="34dp"
+            android:layout_height="4dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="10dp"
+            android:background="@drawable/color_picker_sheet_handle" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/custom_color_picker_title"
+                android:textColor="?attr/colorPickerOnSurface"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <ImageButton
+                android:id="@+id/custom_color_close"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="@drawable/color_picker_close_background"
+                android:contentDescription="@string/custom_color_close"
+                android:padding="11dp"
+                android:src="@drawable/ic_action_cancel"
+                app:tint="?attr/colorPickerOnSurface" />
+        </LinearLayout>
+
+        <com.google.android.material.card.MaterialCardView
+            android:id="@+id/custom_color_preview"
+            android:layout_width="match_parent"
+            android:layout_height="74dp"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="16dp"
+            app:cardCornerRadius="18dp"
+            app:cardElevation="0dp">
+
+            <TextView
+                android:id="@+id/custom_color_preview_value"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="start|bottom"
+                android:layout_margin="12dp"
+                android:background="@drawable/color_picker_hex_badge"
+                android:fontFamily="monospace"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="5dp"
+                android:textColor="@android:color/white"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </com.google.android.material.card.MaterialCardView>
+
+        <com.google.android.material.tabs.TabLayout
+            android:id="@+id/custom_color_tabs"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:background="@drawable/color_picker_tabs_background"
+            app:tabIndicatorColor="?attr/colorPickerOnSurface"
+            app:tabIndicatorFullWidth="false"
+            app:tabMode="fixed"
+            app:tabRippleColor="?attr/colorPickerBorder"
+            app:tabSelectedTextColor="?attr/colorPickerOnSurface"
+            app:tabTextColor="?attr/colorPickerOnSurfaceVariant">
+
+            <com.google.android.material.tabs.TabItem android:text="@string/custom_color_tab_hex" />
+            <com.google.android.material.tabs.TabItem android:text="@string/custom_color_tab_hsv" />
+            <com.google.android.material.tabs.TabItem android:text="@string/custom_color_tab_rgb" />
+        </com.google.android.material.tabs.TabLayout>
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp">
+
+            <LinearLayout
+                android:id="@+id/custom_color_hex_panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/custom_color_hex_layout"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/custom_color_hex"
+                    app:boxBackgroundColor="?attr/colorPickerSurfaceVariant"
+                    app:boxStrokeColor="?attr/colorPickerOnSurfaceVariant"
+                    app:errorTextColor="?attr/colorPickerDanger">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/custom_color_hex_input"
+                        android:layout_width="match_parent"
+                        android:layout_height="56dp"
+                        android:digits="0123456789ABCDEFabcdef#"
+                        android:fontFamily="monospace"
+                        android:inputType="textCapCharacters|textNoSuggestions"
+                        android:maxLength="7"
+                        android:singleLine="true"
+                        android:textColor="?attr/colorPickerOnSurface"
+                        android:textSize="17sp" />
+                </com.google.android.material.textfield.TextInputLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/custom_color_hsv_panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <include layout="@layout/custom_color_hsv_controls" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/custom_color_rgb_panel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <include layout="@layout/custom_color_rgb_controls" />
+            </LinearLayout>
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/custom_color_cancel"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_weight="1"
+                android:backgroundTint="?attr/colorPickerSurfaceVariant"
+                android:text="@android:string/cancel"
+                android:textAllCaps="false"
+                android:textColor="?attr/colorPickerOnSurface"
+                android:textStyle="bold"
+                app:cornerRadius="14dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/custom_color_done"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="52dp"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1.35"
+                android:text="@string/pomodoro_done"
+                android:textAllCaps="false"
+                app:cornerRadius="14dp" />
+        </LinearLayout>
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

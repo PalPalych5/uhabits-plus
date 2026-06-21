@@ -19,30 +19,29 @@
 package org.isoron.uhabits.activities.common.dialogs
 
 import android.content.Context
-import com.android.colorpicker.ColorPickerDialog.Companion.SIZE_SMALL
 import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.gui.toInt
-import org.isoron.uhabits.R
 import org.isoron.uhabits.core.models.PaletteColor
+import org.isoron.uhabits.core.ui.views.DarkTheme
+import org.isoron.uhabits.core.ui.views.PureBlackTheme
 import org.isoron.uhabits.core.ui.views.Theme
 import org.isoron.uhabits.inject.ActivityContext
 import org.isoron.uhabits.inject.ActivityScope
-import org.isoron.uhabits.utils.StyledResources
 
 @Inject
 @ActivityScope
 class ColorPickerDialogFactory(@param:ActivityContext private val context: Context) {
-    fun create(color: PaletteColor, theme: Theme): ColorPickerDialog {
-        val dialog = ColorPickerDialog()
-        val res = StyledResources(context)
+    fun create(color: PaletteColor, theme: Theme, previewName: String? = null): ColorPickerDialog {
         val androidColor = theme.color(color).toInt()
-        dialog.initialize(
-            R.string.color_picker_default_title,
-            res.getPalette(),
-            androidColor,
-            4,
-            SIZE_SMALL
+        val themeMode = when (theme) {
+            is PureBlackTheme -> ColorPickerDialog.THEME_AMOLED
+            is DarkTheme -> ColorPickerDialog.THEME_DARK
+            else -> ColorPickerDialog.THEME_LIGHT
+        }
+        return ColorPickerDialog.newInstance(
+            initialColor = androidColor,
+            previewName = previewName,
+            theme = themeMode
         )
-        return dialog
     }
 }

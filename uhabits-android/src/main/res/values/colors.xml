@@ -90,4 +90,24 @@
 
     <color name="ic_launcher_background">#1976D2</color>
     <color name="color_background">@color/grey_200</color>
+    <color name="color_picker_background_light">#F6F7F9</color>
+    <color name="color_picker_surface_light">#FFFFFF</color>
+    <color name="color_picker_surface_variant_light">#ECEFF3</color>
+    <color name="color_picker_on_surface_light">#191C20</color>
+    <color name="color_picker_on_surface_variant_light">#626872</color>
+    <color name="color_picker_border_light">#1F181C22</color>
+    <color name="color_picker_danger_light">#B3261E</color>
+    <color name="color_picker_background_dark">#111318</color>
+    <color name="color_picker_surface_dark">#1A1D23</color>
+    <color name="color_picker_surface_variant_dark">#242830</color>
+    <color name="color_picker_on_surface_dark">#F1F2F5</color>
+    <color name="color_picker_on_surface_variant_dark">#AEB3BD</color>
+    <color name="color_picker_border_dark">#1AFFFFFF</color>
+    <color name="color_picker_danger_dark">#FFB4AB</color>
+    <color name="color_picker_background_amoled">#000000</color>
+    <color name="color_picker_surface_amoled">#050607</color>
+    <color name="color_picker_surface_variant_amoled">#08090B</color>
+    <color name="color_picker_on_surface_amoled">#F4F4F5</color>
+    <color name="color_picker_on_surface_variant_amoled">#A7A9AF</color>
+    <color name="color_picker_border_amoled">#29FFFFFF</color>
 </resources>

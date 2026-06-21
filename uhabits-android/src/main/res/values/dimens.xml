@@ -27,4 +27,24 @@
     <dimen name="smallerTextSize">12sp</dimen>
     <dimen name="tinyTextSize">10sp</dimen>
     <dimen name="habitNameWidth">160dp</dimen>
+    <dimen name="color_picker_toolbar_height">56dp</dimen>
+    <dimen name="color_picker_horizontal_padding">20dp</dimen>
+    <dimen name="color_picker_content_top_padding">8dp</dimen>
+    <dimen name="color_picker_content_bottom_padding">12dp</dimen>
+    <dimen name="color_picker_preview_height">70dp</dimen>
+    <dimen name="color_picker_preview_padding">13dp</dimen>
+    <dimen name="color_picker_preview_swatch_size">44dp</dimen>
+    <dimen name="color_picker_preview_gap">14dp</dimen>
+    <dimen name="color_picker_card_radius">16dp</dimen>
+    <dimen name="color_picker_section_margin">18dp</dimen>
+    <dimen name="color_picker_palette_title_gap">8dp</dimen>
+    <dimen name="color_picker_swatch_touch_size">48dp</dimen>
+    <dimen name="color_picker_custom_row_height">54dp</dimen>
+    <dimen name="color_picker_custom_margin">14dp</dimen>
+    <dimen name="color_picker_custom_radius">15dp</dimen>
+    <dimen name="color_picker_reset_height">44dp</dimen>
+    <dimen name="color_picker_action_padding">10dp</dimen>
+    <dimen name="color_picker_action_height">50dp</dimen>
+    <dimen name="color_picker_action_radius">14dp</dimen>
+    <dimen name="color_picker_action_stroke">2dp</dimen>
 </resources>

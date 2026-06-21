@@ -39,6 +39,7 @@ import org.isoron.platform.gui.toInt
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
+import org.isoron.uhabits.activities.common.dialogs.ColorPickerDialog
 import org.isoron.uhabits.activities.common.dialogs.ColorPickerDialogFactory
 import org.isoron.uhabits.activities.common.dialogs.FrequencyPickerDialog
 import org.isoron.uhabits.activities.common.dialogs.WeekdayPickerDialog
@@ -184,12 +185,34 @@ class EditHabitActivity : AppCompatActivity() {
         supportActionBar?.elevation = 10.0f
 
         val colorPickerDialogFactory = ColorPickerDialogFactory(this)
-        binding.colorButton.setOnClickListener {
-            val picker = colorPickerDialogFactory.create(color, themeSwitcher.currentTheme)
+        val configureColorPicker: (ColorPickerDialog) -> Unit = { picker ->
             picker.setListener { paletteColor ->
                 this.color = paletteColor
                 updateColors()
             }
+        }
+        (supportFragmentManager.findFragmentByTag("colorPicker") as? ColorPickerDialog)
+            ?.let(configureColorPicker)
+        if (state?.getBoolean("colorPickerOpen") == true) {
+            (supportFragmentManager.findFragmentByTag("colorPicker") as? ColorPickerDialog)?.let {
+                supportFragmentManager.beginTransaction().remove(it).commitNowAllowingStateLoss()
+            }
+            val previewName = binding.nameInput.text.toString().trim()
+                .ifBlank { getString(R.string.color_picker_habit_preview_fallback) }
+            val restoredPicker = colorPickerDialogFactory.create(
+                PaletteColor(state.getInt("colorPickerInitialColor")),
+                themeSwitcher.currentTheme,
+                previewName
+            )
+            restoredPicker.restoreDraftColor(state.getInt("colorPickerDraftColor"))
+            configureColorPicker(restoredPicker)
+            restoredPicker.dismissCurrentAndShow(supportFragmentManager, "colorPicker")
+        }
+        binding.colorButton.setOnClickListener {
+            val previewName = binding.nameInput.text.toString().trim()
+                .ifBlank { getString(R.string.color_picker_habit_preview_fallback) }
+            val picker = colorPickerDialogFactory.create(color, themeSwitcher.currentTheme, previewName)
+            configureColorPicker(picker)
             picker.dismissCurrentAndShow(supportFragmentManager, "colorPicker")
         }
 
@@ -450,6 +473,7 @@ class EditHabitActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(state: Bundle) {
         super.onSaveInstanceState(state)
+        val colorPicker = supportFragmentManager.findFragmentByTag("colorPicker") as? ColorPickerDialog
         with(state) {
             putLong("habitId", habitId)
             putInt("habitType", habitType.value)
@@ -463,6 +487,11 @@ class EditHabitActivity : AppCompatActivity() {
             putString("dayTier", dayTier.name)
             putBoolean("timerEnabled", binding.timerEnabledSwitch.isChecked)
             putLong("blockId", blockId ?: -1L)
+            putBoolean("colorPickerOpen", colorPicker?.isAdded == true)
+            colorPicker?.let {
+                putInt("colorPickerInitialColor", it.snapshotInitialColor())
+                putInt("colorPickerDraftColor", it.snapshotDraftColor())
+            }
         }
     }
 

@@ -57,4 +57,12 @@
     <attr name="selectedBackground" format="reference"/>
 
     <attr name="scrollableRecyclerViewStyle" format="reference"/>
+
+    <attr name="colorPickerBackground" format="color|reference" />
+    <attr name="colorPickerSurface" format="color|reference" />
+    <attr name="colorPickerSurfaceVariant" format="color|reference" />
+    <attr name="colorPickerOnSurface" format="color|reference" />
+    <attr name="colorPickerOnSurfaceVariant" format="color|reference" />
+    <attr name="colorPickerBorder" format="color|reference" />
+    <attr name="colorPickerDanger" format="color|reference" />
 </resources>
