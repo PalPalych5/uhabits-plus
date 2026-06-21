@@ -8,6 +8,7 @@ import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.widget.Toast
+import androidx.preference.PreferenceManager
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.R
 import org.isoron.uhabits.core.commands.CommandRunner
@@ -22,6 +23,11 @@ import org.isoron.uhabits.core.timer.TimerSessionSnapshot
 import org.isoron.uhabits.core.timer.elapsedMillisToTenthsMinutes
 import kotlin.math.roundToInt
 
+data class PomodoroDurations(
+    val focusMinutes: Int = 25,
+    val breakMinutes: Int = 5
+)
+
 class TimerSessionManager(
     private val context: Context,
     private val habitList: HabitList,
@@ -33,17 +39,52 @@ class TimerSessionManager(
     }
 
     private val listeners = mutableSetOf<Listener>()
+    private val preferences = PreferenceManager.getDefaultSharedPreferences(context)
     private val handler = Handler(Looper.getMainLooper())
     private val ticker = object : Runnable {
         override fun run() {
             val completion = engine.tick()
-            if (completion != null) handleCompletion(completion)
+            if (completion != null) {
+                handleCompletion(completion)
+                syncForegroundService()
+            }
             notifyListeners()
             if (engine.snapshot().isRunning) handler.postDelayed(this, TICK_INTERVAL_MILLIS)
         }
     }
 
     fun snapshot(): TimerSessionSnapshot = engine.snapshot()
+
+    fun prepare(habit: Habit) {
+        applyStoredDurations(habit)
+    }
+
+    fun durations(habit: Habit): PomodoroDurations {
+        val key = habitPreferenceKey(habit)
+        return PomodoroDurations(
+            focusMinutes = preferences.getInt("${key}_focus", DEFAULT_FOCUS_MINUTES),
+            breakMinutes = preferences.getInt("${key}_break", DEFAULT_BREAK_MINUTES)
+        )
+    }
+
+    fun updateDurations(habit: Habit, focusMinutes: Int, breakMinutes: Int): Boolean {
+        if (focusMinutes !in MIN_FOCUS_MINUTES..MAX_FOCUS_MINUTES) return false
+        if (breakMinutes !in MIN_BREAK_MINUTES..MAX_BREAK_MINUTES) return false
+        val changed = engine.configurePomodoro(
+            habit.id!!,
+            habit.name,
+            focusMinutes.minutesToMillis(),
+            breakMinutes.minutesToMillis()
+        )
+        if (!changed) return false
+        val key = habitPreferenceKey(habit)
+        preferences.edit()
+            .putInt("${key}_focus", focusMinutes)
+            .putInt("${key}_break", breakMinutes)
+            .apply()
+        notifyListeners()
+        return true
+    }
 
     fun addListener(listener: Listener) {
         listeners.add(listener)
@@ -55,6 +96,7 @@ class TimerSessionManager(
     }
 
     fun switchMode(habit: Habit, mode: TimerMode): Boolean {
+        if (mode == TimerMode.POMODORO) applyStoredDurations(habit)
         val changed = engine.switchMode(habit.id!!, habit.name, mode)
         notifyListeners()
         return changed
@@ -69,6 +111,7 @@ class TimerSessionManager(
             engine.start(id, habit.name)
         }
         restartTickerIfNeeded()
+        syncForegroundService()
         notifyListeners()
         return changed
     }
@@ -77,12 +120,14 @@ class TimerSessionManager(
         val elapsed = engine.finish(habit.id!!)
         handler.removeCallbacks(ticker)
         if (elapsed > 0) saveElapsed(habit.id!!, elapsed)
+        syncForegroundService()
         notifyListeners()
     }
 
     fun reset(habit: Habit) {
         if (engine.reset(habit.id!!)) {
             handler.removeCallbacks(ticker)
+            syncForegroundService()
             notifyListeners()
         }
     }
@@ -94,7 +139,8 @@ class TimerSessionManager(
 
     private fun handleCompletion(completion: PomodoroCompletion) {
         if (completion == PomodoroCompletion.FOCUS) {
-            engine.snapshot().habitId?.let { saveElapsed(it, TimerSessionEngine.FOCUS_MILLIS) }
+            val state = engine.snapshot()
+            state.habitId?.let { saveElapsed(it, state.focusDurationMillis) }
         }
         playAlert()
         val message = if (completion == PomodoroCompletion.FOCUS) {
@@ -137,7 +183,36 @@ class TimerSessionManager(
 
     private fun notifyListeners() = listeners.toList().forEach { it.onTimerChanged() }
 
+    private fun syncForegroundService() {
+        if (engine.snapshot().hasActiveSession) {
+            TimerForegroundService.sync(context)
+        } else {
+            TimerForegroundService.stop(context)
+        }
+    }
+
+    private fun applyStoredDurations(habit: Habit): Boolean {
+        val durations = durations(habit)
+        return engine.configurePomodoro(
+            habit.id!!,
+            habit.name,
+            durations.focusMinutes.minutesToMillis(),
+            durations.breakMinutes.minutesToMillis()
+        )
+    }
+
+    private fun habitPreferenceKey(habit: Habit): String =
+        "pomodoro_${habit.uuid ?: habit.id}"
+
+    private fun Int.minutesToMillis(): Long = this * 60_000L
+
     companion object {
         private const val TICK_INTERVAL_MILLIS = 500L
+        const val DEFAULT_FOCUS_MINUTES = 25
+        const val DEFAULT_BREAK_MINUTES = 5
+        const val MIN_FOCUS_MINUTES = 1
+        const val MAX_FOCUS_MINUTES = 180
+        const val MIN_BREAK_MINUTES = 1
+        const val MAX_BREAK_MINUTES = 60
     }
 }

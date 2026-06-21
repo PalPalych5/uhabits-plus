@@ -13,7 +13,9 @@ data class TimerSessionSnapshot(
     val phase: PomodoroPhase = PomodoroPhase.FOCUS,
     val isRunning: Boolean = false,
     val elapsedMillis: Long = 0,
-    val displayMillis: Long = 0
+    val displayMillis: Long = 0,
+    val focusDurationMillis: Long = 25 * 60 * 1000L,
+    val breakDurationMillis: Long = 5 * 60 * 1000L
 ) {
     val hasActiveSession: Boolean
         get() = isRunning || elapsedMillis > 0 || phase == PomodoroPhase.BREAK
@@ -27,6 +29,8 @@ class TimerSessionEngine(private val clock: () -> Long) {
     private var isRunning = false
     private var accumulatedMillis = 0L
     private var startedAtMillis = 0L
+    private var focusDurationMillis = FOCUS_MILLIS
+    private var breakDurationMillis = BREAK_MILLIS
 
     fun snapshot(): TimerSessionSnapshot {
         val elapsed = currentElapsedMillis()
@@ -41,8 +45,25 @@ class TimerSessionEngine(private val clock: () -> Long) {
             phase = phase,
             isRunning = isRunning,
             elapsedMillis = elapsed,
-            displayMillis = display
+            displayMillis = display,
+            focusDurationMillis = focusDurationMillis,
+            breakDurationMillis = breakDurationMillis
         )
+    }
+
+    fun configurePomodoro(
+        habitId: Long,
+        habitName: String,
+        focusDurationMillis: Long,
+        breakDurationMillis: Long
+    ): Boolean {
+        if (focusDurationMillis <= 0 || breakDurationMillis <= 0) return false
+        if (hasConflict(habitId)) return false
+        if (isRunning || accumulatedMillis > 0 || phase != PomodoroPhase.FOCUS) return false
+        attach(habitId, habitName)
+        this.focusDurationMillis = focusDurationMillis
+        this.breakDurationMillis = breakDurationMillis
+        return true
     }
 
     fun switchMode(habitId: Long, habitName: String, newMode: TimerMode): Boolean {
@@ -87,7 +108,7 @@ class TimerSessionEngine(private val clock: () -> Long) {
         val elapsed = currentElapsedMillis()
         val result = when {
             mode == TimerMode.STOPWATCH -> elapsed
-            phase == PomodoroPhase.FOCUS -> elapsed.coerceAtMost(FOCUS_MILLIS)
+            phase == PomodoroPhase.FOCUS -> elapsed.coerceAtMost(focusDurationMillis)
             else -> 0
         }
         reset()
@@ -108,6 +129,8 @@ class TimerSessionEngine(private val clock: () -> Long) {
         isRunning = false
         accumulatedMillis = 0
         startedAtMillis = 0
+        focusDurationMillis = FOCUS_MILLIS
+        breakDurationMillis = BREAK_MILLIS
     }
 
     private fun attach(habitId: Long, habitName: String) {
@@ -134,7 +157,7 @@ class TimerSessionEngine(private val clock: () -> Long) {
     }
 
     private fun phaseDurationMillis(): Long =
-        if (phase == PomodoroPhase.FOCUS) FOCUS_MILLIS else BREAK_MILLIS
+        if (phase == PomodoroPhase.FOCUS) focusDurationMillis else breakDurationMillis
 
     companion object {
         const val FOCUS_MILLIS = 25 * 60 * 1000L

@@ -18,13 +18,18 @@
  */
 package org.isoron.uhabits.activities.habits.show
 
+import android.Manifest
 import android.content.ContentUris
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.HapticFeedbackConstants
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -71,6 +76,9 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
     private val scope = CoroutineScope(Dispatchers.Main)
     private lateinit var presenter: ShowHabitPresenter
     private val screen = Screen()
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -110,7 +118,11 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
             preferences = preferences
         )
 
-        view.initTimer(habit, appComponent.timerSessionManager)
+        view.initTimer(
+            habit,
+            appComponent.timerSessionManager,
+            ::requestTimerNotificationPermission
+        )
         view.setListener(presenter)
         view.applyRootViewInsets()
         setContentView(view)
@@ -145,6 +157,14 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
 
     override fun onCommandFinished(command: Command) {
         screen.refresh()
+    }
+
+    private fun requestTimerNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) return
+        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     inner class Screen : ShowHabitMenuPresenter.Screen, ShowHabitPresenter.Screen {

@@ -79,9 +79,14 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
         binding.barCard.setListener(presenter.barCardPresenter)
     }
 
-    fun initTimer(habit: Habit, manager: TimerSessionManager) {
+    fun initTimer(
+        habit: Habit,
+        manager: TimerSessionManager,
+        requestNotificationPermission: () -> Unit
+    ) {
         habitUnit = habit.unit
         isTimerEnabled = habit.timerEnabled
+        binding.timerCard.setNotificationPermissionRequester(requestNotificationPermission)
         binding.timerCard.setHabit(habit, manager)
     }
 }

@@ -47,6 +47,32 @@ class TimerSessionEngineTest {
     }
 
     @Test
+    fun usesConfiguredFocusAndBreakDurations() {
+        assertTrue(engine.configurePomodoro(1, "Reading", 30_000, 10_000))
+        engine.switchMode(1, "Reading", TimerMode.POMODORO)
+        assertEquals(30_000, engine.snapshot().displayMillis)
+
+        engine.start(1, "Reading")
+        now += 30_000
+        assertEquals(PomodoroCompletion.FOCUS, engine.tick())
+        assertEquals(10_000, engine.snapshot().displayMillis)
+
+        engine.start(1, "Reading")
+        now += 10_000
+        assertEquals(PomodoroCompletion.BREAK, engine.tick())
+    }
+
+    @Test
+    fun blocksDurationChangeAfterSessionStarts() {
+        engine.configurePomodoro(1, "Reading", 30_000, 10_000)
+        engine.switchMode(1, "Reading", TimerMode.POMODORO)
+        engine.start(1, "Reading")
+
+        assertFalse(engine.configurePomodoro(1, "Reading", 45_000, 15_000))
+        assertEquals(30_000, engine.snapshot().focusDurationMillis)
+    }
+
+    @Test
     fun partialFocusFinishReturnsElapsedAndResetDiscards() {
         engine.switchMode(1, "Reading", TimerMode.POMODORO)
         engine.start(1, "Reading")

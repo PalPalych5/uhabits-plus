@@ -1,14 +1,19 @@
 package org.isoron.uhabits.activities.habits.show.views
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
 import android.view.Gravity
 import android.view.View
+import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import org.isoron.uhabits.R
@@ -26,12 +31,24 @@ class TimerCardView : LinearLayout {
 
     private lateinit var stopwatchTab: TextView
     private lateinit var pomodoroTab: TextView
-    private lateinit var titleView: TextView
+    private lateinit var statusView: TextView
+    private lateinit var sceneContainer: FrameLayout
+    private lateinit var normalContainer: LinearLayout
     private lateinit var timeDisplay: TextView
+    private lateinit var editorContainer: LinearLayout
+    private lateinit var focusEditorTab: TextView
+    private lateinit var breakEditorTab: TextView
+    private lateinit var minuteWheel: MinuteWheelView
+    private lateinit var buttons: LinearLayout
     private lateinit var startPauseBtn: Button
     private lateinit var finishBtn: Button
     private lateinit var resetBtn: Button
     private var activeColor: Int = 0
+    private var isEditingDuration = false
+    private var isEditingBreak = false
+    private var transitionInProgress = false
+    private var sceneAnimator: ValueAnimator? = null
+    private var requestNotificationPermission: (() -> Unit)? = null
 
     constructor(context: Context) : super(context) { initView() }
     constructor(context: Context, attrs: AttributeSet) : super(context, attrs) { initView() }
@@ -53,49 +70,109 @@ class TimerCardView : LinearLayout {
         modeSelector.addView(pomodoroTab, LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
         addView(modeSelector, LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8f).toInt() })
 
-        titleView = TextView(context).apply {
+        statusView = TextView(context).apply {
             textSize = 14f
             setTypeface(null, Typeface.BOLD)
-            gravity = Gravity.CENTER_HORIZONTAL
+            gravity = Gravity.CENTER
+            visibility = View.GONE
         }
-        addView(titleView, LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(12f).toInt() })
+        addView(statusView, LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+            bottomMargin = dp(8f).toInt()
+        })
+
+        sceneContainer = FrameLayout(context)
+        normalContainer = LinearLayout(context).apply {
+            orientation = VERTICAL
+            gravity = Gravity.CENTER
+        }
 
         timeDisplay = TextView(context).apply {
             textSize = 48f
             setTypeface(Typeface.MONOSPACE, Typeface.BOLD)
             gravity = Gravity.CENTER
+            setPadding(0, dp(4f).toInt(), 0, dp(4f).toInt())
+            contentDescription = context.getString(R.string.pomodoro_edit_duration)
+            setOnClickListener { enterDurationEditor() }
         }
-        addView(timeDisplay, LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(16f).toInt() })
+        normalContainer.addView(timeDisplay, LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+            bottomMargin = dp(16f).toInt()
+        })
 
-        val buttons = LinearLayout(context).apply {
+        editorContainer = LinearLayout(context).apply {
+            orientation = VERTICAL
+            gravity = Gravity.CENTER
+            visibility = View.GONE
+        }
+        val editorTabs = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER
         }
-        startPauseBtn = actionButton { habit?.let { manager?.startOrPause(it) } }
+        focusEditorTab = editorTab(R.string.pomodoro_focus_title) { showEditorPhase(false) }
+        breakEditorTab = editorTab(R.string.pomodoro_break_title) { showEditorPhase(true) }
+        editorTabs.addView(focusEditorTab, buttonParams())
+        editorTabs.addView(breakEditorTab, LayoutParams(WRAP_CONTENT, dp(40f).toInt()))
+        editorContainer.addView(editorTabs, LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+
+        minuteWheel = MinuteWheelView(context).apply {
+            contentDescription = context.getString(R.string.pomodoro_minute_wheel)
+            onMinuteChanged = { minute -> saveEditedMinute(minute) }
+        }
+        editorContainer.addView(minuteWheel, LayoutParams(MATCH_PARENT, dp(132f).toInt()))
+        editorContainer.addView(
+            editorTab(R.string.pomodoro_done) { exitDurationEditor() },
+            LayoutParams(WRAP_CONTENT, dp(40f).toInt())
+        )
+        buttons = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        startPauseBtn = actionButton { toggleTimer() }
         finishBtn = actionButton { habit?.let { manager?.finish(it) } }
         resetBtn = actionButton { habit?.let { manager?.reset(it) } }
         buttons.addView(startPauseBtn, buttonParams())
         buttons.addView(finishBtn, buttonParams())
         buttons.addView(resetBtn, LayoutParams(WRAP_CONTENT, dp(40f).toInt()))
-        addView(buttons, LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        normalContainer.addView(buttons, LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        sceneContainer.addView(
+            normalContainer,
+            FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+        )
+        sceneContainer.addView(
+            editorContainer,
+            FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+        )
+        addView(sceneContainer, LayoutParams(MATCH_PARENT, WRAP_CONTENT))
     }
 
     fun setHabit(habit: Habit, manager: TimerSessionManager) {
         if (isAttachedToWindow) this.manager?.removeListener(listener)
         this.habit = habit
         this.manager = manager
+        manager.prepare(habit)
         if (isAttachedToWindow) manager.addListener(listener) else updateUIState()
+    }
+
+    fun setNotificationPermissionRequester(requester: () -> Unit) {
+        requestNotificationPermission = requester
     }
 
     fun setColor(color: Int) {
         activeColor = color
-        titleView.setTextColor(color)
+        statusView.setTextColor(color)
         timeDisplay.setTextColor(color)
+        if (::focusEditorTab.isInitialized) updateEditorTabs()
         updateUIState()
     }
 
     private fun switchMode(mode: TimerMode) {
         habit?.let { manager?.switchMode(it, mode) }
+    }
+
+    private fun toggleTimer() {
+        val currentHabit = habit ?: return
+        val currentManager = manager ?: return
+        if (!currentManager.snapshot().hasActiveSession) requestNotificationPermission?.invoke()
+        currentManager.startOrPause(currentHabit)
     }
 
     private fun updateUIState() {
@@ -108,22 +185,21 @@ class TimerCardView : LinearLayout {
         updateTimeDisplay(state.displayMillis)
         stopwatchTab.text = context.getString(R.string.timer_mode_stopwatch).uppercase()
         pomodoroTab.text = context.getString(R.string.timer_mode_pomodoro).uppercase()
-        titleView.text = when {
+        statusView.text = when {
             conflict -> context.getString(R.string.timer_active_for_other, sharedState.habitName)
-            state.mode == TimerMode.STOPWATCH -> context.getString(R.string.timer_title).uppercase()
-            state.phase == PomodoroPhase.FOCUS -> context.getString(
-                R.string.timer_pomodoro_phase,
-                context.getString(R.string.pomodoro_focus_title)
-            ).uppercase()
-            else -> context.getString(
+            state.mode == TimerMode.POMODORO && state.phase == PomodoroPhase.BREAK -> context.getString(
                 R.string.timer_pomodoro_phase,
                 context.getString(R.string.pomodoro_break_title)
             ).uppercase()
+            else -> ""
         }
+        statusView.visibility = if (statusView.text.isEmpty()) View.GONE else View.VISIBLE
 
         startPauseBtn.text = when {
             state.isRunning -> context.getString(R.string.timer_pause)
             state.elapsedMillis > 0 -> context.getString(R.string.timer_resume)
+            state.mode == TimerMode.POMODORO && state.phase == PomodoroPhase.BREAK ->
+                context.getString(R.string.pomodoro_start_break)
             else -> context.getString(R.string.timer_start)
         }
         finishBtn.text = context.getString(R.string.timer_finish)
@@ -133,13 +209,155 @@ class TimerCardView : LinearLayout {
         finishBtn.visibility = if (state.mode == TimerMode.POMODORO && state.phase == PomodoroPhase.BREAK) View.GONE else View.VISIBLE
         finishBtn.isEnabled = !conflict && state.elapsedMillis > 0
         resetBtn.isEnabled = !conflict && state.habitId == currentHabit.id && state.hasActiveSession
+        val canConfigureDuration = !conflict && !state.isRunning &&
+            state.elapsedMillis == 0L && state.phase == PomodoroPhase.FOCUS &&
+            state.mode == TimerMode.POMODORO
+        timeDisplay.isClickable = canConfigureDuration
+        timeDisplay.isFocusable = canConfigureDuration
+        if (isEditingDuration && !canConfigureDuration) exitDurationEditor()
         styleTabs(state, conflict)
         styleButtons()
     }
 
+    private fun enterDurationEditor() {
+        if (transitionInProgress) return
+        val currentHabit = habit ?: return
+        val state = manager?.snapshot() ?: return
+        if (state.habitId != currentHabit.id || state.mode != TimerMode.POMODORO ||
+            state.isRunning || state.elapsedMillis > 0L || state.phase != PomodoroPhase.FOCUS
+        ) return
+        isEditingDuration = true
+        isEditingBreak = false
+        showEditorPhase(false)
+        animateEditorVisibility(showEditor = true)
+    }
+
+    private fun exitDurationEditor() {
+        if (!isEditingDuration || transitionInProgress) return
+        isEditingDuration = false
+        animateEditorVisibility(showEditor = false)
+        updateUIState()
+    }
+
+    private fun showEditorPhase(editBreak: Boolean) {
+        if (transitionInProgress) return
+        val currentHabit = habit ?: return
+        val currentManager = manager ?: return
+        isEditingBreak = editBreak
+        val durations = currentManager.durations(currentHabit)
+        if (editBreak) {
+            minuteWheel.setRange(1, 60, durations.breakMinutes)
+        } else {
+            minuteWheel.setRange(1, 180, durations.focusMinutes)
+        }
+        updateEditorTabs()
+    }
+
+    private fun saveEditedMinute(minute: Int) {
+        val currentHabit = habit ?: return
+        val currentManager = manager ?: return
+        val durations = currentManager.durations(currentHabit)
+        if (isEditingBreak) {
+            currentManager.updateDurations(currentHabit, durations.focusMinutes, minute)
+        } else {
+            currentManager.updateDurations(currentHabit, minute, durations.breakMinutes)
+        }
+    }
+
+    private fun animateEditorVisibility(showEditor: Boolean) {
+        sceneAnimator?.cancel()
+        normalContainer.animate().cancel()
+        editorContainer.animate().cancel()
+
+        val oldLayer = if (showEditor) normalContainer else editorContainer
+        val newLayer = if (showEditor) editorContainer else normalContainer
+        transitionInProgress = true
+        timeDisplay.isClickable = false
+        startPauseBtn.isEnabled = false
+        finishBtn.isEnabled = false
+        resetBtn.isEnabled = false
+        focusEditorTab.isEnabled = false
+        breakEditorTab.isEnabled = false
+        stopwatchTab.isEnabled = false
+        pomodoroTab.isEnabled = false
+
+        oldLayer.animate()
+            .alpha(0f)
+            .setDuration(80L)
+            .setInterpolator(AccelerateDecelerateInterpolator())
+            .withEndAction {
+                oldLayer.visibility = View.GONE
+                oldLayer.alpha = 1f
+                newLayer.alpha = 0f
+                newLayer.visibility = View.INVISIBLE
+
+                val width = sceneContainer.width.coerceAtLeast(1)
+                newLayer.measure(
+                    MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+                )
+                val startHeight = sceneContainer.height.coerceAtLeast(1)
+                val targetHeight = newLayer.measuredHeight.coerceAtLeast(1)
+                newLayer.visibility = View.VISIBLE
+                newLayer.animate()
+                    .alpha(1f)
+                    .setStartDelay(20L)
+                    .setDuration(160L)
+                    .setInterpolator(AccelerateDecelerateInterpolator())
+                    .start()
+
+                sceneAnimator = ValueAnimator.ofInt(startHeight, targetHeight).apply {
+                    duration = 180L
+                    interpolator = AccelerateDecelerateInterpolator()
+                    addUpdateListener { animator ->
+                        sceneContainer.layoutParams = sceneContainer.layoutParams.apply {
+                            height = animator.animatedValue as Int
+                        }
+                    }
+                    addListener(object : AnimatorListenerAdapter() {
+                        override fun onAnimationEnd(animation: Animator) {
+                            finishSceneTransition(showEditor)
+                        }
+
+                        override fun onAnimationCancel(animation: Animator) {
+                            finishSceneTransition(showEditor)
+                        }
+                    })
+                    start()
+                }
+            }
+            .start()
+    }
+
+    private fun finishSceneTransition(showEditor: Boolean) {
+        val visibleLayer = if (showEditor) editorContainer else normalContainer
+        val hiddenLayer = if (showEditor) normalContainer else editorContainer
+        visibleLayer.animate().cancel()
+        visibleLayer.alpha = 1f
+        visibleLayer.visibility = View.VISIBLE
+        hiddenLayer.animate().cancel()
+        hiddenLayer.alpha = 1f
+        hiddenLayer.visibility = View.GONE
+        sceneContainer.layoutParams = sceneContainer.layoutParams.apply { height = WRAP_CONTENT }
+        sceneAnimator = null
+        transitionInProgress = false
+        focusEditorTab.isEnabled = true
+        breakEditorTab.isEnabled = true
+        updateUIState()
+    }
+
+    private fun updateEditorTabs() {
+        val inactiveColor = StyledResources(context).getColor(R.attr.contrast60)
+        focusEditorTab.setTextColor(if (!isEditingBreak) activeColor else inactiveColor)
+        breakEditorTab.setTextColor(if (isEditingBreak) activeColor else inactiveColor)
+        focusEditorTab.alpha = if (!isEditingBreak) 1f else 0.55f
+        breakEditorTab.alpha = if (isEditingBreak) 1f else 0.55f
+    }
+
     private fun styleTabs(state: TimerSessionSnapshot, conflict: Boolean) {
         val inactiveColor = StyledResources(context).getColor(R.attr.contrast60)
-        val canSwitch = !conflict && !state.isRunning && state.elapsedMillis == 0L && state.phase == PomodoroPhase.FOCUS
+        val canSwitch = !isEditingDuration && !transitionInProgress && !conflict && !state.isRunning &&
+            state.elapsedMillis == 0L && state.phase == PomodoroPhase.FOCUS
         stopwatchTab.isEnabled = canSwitch
         pomodoroTab.isEnabled = canSwitch
         stopwatchTab.setTextColor(if (state.mode == TimerMode.STOPWATCH) activeColor else inactiveColor)
@@ -185,6 +403,15 @@ class TimerCardView : LinearLayout {
         setOnClickListener { onClick() }
     }
 
+    private fun editorTab(textRes: Int, onClick: () -> Unit) = TextView(context).apply {
+        text = context.getString(textRes).uppercase()
+        textSize = 12f
+        setTypeface(null, Typeface.BOLD)
+        gravity = Gravity.CENTER
+        setPadding(dp(16f).toInt(), 0, dp(16f).toInt(), 0)
+        setOnClickListener { onClick() }
+    }
+
     private fun actionButton(onClick: () -> Unit) = Button(context).apply {
         setPadding(dp(16f).toInt(), 0, dp(16f).toInt(), 0)
         setOnClickListener { onClick() }
@@ -202,6 +429,9 @@ class TimerCardView : LinearLayout {
     }
 
     override fun onDetachedFromWindow() {
+        sceneAnimator?.cancel()
+        normalContainer.animate().cancel()
+        editorContainer.animate().cancel()
         manager?.removeListener(listener)
         super.onDetachedFromWindow()
     }

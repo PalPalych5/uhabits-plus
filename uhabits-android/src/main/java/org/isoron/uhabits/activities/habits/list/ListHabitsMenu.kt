@@ -28,7 +28,6 @@ import me.tatarka.inject.annotations.Inject
 import org.isoron.uhabits.R
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.preferences.Preferences
-import org.isoron.uhabits.core.ui.ThemeSwitcher
 import org.isoron.uhabits.core.ui.screens.habits.list.ListHabitsMenuBehavior
 import org.isoron.uhabits.inject.ActivityContext
 import org.isoron.uhabits.inject.ActivityScope
@@ -39,7 +38,6 @@ import org.isoron.uhabits.utils.StyledResources
 class ListHabitsMenu(
     @ActivityContext context: Context,
     private val preferences: Preferences,
-    private val themeSwitcher: ThemeSwitcher,
     val behavior: ListHabitsMenuBehavior
 ) {
     val activity = (context as AppCompatActivity)
@@ -47,10 +45,8 @@ class ListHabitsMenu(
     fun onCreate(inflater: MenuInflater, menu: Menu) {
         menu.clear()
         inflater.inflate(R.menu.list_habits, menu)
-        val nightModeItem = menu.findItem(R.id.actionToggleNightMode)
         val hideArchivedItem = menu.findItem(R.id.actionHideArchived)
         val hideCompletedItem = menu.findItem(R.id.actionHideCompleted)
-        nightModeItem.isChecked = themeSwitcher.isNightMode
         hideArchivedItem.isChecked = !preferences.showArchived
         hideCompletedItem.isChecked = !preferences.showCompleted
         if (preferences.areQuestionMarksEnabled || preferences.isSkipEnabled) {
@@ -85,21 +81,6 @@ class ListHabitsMenu(
 
     fun onItemSelected(item: MenuItem): Boolean {
         when (item.itemId) {
-            R.id.actionToggleNightMode -> {
-                behavior.onToggleNightMode()
-                return true
-            }
-
-            R.id.actionFAQ -> {
-                behavior.onViewFAQ()
-                return true
-            }
-
-            R.id.actionAbout -> {
-                behavior.onViewAbout()
-                return true
-            }
-
             R.id.actionHideArchived -> {
                 behavior.onToggleShowArchived()
                 activity.invalidateOptionsMenu()

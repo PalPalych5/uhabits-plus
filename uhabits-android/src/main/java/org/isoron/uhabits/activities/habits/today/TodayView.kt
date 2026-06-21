@@ -301,33 +301,31 @@ class TodayView(
         val isCollapsed = preferences.isTodaySectionCollapsed(sectionKey)
         val sectionColor = section.color.toFixedAndroidColor()
 
-        // Outer card with left color stripe
+        // Outer card with an inset color accent
         val cardWrapper = FrameLayout(context).apply {
             layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
                 topMargin = dp(12f).toInt()
             }
         }
 
-        // Left stripe
+        // Keep the accent inside the card bounds so it never intersects the
+        // card stroke or its rounded corners.
         val stripe = View(context).apply {
-            layoutParams = FrameLayout.LayoutParams(dp(4f).toInt(), MATCH_PARENT).apply {
+            layoutParams = FrameLayout.LayoutParams(dp(3f).toInt(), MATCH_PARENT).apply {
                 gravity = Gravity.START
+                marginStart = dp(4f).toInt()
+                topMargin = dp(8f).toInt()
+                bottomMargin = dp(8f).toInt()
             }
             background = GradientDrawable().apply {
                 setColor(sectionColor)
-                cornerRadii = floatArrayOf(
-                    dp(12f), dp(12f), // top-left
-                    0f, 0f,           // top-right
-                    0f, 0f,           // bottom-right
-                    dp(12f), dp(12f)  // bottom-left
-                )
+                cornerRadius = dp(1.5f)
             }
+            translationZ = dp(3f)
         }
 
         val card = buildCard(cornerRadius = 12f, elevation = 2f).apply {
-            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
-                marginStart = dp(4f).toInt() // shift right to show stripe
-            }
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
         }
         val inner = LinearLayout(context).apply {
             orientation = VERTICAL

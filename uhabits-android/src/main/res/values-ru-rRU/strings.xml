@@ -288,6 +288,17 @@
     <string name="timer_finish">Завершить</string>
     <string name="timer_active_for_other">Активен таймер: %1$s</string>
     <string name="timer_pomodoro_phase">Pomodoro — %1$s</string>
+    <string name="pomodoro_minutes_short">%1$d мин</string>
+    <string name="pomodoro_start_break">Начать отдых</string>
+    <string name="timer_notification_channel">Таймер</string>
+    <string name="timer_notification_channel_description">Секундомер и прогресс Pomodoro</string>
+    <string name="timer_notification_paused_format">%1$s · %2$s</string>
+    <string name="timer_notification_pomodoro_focus">Pomodoro · Фокус</string>
+    <string name="timer_notification_focus_complete">Фокус завершён</string>
+    <string name="timer_notification_pomodoro_break">Pomodoro · Отдых</string>
+    <string name="pomodoro_edit_duration">Изменить длительность Pomodoro</string>
+    <string name="pomodoro_minute_wheel">Длительность Pomodoro в минутах</string>
+    <string name="pomodoro_done">Готово</string>
     <string name="habit_block">Сфера привычки</string>
     <string name="habit_block_unassigned">Прочее</string>
     <string name="manage_blocks">Управление сферами</string>
