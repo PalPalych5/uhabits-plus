@@ -60,15 +60,27 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         binding.root.applyRootViewInsets()
         setContentView(binding.root)
 
+        val todayVisible = prefs.isTodayTabVisible
+        var startDest = savedInstanceState?.getString(STATE_CURRENT)?.let {
+            runCatching { MainDestination.valueOf(it) }.getOrNull()
+        } ?: destinationFromIntent(intent)
+
+        if (startDest == MainDestination.TODAY && !todayVisible) {
+            startDest = MainDestination.HABITS
+        }
+
+        val restoredHistory = (savedInstanceState?.getStringArrayList(STATE_HISTORY)
+            ?.map { runCatching { MainDestination.valueOf(it) }.getOrNull() }
+            ?.filterNotNull() ?: emptyList())
+            .filter { it != MainDestination.TODAY || todayVisible }
+
         navigationState = MainNavigationState(
-            current = savedInstanceState?.getString(STATE_CURRENT)?.let(MainDestination::valueOf)
-                ?: destinationFromIntent(intent),
-            history = savedInstanceState?.getStringArrayList(STATE_HISTORY)
-                ?.map(MainDestination::valueOf)
-                ?: emptyList()
+            current = startDest,
+            history = restoredHistory
         )
 
         setupBottomNavigation()
+        binding.bottomNavigation.menu.findItem(R.id.navigationToday)?.isVisible = todayVisible
         binding.createHabitFab.setOnClickListener {
             HabitTypeDialog().show(supportFragmentManager, "habitType")
         }
@@ -181,7 +193,11 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     override fun navigateBack(): Boolean {
-        val destination = navigationState.navigateBack() ?: return false
+        var destination = navigationState.navigateBack()
+        while (destination == MainDestination.TODAY && !prefs.isTodayTabVisible) {
+            destination = navigationState.navigateBack()
+        }
+        if (destination == null) return false
         showDestination(destination)
         return true
     }
@@ -256,6 +272,16 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
     override fun onQuestionMarksChanged() = Unit
 
+    override fun onNavigationPreferencesChanged() {
+        runOnUiThread {
+            val visible = prefs.isTodayTabVisible
+            binding.bottomNavigation.menu.findItem(R.id.navigationToday)?.isVisible = visible
+            if (!visible && navigationState.current == MainDestination.TODAY) {
+                navigate(MainDestination.HABITS)
+            }
+        }
+    }
+
     private fun requestNotificationPermissionAndSchedule() {
         if (!appComponent.reminderScheduler.hasHabitsWithReminders()) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
@@ -288,10 +314,15 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         MainDestination.SETTINGS -> TAG_SETTINGS
     }
 
-    private fun destinationFromIntent(intent: Intent): MainDestination =
-        intent.getStringExtra(EXTRA_DESTINATION)?.let {
-            runCatching { MainDestination.valueOf(it) }.getOrNull()
-        } ?: MainDestination.TODAY
+    private fun destinationFromIntent(intent: Intent): MainDestination {
+        val destName = intent.getStringExtra(EXTRA_DESTINATION)
+            ?: prefs.startDestinationName
+        var dest = runCatching { MainDestination.valueOf(destName) }.getOrDefault(MainDestination.TODAY)
+        if (dest == MainDestination.TODAY && !prefs.isTodayTabVisible) {
+            dest = MainDestination.HABITS
+        }
+        return dest
+    }
 
     companion object {
         private const val EXTRA_DESTINATION = "main.destination"
