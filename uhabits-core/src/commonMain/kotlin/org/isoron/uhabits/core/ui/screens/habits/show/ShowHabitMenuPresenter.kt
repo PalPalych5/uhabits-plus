@@ -64,6 +64,7 @@ class ShowHabitMenuPresenter(
     fun onArchiveHabits() {
         commandRunner.run(ArchiveHabitsCommand(habitList, listOf(habit)))
         screen.showMessage(Message.HABIT_ARCHIVED)
+        screen.close()
     }
 
     fun onExportCSV() {
