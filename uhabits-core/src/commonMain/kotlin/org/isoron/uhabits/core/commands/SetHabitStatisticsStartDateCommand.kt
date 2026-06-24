@@ -3,6 +3,7 @@ package org.isoron.uhabits.core.commands
 import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.HabitNotFoundException
+import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 
 data class SetHabitStatisticsStartDateCommand(
     val habitList: HabitList,
@@ -16,5 +17,6 @@ data class SetHabitStatisticsStartDateCommand(
         habit.observable.notifyListeners()
         habit.recompute()
         habitList.resort()
+        (habitList as? SQLiteHabitList)?.syncManager?.enqueueHabitUpdate(habit)
     }
 }

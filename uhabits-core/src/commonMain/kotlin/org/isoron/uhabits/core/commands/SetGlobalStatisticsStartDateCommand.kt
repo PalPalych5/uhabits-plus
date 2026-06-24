@@ -2,6 +2,7 @@ package org.isoron.uhabits.core.commands
 
 import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.models.HabitList
+import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 
 data class SetGlobalStatisticsStartDateCommand(
     val habitList: HabitList,
@@ -14,5 +15,9 @@ data class SetGlobalStatisticsStartDateCommand(
             habit.recompute()
         }
         habitList.resort()
+        (habitList as? SQLiteHabitList)?.syncManager?.enqueueAppSettingChange(
+            "global_stats_start_timestamp",
+            statisticsStartDate?.unixTime
+        )
     }
 }

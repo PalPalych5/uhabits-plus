@@ -20,12 +20,17 @@ package org.isoron.uhabits.core.commands
 
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
+import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 
 data class DeleteHabitsCommand(
     val habitList: HabitList,
     val selected: List<Habit>
 ) : Command {
     override fun run() {
-        for (h in selected) habitList.remove(h)
+        val syncManager = (habitList as? SQLiteHabitList)?.syncManager
+        for (h in selected) {
+            habitList.remove(h)
+            syncManager?.enqueueHabitDelete(h)
+        }
     }
 }

@@ -70,6 +70,11 @@ open class EntryList {
         entriesByDate[entry.date] = entry
     }
 
+    @Synchronized
+    open fun remove(date: LocalDate) {
+        entriesByDate.remove(date)
+    }
+
     /**
      * Returns all entries whose values are known, sorted by date. The first element
      * corresponds to the newest entry, and the last element corresponds to the oldest.

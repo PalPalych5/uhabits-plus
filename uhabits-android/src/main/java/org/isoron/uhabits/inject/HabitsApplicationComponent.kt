@@ -51,8 +51,14 @@ import org.isoron.uhabits.intents.IntentScheduler
 import org.isoron.uhabits.intents.PendingIntentFactory
 import org.isoron.uhabits.io.AndroidLogging
 import org.isoron.uhabits.notifications.AndroidNotificationTray
+import org.isoron.uhabits.preferences.DeviceIdentityManager
 import org.isoron.uhabits.preferences.SharedPreferencesStorage
 import org.isoron.uhabits.receivers.ReminderController
+import org.isoron.uhabits.sync.DeviceIdProvider
+import org.isoron.uhabits.sync.SupabaseSyncBackend
+import org.isoron.uhabits.sync.SyncAuthStore
+import org.isoron.uhabits.sync.SyncBackend
+import org.isoron.uhabits.sync.SyncCoordinator
 import org.isoron.uhabits.utils.DatabaseUtils
 import org.isoron.uhabits.widgets.WidgetUpdater
 import java.io.File
@@ -82,6 +88,7 @@ abstract class HabitsApplicationComponent(
     abstract val preferences: Preferences
     abstract val reminderScheduler: ReminderScheduler
     abstract val reminderController: ReminderController
+    abstract val syncCoordinator: SyncCoordinator
     abstract val taskRunner: TaskRunner
     abstract val timerSessionManager: TimerSessionManager
     abstract val widgetPreferences: WidgetPreferences
@@ -126,7 +133,29 @@ abstract class HabitsApplicationComponent(
 
     @AppScope
     @Provides
-    open fun modelFactory(): ModelFactory = SQLModelFactory(providedDb)
+    open fun sqlModelFactory(deviceIdentityManager: DeviceIdentityManager): SQLModelFactory =
+        SQLModelFactory(
+            providedDb,
+            deviceIdProvider = { deviceIdentityManager.deviceId },
+            nowProvider = { System.currentTimeMillis() }
+        )
+
+    @AppScope
+    @Provides
+    open fun modelFactory(sqlModelFactory: SQLModelFactory): ModelFactory = sqlModelFactory
+
+    @AppScope
+    @Provides
+    open fun syncAuthStore(@AppContext context: Context): SyncAuthStore = SyncAuthStore(context)
+
+    @AppScope
+    @Provides
+    open fun syncBackend(): SyncBackend = SupabaseSyncBackend()
+
+    @AppScope
+    @Provides
+    open fun deviceIdProvider(deviceIdentityManager: DeviceIdentityManager): DeviceIdProvider =
+        DeviceIdProvider { deviceIdentityManager.deviceId }
 
     @AppScope
     @Provides

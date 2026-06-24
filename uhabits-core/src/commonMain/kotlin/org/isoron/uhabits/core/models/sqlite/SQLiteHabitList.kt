@@ -42,6 +42,7 @@ import org.isoron.uhabits.core.models.PaletteColor
 import org.isoron.uhabits.core.models.Reminder
 import org.isoron.uhabits.core.models.WeekdayList
 import org.isoron.uhabits.core.models.memory.MemoryHabitList
+import org.isoron.uhabits.core.sync.SyncManager
 
 /**
  * Implementation of a [HabitList] that is backed by SQLite.
@@ -55,6 +56,8 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
         (modelFactory as SQLModelFactory).habitGoalRepository
     private val appSettingRepository: AppSettingRepository =
         (modelFactory as SQLModelFactory).appSettingRepository
+    val syncManager: SyncManager =
+        (modelFactory as SQLModelFactory).syncManager
     private val list: MemoryHabitList = MemoryHabitList()
     private var loaded = false
     override var globalStatisticsStartDate: LocalDate? = null
@@ -91,6 +94,7 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
             h.goalHistory = goalRepository.findAllByHabitId(rec.id!!).map(::toGoal).toMutableList()
             h.globalStatisticsStartDate = globalStatisticsStartDate
             (h.originalEntries as SQLiteEntryList).habitId = h.id
+            (h.originalEntries as SQLiteEntryList).habitUuid = h.uuid
             list.add(h)
         }
         if (shouldRebuildOrder) rebuildOrder()
@@ -102,11 +106,13 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
         require(list.indexOf(habit) < 0) { "habit already added" }
         habit.position = size()
         val data = copyFrom(habit)
+        data.updatedAt = syncManager.now()
         val id = repository.insert(data)
         habit.id = id
         extensionRepository.upsert(habit.toExtensionData())
-        goalRepository.replaceAll(id, habit.normalizedGoalHistory().map { it.toGoalData(id) })
+        goalRepository.replaceAll(id, habit.normalizedGoalHistory().map { it.toGoalData(id, habit.uuid!!) }, data.updatedAt)
         (habit.originalEntries as SQLiteEntryList).habitId = id
+        (habit.originalEntries as SQLiteEntryList).habitUuid = habit.uuid
         habit.globalStatisticsStartDate = globalStatisticsStartDate
         list.add(habit)
         observable.notifyListeners()
@@ -179,10 +185,10 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
     override fun remove(h: Habit) {
         loadRecords()
         list.remove(h)
-        h.originalEntries.clear()
-        extensionRepository.delete(h.id!!)
-        goalRepository.deleteByHabitId(h.id!!)
-        repository.delete(h.id!!)
+        val data = copyFrom(h)
+        data.updatedAt = syncManager.now()
+        data.deletedAt = data.updatedAt
+        repository.update(data)
         rebuildOrder()
         observable.notifyListeners()
     }
@@ -240,9 +246,11 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
         list.update(habits)
         for (h in habits) {
             val data = copyFrom(h)
+            data.updatedAt = syncManager.now()
+            data.deletedAt = null
             repository.update(data)
             extensionRepository.upsert(h.toExtensionData())
-            goalRepository.replaceAll(h.id!!, h.normalizedGoalHistory().map { it.toGoalData(h.id!!) })
+            goalRepository.replaceAll(h.id!!, h.normalizedGoalHistory().map { it.toGoalData(h.id!!, h.uuid!!) }, data.updatedAt)
             h.globalStatisticsStartDate = globalStatisticsStartDate
         }
         observable.notifyListeners()
@@ -257,6 +265,12 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
     @Synchronized
     fun reload() {
         loaded = false
+    }
+
+    @Synchronized
+    fun reloadAndNotify() {
+        loaded = false
+        observable.notifyListeners()
     }
 
     override fun getBlocks(): List<HabitBlock> {
@@ -282,8 +296,9 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
             statsStartTimestamp = statisticsStartDate?.unixTime
         )
 
-        private fun HabitGoal.toGoalData(habitId: Long): HabitGoalData = HabitGoalData(
+        private fun HabitGoal.toGoalData(habitId: Long, habitUuid: String): HabitGoalData = HabitGoalData(
             habitId = habitId,
+            uuid = "$habitUuid:goal:${effectiveDate.unixTime}",
             effectiveTimestamp = effectiveDate.unixTime,
             freqNum = frequency.numerator,
             freqDen = frequency.denominator,

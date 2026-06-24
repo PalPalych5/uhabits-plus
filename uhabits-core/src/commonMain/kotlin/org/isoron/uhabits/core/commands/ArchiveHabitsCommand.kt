@@ -20,6 +20,7 @@ package org.isoron.uhabits.core.commands
 
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
+import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 
 data class ArchiveHabitsCommand(
     val habitList: HabitList,
@@ -28,5 +29,7 @@ data class ArchiveHabitsCommand(
     override fun run() {
         for (h in selected) h.isArchived = true
         habitList.update(selected)
+        val syncManager = (habitList as? SQLiteHabitList)?.syncManager
+        selected.forEach { syncManager?.enqueueHabitArchive(it) }
     }
 }

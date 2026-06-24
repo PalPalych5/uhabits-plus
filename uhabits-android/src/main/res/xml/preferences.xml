@@ -180,6 +180,61 @@
     </PreferenceCategory>
 
     <PreferenceCategory
+            android:key="syncCategory"
+            android:title="@string/sync_title">
+
+            <SwitchPreferenceCompat
+                    android:key="pref_sync_enabled"
+                    android:defaultValue="false"
+                    android:title="@string/sync_enable_title"
+                    android:summary="@string/sync_enable_summary"
+                    app:iconSpaceReserved="false" />
+
+            <Preference
+                    android:key="syncAccount"
+                    android:title="@string/sync_account_title"
+                    android:summary="@string/sync_signed_out"
+                    app:iconSpaceReserved="false" />
+
+            <Preference
+                    android:key="syncSignIn"
+                    android:title="@string/sync_sign_in"
+                    android:summary="@string/sync_sign_in_summary"
+                    app:iconSpaceReserved="false" />
+
+            <Preference
+                    android:key="syncSignOut"
+                    android:title="@string/sync_sign_out"
+                    android:summary="@string/sync_sign_out_summary"
+                    app:iconSpaceReserved="false" />
+
+            <Preference
+                    android:key="syncStatus"
+                    android:title="@string/sync_status_title"
+                    android:summary="@string/sync_status_disabled"
+                    app:iconSpaceReserved="false" />
+
+            <Preference
+                    android:key="syncNow"
+                    android:title="@string/sync_now"
+                    android:summary="@string/sync_now_summary"
+                    app:iconSpaceReserved="false" />
+
+            <Preference
+                    android:key="syncReview"
+                    android:title="@string/sync_review_required_title"
+                    android:summary="@string/sync_review_required_summary"
+                    app:iconSpaceReserved="false" />
+
+            <Preference
+                    android:key="syncWarning"
+                    android:title="@string/sync_warning_title"
+                    android:summary="@string/sync_warning_summary"
+                    app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+    <PreferenceCategory
             android:key="dataCategory"
             android:title="@string/data_preferences">
 
@@ -318,16 +373,16 @@
                 app:iconSpaceReserved="false" />
 
         <EditTextPreference
-            android:defaultValue="@string/syncBaseURL"
+            android:defaultValue=""
             android:key="pref_sync_base_url"
-            android:title="Sync server"
+            android:title="Supabase URL"
             app:iconSpaceReserved="false"
             />
 
         <EditTextPreference
             android:defaultValue=""
             android:key="pref_sync_key"
-            android:title="Sync key"
+            android:title="Supabase anon key"
             app:iconSpaceReserved="false"
             />
 

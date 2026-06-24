@@ -21,6 +21,7 @@ package org.isoron.uhabits.core.commands
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.ModelFactory
+import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 
 data class CreateHabitCommand(
     val modelFactory: ModelFactory,
@@ -32,5 +33,6 @@ data class CreateHabitCommand(
         habit.copyFrom(model)
         habitList.add(habit)
         habit.recompute()
+        (habitList as? SQLiteHabitList)?.syncManager?.enqueueHabitCreate(habit)
     }
 }

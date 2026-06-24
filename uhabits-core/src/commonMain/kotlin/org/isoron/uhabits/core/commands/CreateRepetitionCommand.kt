@@ -22,6 +22,7 @@ import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
+import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 
 data class CreateRepetitionCommand(
     val habitList: HabitList,
@@ -32,8 +33,16 @@ data class CreateRepetitionCommand(
 ) : Command {
     override fun run() {
         val entries = habit.originalEntries
+        val previous = entries.get(date)
+        if (previous.value == value && previous.notes == notes) return
         entries.add(Entry(date, value, notes))
         habit.recompute()
         habitList.resort()
+        val syncManager = (habitList as? SQLiteHabitList)?.syncManager ?: return
+        if (value == Entry.UNKNOWN) {
+            syncManager.enqueueEntryDelete(habit, date)
+        } else {
+            syncManager.enqueueEntrySet(habit, date, value, notes)
+        }
     }
 }

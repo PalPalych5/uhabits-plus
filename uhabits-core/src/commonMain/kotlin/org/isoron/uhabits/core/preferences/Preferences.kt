@@ -272,6 +272,67 @@ open class Preferences(private val storage: Storage) {
             for (l in listeners) l.onNavigationPreferencesChanged()
         }
 
+    open var isSyncEnabled: Boolean
+        get() = storage.getBoolean("pref_sync_enabled", false)
+        set(enabled) {
+            storage.putBoolean("pref_sync_enabled", enabled)
+        }
+
+    open var syncStatus: String
+        get() = storage.getString("pref_sync_status", "disabled")
+        set(value) {
+            storage.putString("pref_sync_status", value)
+        }
+
+    open var syncStatusDetail: String
+        get() = storage.getString("pref_sync_status_detail", "")
+        set(value) {
+            storage.putString("pref_sync_status_detail", value)
+        }
+
+    open var syncLastSuccessAt: Long
+        get() = storage.getLong("pref_sync_last_success_at", 0L)
+        set(value) {
+            storage.putLong("pref_sync_last_success_at", value)
+        }
+
+    open var syncLastLogId: Long
+        get() = storage.getLong("pref_sync_last_log_id", 0L)
+        set(value) {
+            storage.putLong("pref_sync_last_log_id", value)
+        }
+
+    open var isSyncReviewRequired: Boolean
+        get() = storage.getBoolean("pref_sync_review_required", false)
+        set(required) {
+            storage.putBoolean("pref_sync_review_required", required)
+        }
+
+    open var syncReviewReason: String
+        get() = storage.getString("pref_sync_review_reason", "")
+        set(value) {
+            storage.putString("pref_sync_review_reason", value)
+        }
+
+    open var syncAccountEmail: String?
+        get() = storage.getString("pref_sync_account_email", "").ifBlank { null }
+        set(value) {
+            if (value.isNullOrBlank()) storage.remove("pref_sync_account_email")
+            else storage.putString("pref_sync_account_email", value)
+        }
+
+    open var syncSupabaseUrl: String
+        get() = storage.getString("pref_sync_base_url", "")
+        set(value) {
+            storage.putString("pref_sync_base_url", value)
+        }
+
+    open var syncSupabaseAnonKey: String
+        get() = storage.getString("pref_sync_key", "")
+        set(value) {
+            storage.putString("pref_sync_key", value)
+        }
+
     interface Listener {
         fun onCheckmarkSequenceChanged() {}
         fun onNotificationsChanged() {}

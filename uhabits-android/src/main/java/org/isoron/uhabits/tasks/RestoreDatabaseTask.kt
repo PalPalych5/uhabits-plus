@@ -16,6 +16,9 @@ class RestoreDatabaseTask(
     override suspend fun doInBackground() {
         result = runCatching {
             backupManager.restoreFromBackup(entry).also {
+                application.component.syncCoordinator.markRestoreNeedsReview(
+                    "Локальная база восстановлена из резервной копии. Перед следующей синхронизацией требуется подтверждение."
+                )
                 application.shutdownForDatabaseRestoreRestart()
             }
         }

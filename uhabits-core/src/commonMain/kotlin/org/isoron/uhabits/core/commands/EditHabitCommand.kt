@@ -21,6 +21,7 @@ package org.isoron.uhabits.core.commands
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.HabitNotFoundException
+import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 
 data class EditHabitCommand(
     val habitList: HabitList,
@@ -34,5 +35,6 @@ data class EditHabitCommand(
         habit.observable.notifyListeners()
         habit.recompute()
         habitList.resort()
+        (habitList as? SQLiteHabitList)?.syncManager?.enqueueHabitUpdate(habit)
     }
 }

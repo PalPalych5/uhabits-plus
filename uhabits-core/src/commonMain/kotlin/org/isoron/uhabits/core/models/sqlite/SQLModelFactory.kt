@@ -29,13 +29,18 @@ import org.isoron.uhabits.core.models.EntryList
 import org.isoron.uhabits.core.models.ModelFactory
 import org.isoron.uhabits.core.models.ScoreList
 import org.isoron.uhabits.core.models.StreakList
+import org.isoron.uhabits.core.sync.EntryOpRepository
+import org.isoron.uhabits.core.sync.SyncManager
+import org.isoron.uhabits.core.sync.SyncQueueRepository
 
 /**
  * Factory that provides models backed by an SQLite database.
  */
 @Inject
 class SQLModelFactory(
-    val database: org.isoron.platform.io.Database
+    val database: org.isoron.platform.io.Database,
+    deviceIdProvider: () -> String = { "test-device" },
+    nowProvider: () -> Long = { 0L }
 ) : ModelFactory {
     val habitRepository = HabitRepository(database)
     val habitExtensionRepository = HabitExtensionRepository(database)
@@ -43,8 +48,17 @@ class SQLModelFactory(
     val habitBlockRepository = HabitBlockRepository(database)
     val entryRepository = EntryRepository(database)
     val appSettingRepository = AppSettingRepository(database)
+    val syncQueueRepository = SyncQueueRepository(database)
+    val entryOpRepository = EntryOpRepository(database)
+    val syncManager = SyncManager(
+        syncQueueRepository,
+        entryOpRepository,
+        deviceIdProvider,
+        nowProvider,
+        blockUuidProvider = { blockId -> blockId?.let { habitBlockRepository.findById(it)?.uuid } }
+    )
 
-    override fun buildOriginalEntries() = SQLiteEntryList(entryRepository)
+    override fun buildOriginalEntries() = SQLiteEntryList(entryRepository, syncManager)
     override fun buildComputedEntries() = EntryList()
     override fun buildHabitList() = SQLiteHabitList(this)
     override fun buildScoreList() = ScoreList()

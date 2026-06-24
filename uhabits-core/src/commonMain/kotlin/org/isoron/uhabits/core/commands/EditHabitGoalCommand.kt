@@ -5,6 +5,7 @@ import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitGoal
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.HabitNotFoundException
+import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 
 enum class GoalApplyScope {
     FROM_DATE,
@@ -46,5 +47,6 @@ data class EditHabitGoalCommand(
         habit.observable.notifyListeners()
         habit.recompute()
         habitList.resort()
+        (habitList as? SQLiteHabitList)?.syncManager?.enqueueGoalChange(habit, effectiveDate)
     }
 }

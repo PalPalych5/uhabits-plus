@@ -23,6 +23,7 @@ import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.sqlite.SQLiteEntryList
+import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 
 data class BatchCreateRepetitionCommand(
     val habitList: HabitList,
@@ -38,8 +39,17 @@ data class BatchCreateRepetitionCommand(
         try {
             repository?.execSQL("BEGIN")
             for (habit in habits) {
+                val previous = habit.originalEntries.get(date)
                 habit.originalEntries.add(Entry(date, value, notes))
                 habit.recompute()
+                val syncManager = (habitList as? SQLiteHabitList)?.syncManager
+                if (previous.value != value || previous.notes != notes) {
+                    if (value == Entry.UNKNOWN) {
+                        syncManager?.enqueueEntryDelete(habit, date)
+                    } else {
+                        syncManager?.enqueueEntrySet(habit, date, value, notes)
+                    }
+                }
             }
             repository?.execSQL("COMMIT")
         } catch (e: Exception) {

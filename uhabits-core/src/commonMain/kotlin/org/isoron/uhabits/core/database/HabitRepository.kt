@@ -5,6 +5,8 @@ import org.isoron.platform.io.PreparedStatement
 import org.isoron.platform.io.StepResult
 import org.isoron.platform.io.queryLong
 import org.isoron.platform.io.run
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 data class HabitData(
     var id: Long? = null,
@@ -24,7 +26,9 @@ data class HabitData(
     var targetValue: Double = 0.0,
     var targetType: Int = 0,
     var unit: String = "",
-    var uuid: String? = null
+    var uuid: String? = null,
+    var updatedAt: Long = 0,
+    var deletedAt: Long? = null
 )
 
 class HabitRepository(private val db: Database) {
@@ -32,8 +36,8 @@ class HabitRepository(private val db: Database) {
         db.prepareStatement(
             """SELECT id, name, description, question, freq_num, freq_den, color,
                position, reminder_hour, reminder_min, reminder_days, highlight,
-               archived, type, target_value, target_type, unit, uuid
-               FROM Habits ORDER BY position"""
+               archived, type, target_value, target_type, unit, uuid, updated_at, deleted_at
+               FROM Habits WHERE deleted_at IS NULL ORDER BY position"""
         )
     }
 
@@ -41,8 +45,8 @@ class HabitRepository(private val db: Database) {
         db.prepareStatement(
             """INSERT INTO Habits(name, description, question, freq_num, freq_den,
                color, position, reminder_hour, reminder_min, reminder_days,
-               highlight, archived, type, target_value, target_type, unit, uuid)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+               highlight, archived, type, target_value, target_type, unit, uuid, updated_at, deleted_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
         )
     }
 
@@ -50,8 +54,8 @@ class HabitRepository(private val db: Database) {
         db.prepareStatement(
             """INSERT INTO Habits(id, name, description, question, freq_num, freq_den,
                color, position, reminder_hour, reminder_min, reminder_days,
-               highlight, archived, type, target_value, target_type, unit, uuid)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+               highlight, archived, type, target_value, target_type, unit, uuid, updated_at, deleted_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
         )
     }
 
@@ -60,12 +64,17 @@ class HabitRepository(private val db: Database) {
             """UPDATE Habits SET name=?, description=?, question=?, freq_num=?,
                freq_den=?, color=?, position=?, reminder_hour=?, reminder_min=?,
                reminder_days=?, highlight=?, archived=?, type=?, target_value=?,
-               target_type=?, unit=?, uuid=? WHERE id=?"""
+               target_type=?, unit=?, uuid=?, updated_at=?, deleted_at=? WHERE id=?"""
         )
     }
 
-    private val deleteStmt by lazy {
-        db.prepareStatement("DELETE FROM Habits WHERE id = ?")
+    private val findByUuidStmt by lazy {
+        db.prepareStatement(
+            """SELECT id, name, description, question, freq_num, freq_den, color,
+               position, reminder_hour, reminder_min, reminder_days, highlight,
+               archived, type, target_value, target_type, unit, uuid, updated_at, deleted_at
+               FROM Habits WHERE uuid = ? LIMIT 1"""
+        )
     }
 
     fun findAll(): List<HabitData> {
@@ -78,6 +87,7 @@ class HabitRepository(private val db: Database) {
     }
 
     fun insert(data: HabitData): Long {
+        normalizeForWrite(data)
         if (data.id != null) {
             insertWithIdStmt.reset()
             insertWithIdStmt.bindLong(1, data.id!!)
@@ -92,16 +102,23 @@ class HabitRepository(private val db: Database) {
     }
 
     fun update(data: HabitData) {
+        normalizeForWrite(data)
         updateStmt.reset()
         bindForInsert(updateStmt, data)
-        updateStmt.bindLong(18, data.id!!)
+        updateStmt.bindLong(20, data.id!!)
         updateStmt.step()
     }
 
     fun delete(id: Long) {
-        deleteStmt.reset()
-        deleteStmt.bindLong(1, id)
-        deleteStmt.step()
+        val record = findAll().find { it.id == id } ?: return
+        update(record.copy(updatedAt = record.updatedAt, deletedAt = record.updatedAt))
+    }
+
+    fun findByUuid(uuid: String): HabitData? {
+        findByUuidStmt.reset()
+        findByUuidStmt.bindText(1, uuid)
+        if (findByUuidStmt.step() != StepResult.ROW) return null
+        return readRow(findByUuidStmt)
     }
 
     fun execSQL(sql: String) = db.run(sql)
@@ -127,6 +144,13 @@ class HabitRepository(private val db: Database) {
         stmt.bindInt(15 + o, data.targetType)
         stmt.bindText(16 + o, data.unit)
         if (data.uuid != null) stmt.bindText(17 + o, data.uuid!!) else stmt.bindNull(17 + o)
+        stmt.bindLong(18 + o, data.updatedAt)
+        if (data.deletedAt != null) stmt.bindLong(19 + o, data.deletedAt!!) else stmt.bindNull(19 + o)
+    }
+
+    @OptIn(ExperimentalUuidApi::class)
+    private fun normalizeForWrite(data: HabitData) {
+        if (data.uuid.isNullOrBlank()) data.uuid = Uuid.random().toHexString()
     }
 
     private fun readRow(stmt: PreparedStatement): HabitData {
@@ -148,7 +172,9 @@ class HabitRepository(private val db: Database) {
             targetValue = stmt.getReal(14),
             targetType = stmt.getInt(15),
             unit = stmt.getText(16),
-            uuid = stmt.getTextOrNull(17)
+            uuid = stmt.getTextOrNull(17),
+            updatedAt = stmt.getLong(18),
+            deletedAt = stmt.getLongOrNull(19)
         )
     }
 }

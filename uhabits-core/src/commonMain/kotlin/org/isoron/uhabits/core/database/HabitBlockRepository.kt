@@ -23,6 +23,8 @@ import org.isoron.platform.io.PreparedStatement
 import org.isoron.platform.io.StepResult
 import org.isoron.platform.io.queryLong
 import org.isoron.platform.io.run
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 data class HabitBlockData(
     val id: Long? = null,
@@ -30,32 +32,43 @@ data class HabitBlockData(
     val color: Int,
     val icon: String? = null,
     val position: Int = 0,
-    val isArchived: Boolean = false
+    val isArchived: Boolean = false,
+    val uuid: String? = null,
+    val updatedAt: Long = 0,
+    val deletedAt: Long? = null
 )
 
 class HabitBlockRepository(private val db: Database) {
     private val findAllStmt by lazy {
         db.prepareStatement(
-            "SELECT id, name, color, icon, position, is_archived FROM HabitBlocks ORDER BY position"
+            """SELECT id, name, color, icon, position, is_archived, uuid, updated_at, deleted_at
+               FROM HabitBlocks WHERE deleted_at IS NULL ORDER BY position"""
         )
     }
     private val findByIdStmt by lazy {
         db.prepareStatement(
-            "SELECT id, name, color, icon, position, is_archived FROM HabitBlocks WHERE id = ?"
+            """SELECT id, name, color, icon, position, is_archived, uuid, updated_at, deleted_at
+               FROM HabitBlocks WHERE id = ? AND deleted_at IS NULL"""
         )
     }
     private val insertStmt by lazy {
         db.prepareStatement(
-            "INSERT INTO HabitBlocks(name, color, icon, position, is_archived) VALUES (?, ?, ?, ?, ?)"
+            """INSERT INTO HabitBlocks(name, color, icon, position, is_archived, uuid, updated_at, deleted_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)"""
         )
     }
     private val updateStmt by lazy {
         db.prepareStatement(
-            "UPDATE HabitBlocks SET name = ?, color = ?, icon = ?, position = ?, is_archived = ? WHERE id = ?"
+            """UPDATE HabitBlocks
+               SET name = ?, color = ?, icon = ?, position = ?, is_archived = ?, uuid = ?, updated_at = ?, deleted_at = ?
+               WHERE id = ?"""
         )
     }
-    private val deleteStmt by lazy {
-        db.prepareStatement("DELETE FROM HabitBlocks WHERE id = ?")
+    private val findByUuidStmt by lazy {
+        db.prepareStatement(
+            """SELECT id, name, color, icon, position, is_archived, uuid, updated_at, deleted_at
+               FROM HabitBlocks WHERE uuid = ? LIMIT 1"""
+        )
     }
 
     fun findAll(): List<HabitBlockData> {
@@ -74,25 +87,39 @@ class HabitBlockRepository(private val db: Database) {
         return readRow(findByIdStmt)
     }
 
+    fun findByUuid(uuid: String): HabitBlockData? {
+        findByUuidStmt.reset()
+        findByUuidStmt.bindText(1, uuid)
+        if (findByUuidStmt.step() != StepResult.ROW) return null
+        return readRow(findByUuidStmt)
+    }
+
     fun insert(data: HabitBlockData): Long {
         insertStmt.reset()
-        bindForInsert(insertStmt, data)
+        bindForInsert(insertStmt, normalizeForWrite(data))
         insertStmt.step()
         return db.queryLong("SELECT last_insert_rowid()")
     }
 
     fun update(data: HabitBlockData) {
         updateStmt.reset()
-        bindForInsert(updateStmt, data)
-        updateStmt.bindLong(6, data.id!!)
+        val normalized = normalizeForWrite(data)
+        bindForInsert(updateStmt, normalized)
+        updateStmt.bindLong(9, normalized.id!!)
         updateStmt.step()
     }
 
-    fun delete(id: Long) {
-        deleteStmt.reset()
-        deleteStmt.bindLong(1, id)
-        deleteStmt.step()
+    fun softDelete(id: Long, deletedAt: Long) {
+        val current = findById(id) ?: return
+        update(
+            current.copy(
+                updatedAt = deletedAt,
+                deletedAt = deletedAt
+            )
+        )
     }
+
+    fun delete(id: Long) = softDelete(id, deletedAt = 0)
 
     fun execSQL(sql: String) = db.run(sql)
 
@@ -102,6 +129,15 @@ class HabitBlockRepository(private val db: Database) {
         if (data.icon != null) stmt.bindText(3, data.icon) else stmt.bindNull(3)
         stmt.bindInt(4, data.position)
         stmt.bindInt(5, if (data.isArchived) 1 else 0)
+        if (data.uuid != null) stmt.bindText(6, data.uuid) else stmt.bindNull(6)
+        stmt.bindLong(7, data.updatedAt)
+        if (data.deletedAt != null) stmt.bindLong(8, data.deletedAt) else stmt.bindNull(8)
+    }
+
+    @OptIn(ExperimentalUuidApi::class)
+    private fun normalizeForWrite(data: HabitBlockData): HabitBlockData {
+        if (!data.uuid.isNullOrBlank()) return data
+        return data.copy(uuid = Uuid.random().toHexString())
     }
 
     private fun readRow(stmt: PreparedStatement): HabitBlockData {
@@ -111,7 +147,10 @@ class HabitBlockRepository(private val db: Database) {
             color = stmt.getInt(2),
             icon = stmt.getTextOrNull(3),
             position = stmt.getInt(4),
-            isArchived = stmt.getInt(5) != 0
+            isArchived = stmt.getInt(5) != 0,
+            uuid = stmt.getTextOrNull(6),
+            updatedAt = stmt.getLong(7),
+            deletedAt = stmt.getLongOrNull(8)
         )
     }
 }

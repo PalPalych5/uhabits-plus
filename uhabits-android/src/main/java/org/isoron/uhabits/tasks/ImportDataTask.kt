@@ -35,16 +35,19 @@ class ImportDataTask(
 ) : Task {
     private var result = 0
     private val modelFactory: SQLModelFactory = modelFactory as SQLModelFactory
+
     override suspend fun doInBackground() {
         modelFactory.database.begin()
         try {
-            if (importer.canHandle(file)) {
-                importer.importHabitsFromFile(file)
-                result = SUCCESS
-                modelFactory.database.commit()
-            } else {
-                result = NOT_RECOGNIZED
-                modelFactory.database.commit()
+            modelFactory.syncManager.withCapturePausedSuspend {
+                if (importer.canHandle(file)) {
+                    importer.importHabitsFromFile(file)
+                    result = SUCCESS
+                    modelFactory.database.commit()
+                } else {
+                    result = NOT_RECOGNIZED
+                    modelFactory.database.commit()
+                }
             }
         } catch (e: Exception) {
             result = FAILED

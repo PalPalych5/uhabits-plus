@@ -4,6 +4,8 @@ import org.isoron.platform.io.Database
 import org.isoron.platform.io.StepResult
 
 class AppSettingRepository(private val db: Database) {
+    // Only DB-backed, cross-device-worthy settings should live here. Device-local Android
+    // preferences stay in SharedPreferences and are intentionally out of sync scope.
     private val findLongStmt by lazy {
         db.prepareStatement("SELECT long_value FROM AppSettings WHERE key = ?")
     }

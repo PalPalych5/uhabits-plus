@@ -25,9 +25,14 @@ import org.isoron.uhabits.core.database.EntryRepository
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.EntryList
 import org.isoron.uhabits.core.models.Frequency
+import org.isoron.uhabits.core.sync.SyncManager
 
-class SQLiteEntryList(val repository: EntryRepository) : EntryList() {
+class SQLiteEntryList(
+    val repository: EntryRepository,
+    private val syncManager: SyncManager
+) : EntryList() {
     var habitId: Long? = null
+    var habitUuid: String? = null
     var isLoaded = false
 
     private fun loadRecords() {
@@ -53,18 +58,27 @@ class SQLiteEntryList(val repository: EntryRepository) : EntryList() {
     override fun add(entry: Entry) {
         loadRecords()
         val habitId = habitId ?: throw IllegalStateException("habitId must be set")
+        val uuid = entryUuid(entry.date)
+        val updatedAt = syncManager.now()
+        val deletedAt = if (entry.value == Entry.UNKNOWN) updatedAt else null
 
-        repository.deleteByHabitIdAndTimestamp(habitId, entry.date.unixTime)
-
-        val data = EntryData(
-            habitId = habitId,
-            timestamp = entry.date.unixTime,
-            value = entry.value,
-            notes = entry.notes
+        repository.upsert(
+            EntryData(
+                habitId = habitId,
+                uuid = uuid,
+                timestamp = entry.date.unixTime,
+                value = entry.value,
+                notes = entry.notes,
+                updatedAt = updatedAt,
+                deletedAt = deletedAt
+            )
         )
-        repository.insert(data)
 
-        super.add(entry)
+        if (entry.value == Entry.UNKNOWN) {
+            super.remove(entry.date)
+        } else {
+            super.add(entry)
+        }
     }
 
     override fun getKnown(): List<Entry> {
@@ -83,6 +97,27 @@ class SQLiteEntryList(val repository: EntryRepository) : EntryList() {
 
     override fun clear() {
         super.clear()
-        repository.deleteByHabitId(habitId!!)
+        repository.softDeleteByHabitId(habitId!!, syncManager.now())
+    }
+
+    fun addWithDelta(date: LocalDate, deltaValue: Int, resultingValue: Int, notes: String) {
+        val habitId = habitId ?: throw IllegalStateException("habitId must be set")
+        repository.upsert(
+            EntryData(
+                habitId = habitId,
+                uuid = entryUuid(date),
+                timestamp = date.unixTime,
+                value = resultingValue,
+                notes = notes,
+                updatedAt = syncManager.now(),
+                deletedAt = null
+            )
+        )
+        super.add(Entry(date, resultingValue, notes))
+    }
+
+    private fun entryUuid(date: LocalDate): String {
+        val habitUuid = habitUuid ?: throw IllegalStateException("habitUuid must be set")
+        return "$habitUuid:${date.unixTime}"
     }
 }

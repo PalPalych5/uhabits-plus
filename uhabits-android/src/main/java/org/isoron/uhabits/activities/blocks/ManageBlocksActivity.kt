@@ -49,7 +49,10 @@ import org.isoron.uhabits.utils.applyToolbarInsets
 import org.isoron.uhabits.utils.currentTheme
 import org.isoron.uhabits.utils.dp
 import org.isoron.uhabits.utils.sres
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
+@OptIn(ExperimentalUuidApi::class)
 class ManageBlocksActivity : AppCompatActivity() {
     private lateinit var themeSwitcher: AndroidThemeSwitcher
     private lateinit var binding: ActivityManageBlocksBinding
@@ -139,6 +142,7 @@ class ManageBlocksActivity : AppCompatActivity() {
 
     private fun showEditBlockDialog(block: HabitBlock) {
         val repository = (component.modelFactory as SQLModelFactory).habitBlockRepository
+        val syncManager = (component.modelFactory as SQLModelFactory).syncManager
 
         val dialogView = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -179,7 +183,22 @@ class ManageBlocksActivity : AppCompatActivity() {
 
         if (block.id ?: 0L > 7L) {
             builder.setNeutralButton(R.string.delete) { dialog, _ ->
-                repository.delete(block.id!!)
+                val deletedAt = syncManager.now()
+                syncManager.enqueueBlockChange(
+                    HabitBlockData(
+                        id = block.id,
+                        name = block.name,
+                        color = block.color.paletteIndex,
+                        icon = block.icon,
+                        position = block.position,
+                        isArchived = block.isArchived,
+                        uuid = repository.findById(block.id!!)?.uuid,
+                        updatedAt = deletedAt,
+                        deletedAt = deletedAt
+                    ),
+                    "delete"
+                )
+                repository.softDelete(block.id!!, deletedAt)
                 (component.habitList as SQLiteHabitList).reload()
                 refreshBlocks()
                 dialog.dismiss()
@@ -201,9 +220,12 @@ class ManageBlocksActivity : AppCompatActivity() {
                 color = selectedColor.paletteIndex,
                 icon = block.icon,
                 position = block.position,
-                isArchived = block.isArchived
+                isArchived = block.isArchived,
+                uuid = repository.findById(block.id!!)?.uuid,
+                updatedAt = syncManager.now()
             )
             repository.update(updated)
+            syncManager.enqueueBlockChange(updated, "block_change")
             (component.habitList as SQLiteHabitList).reload()
             refreshBlocks()
             dialog.dismiss()
@@ -212,6 +234,7 @@ class ManageBlocksActivity : AppCompatActivity() {
 
     private fun showAddBlockDialog() {
         val repository = (component.modelFactory as SQLModelFactory).habitBlockRepository
+        val syncManager = (component.modelFactory as SQLModelFactory).syncManager
         val blocks = component.habitList.getBlocks()
         val nextPosition = (blocks.maxOfOrNull { it.position } ?: -1) + 1
 
@@ -265,9 +288,12 @@ class ManageBlocksActivity : AppCompatActivity() {
                 color = selectedColor.paletteIndex,
                 icon = "label",
                 position = nextPosition,
-                isArchived = false
+                isArchived = false,
+                uuid = Uuid.random().toHexString(),
+                updatedAt = syncManager.now()
             )
-            repository.insert(data)
+            val id = repository.insert(data)
+            syncManager.enqueueBlockChange(data.copy(id = id), "create")
             (component.habitList as SQLiteHabitList).reload()
             refreshBlocks()
             dialog.dismiss()

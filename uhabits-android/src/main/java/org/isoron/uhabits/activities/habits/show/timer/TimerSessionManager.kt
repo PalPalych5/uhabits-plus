@@ -11,8 +11,8 @@ import android.widget.Toast
 import androidx.preference.PreferenceManager
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.R
+import org.isoron.uhabits.core.commands.AddNumericalEntryOpCommand
 import org.isoron.uhabits.core.commands.CommandRunner
-import org.isoron.uhabits.core.commands.CreateRepetitionCommand
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
@@ -200,10 +200,14 @@ class TimerSessionManager(
         val habit = habitList.getById(habitId) ?: return
         val today = getToday()
         val entry = habit.computedEntries.get(today)
-        val oldValue = if (entry.value == Entry.UNKNOWN || entry.value == Entry.SKIP) 0.0 else entry.value / 1000.0
-        val scaledValue = ((oldValue + minutes) * 1000.0).roundToInt()
         commandRunner.run(
-            CreateRepetitionCommand(habitList, habit, today, scaledValue, entry.notes)
+            AddNumericalEntryOpCommand(
+                habitList = habitList,
+                habit = habit,
+                date = today,
+                deltaValue = (minutes * 1000.0).roundToInt(),
+                notes = entry.notes
+            )
         )
     }
 

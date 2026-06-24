@@ -65,6 +65,8 @@ import org.isoron.uhabits.utils.startActivitySafely
 import org.isoron.uhabits.widgets.WidgetUpdater
 import androidx.appcompat.app.AlertDialog
 import android.widget.Toast
+import android.widget.EditText
+import android.widget.LinearLayout
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -80,6 +82,8 @@ import org.isoron.uhabits.core.commands.SetGlobalStatisticsStartDateCommand
 import org.isoron.uhabits.core.models.sqlite.SQLModelFactory
 import org.isoron.uhabits.core.tasks.Task
 import org.isoron.uhabits.tasks.RestoreDatabaseTaskFactory
+import org.isoron.uhabits.sync.SyncCoordinator
+import org.isoron.uhabits.sync.SyncRunResult
 import org.isoron.uhabits.utils.DemoDataGenerator
 import java.text.DateFormat
 import java.util.Locale
@@ -94,6 +98,7 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
     private lateinit var backupStatusStore: BackupStatusStore
     private lateinit var safBackupStorage: SafBackupStorage
     private lateinit var restoreTaskFactory: RestoreDatabaseTaskFactory
+    private lateinit var syncCoordinator: SyncCoordinator
     private var widgetUpdater: WidgetUpdater? = null
 
     @Deprecated("Deprecated in Java")
@@ -129,6 +134,7 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
             backupStatusStore = BackupStatusStore(requireContext())
             safBackupStorage = SafBackupStorage(requireContext())
             restoreTaskFactory = RestoreDatabaseTaskFactory(appContext, backupManager)
+            syncCoordinator = appContext.component.syncCoordinator
         }
         setActionOnPreferenceClick("importData", SettingsAction.IMPORT_DATA)
         setActionOnPreferenceClick("exportCSV", SettingsAction.EXPORT_CSV)
@@ -201,6 +207,26 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
                 actionHandler().onSettingsAction(SettingsAction.MANAGE_SPHERES)
                 return true
             }
+            "syncSignIn" -> {
+                showSyncSignInDialog()
+                return true
+            }
+            "syncSignOut" -> {
+                performSignOut()
+                return true
+            }
+            "syncNow" -> {
+                if (prefs.isSyncReviewRequired) {
+                    showSyncReviewDialog()
+                } else {
+                    performSyncNow(allowAfterReview = false)
+                }
+                return true
+            }
+            "syncReview" -> {
+                showSyncReviewDialog()
+                return true
+            }
             "openArchive" -> {
                 actionHandler().onSettingsAction(SettingsAction.OPEN_ARCHIVE)
                 return true
@@ -247,6 +273,7 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
         updateWeekdayPreference()
         updatePublicBackupFolderSummary()
         updateBackupStatusSummary()
+        updateSyncPreferences()
 
         findPreference("reminderSound").isVisible = false
     }
@@ -295,8 +322,49 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
                 startActivity(intent)
             }, 500)
         }
+        if (key == "pref_sync_enabled") {
+            updateSyncPreferences()
+        }
         AndroidBackupManager.dataChanged("org.isoron.uhabits.plus")
         updateWeekdayPreference()
+    }
+
+    private fun updateSyncPreferences() {
+        val accountPref = findPreference("syncAccount") ?: return
+        val signInPref = findPreference("syncSignIn") ?: return
+        val signOutPref = findPreference("syncSignOut") ?: return
+        val statusPref = findPreference("syncStatus") ?: return
+        val nowPref = findPreference("syncNow") ?: return
+        val reviewPref = findPreference("syncReview") ?: return
+        val accountEmail = runCatching { syncCoordinator.currentAccountEmail() }
+            .getOrElse {
+                prefs.syncStatus = "error"
+                prefs.syncStatusDetail = "Sync UI unavailable: ${it.message ?: it::class.simpleName}"
+                null
+            }
+        accountPref.summary = accountEmail ?: getString(R.string.sync_signed_out)
+        signInPref.isVisible = accountEmail == null
+        signOutPref.isVisible = accountEmail != null
+        nowPref.isEnabled = prefs.isSyncEnabled && accountEmail != null
+        reviewPref.isVisible = prefs.isSyncReviewRequired
+        reviewPref.summary = prefs.syncReviewReason.ifBlank { getString(R.string.sync_review_required_summary) }
+
+        val dateFormat = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, Locale.getDefault())
+        statusPref.summary = when (prefs.syncStatus) {
+            "success" -> getString(
+                R.string.sync_status_success,
+                dateFormat.format(prefs.syncLastSuccessAt)
+            )
+            "error" -> getString(
+                R.string.sync_status_error,
+                prefs.syncStatusDetail.ifBlank { getString(R.string.could_not_export) }
+            )
+            "syncing" -> getString(R.string.sync_status_syncing)
+            "signed_out" -> getString(R.string.sync_status_signed_out)
+            "review_required" -> getString(R.string.sync_status_review_required)
+            "idle" -> getString(R.string.sync_status_idle)
+            else -> getString(R.string.sync_status_disabled)
+        }
     }
 
     private fun setActionOnPreferenceClick(key: String, action: SettingsAction) {
@@ -522,6 +590,128 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
             sizeBytes >= mb -> String.format(Locale.US, "%.1f MB", sizeBytes.toDouble() / mb)
             sizeBytes >= kb -> String.format(Locale.US, "%.1f KB", sizeBytes.toDouble() / kb)
             else -> "$sizeBytes B"
+        }
+    }
+
+    private fun showSyncSignInDialog() {
+        val container = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            val padding = (24 * resources.displayMetrics.density).toInt()
+            setPadding(padding, padding / 2, padding, 0)
+        }
+        val emailInput = EditText(requireContext()).apply {
+            hint = getString(R.string.sync_sign_in_email_hint)
+            setText(prefs.syncAccountEmail ?: "")
+        }
+        val passwordInput = EditText(requireContext()).apply {
+            hint = getString(R.string.sync_sign_in_password_hint)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        container.addView(emailInput)
+        container.addView(passwordInput)
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.sync_sign_in_dialog_title)
+            .setView(container)
+            .setPositiveButton(R.string.sync_sign_in) { _, _ ->
+                performSignIn(emailInput.text.toString(), passwordInput.text.toString())
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun performSignIn(email: String, password: String) {
+        CoroutineScope(Dispatchers.Main).launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    syncCoordinator.signIn(email, password)
+                }
+            }.getOrElse {
+                SyncRunResult.Failure(
+                    "Синхронизация сейчас недоступна.",
+                    it.message ?: it::class.simpleName
+                )
+            }
+            when (result) {
+                is SyncRunResult.Success -> {
+                    Toast.makeText(requireContext(), R.string.sync_result_signed_in, Toast.LENGTH_LONG).show()
+                    updateSyncPreferences()
+                }
+                is SyncRunResult.Failure -> {
+                    Toast.makeText(requireContext(), result.userMessage, Toast.LENGTH_LONG).show()
+                    updateSyncPreferences()
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    private fun performSignOut() {
+        CoroutineScope(Dispatchers.Main).launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    syncCoordinator.signOut()
+                }
+            }.getOrElse {
+                SyncRunResult.Failure(
+                    "Синхронизация сейчас недоступна.",
+                    it.message ?: it::class.simpleName
+                )
+            }
+            if (result is SyncRunResult.Success) {
+                Toast.makeText(requireContext(), R.string.sync_result_signed_out, Toast.LENGTH_LONG).show()
+            } else if (result is SyncRunResult.Failure) {
+                Toast.makeText(requireContext(), result.userMessage, Toast.LENGTH_LONG).show()
+            }
+            updateSyncPreferences()
+        }
+    }
+
+    private fun showSyncReviewDialog() {
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.sync_confirm_after_restore_title)
+            .setMessage(
+                prefs.syncReviewReason.ifBlank {
+                    getString(R.string.sync_confirm_after_restore_message)
+                }
+            )
+            .setPositiveButton(R.string.sync_now) { _, _ ->
+                syncCoordinator.confirmSyncReview()
+                updateSyncPreferences()
+                performSyncNow(allowAfterReview = true)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun performSyncNow(allowAfterReview: Boolean) {
+        CoroutineScope(Dispatchers.Main).launch {
+            updateSyncPreferences()
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    syncCoordinator.runSync(manual = true, allowAfterReview = allowAfterReview)
+                }
+            }.getOrElse {
+                SyncRunResult.Failure(
+                    "Синхронизация сейчас недоступна.",
+                    it.message ?: it::class.simpleName
+                )
+            }
+            when (result) {
+                is SyncRunResult.Success -> {
+                    Toast.makeText(
+                        requireContext(),
+                        getString(R.string.sync_result_success, result.pushed, result.pulled),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                is SyncRunResult.Failure -> {
+                    Toast.makeText(requireContext(), result.userMessage, Toast.LENGTH_LONG).show()
+                }
+                is SyncRunResult.Skipped -> Unit
+            }
+            updateSyncPreferences()
         }
     }
 

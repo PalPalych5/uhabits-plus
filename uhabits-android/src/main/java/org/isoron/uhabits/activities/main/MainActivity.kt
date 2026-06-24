@@ -27,6 +27,7 @@ import org.isoron.uhabits.activities.habits.today.TodayFragment
 import org.isoron.uhabits.activities.reports.ReportsFragment
 import org.isoron.uhabits.activities.settings.SettingsSectionFragment
 import org.isoron.uhabits.core.preferences.Preferences
+import org.isoron.uhabits.core.tasks.Task
 import org.isoron.uhabits.core.ui.ThemeSwitcher.Companion.THEME_DARK
 import org.isoron.uhabits.database.AutoBackup
 import org.isoron.uhabits.databinding.ActivityMainBinding
@@ -258,6 +259,21 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                 appComponent.widgetUpdater.updateWidgets()
             } catch (e: Exception) {
                 Log.e("MainActivity", "Startup maintenance failed", e)
+            }
+        }
+        if (prefs.isSyncEnabled) {
+            try {
+                appComponent.taskRunner.execute(object : Task {
+                    override suspend fun doInBackground() {
+                        try {
+                            appComponent.syncCoordinator.runSync(manual = false)
+                        } catch (t: Throwable) {
+                            Log.e("MainActivity", "Background sync failed", t)
+                        }
+                    }
+                })
+            } catch (t: Throwable) {
+                Log.e("MainActivity", "Background sync setup failed", t)
             }
         }
         if (prefs.theme != currentTheme || prefs.isPureBlackEnabled != pureBlack) {
