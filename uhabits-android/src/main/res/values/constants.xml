@@ -210,4 +210,17 @@
         <item>zh-CN</item>
         <item>zh-TW</item>
     </string-array>
+    <string-array name="pref_start_destination_entries">
+        <item>@string/today</item>
+        <item>@string/habits_title</item>
+        <item>@string/reports_title</item>
+        <item>@string/settings</item>
+    </string-array>
+
+    <string-array name="pref_start_destination_values" translatable="false">
+        <item>TODAY</item>
+        <item>HABITS</item>
+        <item>REPORTS</item>
+        <item>SETTINGS</item>
+    </string-array>
 </resources>

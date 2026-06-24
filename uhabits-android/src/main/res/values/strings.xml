@@ -188,6 +188,7 @@
     <string name="by_color">By color</string>
     <string name="by_score">By score</string>
     <string name="by_status">By status</string>
+    <string name="by_sphere">By area/sphere</string>
     <string name="export">Export</string>
     <string name="long_press_to_edit">Press-and-hold to change the value</string>
     <string name="value">Value</string>
@@ -199,6 +200,19 @@
     <string name="example_question_boolean">e.g. Did you exercise today?</string>
     <string name="question">Question</string>
     <string name="target">Target</string>
+    <string name="start_statistics_over">Start statistics over</string>
+    <string name="count_statistics_from_date">Count statistics from date</string>
+    <string name="reset_statistics">Reset statistics</string>
+    <string name="delete_entries_forever">Delete entries forever</string>
+    <string name="action_cannot_be_undone">This action cannot be undone</string>
+    <string name="this_monday">This Monday</string>
+    <string name="next_monday">Next Monday</string>
+    <string name="select_date">Select date</string>
+    <string name="apply_from_today">Apply from today</string>
+    <string name="apply_from_selected_date">Apply from selected date</string>
+    <string name="apply_to_entire_history">Apply to entire history</string>
+    <string name="goal_change_scope_title">Apply new target</string>
+    <string name="reset_statistics_backup_hint">Consider creating a full backup before destructive reset.</string>
     <string name="yes">Yes</string>
     <string name="no">No</string>
     <string name="customize_notification_summary">Change sound, vibration, light and other notification settings</string>
@@ -357,7 +371,7 @@
     <string name="custom_color_red">Red</string>
     <string name="custom_color_green">Green</string>
     <string name="custom_color_blue">Blue</string>
-    <string name="custom_color_hex">HEX Code</string>
+    <string name="custom_color_code">Color code</string>
     <string name="custom_color_invalid_hex">Invalid HEX code</string>
     <string name="demo_data_category_title">Demo Data (Debug Only)</string>
     <string name="demo_data_seed_title">Generate Demo Data</string>
@@ -375,7 +389,6 @@
     <string name="color_picker_title">Color</string>
     <string name="color_picker_back">Back</string>
     <string name="color_picker_habit_preview_fallback">Habit</string>
-    <string name="color_picker_preview_subtitle">Habit color</string>
     <string name="color_picker_preview_description">Habit color preview: %1$s</string>
     <string name="color_picker_palette">Palette</string>
     <string name="color_picker_swatch">Color %1$s, not selected</string>
@@ -390,4 +403,14 @@
     <string name="custom_color_invalid_hex_detail">Enter exactly 6 HEX characters, for example #55B868</string>
     <string name="custom_color_degrees">%1$d°</string>
     <string name="custom_color_percent">%1$d%%</string>
+    <string name="pref_show_today_tab_title">Show Today tab</string>
+    <string name="pref_show_today_tab_description">Show or hide the Today dashboard in the bottom navigation menu</string>
+    <string name="pref_start_destination_title">Start destination</string>
+    <string name="action_skip_day">Skip day</string>
+    <string name="skip_day_dialog_title">Skip day</string>
+    <string name="skip_day_all">Skip all remaining habits</string>
+    <string name="skip_day_by_sphere">Skip remaining habits by area/sphere</string>
+    <string name="skip_day_note_hint">Day note (optional, copies to skipped habits)</string>
+    <string name="skip_day_empty_message">No remaining habits to skip today.</string>
+    <string name="skip_day_other_sphere">Other / Unassigned</string>
 </resources>

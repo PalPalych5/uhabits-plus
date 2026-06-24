@@ -186,6 +186,7 @@
     <string name="by_color">По цвету</string>
     <string name="by_score">По результату</string>
     <string name="by_status">По статусу</string>
+    <string name="by_sphere">По сферам</string>
     <string name="export">Экспортировать</string>
     <string name="long_press_to_edit">Нажмите и удерживайте, чтобы изменить значение</string>
     <string name="value">Значение</string>
@@ -197,6 +198,19 @@
     <string name="example_question_boolean">напр.: Вы упражнялись сегодня?</string>
     <string name="question">Вопрос</string>
     <string name="target">Цель</string>
+    <string name="start_statistics_over">Начать статистику заново</string>
+    <string name="count_statistics_from_date">Считать статистику с даты</string>
+    <string name="reset_statistics">Сбросить статистику</string>
+    <string name="delete_entries_forever">Удалить записи навсегда</string>
+    <string name="action_cannot_be_undone">Это действие нельзя отменить</string>
+    <string name="this_monday">Этот понедельник</string>
+    <string name="next_monday">Следующий понедельник</string>
+    <string name="select_date">Выбрать дату</string>
+    <string name="apply_from_today">Применить с сегодняшнего дня</string>
+    <string name="apply_from_selected_date">Применить с выбранной даты</string>
+    <string name="apply_to_entire_history">Применить ко всей истории</string>
+    <string name="goal_change_scope_title">Как применить новую цель</string>
+    <string name="reset_statistics_backup_hint">Перед необратимым сбросом рекомендуется создать полную резервную копию.</string>
     <string name="yes">Да</string>
     <string name="no">Нет</string>
     <string name="customize_notification_summary">Настройка параметров уведомлений: звук, вибрация, свет и др.</string>
@@ -359,7 +373,7 @@
     <string name="custom_color_red">Красный</string>
     <string name="custom_color_green">Зелёный</string>
     <string name="custom_color_blue">Синий</string>
-    <string name="custom_color_hex">Код цвета HEX</string>
+    <string name="custom_color_code">Код цвета</string>
     <string name="custom_color_invalid_hex">Неверный HEX код</string>
     <string name="demo_data_category_title">Демо-данные (только отладка)</string>
     <string name="demo_data_seed_title">Создать демо-данные</string>
@@ -377,7 +391,6 @@
     <string name="color_picker_title">Цвет</string>
     <string name="color_picker_back">Назад</string>
     <string name="color_picker_habit_preview_fallback">Привычка</string>
-    <string name="color_picker_preview_subtitle">Цвет привычки</string>
     <string name="color_picker_preview_description">Предпросмотр цвета привычки: %1$s</string>
     <string name="color_picker_palette">Палитра</string>
     <string name="color_picker_swatch">Цвет %1$s, не выбран</string>
@@ -392,4 +405,14 @@
     <string name="custom_color_invalid_hex_detail">Введите ровно 6 HEX-символов, например #55B868</string>
     <string name="custom_color_degrees">%1$d°</string>
     <string name="custom_color_percent">%1$d%%</string>
+    <string name="pref_show_today_tab_title">Показывать вкладку Сегодня</string>
+    <string name="pref_show_today_tab_description">Показывать или скрывать экран «Сегодня» в меню навигации</string>
+    <string name="pref_start_destination_title">Стартовый раздел</string>
+    <string name="action_skip_day">Пропустить день</string>
+    <string name="skip_day_dialog_title">Пропустить день</string>
+    <string name="skip_day_all">Пропустить все оставшиеся привычки</string>
+    <string name="skip_day_by_sphere">Пропустить оставшиеся привычки по сферам</string>
+    <string name="skip_day_note_hint">Заметка дня (необязательно, скопируется в пропуски)</string>
+    <string name="skip_day_empty_message">Нет оставшихся привычек для пропуска сегодня.</string>
+    <string name="skip_day_other_sphere">Прочее</string>
 </resources>
