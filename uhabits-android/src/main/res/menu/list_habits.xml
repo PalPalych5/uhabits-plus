@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
 <!--
   ~ Copyright (C) 2016-2025 Álinson Santos Xavier <git@axavier.org>
   ~
@@ -61,6 +62,10 @@
                     <item
                         android:id="@+id/actionSortStatus"
                         android:title="@string/by_status"/>
+
+                    <item
+                        android:id="@+id/actionSortSphere"
+                        android:title="@string/by_sphere"/>
                 </menu>
             </item>
         </menu>

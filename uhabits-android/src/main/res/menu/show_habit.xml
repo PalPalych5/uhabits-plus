@@ -42,6 +42,16 @@
         app:showAsAction="never"/>
 
     <item
+        android:id="@+id/action_soft_reset_statistics"
+        android:title="@string/start_statistics_over"
+        app:showAsAction="never"/>
+
+    <item
+        android:id="@+id/action_hard_reset_statistics"
+        android:title="@string/reset_statistics"
+        app:showAsAction="never"/>
+
+    <item
         android:id="@+id/action_edit_habit"
         android:icon="?iconEdit"
         android:title="@string/edit"

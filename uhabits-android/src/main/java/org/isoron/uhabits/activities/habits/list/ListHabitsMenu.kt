@@ -64,6 +64,7 @@ class ListHabitsMenu(
         val sortColor = menu.findItem(R.id.actionSortColor)
         val sortScore = menu.findItem(R.id.actionSortScore)
         val sortStatus = menu.findItem(R.id.actionSortStatus)
+        val sortSphere = menu.findItem(R.id.actionSortSphere)
         val arrowUp = styledResources.getDrawable(R.attr.iconArrowUp)
         val arrowDown = styledResources.getDrawable(R.attr.iconArrowDown)
         when (preferences.defaultPrimaryOrder) {
@@ -76,6 +77,7 @@ class ListHabitsMenu(
             HabitList.Order.BY_STATUS_ASC -> sortStatus.icon = arrowDown
             HabitList.Order.BY_STATUS_DESC -> sortStatus.icon = arrowUp
             HabitList.Order.BY_POSITION -> sortManual.icon = arrowUp
+            HabitList.Order.BY_SPHERE -> sortSphere.icon = arrowUp
         }
     }
 
@@ -115,6 +117,11 @@ class ListHabitsMenu(
 
             R.id.actionSortStatus -> {
                 behavior.onSortByStatus()
+                return true
+            }
+
+            R.id.actionSortSphere -> {
+                behavior.onSortBySphere()
                 return true
             }
 

@@ -30,10 +30,16 @@ import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.appcompat.app.AlertDialog
+import com.android.datetimepicker.date.DatePickerDialog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.isoron.platform.gui.toInt
+import org.isoron.platform.time.DayOfWeek
+import org.isoron.platform.time.LocalDate
+import org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale
+import org.isoron.platform.time.getToday
 import org.isoron.uhabits.AndroidDirFinder
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
@@ -291,8 +297,79 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
             ConfirmDeleteDialog(this@ShowHabitActivity, callback, 1).dismissCurrentAndShow()
         }
 
+        override fun showStatisticsStartDateDialog(
+            current: LocalDate?,
+            callback: (LocalDate?) -> Unit
+        ) {
+            showStatisticsStartDateDialogInternal(callback)
+        }
+
+        override fun showHardResetStatisticsConfirmation(callback: OnConfirmedCallback) {
+            AlertDialog.Builder(this@ShowHabitActivity)
+                .setTitle(R.string.reset_statistics)
+                .setMessage(
+                    getString(R.string.delete_entries_forever) + "\n\n" +
+                        getString(R.string.action_cannot_be_undone) + "\n" +
+                        getString(R.string.reset_statistics_backup_hint)
+                )
+                .setPositiveButton(R.string.delete) { _, _ -> callback.onConfirmed() }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show()
+        }
+
         override fun close() {
             this@ShowHabitActivity.finish()
         }
+    }
+
+    private fun showStatisticsStartDateDialogInternal(callback: (LocalDate?) -> Unit) {
+        val options = arrayOf(
+            getString(R.string.today),
+            getString(R.string.this_monday),
+            getString(R.string.next_monday),
+            getString(R.string.select_date)
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.count_statistics_from_date)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> callback(getToday())
+                    1 -> callback(thisMonday())
+                    2 -> callback(thisMonday().plus(7))
+                    else -> showDatePicker(callback)
+                }
+            }
+            .setNeutralButton(R.string.clear) { _, _ -> callback(null) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showDatePicker(callback: (LocalDate?) -> Unit) {
+        val today = getToday()
+        val dialog = DatePickerDialog.newInstance(
+            object : DatePickerDialog.OnDateSetListener {
+                override fun onDateSet(
+                    dialog: DatePickerDialog?,
+                    year: Int,
+                    monthOfYear: Int,
+                    dayOfMonth: Int
+                ) {
+                    callback(LocalDate(year, monthOfYear + 1, dayOfMonth))
+                }
+
+                override fun onDateCleared(dialog: DatePickerDialog?) {
+                    callback(null)
+                }
+            },
+            today.year,
+            today.month - 1,
+            today.day
+        )
+        dialog.show(fragmentManager, "statisticsDatePicker")
+    }
+
+    private fun thisMonday(): LocalDate {
+        val firstWeekday = DayOfWeek.entries[getFirstWeekdayNumberAccordingToLocale() - 1]
+        return getToday().startOfWeek(firstWeekday)
     }
 }

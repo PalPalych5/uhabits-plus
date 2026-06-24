@@ -60,6 +60,14 @@ class ShowHabitMenu(
                 presenter.onDeleteHabit()
                 return true
             }
+            R.id.action_soft_reset_statistics -> {
+                presenter.onSoftResetStatistics()
+                return true
+            }
+            R.id.action_hard_reset_statistics -> {
+                presenter.onHardResetStatistics()
+                return true
+            }
             R.id.action_randomize -> {
                 presenter.onRandomize()
                 return true
