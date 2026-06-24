@@ -258,10 +258,25 @@ open class Preferences(private val storage: Storage) {
             }
         }
 
+    open var isTodayTabVisible: Boolean
+        get() = storage.getBoolean("pref_show_today_tab", true)
+        set(visible) {
+            storage.putBoolean("pref_show_today_tab", visible)
+            for (l in listeners) l.onNavigationPreferencesChanged()
+        }
+
+    open var startDestinationName: String
+        get() = storage.getString("pref_start_destination", "TODAY")
+        set(name) {
+            storage.putString("pref_start_destination", name)
+            for (l in listeners) l.onNavigationPreferencesChanged()
+        }
+
     interface Listener {
         fun onCheckmarkSequenceChanged() {}
         fun onNotificationsChanged() {}
         fun onQuestionMarksChanged() {}
+        fun onNavigationPreferencesChanged() {}
     }
 
     interface Storage {

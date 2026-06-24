@@ -23,6 +23,8 @@ import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.AppScope
 import org.isoron.uhabits.core.commands.Command
 import org.isoron.uhabits.core.commands.CommandRunner
+import org.isoron.uhabits.core.commands.ClearAllEntriesCommand
+import org.isoron.uhabits.core.commands.ClearHabitEntriesCommand
 import org.isoron.uhabits.core.commands.CreateRepetitionCommand
 import org.isoron.uhabits.core.commands.DeleteHabitsCommand
 import org.isoron.uhabits.core.models.Habit
@@ -54,6 +56,12 @@ open class NotificationTray(
         if (command is DeleteHabitsCommand) {
             val (_, deleted) = command
             for (habit in deleted) cancel(habit)
+        }
+        if (command is ClearHabitEntriesCommand) {
+            habitListSnapshot().firstOrNull { it.id == command.habitId }?.let { cancel(it) }
+        }
+        if (command is ClearAllEntriesCommand) {
+            for (habit in active.keys.toList()) cancel(habit)
         }
     }
 
@@ -155,4 +163,6 @@ open class NotificationTray(
     companion object {
         const val REMINDERS_CHANNEL_ID = "REMINDERS"
     }
+
+    private fun habitListSnapshot(): List<Habit> = active.keys.toList()
 }

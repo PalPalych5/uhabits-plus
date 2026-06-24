@@ -7,19 +7,20 @@ data class HabitExtensionData(
     val habitId: Long,
     val dayTier: String = "NORMAL",
     val timerEnabled: Boolean = false,
-    val blockId: Long? = null
+    val blockId: Long? = null,
+    val statsStartTimestamp: Long? = null
 )
 
 class HabitExtensionRepository(private val db: Database) {
     private val findByHabitIdStmt by lazy {
         db.prepareStatement(
-            "SELECT habit_id, day_tier, timer_enabled, block_id FROM HabitExtensions WHERE habit_id = ?"
+            "SELECT habit_id, day_tier, timer_enabled, block_id, stats_start_timestamp FROM HabitExtensions WHERE habit_id = ?"
         )
     }
     private val upsertStmt by lazy {
         db.prepareStatement(
-            """INSERT OR REPLACE INTO HabitExtensions(habit_id, day_tier, timer_enabled, block_id)
-               VALUES (?, ?, ?, ?)"""
+            """INSERT OR REPLACE INTO HabitExtensions(habit_id, day_tier, timer_enabled, block_id, stats_start_timestamp)
+               VALUES (?, ?, ?, ?, ?)"""
         )
     }
     private val deleteStmt by lazy {
@@ -37,7 +38,8 @@ class HabitExtensionRepository(private val db: Database) {
             habitId = findByHabitIdStmt.getLong(0),
             dayTier = findByHabitIdStmt.getText(1),
             timerEnabled = findByHabitIdStmt.getInt(2) != 0,
-            blockId = findByHabitIdStmt.getLongOrNull(3)
+            blockId = findByHabitIdStmt.getLongOrNull(3),
+            statsStartTimestamp = findByHabitIdStmt.getLongOrNull(4)
         )
     }
 
@@ -50,6 +52,11 @@ class HabitExtensionRepository(private val db: Database) {
             upsertStmt.bindLong(4, data.blockId)
         } else {
             upsertStmt.bindNull(4)
+        }
+        if (data.statsStartTimestamp != null) {
+            upsertStmt.bindLong(5, data.statsStartTimestamp)
+        } else {
+            upsertStmt.bindNull(5)
         }
         upsertStmt.step()
     }

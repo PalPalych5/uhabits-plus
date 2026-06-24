@@ -36,7 +36,10 @@ import org.isoron.uhabits.core.commands.EditHabitCommand
 import org.isoron.uhabits.core.database.HabitData
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.HabitList
+import org.isoron.uhabits.core.models.HabitGoal
 import org.isoron.uhabits.core.models.ModelFactory
+import org.isoron.uhabits.core.models.Frequency
+import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 import org.isoron.uhabits.core.utils.isSQLite3File
 
@@ -81,6 +84,8 @@ class LoopDBImporter(
             fileOpener.openResourceFile("migrations/$filename").lines().joinToString("\n")
         }
 
+        val globalStatsStart = loadGlobalStatsStart(db)
+        habitList.globalStatisticsStartDate = globalStatsStart
         val habitDataList = loadHabits(db)
         for (habitData in habitDataList) {
             var habit = habitList.getByUUID(habitData.uuid)
@@ -97,6 +102,9 @@ class LoopDBImporter(
             }
 
             habit = habitList.getByUUID(habitData.uuid)!!
+            habit.goalHistory = loadGoalHistory(db, habitData.id!!).toMutableList()
+            habit.statisticsStartDate = loadHabitStatsStart(db, habitData.id!!)
+            habit.globalStatisticsStartDate = globalStatsStart
             val entries = habit.originalEntries
 
             db.query(
@@ -112,10 +120,54 @@ class LoopDBImporter(
                     entries.add(Entry(date, value, notes))
                 }
             }
+            habitList.update(habit)
             habit.recompute()
         }
         habitList.resort()
         db.close()
+    }
+
+    private fun loadGlobalStatsStart(db: Database): LocalDate? {
+        val hasTable = db.querySingle(
+            "select count(*) from sqlite_master where type='table' and name='AppSettings'"
+        ) { it.getInt(0) } ?: 0
+        if (hasTable == 0) return null
+        val millis = db.querySingle(
+            "select long_value from AppSettings where key = 'global_stats_start_timestamp'"
+        ) { it.getLongOrNull(0) }
+        return millis?.let(LocalDate::fromUnixTime)
+    }
+
+    private fun loadHabitStatsStart(db: Database, habitId: Long): LocalDate? {
+        val millis = db.querySingle(
+            "select stats_start_timestamp from HabitExtensions where habit_id = ?",
+            habitId.toString()
+        ) { it.getLongOrNull(0) }
+        return millis?.let(LocalDate::fromUnixTime)
+    }
+
+    private fun loadGoalHistory(db: Database, habitId: Long): List<HabitGoal> {
+        val hasTable = db.querySingle(
+            "select count(*) from sqlite_master where type='table' and name='HabitGoals'"
+        ) { it.getInt(0) } ?: 0
+        if (hasTable == 0) return emptyList()
+        val goals = mutableListOf<HabitGoal>()
+        db.query(
+            """SELECT effective_timestamp, freq_num, freq_den, target_type, target_value, unit
+               FROM HabitGoals WHERE habit_id = ? ORDER BY effective_timestamp ASC""",
+            habitId.toString()
+        ) { stmt ->
+            goals.add(
+                HabitGoal(
+                    effectiveDate = LocalDate.fromUnixTime(stmt.getLong(0)),
+                    frequency = Frequency(stmt.getInt(1), stmt.getInt(2)),
+                    targetType = NumericalHabitType.fromInt(stmt.getInt(3)),
+                    targetValue = stmt.getReal(4),
+                    unit = stmt.getTextOrNull(5) ?: ""
+                )
+            )
+        }
+        return goals
     }
 
     private fun loadHabits(db: Database): List<HabitData> {
