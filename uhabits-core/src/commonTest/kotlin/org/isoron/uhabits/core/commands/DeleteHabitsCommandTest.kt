@@ -19,7 +19,10 @@
 package org.isoron.uhabits.core.commands
 
 import org.isoron.uhabits.core.BaseUnitTest
+import org.isoron.uhabits.core.commands.ClearAllEntriesCommand
+import org.isoron.uhabits.core.commands.ClearHabitEntriesCommand
 import org.isoron.uhabits.core.models.Habit
+import kotlin.test.assertTrue
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -53,5 +56,21 @@ class DeleteHabitsCommandTest : BaseUnitTest() {
         command.run()
         assertEquals(1, habitList.size())
         assertEquals("extra", habitList.getByPosition(0).name)
+    }
+
+    @Test
+    fun testClearHabitEntries() {
+        val target = selected.first()
+        assertTrue(target.originalEntries.getKnown().isNotEmpty())
+        ClearHabitEntriesCommand(habitList, target.id!!).run()
+        assertEquals(0, target.originalEntries.getKnown().size)
+        assertEquals(4, habitList.size())
+    }
+
+    @Test
+    fun testClearAllEntries() {
+        ClearAllEntriesCommand(habitList).run()
+        assertEquals(4, habitList.size())
+        habitList.forEach { assertEquals(0, it.originalEntries.getKnown().size) }
     }
 }

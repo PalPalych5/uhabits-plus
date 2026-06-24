@@ -19,6 +19,7 @@
 package org.isoron.uhabits.core.models
 
 import org.isoron.platform.time.getToday
+import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.BaseUnitTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -105,10 +106,10 @@ class HabitTest : BaseUnitTest() {
         assertFalse(h.isCompletedToday())
         h.originalEntries.add(Entry(getToday(), 100000))
         h.recompute()
-        assertFalse(h.isCompletedToday())
+        assertTrue(h.isCompletedToday())
         h.originalEntries.add(Entry(getToday(), 50000))
         h.recompute()
-        assertFalse(h.isCompletedToday())
+        assertTrue(h.isCompletedToday())
     }
 
     @Test
@@ -118,5 +119,53 @@ class HabitTest : BaseUnitTest() {
         habitList.add(h)
         assertEquals(0L, h.id)
         assertEquals("content://org.isoron.uhabits/habit/0", h.uriString)
+    }
+
+    @Test
+    fun testHistoricalGoalKeepsOldEntriesSuccessful() {
+        val h = modelFactory.buildHabit()
+        h.type = HabitType.NUMERICAL
+        h.targetType = NumericalHabitType.AT_LEAST
+        h.targetValue = 15.0
+        h.unit = "min"
+        h.goalHistory = mutableListOf(
+            HabitGoal(LocalDate(2015, 1, 1), Frequency.DAILY, NumericalHabitType.AT_LEAST, 15.0, "min"),
+            HabitGoal(LocalDate(2015, 1, 23), Frequency.DAILY, NumericalHabitType.AT_LEAST, 20.0, "min")
+        )
+        h.originalEntries.add(Entry(LocalDate(2015, 1, 22), 15_000))
+        h.originalEntries.add(Entry(LocalDate(2015, 1, 25), 15_000))
+        h.recompute()
+
+        assertTrue(h.isCompletedOn(LocalDate(2015, 1, 22)))
+        assertFalse(h.isCompletedOn(LocalDate(2015, 1, 25)))
+    }
+
+    @Test
+    fun testSoftResetExcludesOlderEntriesFromCompletion() {
+        val h = modelFactory.buildHabit()
+        h.originalEntries.add(Entry(getToday().minus(1), Entry.YES_MANUAL))
+        h.recompute()
+        assertTrue(h.isCompletedOn(getToday().minus(1)))
+        h.statisticsStartDate = getToday()
+        h.recompute()
+        assertFalse(h.isCompletedOn(getToday().minus(1)))
+    }
+
+    @Test
+    fun testStatisticsEntriesUseMaxOfGlobalAndPerHabitStartDates() {
+        val h = modelFactory.buildHabit()
+        val threeDaysAgo = getToday().minus(3)
+        val twoDaysAgo = getToday().minus(2)
+        val yesterday = getToday().minus(1)
+        h.originalEntries.add(Entry(threeDaysAgo, Entry.YES_MANUAL))
+        h.originalEntries.add(Entry(twoDaysAgo, Entry.YES_MANUAL))
+        h.originalEntries.add(Entry(yesterday, Entry.YES_MANUAL))
+        h.globalStatisticsStartDate = twoDaysAgo
+        h.statisticsStartDate = yesterday
+        h.recompute()
+
+        val includedDates = h.statisticsEntries(threeDaysAgo, getToday()).map { it.date }
+
+        assertEquals(listOf(getToday(), yesterday), includedDates)
     }
 }

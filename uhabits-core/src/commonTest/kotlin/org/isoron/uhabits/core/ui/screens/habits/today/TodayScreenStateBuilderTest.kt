@@ -18,17 +18,20 @@
  */
 package org.isoron.uhabits.core.ui.screens.habits.today
 
+import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.core.BaseUnitTest
-import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.DayTier
+import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.models.HabitGoal
 import org.isoron.uhabits.core.models.HabitType
+import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.PaletteColor
-import org.isoron.uhabits.core.models.Frequency
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class TodayScreenStateBuilderTest : BaseUnitTest() {
     private val today
@@ -273,6 +276,162 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
         val state = TodayScreenStateBuilder.build(habitList, today)
 
         assertEquals(55.0, state.focusMinutes)
+    }
+
+    @Test
+    fun usesHistoricalGoalForDisplayedDate() {
+        val switchDate = today
+        val oldDate = today.minus(1)
+        val reading = Habit(
+            name = "Reading",
+            type = HabitType.NUMERICAL,
+            targetValue = 20.0,
+            targetType = NumericalHabitType.AT_LEAST,
+            unit = "min",
+            computedEntries = modelFactory.buildComputedEntries(),
+            originalEntries = modelFactory.buildOriginalEntries(),
+            scores = modelFactory.buildScoreList(),
+            streaks = modelFactory.buildStreakList()
+        ).apply {
+            goalHistory = mutableListOf(
+                HabitGoal(LocalDate(2000, 1, 1), Frequency.DAILY, NumericalHabitType.AT_LEAST, 15.0, "min"),
+                HabitGoal(switchDate, Frequency.DAILY, NumericalHabitType.AT_LEAST, 20.0, "min")
+            )
+            originalEntries.add(Entry(oldDate, 15_000))
+            originalEntries.add(Entry(switchDate, 15_000))
+            recompute()
+        }
+        habitList.add(reading)
+
+        val oldItem = TodayScreenStateBuilder.build(habitList, oldDate).sections.single().items.single()
+        val newItem = TodayScreenStateBuilder.build(habitList, switchDate).sections.single().items.single()
+
+        assertEquals(TodayHabitStatus.COMPLETED, oldItem.status)
+        assertEquals(15.0, oldItem.targetValue)
+        assertEquals(TodayHabitStatus.REMAINING, newItem.status)
+        assertEquals(20.0, newItem.targetValue)
+    }
+
+    @Test
+    fun excludesPreResetDatesFromSummariesWithoutDeletingRawEntries() {
+        val oldDate = today.minus(1)
+        val reading = numericalHabit("Reading", Entry.UNKNOWN, targetValue = 30.0, unit = "min").apply {
+            originalEntries.add(Entry(oldDate, 30_000, "before reset"))
+            statisticsStartDate = today
+            recompute()
+        }
+        habitList.add(reading)
+
+        val oldState = TodayScreenStateBuilder.build(habitList, oldDate)
+
+        assertEquals(0, oldState.completedCount)
+        assertEquals(0, oldState.totalCount)
+        assertEquals(0.0, oldState.focusMinutes)
+        assertEquals(TodayTierProgress(0, 0), oldState.minimum)
+        assertTrue(oldState.sections.isEmpty())
+        assertEquals(30_000, reading.originalEntries.get(oldDate).value)
+        assertEquals("before reset", reading.originalEntries.get(oldDate).notes)
+    }
+
+    @Test
+    fun keepsSkipAndUnknownBehaviorWithHistoricalGoalsAndSoftReset() {
+        val active = Habit(
+            name = "Limit",
+            type = HabitType.NUMERICAL,
+            targetValue = 1.0,
+            targetType = NumericalHabitType.AT_MOST,
+            unit = "times",
+            computedEntries = modelFactory.buildComputedEntries(),
+            originalEntries = modelFactory.buildOriginalEntries(),
+            scores = modelFactory.buildScoreList(),
+            streaks = modelFactory.buildStreakList()
+        ).apply {
+            goalHistory = mutableListOf(
+                HabitGoal(LocalDate(2000, 1, 1), Frequency(1, 7), NumericalHabitType.AT_MOST, 2.0, "times"),
+                HabitGoal(today, Frequency(1, 7), NumericalHabitType.AT_MOST, 1.0, "times")
+            )
+            originalEntries.add(Entry(today, Entry.SKIP))
+            recompute()
+        }
+        val preResetUnknown = booleanHabit("Unknown before reset", Entry.UNKNOWN).apply {
+            originalEntries.add(Entry(today.minus(1), Entry.YES_MANUAL))
+            statisticsStartDate = today
+            recompute()
+        }
+        habitList.add(active)
+        habitList.add(preResetUnknown)
+
+        val state = TodayScreenStateBuilder.build(habitList, today)
+        val statuses = state.sections.single().items.associate { it.name to it.status }
+        val oldState = TodayScreenStateBuilder.build(habitList, today.minus(1))
+
+        assertEquals(TodayHabitStatus.SKIPPED, statuses["Limit"])
+        assertEquals(TodayHabitStatus.UNKNOWN, statuses["Unknown before reset"])
+        assertEquals(false, oldState.sections.flatMap { it.items }.any { it.name == "Unknown before reset" })
+    }
+
+    @Test
+    fun usesHistoricalAtMostBundlesForWeeklyAndMonthlyPeriods() {
+        val weekly = Habit(
+            name = "Weekly limit",
+            type = HabitType.NUMERICAL,
+            targetValue = 1.0,
+            targetType = NumericalHabitType.AT_MOST,
+            unit = "times",
+            computedEntries = modelFactory.buildComputedEntries(),
+            originalEntries = modelFactory.buildOriginalEntries(),
+            scores = modelFactory.buildScoreList(),
+            streaks = modelFactory.buildStreakList()
+        ).apply {
+            goalHistory = mutableListOf(
+                HabitGoal(LocalDate(2000, 1, 1), Frequency(1, 7), NumericalHabitType.AT_MOST, 2.0, "times"),
+                HabitGoal(today.minus(6), Frequency(1, 7), NumericalHabitType.AT_MOST, 1.0, "times")
+            )
+            originalEntries.add(Entry(today.minus(13), 1_000))
+            originalEntries.add(Entry(today.minus(11), 1_000))
+            originalEntries.add(Entry(today.minus(1), 1_000))
+            originalEntries.add(Entry(today, 1_000))
+            recompute()
+        }
+        val monthly = Habit(
+            name = "Monthly limit",
+            type = HabitType.NUMERICAL,
+            targetValue = 1.0,
+            targetType = NumericalHabitType.AT_MOST,
+            unit = "times",
+            computedEntries = modelFactory.buildComputedEntries(),
+            originalEntries = modelFactory.buildOriginalEntries(),
+            scores = modelFactory.buildScoreList(),
+            streaks = modelFactory.buildStreakList()
+        ).apply {
+            val monthStart = today.startOfMonth()
+            goalHistory = mutableListOf(
+                HabitGoal(LocalDate(2000, 1, 1), Frequency(1, 30), NumericalHabitType.AT_MOST, 2.0, "times"),
+                HabitGoal(monthStart, Frequency(1, 30), NumericalHabitType.AT_MOST, 1.0, "times")
+            )
+            originalEntries.add(Entry(monthStart.minus(10), 1_000))
+            originalEntries.add(Entry(monthStart.minus(5), 1_000))
+            originalEntries.add(Entry(monthStart.plus(1), 1_000))
+            originalEntries.add(Entry(monthStart.plus(2), 1_000))
+            recompute()
+        }
+        habitList.add(weekly)
+        habitList.add(monthly)
+
+        val oldWeekly = TodayScreenStateBuilder.build(habitList, today.minus(11)).sections.single().items.associateBy { it.name }
+        val newWeekly = TodayScreenStateBuilder.build(habitList, today).sections.single().items.associateBy { it.name }
+        val oldMonthly = TodayScreenStateBuilder.build(habitList, today.startOfMonth().minus(5)).sections.single().items.associateBy { it.name }
+        val newMonthly = TodayScreenStateBuilder.build(habitList, today.startOfMonth().plus(2)).sections.single().items.associateBy { it.name }
+
+        assertEquals(TodayHabitStatus.COMPLETED, oldWeekly["Weekly limit"]?.status)
+        assertEquals(2.0, oldWeekly["Weekly limit"]?.periodProgressTarget)
+        assertEquals(TodayHabitStatus.EXCEEDED, newWeekly["Weekly limit"]?.status)
+        assertEquals(1.0, newWeekly["Weekly limit"]?.periodProgressTarget)
+
+        assertEquals(TodayHabitStatus.COMPLETED, oldMonthly["Monthly limit"]?.status)
+        assertEquals(2.0, oldMonthly["Monthly limit"]?.periodProgressTarget)
+        assertEquals(TodayHabitStatus.EXCEEDED, newMonthly["Monthly limit"]?.status)
+        assertEquals(1.0, newMonthly["Monthly limit"]?.periodProgressTarget)
     }
 
     @Test
