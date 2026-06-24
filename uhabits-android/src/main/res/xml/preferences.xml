@@ -364,25 +364,25 @@
 
     <PreferenceCategory
             android:key="devCategory"
-            android:title="Development">
+            android:title="@string/developer_settings_title">
 
         <SwitchPreferenceCompat
                 android:defaultValue="false"
                 android:key="pref_developer"
-                android:title="Enable developer mode"
+                android:title="@string/developer_mode_title"
                 app:iconSpaceReserved="false" />
 
         <EditTextPreference
             android:defaultValue=""
             android:key="pref_sync_base_url"
-            android:title="Supabase URL"
+            android:title="@string/supabase_url_title"
             app:iconSpaceReserved="false"
             />
 
         <EditTextPreference
             android:defaultValue=""
             android:key="pref_sync_key"
-            android:title="Supabase anon key"
+            android:title="@string/supabase_anon_key_title"
             app:iconSpaceReserved="false"
             />
 

@@ -402,6 +402,10 @@
     <string name="sync_result_success">Sync complete: %1$d pushed, %2$d pulled.</string>
     <string name="sync_result_signed_in">Signed in to sync.</string>
     <string name="sync_result_signed_out">Signed out from sync on this device.</string>
+    <string name="developer_settings_title">Developer settings</string>
+    <string name="developer_mode_title">Enable developer mode</string>
+    <string name="supabase_url_title">Supabase URL</string>
+    <string name="supabase_anon_key_title">Supabase anon key</string>
     <string name="help_category">Help</string>
     <string name="language">Language</string>
     <string name="pref_app_language_system">System default</string>

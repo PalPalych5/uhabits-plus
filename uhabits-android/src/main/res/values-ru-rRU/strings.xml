@@ -187,6 +187,10 @@
     <string name="sync_result_success">Синхронизация завершена: отправлено %1$d, получено %2$d.</string>
     <string name="sync_result_signed_in">Вход для синхронизации выполнен.</string>
     <string name="sync_result_signed_out">Вы вышли из синхронизации на этом устройстве.</string>
+    <string name="developer_settings_title">Настройки разработчика</string>
+    <string name="developer_mode_title">Включить режим разработчика</string>
+    <string name="supabase_url_title">Supabase URL</string>
+    <string name="supabase_anon_key_title">Supabase anon key</string>
     <string name="select_public_backup_folder">Выбрать папку для резервных копий</string>
     <string name="no_public_backup_folder_selected">Папка для резервных копий не выбрана</string>
     <string name="backup_to_public_folder">Создать резервную копию во внешней папке</string>

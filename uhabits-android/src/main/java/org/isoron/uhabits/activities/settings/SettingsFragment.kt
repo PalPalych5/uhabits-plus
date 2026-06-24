@@ -264,10 +264,8 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
         ringtoneManager = RingtoneManager(requireActivity())
         sharedPrefs = preferenceManager.sharedPreferences
         sharedPrefs!!.registerOnSharedPreferenceChangeListener(this)
-        if (!prefs.isDeveloper) {
-            val devCategory = findPreference("devCategory") as PreferenceCategory
-            devCategory.isVisible = false
-        }
+        val devCategory = findPreference("devCategory") as PreferenceCategory
+        devCategory.isVisible = BuildConfig.DEBUG || prefs.isDeveloper
         findPreference("demoCategory")?.isVisible = BuildConfig.DEBUG
         findPreference("configureSpheres")?.isVisible = prefs.isHabitSpheresEnabled
         updateWeekdayPreference()
