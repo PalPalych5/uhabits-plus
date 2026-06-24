@@ -84,6 +84,22 @@
                 android:title="@string/first_day_of_the_week"
                 app:iconSpaceReserved="false" />
 
+        <SwitchPreferenceCompat
+                android:defaultValue="true"
+                android:key="pref_show_today_tab"
+                android:summary="@string/pref_show_today_tab_description"
+                android:title="@string/pref_show_today_tab_title"
+                app:iconSpaceReserved="false" />
+
+        <ListPreference
+                android:key="pref_start_destination"
+                android:title="@string/pref_start_destination_title"
+                android:entries="@array/pref_start_destination_entries"
+                android:entryValues="@array/pref_start_destination_values"
+                android:defaultValue="TODAY"
+                android:summary="%s"
+                app:iconSpaceReserved="false" />
+
     </PreferenceCategory>
 
     <PreferenceCategory
@@ -194,6 +210,18 @@
         <Preference
                 android:key="repairDB"
                 android:title="@string/repair_database"
+                app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="softResetStatistics"
+                android:title="@string/start_statistics_over"
+                android:summary="@string/count_statistics_from_date"
+                app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="hardResetStatistics"
+                android:title="@string/reset_statistics"
+                android:summary="@string/delete_entries_forever"
                 app:iconSpaceReserved="false" />
 
     </PreferenceCategory>

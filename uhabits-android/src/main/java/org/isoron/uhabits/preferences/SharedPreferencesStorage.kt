@@ -93,6 +93,11 @@ class SharedPreferencesStorage(
             "pref_unknown_enabled" -> {
                 preferences.areQuestionMarksEnabled = getBoolean(key, false)
             }
+            "pref_show_today_tab" ->
+                preferences.isTodayTabVisible = getBoolean(key, true)
+            "pref_start_destination" ->
+                preferences.startDestinationName = getString(key, "TODAY")
+
         }
         sharedPreferences.registerOnSharedPreferenceChangeListener(this)
     }

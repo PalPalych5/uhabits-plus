@@ -103,6 +103,7 @@ class ReportsFragment : Fragment() {
             (requireActivity() as AppCompatActivity).setSupportActionBar(it.toolbar)
             (requireActivity() as AppCompatActivity).supportActionBar
                 ?.setDisplayHomeAsUpEnabled(false)
+            updateReport()
         }
         (activity as? MainNavigationHost)?.setHabitCreationAvailable(false)
     }
@@ -231,6 +232,7 @@ class ReportsFragment : Fragment() {
 
         for (habit in habits) {
             val entry = habit.computedEntries.get(date)
+            val goal = habit.goalAt(date)
             if (entry.value == Entry.SKIP) continue
 
             totalCount++
@@ -241,7 +243,7 @@ class ReportsFragment : Fragment() {
             }
 
             // Focus Minutes calculation
-            if (habit.isNumerical && habit.targetType == NumericalHabitType.AT_LEAST && habit.unit.isMinuteUnit()) {
+            if (habit.isNumerical && goal.targetType == NumericalHabitType.AT_LEAST && goal.unit.isMinuteUnit()) {
                 val valDouble = if (entry.value != Entry.UNKNOWN) entry.value / 1000.0 else 0.0
                 totalFocusMinutes += valDouble
                 val blockId = habit.blockId
@@ -250,8 +252,8 @@ class ReportsFragment : Fragment() {
 
             // Missing Targets & Limit Violations list
             if (habit.isNumerical) {
-                val denominator = habit.frequency.denominator
-                if (habit.targetType == NumericalHabitType.AT_MOST && (denominator == 7 || denominator == 30)) {
+                val denominator = goal.frequency.denominator
+                if (goal.targetType == NumericalHabitType.AT_MOST && (denominator == 7 || denominator == 30)) {
                     val (periodActual, periodTarget) = getPeriodTotalAndTarget(habit, date)
                     if (periodActual > periodTarget) {
                         exceededHabits.add(habit)
@@ -263,12 +265,12 @@ class ReportsFragment : Fragment() {
                         remainingHabits.add(habit)
                     } else {
                         val value = entry.value / 1000.0
-                        when (habit.targetType) {
+                        when (goal.targetType) {
                             NumericalHabitType.AT_LEAST -> {
-                                if (value < habit.targetValue) remainingHabits.add(habit)
+                                if (value < goal.targetValue) remainingHabits.add(habit)
                             }
                             NumericalHabitType.AT_MOST -> {
-                                if (value > habit.targetValue) exceededHabits.add(habit)
+                                if (value > goal.targetValue) exceededHabits.add(habit)
                             }
                         }
                     }
@@ -397,7 +399,12 @@ class ReportsFragment : Fragment() {
 
         for (habit in habits) {
             val oldestEntryDate = habit.computedEntries.getKnown().lastOrNull()?.date ?: continue
-            val rangeStart = if (oldestEntryDate.isNewerThan(start)) oldestEntryDate else start
+            var rangeStart = if (oldestEntryDate.isNewerThan(start)) oldestEntryDate else start
+            val statsStart = habit.effectiveStatisticsStartDate()
+            if (statsStart != null && statsStart.isNewerThan(rangeStart)) {
+                rangeStart = statsStart
+            }
+            if (rangeStart.isNewerThan(end)) continue
 
             var habitTotalDays = 0
             var habitCompletedDays = 0
@@ -410,7 +417,11 @@ class ReportsFragment : Fragment() {
                     val firstWeekday = DayOfWeek.entries[firstWeekdayNum - 1]
                     var wStart = rangeStart.startOfWeek(firstWeekday)
                     while (wStart <= end) {
-                        val weekEntries = habit.computedEntries.getByInterval(wStart, wStart.plus(6))
+                        val weekEntries = habit.statisticsEntries(wStart, wStart.plus(6))
+                        if (weekEntries.isEmpty()) {
+                            wStart = wStart.plus(7)
+                            continue
+                        }
                         // A week is skipped if all its entries in the range are SKIP
                         if (weekEntries.isNotEmpty() && weekEntries.all { it.value == SKIP }) {
                             wStart = wStart.plus(7)
@@ -432,7 +443,11 @@ class ReportsFragment : Fragment() {
                     var mStart = rangeStart.startOfMonth()
                     while (mStart <= end) {
                         val monthLength = mStart.monthLength
-                        val monthEntries = habit.computedEntries.getByInterval(mStart, mStart.plus(monthLength - 1))
+                        val monthEntries = habit.statisticsEntries(mStart, mStart.plus(monthLength - 1))
+                        if (monthEntries.isEmpty()) {
+                            mStart = mStart.plus(monthLength)
+                            continue
+                        }
                         if (monthEntries.isNotEmpty() && monthEntries.all { it.value == SKIP }) {
                             mStart = mStart.plus(monthLength)
                             continue
@@ -454,16 +469,21 @@ class ReportsFragment : Fragment() {
                 // Day-by-day evaluation for YES_NO and AT_LEAST habits
                 var current = rangeStart
                 while (current <= end) {
+                    if (!habit.isDateIncludedInStatistics(current)) {
+                        current = current.plus(1)
+                        continue
+                    }
                     val entry = habit.computedEntries.get(current)
                     if (entry.value != Entry.SKIP) {
                         habitTotalDays++
                         val isCompleted = isHabitCompleted(habit, entry)
+                        val goal = habit.goalAt(current)
                         if (isCompleted) {
                             habitCompletedDays++
                         }
 
                         // Focus minutes to hours (only for AT_LEAST minute-based habits)
-                        if (habit.isNumerical && habit.targetType == NumericalHabitType.AT_LEAST && habit.unit.isMinuteUnit()) {
+                        if (habit.isNumerical && goal.targetType == NumericalHabitType.AT_LEAST && goal.unit.isMinuteUnit()) {
                             val valDouble = if (entry.value != Entry.UNKNOWN) entry.value / 1000.0 else 0.0
                             val hours = valDouble / 60.0
                             totalFocusHours += hours
@@ -472,10 +492,10 @@ class ReportsFragment : Fragment() {
                         }
 
                         // Daily AT_MOST limits check (not weekly/monthly)
-                        if (habit.isNumerical && habit.targetType == NumericalHabitType.AT_MOST) {
+                        if (habit.isNumerical && goal.targetType == NumericalHabitType.AT_MOST) {
                             if (entry.value != Entry.UNKNOWN) {
                                 val value = entry.value / 1000.0
-                                if (value > habit.targetValue) {
+                                if (value > goal.targetValue) {
                                     limitViolationsCount++
                                 }
                             }
@@ -554,15 +574,16 @@ class ReportsFragment : Fragment() {
     }
 
     private fun getPeriodTotalAndTarget(habit: Habit, date: LocalDate): Pair<Double, Double> {
-        val denominator = habit.frequency.denominator
-        val targetValue = habit.targetValue
+        val goal = habit.goalAt(date)
+        val denominator = goal.frequency.denominator
+        val targetValue = goal.targetValue
         return when (denominator) {
             7 -> {
                 val firstWeekdayNum = getFirstWeekdayNumberAccordingToLocale()
                 val firstWeekday = DayOfWeek.entries[firstWeekdayNum - 1]
                 val startOfWeek = date.startOfWeek(firstWeekday)
                 val endOfWeek = startOfWeek.plus(6)
-                val weekEntries = habit.computedEntries.getByInterval(startOfWeek, endOfWeek)
+                val weekEntries = habit.statisticsEntries(startOfWeek, endOfWeek)
                 val weekSum = weekEntries.groupedSum(
                     truncateField = TruncateField.WEEK_NUMBER,
                     firstWeekday = firstWeekdayNum,
@@ -573,7 +594,7 @@ class ReportsFragment : Fragment() {
             30 -> {
                 val startOfMonth = date.startOfMonth()
                 val endOfMonth = startOfMonth.plus(date.monthLength - 1)
-                val monthEntries = habit.computedEntries.getByInterval(startOfMonth, endOfMonth)
+                val monthEntries = habit.statisticsEntries(startOfMonth, endOfMonth)
                 val monthSum = monthEntries.groupedSum(
                     truncateField = TruncateField.MONTH,
                     isNumerical = true
@@ -591,16 +612,17 @@ class ReportsFragment : Fragment() {
     private fun isHabitCompleted(habit: Habit, entry: Entry): Boolean {
         if (habit.type == HabitType.NUMERICAL) {
             if (entry.value == Entry.UNKNOWN) return false
+            val goal = habit.goalAt(entry.date)
             val value = entry.value / 1000.0
-            return when (habit.targetType) {
-                NumericalHabitType.AT_LEAST -> value >= habit.targetValue
+            return when (goal.targetType) {
+                NumericalHabitType.AT_LEAST -> value >= goal.targetValue
                 NumericalHabitType.AT_MOST -> {
-                    val denominator = habit.frequency.denominator
+                    val denominator = goal.frequency.denominator
                     if (denominator == 7 || denominator == 30) {
                         val (periodActual, periodTarget) = getPeriodTotalAndTarget(habit, entry.date)
                         periodActual <= periodTarget
                     } else {
-                        value <= habit.targetValue
+                        value <= goal.targetValue
                     }
                 }
             }

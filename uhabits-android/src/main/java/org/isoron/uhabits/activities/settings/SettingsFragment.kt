@@ -37,8 +37,12 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
 import androidx.recyclerview.widget.RecyclerView
+import com.android.datetimepicker.date.DatePickerDialog
 import org.isoron.platform.time.DayOfWeek
 import org.isoron.platform.time.JavaLocalDateFormatter
+import org.isoron.platform.time.LocalDate
+import org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale
+import org.isoron.platform.time.getToday
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
@@ -55,6 +59,7 @@ import org.isoron.uhabits.notifications.AndroidNotificationTray.Companion.create
 import org.isoron.uhabits.notifications.RingtoneManager
 import org.isoron.uhabits.utils.StyledResources
 import org.isoron.uhabits.utils.applyBottomInset
+import org.isoron.uhabits.utils.dismissCurrentAndShow
 import org.isoron.uhabits.utils.startActivitySafely
 import org.isoron.uhabits.widgets.WidgetUpdater
 import java.util.Locale
@@ -65,6 +70,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.isoron.uhabits.BuildConfig
+import org.isoron.uhabits.core.commands.ClearAllEntriesCommand
+import org.isoron.uhabits.core.commands.SetGlobalStatisticsStartDateCommand
 import org.isoron.uhabits.core.models.sqlite.SQLModelFactory
 import org.isoron.uhabits.utils.DemoDataGenerator
 
@@ -188,6 +195,14 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
             }
             "resetDemoData" -> {
                 showSeedConfirmationDialog(isReset = true)
+                return true
+            }
+            "softResetStatistics" -> {
+                showGlobalStatisticsStartDateDialog()
+                return true
+            }
+            "hardResetStatistics" -> {
+                showHardResetStatisticsDialog()
                 return true
             }
         }
@@ -368,6 +383,80 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    private fun showGlobalStatisticsStartDateDialog() {
+        val options = arrayOf(
+            getString(R.string.today),
+            getString(R.string.this_monday),
+            getString(R.string.next_monday),
+            getString(R.string.select_date)
+        )
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.count_statistics_from_date)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> applyGlobalStatisticsStart(getToday())
+                    1 -> applyGlobalStatisticsStart(thisMonday())
+                    2 -> applyGlobalStatisticsStart(thisMonday().plus(7))
+                    else -> showDatePicker { date -> applyGlobalStatisticsStart(date) }
+                }
+            }
+            .setNeutralButton(R.string.clear) { _, _ -> applyGlobalStatisticsStart(null) }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun applyGlobalStatisticsStart(date: LocalDate?) {
+        val app = requireContext().applicationContext as HabitsApplication
+        app.component.commandRunner.run(
+            SetGlobalStatisticsStartDateCommand(app.component.habitList, date)
+        )
+    }
+
+    private fun showHardResetStatisticsDialog() {
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.reset_statistics)
+            .setMessage(
+                getString(R.string.delete_entries_forever) + "\n\n" +
+                    getString(R.string.action_cannot_be_undone) + "\n" +
+                    getString(R.string.reset_statistics_backup_hint)
+            )
+            .setPositiveButton(R.string.delete) { _, _ ->
+                val app = requireContext().applicationContext as HabitsApplication
+                app.component.commandRunner.run(ClearAllEntriesCommand(app.component.habitList))
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showDatePicker(callback: (LocalDate?) -> Unit) {
+        val today = getToday()
+        val dialog = DatePickerDialog.newInstance(
+            object : DatePickerDialog.OnDateSetListener {
+                override fun onDateSet(
+                    dialog: DatePickerDialog?,
+                    year: Int,
+                    monthOfYear: Int,
+                    dayOfMonth: Int
+                ) {
+                    callback(LocalDate(year, monthOfYear + 1, dayOfMonth))
+                }
+
+                override fun onDateCleared(dialog: DatePickerDialog?) {
+                    callback(null)
+                }
+            },
+            today.year,
+            today.month - 1,
+            today.day
+        )
+        dialog.show(requireActivity().fragmentManager, "settingsStatisticsDatePicker")
+    }
+
+    private fun thisMonday(): LocalDate {
+        val firstWeekday = DayOfWeek.entries[getFirstWeekdayNumberAccordingToLocale() - 1]
+        return getToday().startOfWeek(firstWeekday)
     }
 
     companion object {
