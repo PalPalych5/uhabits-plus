@@ -56,13 +56,14 @@ open class ListHabitsBehavior(
     open fun onEdit(habit: Habit, date: LocalDate, x: Float, y: Float) {
         val entry = habit.computedEntries.get(date)
         if (habit.type == HabitType.NUMERICAL) {
+            val goal = habit.goalAt(date)
             val oldValue = entry.value.toDouble() / 1000
             screen.showNumberPopup(oldValue, entry.notes) { newValue: Double, newNotes: String ->
                 val value = (newValue * 1000).roundToInt()
                 if (newValue != oldValue) {
                     if (
-                        (habit.targetType == AT_LEAST && newValue >= habit.targetValue) ||
-                        (habit.targetType == AT_MOST && newValue <= habit.targetValue)
+                        (goal.targetType == AT_LEAST && newValue >= goal.targetValue) ||
+                        (goal.targetType == AT_MOST && newValue <= goal.targetValue)
                     ) {
                         screen.showConfetti(habit.color, x, y)
                     }

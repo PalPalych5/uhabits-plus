@@ -19,10 +19,13 @@
 package org.isoron.uhabits.core.ui.screens.habits.show
 
 import org.isoron.platform.io.UserFile
+import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.core.commands.ArchiveHabitsCommand
+import org.isoron.uhabits.core.commands.ClearHabitEntriesCommand
 import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.commands.DeleteHabitsCommand
+import org.isoron.uhabits.core.commands.SetHabitStatisticsStartDateCommand
 import org.isoron.uhabits.core.commands.UnarchiveHabitsCommand
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
@@ -83,6 +86,20 @@ class ShowHabitMenuPresenter(
         }
     }
 
+    fun onSoftResetStatistics() {
+        screen.showStatisticsStartDateDialog(habit.statisticsStartDate) { date ->
+            commandRunner.run(SetHabitStatisticsStartDateCommand(habitList, habit.id!!, date))
+            screen.refresh()
+        }
+    }
+
+    fun onHardResetStatistics() {
+        screen.showHardResetStatisticsConfirmation {
+            commandRunner.run(ClearHabitEntriesCommand(habitList, habit.id!!))
+            screen.refresh()
+        }
+    }
+
     fun onUnarchiveHabits() {
         commandRunner.run(UnarchiveHabitsCommand(habitList, listOf(habit)))
         screen.showMessage(Message.HABIT_UNARCHIVED)
@@ -122,6 +139,11 @@ class ShowHabitMenuPresenter(
         fun showMessage(m: Message?)
         fun showSendFileScreen(filename: String)
         fun showDeleteConfirmationScreen(callback: OnConfirmedCallback)
+        fun showStatisticsStartDateDialog(
+            current: LocalDate?,
+            callback: (LocalDate?) -> Unit
+        )
+        fun showHardResetStatisticsConfirmation(callback: OnConfirmedCallback)
         fun close()
         fun refresh()
     }

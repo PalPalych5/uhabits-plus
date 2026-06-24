@@ -90,6 +90,10 @@ class ListHabitsMenuBehavior(
         onSortToggleBy(HabitList.Order.BY_STATUS_ASC, HabitList.Order.BY_STATUS_DESC)
     }
 
+    fun onSortBySphere() {
+        adapter.primaryOrder = HabitList.Order.BY_SPHERE
+    }
+
     private fun onSortToggleBy(defaultOrder: HabitList.Order, reversedOrder: HabitList.Order) {
         if (adapter.primaryOrder != defaultOrder) {
             if (adapter.primaryOrder != reversedOrder) {
