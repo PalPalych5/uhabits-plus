@@ -72,10 +72,13 @@ import kotlinx.coroutines.withContext
 import org.isoron.uhabits.BuildConfig
 import org.isoron.uhabits.backup.BackupEntry
 import org.isoron.uhabits.backup.BackupManager
+import org.isoron.uhabits.backup.BackupSource
 import org.isoron.uhabits.backup.BackupStatusStore
+import org.isoron.uhabits.backup.SafBackupStorage
 import org.isoron.uhabits.core.commands.ClearAllEntriesCommand
 import org.isoron.uhabits.core.commands.SetGlobalStatisticsStartDateCommand
 import org.isoron.uhabits.core.models.sqlite.SQLModelFactory
+import org.isoron.uhabits.core.tasks.Task
 import org.isoron.uhabits.tasks.RestoreDatabaseTaskFactory
 import org.isoron.uhabits.utils.DemoDataGenerator
 import java.text.DateFormat
@@ -89,6 +92,7 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
     private lateinit var intentFactory: IntentFactory
     private lateinit var backupManager: BackupManager
     private lateinit var backupStatusStore: BackupStatusStore
+    private lateinit var safBackupStorage: SafBackupStorage
     private lateinit var restoreTaskFactory: RestoreDatabaseTaskFactory
     private var widgetUpdater: WidgetUpdater? = null
 
@@ -123,6 +127,7 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
             intentFactory = appContext.component.intentFactory
             backupManager = appContext.component.backupManager
             backupStatusStore = BackupStatusStore(requireContext())
+            safBackupStorage = SafBackupStorage(requireContext())
             restoreTaskFactory = RestoreDatabaseTaskFactory(appContext, backupManager)
         }
         setActionOnPreferenceClick("importData", SettingsAction.IMPORT_DATA)
@@ -177,17 +182,19 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
                 return true
             }
             "publicBackupFolder" -> {
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
-                intent.addFlags(
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
-                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
-                        Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-                )
-                startActivityForResult(intent, PUBLIC_BACKUP_REQUEST_CODE)
+                launchPublicBackupFolderPicker()
                 return true
             }
             "restoreBackup" -> {
-                showRestoreBackupDialog()
+                showRestoreBackupDialog(BackupSource.PRIVATE)
+                return true
+            }
+            "backupToPublicFolder" -> {
+                performPublicBackup()
+                return true
+            }
+            "restorePublicBackup" -> {
+                showRestoreBackupDialog(BackupSource.PUBLIC)
                 return true
             }
             "configureSpheres" -> {
@@ -338,6 +345,10 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
             pref.summary = getString(R.string.no_public_backup_folder_selected)
             return
         }
+        if (!backupManager.isPublicBackupFolderAvailable()) {
+            pref.summary = getString(R.string.backup_external_folder_permission_lost)
+            return
+        }
         val uri = Uri.parse(uriString)
         val path = fullPathFor(uri)
         pref.summary = path ?: uriString
@@ -377,10 +388,20 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
         }
     }
 
-    private fun showRestoreBackupDialog() {
-        val backups = backupManager.listBackups()
+    private fun showRestoreBackupDialog(source: BackupSource) {
+        if (source == BackupSource.PUBLIC && !ensurePublicBackupFolderReady()) return
+
+        val backups = when (source) {
+            BackupSource.PRIVATE -> backupManager.listLocalBackups()
+            BackupSource.PUBLIC -> backupManager.listPublicBackups()
+        }
         if (backups.isEmpty()) {
-            Toast.makeText(requireContext(), R.string.backup_restore_no_backups, Toast.LENGTH_LONG).show()
+            val messageId = if (source == BackupSource.PUBLIC) {
+                R.string.backup_restore_no_public_backups
+            } else {
+                R.string.backup_restore_no_backups
+            }
+            Toast.makeText(requireContext(), messageId, Toast.LENGTH_LONG).show()
             return
         }
         val dateFormat = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, Locale.getDefault())
@@ -394,6 +415,76 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    private fun performPublicBackup() {
+        if (!ensurePublicBackupFolderReady()) return
+
+        val app = requireContext().applicationContext as HabitsApplication
+        app.component.taskRunner.execute(object : Task {
+            private var result: Result<String>? = null
+
+            override suspend fun doInBackground() {
+                result = runCatching {
+                    backupManager.backupToPublicFolder().location
+                }
+            }
+
+            override fun onPostExecute() {
+                result?.fold(
+                    onSuccess = {
+                        updateBackupStatusSummary()
+                        Toast.makeText(
+                            requireContext(),
+                            getString(R.string.backup_external_success),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    },
+                    onFailure = {
+                        Toast.makeText(
+                            requireContext(),
+                            it.message ?: getString(R.string.could_not_export),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                )
+            }
+        })
+    }
+
+    private fun ensurePublicBackupFolderReady(): Boolean {
+        return when {
+            !backupManager.isPublicBackupFolderConfigured() -> {
+                showChoosePublicBackupFolderDialog(R.string.backup_external_folder_not_selected)
+                false
+            }
+            !backupManager.isPublicBackupFolderAvailable() -> {
+                showChoosePublicBackupFolderDialog(R.string.backup_external_folder_permission_lost)
+                false
+            }
+            else -> true
+        }
+    }
+
+    private fun showChoosePublicBackupFolderDialog(messageId: Int) {
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.select_public_backup_folder)
+            .setMessage(messageId)
+            .setPositiveButton(R.string.choose_folder) { _, _ ->
+                launchPublicBackupFolderPicker()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun launchPublicBackupFolderPicker() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+        intent.addFlags(
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+        )
+        startActivityForResult(intent, PUBLIC_BACKUP_REQUEST_CODE)
     }
 
     private fun showRestoreBackupConfirmation(entry: BackupEntry) {

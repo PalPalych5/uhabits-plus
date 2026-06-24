@@ -197,7 +197,7 @@
 
         <Preference
                 android:key="restoreBackup"
-                android:summary="@string/restore_backup_summary"
+                android:summary="@string/restore_backup_local_summary"
                 android:title="@string/restore_backup"
                 app:iconSpaceReserved="false" />
 
@@ -217,6 +217,18 @@
                 android:key="publicBackupFolder"
                 android:title="@string/select_public_backup_folder"
                 android:summary="@string/no_public_backup_folder_selected"
+                app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="backupToPublicFolder"
+                android:title="@string/backup_to_public_folder"
+                android:summary="@string/backup_to_public_folder_summary"
+                app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="restorePublicBackup"
+                android:title="@string/restore_public_backup"
+                android:summary="@string/restore_public_backup_summary"
                 app:iconSpaceReserved="false" />
 
         <Preference

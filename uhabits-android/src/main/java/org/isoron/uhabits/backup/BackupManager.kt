@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import me.tatarka.inject.annotations.Inject
-import org.isoron.uhabits.core.DATABASE_VERSION
 import org.isoron.uhabits.inject.AppContext
 import org.isoron.uhabits.utils.DatabaseUtils
 import java.io.File
@@ -13,7 +12,8 @@ import java.io.File
 class BackupManager(
     @AppContext private val context: Context,
     private val catalog: BackupCatalog,
-    private val statusStore: BackupStatusStore
+    private val statusStore: BackupStatusStore,
+    private val safBackupStorage: SafBackupStorage
 ) {
     fun backupNow(keep: Int = 5): BackupResult {
         val now = System.currentTimeMillis()
@@ -22,21 +22,33 @@ class BackupManager(
 
         return try {
             val snapshot = DatabaseUtils.createDatabaseSnapshot(context, tempFile)
-            val publicDir = catalog.getPublicBackupDir()
-            val location = if (publicDir != null) {
-                val target = createPublicBackupFile(publicDir, now)
-                DatabaseUtils.copyFileToDocument(context, tempFile, target)
-                tempFile.delete()
-                target.uri.toString()
-            } else {
-                val finalFile = File(tempDir, BackupFileNamePolicy.buildFileName(now))
-                DatabaseUtils.publishLocalBackup(tempFile, finalFile)
-                finalFile.absolutePath
-            }
+            val finalFile = File(tempDir, BackupFileNamePolicy.buildFileName(now))
+            DatabaseUtils.publishLocalBackup(tempFile, finalFile)
 
-            catalog.applyRetention(keep)
-            statusStore.recordSuccess(location, snapshot.sizeBytes, snapshot.databaseVersion, now)
-            BackupResult(location, snapshot.sizeBytes, snapshot.databaseVersion)
+            catalog.applyPrivateRetention(keep)
+            statusStore.recordSuccess(finalFile.absolutePath, snapshot.sizeBytes, snapshot.databaseVersion, now)
+            BackupResult(finalFile.absolutePath, snapshot.sizeBytes, snapshot.databaseVersion)
+        } catch (e: Exception) {
+            tempFile.delete()
+            statusStore.recordFailure(e.message ?: "Backup failed", now)
+            throw e
+        }
+    }
+
+    fun backupToPublicFolder(keep: Int = 5): BackupResult {
+        val now = System.currentTimeMillis()
+        val tempDir = requireNotNull(catalog.getPrivateBackupDir()) { "Backup directory unavailable" }
+        val tempFile = File(tempDir, "${BackupFileNamePolicy.buildFileName(now)}.tmp")
+
+        return try {
+            val snapshot = DatabaseUtils.createDatabaseSnapshot(context, tempFile)
+            val target = createPublicBackupFile(now)
+            DatabaseUtils.copyFileToDocument(context, tempFile, target)
+            tempFile.delete()
+
+            catalog.applyPublicRetention(keep)
+            statusStore.recordSuccess(target.uri.toString(), snapshot.sizeBytes, snapshot.databaseVersion, now)
+            BackupResult(target.uri.toString(), snapshot.sizeBytes, snapshot.databaseVersion)
         } catch (e: Exception) {
             tempFile.delete()
             statusStore.recordFailure(e.message ?: "Backup failed", now)
@@ -45,6 +57,14 @@ class BackupManager(
     }
 
     fun listBackups(): List<BackupEntry> = catalog.listBackups()
+
+    fun listLocalBackups(): List<BackupEntry> = catalog.listPrivateBackups()
+
+    fun listPublicBackups(): List<BackupEntry> = catalog.listPublicBackups()
+
+    fun isPublicBackupFolderConfigured(): Boolean = safBackupStorage.isFolderConfigured()
+
+    fun isPublicBackupFolderAvailable(): Boolean = safBackupStorage.getFolderOrNull() != null
 
     fun validateBackup(entry: BackupEntry): BackupValidationResult {
         return try {
@@ -77,10 +97,8 @@ class BackupManager(
         }
     }
 
-    private fun createPublicBackupFile(dir: DocumentFile, timestamp: Long): DocumentFile {
-        val filename = BackupFileNamePolicy.buildFileName(timestamp)
-        return dir.createFile("application/octet-stream", filename)
-            ?: throw IllegalStateException("Unable to create backup file")
+    private fun createPublicBackupFile(timestamp: Long): DocumentFile {
+        return safBackupStorage.createBackupFile(timestamp)
     }
 
     private fun stageToLocalTemp(entry: BackupEntry): File {

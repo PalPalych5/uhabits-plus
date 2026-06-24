@@ -1,33 +1,32 @@
 package org.isoron.uhabits.backup
 
-import android.content.Context
-import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
-import androidx.preference.PreferenceManager
 import me.tatarka.inject.annotations.Inject
 import org.isoron.uhabits.AndroidDirFinder
-import org.isoron.uhabits.inject.AppContext
 import java.io.File
 
 @Inject
 class BackupCatalog(
-    @AppContext private val context: Context,
-    private val dirFinder: AndroidDirFinder
+    private val dirFinder: AndroidDirFinder,
+    private val safBackupStorage: SafBackupStorage
 ) {
     fun listBackups(): List<BackupEntry> {
         return (listPrivateBackups() + listPublicBackups()).sortedByDescending { it.modifiedAt }
     }
 
-    fun applyRetention(keep: Int) {
-        prunePrivateBackups(keep)
-        prunePublicBackups(keep)
-    }
+    fun listPrivateBackups(): List<BackupEntry> = readPrivateBackups()
+
+    fun listPublicBackups(): List<BackupEntry> = readPublicBackups()
+
+    fun applyPrivateRetention(keep: Int) = prunePrivateBackups(keep)
+
+    fun applyPublicRetention(keep: Int) = prunePublicBackups(keep)
 
     internal fun filterBackupFiles(files: List<File>): List<File> {
         return filterLocalBackupFiles(files)
     }
 
-    private fun listPrivateBackups(): List<BackupEntry> {
+    private fun readPrivateBackups(): List<BackupEntry> {
         val dir = dirFinder.getFilesDir(BACKUP_DIR_NAME) ?: return emptyList()
         return filterBackupFiles(dir.listFiles()?.toList().orEmpty()).map {
             BackupEntry(
@@ -40,8 +39,8 @@ class BackupCatalog(
         }
     }
 
-    private fun listPublicBackups(): List<BackupEntry> {
-        val dir = getPublicBackupDir() ?: return emptyList()
+    private fun readPublicBackups(): List<BackupEntry> {
+        val dir = safBackupStorage.getFolderOrNull() ?: return emptyList()
         return dir.listFiles()
             .filter { it.isFile && BackupFileNamePolicy.isBackupFile(it.name) }
             .sortedByDescending { it.lastModified() }
@@ -63,7 +62,7 @@ class BackupCatalog(
     }
 
     private fun prunePublicBackups(keep: Int) {
-        val dir = getPublicBackupDir() ?: return
+        val dir = safBackupStorage.getFolderOrNull() ?: return
         val backups = dir.listFiles()
             .filter { it.isFile && BackupFileNamePolicy.isBackupFile(it.name) }
             .sortedByDescending { it.lastModified() }
@@ -71,17 +70,6 @@ class BackupCatalog(
     }
 
     fun getPrivateBackupDir(): File? = dirFinder.getFilesDir(BACKUP_DIR_NAME)
-
-    fun getPublicBackupDir(): DocumentFile? {
-        val uriString = PreferenceManager.getDefaultSharedPreferences(context)
-            .getString("publicBackupFolder", null) ?: return null
-        val uri = Uri.parse(uriString)
-        return if (uri.scheme == "content") {
-            DocumentFile.fromTreeUri(context, uri)
-        } else {
-            DocumentFile.fromFile(File(uri.path!!))
-        }
-    }
 
     companion object {
         const val BACKUP_DIR_NAME = "Backups"
