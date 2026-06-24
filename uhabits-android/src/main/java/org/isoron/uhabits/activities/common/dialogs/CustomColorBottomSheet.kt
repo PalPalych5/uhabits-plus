@@ -121,6 +121,9 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
         dialog?.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         (dialog as? BottomSheetDialog)?.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)?.let { sheet ->
             sheet.setBackgroundColor(Color.TRANSPARENT)
+            // The Material container keeps its rectangular elevation shadow even when
+            // transparent, which shows up as a grey bar behind our rounded sheet.
+            sheet.elevation = 0f
             BottomSheetBehavior.from(sheet).apply {
                 state = BottomSheetBehavior.STATE_EXPANDED
                 skipCollapsed = true
@@ -235,9 +238,9 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
 
         val hsv = FloatArray(3)
         Color.colorToHSV(currentColor, hsv)
-        hsvSliders[0].value = hsv[0].roundToInt().toFloat().coerceIn(0f, 360f)
-        hsvSliders[1].value = (hsv[1] * 100f).roundToInt().toFloat().coerceIn(0f, 100f)
-        hsvSliders[2].value = (hsv[2] * 100f).roundToInt().toFloat().coerceIn(0f, 100f)
+        hsvSliders[0].value = hsv[0].coerceIn(0f, 360f)
+        hsvSliders[1].value = (hsv[1] * 100f).coerceIn(0f, 100f)
+        hsvSliders[2].value = (hsv[2] * 100f).coerceIn(0f, 100f)
         rgbSliders[0].value = Color.red(currentColor).toFloat()
         rgbSliders[1].value = Color.green(currentColor).toFloat()
         rgbSliders[2].value = Color.blue(currentColor).toFloat()
@@ -262,13 +265,13 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun updateDoneButton() {
-        val surface = resolveColor(R.attr.colorPickerSurface)
+        val surface = resolveColor(R.attr.colorPickerSurfaceVariant)
         val onSurface = resolveColor(R.attr.colorPickerOnSurface)
         doneButton.backgroundTintList = ColorStateList.valueOf(surface)
         doneButton.strokeColor = ColorStateList.valueOf(currentColor)
         doneButton.strokeWidth = resources.getDimensionPixelSize(R.dimen.color_picker_action_stroke)
         doneButton.setTextColor(ColorPickerUtils.accentTextColor(currentColor, surface, onSurface))
-        doneButton.setTypeface(doneButton.typeface, Typeface.BOLD)
+        doneButton.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
     }
 
     private fun finishEditing() {

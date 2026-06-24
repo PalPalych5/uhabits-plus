@@ -46,9 +46,11 @@ class ColorPickerDialog : AppCompatDialogFragment() {
         const val THEME_AMOLED = 2
 
         private const val ARG_INITIAL_COLOR = "initial_color"
+        private const val ARG_DEFAULT_COLOR = "default_color"
         private const val ARG_PREVIEW_NAME = "preview_name"
         private const val ARG_THEME = "theme"
         private const val STATE_INITIAL_COLOR = "state_initial_color"
+        private const val STATE_DEFAULT_COLOR = "state_default_color"
         private const val STATE_DRAFT_COLOR = "state_draft_color"
         private const val STATE_SOURCE = "state_source"
         internal const val CUSTOM_COLOR_RESULT = "custom_color_result"
@@ -56,11 +58,13 @@ class ColorPickerDialog : AppCompatDialogFragment() {
 
         fun newInstance(
             initialColor: Int,
+            defaultColor: Int,
             previewName: String?,
             theme: Int
         ) = ColorPickerDialog().apply {
             arguments = Bundle().apply {
                 putInt(ARG_INITIAL_COLOR, initialColor)
+                putInt(ARG_DEFAULT_COLOR, defaultColor)
                 putString(ARG_PREVIEW_NAME, previewName)
                 putInt(ARG_THEME, theme)
             }
@@ -71,6 +75,7 @@ class ColorPickerDialog : AppCompatDialogFragment() {
 
     private var listener: OnColorPickedCallback? = null
     private var initialColor = ColorPickerUtils.DEFAULT_COLOR
+    private var defaultColor = ColorPickerUtils.DEFAULT_COLOR
     private var draftColor = ColorPickerUtils.DEFAULT_COLOR
     private var source = ColorSource.DEFAULT
     private var pendingDraftColor: Int? = null
@@ -92,11 +97,6 @@ class ColorPickerDialog : AppCompatDialogFragment() {
     fun restoreDraftColor(color: Int) {
         pendingDraftColor = color
         draftColor = color
-        source = when {
-            color == ColorPickerUtils.DEFAULT_COLOR -> ColorSource.DEFAULT
-            color in ColorPickerUtils.presetColors -> ColorSource.PRESET
-            else -> ColorSource.CUSTOM
-        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -114,9 +114,16 @@ class ColorPickerDialog : AppCompatDialogFragment() {
         initialColor = savedInstanceState?.getInt(STATE_INITIAL_COLOR)
             ?: arguments?.getInt(ARG_INITIAL_COLOR, ColorPickerUtils.DEFAULT_COLOR)
             ?: ColorPickerUtils.DEFAULT_COLOR
+        defaultColor = savedInstanceState?.getInt(STATE_DEFAULT_COLOR)
+            ?: arguments?.getInt(ARG_DEFAULT_COLOR, ColorPickerUtils.DEFAULT_COLOR)
+            ?: ColorPickerUtils.DEFAULT_COLOR
         draftColor = savedInstanceState?.getInt(STATE_DRAFT_COLOR) ?: pendingDraftColor ?: initialColor
         source = savedInstanceState?.getString(STATE_SOURCE)?.let(ColorSource::valueOf)
-            ?: if (draftColor in ColorPickerUtils.presetColors) ColorSource.PRESET else ColorSource.CUSTOM
+            ?: when {
+                draftColor == defaultColor -> ColorSource.DEFAULT
+                draftColor in ColorPickerUtils.presetColors -> ColorSource.PRESET
+                else -> ColorSource.CUSTOM
+            }
 
         childFragmentManager.setFragmentResultListener(CUSTOM_COLOR_RESULT, this) { _, result ->
             updateDraft(result.getInt(CUSTOM_COLOR_VALUE), ColorSource.CUSTOM)
@@ -153,7 +160,7 @@ class ColorPickerDialog : AppCompatDialogFragment() {
                 .show(childFragmentManager, "customColorPicker")
         }
         view.findViewById<View>(R.id.color_picker_reset).setOnClickListener {
-            updateDraft(ColorPickerUtils.DEFAULT_COLOR, ColorSource.DEFAULT)
+            updateDraft(defaultColor, ColorSource.DEFAULT)
         }
         view.findViewById<View>(R.id.color_picker_cancel).setOnClickListener { dismiss() }
         applyButton.setOnClickListener {
@@ -182,6 +189,7 @@ class ColorPickerDialog : AppCompatDialogFragment() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putInt(STATE_INITIAL_COLOR, initialColor)
+        outState.putInt(STATE_DEFAULT_COLOR, defaultColor)
         outState.putInt(STATE_DRAFT_COLOR, draftColor)
         outState.putString(STATE_SOURCE, source.name)
     }
@@ -221,12 +229,14 @@ class ColorPickerDialog : AppCompatDialogFragment() {
         }
         customSwatch.apply {
             swatchColor = draftColor
-            showSelectionRing = false
-            showCheckmark = false
-            isSelected = false
+            val customIsSelected = source == ColorSource.CUSTOM
+            showSpectrum = !customIsSelected
+            showSelectionRing = customIsSelected
+            showCheckmark = customIsSelected
+            isSelected = customIsSelected
         }
         swatches.forEach { swatch ->
-            swatch.isSelected = swatch.swatchColor == draftColor
+            swatch.isSelected = source != ColorSource.CUSTOM && swatch.swatchColor == draftColor
             swatch.contentDescription = getString(
                 if (swatch.isSelected) R.string.color_picker_swatch_selected else R.string.color_picker_swatch,
                 ColorPickerUtils.toHex(swatch.swatchColor)
@@ -239,13 +249,13 @@ class ColorPickerDialog : AppCompatDialogFragment() {
     }
 
     private fun updateApplyButton() {
-        val surface = resolveColor(R.attr.colorPickerSurface)
+        val surface = resolveColor(R.attr.colorPickerSurfaceVariant)
         val onSurface = resolveColor(R.attr.colorPickerOnSurface)
         applyButton.backgroundTintList = ColorStateList.valueOf(surface)
         applyButton.strokeColor = ColorStateList.valueOf(draftColor)
         applyButton.strokeWidth = resources.getDimensionPixelSize(R.dimen.color_picker_action_stroke)
         applyButton.setTextColor(ColorPickerUtils.accentTextColor(draftColor, surface, onSurface))
-        applyButton.setTypeface(applyButton.typeface, Typeface.BOLD)
+        applyButton.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
     }
 
     private fun setupInsets(root: View, toolbar: View, actions: View) {

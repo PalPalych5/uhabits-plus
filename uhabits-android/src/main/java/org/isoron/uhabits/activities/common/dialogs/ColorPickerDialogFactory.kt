@@ -31,8 +31,14 @@ import org.isoron.uhabits.inject.ActivityScope
 @Inject
 @ActivityScope
 class ColorPickerDialogFactory(@param:ActivityContext private val context: Context) {
-    fun create(color: PaletteColor, theme: Theme, previewName: String? = null): ColorPickerDialog {
+    fun create(
+        color: PaletteColor,
+        theme: Theme,
+        previewName: String? = null,
+        defaultColor: PaletteColor = PaletteColor(18)
+    ): ColorPickerDialog {
         val androidColor = theme.color(color).toInt()
+        val androidDefaultColor = theme.color(defaultColor).toInt()
         val themeMode = when (theme) {
             is PureBlackTheme -> ColorPickerDialog.THEME_AMOLED
             is DarkTheme -> ColorPickerDialog.THEME_DARK
@@ -40,6 +46,7 @@ class ColorPickerDialogFactory(@param:ActivityContext private val context: Conte
         }
         return ColorPickerDialog.newInstance(
             initialColor = androidColor,
+            defaultColor = androidDefaultColor,
             previewName = previewName,
             theme = themeMode
         )
