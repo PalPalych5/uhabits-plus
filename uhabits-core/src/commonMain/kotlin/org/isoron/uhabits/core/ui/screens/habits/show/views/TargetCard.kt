@@ -44,8 +44,10 @@ class TargetCardPresenter {
             theme: Theme
         ): TargetCardState {
             val today = getToday()
-            val oldest = habit.computedEntries.getKnown().lastOrNull()?.date ?: today
-            val entries = habit.computedEntries.getByInterval(oldest, today)
+            val oldest = habit.effectiveStatisticsStartDate()
+                ?: habit.computedEntries.getKnown().lastOrNull()?.date
+                ?: today
+            val entries = habit.statisticsEntries(oldest, today)
 
             val valueToday = entries.groupedSum(
                 truncateField = TruncateField.DAY,

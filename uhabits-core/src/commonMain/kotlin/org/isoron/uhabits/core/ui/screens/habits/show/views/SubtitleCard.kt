@@ -49,9 +49,9 @@ class SubtitleCardPresenter {
             isNumerical = habit.isNumerical,
             question = habit.question,
             reminder = habit.reminder,
-            targetValue = habit.targetValue,
-            targetType = habit.targetType,
-            unit = habit.unit,
+            targetValue = habit.goalAt(org.isoron.platform.time.getToday()).targetValue,
+            targetType = habit.goalAt(org.isoron.platform.time.getToday()).targetType,
+            unit = habit.goalAt(org.isoron.platform.time.getToday()).unit,
             theme = theme
         )
     }

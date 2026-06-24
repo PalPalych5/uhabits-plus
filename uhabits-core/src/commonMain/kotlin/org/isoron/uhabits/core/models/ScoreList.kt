@@ -64,76 +64,78 @@ class ScoreList {
      */
     @Synchronized
     fun recompute(
-        frequency: Frequency,
-        isNumerical: Boolean,
-        numericalHabitType: NumericalHabitType,
-        targetValue: Double,
+        habit: Habit,
         computedEntries: EntryList,
         from: LocalDate,
         to: LocalDate
     ) {
         map.clear()
-        var rollingSum = 0.0
-        var numerator = frequency.numerator
-        var denominator = frequency.denominator
-        val freq = frequency.toDouble()
-        val values = computedEntries.getByInterval(from, to).map { it.value }.toIntArray()
-        val isAtMost = numericalHabitType == NumericalHabitType.AT_MOST
+        var previousValue = if (habit.isNumerical && habit.targetType == NumericalHabitType.AT_MOST) 1.0 else 0.0
+        var date = from
+        while (!date.isNewerThan(to)) {
+            val goal = habit.goalAt(date)
+            val entry = computedEntries.get(date)
+            if (!habit.isDateIncludedInStatistics(date)) {
+                map[date] = Score(date, 0.0)
+                previousValue = 0.0
+                date = date.plus(1)
+                continue
+            }
 
-        // For non-daily boolean habits, we double the numerator and the denominator to smooth
-        // out irregular repetition schedules (for example, weekly habits performed on different
-        // days of the week)
-        if (!isNumerical && freq < 1.0) {
-            numerator *= 2
-            denominator *= 2
-        }
+            var numerator = goal.frequency.numerator
+            var denominator = goal.frequency.denominator
+            val freq = goal.frequency.toDouble()
 
-        var previousValue = if (isNumerical && isAtMost) 1.0 else 0.0
-        for (i in values.indices) {
-            val offset = values.size - i - 1
-            if (isNumerical) {
-                rollingSum += max(0, values[offset])
-                if (offset + denominator < values.size) {
-                    rollingSum -= max(0, values[offset + denominator])
-                }
+            if (!habit.isNumerical && freq < 1.0) {
+                numerator *= 2
+                denominator *= 2
+            }
 
-                val normalizedRollingSum = rollingSum / 1000
-                if (values[offset] != Entry.SKIP) {
-                    val percentageCompleted = if (!isAtMost) {
-                        if (targetValue > 0) {
-                            min(1.0, normalizedRollingSum / targetValue)
-                        } else {
-                            1.0
-                        }
-                    } else {
-                        if (targetValue > 0) {
-                            (1 - ((normalizedRollingSum - targetValue) / targetValue)).coerceIn(
-                                0.0,
-                                1.0
-                            )
+            if (entry.value != Entry.SKIP) {
+                val percentageCompleted = if (habit.isNumerical) {
+                    val rollingSum = sumNumericalWindow(computedEntries, date, denominator)
+                    val normalizedRollingSum = rollingSum / 1000.0
+                    if (goal.targetType == NumericalHabitType.AT_MOST) {
+                        if (goal.targetValue > 0) {
+                            (1 - ((normalizedRollingSum - goal.targetValue) / goal.targetValue))
+                                .coerceIn(0.0, 1.0)
                         } else {
                             if (normalizedRollingSum > 0) 0.0 else 1.0
                         }
+                    } else {
+                        if (goal.targetValue > 0) {
+                            min(1.0, normalizedRollingSum / goal.targetValue)
+                        } else {
+                            1.0
+                        }
                     }
-
-                    previousValue = compute(freq, previousValue, percentageCompleted)
+                } else {
+                    val rollingSum = sumBooleanWindow(computedEntries, date, denominator)
+                    min(1.0, rollingSum / numerator)
                 }
-            } else {
-                if (values[offset] == Entry.YES_MANUAL) {
-                    rollingSum += 1.0
-                }
-                if (offset + denominator < values.size) {
-                    if (values[offset + denominator] == Entry.YES_MANUAL) {
-                        rollingSum -= 1.0
-                    }
-                }
-                if (values[offset] != Entry.SKIP) {
-                    val percentageCompleted = min(1.0, rollingSum / numerator)
-                    previousValue = compute(freq, previousValue, percentageCompleted)
-                }
+                previousValue = compute(freq, previousValue, percentageCompleted)
             }
-            val date = from.plus(i)
+
             map[date] = Score(date, previousValue)
+            date = date.plus(1)
         }
+    }
+
+    private fun sumNumericalWindow(computedEntries: EntryList, date: LocalDate, denominator: Int): Int {
+        var sum = 0
+        for (offset in 0 until denominator) {
+            sum += max(0, computedEntries.get(date.minus(offset)).value)
+        }
+        return sum
+    }
+
+    private fun sumBooleanWindow(computedEntries: EntryList, date: LocalDate, denominator: Int): Double {
+        var sum = 0.0
+        for (offset in 0 until denominator) {
+            if (computedEntries.get(date.minus(offset)).value == Entry.YES_MANUAL) {
+                sum += 1.0
+            }
+        }
+        return sum
     }
 }

@@ -35,26 +35,16 @@ class StreakList {
 
     @Synchronized
     fun recompute(
+        habit: Habit,
         computedEntries: EntryList,
         from: LocalDate,
-        to: LocalDate,
-        isNumerical: Boolean,
-        targetValue: Double,
-        targetType: NumericalHabitType
+        to: LocalDate
     ) {
         list.clear()
         val dates = computedEntries
             .getByInterval(from, to)
             .filter {
-                val value = it.value
-                if (isNumerical) {
-                    when (targetType) {
-                        NumericalHabitType.AT_LEAST -> value / 1000.0 >= targetValue
-                        NumericalHabitType.AT_MOST -> value != Entry.UNKNOWN && value / 1000.0 <= targetValue
-                    }
-                } else {
-                    value > 0
-                }
+                habit.isCompletedOn(it.date)
             }
             .map { it.date }
             .toTypedArray()

@@ -164,33 +164,20 @@ class HistoryCardPresenter(
             val series = if (habit.isNumerical) {
                 entries.map {
                     val value = it.value
+                    val goal = habit.goalAt(it.date)
                     when {
                         value == Entry.UNKNOWN -> OFF
                         value == SKIP -> HATCHED
-                        (habit.targetType == AT_MOST) -> {
-                            val denominator = habit.frequency.denominator
+                        (goal.targetType == AT_MOST) -> {
+                            val denominator = goal.frequency.denominator
                             if (denominator == 7 || denominator == 30) {
-                                val isWithinLimit = if (denominator == 7) {
-                                    val wStart = it.date.startOfWeek(firstWeekday)
-                                    val wEnd = wStart.plus(6)
-                                    val weekEntries = habit.computedEntries.getByInterval(wStart, wEnd)
-                                    val weekSum = weekEntries.filter { entry -> entry.value != SKIP }
-                                        .sumOf { entry -> kotlin.math.max(0, entry.value) } / 1000.0
-                                    weekSum <= habit.targetValue
-                                } else { // denominator == 30
-                                    val mStart = it.date.startOfMonth()
-                                    val mEnd = mStart.plus(it.date.monthLength - 1)
-                                    val monthEntries = habit.computedEntries.getByInterval(mStart, mEnd)
-                                    val monthSum = monthEntries.filter { entry -> entry.value != SKIP }
-                                        .sumOf { entry -> kotlin.math.max(0, entry.value) } / 1000.0
-                                    monthSum <= habit.targetValue
-                                }
+                                val isWithinLimit = (habit.periodActualOn(it.date) ?: Double.MAX_VALUE) <= goal.targetValue
                                 if (isWithinLimit) ON else GREY
                             } else {
-                                if (value / 1000.0 <= habit.targetValue) ON else GREY
+                                if (value / 1000.0 <= goal.targetValue) ON else GREY
                             }
                         }
-                        (habit.targetType == AT_LEAST) && (value / 1000.0 >= habit.targetValue) -> ON
+                        (goal.targetType == AT_LEAST) && (value / 1000.0 >= goal.targetValue) -> ON
                         else -> GREY
                     }
                 }
