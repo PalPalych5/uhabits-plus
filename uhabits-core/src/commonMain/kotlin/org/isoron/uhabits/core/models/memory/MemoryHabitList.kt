@@ -19,6 +19,7 @@
 package org.isoron.uhabits.core.models.memory
 
 import org.isoron.platform.Synchronized
+import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitBlock
 import org.isoron.uhabits.core.models.HabitList
@@ -32,6 +33,12 @@ open class MemoryHabitList : HabitList {
     private val blocksList = mutableListOf<HabitBlock>()
 
     override fun getBlocks(): List<HabitBlock> = blocksList
+    override var globalStatisticsStartDate: LocalDate? = null
+        set(value) {
+            field = value
+            list.forEach { it.globalStatisticsStartDate = value }
+            observable.notifyListeners()
+        }
 
     fun setBlocks(blocks: List<HabitBlock>) {
         blocksList.clear()
@@ -68,6 +75,7 @@ open class MemoryHabitList : HabitList {
         this.comparator = comparator
         primaryOrder = parent.primaryOrder
         secondaryOrder = parent.secondaryOrder
+        setBlocks(parent.getBlocks())
         parent.observable.addListener { loadFromParent() }
         loadFromParent()
     }
@@ -80,6 +88,7 @@ open class MemoryHabitList : HabitList {
         val id = habit.id
         if (id != null && getById(id) != null) throw RuntimeException("duplicate id")
         if (id == null) habit.id = list.size.toLong()
+        habit.globalStatisticsStartDate = globalStatisticsStartDate
         list.add(habit)
         resort()
     }
@@ -156,6 +165,21 @@ open class MemoryHabitList : HabitList {
         }
         val statusComparatorAsc =
             Comparator { h1: Habit, h2: Habit -> statusComparatorDesc.compare(h2, h1) }
+        val sphereComparator = Comparator<Habit> { h1, h2 ->
+            val b1 = blocksList.find { it.id == h1.blockId }
+            val b2 = blocksList.find { it.id == h2.blockId }
+            if (b1 != null && b2 != null) {
+                val posCompare = b1.position.compareTo(b2.position)
+                if (posCompare != 0) return@Comparator posCompare
+            } else if (b1 != null && b2 == null) {
+                return@Comparator -1
+            } else if (b1 == null && b2 != null) {
+                return@Comparator 1
+            }
+            val posCompare = h1.position.compareTo(h2.position)
+            if (posCompare != 0) return@Comparator posCompare
+            h1.name.compareTo(h2.name)
+        }
         return when {
             order === Order.BY_POSITION -> positionComparator
             order === Order.BY_NAME_ASC -> nameComparatorAsc
@@ -166,6 +190,7 @@ open class MemoryHabitList : HabitList {
             order === Order.BY_SCORE_ASC -> scoreComparatorAsc
             order === Order.BY_STATUS_DESC -> statusComparatorDesc
             order === Order.BY_STATUS_ASC -> statusComparatorAsc
+            order === Order.BY_SPHERE -> sphereComparator
             else -> throw IllegalStateException()
         }
     }
@@ -222,7 +247,10 @@ open class MemoryHabitList : HabitList {
     private fun loadFromParent() {
         checkNotNull(parent)
         list.clear()
-        for (h in parent!!) if (filter.matches(h)) list.add(h)
+        for (h in parent!!) if (filter.matches(h)) {
+            h.globalStatisticsStartDate = parent!!.globalStatisticsStartDate
+            list.add(h)
+        }
         resort()
     }
 

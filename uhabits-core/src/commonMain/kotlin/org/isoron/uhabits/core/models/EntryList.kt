@@ -89,17 +89,52 @@ open class EntryList {
     open fun recomputeFrom(
         originalEntries: EntryList,
         frequency: Frequency,
-        isNumerical: Boolean
+        isNumerical: Boolean,
+        goalHistory: List<HabitGoal> = emptyList()
     ) {
         clear()
         val original = originalEntries.getKnown()
         if (isNumerical) {
             original.forEach { add(it) }
         } else {
-            val intervals = buildIntervals(frequency, original)
-            snapIntervalsTogether(intervals)
-            val computed = buildEntriesFromInterval(original, intervals)
-            computed.filter { it.value != UNKNOWN || it.notes.isNotEmpty() }.forEach { add(it) }
+            val history = if (goalHistory.isEmpty()) {
+                listOf(
+                    HabitGoal(
+                        effectiveDate = LocalDate(2000, 1, 1),
+                        frequency = frequency,
+                        targetType = NumericalHabitType.AT_LEAST,
+                        targetValue = 0.0,
+                        unit = ""
+                    )
+                )
+            } else {
+                goalHistory.sortedBy { it.effectiveDate }
+            }
+            val oldest = original.lastOrNull()?.date
+            val newest = original.firstOrNull()?.date
+            if (oldest == null || newest == null) return
+
+            history.forEachIndexed { index, goal ->
+                val start = if (goal.effectiveDate.isOlderThan(oldest)) oldest else goal.effectiveDate
+                val nextStart = history.getOrNull(index + 1)?.effectiveDate
+                val nextEnd = nextStart?.minus(1)
+                val end = when {
+                    nextEnd == null -> newest
+                    newest.isOlderThan(nextEnd) -> newest
+                    else -> nextEnd
+                }
+                if (start.isNewerThan(end)) return@forEachIndexed
+
+                val segmentOriginal = original
+                    .filter { !it.date.isOlderThan(start) && !it.date.isNewerThan(end) }
+                val intervals = buildIntervals(goal.frequency, segmentOriginal)
+                snapIntervalsTogether(intervals)
+                val computed = buildEntriesFromInterval(segmentOriginal, intervals)
+                computed
+                    .filter { !it.date.isOlderThan(start) && !it.date.isNewerThan(end) }
+                    .filter { it.value != UNKNOWN || it.notes.isNotEmpty() }
+                    .forEach { add(it) }
+            }
         }
     }
 

@@ -18,6 +18,9 @@
  */
 package org.isoron.uhabits.core.models
 
+import org.isoron.platform.time.LocalDate
+import org.isoron.platform.time.TruncateField
+import org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale
 import org.isoron.platform.time.getToday
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
@@ -38,6 +41,9 @@ data class Habit(
     var type: HabitType = HabitType.YES_NO,
     var unit: String = "",
     var uuid: String? = null,
+    var goalHistory: MutableList<HabitGoal> = mutableListOf(),
+    var statisticsStartDate: LocalDate? = null,
+    var globalStatisticsStartDate: LocalDate? = null,
     var dayTier: DayTier = DayTier.NORMAL,
     var timerEnabled: Boolean = false,
     var blockId: Long? = null,
@@ -61,16 +67,7 @@ data class Habit(
     fun hasReminder(): Boolean = reminder != null
 
     fun isCompletedToday(): Boolean {
-        val today = getToday()
-        val value = computedEntries.get(today).value
-        return if (isNumerical) {
-            when (targetType) {
-                NumericalHabitType.AT_LEAST -> value / 1000.0 >= targetValue
-                NumericalHabitType.AT_MOST -> false
-            }
-        } else {
-            value != Entry.NO && value != Entry.UNKNOWN
-        }
+        return isCompletedOn(getToday())
     }
 
     fun isEnteredToday(): Boolean {
@@ -79,36 +76,150 @@ data class Habit(
         return value != Entry.UNKNOWN
     }
 
+    fun currentGoal(): HabitGoal = HabitGoal(
+        effectiveDate = goalHistory.maxByOrNull { it.effectiveDate }?.effectiveDate ?: LocalDate(2000, 1, 1),
+        frequency = frequency,
+        targetType = targetType,
+        targetValue = targetValue,
+        unit = unit
+    )
+
+    fun normalizedGoalHistory(): List<HabitGoal> {
+        if (goalHistory.isEmpty()) {
+            goalHistory = mutableListOf(
+                HabitGoal(
+                    effectiveDate = LocalDate(2000, 1, 1),
+                    frequency = frequency,
+                    targetType = targetType,
+                    targetValue = targetValue,
+                    unit = unit
+                )
+            )
+        } else if (goalHistory.size == 1) {
+            goalHistory[0] = goalHistory[0].copy(
+                frequency = frequency,
+                targetType = targetType,
+                targetValue = targetValue,
+                unit = unit
+            )
+        }
+        val sorted = goalHistory.sortedBy { it.effectiveDate }
+        val deduped = sorted.fold(mutableListOf<HabitGoal>()) { acc, goal ->
+            if (acc.isNotEmpty() && acc.last().effectiveDate == goal.effectiveDate) {
+                acc[acc.lastIndex] = goal
+            } else {
+                acc.add(goal)
+            }
+            acc
+        }
+        return deduped
+    }
+
+    fun goalAt(date: LocalDate): HabitGoal {
+        val history = normalizedGoalHistory()
+        return history.lastOrNull { !it.effectiveDate.isNewerThan(date) } ?: history.first()
+    }
+
+    fun effectiveStatisticsStartDate(): LocalDate? {
+        val local = statisticsStartDate
+        val global = globalStatisticsStartDate
+        return when {
+            local == null -> global
+            global == null -> local
+            local.isNewerThan(global) -> local
+            else -> global
+        }
+    }
+
+    fun isDateIncludedInStatistics(date: LocalDate): Boolean {
+        val start = effectiveStatisticsStartDate() ?: return true
+        return !date.isOlderThan(start)
+    }
+
+    fun isCompletedOn(date: LocalDate): Boolean {
+        if (!isDateIncludedInStatistics(date)) return false
+        val entry = computedEntries.get(date)
+        val value = entry.value
+        if (isNumerical) {
+            if (value == Entry.UNKNOWN || value == Entry.SKIP) return false
+            val goal = goalAt(date)
+            return when (goal.targetType) {
+                NumericalHabitType.AT_LEAST -> value / 1000.0 >= goal.targetValue
+                NumericalHabitType.AT_MOST -> {
+                    val actual = periodActualOn(date)
+                    actual != null && actual <= goal.targetValue
+                }
+            }
+        }
+        return value != Entry.NO && value != Entry.UNKNOWN
+    }
+
+    fun periodActualOn(date: LocalDate): Double? {
+        val entry = computedEntries.get(date)
+        if (entry.value == Entry.UNKNOWN || entry.value == Entry.SKIP) return null
+        val goal = goalAt(date)
+        return when (goal.frequency.denominator) {
+            7 -> {
+                val firstWeekdayNum = getFirstWeekdayNumberAccordingToLocale()
+                val start = date.startOfWeek(org.isoron.platform.time.DayOfWeek.entries[firstWeekdayNum - 1])
+                val end = start.plus(6)
+                statisticsEntries(start, end).groupedSum(
+                    truncateField = TruncateField.WEEK_NUMBER,
+                    firstWeekday = firstWeekdayNum,
+                    isNumerical = true
+                ).firstOrNull()?.value?.div(1000.0) ?: 0.0
+            }
+            30 -> {
+                val start = date.startOfMonth()
+                val end = start.plus(date.monthLength - 1)
+                statisticsEntries(start, end).groupedSum(
+                    truncateField = TruncateField.MONTH,
+                    isNumerical = true
+                ).firstOrNull()?.value?.div(1000.0) ?: 0.0
+            }
+            else -> entry.value / 1000.0
+        }
+    }
+
+    fun statisticsEntries(from: LocalDate, to: LocalDate): List<Entry> {
+        return computedEntries.getByInterval(from, to).filter { isDateIncludedInStatistics(it.date) }
+    }
+
     fun recompute() {
+        val history = normalizedGoalHistory()
+        val latestGoal = history.last()
+        frequency = latestGoal.frequency
+        targetType = latestGoal.targetType
+        targetValue = latestGoal.targetValue
+        unit = latestGoal.unit
+
         computedEntries.recomputeFrom(
             originalEntries = originalEntries,
             frequency = frequency,
-            isNumerical = isNumerical
+            isNumerical = isNumerical,
+            goalHistory = history
         )
 
         val today = getToday()
         val to = today.plus(30)
         val entries = computedEntries.getKnown()
-        var from = entries.lastOrNull()?.date ?: today
+        var from = effectiveStatisticsStartDate() ?: entries.lastOrNull()?.date ?: today
+        val oldestEntry = entries.lastOrNull()?.date
+        if (oldestEntry != null && oldestEntry.isOlderThan(from)) from = oldestEntry
         if (from.isNewerThan(to)) from = to
 
         scores.recompute(
-            frequency = frequency,
-            isNumerical = isNumerical,
-            numericalHabitType = targetType,
-            targetValue = targetValue,
+            habit = this,
             computedEntries = computedEntries,
             from = from,
             to = to
         )
 
         streaks.recompute(
+            habit = this,
             computedEntries,
             from,
-            to,
-            isNumerical,
-            targetValue,
-            targetType
+            to
         )
     }
 
@@ -127,6 +238,9 @@ data class Habit(
         this.type = other.type
         this.unit = other.unit
         this.uuid = other.uuid
+        this.goalHistory = other.goalHistory.toMutableList()
+        this.statisticsStartDate = other.statisticsStartDate
+        this.globalStatisticsStartDate = other.globalStatisticsStartDate
         this.dayTier = other.dayTier
         this.timerEnabled = other.timerEnabled
         this.blockId = other.blockId
@@ -150,6 +264,9 @@ data class Habit(
         if (type != other.type) return false
         if (unit != other.unit) return false
         if (uuid != other.uuid) return false
+        if (goalHistory != other.goalHistory) return false
+        if (statisticsStartDate != other.statisticsStartDate) return false
+        if (globalStatisticsStartDate != other.globalStatisticsStartDate) return false
         if (dayTier != other.dayTier) return false
         if (timerEnabled != other.timerEnabled) return false
         if (blockId != other.blockId) return false
@@ -172,6 +289,9 @@ data class Habit(
         result = 31 * result + type.value
         result = 31 * result + unit.hashCode()
         result = 31 * result + (uuid?.hashCode() ?: 0)
+        result = 31 * result + goalHistory.hashCode()
+        result = 31 * result + (statisticsStartDate?.hashCode() ?: 0)
+        result = 31 * result + (globalStatisticsStartDate?.hashCode() ?: 0)
         result = 31 * result + dayTier.hashCode()
         result = 31 * result + timerEnabled.hashCode()
         result = 31 * result + (blockId?.hashCode() ?: 0)

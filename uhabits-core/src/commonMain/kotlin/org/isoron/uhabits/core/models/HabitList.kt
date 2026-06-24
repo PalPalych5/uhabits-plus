@@ -20,6 +20,7 @@ package org.isoron.uhabits.core.models
 
 import org.isoron.platform.io.csvLine
 import org.isoron.platform.io.format
+import org.isoron.platform.time.LocalDate
 
 /**
  * An ordered collection of [Habit]s.
@@ -204,6 +205,7 @@ abstract class HabitList : Iterable<Habit> {
 
     abstract fun resort()
     open fun getBlocks(): List<HabitBlock> = emptyList()
+    open var globalStatisticsStartDate: LocalDate? = null
     enum class Order {
         BY_NAME_ASC,
         BY_NAME_DESC,
@@ -213,6 +215,7 @@ abstract class HabitList : Iterable<Habit> {
         BY_SCORE_DESC,
         BY_STATUS_ASC,
         BY_STATUS_DESC,
-        BY_POSITION
+        BY_POSITION,
+        BY_SPHERE
     }
 }

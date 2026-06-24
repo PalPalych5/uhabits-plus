@@ -20,7 +20,11 @@ package org.isoron.uhabits.core.models.sqlite
 
 import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.Synchronized
+import org.isoron.platform.time.LocalDate
+import org.isoron.uhabits.core.database.AppSettingRepository
 import org.isoron.uhabits.core.database.HabitData
+import org.isoron.uhabits.core.database.HabitGoalData
+import org.isoron.uhabits.core.database.HabitGoalRepository
 import org.isoron.uhabits.core.database.HabitRepository
 import org.isoron.uhabits.core.database.HabitExtensionData
 import org.isoron.uhabits.core.database.HabitExtensionRepository
@@ -28,6 +32,7 @@ import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.HabitBlock
 import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.models.HabitGoal
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.HabitMatcher
 import org.isoron.uhabits.core.models.HabitType
@@ -46,13 +51,31 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
     private val repository: HabitRepository = (modelFactory as SQLModelFactory).habitRepository
     private val extensionRepository: HabitExtensionRepository =
         (modelFactory as SQLModelFactory).habitExtensionRepository
+    private val goalRepository: HabitGoalRepository =
+        (modelFactory as SQLModelFactory).habitGoalRepository
+    private val appSettingRepository: AppSettingRepository =
+        (modelFactory as SQLModelFactory).appSettingRepository
     private val list: MemoryHabitList = MemoryHabitList()
     private var loaded = false
+    override var globalStatisticsStartDate: LocalDate? = null
+        set(value) {
+            field = value
+            appSettingRepository.putLong(GLOBAL_STATS_START_KEY, value?.unixTime)
+            list.globalStatisticsStartDate = value
+            for (habit in list) {
+                habit.globalStatisticsStartDate = value
+                habit.recompute()
+            }
+            observable.notifyListeners()
+        }
 
     private fun loadRecords() {
         if (loaded) return
         loaded = true
         list.removeAll()
+        list.setBlocks(getBlocks())
+        globalStatisticsStartDate =
+            appSettingRepository.getLong(GLOBAL_STATS_START_KEY)?.let(LocalDate::fromUnixTime)
         val records = repository.findAll()
         var shouldRebuildOrder = false
         for ((expectedPosition, rec) in records.withIndex()) {
@@ -63,7 +86,10 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
                 h.dayTier = DayTier.fromString(extension.dayTier)
                 h.timerEnabled = extension.timerEnabled
                 h.blockId = extension.blockId
+                h.statisticsStartDate = extension.statsStartTimestamp?.let(LocalDate::fromUnixTime)
             }
+            h.goalHistory = goalRepository.findAllByHabitId(rec.id!!).map(::toGoal).toMutableList()
+            h.globalStatisticsStartDate = globalStatisticsStartDate
             (h.originalEntries as SQLiteEntryList).habitId = h.id
             list.add(h)
         }
@@ -79,7 +105,9 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
         val id = repository.insert(data)
         habit.id = id
         extensionRepository.upsert(habit.toExtensionData())
+        goalRepository.replaceAll(id, habit.normalizedGoalHistory().map { it.toGoalData(id) })
         (habit.originalEntries as SQLiteEntryList).habitId = id
+        habit.globalStatisticsStartDate = globalStatisticsStartDate
         list.add(habit)
         observable.notifyListeners()
     }
@@ -153,6 +181,7 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
         list.remove(h)
         h.originalEntries.clear()
         extensionRepository.delete(h.id!!)
+        goalRepository.deleteByHabitId(h.id!!)
         repository.delete(h.id!!)
         rebuildOrder()
         observable.notifyListeners()
@@ -162,8 +191,10 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
     override fun removeAll() {
         list.removeAll()
         extensionRepository.deleteAll()
+        appSettingRepository.delete(GLOBAL_STATS_START_KEY)
         repository.execSQL("delete from habits")
         repository.execSQL("delete from repetitions")
+        repository.execSQL("delete from HabitGoals")
         observable.notifyListeners()
     }
 
@@ -211,11 +242,14 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
             val data = copyFrom(h)
             repository.update(data)
             extensionRepository.upsert(h.toExtensionData())
+            goalRepository.replaceAll(h.id!!, h.normalizedGoalHistory().map { it.toGoalData(h.id!!) })
+            h.globalStatisticsStartDate = globalStatisticsStartDate
         }
         observable.notifyListeners()
     }
 
     override fun resort() {
+        list.setBlocks(getBlocks())
         list.resort()
         observable.notifyListeners()
     }
@@ -244,7 +278,26 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
             habitId = id!!,
             dayTier = dayTier.name,
             timerEnabled = timerEnabled,
-            blockId = blockId
+            blockId = blockId,
+            statsStartTimestamp = statisticsStartDate?.unixTime
+        )
+
+        private fun HabitGoal.toGoalData(habitId: Long): HabitGoalData = HabitGoalData(
+            habitId = habitId,
+            effectiveTimestamp = effectiveDate.unixTime,
+            freqNum = frequency.numerator,
+            freqDen = frequency.denominator,
+            targetType = targetType.value,
+            targetValue = targetValue,
+            unit = unit
+        )
+
+        private fun toGoal(data: HabitGoalData): HabitGoal = HabitGoal(
+            effectiveDate = LocalDate.fromUnixTime(data.effectiveTimestamp),
+            frequency = Frequency(data.freqNum, data.freqDen),
+            targetType = NumericalHabitType.fromInt(data.targetType),
+            targetValue = data.targetValue,
+            unit = data.unit
         )
 
         fun copyFrom(habit: Habit): HabitData {
@@ -293,5 +346,7 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
                 )
             }
         }
+
+        private const val GLOBAL_STATS_START_KEY = "global_stats_start_timestamp"
     }
 }

@@ -51,6 +51,7 @@ object TodayScreenStateBuilder {
         val items = habitList
             .toList()
             .filter { !it.isArchived }
+            .filter { it.isDateIncludedInStatistics(date) }
             .sortedWith(
                 compareBy<Habit> { h ->
                     val block = blocksMap[h.blockId] ?: fallbackBlock
@@ -99,15 +100,16 @@ object TodayScreenStateBuilder {
 
     private fun Habit.toTodayItem(date: LocalDate): TodayHabitItem {
         val entry = computedEntries.get(date)
+        val goal = goalAt(date)
         val currentValue = if (isNumerical && entry.value != Entry.UNKNOWN && entry.value != Entry.SKIP) {
             entry.value / 1000.0
         } else {
             null
         }
 
-        val isWeekly = frequency.denominator == 7
-        val isMonthly = frequency.denominator == 30
-        val isLimit = isNumerical && targetType == NumericalHabitType.AT_MOST
+        val isWeekly = goal.frequency.denominator == 7
+        val isMonthly = goal.frequency.denominator == 30
+        val isLimit = isNumerical && goal.targetType == NumericalHabitType.AT_MOST
 
         var periodProgressActual: Double? = null
         var periodProgressTarget: Double? = null
@@ -118,7 +120,7 @@ object TodayScreenStateBuilder {
             val firstWeekdayEnum = DayOfWeek.values()[firstWeekdayNum - 1]
             val startOfWeek = date.startOfWeek(firstWeekdayEnum)
             val endOfWeek = startOfWeek.plus(6)
-            val weekEntries = computedEntries.getByInterval(startOfWeek, endOfWeek)
+            val weekEntries = statisticsEntries(startOfWeek, endOfWeek)
             val weekSum = weekEntries.groupedSum(
                 truncateField = TruncateField.WEEK_NUMBER,
                 firstWeekday = firstWeekdayNum,
@@ -126,29 +128,37 @@ object TodayScreenStateBuilder {
             ).firstOrNull()?.value ?: 0
             periodProgressActual = weekSum / 1000.0
             periodProgressTarget = if (isNumerical) {
-                frequency.numerator * targetValue
+                if (goal.targetType == NumericalHabitType.AT_LEAST) {
+                    goal.targetValue * goal.frequency.numerator
+                } else {
+                    goal.targetValue
+                }
             } else {
-                frequency.numerator.toDouble()
+                goal.frequency.numerator.toDouble()
             }
             periodLabel = PeriodLabel.WEEK
         } else if (isMonthly) {
             val startOfMonth = date.startOfMonth()
             val endOfMonth = startOfMonth.plus(date.monthLength - 1)
-            val monthEntries = computedEntries.getByInterval(startOfMonth, endOfMonth)
+            val monthEntries = statisticsEntries(startOfMonth, endOfMonth)
             val monthSum = monthEntries.groupedSum(
                 truncateField = TruncateField.MONTH,
                 isNumerical = isNumerical
             ).firstOrNull()?.value ?: 0
             periodProgressActual = monthSum / 1000.0
             periodProgressTarget = if (isNumerical) {
-                frequency.numerator * targetValue
+                if (goal.targetType == NumericalHabitType.AT_LEAST) {
+                    goal.targetValue * goal.frequency.numerator
+                } else {
+                    goal.targetValue
+                }
             } else {
-                frequency.numerator.toDouble()
+                goal.frequency.numerator.toDouble()
             }
             periodLabel = PeriodLabel.MONTH
         } else {
             periodProgressActual = currentValue
-            periodProgressTarget = targetValue
+            periodProgressTarget = goal.targetValue
             periodLabel = PeriodLabel.DAY
         }
 
@@ -157,11 +167,11 @@ object TodayScreenStateBuilder {
             name = name,
             color = color,
             habitType = type,
-            targetType = targetType,
+            targetType = goal.targetType,
             status = todayStatus(entry, periodProgressActual, periodProgressTarget),
             currentValue = currentValue,
-            targetValue = if (isNumerical) targetValue else null,
-            unit = if (isNumerical) unit else "",
+            targetValue = if (isNumerical) goal.targetValue else null,
+            unit = if (isNumerical) goal.unit else "",
             notes = entry.notes,
             dayTier = dayTier,
             isLimitHabit = isLimit,
@@ -196,8 +206,7 @@ object TodayScreenStateBuilder {
             if (todayItem != null && todayItem.isCompleted) {
                 val yesterdayEntry = habit.computedEntries.get(date.minus(1))
                 val yesterdayCompleted = if (habit.isNumerical) {
-                    yesterdayEntry.value != Entry.UNKNOWN && yesterdayEntry.value != Entry.SKIP &&
-                        (yesterdayEntry.value / 1000.0 >= habit.targetValue)
+                    habit.isCompletedOn(date.minus(1))
                 } else {
                     yesterdayEntry.value == Entry.YES_MANUAL || yesterdayEntry.value == Entry.YES_AUTO
                 }
@@ -218,12 +227,13 @@ object TodayScreenStateBuilder {
         if (entry.value == Entry.SKIP) return TodayHabitStatus.SKIPPED
 
         if (type == HabitType.NUMERICAL) {
-            if (targetType == NumericalHabitType.AT_MOST) {
+            val goal = goalAt(entry.date)
+            if (goal.targetType == NumericalHabitType.AT_MOST) {
                 if (periodActual != null && periodTarget != null) {
                     if (periodActual > periodTarget) return TodayHabitStatus.EXCEEDED
                 } else if (entry.value != Entry.UNKNOWN) {
                     val value = entry.value / 1000.0
-                    if (value > targetValue) return TodayHabitStatus.EXCEEDED
+                    if (value > goal.targetValue) return TodayHabitStatus.EXCEEDED
                 }
 
                 if (entry.value == Entry.UNKNOWN) return TodayHabitStatus.UNKNOWN
@@ -231,7 +241,7 @@ object TodayScreenStateBuilder {
             } else {
                 if (entry.value == Entry.UNKNOWN) return TodayHabitStatus.UNKNOWN
                 val value = entry.value / 1000.0
-                return if (value >= targetValue) TodayHabitStatus.COMPLETED else TodayHabitStatus.REMAINING
+                return if (value >= goal.targetValue) TodayHabitStatus.COMPLETED else TodayHabitStatus.REMAINING
             }
         }
 
