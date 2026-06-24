@@ -123,8 +123,9 @@ class HabitCardListView(
         cardView.buttonCount = checkmarkCount
         cardView.dataOffset = dataOffset
         cardView.score = score
-        cardView.unit = habit.unit
-        cardView.threshold = habit.targetValue / habit.frequency.denominator
+        val goal = habit.goalAt(org.isoron.platform.time.getToday())
+        cardView.unit = goal.unit
+        cardView.threshold = goal.targetValue / goal.frequency.denominator
         cardView.notes = notes
 
         val detector = GestureDetector(context, CardViewGestureDetector(holder))

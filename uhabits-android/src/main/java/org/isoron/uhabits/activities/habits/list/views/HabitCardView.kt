@@ -287,10 +287,11 @@ class HabitCardView(
             }
         }
         numberPanel.apply {
+            val goal = h.goalAt(org.isoron.platform.time.getToday())
             color = c
-            units = h.unit
-            targetType = h.targetType
-            threshold = h.targetValue
+            units = goal.unit
+            targetType = goal.targetType
+            threshold = goal.targetValue
             visibility = when (h.isNumerical) {
                 true -> View.VISIBLE
                 false -> View.GONE
