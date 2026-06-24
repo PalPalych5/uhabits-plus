@@ -18,7 +18,7 @@
  */
 package org.isoron.uhabits.activities.settings
 
-import android.app.backup.BackupManager
+import android.app.backup.BackupManager as AndroidBackupManager
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.SharedPreferences.OnSharedPreferenceChangeListener
@@ -26,6 +26,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
+import android.os.Process
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
@@ -62,7 +63,6 @@ import org.isoron.uhabits.utils.applyBottomInset
 import org.isoron.uhabits.utils.dismissCurrentAndShow
 import org.isoron.uhabits.utils.startActivitySafely
 import org.isoron.uhabits.widgets.WidgetUpdater
-import java.util.Locale
 import androidx.appcompat.app.AlertDialog
 import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
@@ -70,16 +70,26 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.isoron.uhabits.BuildConfig
+import org.isoron.uhabits.backup.BackupEntry
+import org.isoron.uhabits.backup.BackupManager
+import org.isoron.uhabits.backup.BackupStatusStore
 import org.isoron.uhabits.core.commands.ClearAllEntriesCommand
 import org.isoron.uhabits.core.commands.SetGlobalStatisticsStartDateCommand
 import org.isoron.uhabits.core.models.sqlite.SQLModelFactory
+import org.isoron.uhabits.tasks.RestoreDatabaseTaskFactory
 import org.isoron.uhabits.utils.DemoDataGenerator
+import java.text.DateFormat
+import java.util.Locale
+import kotlin.system.exitProcess
 
 class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeListener {
     private var sharedPrefs: SharedPreferences? = null
     private var ringtoneManager: RingtoneManager? = null
     private lateinit var prefs: Preferences
     private lateinit var intentFactory: IntentFactory
+    private lateinit var backupManager: BackupManager
+    private lateinit var backupStatusStore: BackupStatusStore
+    private lateinit var restoreTaskFactory: RestoreDatabaseTaskFactory
     private var widgetUpdater: WidgetUpdater? = null
 
     @Deprecated("Deprecated in Java")
@@ -111,6 +121,9 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
             prefs = appContext.component.preferences
             widgetUpdater = appContext.component.widgetUpdater
             intentFactory = appContext.component.intentFactory
+            backupManager = appContext.component.backupManager
+            backupStatusStore = BackupStatusStore(requireContext())
+            restoreTaskFactory = RestoreDatabaseTaskFactory(appContext, backupManager)
         }
         setActionOnPreferenceClick("importData", SettingsAction.IMPORT_DATA)
         setActionOnPreferenceClick("exportCSV", SettingsAction.EXPORT_CSV)
@@ -173,6 +186,10 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
                 startActivityForResult(intent, PUBLIC_BACKUP_REQUEST_CODE)
                 return true
             }
+            "restoreBackup" -> {
+                showRestoreBackupDialog()
+                return true
+            }
             "configureSpheres" -> {
                 actionHandler().onSettingsAction(SettingsAction.MANAGE_SPHERES)
                 return true
@@ -222,6 +239,7 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
         findPreference("configureSpheres")?.isVisible = prefs.isHabitSpheresEnabled
         updateWeekdayPreference()
         updatePublicBackupFolderSummary()
+        updateBackupStatusSummary()
 
         findPreference("reminderSound").isVisible = false
     }
@@ -270,7 +288,7 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
                 startActivity(intent)
             }, 500)
         }
-        BackupManager.dataChanged("org.isoron.uhabits.plus")
+        AndroidBackupManager.dataChanged("org.isoron.uhabits.plus")
         updateWeekdayPreference()
     }
 
@@ -341,6 +359,78 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
             }
             "file" -> java.io.File(uri.path!!).absolutePath
             else -> null
+        }
+    }
+
+    private fun updateBackupStatusSummary() {
+        val pref = findPreference("backupStatus") ?: return
+        val status = backupStatusStore.load()
+        val dateFormat = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, Locale.getDefault())
+        pref.summary = if (status.lastSuccessAt != null) {
+            getString(
+                R.string.backup_status_last_success,
+                dateFormat.format(status.lastSuccessAt),
+                formatSize(status.lastBackupSizeBytes ?: 0L)
+            )
+        } else {
+            getString(R.string.backup_status_never)
+        }
+    }
+
+    private fun showRestoreBackupDialog() {
+        val backups = backupManager.listBackups()
+        if (backups.isEmpty()) {
+            Toast.makeText(requireContext(), R.string.backup_restore_no_backups, Toast.LENGTH_LONG).show()
+            return
+        }
+        val dateFormat = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, Locale.getDefault())
+        val items = backups.map {
+            "${it.name}\n${dateFormat.format(it.modifiedAt)} • ${formatSize(it.sizeBytes)}"
+        }.toTypedArray()
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.restore_backup)
+            .setItems(items) { _, which ->
+                showRestoreBackupConfirmation(backups[which])
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showRestoreBackupConfirmation(entry: BackupEntry) {
+        AlertDialog.Builder(requireContext())
+            .setTitle(R.string.restore_backup)
+            .setMessage(R.string.restore_backup_warning)
+            .setPositiveButton(R.string.restore_backup_confirm) { _, _ ->
+                performRestore(entry)
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun performRestore(entry: BackupEntry) {
+        val app = requireContext().applicationContext as HabitsApplication
+        app.component.taskRunner.execute(
+            restoreTaskFactory.create(entry) { error ->
+                if (error == null) {
+                    app.scheduleProcessRestart(MainDestination.SETTINGS)
+                    activity?.finishAffinity()
+                    Process.killProcess(Process.myPid())
+                    exitProcess(0)
+                } else {
+                    Toast.makeText(requireContext(), error, Toast.LENGTH_LONG).show()
+                }
+            }
+        )
+    }
+
+    private fun formatSize(sizeBytes: Long): String {
+        if (sizeBytes <= 0L) return "0 B"
+        val kb = 1024L
+        val mb = kb * kb
+        return when {
+            sizeBytes >= mb -> String.format(Locale.US, "%.1f MB", sizeBytes.toDouble() / mb)
+            sizeBytes >= kb -> String.format(Locale.US, "%.1f KB", sizeBytes.toDouble() / kb)
+            else -> "$sizeBytes B"
         }
     }
 

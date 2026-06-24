@@ -19,11 +19,15 @@
 
 package org.isoron.uhabits
 
+import android.app.AlarmManager
 import android.app.Application
+import android.app.PendingIntent
 import android.content.Context
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import androidx.preference.PreferenceManager
+import org.isoron.uhabits.activities.main.MainActivity
+import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.platform.time.computeToday
 import org.isoron.platform.time.setToday
 import org.isoron.uhabits.core.database.UnsupportedDatabaseVersionException
@@ -75,6 +79,41 @@ class HabitsApplication : Application() {
             DatabaseUtils.initializeDatabase(context)
         }
 
+        rebuildComponent()
+    }
+
+    override fun onTerminate() {
+        stopServices()
+        super.onTerminate()
+    }
+
+    fun shutdownForDatabaseRestoreRestart() {
+        // A destructive DB restore invalidates every open SQLite/repository/cache handle in the
+        // process, so we must shut down and relaunch instead of trying to hot-reload state.
+        stopServices()
+        runCatching { component.db.close() }
+        DatabaseUtils.closeDatabase()
+    }
+
+    fun scheduleProcessRestart(destination: MainDestination) {
+        val intent = MainActivity.intent(this, destination, showRestoreSuccess = true).apply {
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            RESTORE_RESTART_REQUEST_CODE,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val alarmManager = getSystemService(AlarmManager::class.java)
+        alarmManager.setExact(
+            AlarmManager.RTC,
+            System.currentTimeMillis() + 200,
+            pendingIntent
+        )
+    }
+
+    private fun rebuildComponent() {
         val db = DatabaseUtils.getDatabaseFile(this)
         HabitsApplication.component = HabitsApplicationComponent::class.create(
             appContext = context,
@@ -100,24 +139,23 @@ class HabitsApplication : Application() {
         notificationTray = component.notificationTray
         notificationTray.startListening()
 
-        val taskRunner = component.taskRunner
-        taskRunner.execute {
+        component.taskRunner.execute {
             reminderScheduler.scheduleAll()
             widgetUpdater.updateWidgets()
         }
     }
 
-    override fun onTerminate() {
-        reminderScheduler.stopListening()
-        widgetUpdater.stopListening()
-        notificationTray.stopListening()
-        super.onTerminate()
+    private fun stopServices() {
+        if (::reminderScheduler.isInitialized) reminderScheduler.stopListening()
+        if (::widgetUpdater.isInitialized) widgetUpdater.stopListening()
+        if (::notificationTray.isInitialized) notificationTray.stopListening()
     }
 
     val component: HabitsApplicationComponent
         get() = HabitsApplication.component
 
     companion object {
+        private const val RESTORE_RESTART_REQUEST_CODE = 2001
         lateinit var component: HabitsApplicationComponent
 
         fun isTestMode(): Boolean {

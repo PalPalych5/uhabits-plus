@@ -184,9 +184,21 @@
             android:title="@string/data_preferences">
 
         <Preference
+                android:key="backupStatus"
+                android:title="@string/backup_status_title"
+                android:summary="@string/backup_status_never"
+                app:iconSpaceReserved="false" />
+
+        <Preference
                 android:key="exportDB"
                 android:summary="@string/export_full_backup_summary"
-                android:title="@string/export_full_backup"
+                android:title="@string/backup_now"
+                app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="restoreBackup"
+                android:summary="@string/restore_backup_summary"
+                android:title="@string/restore_backup"
                 app:iconSpaceReserved="false" />
 
         <Preference
@@ -206,6 +218,13 @@
                 android:title="@string/select_public_backup_folder"
                 android:summary="@string/no_public_backup_folder_selected"
                 app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="backupWarning"
+                android:title="@string/backup_warning_title"
+                android:summary="@string/backup_warning_summary"
+                app:iconSpaceReserved="false"
+                app:isPreferenceVisible="true" />
 
         <Preference
                 android:key="repairDB"

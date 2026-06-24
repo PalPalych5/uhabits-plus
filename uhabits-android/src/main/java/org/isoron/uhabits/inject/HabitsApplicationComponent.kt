@@ -27,6 +27,7 @@ import org.isoron.platform.io.DatabaseOpener
 import org.isoron.platform.io.FileOpener
 import org.isoron.uhabits.core.AppScope
 import org.isoron.uhabits.activities.habits.show.timer.TimerSessionManager
+import org.isoron.uhabits.backup.BackupManager
 import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.io.GenericImporter
 import org.isoron.uhabits.core.io.Logging
@@ -64,6 +65,7 @@ abstract class HabitsApplicationComponent(
     @get:Provides val dbFile: File
 ) {
     abstract val commandRunner: CommandRunner
+    abstract val backupManager: BackupManager
 
     @get:AppContext
     abstract val context: Context

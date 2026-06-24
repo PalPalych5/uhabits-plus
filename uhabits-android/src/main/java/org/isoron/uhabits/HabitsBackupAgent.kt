@@ -20,7 +20,6 @@
 package org.isoron.uhabits
 
 import android.app.backup.BackupAgentHelper
-import android.app.backup.FileBackupHelper
 import android.app.backup.SharedPreferencesBackupHelper
 
 /**
@@ -29,6 +28,5 @@ import android.app.backup.SharedPreferencesBackupHelper
 class HabitsBackupAgent : BackupAgentHelper() {
     override fun onCreate() {
         addHelper("preferences", SharedPreferencesBackupHelper(this, "preferences"))
-        addHelper("database", FileBackupHelper(this, "../databases/uhabits.db"))
     }
 }

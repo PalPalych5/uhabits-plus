@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.MenuItem
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import androidx.appcompat.app.AppCompatActivity
@@ -59,6 +60,10 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         binding = ActivityMainBinding.inflate(layoutInflater)
         binding.root.applyRootViewInsets()
         setContentView(binding.root)
+        if (intent.getBooleanExtra(EXTRA_RESTORE_SUCCESS, false)) {
+            Toast.makeText(this, R.string.restore_backup_success, Toast.LENGTH_LONG).show()
+            intent.removeExtra(EXTRA_RESTORE_SUCCESS)
+        }
 
         val todayVisible = prefs.isTodayTabVisible
         var startDest = savedInstanceState?.getString(STATE_CURRENT)?.let {
@@ -333,9 +338,16 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         private const val TAG_REPORTS = "main.reports"
         private const val TAG_SETTINGS = "main.settings"
 
-        fun intent(context: Context, destination: MainDestination): Intent =
+        private const val EXTRA_RESTORE_SUCCESS = "main.restore_success"
+
+        fun intent(
+            context: Context,
+            destination: MainDestination,
+            showRestoreSuccess: Boolean = false
+        ): Intent =
             Intent(context, MainActivity::class.java).apply {
                 putExtra(EXTRA_DESTINATION, destination.name)
+                putExtra(EXTRA_RESTORE_SUCCESS, showRestoreSuccess)
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             }
     }
