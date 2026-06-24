@@ -33,8 +33,13 @@ import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.DialogFragment
+import com.android.datetimepicker.date.DatePickerDialog
 import com.android.datetimepicker.time.RadialPickerLayout
 import com.android.datetimepicker.time.TimePickerDialog
+import org.isoron.platform.time.DayOfWeek
+import org.isoron.platform.time.LocalDate
+import org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale
+import org.isoron.platform.time.getToday
 import org.isoron.platform.gui.toInt
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
@@ -45,7 +50,9 @@ import org.isoron.uhabits.activities.common.dialogs.FrequencyPickerDialog
 import org.isoron.uhabits.activities.common.dialogs.WeekdayPickerDialog
 import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.commands.CreateHabitCommand
+import org.isoron.uhabits.core.commands.EditHabitGoalCommand
 import org.isoron.uhabits.core.commands.EditHabitCommand
+import org.isoron.uhabits.core.commands.GoalApplyScope
 import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.Habit
@@ -92,6 +99,7 @@ class EditHabitActivity : AppCompatActivity() {
     var dayTier = DayTier.NORMAL
     var timerEnabled = false
     var blockId: Long? = 7L
+    private var hasIndividualColor = false
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -117,6 +125,7 @@ class EditHabitActivity : AppCompatActivity() {
             dayTier = habit.dayTier
             timerEnabled = habit.timerEnabled
             blockId = habit.blockId
+            hasIndividualColor = true
             habit.reminder?.let {
                 reminderHour = it.hour
                 reminderMin = it.minute
@@ -145,6 +154,9 @@ class EditHabitActivity : AppCompatActivity() {
             timerEnabled = state.getBoolean("timerEnabled")
             val savedBlockId = state.getLong("blockId", -1L)
             blockId = if (savedBlockId == -1L) null else savedBlockId
+            hasIndividualColor = state.getBoolean("hasIndividualColor", habitId >= 0)
+        } else if (habitId < 0) {
+            color = defaultColorForCurrentBlock()
         }
 
         updateColors()
@@ -188,6 +200,11 @@ class EditHabitActivity : AppCompatActivity() {
         val configureColorPicker: (ColorPickerDialog) -> Unit = { picker ->
             picker.setListener { paletteColor ->
                 this.color = paletteColor
+                hasIndividualColor = HabitColorDefaults.isIndividual(
+                    paletteColor,
+                    blockId,
+                    currentBlocks()
+                )
                 updateColors()
             }
         }
@@ -200,9 +217,10 @@ class EditHabitActivity : AppCompatActivity() {
             val previewName = binding.nameInput.text.toString().trim()
                 .ifBlank { getString(R.string.color_picker_habit_preview_fallback) }
             val restoredPicker = colorPickerDialogFactory.create(
-                PaletteColor(state.getInt("colorPickerInitialColor")),
+                color,
                 themeSwitcher.currentTheme,
-                previewName
+                previewName,
+                defaultColorForCurrentBlock()
             )
             restoredPicker.restoreDraftColor(state.getInt("colorPickerDraftColor"))
             configureColorPicker(restoredPicker)
@@ -211,7 +229,12 @@ class EditHabitActivity : AppCompatActivity() {
         binding.colorButton.setOnClickListener {
             val previewName = binding.nameInput.text.toString().trim()
                 .ifBlank { getString(R.string.color_picker_habit_preview_fallback) }
-            val picker = colorPickerDialogFactory.create(color, themeSwitcher.currentTheme, previewName)
+            val picker = colorPickerDialogFactory.create(
+                color,
+                themeSwitcher.currentTheme,
+                previewName,
+                defaultColorForCurrentBlock()
+            )
             configureColorPicker(picker)
             picker.dismissCurrentAndShow(supportFragmentManager, "colorPicker")
         }
@@ -268,8 +291,13 @@ class EditHabitActivity : AppCompatActivity() {
                 .setTitle(R.string.habit_block)
                 .setItems(items) { dialog, which ->
                     val selectedBlock = blocks[which]
+                    color = HabitColorDefaults.afterBlockChange(
+                        currentColor = color,
+                        newBlockId = selectedBlock.id,
+                        hasIndividualColor = hasIndividualColor,
+                        blocks = blocks
+                    )
                     blockId = selectedBlock.id
-                    color = selectedBlock.color
                     populateHabitBlock()
                     updateColors()
                     dialog.dismiss()
@@ -381,21 +409,21 @@ class EditHabitActivity : AppCompatActivity() {
         }
         habit.type = habitType
 
-        val command = if (habitId >= 0) {
-            EditHabitCommand(
-                component.habitList,
-                habitId,
-                habit
+        if (habitId >= 0 && original != null && didGoalBundleChange(original, habit)) {
+            showGoalChangeDialog(
+                original = original,
+                modified = habit
             )
-        } else {
-            CreateHabitCommand(
-                component.modelFactory,
-                component.habitList,
-                habit
-            )
+            return
         }
-        component.commandRunner.run(command)
-        finish()
+
+        runSaveCommand(
+            if (habitId >= 0) {
+                EditHabitCommand(component.habitList, habitId, habit)
+            } else {
+                CreateHabitCommand(component.modelFactory, component.habitList, habit)
+            }
+        )
     }
 
     private fun validate(): Boolean {
@@ -487,9 +515,9 @@ class EditHabitActivity : AppCompatActivity() {
             putString("dayTier", dayTier.name)
             putBoolean("timerEnabled", binding.timerEnabledSwitch.isChecked)
             putLong("blockId", blockId ?: -1L)
+            putBoolean("hasIndividualColor", hasIndividualColor)
             putBoolean("colorPickerOpen", colorPicker?.isAdded == true)
             colorPicker?.let {
-                putInt("colorPickerInitialColor", it.snapshotInitialColor())
                 putInt("colorPickerDraftColor", it.snapshotDraftColor())
             }
         }
@@ -506,6 +534,12 @@ class EditHabitActivity : AppCompatActivity() {
         val currentBlock = blocks.firstOrNull { it.id == blockId }
         binding.habitBlockPicker.text = currentBlock?.let { getBlockDisplayName(it) } ?: getString(R.string.habit_block_unassigned)
     }
+
+    private fun currentBlocks() =
+        (application as HabitsApplication).component.habitList.getBlocks()
+
+    private fun defaultColorForCurrentBlock(): PaletteColor =
+        HabitColorDefaults.forBlock(blockId, currentBlocks())
 
     private fun getBlockDisplayName(block: org.isoron.uhabits.core.models.HabitBlock): String {
         return if (block.id in 1L..7L) {
@@ -527,6 +561,88 @@ class EditHabitActivity : AppCompatActivity() {
     private fun updateTimerVisibility() {
         val isMinute = binding.unitInput.text.toString().isMinuteUnit()
         binding.timerEnabledOuterBox.visibility = if (isMinute) View.VISIBLE else View.GONE
+    }
+
+    private fun didGoalBundleChange(original: Habit, modified: Habit): Boolean {
+        return original.frequency != modified.frequency ||
+            original.targetType != modified.targetType ||
+            original.targetValue != modified.targetValue ||
+            original.unit != modified.unit
+    }
+
+    private fun showGoalChangeDialog(original: Habit, modified: Habit) {
+        val options = arrayOf(
+            getString(R.string.apply_from_today),
+            getString(R.string.apply_from_selected_date),
+            getString(R.string.apply_to_entire_history)
+        )
+        AlertDialog.Builder(this)
+            .setTitle(R.string.goal_change_scope_title)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> runSaveCommand(
+                        EditHabitGoalCommand(
+                            (application as HabitsApplication).component.habitList,
+                            habitId,
+                            modified,
+                            GoalApplyScope.FROM_DATE,
+                            getToday()
+                        )
+                    )
+                    1 -> showGoalDatePicker { date ->
+                        date ?: return@showGoalDatePicker
+                        runSaveCommand(
+                            EditHabitGoalCommand(
+                                (application as HabitsApplication).component.habitList,
+                                habitId,
+                                modified,
+                                GoalApplyScope.FROM_DATE,
+                                date
+                            )
+                        )
+                    }
+                    else -> runSaveCommand(
+                        EditHabitGoalCommand(
+                            (application as HabitsApplication).component.habitList,
+                            habitId,
+                            modified,
+                            GoalApplyScope.ENTIRE_HISTORY,
+                            original.normalizedGoalHistory().first().effectiveDate
+                        )
+                    )
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun showGoalDatePicker(callback: (LocalDate?) -> Unit) {
+        val today = getToday()
+        val dialog = DatePickerDialog.newInstance(
+            object : DatePickerDialog.OnDateSetListener {
+                override fun onDateSet(
+                    dialog: DatePickerDialog?,
+                    year: Int,
+                    monthOfYear: Int,
+                    dayOfMonth: Int
+                ) {
+                    callback(LocalDate(year, monthOfYear + 1, dayOfMonth))
+                }
+
+                override fun onDateCleared(dialog: DatePickerDialog?) {
+                    callback(null)
+                }
+            },
+            today.year,
+            today.month - 1,
+            today.day
+        )
+        dialog.show(fragmentManager, "goalDatePicker")
+    }
+
+    private fun runSaveCommand(command: org.isoron.uhabits.core.commands.Command) {
+        (application as HabitsApplication).component.commandRunner.run(command)
+        finish()
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
