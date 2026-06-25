@@ -37,6 +37,9 @@ data class CreateRepetitionCommand(
         if (previous.value == value && previous.notes == notes) return
         entries.add(Entry(date, value, notes))
         habit.recompute()
+        habit.id?.let {
+            habitList.refreshHabitFromDatabase(it, habit)
+        }
         habitList.resort()
         val syncManager = (habitList as? SQLiteHabitList)?.syncManager ?: return
         if (value == Entry.UNKNOWN) {

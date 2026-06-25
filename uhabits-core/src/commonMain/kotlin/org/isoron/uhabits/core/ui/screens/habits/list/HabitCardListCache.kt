@@ -59,6 +59,7 @@ class HabitCardListCache(
 
     private var checkmarkCount = 0
     private var currentFetchTask: Task? = null
+    private var refreshGeneration = 0L
     private var listener: Listener
     private val data: CacheData
     private var filteredHabits: HabitList
@@ -147,14 +148,14 @@ class HabitCardListCache(
     @Synchronized
     fun refreshAllHabits() {
         if (currentFetchTask != null) currentFetchTask!!.cancel()
-        val task = RefreshTask()
+        val task = RefreshTask(++refreshGeneration)
         currentFetchTask = task
         taskRunner.execute(task)
     }
 
     @Synchronized
     fun refreshHabit(id: Long) {
-        taskRunner.execute(RefreshTask(id))
+        taskRunner.execute(RefreshTask(id, ++refreshGeneration))
     }
 
     @Synchronized
@@ -275,15 +276,19 @@ class HabitCardListCache(
         private var isCancelled = false
         private var runner: TaskRunner? = null
 
-        constructor() {
+        private val generation: Long
+
+        constructor(generation: Long) {
             newData = CacheData()
             targetId = null
+            this.generation = generation
             isCancelled = false
         }
 
-        constructor(targetId: Long) {
+        constructor(targetId: Long, generation: Long) {
             newData = CacheData()
             this.targetId = targetId
+            this.generation = generation
         }
 
         @Synchronized
@@ -292,16 +297,20 @@ class HabitCardListCache(
         }
 
         @Synchronized
+        private fun isCurrent(): Boolean = !isCancelled && generation == refreshGeneration
+
+        @Synchronized
         override suspend fun doInBackground() {
+            if (!isCurrent()) return
             newData.fetchHabits()
             newData.copyScoresFrom(data)
             newData.copyCheckmarksFrom(data)
             newData.copyNoteIndicatorsFrom(data)
             val today = getToday()
             val dateFrom = today.minus(checkmarkCount - 1)
-            if (runner != null) runner!!.publishProgress(this, -1)
+            if (runner != null && isCurrent()) runner!!.publishProgress(this, -1)
             for (position in newData.habits.indices) {
-                if (isCancelled) return
+                if (!isCurrent()) return
                 val habit = newData.habits[position]
                 if (targetId != null && targetId != habit.id) continue
                 newData.scores[habit.id] = habit.scores[today].value
@@ -313,7 +322,7 @@ class HabitCardListCache(
                 }
                 newData.checkmarks[habit.id] = checkmarkList.toIntArray()
                 newData.notes[habit.id] = noteList.toTypedArray()
-                runner!!.publishProgress(this, position)
+                if (isCurrent()) runner!!.publishProgress(this, position)
             }
         }
 
@@ -324,12 +333,14 @@ class HabitCardListCache(
 
         @Synchronized
         override fun onPostExecute() {
+            if (!isCurrent()) return
             currentFetchTask = null
             listener.onRefreshFinished()
         }
 
         @Synchronized
         override fun onProgressUpdate(currentPosition: Int) {
+            if (!isCurrent()) return
             if (currentPosition < 0) processRemovedHabits() else processPosition(currentPosition)
         }
 
@@ -387,7 +398,7 @@ class HabitCardListCache(
         private fun processPosition(currentPosition: Int) {
             val habit = newData.habits[currentPosition]
             val id = habit.id
-            val prevPosition = data.habits.indexOf(habit)
+            val prevPosition = data.habits.indexOfFirst { it.id == id }
             if (prevPosition < 0) {
                 performInsert(habit, currentPosition)
             } else {

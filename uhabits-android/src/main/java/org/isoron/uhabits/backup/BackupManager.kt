@@ -28,10 +28,10 @@ class BackupManager(
             catalog.applyPrivateRetention(keep)
             statusStore.recordSuccess(finalFile.absolutePath, snapshot.sizeBytes, snapshot.databaseVersion, now)
             BackupResult(finalFile.absolutePath, snapshot.sizeBytes, snapshot.databaseVersion)
-        } catch (e: Exception) {
+        } catch (t: Throwable) {
             tempFile.delete()
-            statusStore.recordFailure(e.message ?: "Backup failed", now)
-            throw e
+            statusStore.recordFailure(t.message ?: "Backup failed", now)
+            throw t
         }
     }
 

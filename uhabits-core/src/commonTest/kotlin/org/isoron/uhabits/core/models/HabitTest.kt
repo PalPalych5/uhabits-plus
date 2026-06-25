@@ -141,6 +141,24 @@ class HabitTest : BaseUnitTest() {
     }
 
     @Test
+    fun testHistoricalGoalUnitDisplaysCorrectly() {
+        val h = modelFactory.buildHabit()
+        h.type = HabitType.NUMERICAL
+        h.targetType = NumericalHabitType.AT_LEAST
+        h.targetValue = 15.0
+        h.unit = "ир"
+        h.goalHistory = mutableListOf(
+            HabitGoal(LocalDate(2015, 1, 1), Frequency.DAILY, NumericalHabitType.AT_LEAST, 15.0, "ир"),
+            HabitGoal(LocalDate(2015, 1, 23), Frequency.DAILY, NumericalHabitType.AT_LEAST, 15.0, "мин")
+        )
+        h.recompute()
+
+        assertEquals("ир", h.goalAt(LocalDate(2015, 1, 22)).unit)
+        assertEquals("мин", h.goalAt(LocalDate(2015, 1, 23)).unit)
+        assertEquals("мин", h.goalAt(LocalDate(2015, 1, 25)).unit)
+    }
+
+    @Test
     fun testSoftResetExcludesOlderEntriesFromCompletion() {
         val h = modelFactory.buildHabit()
         h.originalEntries.add(Entry(getToday().minus(1), Entry.YES_MANUAL))

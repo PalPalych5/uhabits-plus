@@ -20,6 +20,11 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
+        android:id="@+id/actionSync"
+        android:icon="@drawable/ic_action_sync"
+        android:title="@string/sync_now"
+        app:showAsAction="ifRoom" />
+    <item
         android:id="@+id/actionSkipDay"
         android:title="@string/action_skip_day"
         app:showAsAction="ifRoom" />

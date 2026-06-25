@@ -31,6 +31,9 @@ import org.isoron.uhabits.core.models.ModelObservable
 import org.isoron.uhabits.core.models.Reminder
 import org.isoron.uhabits.core.models.WeekdayList
 import org.isoron.uhabits.core.test.HabitFixtures
+import org.isoron.platform.time.getToday
+import org.isoron.uhabits.core.models.Entry
+import org.isoron.uhabits.core.models.sqlite.SQLiteEntryList
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -207,5 +210,36 @@ class SQLiteHabitListTest : BaseUnitTest() {
         assertEquals(3, record3.position)
         val record4 = all.find { it.id == 4L }!!
         assertEquals(2, record4.position)
+    }
+
+    @Test
+    fun testRefreshHabitFromDatabase() = dbTest {
+        val today = getToday()
+        // 1. list-owned Habit has stale loaded SQLiteEntryList
+        val listOwnedHabit = habitList.getById(3L)!!
+        // Pre-load entries cache (isLoaded = true)
+        val entryBefore = listOwnedHabit.computedEntries.get(today)
+        assertEquals(Entry.UNKNOWN, entryBefore.value)
+
+        // 2. another Habit instance writes an entry for the same habit id
+        val anotherHabitInstance = modelFactory.buildHabit()
+        anotherHabitInstance.id = 3L
+        anotherHabitInstance.uuid = listOwnedHabit.uuid
+        (anotherHabitInstance.originalEntries as SQLiteEntryList).habitId = 3L
+        (anotherHabitInstance.originalEntries as SQLiteEntryList).habitUuid = listOwnedHabit.uuid
+
+        // Write repetition to another instance
+        anotherHabitInstance.originalEntries.add(Entry(today, Entry.YES_MANUAL, "notes!"))
+
+        // Confirm the list-owned instance is still stale (returns old value)
+        assertEquals(Entry.UNKNOWN, listOwnedHabit.computedEntries.get(today).value)
+
+        // 3. refreshHabitFromDatabase() invalidates/reloads/recomputes the list-owned Habit
+        habitList.refreshHabitFromDatabase(3L, anotherHabitInstance)
+
+        // 4. computedEntries.get(date) returns the new value without app restart
+        val entryAfter = listOwnedHabit.computedEntries.get(today)
+        assertEquals(Entry.YES_MANUAL, entryAfter.value)
+        assertEquals("notes!", entryAfter.notes)
     }
 }

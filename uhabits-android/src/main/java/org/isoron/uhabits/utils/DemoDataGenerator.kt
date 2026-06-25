@@ -528,10 +528,7 @@ object DemoDataGenerator {
         
         // 5. Force recomputation of computed entries, scores, and streaks in-memory
         for (habit in habitList) {
-            val originalEntries = habit.originalEntries
-            if (originalEntries is SQLiteEntryList) {
-                originalEntries.isLoaded = false // Clear cache to load from DB
-            }
+            habit.originalEntries.invalidate()
             habit.recompute()
         }
         

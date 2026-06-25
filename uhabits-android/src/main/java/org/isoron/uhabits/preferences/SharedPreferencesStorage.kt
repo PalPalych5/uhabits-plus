@@ -97,7 +97,9 @@ class SharedPreferencesStorage(
                 preferences.isTodayTabVisible = getBoolean(key, true)
             "pref_start_destination" ->
                 preferences.startDestinationName = getString(key, "TODAY")
-
+            "pref_sync_enabled", "pref_sync_base_url", "pref_sync_key", "pref_sync_account_email" -> {
+                preferences.notifySyncPreferencesChanged()
+            }
         }
         sharedPreferences.registerOnSharedPreferenceChangeListener(this)
     }

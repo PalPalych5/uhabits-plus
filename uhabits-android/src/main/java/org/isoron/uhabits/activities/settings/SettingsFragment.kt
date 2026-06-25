@@ -38,6 +38,7 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
 import androidx.recyclerview.widget.RecyclerView
+import androidx.core.content.FileProvider
 import com.android.datetimepicker.date.DatePickerDialog
 import org.isoron.platform.time.DayOfWeek
 import org.isoron.platform.time.JavaLocalDateFormatter
@@ -64,6 +65,7 @@ import org.isoron.uhabits.utils.dismissCurrentAndShow
 import org.isoron.uhabits.utils.startActivitySafely
 import org.isoron.uhabits.widgets.WidgetUpdater
 import androidx.appcompat.app.AlertDialog
+import androidx.lifecycle.lifecycleScope
 import android.widget.Toast
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -86,6 +88,7 @@ import org.isoron.uhabits.sync.SyncCoordinator
 import org.isoron.uhabits.sync.SyncRunResult
 import org.isoron.uhabits.utils.DemoDataGenerator
 import java.text.DateFormat
+import java.io.File
 import java.util.Locale
 import kotlin.system.exitProcess
 
@@ -227,6 +230,14 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
                 showSyncReviewDialog()
                 return true
             }
+            "exportSyncDiagnostics" -> {
+                if (BuildConfig.DEBUG) exportSyncDiagnostics()
+                return true
+            }
+            "refreshScreens" -> {
+                if (BuildConfig.DEBUG) refreshScreensForDiagnostics()
+                return true
+            }
             "openArchive" -> {
                 actionHandler().onSettingsAction(SettingsAction.OPEN_ARCHIVE)
                 return true
@@ -267,6 +278,8 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
         val devCategory = findPreference("devCategory") as PreferenceCategory
         devCategory.isVisible = BuildConfig.DEBUG || prefs.isDeveloper
         findPreference("demoCategory")?.isVisible = BuildConfig.DEBUG
+        findPreference("exportSyncDiagnostics")?.isVisible = BuildConfig.DEBUG
+        findPreference("refreshScreens")?.isVisible = BuildConfig.DEBUG
         findPreference("configureSpheres")?.isVisible = prefs.isHabitSpheresEnabled
         updateWeekdayPreference()
         updatePublicBackupFolderSummary()
@@ -294,6 +307,12 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
         if (key == "pref_enable_habit_spheres") {
             findPreference("configureSpheres")?.isVisible = prefs.isHabitSpheresEnabled
         }
+        if (key == "pref_sync_base_url" || key == "pref_sync_key") {
+            prefs.isSyncBootstrapQueued = false
+            prefs.isSyncBootstrapDone = false
+            prefs.syncLastLogId = 0L
+            updateSyncPreferences()
+        }
         if (key == "pref_widget_opacity" && widgetUpdater != null) {
             Log.d("SettingsFragment", "updating widgets")
             widgetUpdater!!.updateWidgets()
@@ -320,7 +339,7 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
                 startActivity(intent)
             }, 500)
         }
-        if (key == "pref_sync_enabled") {
+        if (key == "pref_sync_enabled" || key == "pref_sync_status" || key == "pref_sync_status_detail" || key == "pref_sync_last_success_at") {
             updateSyncPreferences()
         }
         AndroidBackupManager.dataChanged("org.isoron.uhabits.plus")
@@ -635,6 +654,7 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
                 is SyncRunResult.Success -> {
                     Toast.makeText(requireContext(), R.string.sync_result_signed_in, Toast.LENGTH_LONG).show()
                     updateSyncPreferences()
+                    performSyncNow(allowAfterReview = false)
                 }
                 is SyncRunResult.Failure -> {
                     Toast.makeText(requireContext(), result.userMessage, Toast.LENGTH_LONG).show()
@@ -646,23 +666,47 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
     }
 
     private fun performSignOut() {
-        CoroutineScope(Dispatchers.Main).launch {
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    syncCoordinator.signOut()
+        viewLifecycleOwner.lifecycleScope.launch {
+            val hasPending = withContext(Dispatchers.IO) {
+                syncCoordinator.hasPendingLocalChanges()
+            }
+            if (hasPending) {
+                Toast.makeText(requireContext(), "Отправка несохраненных изменений перед выходом...", Toast.LENGTH_SHORT).show()
+                val syncResult = syncCoordinator.runSync(manual = true)
+                if (syncResult is SyncRunResult.Failure) {
+                    AlertDialog.Builder(requireContext())
+                        .setTitle(R.string.sync_sign_out_warning_title)
+                        .setMessage(R.string.sync_sign_out_warning_message)
+                        .setPositiveButton(R.string.sync_sign_out) { _, _ ->
+                            executeSignOut()
+                        }
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show()
+                    return@launch
                 }
+            }
+            executeSignOut()
+        }
+    }
+
+    private fun executeSignOut() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val result = runCatching {
+                syncCoordinator.signOut()
             }.getOrElse {
                 SyncRunResult.Failure(
                     "Синхронизация сейчас недоступна.",
                     it.message ?: it::class.simpleName
                 )
             }
-            if (result is SyncRunResult.Success) {
-                Toast.makeText(requireContext(), R.string.sync_result_signed_out, Toast.LENGTH_LONG).show()
-            } else if (result is SyncRunResult.Failure) {
-                Toast.makeText(requireContext(), result.userMessage, Toast.LENGTH_LONG).show()
+            if (isAdded) {
+                if (result is SyncRunResult.Success) {
+                    Toast.makeText(requireContext(), R.string.sync_result_signed_out, Toast.LENGTH_LONG).show()
+                } else if (result is SyncRunResult.Failure) {
+                    Toast.makeText(requireContext(), result.userMessage, Toast.LENGTH_LONG).show()
+                }
+                updateSyncPreferences()
             }
-            updateSyncPreferences()
         }
     }
 
@@ -698,6 +742,7 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
             }
             when (result) {
                 is SyncRunResult.Success -> {
+                    reloadVisibleHabitScreens("manual_sync_success")
                     Toast.makeText(
                         requireContext(),
                         getString(R.string.sync_result_success, result.pushed, result.pulled),
@@ -711,6 +756,62 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
             }
             updateSyncPreferences()
         }
+    }
+
+    private fun exportSyncDiagnostics() {
+        CoroutineScope(Dispatchers.Main).launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val report = syncCoordinator.buildDiagnosticsReport(
+                        appVersionName = BuildConfig.VERSION_NAME,
+                        appVersionCode = BuildConfig.VERSION_CODE
+                    )
+                    val file = File(
+                        requireContext().cacheDir,
+                        "sync-diagnostics-${System.currentTimeMillis()}.json"
+                    )
+                    file.writeText(report, Charsets.UTF_8)
+                    file
+                }
+            }
+            result.fold(
+                onSuccess = { shareSyncDiagnostics(it) },
+                onFailure = {
+                    Log.e("SettingsFragment", "Failed to export sync diagnostics", it)
+                    Toast.makeText(
+                        requireContext(),
+                        R.string.sync_diagnostics_export_error,
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            )
+        }
+    }
+
+    private fun shareSyncDiagnostics(file: File) {
+        val uri = FileProvider.getUriForFile(
+            requireContext(),
+            "org.isoron.uhabits.plus",
+            file
+        )
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/json"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+        }
+        activity?.startActivitySafely(
+            Intent.createChooser(intent, getString(R.string.sync_export_diagnostics_title))
+        )
+    }
+
+    private fun refreshScreensForDiagnostics() {
+        reloadVisibleHabitScreens("debug_refresh_screens")
+        Toast.makeText(requireContext(), R.string.sync_screens_refreshed, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun reloadVisibleHabitScreens(reason: String) {
+        (activity as? MainActivity)?.reloadVisibleHabitScreens(reason)
+            ?: syncCoordinator.refreshLocalViewsForDiagnostics("${reason}_no_main_activity")
     }
 
     private fun showSeedConfirmationDialog(isReset: Boolean) {
@@ -727,6 +828,7 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
                 Toast.makeText(requireContext(), R.string.demo_data_generating, Toast.LENGTH_SHORT).show()
                 
                 CoroutineScope(Dispatchers.Main).launch {
+                    component.syncCoordinator.isAutoSyncPaused = true
                     val success = withContext(Dispatchers.IO) {
                         try {
                             DemoDataGenerator.generate(
@@ -741,6 +843,8 @@ class SettingsFragment : PreferenceFragmentCompat(), OnSharedPreferenceChangeLis
                         } catch (e: Exception) {
                             Log.e("SettingsFragment", "Failed to generate demo data", e)
                             false
+                        } finally {
+                            component.syncCoordinator.isAutoSyncPaused = false
                         }
                     }
                     if (success) {

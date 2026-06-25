@@ -276,6 +276,7 @@ open class Preferences(private val storage: Storage) {
         get() = storage.getBoolean("pref_sync_enabled", false)
         set(enabled) {
             storage.putBoolean("pref_sync_enabled", enabled)
+            notifySyncPreferencesChanged()
         }
 
     open var syncStatus: String
@@ -288,6 +289,30 @@ open class Preferences(private val storage: Storage) {
         get() = storage.getString("pref_sync_status_detail", "")
         set(value) {
             storage.putString("pref_sync_status_detail", value)
+        }
+
+    open var syncLastUiRefreshReason: String
+        get() = storage.getString("pref_sync_last_ui_refresh_reason", "never")
+        set(value) {
+            storage.putString("pref_sync_last_ui_refresh_reason", value)
+        }
+
+    open var syncLastUiRefreshAt: Long
+        get() = storage.getLong("pref_sync_last_ui_refresh_at", 0L)
+        set(value) {
+            storage.putLong("pref_sync_last_ui_refresh_at", value)
+        }
+
+    open var syncLastUiRefreshDestination: String
+        get() = storage.getString("pref_sync_last_ui_refresh_destination", "")
+        set(value) {
+            storage.putString("pref_sync_last_ui_refresh_destination", value)
+        }
+
+    open var syncLastUiRefreshHabitCount: Long
+        get() = storage.getLong("pref_sync_last_ui_refresh_habit_count", -1L)
+        set(value) {
+            storage.putLong("pref_sync_last_ui_refresh_habit_count", value)
         }
 
     open var syncLastSuccessAt: Long
@@ -319,25 +344,68 @@ open class Preferences(private val storage: Storage) {
         set(value) {
             if (value.isNullOrBlank()) storage.remove("pref_sync_account_email")
             else storage.putString("pref_sync_account_email", value)
+            notifySyncPreferencesChanged()
+        }
+
+    open var isSyncBootstrapQueued: Boolean
+        get() = storage.getBoolean("pref_sync_bootstrap_queued", false)
+        set(value) {
+            storage.putBoolean("pref_sync_bootstrap_queued", value)
+        }
+
+    open var isSyncBootstrapDone: Boolean
+        get() = storage.getBoolean("pref_sync_bootstrap_done", false)
+        set(value) {
+            storage.putBoolean("pref_sync_bootstrap_done", value)
         }
 
     open var syncSupabaseUrl: String
         get() = storage.getString("pref_sync_base_url", "")
         set(value) {
             storage.putString("pref_sync_base_url", value)
+            notifySyncPreferencesChanged()
         }
 
     open var syncSupabaseAnonKey: String
         get() = storage.getString("pref_sync_key", "")
         set(value) {
             storage.putString("pref_sync_key", value)
+            notifySyncPreferencesChanged()
         }
+
+    open var syncLastBackgroundSyncReason: String
+        get() = storage.getString("pref_sync_last_bg_reason", "never")
+        set(value) {
+            storage.putString("pref_sync_last_bg_reason", value)
+        }
+
+    open var syncLastBackgroundSyncScheduledAt: Long
+        get() = storage.getLong("pref_sync_last_bg_scheduled_at", 0L)
+        set(value) {
+            storage.putLong("pref_sync_last_bg_scheduled_at", value)
+        }
+
+    open var syncLastBackgroundSyncResult: String
+        get() = storage.getString("pref_sync_last_bg_result", "")
+        set(value) {
+            storage.putString("pref_sync_last_bg_result", value)
+        }
+
+    open fun notifySyncFinished() {
+        for (l in listeners) l.onSyncFinished()
+    }
+
+    open fun notifySyncPreferencesChanged() {
+        for (l in listeners) l.onSyncPreferencesChanged()
+    }
 
     interface Listener {
         fun onCheckmarkSequenceChanged() {}
         fun onNotificationsChanged() {}
         fun onQuestionMarksChanged() {}
         fun onNavigationPreferencesChanged() {}
+        fun onSyncFinished() {}
+        fun onSyncPreferencesChanged() {}
     }
 
     interface Storage {

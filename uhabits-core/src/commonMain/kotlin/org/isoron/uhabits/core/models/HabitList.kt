@@ -203,6 +203,19 @@ abstract class HabitList : Iterable<Habit> {
         return sb.toString()
     }
 
+    /**
+     * Refreshes the database-backed entry list and recomputes the habit instance inside this list.
+     * If the currentHabitInstance is the same object reference, it skips reloading to avoid duplicate queries.
+     */
+    open fun refreshHabitFromDatabase(habitId: Long, currentHabitInstance: Habit? = null) {
+        val listHabit = getById(habitId) ?: return
+        if (currentHabitInstance != null && listHabit === currentHabitInstance) {
+            return
+        }
+        listHabit.originalEntries.invalidate()
+        listHabit.recompute()
+    }
+
     abstract fun resort()
     open fun getBlocks(): List<HabitBlock> = emptyList()
     open var globalStatisticsStartDate: LocalDate? = null

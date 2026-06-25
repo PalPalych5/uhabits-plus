@@ -24,6 +24,12 @@
     tools:context=".MainActivity">
 
     <item
+        android:id="@+id/actionSync"
+        android:icon="@drawable/ic_action_sync"
+        android:title="@string/sync_now"
+        app:showAsAction="always" />
+
+    <item
         android:id="@+id/action_filter"
         android:icon="?iconFilter"
         android:title="@string/filter"

@@ -118,7 +118,18 @@ object DatabaseUtils {
                 errorMessage = "Backup file is empty or missing"
             )
         }
-        if (!file.inputStream().use { it.readNBytes(16).decodeToString() }.startsWith("SQLite format 3")) {
+        val expectedHeader = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
+        val actualHeader = ByteArray(expectedHeader.size)
+        val bytesRead = file.inputStream().use { input ->
+            var offset = 0
+            while (offset < actualHeader.size) {
+                val count = input.read(actualHeader, offset, actualHeader.size - offset)
+                if (count <= 0) break
+                offset += count
+            }
+            offset
+        }
+        if (bytesRead != expectedHeader.size || !actualHeader.contentEquals(expectedHeader)) {
             return org.isoron.uhabits.backup.BackupValidationResult(
                 isValid = false,
                 errorMessage = "Backup file is not a SQLite database"

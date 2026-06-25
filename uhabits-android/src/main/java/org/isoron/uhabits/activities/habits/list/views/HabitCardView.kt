@@ -287,6 +287,7 @@ class HabitCardView(
             }
         }
         numberPanel.apply {
+            habit = h
             val goal = h.goalAt(org.isoron.platform.time.getToday())
             color = c
             units = goal.unit

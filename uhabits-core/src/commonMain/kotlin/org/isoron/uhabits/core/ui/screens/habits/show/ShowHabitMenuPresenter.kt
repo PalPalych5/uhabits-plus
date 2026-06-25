@@ -120,6 +120,10 @@ class ShowHabitMenuPresenter(
             habit.originalEntries.add(Entry(getToday().minus(i), value))
         }
         habit.recompute()
+        habit.id?.let {
+            habitList.refreshHabitFromDatabase(it, habit)
+        }
+        habitList.resort()
         screen.refresh()
     }
 

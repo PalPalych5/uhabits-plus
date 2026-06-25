@@ -20,6 +20,7 @@ import org.isoron.uhabits.activities.main.MainNavigationHost
 import org.isoron.uhabits.activities.main.SettingsAction
 import org.isoron.uhabits.activities.habits.list.views.HabitCardListAdapter
 import org.isoron.uhabits.core.models.HabitMatcher
+import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.tasks.TaskRunner
 import org.isoron.uhabits.inject.HabitsActivityComponent
@@ -27,10 +28,15 @@ import org.isoron.uhabits.inject.HabitsApplicationComponent
 import org.isoron.uhabits.inject.create
 import org.isoron.uhabits.utils.dismissCurrentDialog
 import org.isoron.uhabits.utils.restartWithFade
+import android.widget.Toast
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import org.isoron.uhabits.sync.SyncCoordinator
+import org.isoron.uhabits.sync.SyncRunResult
 
 enum class ListHabitsDisplayMode { NORMAL, ARCHIVE }
 
-class ListHabitsFragment : Fragment(), Preferences.Listener {
+class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Listener {
     lateinit var appComponent: HabitsApplicationComponent
     lateinit var component: HabitsActivityComponent
     lateinit var taskRunner: TaskRunner
@@ -91,6 +97,53 @@ class ListHabitsFragment : Fragment(), Preferences.Listener {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        appComponent.syncCoordinator.addListener(this)
+        activity?.invalidateOptionsMenu()
+    }
+
+    override fun onStop() {
+        appComponent.syncCoordinator.removeListener(this)
+        super.onStop()
+    }
+
+    override fun onSyncStateChanged(isSyncing: Boolean, lastResult: SyncRunResult?) {
+        activity?.runOnUiThread {
+            activity?.invalidateOptionsMenu()
+            if (!isSyncing && manualSyncInitiated) {
+                manualSyncInitiated = false
+                if (lastResult != null) {
+                    when (lastResult) {
+                        is SyncRunResult.Success -> {
+                            Toast.makeText(
+                                requireContext(),
+                                getString(R.string.sync_result_success, lastResult.pushed, lastResult.pulled),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        is SyncRunResult.Failure -> {
+                            Toast.makeText(
+                                requireContext(),
+                                lastResult.userMessage,
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        is SyncRunResult.Skipped -> {
+                            if (lastResult.reason != "already_syncing") {
+                                Toast.makeText(
+                                    requireContext(),
+                                    "Sync skipped: ${lastResult.reason}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         activateToolbar()
@@ -132,11 +185,28 @@ class ListHabitsFragment : Fragment(), Preferences.Listener {
     }
 
     override fun onPrepareOptionsMenu(menu: Menu) {
+        val syncItem = menu.findItem(R.id.actionSync)
+        val syncCoordinator = appComponent.syncCoordinator
+        val syncEnabled = syncCoordinator.isSyncReady()
+        if (syncItem != null) {
+            syncItem.isVisible = syncEnabled
+            if (syncCoordinator.isSyncing) {
+                syncItem.setActionView(R.layout.menu_item_sync_progress)
+                syncItem.isEnabled = false
+            } else {
+                syncItem.setActionView(null)
+                syncItem.isEnabled = true
+            }
+        }
         updateMenuVisibility(menu)
         super.onPrepareOptionsMenu(menu)
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == R.id.actionSync) {
+            triggerManualSync()
+            return true
+        }
         if (item.itemId == android.R.id.home && displayMode == ListHabitsDisplayMode.ARCHIVE) {
             return (activity as MainNavigationHost).navigateBack()
         }
@@ -144,9 +214,31 @@ class ListHabitsFragment : Fragment(), Preferences.Listener {
         return menuController.onItemSelected(item) || super.onOptionsItemSelected(item)
     }
 
+    private var manualSyncInitiated = false
+
+    private fun triggerManualSync() {
+        manualSyncInitiated = true
+        activity?.invalidateOptionsMenu()
+        viewLifecycleOwner.lifecycleScope.launch {
+            appComponent.syncCoordinator.runSync(manual = true)
+        }
+    }
+
     fun setDisplayMode(mode: ListHabitsDisplayMode) {
         displayMode = mode
         if (initialized) applyDisplayMode()
+    }
+
+    fun refresh(reloadFromDatabase: Boolean = false) {
+        if (initialized && isAdded) {
+            if (reloadFromDatabase) {
+                (appComponent.habitList as? SQLiteHabitList)?.reloadAndNotify()
+                applyDisplayMode()
+            } else {
+                adapter.refresh()
+            }
+            rootView.postInvalidate()
+        }
     }
 
     private fun applyDisplayMode() {

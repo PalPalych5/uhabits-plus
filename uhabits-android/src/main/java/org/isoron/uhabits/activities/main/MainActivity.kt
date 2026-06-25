@@ -27,10 +27,12 @@ import org.isoron.uhabits.activities.habits.today.TodayFragment
 import org.isoron.uhabits.activities.reports.ReportsFragment
 import org.isoron.uhabits.activities.settings.SettingsSectionFragment
 import org.isoron.uhabits.core.preferences.Preferences
+import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 import org.isoron.uhabits.core.tasks.Task
 import org.isoron.uhabits.core.ui.ThemeSwitcher.Companion.THEME_DARK
 import org.isoron.uhabits.database.AutoBackup
 import org.isoron.uhabits.databinding.ActivityMainBinding
+import org.isoron.uhabits.sync.SyncRunResult
 import org.isoron.uhabits.utils.applyRootViewInsets
 import org.isoron.uhabits.utils.restartWithFade
 
@@ -257,18 +259,27 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
             try {
                 AutoBackup(this@MainActivity).run()
                 appComponent.widgetUpdater.updateWidgets()
-            } catch (e: Exception) {
-                Log.e("MainActivity", "Startup maintenance failed", e)
+            } catch (t: Throwable) {
+                Log.e("MainActivity", "Startup maintenance failed", t)
             }
         }
         if (prefs.isSyncEnabled) {
             try {
                 appComponent.taskRunner.execute(object : Task {
+                    private var syncResult: SyncRunResult? = null
+
                     override suspend fun doInBackground() {
                         try {
-                            appComponent.syncCoordinator.runSync(manual = false)
+                            syncResult = appComponent.syncCoordinator.runSync(manual = false)
                         } catch (t: Throwable) {
                             Log.e("MainActivity", "Background sync failed", t)
+                        }
+                    }
+
+                    override fun onPostExecute() {
+                        val result = syncResult
+                        if (result is SyncRunResult.Success && result.pulled > 0) {
+                            reloadVisibleHabitScreens("background_sync_success")
                         }
                     }
                 })
@@ -286,12 +297,42 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         super.onPause()
     }
 
+    override fun onStop() {
+        super.onStop()
+        appComponent.syncCoordinator.scheduleBackgroundSyncIfHasChanges("app_background")
+    }
+
     override fun onDestroy() {
         prefs.removeListener(this)
         super.onDestroy()
     }
 
     override fun onQuestionMarksChanged() = Unit
+
+    override fun onSyncFinished() {
+        reloadVisibleHabitScreens("sync_finished_listener")
+    }
+
+    fun reloadVisibleHabitScreens(reason: String) {
+        runOnUiThread {
+            binding.root.post {
+                val sqliteHabitList = appComponent.habitList as? SQLiteHabitList
+                sqliteHabitList?.reloadAndNotify()
+                val habitCount = runCatching { appComponent.habitList.size().toLong() }.getOrDefault(-1L)
+
+                (supportFragmentManager.findFragmentByTag(TAG_TODAY) as? TodayFragment)?.refresh()
+                (supportFragmentManager.findFragmentByTag(TAG_HABITS) as? ListHabitsFragment)?.refresh(
+                    reloadFromDatabase = true
+                )
+                (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? ReportsFragment)?.refresh()
+
+                prefs.syncLastUiRefreshReason = reason
+                prefs.syncLastUiRefreshAt = System.currentTimeMillis()
+                prefs.syncLastUiRefreshDestination = navigationState.current.name
+                prefs.syncLastUiRefreshHabitCount = habitCount
+            }
+        }
+    }
 
     override fun onNavigationPreferencesChanged() {
         runOnUiThread {

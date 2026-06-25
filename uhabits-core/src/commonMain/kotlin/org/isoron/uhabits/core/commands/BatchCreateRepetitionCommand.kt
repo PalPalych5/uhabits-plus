@@ -52,6 +52,11 @@ data class BatchCreateRepetitionCommand(
                 }
             }
             repository?.execSQL("COMMIT")
+            for (habit in habits) {
+                habit.id?.let {
+                    habitList.refreshHabitFromDatabase(it, habit)
+                }
+            }
         } catch (e: Exception) {
             repository?.execSQL("ROLLBACK")
             throw e

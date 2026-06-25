@@ -23,6 +23,9 @@ data class AddNumericalEntryOpCommand(
         val newValue = oldValue + deltaValue
         entries.addWithDelta(date, deltaValue, newValue, notes)
         habit.recompute()
+        habit.id?.let {
+            habitList.refreshHabitFromDatabase(it, habit)
+        }
         habitList.resort()
         (habitList as? SQLiteHabitList)?.syncManager?.recordEntryOp(habit, date, deltaValue, opType, notes)
     }

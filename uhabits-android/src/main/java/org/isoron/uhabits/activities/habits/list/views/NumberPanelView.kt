@@ -23,6 +23,7 @@ import android.content.Context
 import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
+import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.inject.ActivityContext
@@ -41,6 +42,12 @@ class NumberPanelView(
     preferences: Preferences,
     private val buttonFactory: NumberButtonViewFactory
 ) : ButtonPanelView<NumberButtonView>(context, preferences) {
+
+    var habit: Habit? = null
+        set(value) {
+            field = value
+            setupButtons()
+        }
 
     var values = DoubleArray(0)
         set(values) {
@@ -89,6 +96,7 @@ class NumberPanelView(
     @Synchronized
     override fun setupButtons() {
         val today = getToday()
+        val h = habit
 
         buttons.forEachIndexed { index, button ->
             val date = today.minus(index + dataOffset)
@@ -101,9 +109,10 @@ class NumberPanelView(
                 else -> ""
             }
             button.color = color
-            button.targetType = targetType
-            button.threshold = threshold
-            button.units = units
+            val goal = h?.goalAt(date)
+            button.targetType = goal?.targetType ?: targetType
+            button.threshold = if (goal != null) goal.targetValue / goal.frequency.denominator else threshold
+            button.units = goal?.unit ?: units
             button.onEdit = { onEdit(date) }
         }
     }

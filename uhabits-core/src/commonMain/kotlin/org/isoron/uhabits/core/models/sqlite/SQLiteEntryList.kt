@@ -33,12 +33,17 @@ class SQLiteEntryList(
 ) : EntryList() {
     var habitId: Long? = null
     var habitUuid: String? = null
-    var isLoaded = false
+    private var isLoaded = false
+
+    override fun invalidate() {
+        isLoaded = false
+    }
 
     private fun loadRecords() {
         if (isLoaded) return
         val habitId = habitId ?: throw IllegalStateException("habitId must be set")
         val records = repository.findAllByHabitId(habitId)
+        super.clear()
         for (rec in records) {
             super.add(Entry(LocalDate.fromUnixTime(rec.timestamp), rec.value, rec.notes))
         }

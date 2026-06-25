@@ -85,6 +85,11 @@ open class EntryList {
     }
 
     /**
+     * Invalidate any in-memory caching or database status. Subclasses should override.
+     */
+    open fun invalidate() {}
+
+    /**
      * Replaces all entries in this list by entries computed automatically from another list.
      *
      * For boolean habits, this function creates additional entries (with value YES_AUTO) according

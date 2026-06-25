@@ -26,8 +26,13 @@ import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.ui.screens.habits.today.TodayScreenStateBuilder
 import org.isoron.uhabits.intents.IntentFactory
+import android.widget.Toast
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import org.isoron.uhabits.sync.SyncCoordinator
+import org.isoron.uhabits.sync.SyncRunResult
 
-class TodayFragment : Fragment(), CommandRunner.Listener {
+class TodayFragment : Fragment(), CommandRunner.Listener, SyncCoordinator.Listener {
     private var todayView: TodayView? = null
     private val component
         get() = (requireContext().applicationContext as HabitsApplication).component
@@ -64,12 +69,43 @@ class TodayFragment : Fragment(), CommandRunner.Listener {
         super.onCreateOptionsMenu(menu, inflater)
     }
 
+    override fun onPrepareOptionsMenu(menu: Menu) {
+        val syncItem = menu.findItem(R.id.actionSync)
+        val syncCoordinator = component.syncCoordinator
+        val syncEnabled = syncCoordinator.isSyncReady()
+        if (syncItem != null) {
+            syncItem.isVisible = syncEnabled
+            if (syncCoordinator.isSyncing) {
+                syncItem.setActionView(R.layout.menu_item_sync_progress)
+                syncItem.isEnabled = false
+            } else {
+                syncItem.setActionView(null)
+                syncItem.isEnabled = true
+            }
+        }
+        super.onPrepareOptionsMenu(menu)
+    }
+
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == R.id.actionSync) {
+            triggerManualSync()
+            return true
+        }
         if (item.itemId == R.id.actionSkipDay) {
             showSkipDayDialog()
             return true
         }
         return super.onOptionsItemSelected(item)
+    }
+
+    private var manualSyncInitiated = false
+
+    private fun triggerManualSync() {
+        manualSyncInitiated = true
+        activity?.invalidateOptionsMenu()
+        viewLifecycleOwner.lifecycleScope.launch {
+            component.syncCoordinator.runSync(manual = true)
+        }
     }
 
     private fun showSkipDayDialog() {
@@ -209,6 +245,53 @@ class TodayFragment : Fragment(), CommandRunner.Listener {
             .show()
     }
 
+    override fun onStart() {
+        super.onStart()
+        component.syncCoordinator.addListener(this)
+        activity?.invalidateOptionsMenu()
+    }
+
+    override fun onStop() {
+        component.syncCoordinator.removeListener(this)
+        super.onStop()
+    }
+
+    override fun onSyncStateChanged(isSyncing: Boolean, lastResult: SyncRunResult?) {
+        activity?.runOnUiThread {
+            activity?.invalidateOptionsMenu()
+            if (!isSyncing && manualSyncInitiated) {
+                manualSyncInitiated = false
+                if (lastResult != null) {
+                    when (lastResult) {
+                        is SyncRunResult.Success -> {
+                            Toast.makeText(
+                                requireContext(),
+                                getString(R.string.sync_result_success, lastResult.pushed, lastResult.pulled),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        is SyncRunResult.Failure -> {
+                            Toast.makeText(
+                                requireContext(),
+                                lastResult.userMessage,
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        is SyncRunResult.Skipped -> {
+                            if (lastResult.reason != "already_syncing") {
+                                Toast.makeText(
+                                    requireContext(),
+                                    "Sync skipped: ${lastResult.reason}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         todayView?.activateToolbar()
@@ -233,7 +316,7 @@ class TodayFragment : Fragment(), CommandRunner.Listener {
         HabitTypeDialog().show(parentFragmentManager, "habitType")
     }
 
-    private fun refresh() {
+    internal fun refresh() {
         todayView?.setState(TodayScreenStateBuilder.build(component.habitList))
     }
 }

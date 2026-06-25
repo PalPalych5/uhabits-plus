@@ -108,6 +108,12 @@ class ReportsFragment : Fragment() {
         (activity as? MainNavigationHost)?.setHabitCreationAvailable(false)
     }
 
+    fun refresh() {
+        if (viewBinding != null && isAdded) {
+            updateReport()
+        }
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putInt(STATE_TAB, currentTab.ordinal)
         outState.putInt(STATE_YEAR, currentAnchorDate.year)

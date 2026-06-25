@@ -77,15 +77,11 @@ class EntryListTest {
         computed.recomputeFrom(original, Frequency(1, 3), isNumerical = false)
 
         val expected = listOf(
-            Entry(today.minus(2), YES_AUTO),
-            Entry(today.minus(3), YES_AUTO),
             Entry(today.minus(4), YES_MANUAL),
             Entry(today.minus(7), YES_AUTO),
             Entry(today.minus(8), YES_AUTO),
             Entry(today.minus(9), YES_MANUAL),
-            Entry(today.minus(10), YES_MANUAL),
-            Entry(today.minus(11), YES_AUTO),
-            Entry(today.minus(12), YES_AUTO)
+            Entry(today.minus(10), YES_MANUAL)
         )
         assertEquals(expected, computed.getKnown())
 
