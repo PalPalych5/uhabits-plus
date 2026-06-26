@@ -26,6 +26,8 @@ import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.BaseUnitTest
 import org.isoron.uhabits.core.commands.CreateRepetitionCommand
 import org.isoron.uhabits.core.commands.DeleteHabitsCommand
+import org.isoron.uhabits.core.commands.EditHabitCommand
+import org.isoron.uhabits.core.models.HabitType
 import org.isoron.uhabits.core.models.Entry
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -144,6 +146,20 @@ class HabitCardListCacheTest : BaseUnitTest() {
         verify { listener.onItemMoved(7, 6) }
         verify { listener.onRefreshFinished() }
         verifyNoMoreCalls(listener)
+    }
+
+    @Test
+    fun testGoalEditInvalidatesCache() {
+        val h = habitList.getByPosition(2)!!
+        val modified = h.copy()
+        modified.type = HabitType.NUMERICAL
+        modified.targetValue = 99.0
+        modified.unit = "мин"
+
+        resetCalls(listener)
+        commandRunner.run(EditHabitCommand(habitList, h.id!!, modified))
+
+        verify { listener.onRefreshFinished() }
     }
 
     private fun removeHabitAt(position: Int) {

@@ -786,7 +786,7 @@ class SyncCoordinator(
         }
     }
 
-    private fun blocksForBootstrap(blocks: List<HabitBlockData>, habits: List<Habit>): List<HabitBlockData> {
+    internal fun blocksForBootstrap(blocks: List<HabitBlockData>, habits: List<Habit>): List<HabitBlockData> {
         val referencedBlockIds = habits.mapNotNull { it.blockId }.toSet()
         return blocks.filter { block ->
             val id = block.id
@@ -1214,7 +1214,7 @@ class SyncCoordinator(
     /** Accumulated during applyRemoteEvents for diagnostics display. */
     private val lastUnresolvedHabitBlocks = mutableListOf<UnresolvedHabitBlock>()
 
-    private fun applyRemoteEvents(events: List<RemoteSyncEvent>): Int {
+    internal fun applyRemoteEvents(events: List<RemoteSyncEvent>): Int {
         if (events.isEmpty()) return 0
         // Do NOT run destructive cleanupDuplicateDefaultBlocks here.
         // Duplicate blocks are less harmful than losing habit-sphere assignments.
@@ -1304,7 +1304,7 @@ class SyncCoordinator(
      * - Does NOT delete any blocks.
      * - Idempotent: safe to call multiple times per sync cycle.
      */
-    private fun repairDefaultBlockUuids() {
+    internal fun repairDefaultBlockUuids() {
         var repaired = 0
         for ((id, deterministicUuid) in DETERMINISTIC_DEFAULT_BLOCK_UUIDS) {
             val block = modelFactory.habitBlockRepository.findById(id) ?: continue
@@ -1393,7 +1393,8 @@ class SyncCoordinator(
         val existing = modelFactory.habitRepository.findByUuid(event.entityUuid)
         if (!shouldApply(existing?.updatedAt ?: 0L, existing?.deletedAt, event)) return null
 
-        val blockUuid = payload.optionalString("block_uuid")
+        val hasBlockUuid = payload.has("block_uuid")
+        val blockUuid = if (hasBlockUuid) payload.optionalString("block_uuid") else null
         // Resolve block UUID to local id:
         //   null blockUuid => explicit Other/unassigned => blockId = null
         //   non-null blockUuid, found locally => use that local id
@@ -1432,11 +1433,13 @@ class SyncCoordinator(
         }
 
         // Determine the blockId to write to HabitExtensions:
+        //   - Missing field (legacy payload) => keep existing assignment
         //   - Explicit null (Other) => write null
         //   - Resolved block => write its local id
         //   - Unresolved (block not yet in DB) => keep existing assignment; do NOT write null
         val existingExtension = modelFactory.habitExtensionRepository.findByHabitId(habitId)
         val blockIdToWrite = when {
+            !hasBlockUuid -> existingExtension?.blockId // legacy payload: preserve existing
             blockUuid == null -> null  // explicit Other from remote
             resolvedBlock != null -> resolvedBlock.id  // successfully resolved
             else -> existingExtension?.blockId  // unresolved: preserve current

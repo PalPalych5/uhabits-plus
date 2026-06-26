@@ -39,13 +39,13 @@ import kotlin.math.min
 
 @Inject
 @AppScope
-class IntentScheduler(
+open class IntentScheduler(
     @AppContext context: Context,
     private val pendingIntents: PendingIntentFactory
 ) : SystemScheduler {
 
     private val manager =
-        context.getSystemService(ALARM_SERVICE) as AlarmManager
+        context.getSystemService(ALARM_SERVICE) as? AlarmManager
 
     private fun schedule(timestamp: Long, intent: PendingIntent, alarmType: Int): SchedulerResult {
         val now = System.currentTimeMillis()
@@ -57,13 +57,15 @@ class IntentScheduler(
             )
             return SchedulerResult.IGNORED
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !manager.canScheduleExactAlarms()) {
+        val mgr = manager ?: return SchedulerResult.IGNORED
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !mgr.canScheduleExactAlarms()) {
             Log.e("IntentScheduler", "No permission to schedule exact alarms")
             return SchedulerResult.IGNORED
         }
-        manager.setExactAndAllowWhileIdle(alarmType, timestamp, intent)
+        mgr.setExactAndAllowWhileIdle(alarmType, timestamp, intent)
         return SchedulerResult.OK
     }
+
 
     override fun scheduleShowReminder(
         reminderTime: Long,

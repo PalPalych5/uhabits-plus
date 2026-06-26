@@ -97,6 +97,9 @@ android {
     }
     buildFeatures.viewBinding = true
     lint.abortOnError = false
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 mokkery {
@@ -137,4 +140,6 @@ dependencies {
 
     testImplementation(libs.kotlin.inject.runtime)
     testImplementation(libs.junit.junit)
+    testImplementation(libs.sqlite.jdbc)
+    testImplementation("org.json:json:20240303")
 }

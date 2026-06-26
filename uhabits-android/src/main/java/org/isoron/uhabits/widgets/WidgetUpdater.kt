@@ -39,7 +39,7 @@ import org.isoron.uhabits.intents.IntentScheduler
  * updates the home-screen widgets accordingly.
  */
 @Inject
-class WidgetUpdater(
+open class WidgetUpdater(
     @AppContext private val context: Context,
     private val commandRunner: CommandRunner,
     private val taskRunner: TaskRunner,
@@ -61,7 +61,7 @@ class WidgetUpdater(
      * commands are executed after this method is called, the corresponding
      * widgets will get updated.
      */
-    fun startListening() {
+    open fun startListening() {
         commandRunner.addListener(this)
     }
 
@@ -69,16 +69,16 @@ class WidgetUpdater(
      * Instructs the updater to stop listening to commands. Every command
      * executed after this method is called will be ignored by the updater.
      */
-    fun stopListening() {
+    open fun stopListening() {
         commandRunner.removeListener(this)
     }
 
-    fun scheduleStartDayWidgetUpdate() {
+    open fun scheduleStartDayWidgetUpdate() {
         val timestamp = DateUtils.getStartOfTomorrowWithOffset(preferences.midnightDelayHours, 0)
         intentScheduler.scheduleWidgetUpdate(timestamp)
     }
 
-    fun updateWidgets(modifiedHabitId: Long?) {
+    open fun updateWidgets(modifiedHabitId: Long?) {
         taskRunner.execute {
             updateWidgets(modifiedHabitId, CheckmarkWidgetProvider::class.java)
             updateWidgets(modifiedHabitId, HistoryWidgetProvider::class.java)
@@ -109,7 +109,7 @@ class WidgetUpdater(
         )
     }
 
-    fun updateWidgets() {
+    open fun updateWidgets() {
         updateWidgets(null)
     }
 }

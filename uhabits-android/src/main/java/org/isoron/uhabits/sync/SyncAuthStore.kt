@@ -5,7 +5,7 @@ import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
-class SyncAuthStore(context: Context) {
+open class SyncAuthStore(context: Context) {
     private val prefs: SharedPreferences by lazy {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
@@ -19,7 +19,7 @@ class SyncAuthStore(context: Context) {
         )
     }
 
-    fun save(session: SyncSession) {
+    open fun save(session: SyncSession) {
         prefs.edit()
             .putString(KEY_ACCESS_TOKEN, session.accessToken)
             .putString(KEY_REFRESH_TOKEN, session.refreshToken)
@@ -29,7 +29,7 @@ class SyncAuthStore(context: Context) {
             .apply()
     }
 
-    fun load(): SyncSession? {
+    open fun load(): SyncSession? {
         val accessToken = prefs.getString(KEY_ACCESS_TOKEN, null) ?: return null
         val refreshToken = prefs.getString(KEY_REFRESH_TOKEN, null) ?: return null
         val userId = prefs.getString(KEY_USER_ID, null) ?: return null
@@ -42,7 +42,7 @@ class SyncAuthStore(context: Context) {
         )
     }
 
-    fun clear() {
+    open fun clear() {
         prefs.edit().clear().apply()
     }
 

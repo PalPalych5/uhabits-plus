@@ -615,6 +615,19 @@ class TodayScreenStateBuilderTest : BaseUnitTest() {
         assertEquals(true, state.motivations.contains("streak_milestone|Streak Habit|3"))
     }
 
+    @Test
+    fun testTodayScreenStateUnitAndTargetResolution() {
+        val h = numericalHabit("Meditation", 15_000, targetValue = 20.0, unit = "мин")
+        habitList.add(h)
+
+        val state = TodayScreenStateBuilder.build(habitList, today)
+        val item = state.sections.single().items.single()
+        assertEquals("мин", item.unit)
+        assertEquals(20.0, item.targetValue)
+        assertEquals(15.0, item.currentValue)
+        assertEquals(TodayHabitStatus.REMAINING, item.status)
+    }
+
     private fun booleanHabit(
         name: String,
         value: Int,
