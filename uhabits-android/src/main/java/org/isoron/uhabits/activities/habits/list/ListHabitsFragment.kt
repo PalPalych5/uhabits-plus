@@ -18,6 +18,7 @@ import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.activities.main.MainNavigationHost
 import org.isoron.uhabits.activities.main.SettingsAction
+import org.isoron.uhabits.activities.habits.edit.HabitTypeDialog
 import org.isoron.uhabits.activities.habits.list.views.HabitCardListAdapter
 import org.isoron.uhabits.core.models.HabitMatcher
 import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
@@ -203,6 +204,10 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == R.id.actionAddHabit) {
+            HabitTypeDialog().show(parentFragmentManager, "habitType")
+            return true
+        }
         if (item.itemId == R.id.actionSync) {
             triggerManualSync()
             return true

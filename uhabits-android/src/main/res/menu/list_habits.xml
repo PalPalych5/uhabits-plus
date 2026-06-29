@@ -24,6 +24,12 @@
     tools:context=".MainActivity">
 
     <item
+        android:id="@+id/actionAddHabit"
+        android:icon="@drawable/ic_toolbar_add"
+        android:title="@string/create_habit"
+        app:showAsAction="always" />
+
+    <item
         android:id="@+id/actionSync"
         android:icon="@drawable/ic_action_sync"
         android:title="@string/sync_now"

@@ -13,6 +13,8 @@ import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.ScrollView
+import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
@@ -26,7 +28,6 @@ import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.ui.screens.habits.today.TodayScreenStateBuilder
 import org.isoron.uhabits.intents.IntentFactory
-import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import org.isoron.uhabits.sync.SyncCoordinator
@@ -148,8 +149,35 @@ class TodayFragment : Fragment(), CommandRunner.Listener, SyncCoordinator.Listen
         }
         scrollView.addView(container)
 
+        container.addView(
+            TextView(context).apply {
+                text = context.getString(R.string.skip_day_dialog_message, remainingHabits.size)
+                textSize = 14f
+                setTextColor(0xFF9AA3AF.toInt())
+            }
+        )
+        container.addView(
+            TextView(context).apply {
+                text = context.getString(R.string.skip_day_dialog_impact)
+                textSize = 13f
+                setTextColor(0xFF9AA3AF.toInt())
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = (8 * resources.displayMetrics.density).toInt()
+                }
+            }
+        )
+
         val radioGroup = RadioGroup(context).apply {
             orientation = RadioGroup.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = (18 * resources.displayMetrics.density).toInt()
+            }
         }
         val radioAll = RadioButton(context).apply {
             id = View.generateViewId()
@@ -211,11 +239,14 @@ class TodayFragment : Fragment(), CommandRunner.Listener, SyncCoordinator.Listen
         }
         container.addView(noteEditText)
 
-        AlertDialog.Builder(context)
+        val dialog = AlertDialog.Builder(context)
             .setTitle(R.string.skip_day_dialog_title)
             .setView(scrollView)
             .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(android.R.string.ok) { _, _ ->
+            .setPositiveButton(R.string.skip_day_confirm, null)
+            .show()
+
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val note = noteEditText.text.toString()
                 val habitsToSkip = if (radioAll.isChecked) {
                     remainingHabits
@@ -240,9 +271,11 @@ class TodayFragment : Fragment(), CommandRunner.Listener, SyncCoordinator.Listen
                         notes = note
                     )
                     component.commandRunner.run(cmd)
+                    dialog.dismiss()
+                } else {
+                    Toast.makeText(context, R.string.skip_day_empty_selection, Toast.LENGTH_SHORT).show()
                 }
             }
-            .show()
     }
 
     override fun onStart() {

@@ -270,7 +270,7 @@ class ListHabitsScreen(
     }
 
     override fun showReportsScreen() {
-        (activity as MainNavigationHost).navigate(MainDestination.REPORTS)
+        (activity as MainNavigationHost).navigate(MainDestination.STATISTICS)
     }
 
     override fun showColorPicker(defaultColor: PaletteColor, callback: OnColorPickedCallback) {
