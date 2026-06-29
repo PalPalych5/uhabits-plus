@@ -24,8 +24,9 @@ import org.isoron.uhabits.activities.habits.edit.HabitTypeDialog
 import org.isoron.uhabits.activities.habits.list.ListHabitsDisplayMode
 import org.isoron.uhabits.activities.habits.list.ListHabitsFragment
 import org.isoron.uhabits.activities.habits.today.TodayFragment
-import org.isoron.uhabits.activities.reports.ReportsFragment
+import org.isoron.uhabits.activities.statistics.StatisticsFragment
 import org.isoron.uhabits.activities.settings.SettingsSectionFragment
+import org.isoron.uhabits.activities.settings.AccentColorManager
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 import org.isoron.uhabits.core.tasks.Task
@@ -44,6 +45,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     private val prefs get() = appComponent.preferences
     private var pureBlack = false
     private var currentTheme = 0
+    private var currentResolvedNightMode = false
     private var permissionAlreadyRequested = false
     private var updatingBottomNavigation = false
 
@@ -54,9 +56,11 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        AndroidThemeSwitcher(this, prefs).apply()
+        val themeSwitcher = AndroidThemeSwitcher(this, prefs)
+        themeSwitcher.apply()
         pureBlack = prefs.isPureBlackEnabled
         currentTheme = prefs.theme
+        currentResolvedNightMode = themeSwitcher.isNightMode
         prefs.addListener(this)
         Thread.setDefaultUncaughtExceptionHandler(BaseExceptionHandler(this))
 
@@ -88,10 +92,9 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         )
 
         setupBottomNavigation()
+        applyAccentColor()
         binding.bottomNavigation.menu.findItem(R.id.navigationToday)?.isVisible = todayVisible
-        binding.createHabitFab.setOnClickListener {
-            HabitTypeDialog().show(supportFragmentManager, "habitType")
-        }
+
         setupBackHandling()
         ensureCoreFragments()
         showDestination(navigationState.current)
@@ -107,7 +110,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
             val destination = when (item.itemId) {
                 R.id.navigationToday -> MainDestination.TODAY
                 R.id.navigationHabits -> MainDestination.HABITS
-                R.id.navigationReports -> MainDestination.REPORTS
+                R.id.navigationReports -> MainDestination.STATISTICS
                 R.id.navigationSettings -> MainDestination.SETTINGS
                 else -> return@setOnItemSelectedListener false
             }
@@ -145,7 +148,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         val fragment = when (destination) {
             MainDestination.TODAY -> TodayFragment()
             MainDestination.HABITS, MainDestination.ARCHIVE -> ListHabitsFragment()
-            MainDestination.REPORTS -> ReportsFragment()
+            MainDestination.STATISTICS -> StatisticsFragment()
             MainDestination.SETTINGS -> SettingsSectionFragment()
         }
         supportFragmentManager.beginTransaction()
@@ -186,7 +189,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         val itemId = when (destination.bottomItemDestination) {
             MainDestination.TODAY -> R.id.navigationToday
             MainDestination.HABITS -> R.id.navigationHabits
-            MainDestination.REPORTS -> R.id.navigationReports
+            MainDestination.STATISTICS -> R.id.navigationReports
             MainDestination.SETTINGS -> R.id.navigationSettings
             MainDestination.ARCHIVE -> R.id.navigationHabits
         }
@@ -211,7 +214,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     override fun setHabitCreationAvailable(available: Boolean) {
-        if (available) binding.createHabitFab.show() else binding.createHabitFab.hide()
+        // No-op: FAB is removed
     }
 
     override fun onSettingsAction(action: SettingsAction) {
@@ -287,7 +290,12 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                 Log.e("MainActivity", "Background sync setup failed", t)
             }
         }
-        if (prefs.theme != currentTheme || prefs.isPureBlackEnabled != pureBlack) {
+        applyAccentColor()
+        val resolvedNightMode = AndroidThemeSwitcher(this, prefs).isNightMode
+        if (prefs.theme != currentTheme ||
+            prefs.isPureBlackEnabled != pureBlack ||
+            resolvedNightMode != currentResolvedNightMode
+        ) {
             restartWithFade(MainActivity::class.java)
         }
     }
@@ -324,7 +332,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                 (supportFragmentManager.findFragmentByTag(TAG_HABITS) as? ListHabitsFragment)?.refresh(
                     reloadFromDatabase = true
                 )
-                (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? ReportsFragment)?.refresh()
+                (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.refresh()
 
                 prefs.syncLastUiRefreshReason = reason
                 prefs.syncLastUiRefreshAt = System.currentTimeMillis()
@@ -341,7 +349,20 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
             if (!visible && navigationState.current == MainDestination.TODAY) {
                 navigate(MainDestination.HABITS)
             }
+            applyAccentColor()
         }
+    }
+
+    override fun onSyncPreferencesChanged() {
+        runOnUiThread {
+            applyAccentColor()
+        }
+    }
+
+    private fun applyAccentColor() {
+        val colorStateList = AccentColorManager.getAccentColorStateList(this, prefs)
+        binding.bottomNavigation.itemIconTintList = colorStateList
+        binding.bottomNavigation.itemTextColor = colorStateList
     }
 
     private fun requestNotificationPermissionAndSchedule() {
@@ -372,7 +393,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     private fun tagFor(destination: MainDestination) = when (destination) {
         MainDestination.TODAY -> TAG_TODAY
         MainDestination.HABITS, MainDestination.ARCHIVE -> TAG_HABITS
-        MainDestination.REPORTS -> TAG_REPORTS
+        MainDestination.STATISTICS -> TAG_REPORTS
         MainDestination.SETTINGS -> TAG_SETTINGS
     }
 

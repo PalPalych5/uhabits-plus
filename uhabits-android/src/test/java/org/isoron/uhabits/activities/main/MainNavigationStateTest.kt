@@ -20,7 +20,7 @@ class MainNavigationStateTest {
         val state = MainNavigationState()
 
         assertTrue(state.navigate(MainDestination.HABITS))
-        assertTrue(state.navigate(MainDestination.REPORTS))
+        assertTrue(state.navigate(MainDestination.STATISTICS))
         assertEquals(MainDestination.HABITS, state.navigateBack())
         assertEquals(MainDestination.TODAY, state.navigateBack())
         assertNull(state.navigateBack())

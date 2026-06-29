@@ -4,7 +4,7 @@ enum class MainDestination {
     TODAY,
     HABITS,
     ARCHIVE,
-    REPORTS,
+    STATISTICS,
     SETTINGS;
 
     val bottomItemDestination: MainDestination

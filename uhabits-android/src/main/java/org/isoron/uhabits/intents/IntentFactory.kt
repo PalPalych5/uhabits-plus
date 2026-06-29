@@ -65,7 +65,7 @@ class IntentFactory() {
         MainActivity.intent(context, MainDestination.HABITS)
 
     fun startReportsActivity(context: Context) =
-        MainActivity.intent(context, MainDestination.REPORTS)
+        MainActivity.intent(context, MainDestination.STATISTICS)
 
     fun startTodayActivity(context: Context) =
         MainActivity.intent(context, MainDestination.TODAY)

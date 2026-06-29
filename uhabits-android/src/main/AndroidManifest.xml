@@ -111,7 +111,7 @@
         </activity>
 
         <activity
-            android:name=".activities.reports.ReportsActivity"
+            android:name=".activities.statistics.StatisticsActivity"
             android:label="@string/reports_title">
             <meta-data
                 android:name="android.support.PARENT_ACTIVITY"
