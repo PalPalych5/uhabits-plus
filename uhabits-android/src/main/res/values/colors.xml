@@ -110,4 +110,20 @@
     <color name="color_picker_on_surface_amoled">#F4F4F5</color>
     <color name="color_picker_on_surface_variant_amoled">#A7A9AF</color>
     <color name="color_picker_border_amoled">#29FFFFFF</color>
+
+    <!-- General Theme Surfaces and Backgrounds (used in Settings and custom UI) -->
+    <color name="theme_background_light">#F6F7F9</color>
+    <color name="theme_surface_light">#FFFFFF</color>
+    <color name="theme_surface_variant_light">#ECEFF3</color>
+    <color name="theme_border_light">#1F181C22</color>
+
+    <color name="theme_background_dark">#111318</color>
+    <color name="theme_surface_dark">#1A1D23</color>
+    <color name="theme_surface_variant_dark">#242830</color>
+    <color name="theme_border_dark">#1AFFFFFF</color>
+
+    <color name="theme_background_amoled">#000000</color>
+    <color name="theme_surface_amoled">#121212</color>
+    <color name="theme_surface_variant_amoled">#1A1A1A</color>
+    <color name="theme_border_amoled">#29FFFFFF</color>
 </resources>

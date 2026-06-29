@@ -129,6 +129,13 @@ open class Preferences(private val storage: Storage) {
         set(enabled) {
             storage.putBoolean("pref_pure_black", enabled)
         }
+
+    open var accentColor: String
+        get() = storage.getString("pref_accent_color", "preset:blue")
+        set(value) {
+            storage.putString("pref_accent_color", value)
+            notifySyncPreferencesChanged()
+        }
     open var isShortToggleEnabled: Boolean
         get() = storage.getBoolean("pref_short_toggle", true)
         set(enabled) {

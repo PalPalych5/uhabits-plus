@@ -317,8 +317,8 @@
     <string name="today_tier_ideal">Идеальный день: %1$d/%2$d</string>
     <string name="today_empty">Активных привычек не найдено.</string>
     <string name="today_empty_title">Привычек пока нет</string>
-    <string name="today_empty_subtitle">Создай первую привычку, чтобы собрать план дня.</string>
-    <string name="today_create_habit">Создать привычку</string>
+    <string name="today_empty_subtitle">Создайте привычку на вкладке Привычки.</string>
+    <string name="today_create_habit">Перейти к Привычкам</string>
     <string name="today_section_title">%1$s - %2$d/%3$d - %4$s мин</string>
     <string name="today_section_limits">Ограничения</string>
     <string name="today_section_routine">Режим</string>
@@ -369,6 +369,9 @@
     <string name="day_tier_normal">Норма</string>
     <string name="day_tier_ideal">Идеальный день</string>
     <string name="day_tier_optional">Опционально</string>
+    <string name="day_tier_badge_minimum">Минимум</string>
+    <string name="day_tier_badge_normal">Норма</string>
+    <string name="day_tier_badge_ideal">Идеал</string>
     <string name="habit_timer">Таймер привычки</string>
     <string name="timer_enabled">Включить таймер и Pomodoro</string>
     <string name="timer_finish">Завершить</string>
@@ -394,7 +397,7 @@
     <string name="block_name">Название сферы</string>
     <string name="save_block">Сохранить</string>
     <string name="block_name_validation">Название не может быть пустым</string>
-    <string name="reports_title">Отчёты</string>
+    <string name="reports_title">Статистика</string>
     <string name="reports_tab_day">День</string>
     <string name="reports_tab_week">Неделя</string>
     <string name="reports_tab_month">Месяц</string>
@@ -477,9 +480,57 @@
     <string name="pref_start_destination_title">Стартовый раздел</string>
     <string name="action_skip_day">Пропустить день</string>
     <string name="skip_day_dialog_title">Пропустить день</string>
+    <string name="skip_day_dialog_message">Применить пропуск к %1$d оставшимся привычкам, у которых сегодня ещё нет явной отметки.</string>
+    <string name="skip_day_dialog_impact">Уже выполненные привычки и введённые значения не изменятся. Пропуски не ломают серию и не меняют результат.</string>
     <string name="skip_day_all">Пропустить все оставшиеся привычки</string>
     <string name="skip_day_by_sphere">Пропустить оставшиеся привычки по сферам</string>
     <string name="skip_day_note_hint">Заметка дня (необязательно, скопируется в пропуски)</string>
+    <string name="skip_day_confirm">Пропустить</string>
     <string name="skip_day_empty_message">Нет оставшихся привычек для пропуска сегодня.</string>
+    <string name="skip_day_empty_selection">Выберите хотя бы одну сферу.</string>
     <string name="skip_day_other_sphere">Прочее</string>
+
+    <string name="today_filter_all">Все</string>
+    <string name="today_filter_streaks">Серии</string>
+    <string name="today_filter_comebacks">Возвращения</string>
+    <string name="today_filter_problems">Проблемы</string>
+    <string name="today_filter_best">Лучшие</string>
+    <string name="today_show_more">Показать еще</string>
+    <string name="today_show_less">Свернуть</string>
+    <string name="today_events_title">Аналитика и события</string>
+    <string name="pref_habits_today_title">Привычки и Сегодня</string>
+    <string name="pref_statistics_title">Статистика</string>
+    <string name="pref_data_backup_title">Данные и Резервные копии</string>
+    <string name="pref_developer_section_title">Разработчик</string>
+    <string name="reports_tab_year">Год</string>
+    <string name="reports_tab_all">Всё время</string>
+    <string name="reports_filter_all_spheres">Все сферы</string>
+    <string name="reports_filter_all_habits">Все привычки</string>
+    <string name="reports_filter_active_only">Только активные</string>
+    <string name="reports_filter_archived_only">Только в архиве</string>
+    <string name="reports_filter_all_goals">Все цели</string>
+    <string name="reports_filter_boolean_only">Только Да/Нет</string>
+    <string name="reports_filter_numerical_only">Только числовые</string>
+    <string name="reports_metric_completed_count">Выполнено раз</string>
+    <string name="reports_metric_focus_time">Время фокуса</string>
+    <string name="reports_metric_best_streak">Лучшая серия</string>
+    <string name="reports_metric_best_sphere">Лучшая сфера</string>
+    <string name="reports_metric_worst_sphere">Худшая сфера</string>
+    <string name="reports_metric_missed_goals">Пропущено целей</string>
+    <string name="reports_activity_calendar">Календарь активности</string>
+    <string name="reports_weekday_frequency">Частота по дням недели</string>
+    <string name="reports_loading">Расчет статистики...</string>
+    <string name="reports_chart_completion">Выполнение по времени</string>
+    <string name="reports_metric_completion_rate">Процент выполнения</string>
+
+    <!-- Settings Accent Color Strings -->
+    <string name="accent_color">Акцентный цвет</string>
+    <string name="color_blue">Синий</string>
+    <string name="color_red">Красный</string>
+    <string name="color_orange">Оранжевый</string>
+    <string name="color_green">Зелёный</string>
+    <string name="color_teal">Бирюзовый</string>
+    <string name="color_purple">Фиолетовый</string>
+    <string name="color_pink">Розовый</string>
+    <string name="color_custom">Пользовательский</string>
 </resources>

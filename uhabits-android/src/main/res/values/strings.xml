@@ -274,8 +274,8 @@
     <string name="today_tier_ideal">Ideal day: %1$d/%2$d</string>
     <string name="today_empty">No active habits found.</string>
     <string name="today_empty_title">No habits yet</string>
-    <string name="today_empty_subtitle">Create your first habit to build your daily plan.</string>
-    <string name="today_create_habit">Create habit</string>
+    <string name="today_empty_subtitle">Create a habit on the Habits tab.</string>
+    <string name="today_create_habit">Go to Habits</string>
     <string name="today_section_title">%1$s - %2$d/%3$d - %4$s min</string>
     <string name="today_section_limits">Limits</string>
     <string name="today_section_routine">Routine</string>
@@ -329,6 +329,9 @@
     <string name="day_tier_normal">Normal</string>
     <string name="day_tier_ideal">Ideal day</string>
     <string name="day_tier_optional">Optional</string>
+    <string name="day_tier_badge_minimum">Minimum</string>
+    <string name="day_tier_badge_normal">Normal</string>
+    <string name="day_tier_badge_ideal">Ideal</string>
     <string name="habit_timer">Habit timer</string>
     <string name="timer_enabled">Enable timer and Pomodoro</string>
     <string name="timer_finish">Finish</string>
@@ -354,7 +357,7 @@
     <string name="block_name">Sphere Name</string>
     <string name="save_block">Save</string>
     <string name="block_name_validation">Name cannot be blank</string>
-    <string name="reports_title">Reports</string>
+    <string name="reports_title">Statistics</string>
     <string name="reports_tab_day">Day</string>
     <string name="reports_tab_week">Week</string>
     <string name="reports_tab_month">Month</string>
@@ -474,9 +477,57 @@
     <string name="pref_start_destination_title">Start destination</string>
     <string name="action_skip_day">Skip day</string>
     <string name="skip_day_dialog_title">Skip day</string>
+    <string name="skip_day_dialog_message">Apply skip to %1$d remaining habits that still have no explicit entry today.</string>
+    <string name="skip_day_dialog_impact">Completed habits and already entered values stay untouched. Skipped habits keep scores and streaks unchanged.</string>
     <string name="skip_day_all">Skip all remaining habits</string>
     <string name="skip_day_by_sphere">Skip remaining habits by area/sphere</string>
     <string name="skip_day_note_hint">Day note (optional, copies to skipped habits)</string>
+    <string name="skip_day_confirm">Skip</string>
     <string name="skip_day_empty_message">No remaining habits to skip today.</string>
+    <string name="skip_day_empty_selection">Select at least one area to skip.</string>
     <string name="skip_day_other_sphere">Other / Unassigned</string>
+
+    <string name="today_filter_all">All</string>
+    <string name="today_filter_streaks">Streaks</string>
+    <string name="today_filter_comebacks">Comebacks</string>
+    <string name="today_filter_problems">Problems</string>
+    <string name="today_filter_best">Best</string>
+    <string name="today_show_more">Show more</string>
+    <string name="today_show_less">Show less</string>
+    <string name="today_events_title">Analytics and events</string>
+    <string name="pref_habits_today_title">Habits &amp; Today</string>
+    <string name="pref_statistics_title">Statistics</string>
+    <string name="pref_data_backup_title">Data &amp; Backup</string>
+    <string name="pref_developer_section_title">Developer</string>
+    <string name="reports_tab_year">Year</string>
+    <string name="reports_tab_all">All Time</string>
+    <string name="reports_filter_all_spheres">All Spheres</string>
+    <string name="reports_filter_all_habits">All Habits</string>
+    <string name="reports_filter_active_only">Active Only</string>
+    <string name="reports_filter_archived_only">Archived Only</string>
+    <string name="reports_filter_all_goals">All Goals</string>
+    <string name="reports_filter_boolean_only">Yes/No Only</string>
+    <string name="reports_filter_numerical_only">Numerical Only</string>
+    <string name="reports_metric_completed_count">Completed</string>
+    <string name="reports_metric_focus_time">Focus Time</string>
+    <string name="reports_metric_best_streak">Best Streak</string>
+    <string name="reports_metric_best_sphere">Best Sphere</string>
+    <string name="reports_metric_worst_sphere">Worst Sphere</string>
+    <string name="reports_metric_missed_goals">Missed Goals</string>
+    <string name="reports_activity_calendar">Activity Calendar</string>
+    <string name="reports_weekday_frequency">Weekday Frequency</string>
+    <string name="reports_loading">Calculating statistics...</string>
+    <string name="reports_chart_completion">Completion over time</string>
+    <string name="reports_metric_completion_rate">Success Rate</string>
+
+    <!-- Settings Accent Color Strings -->
+    <string name="accent_color">Accent color</string>
+    <string name="color_blue">Blue</string>
+    <string name="color_red">Red</string>
+    <string name="color_orange">Orange</string>
+    <string name="color_green">Green</string>
+    <string name="color_teal">Teal</string>
+    <string name="color_purple">Purple</string>
+    <string name="color_pink">Pink</string>
+    <string name="color_custom">Custom</string>
 </resources>

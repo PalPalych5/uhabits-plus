@@ -19,8 +19,10 @@
 package org.isoron.uhabits.activities.common.dialogs
 
 import android.content.Context
-import android.content.DialogInterface
-import androidx.appcompat.app.AlertDialog
+import android.view.LayoutInflater
+import android.widget.Button
+import android.widget.TextView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.isoron.uhabits.R
 import org.isoron.uhabits.core.ui.callbacks.OnConfirmedCallback
 import org.isoron.uhabits.inject.ActivityContext
@@ -32,18 +34,32 @@ class ConfirmDeleteDialog(
     @ActivityContext context: Context,
     callback: OnConfirmedCallback,
     quantity: Int
-) : AlertDialog(context) {
+) : androidx.appcompat.app.AlertDialog(
+    MaterialAlertDialogBuilder(context).create().context
+) {
     init {
         val res = context.resources
-        setTitle(res.getQuantityString(R.plurals.delete_habits_title, quantity))
-        setMessage(res.getQuantityString(R.plurals.delete_habits_message, quantity))
-        setButton(
-            BUTTON_POSITIVE,
-            res.getString(R.string.yes)
-        ) { dialog: DialogInterface?, which: Int -> callback.onConfirmed() }
-        setButton(
-            BUTTON_NEGATIVE,
-            res.getString(R.string.no)
-        ) { dialog: DialogInterface?, which: Int -> }
+        // Use the dialog's own themed context so ?android:attr/textColorPrimary
+        // resolves correctly (dark on light dialog surface, not white on white).
+        val view = LayoutInflater.from(this.context)
+            .inflate(R.layout.dialog_custom_confirm, null)
+        val dialogTitle  = view.findViewById<TextView>(R.id.dialog_title)
+        val dialogMessage= view.findViewById<TextView>(R.id.dialog_message)
+        val btnNegative  = view.findViewById<Button>(R.id.button_negative)
+        val btnPositive  = view.findViewById<Button>(R.id.button_positive)
+
+        dialogTitle.text  = res.getQuantityString(R.plurals.delete_habits_title, quantity)
+        dialogMessage.text= res.getQuantityString(R.plurals.delete_habits_message, quantity)
+
+        btnNegative.text = context.getString(android.R.string.cancel)
+        btnPositive.text = context.getString(android.R.string.ok)
+        btnPositive.setTextColor(0xFFD32F2F.toInt()) // Destructive Red
+
+        btnNegative.setOnClickListener { dismiss() }
+        btnPositive.setOnClickListener {
+            callback.onConfirmed()
+            dismiss()
+        }
+        setView(view)
     }
 }

@@ -1,4 +1,5 @@
-<?xml version="1.0" encoding="utf-8"?><!--
+<?xml version="1.0" encoding="utf-8"?>
+<!--
   ~ Copyright (C) 2016-2025 Álinson Santos Xavier <git@axavier.org>
   ~
   ~ This file is part of Loop Habit Tracker.
@@ -20,6 +21,7 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
         xmlns:app="http://schemas.android.com/apk/res-auto">
 
+    <!-- 1. Внешний вид -->
     <PreferenceCategory
             android:key="appearanceCategory"
             android:title="@string/appearance">
@@ -43,10 +45,58 @@
                 app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
+                android:defaultValue="false"
+                android:key="pref_disable_animation"
+                android:summary="@string/pref_animations_description"
+                android:title="@string/pref_animations_title"
+                app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
                 android:defaultValue="true"
                 android:key="pref_pure_black"
                 android:summary="@string/pure_black_description"
                 android:title="@string/use_pure_black"
+                app:iconSpaceReserved="false" />
+
+        <ListPreference
+                android:key="pref_first_weekday"
+                android:title="@string/first_day_of_the_week"
+                app:iconSpaceReserved="false" />
+
+        <ListPreference
+                android:defaultValue="255"
+                android:entries="@array/widget_opacity_entries"
+                android:entryValues="@array/widget_opacity_values"
+                android:key="pref_widget_opacity"
+                android:summary="@string/widget_opacity_description"
+                android:title="@string/widget_opacity_title"
+                app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+    <!-- 2. Привычки и Сегодня -->
+    <PreferenceCategory
+            android:key="habitsTodayCategory"
+            android:title="@string/pref_habits_today_title">
+
+        <SwitchPreferenceCompat
+                android:defaultValue="true"
+                android:key="pref_enable_habit_spheres"
+                android:summary="@string/pref_enable_habit_spheres_summary"
+                android:title="@string/pref_enable_habit_spheres_title"
+                app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="configureSpheres"
+                android:summary="@string/configure_spheres_summary"
+                android:title="@string/configure_spheres"
+                app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+                android:defaultValue="true"
+                android:key="pref_enable_day_tiers"
+                android:summary="@string/pref_enable_day_tiers_summary"
+                android:title="@string/pref_enable_day_tiers_title"
                 app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
@@ -64,31 +114,17 @@
                 app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
-                android:defaultValue="false"
-                android:key="pref_disable_animation"
-                android:summary="@string/pref_animations_description"
-                android:title="@string/pref_animations_title"
-                app:iconSpaceReserved="false" />
-
-        <ListPreference
-                android:defaultValue="255"
-                android:entries="@array/widget_opacity_entries"
-                android:entryValues="@array/widget_opacity_values"
-                android:key="pref_widget_opacity"
-                android:summary="@string/widget_opacity_description"
-                android:title="@string/widget_opacity_title"
-                app:iconSpaceReserved="false" />
-
-        <ListPreference
-                android:key="pref_first_weekday"
-                android:title="@string/first_day_of_the_week"
+                android:defaultValue="true"
+                android:key="pref_skip_enabled"
+                android:summary="@string/pref_skip_description"
+                android:title="@string/pref_skip_title"
                 app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
-                android:defaultValue="true"
-                android:key="pref_show_today_tab"
-                android:summary="@string/pref_show_today_tab_description"
-                android:title="@string/pref_show_today_tab_title"
+                android:defaultValue="false"
+                android:key="pref_unknown_enabled"
+                android:summary="@string/pref_unknown_description"
+                android:title="@string/pref_unknown_title"
                 app:iconSpaceReserved="false" />
 
         <ListPreference
@@ -100,64 +136,25 @@
                 android:summary="%s"
                 app:iconSpaceReserved="false" />
 
-    </PreferenceCategory>
-
-    <PreferenceCategory
-        android:key="organizationCategory"
-        android:title="@string/organization">
+        <SwitchPreferenceCompat
+                android:defaultValue="true"
+                android:key="pref_show_today_tab"
+                android:summary="@string/pref_show_today_tab_description"
+                android:title="@string/pref_show_today_tab_title"
+                app:iconSpaceReserved="false" />
 
         <Preference
-            android:key="configureSpheres"
-            android:summary="@string/configure_spheres_summary"
-            android:title="@string/configure_spheres"
-            app:iconSpaceReserved="false" />
+                android:key="openArchive"
+                android:summary="@string/open_archive_summary"
+                android:title="@string/open_archive"
+                app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
-            android:defaultValue="true"
-            android:key="pref_enable_day_tiers"
-            android:summary="@string/pref_enable_day_tiers_summary"
-            android:title="@string/pref_enable_day_tiers_title"
-            app:iconSpaceReserved="false" />
-
-        <SwitchPreferenceCompat
-            android:defaultValue="true"
-            android:key="pref_enable_habit_spheres"
-            android:summary="@string/pref_enable_habit_spheres_summary"
-            android:title="@string/pref_enable_habit_spheres_title"
-            app:iconSpaceReserved="false" />
-
-        <Preference
-            android:key="openArchive"
-            android:summary="@string/open_archive_summary"
-            android:title="@string/open_archive"
-            app:iconSpaceReserved="false" />
-
-        <SwitchPreferenceCompat
-            android:defaultValue="true"
-            android:key="pref_midnight_delay"
-            android:summary="@string/pref_midnight_delay_description"
-            android:title="@string/pref_midnight_delay_title"
-            app:iconSpaceReserved="false" />
-
-        <SwitchPreferenceCompat
-            android:defaultValue="true"
-            android:key="pref_skip_enabled"
-            android:summary="@string/pref_skip_description"
-            android:title="@string/pref_skip_title"
-            app:iconSpaceReserved="false" />
-
-        <SwitchPreferenceCompat
-            android:defaultValue="false"
-            android:key="pref_unknown_enabled"
-            android:summary="@string/pref_unknown_description"
-            android:title="@string/pref_unknown_title"
-            app:iconSpaceReserved="false" />
-
-    </PreferenceCategory>
-
-    <PreferenceCategory
-            android:key="reminderCategory"
-            android:title="@string/reminder">
+                android:defaultValue="true"
+                android:key="pref_midnight_delay"
+                android:summary="@string/pref_midnight_delay_description"
+                android:title="@string/pref_midnight_delay_title"
+                app:iconSpaceReserved="false" />
 
         <Preference
                 android:key="reminderSound"
@@ -179,64 +176,29 @@
 
     </PreferenceCategory>
 
+    <!-- 3. Статистика -->
     <PreferenceCategory
-            android:key="syncCategory"
-            android:title="@string/sync_title">
+            android:key="statisticsCategory"
+            android:title="@string/pref_statistics_title">
 
-            <SwitchPreferenceCompat
-                    android:key="pref_sync_enabled"
-                    android:defaultValue="false"
-                    android:title="@string/sync_enable_title"
-                    android:summary="@string/sync_enable_summary"
-                    app:iconSpaceReserved="false" />
+        <Preference
+                android:key="softResetStatistics"
+                android:title="@string/start_statistics_over"
+                android:summary="@string/count_statistics_from_date"
+                app:iconSpaceReserved="false" />
 
-            <Preference
-                    android:key="syncAccount"
-                    android:title="@string/sync_account_title"
-                    android:summary="@string/sync_signed_out"
-                    app:iconSpaceReserved="false" />
-
-            <Preference
-                    android:key="syncSignIn"
-                    android:title="@string/sync_sign_in"
-                    android:summary="@string/sync_sign_in_summary"
-                    app:iconSpaceReserved="false" />
-
-            <Preference
-                    android:key="syncSignOut"
-                    android:title="@string/sync_sign_out"
-                    android:summary="@string/sync_sign_out_summary"
-                    app:iconSpaceReserved="false" />
-
-            <Preference
-                    android:key="syncStatus"
-                    android:title="@string/sync_status_title"
-                    android:summary="@string/sync_status_disabled"
-                    app:iconSpaceReserved="false" />
-
-            <Preference
-                    android:key="syncNow"
-                    android:title="@string/sync_now"
-                    android:summary="@string/sync_now_summary"
-                    app:iconSpaceReserved="false" />
-
-            <Preference
-                    android:key="syncReview"
-                    android:title="@string/sync_review_required_title"
-                    android:summary="@string/sync_review_required_summary"
-                    app:iconSpaceReserved="false" />
-
-            <Preference
-                    android:key="syncWarning"
-                    android:title="@string/sync_warning_title"
-                    android:summary="@string/sync_warning_summary"
-                    app:iconSpaceReserved="false" />
+        <Preference
+                android:key="hardResetStatistics"
+                android:title="@string/reset_statistics"
+                android:summary="@string/delete_entries_forever"
+                app:iconSpaceReserved="false" />
 
     </PreferenceCategory>
 
+    <!-- 4. Данные и резервное копирование -->
     <PreferenceCategory
             android:key="dataCategory"
-            android:title="@string/data_preferences">
+            android:title="@string/pref_data_backup_title">
 
         <Preference
                 android:key="backupStatus"
@@ -299,30 +261,69 @@
                 app:iconSpaceReserved="false" />
 
         <Preference
-                android:key="softResetStatistics"
-                android:title="@string/start_statistics_over"
-                android:summary="@string/count_statistics_from_date"
-                app:iconSpaceReserved="false" />
-
-        <Preference
-                android:key="hardResetStatistics"
-                android:title="@string/reset_statistics"
-                android:summary="@string/delete_entries_forever"
-                app:iconSpaceReserved="false" />
-
-    </PreferenceCategory>
-
-    <PreferenceCategory
-            android:key="pref_key_debug"
-            android:title="@string/troubleshooting">
-
-        <Preference
                 android:key="bugReport"
                 android:title="@string/generate_bug_report"
                 app:iconSpaceReserved="false" />
 
     </PreferenceCategory>
 
+    <!-- 5. Синхронизация -->
+    <PreferenceCategory
+            android:key="syncCategory"
+            android:title="@string/sync_title">
+
+        <SwitchPreferenceCompat
+                android:key="pref_sync_enabled"
+                android:defaultValue="false"
+                android:title="@string/sync_enable_title"
+                android:summary="@string/sync_enable_summary"
+                app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="syncAccount"
+                android:title="@string/sync_account_title"
+                android:summary="@string/sync_signed_out"
+                app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="syncSignIn"
+                android:title="@string/sync_sign_in"
+                android:summary="@string/sync_sign_in_summary"
+                app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="syncSignOut"
+                android:title="@string/sync_sign_out"
+                android:summary="@string/sync_sign_out_summary"
+                app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="syncStatus"
+                android:title="@string/sync_status_title"
+                android:summary="@string/sync_status_disabled"
+                app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="syncNow"
+                android:title="@string/sync_now"
+                android:summary="@string/sync_now_summary"
+                app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="syncReview"
+                android:title="@string/sync_review_required_title"
+                android:summary="@string/sync_review_required_summary"
+                app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="syncWarning"
+                android:title="@string/sync_warning_title"
+                android:summary="@string/sync_warning_summary"
+                app:iconSpaceReserved="false" />
+
+    </PreferenceCategory>
+
+    <!-- 6. Справка -->
     <PreferenceCategory
             android:key="linksCategory"
             android:title="@string/help_category">
@@ -344,9 +345,44 @@
 
     </PreferenceCategory>
 
+    <!-- 7. Настройки разработчика -->
     <PreferenceCategory
-            android:key="demoCategory"
-            android:title="@string/demo_data_category_title">
+            android:key="devCategory"
+            android:title="@string/pref_developer_section_title">
+
+        <SwitchPreferenceCompat
+                android:defaultValue="false"
+                android:key="pref_developer"
+                android:title="@string/developer_mode_title"
+                app:iconSpaceReserved="false" />
+
+        <EditTextPreference
+                android:defaultValue=""
+                android:key="pref_sync_base_url"
+                android:title="@string/supabase_url_title"
+                app:iconSpaceReserved="false" />
+
+        <EditTextPreference
+                android:defaultValue=""
+                android:key="pref_sync_key"
+                android:title="@string/supabase_anon_key_title"
+                app:iconSpaceReserved="false" />
+
+        <EditTextPreference
+                android:defaultValue=""
+                android:key="pref_encryption_key"
+                android:title="Encryption key"
+                app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="exportSyncDiagnostics"
+                android:title="@string/sync_export_diagnostics_title"
+                app:iconSpaceReserved="false" />
+
+        <Preference
+                android:key="refreshScreens"
+                android:title="@string/sync_refresh_screens_title"
+                app:iconSpaceReserved="false" />
 
         <Preference
                 android:key="seedDemoData"
@@ -359,49 +395,6 @@
                 android:title="@string/demo_data_reset_title"
                 android:summary="@string/demo_data_reset_summary"
                 app:iconSpaceReserved="false" />
-
-    </PreferenceCategory>
-
-    <PreferenceCategory
-            android:key="devCategory"
-            android:title="@string/developer_settings_title">
-
-        <SwitchPreferenceCompat
-                android:defaultValue="false"
-                android:key="pref_developer"
-                android:title="@string/developer_mode_title"
-                app:iconSpaceReserved="false" />
-
-        <EditTextPreference
-            android:defaultValue=""
-            android:key="pref_sync_base_url"
-            android:title="@string/supabase_url_title"
-            app:iconSpaceReserved="false"
-            />
-
-        <EditTextPreference
-            android:defaultValue=""
-            android:key="pref_sync_key"
-            android:title="@string/supabase_anon_key_title"
-            app:iconSpaceReserved="false"
-            />
-
-        <Preference
-            android:key="exportSyncDiagnostics"
-            android:title="@string/sync_export_diagnostics_title"
-            app:iconSpaceReserved="false" />
-
-        <Preference
-            android:key="refreshScreens"
-            android:title="@string/sync_refresh_screens_title"
-            app:iconSpaceReserved="false" />
-
-        <EditTextPreference
-            android:defaultValue=""
-            android:key="pref_encryption_key"
-            android:title="Encryption key"
-            app:iconSpaceReserved="false"
-            />
 
     </PreferenceCategory>
 
