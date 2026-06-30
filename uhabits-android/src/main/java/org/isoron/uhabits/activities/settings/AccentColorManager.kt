@@ -37,8 +37,7 @@ object AccentColorManager {
             value == "preset:pink" -> R.string.color_pink
             value.startsWith("custom:") -> {
                 val hex = value.removePrefix("custom:").uppercase()
-                val label = context.getString(R.string.color_custom)
-                return "$label · #$hex"
+                return "#$hex"
             }
             else -> R.string.color_blue
         }

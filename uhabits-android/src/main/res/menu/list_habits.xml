@@ -31,13 +31,13 @@
 
     <item
         android:id="@+id/actionSync"
-        android:icon="@drawable/ic_action_sync"
+        android:icon="@drawable/ic_toolbar_refresh"
         android:title="@string/sync_now"
         app:showAsAction="always" />
 
     <item
         android:id="@+id/action_filter"
-        android:icon="?iconFilter"
+        android:icon="@drawable/ic_toolbar_sort_descending"
         android:title="@string/filter"
         app:showAsAction="always">
         <menu>

@@ -30,6 +30,7 @@ import android.view.View
 import android.view.View.MeasureSpec.EXACTLY
 import me.tatarka.inject.annotations.Inject
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Entry.Companion.NO
 import org.isoron.uhabits.core.models.Entry.Companion.SKIP
@@ -132,9 +133,10 @@ class CheckmarkButtonView(
 
     private inner class Drawer {
         private val rect = RectF()
-        private val bgColor = sres.getColor(R.attr.cardBgColor)
-        private val lowContrastColor = sres.getColor(R.attr.contrast40)
-        private val mediumContrastColor = sres.getColor(R.attr.contrast60)
+        private val palette = MainTabsThemeBridge.resolve(context)
+        private val bgColor = palette.surface
+        private val lowContrastColor = MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.55f)
+        private val mediumContrastColor = MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.82f)
         private val pNotesIndicator = Paint()
 
         private val paint = TextPaint().apply {

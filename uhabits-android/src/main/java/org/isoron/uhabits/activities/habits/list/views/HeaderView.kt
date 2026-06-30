@@ -21,7 +21,6 @@ package org.isoron.uhabits.activities.habits.list.views
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
@@ -30,6 +29,7 @@ import android.view.View.MeasureSpec.EXACTLY
 import org.isoron.platform.time.JavaLocalDateFormatter
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.common.views.ScrollableChart
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.utils.MidnightTimer
@@ -47,6 +47,7 @@ class HeaderView(
 ) : ScrollableChart(context),
     Preferences.Listener,
     MidnightTimer.MidnightListener {
+    private val palette get() = MainTabsThemeBridge.resolve(context)
 
     private var drawer = Drawer()
 
@@ -58,7 +59,7 @@ class HeaderView(
 
     init {
         setScrollerBucketSize(dim(R.dimen.checkmarkWidth).toInt())
-        setBackgroundColor(sres.getColor(R.attr.headerBackgroundColor))
+        setBackgroundColor(palette.surface)
         elevation = dp(2.0f)
     }
 
@@ -105,12 +106,11 @@ class HeaderView(
         private val rect = RectF()
         private val dateFormatter = JavaLocalDateFormatter(Locale.getDefault())
         private val paint = TextPaint().apply {
-            color = Color.BLACK
             isAntiAlias = true
             textSize = dim(R.dimen.tinyTextSize)
             textAlign = Paint.Align.CENTER
             typeface = Typeface.DEFAULT_BOLD
-            color = sres.getColor(R.attr.contrast60)
+            color = palette.onSurfaceVariant
         }
 
         fun draw(canvas: Canvas) {

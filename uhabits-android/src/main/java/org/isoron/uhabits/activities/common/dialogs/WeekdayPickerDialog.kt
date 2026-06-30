@@ -2,28 +2,23 @@
  * Copyright (C) 2016-2025 Álinson Santos Xavier <git@axavier.org>
  *
  * This file is part of Loop Habit Tracker.
- *
- * Loop Habit Tracker is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.
- *
- * Loop Habit Tracker is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 package org.isoron.uhabits.activities.common.dialogs
 
 import android.app.Dialog
 import android.content.DialogInterface
-import android.content.DialogInterface.OnMultiChoiceClickListener
 import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.CheckBox
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatDialogFragment
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.isoron.platform.time.DayOfWeek
 import org.isoron.platform.time.JavaLocalDateFormatter
 import org.isoron.uhabits.R
@@ -32,16 +27,11 @@ import java.util.Locale
 
 /**
  * Dialog that allows the user to pick one or more days of the week.
+ * Rebuilt to use the transparent dialog host and explicitly styled CheckBoxes.
  */
-class WeekdayPickerDialog :
-    AppCompatDialogFragment(),
-    OnMultiChoiceClickListener,
-    DialogInterface.OnClickListener {
+class WeekdayPickerDialog : AppCompatDialogFragment() {
     private var selectedDays: BooleanArray? = null
     private var listener: OnWeekdaysPickedListener? = null
-    override fun onClick(dialog: DialogInterface, which: Int, isChecked: Boolean) {
-        selectedDays!![which] = isChecked
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,27 +45,72 @@ class WeekdayPickerDialog :
         outState.putBooleanArray(KEY_SELECTED_DAYS, selectedDays)
     }
 
-    override fun onClick(dialog: DialogInterface, which: Int) {
-        if (listener != null) listener!!.onWeekdaysSet(WeekdayList(selectedDays))
-    }
-
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-        val builder = AlertDialog.Builder(
-            requireActivity()
-        )
-        builder
-            .setTitle(R.string.select_weekdays)
-            .setMultiChoiceItems(
-                JavaLocalDateFormatter(Locale.getDefault()).longWeekdayNames(DayOfWeek.SATURDAY),
-                selectedDays,
-                this
-            )
-            .setPositiveButton(android.R.string.yes, this)
-            .setNegativeButton(
-                android.R.string.cancel
-            ) { _: DialogInterface?, _: Int -> dismiss() }
+        val dialog = MaterialAlertDialogBuilder(requireActivity(), R.style.CustomTransparentDialogTheme).create()
+        val dialogContext = dialog.context
 
-        return builder.create()
+        val view = LayoutInflater.from(dialogContext)
+            .inflate(R.layout.dialog_custom_view, null)
+        val dialogTitle = view.findViewById<TextView>(R.id.dialog_title)
+        val customContainer = view.findViewById<FrameLayout>(R.id.custom_container)
+        val btnNegative = view.findViewById<Button>(R.id.button_negative)
+        val btnPositive = view.findViewById<Button>(R.id.button_positive)
+
+        dialogTitle.text = getString(R.string.select_weekdays)
+        btnNegative.text = getString(android.R.string.cancel)
+        btnNegative.setOnClickListener { dialog.dismiss() }
+
+        btnPositive.text = getString(android.R.string.yes)
+        btnPositive.setOnClickListener {
+            listener?.onWeekdaysSet(WeekdayList(selectedDays))
+            dialog.dismiss()
+        }
+
+        val density = resources.displayMetrics.density
+        val scroll = ScrollView(dialogContext).apply {
+            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            isFillViewport = true
+        }
+
+        val layout = LinearLayout(dialogContext).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            val padding = (4 * density).toInt()
+            setPadding(0, padding, 0, padding)
+        }
+
+        val weekdayNames = JavaLocalDateFormatter(Locale.getDefault()).longWeekdayNames(DayOfWeek.SATURDAY)
+        weekdayNames.forEachIndexed { index, name ->
+            val checkBox = CheckBox(dialogContext).apply {
+                text = name
+                isChecked = selectedDays?.getOrNull(index) ?: false
+                setOnCheckedChangeListener { _, isChecked ->
+                    selectedDays?.set(index, isChecked)
+                }
+                textSize = 15f
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    val margin = (4 * density).toInt()
+                    setMargins(0, margin, 0, margin)
+                }
+            }
+            CustomDialogs.styleCheckBox(checkBox)
+            layout.addView(checkBox)
+        }
+
+        scroll.addView(layout)
+        customContainer.addView(scroll)
+
+        dialog.setView(view, 0, 0, 0, 0)
+
+        dialog.setOnShowListener {
+            CustomDialogs.styleDialogShell(dialog, view)
+            CustomDialogs.styleText(dialogTitle, null, btnNegative, btnPositive, null, isDestructive = false)
+        }
+
+        return dialog
     }
 
     fun setListener(listener: OnWeekdaysPickedListener?) {

@@ -37,12 +37,14 @@ import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import com.google.android.material.tabs.TabLayout
 import org.isoron.platform.time.*
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.activities.main.MainNavigationHost
@@ -66,6 +68,7 @@ class StatisticsFragment : Fragment() {
     private val component
         get() = (requireContext().applicationContext as HabitsApplication).component
     private val sres get() = binding.root.sres
+    private val palette get() = MainTabsThemeBridge.resolve(requireContext())
 
     private enum class ReportTab { DAY, WEEK, MONTH, YEAR, ALL }
     private var currentTab = ReportTab.DAY
@@ -82,8 +85,20 @@ class StatisticsFragment : Fragment() {
 
         viewBinding = ActivityStatisticsBinding.inflate(inflater, container, false)
         binding.toolbar.applyToolbarInsets()
+        binding.root.setBackgroundColor(palette.background)
+        binding.toolbar.setBackgroundColor(palette.background)
+        binding.toolbar.setTitleTextColor(palette.onSurface)
+        binding.tabLayout.setBackgroundColor(palette.background)
+        binding.tabLayout.setTabTextColors(palette.onSurfaceVariant, palette.onSurface)
+        binding.tabLayout.setSelectedTabIndicatorColor(palette.accent)
+        binding.dateNavigationBar.setBackgroundColor(palette.surface)
+        binding.filtersScrollView.setBackgroundColor(palette.surface)
+        binding.tvDateRange.setTextColor(palette.onSurface)
+        binding.btnPrev.imageTintList = ColorStateList.valueOf(palette.onSurface)
+        binding.btnNext.imageTintList = ColorStateList.valueOf(palette.onSurface)
 
         val activity = requireActivity() as AppCompatActivity
+        activity.window.statusBarColor = palette.background
         activity.setSupportActionBar(binding.toolbar)
         activity.supportActionBar?.setDisplayHomeAsUpEnabled(false)
 
@@ -203,14 +218,10 @@ class StatisticsFragment : Fragment() {
         }
         binding.spinnerGoalType.adapter = goalAdapter
 
-        val isDarkTheme = themeSwitcher.currentTheme is org.isoron.uhabits.core.ui.views.DarkTheme
         val spinnerBg = GradientDrawable().apply {
-            setColor(if (isDarkTheme) 0x1AFFFFFF.toInt() else 0x0A000000.toInt())
+            setColor(palette.surfaceVariant)
             cornerRadius = dp(6f)
-            setStroke(
-                dp(1f).toInt(),
-                if (isDarkTheme) 0x25FFFFFF.toInt() else 0x15000000.toInt()
-            )
+            setStroke(dp(1f).toInt().coerceAtLeast(1), palette.border)
         }
         binding.spinnerSphere.background = spinnerBg
         binding.spinnerHabitStatus.background = spinnerBg
@@ -336,7 +347,7 @@ class StatisticsFragment : Fragment() {
             gravity = Gravity.CENTER
             textSize = 15f
             setPadding(0, dp(40f).toInt(), 0, 0)
-            setTextColor(sres.getColor(android.R.attr.textColorSecondary))
+            setTextColor(palette.onSurfaceVariant)
         }
         binding.reportContentContainer.addView(loadingText)
 
@@ -709,8 +720,12 @@ class StatisticsFragment : Fragment() {
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     dp(160f).toInt()
                 )
-                val accentColor = themeSwitcher.currentTheme.color(PaletteColor(17)).toInt()
-                setColor(accentColor)
+                setColor(palette.accent)
+                setSurfaceColors(
+                    textColor = palette.onSurfaceVariant,
+                    gridColor = palette.divider,
+                    backgroundColor = palette.surface
+                )
                 setScores(result.scoreChartData)
             }
             chartContent.addView(chart)
@@ -833,13 +848,13 @@ class StatisticsFragment : Fragment() {
         val titleView = TextView(requireContext()).apply {
             text = title
             textSize = 12f
-            setTextColor(sres.getColor(android.R.attr.textColorSecondary))
+            setTextColor(palette.onSurfaceVariant)
         }
         val valueView = TextView(requireContext()).apply {
             text = value
             textSize = 18f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(sres.getColor(android.R.attr.textColorPrimary))
+            setTextColor(palette.onSurface)
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(2f).toInt()
             }
@@ -954,7 +969,7 @@ class StatisticsFragment : Fragment() {
         val nameView = TextView(requireContext()).apply {
             text = name
             textSize = 14f
-            setTextColor(sres.getColor(android.R.attr.textColorPrimary))
+            setTextColor(palette.onSurface)
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
 
@@ -962,7 +977,7 @@ class StatisticsFragment : Fragment() {
             text = valueText
             textSize = 14f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(sres.getColor(android.R.attr.textColorPrimary))
+            setTextColor(palette.onSurface)
         }
 
         row.addView(dot)
@@ -984,7 +999,7 @@ class StatisticsFragment : Fragment() {
                 cornerRadius = dp(2f)
             }.let { filled ->
                 val track = GradientDrawable().apply {
-                    setColor(if (isDark) 0x20FFFFFF.toInt() else 0x15000000.toInt())
+                    setColor(palette.divider)
                     cornerRadius = dp(2f)
                 }
                 val ld = android.graphics.drawable.LayerDrawable(arrayOf(track, filled))
@@ -1016,14 +1031,14 @@ class StatisticsFragment : Fragment() {
         val nameView = TextView(requireContext()).apply {
             text = name
             textSize = 15f
-            setTextColor(sres.getColor(android.R.attr.textColorPrimary))
+            setTextColor(palette.onSurface)
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
 
         val valueView = TextView(requireContext()).apply {
             text = valueText
             textSize = 14f
-            setTextColor(themeSwitcher.currentTheme.color(PaletteColor(18)).toInt()) // grey text color
+            setTextColor(palette.onSurfaceVariant)
         }
 
         row.addView(iconView)
@@ -1061,13 +1076,13 @@ class StatisticsFragment : Fragment() {
         val titleView = TextView(requireContext()).apply {
             text = name
             textSize = 15f
-            setTextColor(sres.getColor(android.R.attr.textColorPrimary))
+            setTextColor(palette.onSurface)
         }
 
         val subtitleView = TextView(requireContext()).apply {
             text = subtitle
             textSize = 13f
-            setTextColor(themeSwitcher.currentTheme.color(PaletteColor(18)).toInt()) // grey text color
+            setTextColor(palette.onSurfaceVariant)
         }
 
         textContainer.addView(titleView)
@@ -1094,13 +1109,10 @@ class StatisticsFragment : Fragment() {
             val padding = dp(16f).toInt()
             setPadding(padding, padding, padding, padding)
 
-            val typedArray = requireContext().obtainStyledAttributes(intArrayOf(R.attr.cardBgColor))
-            val cardBg = typedArray.getColor(0, sres.getColor(android.R.color.white))
-            typedArray.recycle()
-
             background = GradientDrawable().apply {
-                setColor(cardBg)
+                setColor(palette.surface)
                 cornerRadius = dp(8f)
+                setStroke(dp(1f).toInt().coerceAtLeast(1), palette.border)
             }
         }
 
@@ -1108,10 +1120,7 @@ class StatisticsFragment : Fragment() {
             text = titleText
             textSize = 16f
             setTypeface(null, Typeface.BOLD)
-            val typedArray = requireContext().obtainStyledAttributes(intArrayOf(android.R.attr.textColorSecondary))
-            val titleColor = typedArray.getColor(0, sres.getColor(android.R.color.black))
-            typedArray.recycle()
-            setTextColor(titleColor)
+            setTextColor(palette.onSurface)
             val lp = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -1222,6 +1231,7 @@ class HeatmapView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val prefs = (context.applicationContext as HabitsApplication).component.preferences
+        val palette = MainTabsThemeBridge.resolve(context)
         val firstWeekday = prefs.firstWeekday
         val gridStart = startDate.startOfWeek(firstWeekday)
         val daysCount = gridStart.daysUntil(endDate) + 1
@@ -1235,11 +1245,11 @@ class HeatmapView @JvmOverloads constructor(
         val app = context.applicationContext as HabitsApplication
         val themeSwitcher = AndroidThemeSwitcher(context, app.component.preferences)
         val theme = themeSwitcher.currentTheme
-        val accentColor = theme.color(PaletteColor(17)).toInt()
+        val accentColor = palette.accent
         val isAMOLED = theme is org.isoron.uhabits.core.ui.views.PureBlackTheme
 
         // 1. Draw weekday labels (e.g. Пн, Ср, Пт) on the left
-        labelPaint.color = sres.getColor(R.attr.contrast40)
+        labelPaint.color = palette.onSurfaceVariant
         val dayNames = JavaLocalDateFormatter(Locale.getDefault()).shortWeekdayNames(firstWeekday)
         val showIndices = setOf(1, 3, 5)
         for (i in 0 until 7) {
@@ -1278,7 +1288,7 @@ class HeatmapView @JvmOverloads constructor(
                 val baseColor = if (rate > 0f) {
                     accentColor
                 } else {
-                    if (isAMOLED) 0x12FFFFFF.toInt() else if (isDarkTheme) 0x1AFFFFFF.toInt() else 0x1A000000.toInt()
+                    if (isAMOLED) MainTabsThemeBridge.withAlpha(palette.divider, 0.75f) else palette.divider
                 }
 
                 cellPaint.color = if (rate > 0f) {

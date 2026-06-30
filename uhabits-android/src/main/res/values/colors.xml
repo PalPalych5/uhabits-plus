@@ -90,26 +90,38 @@
 
     <color name="ic_launcher_background">#1976D2</color>
     <color name="color_background">@color/grey_200</color>
-    <color name="color_picker_background_light">#F6F7F9</color>
-    <color name="color_picker_surface_light">#FFFFFF</color>
-    <color name="color_picker_surface_variant_light">#ECEFF3</color>
-    <color name="color_picker_on_surface_light">#191C20</color>
-    <color name="color_picker_on_surface_variant_light">#626872</color>
-    <color name="color_picker_border_light">#1F181C22</color>
+    <color name="color_picker_background_light">#FFFFFFFF</color>
+    <color name="color_picker_surface_light">#FFFFFFFF</color>
+    <color name="color_picker_surface_variant_light">#FFF3F5F8</color>
+    <color name="color_picker_on_surface_light">#FF171A20</color>
+    <color name="color_picker_on_surface_variant_light">#FF667085</color>
+    <color name="color_picker_border_light">#FFD9DEE5</color>
+    <color name="color_picker_divider_light">#FFE7EBF0</color>
+    <color name="color_picker_slider_inactive_light">#FFD8DCE3</color>
+    <color name="color_picker_slider_thumb_stroke_light">#2E171A20</color>
+    <color name="color_picker_slider_focus_light">#14171A20</color>
     <color name="color_picker_danger_light">#B3261E</color>
-    <color name="color_picker_background_dark">#111318</color>
-    <color name="color_picker_surface_dark">#1A1D23</color>
-    <color name="color_picker_surface_variant_dark">#242830</color>
-    <color name="color_picker_on_surface_dark">#F1F2F5</color>
-    <color name="color_picker_on_surface_variant_dark">#AEB3BD</color>
-    <color name="color_picker_border_dark">#1AFFFFFF</color>
+    <color name="color_picker_background_dark">#FF1B1E26</color>
+    <color name="color_picker_surface_dark">#FF1F232D</color>
+    <color name="color_picker_surface_variant_dark">#FF262B36</color>
+    <color name="color_picker_on_surface_dark">#FFF3F5F7</color>
+    <color name="color_picker_on_surface_variant_dark">#FFA9B1BD</color>
+    <color name="color_picker_border_dark">#29313D4C</color>
+    <color name="color_picker_divider_dark">#FF303540</color>
+    <color name="color_picker_slider_inactive_dark">#FF2A2D33</color>
+    <color name="color_picker_slider_thumb_stroke_dark">#38FFFFFF</color>
+    <color name="color_picker_slider_focus_dark">#1FFFFFFF</color>
     <color name="color_picker_danger_dark">#FFB4AB</color>
-    <color name="color_picker_background_amoled">#000000</color>
-    <color name="color_picker_surface_amoled">#050607</color>
-    <color name="color_picker_surface_variant_amoled">#08090B</color>
-    <color name="color_picker_on_surface_amoled">#F4F4F5</color>
-    <color name="color_picker_on_surface_variant_amoled">#A7A9AF</color>
-    <color name="color_picker_border_amoled">#29FFFFFF</color>
+    <color name="color_picker_background_amoled">#FF000000</color>
+    <color name="color_picker_surface_amoled">#FF0B0B0D</color>
+    <color name="color_picker_surface_variant_amoled">#FF111216</color>
+    <color name="color_picker_on_surface_amoled">#FFF5F6F8</color>
+    <color name="color_picker_on_surface_variant_amoled">#FFA7ADB8</color>
+    <color name="color_picker_border_amoled">#242F3642</color>
+    <color name="color_picker_divider_amoled">#1AFFFFFF</color>
+    <color name="color_picker_slider_inactive_amoled">#FF1A1A1D</color>
+    <color name="color_picker_slider_thumb_stroke_amoled">#33FFFFFF</color>
+    <color name="color_picker_slider_focus_amoled">#1FF5F6F8</color>
 
     <!-- General Theme Surfaces and Backgrounds (used in Settings and custom UI) -->
     <color name="theme_background_light">#F6F7F9</color>
@@ -126,4 +138,11 @@
     <color name="theme_surface_amoled">#121212</color>
     <color name="theme_surface_variant_amoled">#1A1A1A</color>
     <color name="theme_border_amoled">#29FFFFFF</color>
+
+    <color name="theme_on_surface_light">#191C20</color>
+    <color name="theme_on_surface_variant_light">#626872</color>
+    <color name="theme_on_surface_dark">#F1F2F5</color>
+    <color name="theme_on_surface_variant_dark">#AEB3BD</color>
+    <color name="theme_on_surface_amoled">#F4F4F5</color>
+    <color name="theme_on_surface_variant_amoled">#A7A9AF</color>
 </resources>

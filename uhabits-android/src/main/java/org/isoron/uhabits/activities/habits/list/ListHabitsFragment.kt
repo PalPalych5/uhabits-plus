@@ -183,6 +183,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             )
         }
         updateMenuVisibility(menu)
+        rootView.applyToolbarIconTint(menu)
     }
 
     override fun onPrepareOptionsMenu(menu: Menu) {
@@ -200,6 +201,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             }
         }
         updateMenuVisibility(menu)
+        rootView.applyToolbarIconTint(menu)
         super.onPrepareOptionsMenu(menu)
     }
 
@@ -271,6 +273,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
         activity.supportActionBar?.setDisplayHomeAsUpEnabled(
             displayMode == ListHabitsDisplayMode.ARCHIVE
         )
+        rootView.applyToolbarIconTint()
     }
 
     private fun updateMenuVisibility(menu: Menu) {

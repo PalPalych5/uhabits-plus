@@ -46,6 +46,7 @@ import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
 import org.isoron.uhabits.activities.HabitsDirFinder
 import org.isoron.uhabits.activities.common.dialogs.CheckmarkDialog
+import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import org.isoron.uhabits.activities.common.dialogs.ConfirmDeleteDialog
 import org.isoron.uhabits.activities.common.dialogs.HistoryEditorDialog
 import org.isoron.uhabits.activities.common.dialogs.NumberDialog
@@ -305,16 +306,17 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
         }
 
         override fun showHardResetStatisticsConfirmation(callback: OnConfirmedCallback) {
-            AlertDialog.Builder(this@ShowHabitActivity)
-                .setTitle(R.string.reset_statistics)
-                .setMessage(
-                    getString(R.string.delete_entries_forever) + "\n\n" +
+            CustomDialogs.showConfirmDialog(
+                context = this@ShowHabitActivity,
+                title = getString(R.string.reset_statistics),
+                message = getString(R.string.delete_entries_forever) + "\n\n" +
                         getString(R.string.action_cannot_be_undone) + "\n" +
-                        getString(R.string.reset_statistics_backup_hint)
-                )
-                .setPositiveButton(R.string.delete) { _, _ -> callback.onConfirmed() }
-                .setNegativeButton(android.R.string.cancel, null)
-                .show()
+                        getString(R.string.reset_statistics_backup_hint),
+                isDestructive = true,
+                positiveText = getString(R.string.delete)
+            ) {
+                callback.onConfirmed()
+            }
         }
 
         override fun close() {
@@ -323,49 +325,38 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
     }
 
     private fun showStatisticsStartDateDialogInternal(callback: (LocalDate?) -> Unit) {
-        val options = arrayOf(
+        val options = listOf(
             getString(R.string.today),
             getString(R.string.this_monday),
             getString(R.string.next_monday),
             getString(R.string.select_date)
         )
-        AlertDialog.Builder(this)
-            .setTitle(R.string.count_statistics_from_date)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> callback(getToday())
-                    1 -> callback(thisMonday())
-                    2 -> callback(thisMonday().plus(7))
-                    else -> showDatePicker(callback)
-                }
+        CustomDialogs.showSingleChoiceDialog(
+            context = this,
+            title = getString(R.string.count_statistics_from_date),
+            options = options,
+            selectedIndex = -1,
+            neutralText = getString(R.string.clear),
+            onNeutral = { callback(null) }
+        ) { which ->
+            when (which) {
+                0 -> callback(getToday())
+                1 -> callback(thisMonday())
+                2 -> callback(thisMonday().plus(7))
+                else -> showDatePicker(callback)
             }
-            .setNeutralButton(R.string.clear) { _, _ -> callback(null) }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        }
     }
 
     private fun showDatePicker(callback: (LocalDate?) -> Unit) {
         val today = getToday()
-        val dialog = DatePickerDialog.newInstance(
-            object : DatePickerDialog.OnDateSetListener {
-                override fun onDateSet(
-                    dialog: DatePickerDialog?,
-                    year: Int,
-                    monthOfYear: Int,
-                    dayOfMonth: Int
-                ) {
-                    callback(LocalDate(year, monthOfYear + 1, dayOfMonth))
-                }
-
-                override fun onDateCleared(dialog: DatePickerDialog?) {
-                    callback(null)
-                }
-            },
-            today.year,
-            today.month - 1,
-            today.day
-        )
-        dialog.show(fragmentManager, "statisticsDatePicker")
+        CustomDialogs.showDatePickerDialog(
+            context = this,
+            title = getString(R.string.select_date),
+            initialDate = today
+        ) { date ->
+            callback(date)
+        }
     }
 
     private fun thisMonday(): LocalDate {

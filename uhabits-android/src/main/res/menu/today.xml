@@ -21,11 +21,12 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
     <item
         android:id="@+id/actionSync"
-        android:icon="@drawable/ic_action_sync"
+        android:icon="@drawable/ic_toolbar_refresh"
         android:title="@string/sync_now"
-        app:showAsAction="ifRoom" />
+        app:showAsAction="always" />
     <item
         android:id="@+id/actionSkipDay"
+        android:icon="@drawable/ic_toolbar_skip_day"
         android:title="@string/action_skip_day"
-        app:showAsAction="ifRoom" />
+        app:showAsAction="always" />
 </menu>

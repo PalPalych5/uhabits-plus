@@ -31,6 +31,7 @@ import android.view.View
 import android.widget.ArrayAdapter
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
+import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.DialogFragment
 import com.android.datetimepicker.date.DatePickerDialog
@@ -252,79 +253,92 @@ class EditHabitActivity : AppCompatActivity() {
 
         populateTargetType()
         binding.targetTypePicker.setOnClickListener {
-            val builder = AlertDialog.Builder(this)
-            val arrayAdapter = ArrayAdapter<String>(this, android.R.layout.select_dialog_item)
-            arrayAdapter.add(getString(R.string.target_type_at_least))
-            arrayAdapter.add(getString(R.string.target_type_at_most))
-            builder.setAdapter(arrayAdapter) { dialog, which ->
+            val options = listOf(
+                getString(R.string.target_type_at_least),
+                getString(R.string.target_type_at_most)
+            )
+            CustomDialogs.showSingleChoiceDialog(
+                context = this,
+                title = getString(R.string.target_type),
+                options = options,
+                selectedIndex = if (targetType == NumericalHabitType.AT_LEAST) 0 else 1
+            ) { which ->
                 targetType = when (which) {
                     0 -> NumericalHabitType.AT_LEAST
                     else -> NumericalHabitType.AT_MOST
                 }
                 populateTargetType()
-                dialog.dismiss()
             }
-            val dialog = builder.create()
-            dialog.dismissCurrentAndShow()
         }
 
         populateDayTier()
         binding.dayTierPicker.setOnClickListener {
             val tiers = DayTier.entries
-            val labels = tiers.map { getString(it.labelResId) }.toTypedArray()
-            AlertDialog.Builder(this)
-                .setItems(labels) { dialog, which ->
-                    dayTier = tiers[which]
-                    populateDayTier()
-                    dialog.dismiss()
-                }
-                .show()
+            val labels = tiers.map { getString(it.labelResId) }
+            CustomDialogs.showSingleChoiceDialog(
+                context = this,
+                title = getString(R.string.day_tier),
+                options = labels,
+                selectedIndex = tiers.indexOf(dayTier)
+            ) { which ->
+                dayTier = tiers[which]
+                populateDayTier()
+            }
         }
         binding.timerEnabledSwitch.isChecked = timerEnabled
 
         binding.habitBlockPicker.setOnClickListener {
             val component = (application as HabitsApplication).component
             val blocks = component.habitList.getBlocks()
-            val items = blocks.map { getBlockDisplayName(it) }.toTypedArray()
+            val items = blocks.map { getBlockDisplayName(it) }
 
-            AlertDialog.Builder(this)
-                .setTitle(R.string.habit_block)
-                .setItems(items) { dialog, which ->
-                    val selectedBlock = blocks[which]
-                    color = HabitColorDefaults.afterBlockChange(
-                        currentColor = color,
-                        newBlockId = selectedBlock.id,
-                        hasIndividualColor = hasIndividualColor,
-                        blocks = blocks
-                    )
-                    blockId = selectedBlock.id
-                    populateHabitBlock()
-                    updateColors()
-                    dialog.dismiss()
-                }
-                .setNeutralButton(R.string.manage_blocks) { dialog, _ ->
+            CustomDialogs.showSingleChoiceDialog(
+                context = this,
+                title = getString(R.string.habit_block),
+                options = items,
+                selectedIndex = blocks.indexOfFirst { it.id == blockId },
+                neutralText = getString(R.string.manage_blocks),
+                onNeutral = {
                     startActivity(android.content.Intent(this, org.isoron.uhabits.activities.blocks.ManageBlocksActivity::class.java))
-                    dialog.dismiss()
                 }
-                .show()
+            ) { which ->
+                val selectedBlock = blocks[which]
+                color = HabitColorDefaults.afterBlockChange(
+                    currentColor = color,
+                    newBlockId = selectedBlock.id,
+                    hasIndividualColor = hasIndividualColor,
+                    blocks = blocks
+                )
+                blockId = selectedBlock.id
+                populateHabitBlock()
+                updateColors()
+            }
         }
 
         binding.numericalFrequencyPicker.setOnClickListener {
-            val builder = AlertDialog.Builder(this)
-            val arrayAdapter = ArrayAdapter<String>(this, android.R.layout.select_dialog_item)
-            arrayAdapter.add(getString(R.string.every_day))
-            arrayAdapter.add(getString(R.string.every_week))
-            arrayAdapter.add(getString(R.string.every_month))
-            builder.setAdapter(arrayAdapter) { dialog, which ->
+            val options = listOf(
+                getString(R.string.every_day),
+                getString(R.string.every_week),
+                getString(R.string.every_month)
+            )
+            val currentIdx = when (freqDen) {
+                7 -> 1
+                30 -> 2
+                else -> 0
+            }
+            CustomDialogs.showSingleChoiceDialog(
+                context = this,
+                title = getString(R.string.frequency),
+                options = options,
+                selectedIndex = currentIdx
+            ) { which ->
                 freqDen = when (which) {
                     1 -> 7
                     2 -> 30
                     else -> 1
                 }
                 populateFrequency()
-                dialog.dismiss()
             }
-            builder.show()
         }
 
         populateReminder()
@@ -571,73 +585,61 @@ class EditHabitActivity : AppCompatActivity() {
     }
 
     private fun showGoalChangeDialog(original: Habit, modified: Habit) {
-        val options = arrayOf(
+        val options = listOf(
             getString(R.string.apply_from_today),
             getString(R.string.apply_from_selected_date),
             getString(R.string.apply_to_entire_history)
         )
-        AlertDialog.Builder(this)
-            .setTitle(R.string.goal_change_scope_title)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> runSaveCommand(
+        CustomDialogs.showSingleChoiceDialog(
+            context = this,
+            title = getString(R.string.goal_change_scope_title),
+            options = options,
+            selectedIndex = -1
+        ) { which ->
+            when (which) {
+                0 -> runSaveCommand(
+                    EditHabitGoalCommand(
+                        (application as HabitsApplication).component.habitList,
+                        habitId,
+                        modified,
+                        GoalApplyScope.FROM_DATE,
+                        getToday()
+                    )
+                )
+                1 -> showGoalDatePicker { date ->
+                    date ?: return@showGoalDatePicker
+                    runSaveCommand(
                         EditHabitGoalCommand(
                             (application as HabitsApplication).component.habitList,
                             habitId,
                             modified,
                             GoalApplyScope.FROM_DATE,
-                            getToday()
-                        )
-                    )
-                    1 -> showGoalDatePicker { date ->
-                        date ?: return@showGoalDatePicker
-                        runSaveCommand(
-                            EditHabitGoalCommand(
-                                (application as HabitsApplication).component.habitList,
-                                habitId,
-                                modified,
-                                GoalApplyScope.FROM_DATE,
-                                date
-                            )
-                        )
-                    }
-                    else -> runSaveCommand(
-                        EditHabitGoalCommand(
-                            (application as HabitsApplication).component.habitList,
-                            habitId,
-                            modified,
-                            GoalApplyScope.ENTIRE_HISTORY,
-                            original.normalizedGoalHistory().first().effectiveDate
+                            date
                         )
                     )
                 }
+                else -> runSaveCommand(
+                    EditHabitGoalCommand(
+                        (application as HabitsApplication).component.habitList,
+                        habitId,
+                        modified,
+                        GoalApplyScope.ENTIRE_HISTORY,
+                        original.normalizedGoalHistory().first().effectiveDate
+                    )
+                )
             }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        }
     }
 
     private fun showGoalDatePicker(callback: (LocalDate?) -> Unit) {
         val today = getToday()
-        val dialog = DatePickerDialog.newInstance(
-            object : DatePickerDialog.OnDateSetListener {
-                override fun onDateSet(
-                    dialog: DatePickerDialog?,
-                    year: Int,
-                    monthOfYear: Int,
-                    dayOfMonth: Int
-                ) {
-                    callback(LocalDate(year, monthOfYear + 1, dayOfMonth))
-                }
-
-                override fun onDateCleared(dialog: DatePickerDialog?) {
-                    callback(null)
-                }
-            },
-            today.year,
-            today.month - 1,
-            today.day
-        )
-        dialog.show(fragmentManager, "goalDatePicker")
+        CustomDialogs.showDatePickerDialog(
+            context = this,
+            title = getString(R.string.select_date),
+            initialDate = today
+        ) { date ->
+            callback(date)
+        }
     }
 
     private fun runSaveCommand(command: org.isoron.uhabits.core.commands.Command) {

@@ -64,5 +64,9 @@
     <attr name="colorPickerOnSurface" format="color|reference" />
     <attr name="colorPickerOnSurfaceVariant" format="color|reference" />
     <attr name="colorPickerBorder" format="color|reference" />
+    <attr name="colorPickerDivider" format="color|reference" />
+    <attr name="colorPickerSliderInactive" format="color|reference" />
+    <attr name="colorPickerSliderThumbStroke" format="color|reference" />
+    <attr name="colorPickerSliderFocus" format="color|reference" />
     <attr name="colorPickerDanger" format="color|reference" />
 </resources>

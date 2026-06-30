@@ -18,7 +18,8 @@
  */
 package org.isoron.uhabits.notifications
 
-import android.app.AlertDialog
+import androidx.appcompat.app.AlertDialog
+import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import android.content.ContentUris
 import android.os.Bundle
 import android.text.format.DateFormat
@@ -63,13 +64,22 @@ class SnoozeDelayPickerActivity : FragmentActivity(), OnItemClickListener {
         if (habit == null) finish()
         androidColor = themeSwitcher.currentTheme.color(habit!!.color).toInt()
         reminderController = appComponent.reminderController
-        dialog = AlertDialog.Builder(this)
-            .setTitle(R.string.select_snooze_delay)
-            .setItems(R.array.snooze_picker_names, null)
-            .create()
-        dialog!!.listView.onItemClickListener = this
-        dialog!!.setOnDismissListener { finish() }
-        dialog!!.show()
+        val options = resources.getStringArray(R.array.snooze_picker_names).toList()
+        val customDialog = CustomDialogs.showSimpleListDialog(
+            context = this,
+            title = getString(R.string.select_snooze_delay),
+            items = options
+        ) { which ->
+            val snoozeValues = resources.getIntArray(R.array.snooze_picker_values)
+            if (snoozeValues[which] >= 0) {
+                reminderController!!.onSnoozeDelayPicked(habit!!, snoozeValues[which])
+                finish()
+            } else {
+                showTimePicker()
+            }
+        }
+        customDialog.setOnDismissListener { finish() }
+        dialog = customDialog
         SystemUtils.unlockScreen(this)
     }
 

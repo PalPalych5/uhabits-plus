@@ -26,8 +26,13 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.TextView
+import android.widget.Button
+import android.widget.FrameLayout
+import android.view.ViewGroup
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatDialogFragment
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import org.isoron.uhabits.R
 import org.isoron.uhabits.databinding.FrequencyPickerDialogBinding
 
@@ -115,10 +120,37 @@ class FrequencyPickerDialog(
             if (hasFocus) check(binding.xTimesPerYDaysRadioButton)
         }
 
-        return AlertDialog.Builder(requireActivity())
-            .setView(binding.root)
-            .setPositiveButton(R.string.save) { _, _ -> onSaveClicked() }
-            .create()
+        val dialog = MaterialAlertDialogBuilder(requireActivity(), R.style.CustomTransparentDialogTheme).create()
+        val dialogContext = dialog.context
+        val view = LayoutInflater.from(dialogContext)
+            .inflate(R.layout.dialog_custom_view, null)
+        val dialogTitle = view.findViewById<TextView>(R.id.dialog_title)
+        val customContainer = view.findViewById<FrameLayout>(R.id.custom_container)
+        val btnNegative = view.findViewById<Button>(R.id.button_negative)
+        val btnPositive = view.findViewById<Button>(R.id.button_positive)
+
+        dialogTitle.text = getString(R.string.frequency)
+        val bindingRoot = binding.root
+        (bindingRoot.parent as? ViewGroup)?.removeView(bindingRoot)
+        customContainer.addView(bindingRoot)
+
+        btnNegative.text = getString(android.R.string.cancel)
+        btnNegative.setOnClickListener { dialog.dismiss() }
+        btnPositive.text = getString(R.string.save)
+        btnPositive.setOnClickListener {
+            onSaveClicked()
+            dialog.dismiss()
+        }
+
+        dialog.setView(view, 0, 0, 0, 0)
+
+        dialog.setOnShowListener {
+            CustomDialogs.styleDialogShell(dialog, view)
+            CustomDialogs.styleText(dialogTitle, null, btnNegative, btnPositive, null, isDestructive = false)
+            CustomDialogs.styleCustomViewElements(bindingRoot)
+        }
+
+        return dialog
     }
 
     private fun addBeforeAfterText(

@@ -20,7 +20,10 @@
 package org.isoron.uhabits.activities.habits.list.views
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.PointF
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.graphics.text.LineBreaker.BREAK_STRATEGY_BALANCED
 import android.os.Build
 import android.os.Build.VERSION.SDK_INT
@@ -39,6 +42,7 @@ import org.isoron.platform.gui.toInt
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.common.views.RingView
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.ModelObservable
@@ -65,6 +69,7 @@ class HabitCardView(
     private val behavior: ListHabitsBehavior
 ) : FrameLayout(context),
     ModelObservable.Listener {
+    private val palette get() = MainTabsThemeBridge.resolve(context)
 
     var buttonCount
         get() = checkmarkPanel.buttonCount
@@ -266,7 +271,7 @@ class HabitCardView(
     private fun copyAttributesFrom(h: Habit) {
         fun getActiveColor(habit: Habit): Int {
             return when (habit.isArchived) {
-                true -> sres.getColor(R.attr.contrast60)
+                true -> MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.82f)
                 false -> currentTheme().color(habit.color).toInt()
             }
         }
@@ -311,11 +316,26 @@ class HabitCardView(
     }
 
     private fun updateBackground(isSelected: Boolean) {
-        val background = when (isSelected) {
-            true -> R.drawable.selected_box
-            false -> R.drawable.ripple
+        val fill = if (isSelected) palette.surfaceVariant else palette.surface
+        val stroke = if (isSelected) MainTabsThemeBridge.withAlpha(palette.accent, 0.65f) else palette.border
+        val radius = dp(8f)
+        val strokeWidth = dp(if (isSelected) 1.5f else 1f).toInt().coerceAtLeast(1)
+        val contentDrawable = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = radius
+            setColor(fill)
+            setStroke(strokeWidth, stroke)
         }
-        innerFrame.setBackgroundResource(background)
+        val maskDrawable = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = radius
+            setColor(0xFFFFFFFF.toInt())
+        }
+        innerFrame.background = RippleDrawable(
+            ColorStateList.valueOf(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.12f)),
+            contentDrawable,
+            maskDrawable
+        )
     }
 
     companion object {

@@ -22,6 +22,8 @@ import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.habits.edit.HabitTypeDialog
 import org.isoron.uhabits.activities.main.MainNavigationHost
+import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
+import android.widget.Button
 import org.isoron.uhabits.core.commands.BatchCreateRepetitionCommand
 import org.isoron.uhabits.core.commands.Command
 import org.isoron.uhabits.core.commands.CommandRunner
@@ -67,6 +69,7 @@ class TodayFragment : Fragment(), CommandRunner.Listener, SyncCoordinator.Listen
 
     override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
         inflater.inflate(R.menu.today, menu)
+        todayView?.applyToolbarIconTint(menu)
         super.onCreateOptionsMenu(menu, inflater)
     }
 
@@ -84,6 +87,7 @@ class TodayFragment : Fragment(), CommandRunner.Listener, SyncCoordinator.Listen
                 syncItem.isEnabled = true
             }
         }
+        todayView?.applyToolbarIconTint(menu)
         super.onPrepareOptionsMenu(menu)
     }
 
@@ -128,11 +132,13 @@ class TodayFragment : Fragment(), CommandRunner.Listener, SyncCoordinator.Listen
         }
 
         if (remainingHabits.isEmpty()) {
-            AlertDialog.Builder(context)
-                .setTitle(R.string.skip_day_dialog_title)
-                .setMessage(R.string.skip_day_empty_message)
-                .setPositiveButton(android.R.string.ok, null)
-                .show()
+            CustomDialogs.showConfirmDialog(
+                context = requireContext(),
+                title = getString(R.string.skip_day_dialog_title),
+                message = getString(R.string.skip_day_empty_message),
+                isDestructive = false,
+                positiveText = getString(android.R.string.ok)
+            ) {}
             return
         }
 
@@ -239,44 +245,45 @@ class TodayFragment : Fragment(), CommandRunner.Listener, SyncCoordinator.Listen
         }
         container.addView(noteEditText)
 
-        val dialog = AlertDialog.Builder(context)
-            .setTitle(R.string.skip_day_dialog_title)
-            .setView(scrollView)
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(R.string.skip_day_confirm, null)
-            .show()
+        val dialog = CustomDialogs.showCustomViewDialog(
+            context = context,
+            title = getString(R.string.skip_day_dialog_title),
+            contentView = scrollView,
+            positiveText = getString(R.string.skip_day_confirm)
+        ) {}
 
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val note = noteEditText.text.toString()
-                val habitsToSkip = if (radioAll.isChecked) {
-                    remainingHabits
-                } else {
-                    val checkedBlockIds = sphereCheckboxes.filter { it.isChecked }.map { it.tag as Long }.toSet()
-                    val skipSphereless = spherelessCheckbox?.isChecked ?: false
-                    remainingHabits.filter { habit ->
-                        if (habit.blockId != null) {
-                            checkedBlockIds.contains(habit.blockId)
-                        } else {
-                            skipSphereless
-                        }
+        dialog.findViewById<Button>(R.id.button_positive)?.setOnClickListener {
+            val note = noteEditText.text.toString()
+            val habitsToSkip = if (radioAll.isChecked) {
+                remainingHabits
+            } else {
+                val checkedBlockIds = sphereCheckboxes.filter { it.isChecked }.map { it.tag as Long }.toSet()
+                val skipSphereless = spherelessCheckbox?.isChecked ?: false
+                remainingHabits.filter { habit ->
+                    if (habit.blockId != null) {
+                        checkedBlockIds.contains(habit.blockId)
+                    } else {
+                        skipSphereless
                     }
                 }
-
-                if (habitsToSkip.isNotEmpty()) {
-                    val cmd = BatchCreateRepetitionCommand(
-                        habitList = component.habitList,
-                        habits = habitsToSkip,
-                        date = todayDate,
-                        value = Entry.SKIP,
-                        notes = note
-                    )
-                    component.commandRunner.run(cmd)
-                    dialog.dismiss()
-                } else {
-                    Toast.makeText(context, R.string.skip_day_empty_selection, Toast.LENGTH_SHORT).show()
-                }
             }
+
+            if (habitsToSkip.isNotEmpty()) {
+                val cmd = BatchCreateRepetitionCommand(
+                    habitList = component.habitList,
+                    habits = habitsToSkip,
+                    date = todayDate,
+                    value = Entry.SKIP,
+                    notes = note
+                )
+                component.commandRunner.run(cmd)
+                dialog.dismiss()
+            } else {
+                Toast.makeText(context, R.string.skip_day_empty_selection, Toast.LENGTH_SHORT).show()
+            }
+        }
     }
+
 
     override fun onStart() {
         super.onStart()

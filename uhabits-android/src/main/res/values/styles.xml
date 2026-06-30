@@ -160,6 +160,16 @@
         <item name="dialogFormLabelColor">@color/grey_800</item>
     </style>
 
+    <style name="CustomTransparentDialogTheme" parent="Theme.MaterialComponents.Dialog.Alert">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="background">@android:color/transparent</item>
+        <item name="backgroundTint">@android:color/transparent</item>
+    </style>
+
     <style name="PreferenceThemeOverlay.v14.Material.PureBlack">
         <item name="colorControlHighlight">@color/white_a0</item>
     </style>
@@ -439,6 +449,10 @@
         <item name="colorPickerOnSurface">@color/color_picker_on_surface_light</item>
         <item name="colorPickerOnSurfaceVariant">@color/color_picker_on_surface_variant_light</item>
         <item name="colorPickerBorder">@color/color_picker_border_light</item>
+        <item name="colorPickerDivider">@color/color_picker_divider_light</item>
+        <item name="colorPickerSliderInactive">@color/color_picker_slider_inactive_light</item>
+        <item name="colorPickerSliderThumbStroke">@color/color_picker_slider_thumb_stroke_light</item>
+        <item name="colorPickerSliderFocus">@color/color_picker_slider_focus_light</item>
         <item name="colorPickerDanger">@color/color_picker_danger_light</item>
     </style>
 
@@ -454,6 +468,10 @@
         <item name="colorPickerOnSurface">@color/color_picker_on_surface_dark</item>
         <item name="colorPickerOnSurfaceVariant">@color/color_picker_on_surface_variant_dark</item>
         <item name="colorPickerBorder">@color/color_picker_border_dark</item>
+        <item name="colorPickerDivider">@color/color_picker_divider_dark</item>
+        <item name="colorPickerSliderInactive">@color/color_picker_slider_inactive_dark</item>
+        <item name="colorPickerSliderThumbStroke">@color/color_picker_slider_thumb_stroke_dark</item>
+        <item name="colorPickerSliderFocus">@color/color_picker_slider_focus_dark</item>
         <item name="colorPickerDanger">@color/color_picker_danger_dark</item>
     </style>
 
@@ -465,6 +483,10 @@
         <item name="colorPickerOnSurface">@color/color_picker_on_surface_amoled</item>
         <item name="colorPickerOnSurfaceVariant">@color/color_picker_on_surface_variant_amoled</item>
         <item name="colorPickerBorder">@color/color_picker_border_amoled</item>
+        <item name="colorPickerDivider">@color/color_picker_divider_amoled</item>
+        <item name="colorPickerSliderInactive">@color/color_picker_slider_inactive_amoled</item>
+        <item name="colorPickerSliderThumbStroke">@color/color_picker_slider_thumb_stroke_amoled</item>
+        <item name="colorPickerSliderFocus">@color/color_picker_slider_focus_amoled</item>
     </style>
 
     <style name="ColorPickerBottomSheetTheme" parent="Theme.MaterialComponents.Light.BottomSheetDialog">
@@ -474,6 +496,10 @@
         <item name="colorPickerOnSurface">@color/color_picker_on_surface_light</item>
         <item name="colorPickerOnSurfaceVariant">@color/color_picker_on_surface_variant_light</item>
         <item name="colorPickerBorder">@color/color_picker_border_light</item>
+        <item name="colorPickerDivider">@color/color_picker_divider_light</item>
+        <item name="colorPickerSliderInactive">@color/color_picker_slider_inactive_light</item>
+        <item name="colorPickerSliderThumbStroke">@color/color_picker_slider_thumb_stroke_light</item>
+        <item name="colorPickerSliderFocus">@color/color_picker_slider_focus_light</item>
         <item name="colorPickerDanger">@color/color_picker_danger_light</item>
     </style>
 
@@ -484,6 +510,10 @@
         <item name="colorPickerOnSurface">@color/color_picker_on_surface_dark</item>
         <item name="colorPickerOnSurfaceVariant">@color/color_picker_on_surface_variant_dark</item>
         <item name="colorPickerBorder">@color/color_picker_border_dark</item>
+        <item name="colorPickerDivider">@color/color_picker_divider_dark</item>
+        <item name="colorPickerSliderInactive">@color/color_picker_slider_inactive_dark</item>
+        <item name="colorPickerSliderThumbStroke">@color/color_picker_slider_thumb_stroke_dark</item>
+        <item name="colorPickerSliderFocus">@color/color_picker_slider_focus_dark</item>
         <item name="colorPickerDanger">@color/color_picker_danger_dark</item>
     </style>
 
@@ -494,30 +524,38 @@
         <item name="colorPickerOnSurface">@color/color_picker_on_surface_amoled</item>
         <item name="colorPickerOnSurfaceVariant">@color/color_picker_on_surface_variant_amoled</item>
         <item name="colorPickerBorder">@color/color_picker_border_amoled</item>
+        <item name="colorPickerDivider">@color/color_picker_divider_amoled</item>
+        <item name="colorPickerSliderInactive">@color/color_picker_slider_inactive_amoled</item>
+        <item name="colorPickerSliderThumbStroke">@color/color_picker_slider_thumb_stroke_amoled</item>
+        <item name="colorPickerSliderFocus">@color/color_picker_slider_focus_amoled</item>
         <item name="colorPickerDanger">@color/color_picker_danger_dark</item>
     </style>
 
     <style name="ColorPicker.SliderLabel" parent="@android:style/Widget.TextView">
-        <item name="android:layout_width">32dp</item>
+        <item name="android:layout_width">28dp</item>
         <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:textColor">?attr/colorPickerOnSurfaceVariant</item>
-        <item name="android:textStyle">bold</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">normal</item>
     </style>
 
     <style name="ColorPicker.SliderValue" parent="@android:style/Widget.TextView">
-        <item name="android:layout_width">52dp</item>
+        <item name="android:layout_width">56dp</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:fontFamily">monospace</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:fontFeatureSettings">tnum</item>
         <item name="android:gravity">end</item>
+        <item name="android:includeFontPadding">false</item>
         <item name="android:textColor">?attr/colorPickerOnSurface</item>
-        <item name="android:textSize">12sp</item>
+        <item name="android:textSize">16sp</item>
     </style>
 
     <style name="ColorPicker.TabText" parent="TextAppearance.MaterialComponents.Button">
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:letterSpacing">0</item>
         <item name="android:textAllCaps">false</item>
-        <item name="android:textSize">14sp</item>
+        <item name="android:textSize">16sp</item>
         <item name="android:textStyle">normal</item>
     </style>
 
@@ -525,7 +563,7 @@
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:letterSpacing">0</item>
         <item name="android:textAllCaps">false</item>
-        <item name="android:textSize">14sp</item>
+        <item name="android:textSize">16sp</item>
         <item name="android:textStyle">normal</item>
     </style>
 
@@ -533,7 +571,7 @@
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:letterSpacing">0</item>
         <item name="android:textAllCaps">false</item>
-        <item name="android:textSize">14sp</item>
+        <item name="android:textSize">16sp</item>
         <item name="android:textStyle">normal</item>
     </style>
 

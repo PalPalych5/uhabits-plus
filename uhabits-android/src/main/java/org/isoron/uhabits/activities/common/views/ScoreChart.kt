@@ -58,6 +58,9 @@ class ScoreChart : ScrollableChart {
     private var gridColor = 0
     private var scores: List<Score>? = null
     private var primaryColor = 0
+    private var textColorOverride: Int? = null
+    private var gridColorOverride: Int? = null
+    private var backgroundColorOverride: Int? = null
 
     @Deprecated("")
     private var bucketSize = 7
@@ -109,6 +112,16 @@ class ScoreChart : ScrollableChart {
 
     fun setScores(scores: List<Score>) {
         this.scores = scores
+        postInvalidate()
+    }
+
+    fun setSurfaceColors(textColor: Int, gridColor: Int, backgroundColor: Int) {
+        textColorOverride = textColor
+        gridColorOverride = gridColor
+        backgroundColorOverride = backgroundColor
+        this.textColor = textColor
+        this.gridColor = gridColor
+        this.internalBackgroundColor = backgroundColor
         postInvalidate()
     }
 
@@ -325,9 +338,9 @@ class ScoreChart : ScrollableChart {
     private fun initColors() {
         val res = StyledResources(context)
         primaryColor = Color.BLACK
-        textColor = res.getColor(R.attr.contrast60)
-        gridColor = res.getColor(R.attr.contrast20)
-        internalBackgroundColor = res.getColor(R.attr.cardBgColor)
+        textColor = textColorOverride ?: res.getColor(R.attr.contrast60)
+        gridColor = gridColorOverride ?: res.getColor(R.attr.contrast20)
+        internalBackgroundColor = backgroundColorOverride ?: res.getColor(R.attr.cardBgColor)
     }
 
     private fun initDateFormats() {

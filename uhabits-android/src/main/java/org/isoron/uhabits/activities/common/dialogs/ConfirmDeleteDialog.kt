@@ -27,6 +27,8 @@ import org.isoron.uhabits.R
 import org.isoron.uhabits.core.ui.callbacks.OnConfirmedCallback
 import org.isoron.uhabits.inject.ActivityContext
 
+import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
+
 /**
  * Dialog that asks the user confirmation before executing a delete operation.
  */
@@ -35,13 +37,12 @@ class ConfirmDeleteDialog(
     callback: OnConfirmedCallback,
     quantity: Int
 ) : androidx.appcompat.app.AlertDialog(
-    MaterialAlertDialogBuilder(context).create().context
+    context,
+    R.style.CustomTransparentDialogTheme
 ) {
     init {
         val res = context.resources
-        // Use the dialog's own themed context so ?android:attr/textColorPrimary
-        // resolves correctly (dark on light dialog surface, not white on white).
-        val view = LayoutInflater.from(this.context)
+        val view = LayoutInflater.from(context)
             .inflate(R.layout.dialog_custom_confirm, null)
         val dialogTitle  = view.findViewById<TextView>(R.id.dialog_title)
         val dialogMessage= view.findViewById<TextView>(R.id.dialog_message)
@@ -53,13 +54,17 @@ class ConfirmDeleteDialog(
 
         btnNegative.text = context.getString(android.R.string.cancel)
         btnPositive.text = context.getString(android.R.string.ok)
-        btnPositive.setTextColor(0xFFD32F2F.toInt()) // Destructive Red
 
         btnNegative.setOnClickListener { dismiss() }
         btnPositive.setOnClickListener {
             callback.onConfirmed()
             dismiss()
         }
-        setView(view)
+        setView(view, 0, 0, 0, 0)
+
+        setOnShowListener {
+            CustomDialogs.styleDialogShell(this, view)
+            CustomDialogs.styleText(dialogTitle, dialogMessage, btnNegative, btnPositive, null, isDestructive = true)
+        }
     }
 }

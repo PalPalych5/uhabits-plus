@@ -465,6 +465,7 @@
     <string name="color_picker_palette">Палитра</string>
     <string name="color_picker_swatch">Цвет %1$s, не выбран</string>
     <string name="color_picker_swatch_selected">Цвет %1$s, выбран</string>
+    <string name="color_picker_cancel">Отмена</string>
     <string name="color_picker_apply">Применить</string>
     <string name="color_picker_apply_dirty">Применить выбранный цвет</string>
     <string name="custom_color_modes">HEX · HSV · RGB</string>

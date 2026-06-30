@@ -462,6 +462,7 @@
     <string name="color_picker_palette">Palette</string>
     <string name="color_picker_swatch">Color %1$s, not selected</string>
     <string name="color_picker_swatch_selected">Color %1$s, selected</string>
+    <string name="color_picker_cancel">Cancel</string>
     <string name="color_picker_apply">Apply</string>
     <string name="color_picker_apply_dirty">Apply selected color</string>
     <string name="custom_color_modes">HEX · HSV · RGB</string>

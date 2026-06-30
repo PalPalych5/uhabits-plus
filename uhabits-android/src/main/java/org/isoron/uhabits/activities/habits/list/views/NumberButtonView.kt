@@ -30,6 +30,7 @@ import android.view.View.OnClickListener
 import android.view.View.OnLongClickListener
 import me.tatarka.inject.annotations.Inject
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.NumericalHabitType.AT_LEAST
 import org.isoron.uhabits.core.models.NumericalHabitType.AT_MOST
@@ -141,6 +142,7 @@ class NumberButtonView(
 
         private val em: Float
         private val rect: RectF = RectF()
+        private val palette = MainTabsThemeBridge.resolve(context)
 
         private val lowContrast: Int
         private val mediumContrast: Int
@@ -169,8 +171,8 @@ class NumberButtonView(
 
         init {
             em = pNumber.measureText("m")
-            lowContrast = sres.getColor(R.attr.contrast40)
-            mediumContrast = sres.getColor(R.attr.contrast60)
+            lowContrast = MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.55f)
+            mediumContrast = MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.82f)
         }
 
         fun draw(canvas: Canvas) {

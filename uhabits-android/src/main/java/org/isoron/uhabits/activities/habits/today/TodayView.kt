@@ -19,10 +19,12 @@
 package org.isoron.uhabits.activities.habits.today
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
+import android.view.Menu
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
@@ -34,8 +36,10 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.graphics.drawable.DrawableCompat
 import org.isoron.platform.gui.toInt
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.core.models.HabitType
 import org.isoron.uhabits.core.models.PaletteColor
 import org.isoron.uhabits.core.preferences.Preferences
@@ -52,7 +56,6 @@ import org.isoron.uhabits.utils.applyToolbarInsets
 import org.isoron.uhabits.utils.buildToolbar
 import org.isoron.uhabits.utils.currentTheme
 import org.isoron.uhabits.utils.dp
-import org.isoron.uhabits.utils.sres
 import org.isoron.uhabits.utils.toFixedAndroidColor
 
 class TodayView(
@@ -69,11 +72,12 @@ class TodayView(
         setPadding(dp(16f).toInt(), dp(12f).toInt(), dp(16f).toInt(), dp(32f).toInt())
     }
 
-    private val isDark: Boolean get() = currentTheme() is DarkTheme
+    private val palette get() = MainTabsThemeBridge.resolve(context)
+    private val isDark: Boolean get() = palette.isDark
 
     init {
         orientation = VERTICAL
-        setBackgroundColor(sres.getColor(R.attr.windowBackgroundColor))
+        setBackgroundColor(palette.background)
         setupToolbar()
         addView(toolbar, MATCH_PARENT, WRAP_CONTENT)
         addView(
@@ -88,21 +92,31 @@ class TodayView(
     private fun setupToolbar() {
         toolbar.elevation = InterfaceUtils.dpToPixels(context, 2f)
         toolbar.title = resources.getString(R.string.today)
-        val res = StyledResources(context)
-        val toolbarColor = if (!res.getBoolean(R.attr.useHabitColorAsPrimary)) {
-            res.getColor(R.attr.colorPrimary)
-        } else {
-            currentTheme().color(PaletteColor(17)).toInt()
-        }
+        val toolbarColor = palette.background
         toolbar.background = ColorDrawable(toolbarColor)
+        toolbar.setTitleTextColor(palette.onSurface)
         toolbar.applyToolbarInsets()
         activity.window.statusBarColor = toolbarColor
+        applyToolbarIconTint()
         activateToolbar()
     }
 
     fun activateToolbar() {
         activity.setSupportActionBar(toolbar)
         activity.supportActionBar?.setDisplayHomeAsUpEnabled(false)
+        applyToolbarIconTint()
+    }
+
+    fun applyToolbarIconTint(menu: Menu? = null) {
+        toolbar.navigationIcon?.mutate()?.let { DrawableCompat.setTint(it, palette.onSurface) }
+        toolbar.overflowIcon?.mutate()?.let { DrawableCompat.setTint(it, palette.onSurface) }
+        menu?.let {
+            for (index in 0 until it.size()) {
+                it.getItem(index).icon?.mutate()?.let { icon ->
+                    DrawableCompat.setTint(icon, palette.onSurface)
+                }
+            }
+        }
     }
 
     fun setState(state: TodayScreenState) {
@@ -160,6 +174,8 @@ class TodayView(
         val createButton = Button(context).apply {
             text = resources.getString(R.string.today_create_habit)
             isAllCaps = false
+            backgroundTintList = ColorStateList.valueOf(palette.accent)
+            setTextColor(if (androidx.core.graphics.ColorUtils.calculateLuminance(palette.accent) > 0.5) 0xFF1C1B1F.toInt() else 0xFFFFFFFF.toInt())
             setOnClickListener { onCreateHabit() }
             layoutParams = LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
                 topMargin = dp(16f).toInt()
@@ -525,7 +541,7 @@ class TodayView(
                     cornerRadius = dp(2f)
                 }.let { filled ->
                     val track = GradientDrawable().apply {
-                        setColor(if (isDark) 0x20FFFFFF.toInt() else 0x15000000.toInt())
+                        setColor(palette.divider)
                         cornerRadius = dp(2f)
                     }
                     val ld = LayerDrawable(arrayOf(track, filled))
@@ -591,8 +607,8 @@ class TodayView(
         val baseColor = when (status) {
             TodayHabitStatus.COMPLETED -> 0xFF4CAF50.toInt()
             TodayHabitStatus.REMAINING -> sectionColor ?: item.color.toFixedAndroidColor()
-            TodayHabitStatus.UNKNOWN -> 0xFF9E9E9E.toInt()
-            TodayHabitStatus.SKIPPED -> 0xFF9E9E9E.toInt()
+            TodayHabitStatus.UNKNOWN -> palette.onSurfaceVariant
+            TodayHabitStatus.SKIPPED -> palette.onSurfaceVariant
             TodayHabitStatus.EXCEEDED -> 0xFFFF5722.toInt()
         }
 
@@ -615,7 +631,7 @@ class TodayView(
     }
 
     private fun buildBadge(text: String, completed: Boolean, colorInt: Int? = null): TextView {
-        val baseColor = colorInt ?: if (completed) 0xFF4CAF50.toInt() else 0xFF9E9E9E.toInt()
+        val baseColor = colorInt ?: if (completed) 0xFF4CAF50.toInt() else palette.onSurfaceVariant
         val bgColor = applyAlpha(baseColor, if (completed) 0.15f else 0.1f)
         return TextView(context).apply {
             this.text = text
@@ -634,23 +650,19 @@ class TodayView(
     }
 
     private fun buildCard(cornerRadius: Float, elevation: Float): LinearLayout {
-        val bgColor = if (isDark) 0x10FFFFFF.toInt() else 0x08000000.toInt()
         return LinearLayout(context).apply {
             orientation = VERTICAL
             background = GradientDrawable().apply {
-                setColor(bgColor)
+                setColor(palette.surface)
                 this.cornerRadius = dp(cornerRadius)
-                setStroke(
-                    dp(0.5f).toInt(),
-                    if (isDark) 0x18FFFFFF.toInt() else 0x12000000.toInt()
-                )
+                setStroke(dp(1f).toInt().coerceAtLeast(1), palette.border)
             }
             this.elevation = dp(elevation)
         }
     }
 
     private fun dividerView(): View = View(context).apply {
-        setBackgroundColor(if (isDark) 0x15FFFFFF.toInt() else 0x10000000.toInt())
+        setBackgroundColor(palette.divider)
     }
 
     private fun addMotivations(motivations: List<String>) {
@@ -678,7 +690,6 @@ class TodayView(
                 else -> "\uD83C\uDF1F"
             }
 
-            val bgColor = if (isDark) 0x20FFFFFF.toInt() else 0x10000000.toInt()
             val card = LinearLayout(context).apply {
                 orientation = HORIZONTAL
                 setPadding(dp(12f).toInt(), dp(12f).toInt(), dp(12f).toInt(), dp(12f).toInt())
@@ -686,9 +697,9 @@ class TodayView(
                     bottomMargin = dp(8f).toInt()
                 }
                 background = GradientDrawable().apply {
-                    setColor(bgColor)
+                    setColor(palette.surface)
                     cornerRadius = dp(8f)
-                    setStroke(dp(1f).toInt(), if (isDark) 0x15FFFFFF.toInt() else 0x15000000.toInt())
+                    setStroke(dp(1f).toInt().coerceAtLeast(1), palette.border)
                 }
             }
 
@@ -704,7 +715,7 @@ class TodayView(
                 text = formatted
                 textSize = 14f
                 setTypeface(null, Typeface.ITALIC)
-                setTextColor(sres.getColor(android.R.attr.textColorPrimary))
+                setTextColor(palette.onSurface)
                 layoutParams = LayoutParams(0, WRAP_CONTENT, 1f)
             }
 
@@ -739,10 +750,7 @@ class TodayView(
     ): TextView = TextView(context).apply {
         this.text = text
         setTextSize(size)
-        setTextColor(
-            if (muted) sres.getColor(R.attr.contrast60)
-            else sres.getColor(android.R.attr.textColorPrimary)
-        )
+        setTextColor(if (muted) palette.onSurfaceVariant else palette.onSurface)
         if (bold) setTypeface(typeface, Typeface.BOLD)
     }
 

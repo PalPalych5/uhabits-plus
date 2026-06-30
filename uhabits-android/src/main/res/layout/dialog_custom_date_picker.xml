@@ -10,31 +10,16 @@
         android:id="@+id/dialog_title"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="10dp"
+        android:layout_marginBottom="16dp"
         android:textSize="18sp"
         android:textStyle="bold" />
 
-    <TextView
-        android:id="@+id/dialog_message"
+    <DatePicker
+        android:id="@+id/date_picker"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp"
-        android:textSize="14sp"
-        android:visibility="gone" />
-
-    <ScrollView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:fadeScrollbars="false"
-        android:maxHeight="360dp"
-        android:scrollbars="vertical">
-
-        <LinearLayout
-            android:id="@+id/options_container"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical" />
-    </ScrollView>
+        android:calendarViewShown="true"
+        android:datePickerMode="calendar" />
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -44,16 +29,15 @@
         android:orientation="horizontal">
 
         <Button
-            android:id="@+id/button_neutral"
+            android:id="@+id/button_negative"
             style="?android:attr/borderlessButtonStyle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginEnd="8dp"
-            android:textAllCaps="false"
-            android:visibility="gone" />
+            android:textAllCaps="false" />
 
         <Button
-            android:id="@+id/button_negative"
+            android:id="@+id/button_positive"
             style="?android:attr/borderlessButtonStyle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

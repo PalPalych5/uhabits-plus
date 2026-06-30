@@ -20,12 +20,17 @@
 package org.isoron.uhabits.activities.habits.list
 
 import android.content.Context
+import android.graphics.drawable.ColorDrawable
+import android.view.Menu
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.widget.FrameLayout
 import android.widget.RelativeLayout
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.graphics.drawable.DrawableCompat
 import me.tatarka.inject.annotations.Inject
 import nl.dionsegijn.konfetti.xml.KonfettiView
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.common.views.ScrollableChart
 import org.isoron.uhabits.activities.common.views.TaskProgressBar
 import org.isoron.uhabits.activities.habits.list.views.EmptyListView
@@ -67,6 +72,7 @@ class ListHabitsRootView(
     private val listAdapter: HabitCardListAdapter,
     habitCardListViewFactory: HabitCardListViewFactory
 ) : FrameLayout(context), ModelObservable.Listener {
+    private val palette get() = MainTabsThemeBridge.resolve(context)
 
     val listView: HabitCardListView = habitCardListViewFactory.create()
     val llEmpty = EmptyListView(context)
@@ -84,12 +90,16 @@ class ListHabitsRootView(
         hintView = HintView(context, hintList)
 
         val rootView = RelativeLayout(context).apply {
-            background = sres.getDrawable(R.attr.windowBackgroundColor)
+            setBackgroundColor(palette.background)
             addAtTop(konfettiView)
             addAtTop(tbar)
             addBelow(header, tbar)
-            addBelow(listView, header, height = MATCH_PARENT)
-            addBelow(llEmpty, header, height = MATCH_PARENT)
+            addBelow(listView, header, height = MATCH_PARENT) {
+                it.topMargin = dp(3f).toInt()
+            }
+            addBelow(llEmpty, header, height = MATCH_PARENT) {
+                it.topMargin = dp(3f).toInt()
+            }
             addBelow(progressBar, header) {
                 it.topMargin = dp(-6.0f).toInt()
             }
@@ -102,6 +112,10 @@ class ListHabitsRootView(
             displayHomeAsUpEnabled = false,
             theme = currentTheme()
         )
+        tbar.background = ColorDrawable(palette.background)
+        tbar.setTitleTextColor(palette.onSurface)
+        (context as? AppCompatActivity)?.window?.statusBarColor = palette.background
+        applyToolbarIconTint()
         addView(rootView, MATCH_PARENT, MATCH_PARENT)
         listAdapter.setListView(listView)
     }
@@ -161,5 +175,17 @@ class ListHabitsRootView(
 
     fun setScreenTitle(title: String) {
         tbar.title = title
+    }
+
+    fun applyToolbarIconTint(menu: Menu? = null) {
+        tbar.navigationIcon?.mutate()?.let { DrawableCompat.setTint(it, palette.onSurface) }
+        tbar.overflowIcon?.mutate()?.let { DrawableCompat.setTint(it, palette.onSurface) }
+        menu?.let {
+            for (index in 0 until it.size()) {
+                it.getItem(index).icon?.mutate()?.let { icon ->
+                    DrawableCompat.setTint(icon, palette.onSurface)
+                }
+            }
+        }
     }
 }

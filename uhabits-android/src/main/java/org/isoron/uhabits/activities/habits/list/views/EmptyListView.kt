@@ -27,13 +27,14 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.LinearLayout
 import android.widget.TextView
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.utils.dp
 import org.isoron.uhabits.utils.getFontAwesome
 import org.isoron.uhabits.utils.sp
-import org.isoron.uhabits.utils.sres
 import org.isoron.uhabits.utils.str
 
 class EmptyListView(context: Context) : LinearLayout(context) {
+    private val palette = MainTabsThemeBridge.resolve(context)
     var textTextView: TextView
     var iconTextView: TextView
 
@@ -47,7 +48,7 @@ class EmptyListView(context: Context) : LinearLayout(context) {
             typeface = getFontAwesome()
             textSize = sp(40.0f)
             gravity = CENTER
-            setTextColor(sres.getColor(R.attr.contrast60))
+            setTextColor(palette.onSurfaceVariant)
         }
 
         addView(
@@ -60,7 +61,7 @@ class EmptyListView(context: Context) : LinearLayout(context) {
             text = str(R.string.no_habits_found)
             gravity = CENTER
             setPadding(0, dp(20.0f).toInt(), 0, 0)
-            setTextColor(sres.getColor(R.attr.contrast60))
+            setTextColor(palette.onSurfaceVariant)
         }
         addView(
             textTextView,

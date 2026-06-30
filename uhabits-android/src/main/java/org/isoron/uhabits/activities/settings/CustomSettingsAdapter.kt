@@ -97,7 +97,6 @@ class CustomSettingsAdapter(
             shape = GradientDrawable.RECTANGLE
             cornerRadii = radii
             setColor(palette.surface)
-            setStroke((density).toInt().coerceAtLeast(1), palette.border)
         }
 
         val maskDrawable = GradientDrawable().apply {
@@ -328,12 +327,10 @@ class CustomSettingsAdapter(
         holder.summaryText.maxLines = if (isExpanded) 6 else 3
         holder.summaryText.ellipsize = if (isExpanded) null else android.text.TextUtils.TruncateAt.END
 
-        if (shouldAllowSummaryExpansion(summary)) {
+        if (!isInteractive && shouldAllowSummaryExpansion(summary)) {
             holder.summaryText.isClickable = true
             holder.summaryText.setOnClickListener { toggleSummary(key) }
-            if (!isInteractive) {
-                holder.itemView.setOnClickListener { toggleSummary(key) }
-            }
+            holder.itemView.setOnClickListener { toggleSummary(key) }
         }
     }
 

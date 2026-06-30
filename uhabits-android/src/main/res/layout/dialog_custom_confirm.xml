@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/dialog_root"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
@@ -11,7 +12,6 @@
         android:layout_height="wrap_content"
         android:textSize="18sp"
         android:textStyle="bold"
-        android:textColor="?android:attr/textColorPrimary"
         android:layout_marginBottom="12dp" />
 
     <TextView
@@ -19,7 +19,6 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textSize="14sp"
-        android:textColor="?android:attr/textColorSecondary"
         android:layout_marginBottom="24dp" />
 
     <LinearLayout
@@ -34,7 +33,6 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textAllCaps="false"
-            android:textColor="?android:attr/textColorSecondary"
             android:layout_marginEnd="8dp" />
 
         <Button
@@ -42,8 +40,7 @@
             style="?android:attr/borderlessButtonStyle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textAllCaps="false"
-            android:textColor="?android:attr/colorPrimary" />
+            android:textAllCaps="false" />
 
     </LinearLayout>
 </LinearLayout>

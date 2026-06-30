@@ -32,10 +32,7 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.EditText
-import android.widget.LinearLayout
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.FileProvider
 import androidx.core.os.LocaleListCompat
@@ -43,7 +40,6 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.android.datetimepicker.date.DatePickerDialog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -609,7 +605,7 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         items.add(
             SettingItem.Switch(
                 key = "pref_sync_enabled",
-                iconRes = R.drawable.ic_settings_sync,
+                iconRes = R.drawable.ic_settings_cloud_sync,
                 title = getString(R.string.sync_enable_title),
                 summary = getString(R.string.sync_enable_summary),
                 checked = prefs.isSyncEnabled,
@@ -656,7 +652,7 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         items.add(
             SettingItem.Navigation(
                 key = "syncStatus",
-                iconRes = R.drawable.ic_settings_sync,
+                iconRes = R.drawable.ic_settings_backup_history,
                 title = getString(R.string.sync_status_title),
                 summary = syncStatusText
             )
@@ -886,7 +882,8 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         CustomDialogs.showInputDialog(
             context = requireContext(),
             title = title,
-            initialValue = initialValue
+            initialValue = initialValue,
+            hint = title
         ) { newValue ->
             sharedPrefs?.edit()?.putString(key, newValue)?.apply()
             if (key == "pref_sync_base_url" || key == "pref_sync_key") {
@@ -993,27 +990,26 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             BackupSource.PRIVATE -> backupManager.listLocalBackups()
             BackupSource.PUBLIC -> backupManager.listPublicBackups()
         }
-        if (backups.isEmpty()) {
-            val messageId = if (source == BackupSource.PUBLIC) {
-                R.string.backup_restore_no_public_backups
-            } else {
-                R.string.backup_restore_no_backups
-            }
-            Toast.makeText(requireContext(), messageId, Toast.LENGTH_LONG).show()
-            return
-        }
         val dateFormat = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, Locale.getDefault())
-        val items = backups.map {
-            "${it.name}\n${dateFormat.format(it.modifiedAt)} • ${formatSize(it.sizeBytes)}"
-        }.toTypedArray()
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.restore_backup)
-            .setItems(items) { _, which ->
-                showRestoreBackupConfirmation(backups[which])
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        val items = backups.map { it.name }
+        val summaries = backups.map { "${dateFormat.format(it.modifiedAt)} • ${formatSize(it.sizeBytes)}" }
+        val emptyMessageId = if (source == BackupSource.PUBLIC) {
+            R.string.backup_restore_no_public_backups
+        } else {
+            R.string.backup_restore_no_backups
+        }
+
+        CustomDialogs.showSimpleListDialog(
+            context = requireContext(),
+            title = getString(R.string.restore_backup),
+            items = items,
+            summaries = summaries,
+            emptyStateMessage = getString(emptyMessageId)
+        ) { which ->
+            showRestoreBackupConfirmation(backups[which])
+        }
     }
+
 
     private fun performPublicBackup() {
         if (!ensurePublicBackupFolderReady()) return
@@ -1065,25 +1061,27 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     }
 
     private fun showChoosePublicBackupFolderDialog(messageId: Int) {
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.select_public_backup_folder)
-            .setMessage(messageId)
-            .setPositiveButton(R.string.choose_folder) { _, _ ->
-                launchPublicBackupFolderPicker()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        CustomDialogs.showConfirmDialog(
+            context = requireContext(),
+            title = getString(R.string.select_public_backup_folder),
+            message = getString(messageId),
+            isDestructive = false,
+            positiveText = getString(R.string.choose_folder)
+        ) {
+            launchPublicBackupFolderPicker()
+        }
     }
 
     private fun showRestoreBackupConfirmation(entry: BackupEntry) {
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.restore_backup)
-            .setMessage(R.string.restore_backup_warning)
-            .setPositiveButton(R.string.restore_backup_confirm) { _, _ ->
-                performRestore(entry)
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        CustomDialogs.showConfirmDialog(
+            context = requireContext(),
+            title = getString(R.string.restore_backup),
+            message = getString(R.string.restore_backup_warning),
+            isDestructive = true,
+            positiveText = getString(R.string.restore_backup_confirm)
+        ) {
+            performRestore(entry)
+        }
     }
 
     private fun performRestore(entry: BackupEntry) {
@@ -1114,31 +1112,16 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     }
 
     private fun showSyncSignInDialog() {
-        val container = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            val padding = (24 * resources.displayMetrics.density).toInt()
-            setPadding(padding, padding / 2, padding, 0)
+        CustomDialogs.showCredentialsDialog(
+            context = requireContext(),
+            title = getString(R.string.sync_sign_in_dialog_title),
+            primaryHint = getString(R.string.sync_sign_in_email_hint),
+            secondaryHint = getString(R.string.sync_sign_in_password_hint),
+            initialPrimaryValue = prefs.syncAccountEmail ?: "",
+            positiveText = getString(R.string.sync_sign_in)
+        ) { email, password ->
+            performSignIn(email, password)
         }
-        val emailInput = EditText(requireContext()).apply {
-            hint = getString(R.string.sync_sign_in_email_hint)
-            setText(prefs.syncAccountEmail ?: "")
-        }
-        val passwordInput = EditText(requireContext()).apply {
-            hint = getString(R.string.sync_sign_in_password_hint)
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or
-                android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
-        container.addView(emailInput)
-        container.addView(passwordInput)
-
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.sync_sign_in_dialog_title)
-            .setView(container)
-            .setPositiveButton(R.string.sync_sign_in) { _, _ ->
-                performSignIn(emailInput.text.toString(), passwordInput.text.toString())
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
     }
 
     private fun performSignIn(email: String, password: String) {
@@ -1177,14 +1160,15 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 Toast.makeText(requireContext(), "Отправка несохраненных изменений перед выходом...", Toast.LENGTH_SHORT).show()
                 val syncResult = syncCoordinator.runSync(manual = true)
                 if (syncResult is SyncRunResult.Failure) {
-                    AlertDialog.Builder(requireContext())
-                        .setTitle(R.string.sync_sign_out_warning_title)
-                        .setMessage(R.string.sync_sign_out_warning_message)
-                        .setPositiveButton(R.string.sync_sign_out) { _, _ ->
-                            executeSignOut()
-                        }
-                        .setNegativeButton(android.R.string.cancel, null)
-                        .show()
+                    CustomDialogs.showConfirmDialog(
+                        context = requireContext(),
+                        title = getString(R.string.sync_sign_out_warning_title),
+                        message = getString(R.string.sync_sign_out_warning_message),
+                        isDestructive = true,
+                        positiveText = getString(R.string.sync_sign_out)
+                    ) {
+                        executeSignOut()
+                    }
                     return@launch
                 }
             }
@@ -1214,20 +1198,19 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     }
 
     private fun showSyncReviewDialog() {
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.sync_confirm_after_restore_title)
-            .setMessage(
-                prefs.syncReviewReason.ifBlank {
-                    getString(R.string.sync_confirm_after_restore_message)
-                }
-            )
-            .setPositiveButton(R.string.sync_now) { _, _ ->
-                syncCoordinator.confirmSyncReview()
-                rebuildSettingsList()
-                performSyncNow(allowAfterReview = true)
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        CustomDialogs.showConfirmDialog(
+            context = requireContext(),
+            title = getString(R.string.sync_confirm_after_restore_title),
+            message = prefs.syncReviewReason.ifBlank {
+                getString(R.string.sync_confirm_after_restore_message)
+            },
+            isDestructive = false,
+            positiveText = getString(R.string.sync_now)
+        ) {
+            syncCoordinator.confirmSyncReview()
+            rebuildSettingsList()
+            performSyncNow(allowAfterReview = true)
+        }
     }
 
     private fun performSyncNow(allowAfterReview: Boolean) {
@@ -1361,25 +1344,27 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     }
 
     private fun showGlobalStatisticsStartDateDialog() {
-        val options = arrayOf(
+        val options = listOf(
             getString(R.string.today),
             getString(R.string.this_monday),
             getString(R.string.next_monday),
             getString(R.string.select_date)
         )
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.count_statistics_from_date)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> applyGlobalStatisticsStart(getToday())
-                    1 -> applyGlobalStatisticsStart(thisMonday())
-                    2 -> applyGlobalStatisticsStart(thisMonday().plus(7))
-                    else -> showDatePicker { date -> applyGlobalStatisticsStart(date) }
-                }
+        CustomDialogs.showSingleChoiceDialog(
+            context = requireContext(),
+            title = getString(R.string.count_statistics_from_date),
+            options = options,
+            selectedIndex = -1,
+            neutralText = getString(R.string.clear),
+            onNeutral = { applyGlobalStatisticsStart(null) }
+        ) { which ->
+            when (which) {
+                0 -> applyGlobalStatisticsStart(getToday())
+                1 -> applyGlobalStatisticsStart(thisMonday())
+                2 -> applyGlobalStatisticsStart(thisMonday().plus(7))
+                else -> showDatePicker { date -> applyGlobalStatisticsStart(date) }
             }
-            .setNeutralButton(R.string.clear) { _, _ -> applyGlobalStatisticsStart(null) }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        }
     }
 
     private fun applyGlobalStatisticsStart(date: LocalDate?) {
@@ -1406,26 +1391,13 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
 
     private fun showDatePicker(callback: (LocalDate?) -> Unit) {
         val today = getToday()
-        val dialog = DatePickerDialog.newInstance(
-            object : DatePickerDialog.OnDateSetListener {
-                override fun onDateSet(
-                    dialog: DatePickerDialog?,
-                    year: Int,
-                    monthOfYear: Int,
-                    dayOfMonth: Int
-                ) {
-                    callback(LocalDate(year, monthOfYear + 1, dayOfMonth))
-                }
-
-                override fun onDateCleared(dialog: DatePickerDialog?) {
-                    callback(null)
-                }
-            },
-            today.year,
-            today.month - 1,
-            today.day
-        )
-        dialog.show(requireActivity().fragmentManager, "settingsStatisticsDatePicker")
+        CustomDialogs.showDatePickerDialog(
+            context = requireContext(),
+            title = getString(R.string.select_date),
+            initialDate = today
+        ) { date ->
+            callback(date)
+        }
     }
 
     private fun thisMonday(): LocalDate {

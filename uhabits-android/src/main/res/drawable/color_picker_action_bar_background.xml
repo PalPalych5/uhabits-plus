@@ -2,7 +2,7 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <shape>
-            <solid android:color="?attr/colorPickerBorder" />
+            <solid android:color="?attr/colorPickerDivider" />
         </shape>
     </item>
     <item android:top="1dp">
