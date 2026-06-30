@@ -1,8 +1,11 @@
 package org.isoron.uhabits.activities.common.dialogs
 
+import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
@@ -11,6 +14,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.widget.Button
 import android.widget.TextView
 import androidx.annotation.AttrRes
 import androidx.core.content.ContextCompat
@@ -20,13 +24,14 @@ import androidx.core.view.updatePadding
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.slider.Slider
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import org.isoron.uhabits.R
+import org.isoron.uhabits.utils.ColorUtils
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 class CustomColorBottomSheet : BottomSheetDialogFragment() {
@@ -48,10 +53,12 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
     }
 
     private var currentColor = ColorPickerUtils.DEFAULT_COLOR
+    private var themeMode = ColorPickerDialog.THEME_LIGHT
     private var selectedTab = 0
     private var validationError: String? = null
     private var savedHex: String? = null
     private var updatingControls = false
+    private lateinit var themedContext: Context
 
     private lateinit var preview: MaterialCardView
     private lateinit var previewValue: TextView
@@ -61,7 +68,8 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
     private lateinit var rgbPanel: View
     private lateinit var hexLayout: TextInputLayout
     private lateinit var hexInput: TextInputEditText
-    private lateinit var doneButton: MaterialButton
+    private lateinit var cancelButton: TextView
+    private lateinit var doneButton: Button
     private lateinit var hsvSliders: List<Slider>
     private lateinit var rgbSliders: List<Slider>
     private lateinit var hsvValues: List<TextView>
@@ -69,9 +77,10 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        themeMode = arguments?.getInt(ARG_THEME, ColorPickerDialog.THEME_LIGHT) ?: ColorPickerDialog.THEME_LIGHT
         setStyle(
             STYLE_NORMAL,
-            when (arguments?.getInt(ARG_THEME, ColorPickerDialog.THEME_LIGHT)) {
+            when (themeMode) {
                 ColorPickerDialog.THEME_AMOLED -> R.style.ColorPickerBottomSheetTheme_Amoled
                 ColorPickerDialog.THEME_DARK -> R.style.ColorPickerBottomSheetTheme_Dark
                 else -> R.style.ColorPickerBottomSheetTheme
@@ -93,6 +102,7 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        themedContext = view.context
         bindViews(view)
         setupInsets(view)
         setupTabs()
@@ -148,6 +158,7 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
         rgbPanel = view.findViewById(R.id.custom_color_rgb_panel)
         hexLayout = view.findViewById(R.id.custom_color_hex_layout)
         hexInput = view.findViewById(R.id.custom_color_hex_input)
+        cancelButton = view.findViewById(R.id.custom_color_cancel)
         doneButton = view.findViewById(R.id.custom_color_done)
         hsvSliders = listOf(
             view.findViewById(R.id.custom_color_hue),
@@ -206,7 +217,19 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun setupSliders() {
+        val normalThumb = resources.getDimensionPixelSize(R.dimen.color_picker_slider_thumb_radius)
+        val pressedThumb = resources.getDimensionPixelSize(R.dimen.color_picker_slider_thumb_radius_pressed)
+
         hsvSliders.forEach { slider ->
+            slider.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+                override fun onStartTrackingTouch(slider: Slider) {
+                    slider.thumbRadius = pressedThumb
+                }
+
+                override fun onStopTrackingTouch(slider: Slider) {
+                    slider.thumbRadius = normalThumb
+                }
+            })
             slider.addOnChangeListener { _, _, fromUser ->
                 if (fromUser && !updatingControls) {
                     val color = Color.HSVToColor(
@@ -217,6 +240,15 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
             }
         }
         rgbSliders.forEach { slider ->
+            slider.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+                override fun onStartTrackingTouch(slider: Slider) {
+                    slider.thumbRadius = pressedThumb
+                }
+
+                override fun onStopTrackingTouch(slider: Slider) {
+                    slider.thumbRadius = normalThumb
+                }
+            })
             slider.addOnChangeListener { _, _, fromUser ->
                 if (fromUser && !updatingControls) {
                     updateControls(
@@ -254,9 +286,16 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
         if (updateHex) hexInput.setText(hex)
         previewValue.text = hex
         preview.setCardBackgroundColor(currentColor)
+        val activeColor = toneSliderColor(currentColor)
+        val inactiveColor = resolveColor(R.attr.colorPickerSliderInactive)
+        val thumbStrokeColor = resolveColor(R.attr.colorPickerSliderThumbStroke)
+        val focusColor = resolveColor(R.attr.colorPickerSliderFocus)
         (hsvSliders + rgbSliders).forEach { slider ->
-            slider.trackActiveTintList = ColorStateList.valueOf(currentColor)
-            slider.thumbTintList = ColorStateList.valueOf(currentColor)
+            slider.trackActiveTintList = ColorStateList.valueOf(activeColor)
+            slider.trackInactiveTintList = ColorStateList.valueOf(inactiveColor)
+            slider.thumbTintList = ColorStateList.valueOf(activeColor)
+            slider.thumbStrokeColor = ColorStateList.valueOf(thumbStrokeColor)
+            slider.haloTintList = ColorStateList.valueOf(focusColor)
         }
         validationError = null
         hexLayout.error = null
@@ -265,13 +304,67 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun updateDoneButton() {
-        val surface = resolveColor(R.attr.colorPickerSurfaceVariant)
-        val onSurface = resolveColor(R.attr.colorPickerOnSurface)
-        doneButton.backgroundTintList = ColorStateList.valueOf(surface)
-        doneButton.strokeColor = ColorStateList.valueOf(currentColor)
-        doneButton.strokeWidth = resources.getDimensionPixelSize(R.dimen.color_picker_action_stroke)
-        doneButton.setTextColor(ColorPickerUtils.accentTextColor(currentColor, surface, onSurface))
+        styleCancelButton()
+        val borderColor = resolveColor(R.attr.colorPickerBorder)
+        val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(currentColor)
+        val textColor = if (luminance > 0.5) 0xFF1C1B1F.toInt() else Color.WHITE
+        doneButton.setTextColor(textColor)
         doneButton.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        doneButton.background = createActionButtonBackground(
+            fillColor = currentColor,
+            strokeColor = borderColor,
+            rippleColor = rippleColorFor(textColor)
+        )
+        doneButton.stateListAnimator = null
+        doneButton.elevation = 0f
+        doneButton.translationZ = 0f
+    }
+
+    private fun styleCancelButton() {
+        val surfaceColor = actionButtonSurfaceColor()
+        val borderColor = actionButtonBorderColor()
+        val textColor = resolveColor(R.attr.colorPickerOnSurface)
+        cancelButton.alpha = 1f
+        cancelButton.isEnabled = true
+        cancelButton.isClickable = true
+        cancelButton.isFocusable = true
+        cancelButton.text = getString(R.string.color_picker_cancel)
+        cancelButton.setTextColor(textColor)
+        cancelButton.typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        ViewCompat.setBackgroundTintList(cancelButton, null)
+        cancelButton.background = createActionButtonBackground(
+            fillColor = surfaceColor,
+            strokeColor = borderColor,
+            rippleColor = rippleColorFor(textColor)
+        )
+        cancelButton.elevation = 0f
+        cancelButton.translationZ = 0f
+        cancelButton.stateListAnimator = null
+    }
+
+    private fun actionButtonSurfaceColor(): Int {
+        return if (themeMode == ColorPickerDialog.THEME_AMOLED) 0xFF171A20.toInt()
+        else resolveColor(R.attr.colorPickerSurfaceVariant)
+    }
+
+    private fun actionButtonBorderColor(): Int {
+        return if (themeMode == ColorPickerDialog.THEME_AMOLED) 0x33FFFFFF
+        else resolveColor(R.attr.colorPickerBorder)
+    }
+
+    private fun toneSliderColor(color: Int): Int {
+        val hsv = FloatArray(3)
+        Color.colorToHSV(color, hsv)
+        hsv[1] = (hsv[1] * 0.9f).coerceIn(0f, 1f)
+        hsv[2] = when (themeMode) {
+            ColorPickerDialog.THEME_LIGHT -> (hsv[2] * 0.94f).coerceIn(0f, 1f)
+            ColorPickerDialog.THEME_AMOLED -> max(hsv[2], 0.42f).let { (it + 0.05f).coerceIn(0f, 1f) }
+            else -> max(hsv[2], 0.38f).let { (it + 0.04f).coerceIn(0f, 1f) }
+        }
+
+        val toned = Color.HSVToColor(hsv)
+        val surface = resolveColor(R.attr.colorPickerSurface)
+        return ColorUtils.mixColors(toned, surface, 0.92f)
     }
 
     private fun finishEditing() {
@@ -307,7 +400,29 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
 
     private fun resolveColor(@AttrRes attribute: Int): Int {
         val value = TypedValue()
-        requireContext().theme.resolveAttribute(attribute, value, true)
-        return if (value.resourceId != 0) ContextCompat.getColor(requireContext(), value.resourceId) else value.data
+        val context = if (this::themedContext.isInitialized) themedContext else requireContext()
+        context.theme.resolveAttribute(attribute, value, true)
+        return if (value.resourceId != 0) ContextCompat.getColor(context, value.resourceId) else value.data
+    }
+
+    private fun createActionButtonBackground(fillColor: Int, strokeColor: Int, rippleColor: Int): RippleDrawable {
+        val cornerRadius = resources.displayMetrics.density * 16f
+        val strokeWidth = max(1, resources.getDimensionPixelSize(R.dimen.color_picker_action_stroke))
+        val content = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            this.cornerRadius = cornerRadius
+            setColor(fillColor)
+            setStroke(strokeWidth, strokeColor)
+        }
+        val mask = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            this.cornerRadius = cornerRadius
+            setColor(Color.WHITE)
+        }
+        return RippleDrawable(ColorStateList.valueOf(rippleColor), content, mask)
+    }
+
+    private fun rippleColorFor(baseColor: Int): Int {
+        return androidx.core.graphics.ColorUtils.setAlphaComponent(baseColor, 24)
     }
 }

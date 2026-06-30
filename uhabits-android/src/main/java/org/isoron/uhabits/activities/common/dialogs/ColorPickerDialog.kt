@@ -10,9 +10,12 @@
  */
 package org.isoron.uhabits.activities.common.dialogs
 
+import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.os.Bundle
 import android.util.TypedValue
 import android.view.LayoutInflater
@@ -30,10 +33,10 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.updatePadding
-import com.google.android.material.button.MaterialButton
 import org.isoron.uhabits.R
 import org.isoron.uhabits.core.ui.callbacks.OnColorPickedCallback
 import org.isoron.uhabits.utils.toPaletteColor
+import kotlin.math.max
 
 class ColorPickerDialog : AppCompatDialogFragment() {
 
@@ -77,13 +80,16 @@ class ColorPickerDialog : AppCompatDialogFragment() {
     private var initialColor = ColorPickerUtils.DEFAULT_COLOR
     private var defaultColor = ColorPickerUtils.DEFAULT_COLOR
     private var draftColor = ColorPickerUtils.DEFAULT_COLOR
+    private var themeMode = THEME_LIGHT
     private var source = ColorSource.DEFAULT
     private var pendingDraftColor: Int? = null
     private val isDirty: Boolean get() = draftColor != initialColor
+    private lateinit var themedContext: Context
 
     private lateinit var previewSwatch: ColorSwatchView
     private lateinit var customSwatch: ColorSwatchView
-    private lateinit var applyButton: MaterialButton
+    private lateinit var cancelButton: TextView
+    private lateinit var applyButton: TextView
     private lateinit var swatches: List<ColorSwatchView>
 
     fun setListener(callback: OnColorPickedCallback) {
@@ -101,10 +107,10 @@ class ColorPickerDialog : AppCompatDialogFragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val theme = arguments?.getInt(ARG_THEME, THEME_LIGHT) ?: THEME_LIGHT
+        themeMode = arguments?.getInt(ARG_THEME, THEME_LIGHT) ?: THEME_LIGHT
         setStyle(
             STYLE_NORMAL,
-            when (theme) {
+            when (themeMode) {
                 THEME_AMOLED -> R.style.ColorPickerFullScreenTheme_Amoled
                 THEME_DARK -> R.style.ColorPickerFullScreenTheme_Dark
                 else -> R.style.ColorPickerFullScreenTheme
@@ -138,11 +144,13 @@ class ColorPickerDialog : AppCompatDialogFragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+        themedContext = view.context
 
         val toolbar = view.findViewById<Toolbar>(R.id.toolbar)
         val actions = view.findViewById<View>(R.id.color_picker_actions)
         previewSwatch = view.findViewById(R.id.color_picker_preview_swatch)
         customSwatch = view.findViewById(R.id.custom_color_preview)
+        cancelButton = view.findViewById(R.id.color_picker_cancel)
         applyButton = view.findViewById(R.id.color_picker_apply)
 
         toolbar.setNavigationOnClickListener { dismiss() }
@@ -162,7 +170,7 @@ class ColorPickerDialog : AppCompatDialogFragment() {
         view.findViewById<View>(R.id.color_picker_reset).setOnClickListener {
             updateDraft(defaultColor, ColorSource.DEFAULT)
         }
-        view.findViewById<View>(R.id.color_picker_cancel).setOnClickListener { dismiss() }
+        cancelButton.setOnClickListener { dismiss() }
         applyButton.setOnClickListener {
             listener?.onColorPicked(draftColor.toPaletteColor(requireContext()))
             dismiss()
@@ -249,13 +257,52 @@ class ColorPickerDialog : AppCompatDialogFragment() {
     }
 
     private fun updateApplyButton() {
-        val surface = resolveColor(R.attr.colorPickerSurfaceVariant)
-        val onSurface = resolveColor(R.attr.colorPickerOnSurface)
-        applyButton.backgroundTintList = ColorStateList.valueOf(surface)
-        applyButton.strokeColor = ColorStateList.valueOf(draftColor)
-        applyButton.strokeWidth = resources.getDimensionPixelSize(R.dimen.color_picker_action_stroke)
-        applyButton.setTextColor(ColorPickerUtils.accentTextColor(draftColor, surface, onSurface))
+        styleCancelButton()
+        val borderColor = resolveColor(R.attr.colorPickerBorder)
+        val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(draftColor)
+        val textColor = if (luminance > 0.5) 0xFF1C1B1F.toInt() else Color.WHITE
+        applyButton.setTextColor(textColor)
         applyButton.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        applyButton.background = createActionButtonBackground(
+            fillColor = draftColor,
+            strokeColor = borderColor,
+            rippleColor = rippleColorFor(textColor)
+        )
+        applyButton.stateListAnimator = null
+        applyButton.elevation = 0f
+        applyButton.translationZ = 0f
+    }
+
+    private fun styleCancelButton() {
+        val surfaceColor = actionButtonSurfaceColor()
+        val borderColor = actionButtonBorderColor()
+        val textColor = resolveColor(R.attr.colorPickerOnSurface)
+        cancelButton.alpha = 1f
+        cancelButton.isEnabled = true
+        cancelButton.isClickable = true
+        cancelButton.isFocusable = true
+        cancelButton.text = getString(R.string.color_picker_cancel)
+        cancelButton.setTextColor(textColor)
+        cancelButton.typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        ViewCompat.setBackgroundTintList(cancelButton, null)
+        cancelButton.background = createActionButtonBackground(
+            fillColor = surfaceColor,
+            strokeColor = borderColor,
+            rippleColor = rippleColorFor(textColor)
+        )
+        cancelButton.elevation = 0f
+        cancelButton.translationZ = 0f
+        cancelButton.stateListAnimator = null
+    }
+
+    private fun actionButtonSurfaceColor(): Int {
+        return if (themeMode == THEME_AMOLED) 0xFF171A20.toInt()
+        else resolveColor(R.attr.colorPickerSurfaceVariant)
+    }
+
+    private fun actionButtonBorderColor(): Int {
+        return if (themeMode == THEME_AMOLED) 0x33FFFFFF
+        else resolveColor(R.attr.colorPickerBorder)
     }
 
     private fun setupInsets(root: View, toolbar: View, actions: View) {
@@ -277,7 +324,29 @@ class ColorPickerDialog : AppCompatDialogFragment() {
 
     private fun resolveColor(@AttrRes attribute: Int): Int {
         val value = TypedValue()
-        requireContext().theme.resolveAttribute(attribute, value, true)
-        return if (value.resourceId != 0) ContextCompat.getColor(requireContext(), value.resourceId) else value.data
+        val context = if (this::themedContext.isInitialized) themedContext else requireContext()
+        context.theme.resolveAttribute(attribute, value, true)
+        return if (value.resourceId != 0) ContextCompat.getColor(context, value.resourceId) else value.data
+    }
+
+    private fun createActionButtonBackground(fillColor: Int, strokeColor: Int, rippleColor: Int): RippleDrawable {
+        val cornerRadius = resources.getDimension(R.dimen.color_picker_action_radius)
+        val strokeWidth = max(1, resources.getDimensionPixelSize(R.dimen.color_picker_action_stroke))
+        val content = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            this.cornerRadius = cornerRadius
+            setColor(fillColor)
+            setStroke(strokeWidth, strokeColor)
+        }
+        val mask = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            this.cornerRadius = cornerRadius
+            setColor(Color.WHITE)
+        }
+        return RippleDrawable(ColorStateList.valueOf(rippleColor), content, mask)
+    }
+
+    private fun rippleColorFor(baseColor: Int): Int {
+        return androidx.core.graphics.ColorUtils.setAlphaComponent(baseColor, 24)
     }
 }

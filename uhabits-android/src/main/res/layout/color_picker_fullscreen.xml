@@ -160,25 +160,40 @@
         android:paddingEnd="@dimen/color_picker_horizontal_padding"
         android:paddingBottom="@dimen/color_picker_action_padding">
 
-        <com.google.android.material.button.MaterialButton
+        <TextView
             android:id="@+id/color_picker_cancel"
-            style="@style/ColorPicker.ActionButton"
             android:layout_width="0dp"
             android:layout_height="@dimen/color_picker_action_height"
             android:layout_weight="1"
-            android:backgroundTint="?attr/colorPickerSurfaceVariant"
-            android:text="@android:string/cancel"
+            android:alpha="1"
+            android:background="@null"
+            android:clickable="true"
+            android:elevation="0dp"
+            android:focusable="true"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="center"
+            android:letterSpacing="0"
+            android:text="@string/color_picker_cancel"
+            android:textAllCaps="false"
             android:textColor="?attr/colorPickerOnSurface"
-            app:cornerRadius="@dimen/color_picker_action_radius" />
+            android:textSize="16sp"
+            android:textStyle="bold" />
 
-        <com.google.android.material.button.MaterialButton
+        <TextView
             android:id="@+id/color_picker_apply"
-            style="@style/ColorPicker.OutlinedActionButton"
             android:layout_width="0dp"
             android:layout_height="@dimen/color_picker_action_height"
             android:layout_marginStart="12dp"
-            android:layout_weight="1.35"
+            android:layout_weight="1"
+            android:background="@null"
+            android:clickable="true"
+            android:focusable="true"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="center"
+            android:letterSpacing="0"
             android:text="@string/color_picker_apply"
-            app:cornerRadius="@dimen/color_picker_action_radius" />
+            android:textAllCaps="false"
+            android:textSize="16sp"
+            android:textStyle="normal" />
     </LinearLayout>
 </LinearLayout>

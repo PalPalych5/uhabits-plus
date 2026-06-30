@@ -6,10 +6,10 @@
     android:background="@drawable/color_picker_sheet_background"
     android:clipToPadding="false"
     android:fillViewport="true"
-    android:paddingStart="20dp"
+    android:paddingStart="24dp"
     android:paddingTop="8dp"
-    android:paddingEnd="20dp"
-    android:paddingBottom="16dp">
+    android:paddingEnd="24dp"
+    android:paddingBottom="20dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -17,10 +17,10 @@
         android:orientation="vertical">
 
         <View
-            android:layout_width="34dp"
+            android:layout_width="36dp"
             android:layout_height="4dp"
             android:layout_gravity="center_horizontal"
-            android:layout_marginBottom="8dp"
+            android:layout_marginBottom="20dp"
             android:background="@drawable/color_picker_sheet_handle" />
 
         <LinearLayout
@@ -36,16 +36,16 @@
                 android:text="@string/custom_color_picker_title"
                 android:textColor="?attr/colorPickerOnSurface"
                 android:fontFamily="sans-serif-medium"
-                android:textSize="20sp"
+                android:textSize="21sp"
                 android:textStyle="normal" />
 
             <ImageButton
                 android:id="@+id/custom_color_close"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:background="@drawable/color_picker_close_background"
                 android:contentDescription="@string/custom_color_close"
-                android:padding="12dp"
+                android:padding="11dp"
                 android:src="@drawable/ic_action_cancel"
                 app:tint="?attr/colorPickerOnSurface" />
         </LinearLayout>
@@ -53,10 +53,10 @@
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/custom_color_preview"
             android:layout_width="match_parent"
-            android:layout_height="68dp"
-            android:layout_marginTop="10dp"
-            android:layout_marginBottom="12dp"
-            app:cardCornerRadius="16dp"
+            android:layout_height="96dp"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="16dp"
+            app:cardCornerRadius="22dp"
             app:cardElevation="0dp">
 
             <TextView
@@ -64,20 +64,20 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="start|bottom"
-                android:layout_margin="12dp"
+                android:layout_margin="16dp"
                 android:background="@drawable/color_picker_hex_badge"
                 android:fontFamily="monospace"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="5dp"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="7dp"
                 android:textColor="@android:color/white"
-                android:textSize="12sp"
+                android:textSize="15sp"
                 android:textStyle="bold" />
         </com.google.android.material.card.MaterialCardView>
 
         <com.google.android.material.tabs.TabLayout
             android:id="@+id/custom_color_tabs"
             android:layout_width="match_parent"
-            android:layout_height="44dp"
+            android:layout_height="52dp"
             android:background="@drawable/color_picker_tabs_background"
             app:tabIndicator="@drawable/color_picker_tab_indicator"
             app:tabIndicatorColor="?attr/colorPickerSurface"
@@ -97,7 +97,7 @@
         <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp">
+            android:layout_marginTop="20dp">
 
             <LinearLayout
                 android:id="@+id/custom_color_hex_panel"
@@ -109,10 +109,10 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="2dp"
-                    android:layout_marginBottom="5dp"
+                    android:layout_marginBottom="8dp"
                     android:text="@string/custom_color_code"
                     android:textColor="?attr/colorPickerOnSurfaceVariant"
-                    android:textSize="12sp" />
+                    android:textSize="13sp" />
 
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/custom_color_hex_layout"
@@ -120,8 +120,8 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:hint=""
-                    app:boxBackgroundColor="?attr/colorPickerSurfaceVariant"
-                    app:boxStrokeColor="?attr/colorPickerOnSurfaceVariant"
+                    app:boxBackgroundColor="?attr/colorPickerSurface"
+                    app:boxStrokeColor="?attr/colorPickerBorder"
                     app:errorTextColor="?attr/colorPickerDanger"
                     app:hintEnabled="false">
 
@@ -135,7 +135,7 @@
                         android:maxLength="7"
                         android:singleLine="true"
                         android:textColor="?attr/colorPickerOnSurface"
-                        android:textSize="17sp" />
+                        android:textSize="18sp" />
                 </com.google.android.material.textfield.TextInputLayout>
             </LinearLayout>
 
@@ -163,29 +163,42 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="24dp"
             android:orientation="horizontal">
 
-            <com.google.android.material.button.MaterialButton
+            <TextView
                 android:id="@+id/custom_color_cancel"
-                style="@style/ColorPicker.ActionButton"
                 android:layout_width="0dp"
-                android:layout_height="50dp"
+                android:layout_height="48dp"
                 android:layout_weight="1"
-                android:backgroundTint="?attr/colorPickerSurfaceVariant"
-                android:text="@android:string/cancel"
+                android:alpha="1"
+                android:background="@null"
+                android:clickable="true"
+                android:focusable="true"
+                android:fontFamily="sans-serif-medium"
+                android:gravity="center"
+                android:letterSpacing="0"
+                android:text="@string/color_picker_cancel"
+                android:textAllCaps="false"
                 android:textColor="?attr/colorPickerOnSurface"
-                app:cornerRadius="14dp" />
+                android:textSize="16sp"
+                android:textStyle="bold" />
 
-            <com.google.android.material.button.MaterialButton
+            <androidx.appcompat.widget.AppCompatButton
                 android:id="@+id/custom_color_done"
-                style="@style/ColorPicker.OutlinedActionButton"
                 android:layout_width="0dp"
-                android:layout_height="50dp"
+                android:layout_height="48dp"
                 android:layout_marginStart="12dp"
-                android:layout_weight="1.35"
+                android:layout_weight="1"
+                android:background="@null"
+                android:elevation="0dp"
+                android:fontFamily="sans-serif-medium"
+                android:stateListAnimator="@null"
                 android:text="@string/pomodoro_done"
-                app:cornerRadius="14dp" />
+                android:textAllCaps="false"
+                android:textSize="16sp"
+                android:textStyle="normal"
+                android:translationZ="0dp" />
         </LinearLayout>
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>
