@@ -67,9 +67,6 @@ class IntentFactory() {
     fun startReportsActivity(context: Context) =
         MainActivity.intent(context, MainDestination.STATISTICS)
 
-    fun startTodayActivity(context: Context) =
-        MainActivity.intent(context, MainDestination.TODAY)
-
     fun startShowHabitActivity(context: Context, habit: Habit) =
         Intent(context, ShowHabitActivity::class.java).apply {
             data = Uri.parse(habit.uriString)

@@ -21,7 +21,7 @@
             android:id="@+id/bottomNavigation"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="?attr/contrast0"
+            android:background="?attr/bottomNavigationBackground"
             app:itemIconTint="?attr/colorAccent"
             app:itemTextColor="?attr/contrast100"
             app:labelVisibilityMode="labeled"

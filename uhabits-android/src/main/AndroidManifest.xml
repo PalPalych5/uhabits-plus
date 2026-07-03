@@ -60,15 +60,6 @@
             android:label="@string/main_activity_title"
             android:launchMode="singleTop" />
 
-        <activity
-            android:name=".activities.habits.today.TodayActivity"
-            android:label="@string/today"
-            android:launchMode="singleTop">
-            <meta-data
-                android:name="android.support.PARENT_ACTIVITY"
-                android:value=".activities.main.MainActivity" />
-        </activity>
-
         <activity-alias
             android:name=".MainActivity"
             android:exported="true"

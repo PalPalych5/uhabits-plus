@@ -1,7 +1,6 @@
 package org.isoron.uhabits.activities.main
 
 enum class MainDestination {
-    TODAY,
     HABITS,
     ARCHIVE,
     STATISTICS,

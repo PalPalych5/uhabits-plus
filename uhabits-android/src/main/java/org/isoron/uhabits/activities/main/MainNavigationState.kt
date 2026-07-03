@@ -1,7 +1,7 @@
 package org.isoron.uhabits.activities.main
 
 class MainNavigationState(
-    current: MainDestination = MainDestination.TODAY,
+    current: MainDestination = MainDestination.HABITS,
     history: List<MainDestination> = emptyList()
 ) {
     var current: MainDestination = current

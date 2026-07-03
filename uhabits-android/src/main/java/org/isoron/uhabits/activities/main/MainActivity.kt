@@ -23,7 +23,6 @@ import org.isoron.uhabits.activities.blocks.ManageBlocksActivity
 import org.isoron.uhabits.activities.habits.edit.HabitTypeDialog
 import org.isoron.uhabits.activities.habits.list.ListHabitsDisplayMode
 import org.isoron.uhabits.activities.habits.list.ListHabitsFragment
-import org.isoron.uhabits.activities.habits.today.TodayFragment
 import org.isoron.uhabits.activities.statistics.StatisticsFragment
 import org.isoron.uhabits.activities.settings.SettingsSectionFragment
 import org.isoron.uhabits.activities.settings.AccentColorManager
@@ -72,19 +71,13 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
             intent.removeExtra(EXTRA_RESTORE_SUCCESS)
         }
 
-        val todayVisible = prefs.isTodayTabVisible
         var startDest = savedInstanceState?.getString(STATE_CURRENT)?.let {
-            runCatching { MainDestination.valueOf(it) }.getOrNull()
+            parseDestination(it)
         } ?: destinationFromIntent(intent)
 
-        if (startDest == MainDestination.TODAY && !todayVisible) {
-            startDest = MainDestination.HABITS
-        }
-
         val restoredHistory = (savedInstanceState?.getStringArrayList(STATE_HISTORY)
-            ?.map { runCatching { MainDestination.valueOf(it) }.getOrNull() }
+            ?.map { parseDestination(it) }
             ?.filterNotNull() ?: emptyList())
-            .filter { it != MainDestination.TODAY || todayVisible }
 
         navigationState = MainNavigationState(
             current = startDest,
@@ -93,7 +86,6 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
         setupBottomNavigation()
         applyAccentColor()
-        binding.bottomNavigation.menu.findItem(R.id.navigationToday)?.isVisible = todayVisible
 
         setupBackHandling()
         ensureCoreFragments()
@@ -108,7 +100,6 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         binding.bottomNavigation.setOnItemSelectedListener { item ->
             if (updatingBottomNavigation) return@setOnItemSelectedListener true
             val destination = when (item.itemId) {
-                R.id.navigationToday -> MainDestination.TODAY
                 R.id.navigationHabits -> MainDestination.HABITS
                 R.id.navigationReports -> MainDestination.STATISTICS
                 R.id.navigationSettings -> MainDestination.SETTINGS
@@ -132,12 +123,9 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
     private fun ensureCoreFragments() {
         val transaction = supportFragmentManager.beginTransaction()
-        if (supportFragmentManager.findFragmentByTag(TAG_TODAY) == null) {
-            transaction.add(R.id.mainContent, TodayFragment(), TAG_TODAY)
-        }
         if (supportFragmentManager.findFragmentByTag(TAG_HABITS) == null) {
             val habits = ListHabitsFragment()
-            transaction.add(R.id.mainContent, habits, TAG_HABITS).hide(habits)
+            transaction.add(R.id.mainContent, habits, TAG_HABITS)
         }
         transaction.commitNowAllowingStateLoss()
     }
@@ -146,7 +134,6 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         val tag = tagFor(destination)
         supportFragmentManager.findFragmentByTag(tag)?.let { return it }
         val fragment = when (destination) {
-            MainDestination.TODAY -> TodayFragment()
             MainDestination.HABITS, MainDestination.ARCHIVE -> ListHabitsFragment()
             MainDestination.STATISTICS -> StatisticsFragment()
             MainDestination.SETTINGS -> SettingsSectionFragment()
@@ -187,7 +174,6 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
     private fun updateBottomSelection(destination: MainDestination) {
         val itemId = when (destination.bottomItemDestination) {
-            MainDestination.TODAY -> R.id.navigationToday
             MainDestination.HABITS -> R.id.navigationHabits
             MainDestination.STATISTICS -> R.id.navigationReports
             MainDestination.SETTINGS -> R.id.navigationSettings
@@ -204,10 +190,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     override fun navigateBack(): Boolean {
-        var destination = navigationState.navigateBack()
-        while (destination == MainDestination.TODAY && !prefs.isTodayTabVisible) {
-            destination = navigationState.navigateBack()
-        }
+        val destination = navigationState.navigateBack()
         if (destination == null) return false
         showDestination(destination)
         return true
@@ -328,7 +311,6 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                 sqliteHabitList?.reloadAndNotify()
                 val habitCount = runCatching { appComponent.habitList.size().toLong() }.getOrDefault(-1L)
 
-                (supportFragmentManager.findFragmentByTag(TAG_TODAY) as? TodayFragment)?.refresh()
                 (supportFragmentManager.findFragmentByTag(TAG_HABITS) as? ListHabitsFragment)?.refresh(
                     reloadFromDatabase = true
                 )
@@ -342,16 +324,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         }
     }
 
-    override fun onNavigationPreferencesChanged() {
-        runOnUiThread {
-            val visible = prefs.isTodayTabVisible
-            binding.bottomNavigation.menu.findItem(R.id.navigationToday)?.isVisible = visible
-            if (!visible && navigationState.current == MainDestination.TODAY) {
-                navigate(MainDestination.HABITS)
-            }
-            applyAccentColor()
-        }
-    }
+    override fun onNavigationPreferencesChanged() = Unit
 
     override fun onSyncPreferencesChanged() {
         runOnUiThread {
@@ -391,7 +364,6 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     private fun habitsFragment() = fragmentFor(MainDestination.HABITS) as ListHabitsFragment
 
     private fun tagFor(destination: MainDestination) = when (destination) {
-        MainDestination.TODAY -> TAG_TODAY
         MainDestination.HABITS, MainDestination.ARCHIVE -> TAG_HABITS
         MainDestination.STATISTICS -> TAG_REPORTS
         MainDestination.SETTINGS -> TAG_SETTINGS
@@ -399,19 +371,18 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
     private fun destinationFromIntent(intent: Intent): MainDestination {
         val destName = intent.getStringExtra(EXTRA_DESTINATION)
-            ?: prefs.startDestinationName
-        var dest = runCatching { MainDestination.valueOf(destName) }.getOrDefault(MainDestination.TODAY)
-        if (dest == MainDestination.TODAY && !prefs.isTodayTabVisible) {
-            dest = MainDestination.HABITS
-        }
-        return dest
+        return parseDestination(destName) ?: MainDestination.HABITS
+    }
+
+    private fun parseDestination(destName: String?): MainDestination? {
+        if (destName == "TODAY") return MainDestination.HABITS
+        return destName?.let { runCatching { MainDestination.valueOf(it) }.getOrNull() }
     }
 
     companion object {
         private const val EXTRA_DESTINATION = "main.destination"
         private const val STATE_CURRENT = "main.current"
         private const val STATE_HISTORY = "main.history"
-        private const val TAG_TODAY = "main.today"
         private const val TAG_HABITS = "main.habits"
         private const val TAG_REPORTS = "main.reports"
         private const val TAG_SETTINGS = "main.settings"

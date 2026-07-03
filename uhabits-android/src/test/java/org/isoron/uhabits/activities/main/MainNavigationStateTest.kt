@@ -11,7 +11,7 @@ class MainNavigationStateTest {
     fun repeatedDestinationIsNoOp() {
         val state = MainNavigationState()
 
-        assertFalse(state.navigate(MainDestination.TODAY))
+        assertFalse(state.navigate(MainDestination.HABITS))
         assertEquals(emptyList<MainDestination>(), state.history())
     }
 
@@ -19,24 +19,20 @@ class MainNavigationStateTest {
     fun backFollowsVisitHistory() {
         val state = MainNavigationState()
 
-        assertTrue(state.navigate(MainDestination.HABITS))
         assertTrue(state.navigate(MainDestination.STATISTICS))
         assertEquals(MainDestination.HABITS, state.navigateBack())
-        assertEquals(MainDestination.TODAY, state.navigateBack())
         assertNull(state.navigateBack())
     }
 
     @Test
     fun stateCanBeRestored() {
         val original = MainNavigationState()
-        original.navigate(MainDestination.HABITS)
         original.navigate(MainDestination.SETTINGS)
 
         val restored = MainNavigationState(original.current, original.history())
 
         assertEquals(MainDestination.SETTINGS, restored.current)
         assertEquals(MainDestination.HABITS, restored.navigateBack())
-        assertEquals(MainDestination.TODAY, restored.navigateBack())
     }
 
     @Test
