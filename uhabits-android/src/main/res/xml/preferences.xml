@@ -74,10 +74,10 @@
 
     </PreferenceCategory>
 
-    <!-- 2. Привычки и Сегодня -->
-    <PreferenceCategory
-            android:key="habitsTodayCategory"
-            android:title="@string/pref_habits_today_title">
+    <!-- 2. Привычки -->
+        <PreferenceCategory
+            android:key="habitsCategory"
+            android:title="@string/pref_habits_title">
 
         <SwitchPreferenceCompat
                 android:defaultValue="true"
@@ -97,6 +97,13 @@
                 android:key="pref_enable_day_tiers"
                 android:summary="@string/pref_enable_day_tiers_summary"
                 android:title="@string/pref_enable_day_tiers_title"
+                app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+                android:defaultValue="false"
+                android:key="pref_habit_group_separators"
+                android:summary="@string/pref_habit_group_separators_summary"
+                android:title="@string/pref_habit_group_separators_title"
                 app:iconSpaceReserved="false" />
 
         <SwitchPreferenceCompat
@@ -125,22 +132,6 @@
                 android:key="pref_unknown_enabled"
                 android:summary="@string/pref_unknown_description"
                 android:title="@string/pref_unknown_title"
-                app:iconSpaceReserved="false" />
-
-        <ListPreference
-                android:key="pref_start_destination"
-                android:title="@string/pref_start_destination_title"
-                android:entries="@array/pref_start_destination_entries"
-                android:entryValues="@array/pref_start_destination_values"
-                android:defaultValue="TODAY"
-                android:summary="%s"
-                app:iconSpaceReserved="false" />
-
-        <SwitchPreferenceCompat
-                android:defaultValue="true"
-                android:key="pref_show_today_tab"
-                android:summary="@string/pref_show_today_tab_description"
-                android:title="@string/pref_show_today_tab_title"
                 app:iconSpaceReserved="false" />
 
         <Preference

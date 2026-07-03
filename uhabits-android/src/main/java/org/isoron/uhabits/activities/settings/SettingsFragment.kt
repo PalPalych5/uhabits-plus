@@ -32,14 +32,20 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.FileProvider
 import androidx.core.os.LocaleListCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.slider.Slider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -61,6 +67,7 @@ import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import org.isoron.uhabits.activities.common.dialogs.ColorPickerDialogFactory
 import org.isoron.uhabits.core.commands.ClearAllEntriesCommand
 import org.isoron.uhabits.core.commands.SetGlobalStatisticsStartDateCommand
+import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.PaletteColor
 import org.isoron.uhabits.core.models.sqlite.SQLModelFactory
 import org.isoron.uhabits.core.preferences.Preferences
@@ -68,7 +75,6 @@ import org.isoron.uhabits.core.tasks.Task
 import org.isoron.uhabits.intents.IntentFactory
 import org.isoron.uhabits.notifications.RingtoneManager
 import org.isoron.uhabits.utils.StyledResources
-import org.isoron.uhabits.utils.applyBottomInset
 import org.isoron.uhabits.utils.startActivitySafely
 import org.isoron.uhabits.widgets.WidgetUpdater
 import org.isoron.uhabits.backup.BackupEntry
@@ -151,7 +157,20 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
 
         recyclerView = view.findViewById(R.id.settingsRecyclerView)
         recyclerView.layoutManager = LinearLayoutManager(requireContext())
-        recyclerView.applyBottomInset()
+        val topSpacing = (2 * resources.displayMetrics.density).toInt()
+        val bottomSpacing = (16 * resources.displayMetrics.density).toInt()
+        ViewCompat.setOnApplyWindowInsetsListener(recyclerView) { recycler, insets ->
+            val systemBarsInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val displayCutoutInsets = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+            val topInset = maxOf(systemBarsInsets.top, displayCutoutInsets.top)
+            recycler.setPadding(
+                recycler.paddingLeft,
+                topInset + topSpacing,
+                recycler.paddingRight,
+                systemBarsInsets.bottom + bottomSpacing
+            )
+            insets
+        }
 
         adapter = CustomSettingsAdapter(requireContext(), prefs, emptyList())
         recyclerView.adapter = adapter
@@ -286,8 +305,18 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             )
         )
 
-        // 2. Привычки и Сегодня
-        items.add(SettingItem.Header(getString(R.string.pref_habits_today_title)))
+        items.add(
+            SettingItem.Navigation(
+                key = "pref_card_rounding",
+                iconRes = R.drawable.ic_settings_corners,
+                title = getString(R.string.pref_card_rounding_title),
+                summary = buildCardRoundingSummary(),
+                onClick = { showCardRoundingDialog() }
+            )
+        )
+
+        // 2. Привычки
+        items.add(SettingItem.Header(getString(R.string.pref_habits_title)))
 
         items.add(
             SettingItem.Switch(
@@ -324,6 +353,32 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 checked = prefs.isDayTiersEnabled,
                 onCheckedChange = { checked ->
                     prefs.isDayTiersEnabled = checked
+                    rebuildSettingsList()
+                }
+            )
+        )
+
+        if (prefs.isDayTiersEnabled) {
+            items.add(
+                SettingItem.Navigation(
+                    key = "pref_day_tier_sort_order",
+                    iconRes = R.drawable.ic_settings_tiers,
+                    title = getString(R.string.pref_day_tier_sort_order_title),
+                    summary = dayTierSortOrderSummary(),
+                    onClick = { showDayTierSortOrderDialog() }
+                )
+            )
+        }
+
+        items.add(
+            SettingItem.Switch(
+                key = "pref_habit_group_separators",
+                iconRes = R.drawable.ic_settings_squares,
+                title = getString(R.string.pref_habit_group_separators_title),
+                summary = getString(R.string.pref_habit_group_separators_summary),
+                checked = prefs.areHabitGroupSeparatorsEnabled,
+                onCheckedChange = { checked ->
+                    prefs.areHabitGroupSeparatorsEnabled = checked
                     rebuildSettingsList()
                 }
             )
@@ -385,38 +440,6 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             )
         )
 
-        // Стартовый раздел
-        val startDestValue = prefs.startDestinationName
-        val startDestIndex = resources.getStringArray(R.array.pref_start_destination_values).indexOf(startDestValue)
-        val startDestEntry = if (startDestIndex >= 0) {
-            resources.getStringArray(R.array.pref_start_destination_entries)[startDestIndex]
-        } else {
-            startDestValue
-        }
-        items.add(
-            SettingItem.Navigation(
-                key = "pref_start_destination",
-                iconRes = R.drawable.ic_settings_start,
-                title = getString(R.string.pref_start_destination_title),
-                summary = startDestEntry,
-                onClick = { showStartDestinationDialog() }
-            )
-        )
-
-        items.add(
-            SettingItem.Switch(
-                key = "pref_show_today_tab",
-                iconRes = R.drawable.ic_settings_today,
-                title = getString(R.string.pref_show_today_tab_title),
-                summary = getString(R.string.pref_show_today_tab_description),
-                checked = prefs.isTodayTabVisible,
-                onCheckedChange = { checked ->
-                    prefs.isTodayTabVisible = checked
-                    rebuildSettingsList()
-                }
-            )
-        )
-
         items.add(
             SettingItem.Navigation(
                 key = "openArchive",
@@ -468,6 +491,43 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                         putExtra(Settings.EXTRA_CHANNEL_ID, org.isoron.uhabits.core.ui.NotificationTray.REMINDERS_CHANNEL_ID)
                     }
                     startActivity(intent)
+                }
+            )
+        )
+
+        // Pomodoro
+        items.add(SettingItem.Header(getString(R.string.pref_pomodoro_category)))
+
+        items.add(
+            SettingItem.Navigation(
+                key = "pref_pomodoro_default_focus_minutes",
+                iconRes = R.drawable.ic_settings_pomodoro_focus,
+                title = getString(R.string.pref_pomodoro_default_focus_title),
+                summary = getString(R.string.pomodoro_minutes_short, prefs.pomodoroDefaultFocusMinutes),
+                onClick = { showPomodoroDefaultMinutesDialog(isBreak = false) }
+            )
+        )
+
+        items.add(
+            SettingItem.Navigation(
+                key = "pref_pomodoro_default_break_minutes",
+                iconRes = R.drawable.ic_settings_pomodoro_break,
+                title = getString(R.string.pref_pomodoro_default_break_title),
+                summary = getString(R.string.pomodoro_minutes_short, prefs.pomodoroDefaultBreakMinutes),
+                onClick = { showPomodoroDefaultMinutesDialog(isBreak = true) }
+            )
+        )
+
+        items.add(
+            SettingItem.Switch(
+                key = "pref_pomodoro_auto_switch",
+                iconRes = R.drawable.ic_settings_pomodoro_auto,
+                title = getString(R.string.pref_pomodoro_auto_switch_title),
+                summary = getString(R.string.pref_pomodoro_auto_switch_summary),
+                checked = prefs.isPomodoroAutoSwitch,
+                onCheckedChange = { checked ->
+                    prefs.isPomodoroAutoSwitch = checked
+                    rebuildSettingsList()
                 }
             )
         )
@@ -811,6 +871,126 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         adapter.updateItems(items)
     }
 
+    private fun showPomodoroDefaultMinutesDialog(isBreak: Boolean) {
+        val initialValue = if (isBreak) {
+            prefs.pomodoroDefaultBreakMinutes.toString()
+        } else {
+            prefs.pomodoroDefaultFocusMinutes.toString()
+        }
+        val title = if (isBreak) {
+            getString(R.string.pref_pomodoro_default_break_title)
+        } else {
+            getString(R.string.pref_pomodoro_default_focus_title)
+        }
+        CustomDialogs.showInputDialog(
+            context = requireContext(),
+            title = title,
+            initialValue = initialValue,
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER,
+            hint = title
+        ) { newValue ->
+            val minutes = newValue.toIntOrNull()
+            val minLimit = 1
+            val maxLimit = if (isBreak) 60 else 180
+            if (minutes != null && minutes in minLimit..maxLimit) {
+                if (isBreak) {
+                    prefs.pomodoroDefaultBreakMinutes = minutes
+                } else {
+                    prefs.pomodoroDefaultFocusMinutes = minutes
+                }
+                rebuildSettingsList()
+            } else {
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.pref_pomodoro_invalid_range, minLimit, maxLimit),
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    private fun dayTierSortOrderSummary(): String {
+        return prefs.dayTierSortOrder.joinToString(" · ") { dayTierLabel(it) }
+    }
+
+    private fun showDayTierSortOrderDialog() {
+        val order = prefs.dayTierSortOrder.toMutableList()
+        val content = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dpInt(4f), 0, dpInt(4f))
+        }
+
+        fun renderRows() {
+            content.removeAllViews()
+            order.forEachIndexed { index, tier ->
+                val row = LinearLayout(requireContext()).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                    setPadding(0, dpInt(4f), 0, dpInt(4f))
+                }
+                row.addView(
+                    TextView(requireContext()).apply {
+                        text = "${index + 1}. ${dayTierLabel(tier)}"
+                        textSize = 16f
+                        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    }
+                )
+                row.addView(
+                    Button(requireContext()).apply {
+                        text = getString(R.string.move_up)
+                        isEnabled = index > 0
+                        setOnClickListener {
+                            if (index <= 0) return@setOnClickListener
+                            java.util.Collections.swap(order, index, index - 1)
+                            renderRows()
+                        }
+                    }
+                )
+                row.addView(
+                    Button(requireContext()).apply {
+                        text = getString(R.string.move_down)
+                        isEnabled = index < order.lastIndex
+                        setOnClickListener {
+                            if (index >= order.lastIndex) return@setOnClickListener
+                            java.util.Collections.swap(order, index, index + 1)
+                            renderRows()
+                        }
+                    }
+                )
+                content.addView(row)
+            }
+        }
+
+        renderRows()
+        CustomDialogs.showCustomViewDialog(
+            context = requireContext(),
+            title = getString(R.string.pref_day_tier_sort_order_title),
+            contentView = content,
+            positiveText = getString(android.R.string.ok),
+            neutralText = getString(R.string.reset_default),
+            onNeutral = {
+                prefs.dayTierSortOrder = DayTier.entries
+                rebuildSettingsList()
+            }
+        ) {
+            prefs.dayTierSortOrder = order
+            rebuildSettingsList()
+        }
+    }
+
+    private fun dayTierLabel(tier: DayTier): String {
+        return when (tier) {
+            DayTier.MINIMUM -> getString(R.string.day_tier_badge_minimum)
+            DayTier.NORMAL -> getString(R.string.day_tier_badge_normal)
+            DayTier.IDEAL -> getString(R.string.day_tier_badge_ideal)
+            DayTier.OPTIONAL -> getString(R.string.day_tier_optional)
+        }
+    }
+
+    private fun dpInt(value: Float): Int {
+        return (value * resources.displayMetrics.density).toInt()
+    }
+
     private fun showLanguageDialog() {
         val entries = resources.getStringArray(R.array.pref_app_language_entries)
         val values = resources.getStringArray(R.array.pref_app_language_values)
@@ -874,6 +1054,121 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 sharedPrefs?.edit()?.putString("pref_widget_opacity", selectedVal)?.apply()
                 widgetUpdater?.updateWidgets()
                 rebuildSettingsList()
+        }
+    }
+
+    private fun formatCornerRadiusSummary(radius: Int): String {
+        val entries = resources.getStringArray(R.array.pref_habit_card_corners_entries)
+        val values = resources.getStringArray(R.array.pref_habit_card_corners_values)
+        val index = values.indexOf(radius.toString())
+        return if (index >= 0) entries[index] else "$radius dp"
+    }
+
+    private fun buildCardRoundingSummary(): String {
+        return listOf(
+            "${getString(R.string.habits_title)} ${prefs.habitsCardCornerRadius} dp",
+            "${getString(R.string.reports_title)} ${prefs.statisticsCardCornerRadius} dp"
+        ).joinToString(" · ")
+    }
+
+    private fun showCardRoundingDialog() {
+        val values = resources.getStringArray(R.array.pref_habit_card_corners_values)
+        val allowedValues = values.map { it.toIntOrNull() ?: 8 }
+        var habitsRadius = prefs.habitsCardCornerRadius
+        var statisticsRadius = prefs.statisticsCardCornerRadius
+        val palette = SettingsThemePaletteResolver.resolve(requireContext(), prefs)
+
+        fun sliderIndexFor(radius: Int): Float {
+            val fallbackIndex = allowedValues.indexOf(8).takeIf { it >= 0 } ?: 0
+            return (allowedValues.indexOf(radius).takeIf { it >= 0 } ?: fallbackIndex).toFloat()
+        }
+
+        fun sliderBlock(
+            title: String,
+            initialRadius: Int,
+            onRadiusChanged: (Int) -> Unit
+        ): View {
+            val density = resources.displayMetrics.density
+            val valueView = TextView(requireContext()).apply {
+                text = "$initialRadius dp"
+                textSize = 13f
+                setTextColor(palette.onSurfaceVariant)
+            }
+            return LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.VERTICAL
+                addView(
+                    LinearLayout(requireContext()).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        addView(
+                            TextView(requireContext()).apply {
+                                text = title
+                                textSize = 14f
+                                setTextColor(palette.onSurface)
+                                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                            }
+                        )
+                        addView(valueView)
+                    }
+                )
+                addView(
+                    Slider(requireContext()).apply {
+                        valueFrom = 0f
+                        valueTo = allowedValues.lastIndex.toFloat()
+                        stepSize = 1f
+                        value = sliderIndexFor(initialRadius)
+                        haloRadius = 0
+                        thumbRadius = (8 * density).toInt()
+                        trackHeight = (4 * density).toInt()
+                        labelBehavior = com.google.android.material.slider.LabelFormatter.LABEL_GONE
+                        trackActiveTintList = android.content.res.ColorStateList.valueOf(palette.accent)
+                        trackInactiveTintList = android.content.res.ColorStateList.valueOf(palette.border)
+                        thumbTintList = android.content.res.ColorStateList.valueOf(palette.accent)
+                        layoutParams = LinearLayout.LayoutParams(
+                            LinearLayout.LayoutParams.MATCH_PARENT,
+                            LinearLayout.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            topMargin = (4 * density).toInt()
+                        }
+                        addOnChangeListener { _, sliderValue, _ ->
+                            val mappedValue = allowedValues[sliderValue.toInt().coerceIn(0, allowedValues.lastIndex)]
+                            valueView.text = "$mappedValue dp"
+                            onRadiusChanged(mappedValue)
+                        }
+                    }
+                )
+            }
+        }
+
+        val density = resources.displayMetrics.density
+        val content = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((4 * density).toInt(), 0, (4 * density).toInt(), 0)
+            addView(sliderBlock(getString(R.string.habits_title), habitsRadius) { habitsRadius = it }.apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = (10 * density).toInt()
+                }
+            })
+            addView(sliderBlock(getString(R.string.reports_title), statisticsRadius) { statisticsRadius = it }.apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = (10 * density).toInt()
+                }
+            })
+        }
+
+        CustomDialogs.showCustomViewDialog(
+            context = requireContext(),
+            title = getString(R.string.pref_card_rounding_title),
+            contentView = content
+        ) {
+            prefs.habitsCardCornerRadius = habitsRadius
+            prefs.statisticsCardCornerRadius = statisticsRadius
+            rebuildSettingsList()
         }
     }
 
@@ -1403,23 +1698,6 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     private fun thisMonday(): LocalDate {
         val firstWeekday = DayOfWeek.values()[getFirstWeekdayNumberAccordingToLocale() - 1]
         return getToday().startOfWeek(firstWeekday)
-    }
-
-    private fun showStartDestinationDialog() {
-        val entries = resources.getStringArray(R.array.pref_start_destination_entries)
-        val values = resources.getStringArray(R.array.pref_start_destination_values)
-        val currentVal = prefs.startDestinationName
-        val selectedIndex = values.indexOf(currentVal)
-
-        CustomDialogs.showSingleChoiceDialog(
-            context = requireContext(),
-            title = getString(R.string.pref_start_destination_title),
-            options = entries.toList(),
-            selectedIndex = selectedIndex
-        ) { which ->
-            prefs.startDestinationName = values[which]
-            rebuildSettingsList()
-        }
     }
 
     private fun fullPathFor(uri: Uri): String? {

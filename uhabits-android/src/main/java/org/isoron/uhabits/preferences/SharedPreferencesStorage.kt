@@ -93,10 +93,12 @@ class SharedPreferencesStorage(
             "pref_unknown_enabled" -> {
                 preferences.areQuestionMarksEnabled = getBoolean(key, false)
             }
-            "pref_show_today_tab" ->
-                preferences.isTodayTabVisible = getBoolean(key, true)
-            "pref_start_destination" ->
-                preferences.startDestinationName = getString(key, "TODAY")
+            "pref_habit_group_separators" ->
+                preferences.areHabitGroupSeparatorsEnabled = getBoolean(key, false)
+            "pref_enable_day_tiers" ->
+                preferences.isDayTiersEnabled = getBoolean(key, true)
+            "pref_day_tier_sort_order" ->
+                preferences.dayTierSortOrder = preferences.dayTierSortOrder
             "pref_sync_enabled", "pref_sync_base_url", "pref_sync_key", "pref_sync_account_email" -> {
                 preferences.notifySyncPreferencesChanged()
             }

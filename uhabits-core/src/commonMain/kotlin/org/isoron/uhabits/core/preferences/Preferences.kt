@@ -23,6 +23,7 @@ import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale
 import org.isoron.platform.utils.StringUtils.Companion.joinLongs
 import org.isoron.platform.utils.StringUtils.Companion.splitLongs
+import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.ui.ThemeSwitcher
 import kotlin.math.max
@@ -152,6 +153,63 @@ open class Preferences(private val storage: Storage) {
         get() = storage.getBoolean("pref_enable_day_tiers", true)
         set(enabled) {
             storage.putBoolean("pref_enable_day_tiers", enabled)
+            if (!enabled && defaultPrimaryOrder == HabitList.Order.BY_DAY_TIER) {
+                defaultPrimaryOrder = HabitList.Order.BY_POSITION
+            }
+            notifyHabitListAppearanceChanged()
+        }
+
+    open var areHabitGroupSeparatorsEnabled: Boolean
+        get() = storage.getBoolean("pref_habit_group_separators", false)
+        set(enabled) {
+            storage.putBoolean("pref_habit_group_separators", enabled)
+            notifyHabitListAppearanceChanged()
+        }
+
+    open var dayTierSortOrder: List<DayTier>
+        get() {
+            val stored = storage.getString("pref_day_tier_sort_order", "")
+            val parsed = stored
+                .split(",")
+                .mapNotNull { name -> runCatching { DayTier.valueOf(name) }.getOrNull() }
+                .distinct()
+            return normalizeDayTierOrder(parsed)
+        }
+        set(order) {
+            val normalized = normalizeDayTierOrder(order)
+            storage.putString("pref_day_tier_sort_order", normalized.joinToString(",") { it.name })
+            notifyHabitListAppearanceChanged()
+        }
+
+    private fun normalizeDayTierOrder(order: List<DayTier>): List<DayTier> {
+        return (order + DayTier.entries.filterNot { it in order }).distinct()
+    }
+
+    open var habitCardCornerRadius: Int
+        get() = storage.getInt("pref_habit_card_corner_radius", 8)
+        set(value) {
+            storage.putInt("pref_habit_card_corner_radius", value)
+            notifyCardCornersChanged()
+        }
+
+    open var habitsCardCornerRadius: Int
+        get() {
+            val radius = storage.getInt("pref_habits_card_corner_radius", -1)
+            return if (radius >= 0) radius else habitCardCornerRadius
+        }
+        set(value) {
+            storage.putInt("pref_habits_card_corner_radius", value)
+            notifyCardCornersChanged()
+        }
+
+    open var statisticsCardCornerRadius: Int
+        get() {
+            val radius = storage.getInt("pref_statistics_card_corner_radius", -1)
+            return if (radius >= 0) radius else habitCardCornerRadius
+        }
+        set(value) {
+            storage.putInt("pref_statistics_card_corner_radius", value)
+            notifyCardCornersChanged()
         }
 
     open var isHabitSpheresEnabled: Boolean
@@ -214,6 +272,19 @@ open class Preferences(private val storage: Storage) {
         storage.putLong("last_hint_timestamp", date.unixTime)
     }
 
+    open var pomodoroDefaultFocusMinutes: Int
+        get() = storage.getInt("pref_pomodoro_default_focus_minutes", 25)
+        set(value) = storage.putInt("pref_pomodoro_default_focus_minutes", value)
+
+    open var pomodoroDefaultBreakMinutes: Int
+        get() = storage.getInt("pref_pomodoro_default_break_minutes", 5)
+        set(value) = storage.putInt("pref_pomodoro_default_break_minutes", value)
+
+    open var isPomodoroAutoSwitch: Boolean
+        get() = storage.getBoolean("pref_pomodoro_auto_switch", true)
+        set(value) = storage.putBoolean("pref_pomodoro_auto_switch", value)
+
+
     open var lastAppVersion: Int
         get() = storage.getInt("last_version", 0)
         set(version) {
@@ -263,20 +334,6 @@ open class Preferences(private val storage: Storage) {
                 7 -> DayOfWeek.SATURDAY
                 else -> throw IllegalArgumentException()
             }
-        }
-
-    open var isTodayTabVisible: Boolean
-        get() = storage.getBoolean("pref_show_today_tab", true)
-        set(visible) {
-            storage.putBoolean("pref_show_today_tab", visible)
-            for (l in listeners) l.onNavigationPreferencesChanged()
-        }
-
-    open var startDestinationName: String
-        get() = storage.getString("pref_start_destination", "TODAY")
-        set(name) {
-            storage.putString("pref_start_destination", name)
-            for (l in listeners) l.onNavigationPreferencesChanged()
         }
 
     open var isSyncEnabled: Boolean
@@ -406,6 +463,14 @@ open class Preferences(private val storage: Storage) {
         for (l in listeners) l.onSyncPreferencesChanged()
     }
 
+    open fun notifyCardCornersChanged() {
+        for (l in listeners) l.onCardCornersChanged()
+    }
+
+    open fun notifyHabitListAppearanceChanged() {
+        for (l in listeners) l.onHabitListAppearanceChanged()
+    }
+
     interface Listener {
         fun onCheckmarkSequenceChanged() {}
         fun onNotificationsChanged() {}
@@ -413,6 +478,8 @@ open class Preferences(private val storage: Storage) {
         fun onNavigationPreferencesChanged() {}
         fun onSyncFinished() {}
         fun onSyncPreferencesChanged() {}
+        fun onCardCornersChanged() {}
+        fun onHabitListAppearanceChanged() {}
     }
 
     interface Storage {
@@ -441,14 +508,6 @@ open class Preferences(private val storage: Storage) {
                 )
             }
         }
-    }
-
-    open fun isTodaySectionCollapsed(sectionId: String): Boolean {
-        return storage.getBoolean("today_section_collapsed_$sectionId", false)
-    }
-
-    open fun setTodaySectionCollapsed(sectionId: String, collapsed: Boolean) {
-        storage.putBoolean("today_section_collapsed_$sectionId", collapsed)
     }
 
     init {

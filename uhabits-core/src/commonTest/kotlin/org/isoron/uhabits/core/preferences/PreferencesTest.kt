@@ -20,6 +20,7 @@ package org.isoron.uhabits.core.preferences
 
 import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.BaseUnitTest
+import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.ui.ThemeSwitcher
 import kotlin.test.BeforeTest
@@ -68,6 +69,26 @@ class PreferencesTest : BaseUnitTest() {
             "BY_POSITION",
             storage.getString("pref_default_order", "")
         )
+    }
+
+    @Test
+    fun testDayTierSortOrder() {
+        assertEquals(
+            listOf(DayTier.MINIMUM, DayTier.NORMAL, DayTier.IDEAL, DayTier.OPTIONAL),
+            prefs.dayTierSortOrder
+        )
+        prefs.dayTierSortOrder = listOf(DayTier.OPTIONAL, DayTier.MINIMUM)
+        assertEquals(
+            listOf(DayTier.OPTIONAL, DayTier.MINIMUM, DayTier.NORMAL, DayTier.IDEAL),
+            prefs.dayTierSortOrder
+        )
+    }
+
+    @Test
+    fun testDisableDayTiersFallsBackFromTierSorting() {
+        prefs.defaultPrimaryOrder = HabitList.Order.BY_DAY_TIER
+        prefs.isDayTiersEnabled = false
+        assertEquals(HabitList.Order.BY_POSITION, prefs.defaultPrimaryOrder)
     }
 
     @Test
