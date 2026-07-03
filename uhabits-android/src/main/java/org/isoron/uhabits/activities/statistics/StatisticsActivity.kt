@@ -32,6 +32,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
+import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.Spinner
@@ -51,7 +52,9 @@ import org.isoron.uhabits.activities.main.MainNavigationHost
 import org.isoron.uhabits.activities.common.views.ScoreChart
 import org.isoron.uhabits.core.models.*
 import org.isoron.uhabits.core.models.Entry.Companion.SKIP
-import org.isoron.uhabits.core.ui.screens.habits.today.formatTodayValue
+import org.isoron.uhabits.core.ui.screens.statistics.StatisticsOverviewState
+import org.isoron.uhabits.core.ui.screens.statistics.StatisticsOverviewStateBuilder
+import org.isoron.uhabits.core.ui.screens.statistics.formatStatisticsValue
 import org.isoron.uhabits.databinding.ActivityStatisticsBinding
 import org.isoron.platform.gui.toInt
 import org.isoron.uhabits.utils.applyToolbarInsets
@@ -84,10 +87,15 @@ class StatisticsFragment : Fragment() {
         themeSwitcher.apply()
 
         viewBinding = ActivityStatisticsBinding.inflate(inflater, container, false)
-        binding.toolbar.applyToolbarInsets()
         binding.root.setBackgroundColor(palette.background)
-        binding.toolbar.setBackgroundColor(palette.background)
-        binding.toolbar.setTitleTextColor(palette.onSurface)
+        binding.toolbar.root.apply {
+            applyToolbarInsets()
+            visibility = View.GONE
+            minimumHeight = 0
+            layoutParams = layoutParams.apply {
+                height = ViewGroup.LayoutParams.WRAP_CONTENT
+            }
+        }
         binding.tabLayout.setBackgroundColor(palette.background)
         binding.tabLayout.setTabTextColors(palette.onSurfaceVariant, palette.onSurface)
         binding.tabLayout.setSelectedTabIndicatorColor(palette.accent)
@@ -99,8 +107,6 @@ class StatisticsFragment : Fragment() {
 
         val activity = requireActivity() as AppCompatActivity
         activity.window.statusBarColor = palette.background
-        activity.setSupportActionBar(binding.toolbar)
-        activity.supportActionBar?.setDisplayHomeAsUpEnabled(false)
 
         dateFormatter = JavaLocalDateFormatter(Locale.getDefault())
         currentTab = ReportTab.values().getOrElse(
@@ -124,12 +130,7 @@ class StatisticsFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
-        viewBinding?.let {
-            (requireActivity() as AppCompatActivity).setSupportActionBar(it.toolbar)
-            (requireActivity() as AppCompatActivity).supportActionBar
-                ?.setDisplayHomeAsUpEnabled(false)
-            updateReport()
-        }
+        viewBinding?.let { updateReport() }
         (activity as? MainNavigationHost)?.setHabitCreationAvailable(false)
     }
 
@@ -660,6 +661,8 @@ class StatisticsFragment : Fragment() {
             position = 1000
         )
 
+        addDailyOverviewCard()
+
         // 1. Overview Metrics Card
         val (summaryCard, summaryContent) = createCard(getString(R.string.overview))
         val gridLayout = LinearLayout(context).apply {
@@ -852,8 +855,7 @@ class StatisticsFragment : Fragment() {
         }
         val valueView = TextView(requireContext()).apply {
             text = value
-            textSize = 18f
-            setTypeface(null, Typeface.BOLD)
+            textSize = 16f
             setTextColor(palette.onSurface)
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(2f).toInt()
@@ -1093,6 +1095,157 @@ class StatisticsFragment : Fragment() {
         return row
     }
 
+    private fun addDailyOverviewCard() {
+        val overview = StatisticsOverviewStateBuilder.build(component.habitList)
+        val (card, content) = createCard(getString(R.string.statistics_daily_overview_title))
+        if (!component.preferences.isDayTiersEnabled) {
+            content.addView(createOverviewTextOnly(overview))
+        } else {
+            val row = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                minimumHeight = dp(120f).toInt()
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = dp(4f).toInt()
+                }
+            }
+            row.addView(createOverviewRing(overview))
+            row.addView(createOverviewLegend(overview))
+            content.addView(row)
+        }
+        binding.reportContentContainer.addView(card)
+    }
+
+    private fun createOverviewRing(overview: StatisticsOverviewState): View {
+        val levels = orderedTierProgress(overview)
+        val ringSize = dp(120f).toInt()
+        return FrameLayout(requireContext()).apply {
+            layoutParams = LinearLayout.LayoutParams(ringSize, ringSize)
+            addView(
+                StatisticsOverviewRingView(requireContext()).apply {
+                    layoutParams = FrameLayout.LayoutParams(
+                        ringSize,
+                        ringSize,
+                        Gravity.CENTER
+                    )
+                    setRings(
+                        levels.map { level ->
+                            StatisticsOverviewRingView.RingData(
+                                progress = if (level.totalCount == 0) {
+                                    0f
+                                } else {
+                                    level.completedCount.toFloat() / level.totalCount.toFloat()
+                                },
+                                color = tierColor(level.tier),
+                                trackColor = MainTabsThemeBridge.withAlpha(
+                                    palette.onSurfaceVariant,
+                                    if (palette.isPureBlack) 0.12f else 0.18f
+                                )
+                            )
+                        }
+                    )
+                }
+            )
+            addView(
+                TextView(requireContext()).apply {
+                    text = "${overview.completedCount}/${overview.totalCount}"
+                    textSize = 14f
+                    setTypeface(null, Typeface.BOLD)
+                    setTextColor(palette.onSurface)
+                    gravity = Gravity.CENTER
+                    layoutParams = FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        Gravity.CENTER
+                    )
+                }
+            )
+        }
+    }
+
+    private fun createOverviewLegend(overview: StatisticsOverviewState): View {
+        return LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                leftMargin = dp(12f).toInt()
+            }
+            orderedTierProgress(overview).forEach { level ->
+                addView(
+                    TextView(requireContext()).apply {
+                        text = "${tierLabel(level.tier)} ${level.completedCount}/${level.totalCount}"
+                        textSize = 12f
+                        setTextColor(palette.onSurfaceVariant)
+                        setPadding(0, dp(1f).toInt(), 0, dp(1f).toInt())
+                    }
+                )
+            }
+            addView(
+                TextView(requireContext()).apply {
+                    text = getString(
+                        R.string.statistics_daily_focus_minutes,
+                        overview.focusMinutes.formatStatisticsValue()
+                    )
+                    textSize = 13f
+                    setTextColor(palette.onSurfaceVariant)
+                    setPadding(0, dp(6f).toInt(), 0, 0)
+                }
+            )
+        }
+    }
+
+    private fun createOverviewTextOnly(overview: StatisticsOverviewState): View {
+        return LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(
+                TextView(requireContext()).apply {
+                    text = "${overview.completedCount}/${overview.totalCount}"
+                    textSize = 16f
+                    setTextColor(palette.onSurface)
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                }
+            )
+            addView(
+                TextView(requireContext()).apply {
+                    text = getString(
+                        R.string.statistics_daily_focus_minutes,
+                        overview.focusMinutes.formatStatisticsValue()
+                    )
+                    textSize = 13f
+                    setTextColor(palette.onSurfaceVariant)
+                }
+            )
+        }
+    }
+
+    private fun orderedTierProgress(overview: StatisticsOverviewState): List<org.isoron.uhabits.core.ui.screens.statistics.StatisticsTierProgress> {
+        val order = component.preferences.dayTierSortOrder
+        return overview.tiers.sortedBy { order.indexOf(it.tier).takeIf { index -> index >= 0 } ?: Int.MAX_VALUE }
+    }
+
+    private fun tierLabel(tier: DayTier): String {
+        return when (tier) {
+            DayTier.MINIMUM -> getString(R.string.day_tier_badge_minimum)
+            DayTier.NORMAL -> getString(R.string.day_tier_badge_normal)
+            DayTier.IDEAL -> getString(R.string.day_tier_badge_ideal)
+            DayTier.OPTIONAL -> getString(R.string.day_tier_optional)
+        }
+    }
+
+    private fun tierColor(tier: DayTier): Int {
+        val paletteColor = when (tier) {
+            DayTier.MINIMUM -> PaletteColor(17)
+            DayTier.NORMAL -> PaletteColor(5)
+            DayTier.IDEAL -> PaletteColor(7)
+            DayTier.OPTIONAL -> PaletteColor(13)
+        }
+        return themeSwitcher.currentTheme.color(paletteColor).toInt()
+    }
+
     private fun createCard(titleText: String): Pair<LinearLayout, LinearLayout> {
         val cardContainer = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
@@ -1100,32 +1253,32 @@ class StatisticsFragment : Fragment() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                bottomMargin = dp(12f).toInt()
+                bottomMargin = dp(10f).toInt()
                 leftMargin = dp(4f).toInt()
                 rightMargin = dp(4f).toInt()
             }
             layoutParams = lp
-            elevation = dp(1f)
-            val padding = dp(16f).toInt()
+            elevation = 0f
+            val padding = dp(14f).toInt()
             setPadding(padding, padding, padding, padding)
 
             background = GradientDrawable().apply {
                 setColor(palette.surface)
-                cornerRadius = dp(8f)
+                cornerRadius = dp(component.preferences.statisticsCardCornerRadius.toFloat())
                 setStroke(dp(1f).toInt().coerceAtLeast(1), palette.border)
             }
         }
 
         val titleView = TextView(requireContext()).apply {
             text = titleText
-            textSize = 16f
+            textSize = 15f
             setTypeface(null, Typeface.BOLD)
             setTextColor(palette.onSurface)
             val lp = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                bottomMargin = dp(12f).toInt()
+                bottomMargin = dp(10f).toInt()
             }
             layoutParams = lp
         }
