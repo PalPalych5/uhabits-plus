@@ -175,6 +175,20 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
         }
     }
 
+    override fun onCardCornersChanged() {
+        adapter.notifyDataSetChanged()
+    }
+
+    override fun onHabitListAppearanceChanged() {
+        if (!prefs.isDayTiersEnabled && adapter.primaryOrder == org.isoron.uhabits.core.models.HabitList.Order.BY_DAY_TIER) {
+            adapter.primaryOrder = org.isoron.uhabits.core.models.HabitList.Order.BY_POSITION
+        }
+        adapter.applyDayTierSortOrder()
+        rootView.listView.invalidateItemDecorations()
+        adapter.notifyDataSetChanged()
+        requireActivity().invalidateOptionsMenu()
+    }
+
     override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
         menuController.onCreate(inflater, menu)
         if (displayMode == ListHabitsDisplayMode.ARCHIVE) {
@@ -212,6 +226,14 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
         }
         if (item.itemId == R.id.actionSync) {
             triggerManualSync()
+            return true
+        }
+        if (item.itemId == R.id.actionSkipDay) {
+            SkipDayDialogController(
+                fragment = this,
+                habitList = appComponent.habitList,
+                commandRunner = appComponent.commandRunner
+            ).show()
             return true
         }
         if (item.itemId == android.R.id.home && displayMode == ListHabitsDisplayMode.ARCHIVE) {
@@ -256,7 +278,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
                 HabitMatcher(isArchivedAllowed = true, isArchivedRequired = true)
             )
         } else {
-            rootView.setScreenTitle(getString(R.string.habits_title))
+            rootView.setScreenTitle("")
             menuController.behavior.onPreferencesChanged()
         }
         adapter.refresh()
@@ -278,6 +300,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
 
     private fun updateMenuVisibility(menu: Menu) {
         menu.findItem(R.id.action_filter)?.isVisible = displayMode == ListHabitsDisplayMode.NORMAL
+        menu.findItem(R.id.actionSkipDay)?.isVisible = displayMode == ListHabitsDisplayMode.NORMAL
     }
 
     fun onHostStartup() {

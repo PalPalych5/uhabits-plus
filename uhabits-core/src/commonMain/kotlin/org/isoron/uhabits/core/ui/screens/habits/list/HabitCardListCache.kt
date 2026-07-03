@@ -26,6 +26,7 @@ import org.isoron.uhabits.core.commands.Command
 import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.commands.CreateRepetitionCommand
 import org.isoron.uhabits.core.io.Logging
+import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.HabitList.Order
@@ -119,6 +120,13 @@ class HabitCardListCache(
             filteredHabits.secondaryOrder = order
             refreshAllHabits()
         }
+
+    @Synchronized
+    fun setDayTierSortOrder(order: List<DayTier>) {
+        allHabits.dayTierSortOrder = order
+        filteredHabits.dayTierSortOrder = order
+        refreshAllHabits()
+    }
 
     @Synchronized
     fun getScore(habitId: Long): Double {

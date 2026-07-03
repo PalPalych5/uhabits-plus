@@ -39,6 +39,8 @@ import me.tatarka.inject.annotations.Inject
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.views.BundleSavedState
 import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.models.HabitList
+import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.inject.ActivityContext
 
 @Inject
@@ -46,16 +48,18 @@ class HabitCardListViewFactory(
     @ActivityContext val context: Context,
     val adapter: HabitCardListAdapter,
     val cardViewFactory: HabitCardViewFactory,
-    val controller: Lazy<HabitCardListController>
+    val controller: Lazy<HabitCardListController>,
+    val preferences: Preferences
 ) {
-    fun create() = HabitCardListView(context, adapter, cardViewFactory, controller)
+    fun create() = HabitCardListView(context, adapter, cardViewFactory, controller, preferences)
 }
 
 class HabitCardListView(
     @ActivityContext context: Context,
     private val adapter: HabitCardListAdapter,
     private val cardViewFactory: HabitCardViewFactory,
-    private val controller: Lazy<HabitCardListController>
+    private val controller: Lazy<HabitCardListController>,
+    private val preferences: Preferences
 ) : RecyclerView(context, null, R.attr.scrollableRecyclerViewStyle) {
 
     var checkmarkCount: Int = 0
@@ -78,6 +82,7 @@ class HabitCardListView(
         setHasFixedSize(true)
         isLongClickable = true
         layoutManager = LinearLayoutManager(context)
+        addItemDecoration(GroupSeparatorDecoration())
         applyBottomInset()
         super.setAdapter(adapter)
     }
@@ -223,4 +228,42 @@ class HabitCardListView(
         override fun isItemViewSwipeEnabled() = false
         override fun isLongPressDragEnabled() = false
     }
+
+    private inner class GroupSeparatorDecoration : ItemDecoration() {
+        private val topGap = dp(22f).toInt()
+
+        override fun getItemOffsets(
+            outRect: Rect,
+            view: View,
+            parent: RecyclerView,
+            state: State
+        ) {
+            val position = parent.getChildAdapterPosition(view)
+            if (hasSeparatorBefore(position)) outRect.top = topGap
+        }
+
+        private fun hasSeparatorBefore(position: Int): Boolean {
+            if (!preferences.areHabitGroupSeparatorsEnabled) return false
+            if (!adapter.primaryOrder.isGroupedOrder()) return false
+            if (position <= 0 || position >= adapter.itemCount) return false
+            val previous = adapter.getItem(position - 1) ?: return false
+            val current = adapter.getItem(position) ?: return false
+            return previous.groupKey(adapter.primaryOrder) != current.groupKey(adapter.primaryOrder)
+        }
+    }
+
+    private fun Habit.groupKey(order: HabitList.Order): Any? {
+        return when (order) {
+            HabitList.Order.BY_SPHERE -> blockId
+            HabitList.Order.BY_DAY_TIER -> dayTier
+            else -> null
+        }
+    }
+
+    private fun HabitList.Order.isGroupedOrder(): Boolean {
+        return this == HabitList.Order.BY_SPHERE ||
+            (this == HabitList.Order.BY_DAY_TIER && preferences.isDayTiersEnabled)
+    }
+
+    private fun dp(value: Float): Float = value * resources.displayMetrics.density
 }

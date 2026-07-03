@@ -20,10 +20,12 @@
 package org.isoron.uhabits.activities.habits.list
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.drawable.ColorDrawable
 import android.view.Menu
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.widget.FrameLayout
+import android.widget.ProgressBar
 import android.widget.RelativeLayout
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.graphics.drawable.DrawableCompat
@@ -107,7 +109,7 @@ class ListHabitsRootView(
         }
         rootView.setupToolbar(
             toolbar = tbar,
-            title = resources.getString(R.string.habits_title),
+            title = "",
             color = PaletteColor(17),
             displayHomeAsUpEnabled = false,
             theme = currentTheme()
@@ -182,8 +184,14 @@ class ListHabitsRootView(
         tbar.overflowIcon?.mutate()?.let { DrawableCompat.setTint(it, palette.onSurface) }
         menu?.let {
             for (index in 0 until it.size()) {
-                it.getItem(index).icon?.mutate()?.let { icon ->
+                val item = it.getItem(index)
+                item.icon?.mutate()?.let { icon ->
                     DrawableCompat.setTint(icon, palette.onSurface)
+                }
+                val spinner = item.actionView?.findViewById<ProgressBar>(R.id.syncProgress)
+                spinner?.indeterminateTintList = ColorStateList.valueOf(palette.onSurface)
+                spinner?.indeterminateDrawable?.mutate()?.let { drawable ->
+                    DrawableCompat.setTint(drawable, palette.onSurface)
                 }
             }
         }

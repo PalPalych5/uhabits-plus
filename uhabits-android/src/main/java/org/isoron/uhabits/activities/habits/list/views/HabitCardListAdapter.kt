@@ -238,6 +238,7 @@ class HabitCardListAdapter(
         set(value) {
             cache.primaryOrder = value
             preferences.defaultPrimaryOrder = value
+            listView?.invalidateItemDecorations()
         }
 
     override var secondaryOrder: HabitList.Order
@@ -245,7 +246,13 @@ class HabitCardListAdapter(
         set(value) {
             cache.secondaryOrder = value
             preferences.defaultSecondaryOrder = value
+            listView?.invalidateItemDecorations()
         }
+
+    fun applyDayTierSortOrder() {
+        cache.setDayTierSortOrder(preferences.dayTierSortOrder)
+        listView?.invalidateItemDecorations()
+    }
 
     /**
      * Selects or deselects the item at a given position.
@@ -264,6 +271,7 @@ class HabitCardListAdapter(
         cache.setCheckmarkCount(
             MAX_CHECKMARK_COUNT
         )
+        cache.setDayTierSortOrder(preferences.dayTierSortOrder)
         cache.secondaryOrder = preferences.defaultSecondaryOrder
         cache.primaryOrder = preferences.defaultPrimaryOrder
         setHasStableIds(true)

@@ -57,16 +57,18 @@ class HabitCardViewFactory(
     @ActivityContext val context: Context,
     private val checkmarkPanelFactory: CheckmarkPanelViewFactory,
     private val numberPanelFactory: NumberPanelViewFactory,
-    private val behavior: ListHabitsBehavior
+    private val behavior: ListHabitsBehavior,
+    private val preferences: org.isoron.uhabits.core.preferences.Preferences
 ) {
-    fun create() = HabitCardView(context, checkmarkPanelFactory, numberPanelFactory, behavior)
+    fun create() = HabitCardView(context, checkmarkPanelFactory, numberPanelFactory, behavior, preferences)
 }
 
 class HabitCardView(
     @ActivityContext context: Context,
     checkmarkPanelFactory: CheckmarkPanelViewFactory,
     numberPanelFactory: NumberPanelViewFactory,
-    private val behavior: ListHabitsBehavior
+    private val behavior: ListHabitsBehavior,
+    private val preferences: org.isoron.uhabits.core.preferences.Preferences
 ) : FrameLayout(context),
     ModelObservable.Listener {
     private val palette get() = MainTabsThemeBridge.resolve(context)
@@ -200,7 +202,7 @@ class HabitCardView(
             addView(numberPanel)
 
             setOnTouchListener { v, event ->
-                v.background.setHotspot(event.x, event.y)
+                v.background?.setHotspot(event.x, event.y)
                 false
             }
         }
@@ -210,6 +212,7 @@ class HabitCardView(
         val margin = dp(3f).toInt()
         setPadding(margin, 0, margin, margin)
         addView(innerFrame)
+        updateBackground(false)
     }
 
     override fun onModelChange() {
@@ -303,6 +306,7 @@ class HabitCardView(
                 false -> View.GONE
             }
         }
+        updateBackground(isSelected)
     }
 
     private fun triggerRipple(x: Float, y: Float) {
@@ -318,7 +322,7 @@ class HabitCardView(
     private fun updateBackground(isSelected: Boolean) {
         val fill = if (isSelected) palette.surfaceVariant else palette.surface
         val stroke = if (isSelected) MainTabsThemeBridge.withAlpha(palette.accent, 0.65f) else palette.border
-        val radius = dp(8f)
+        val radius = dp(preferences.habitsCardCornerRadius.toFloat())
         val strokeWidth = dp(if (isSelected) 1.5f else 1f).toInt().coerceAtLeast(1)
         val contentDrawable = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE

@@ -36,6 +36,12 @@
         app:showAsAction="always" />
 
     <item
+        android:id="@+id/actionSkipDay"
+        android:icon="@drawable/ic_toolbar_skip_day"
+        android:title="@string/action_skip_day"
+        app:showAsAction="always" />
+
+    <item
         android:id="@+id/action_filter"
         android:icon="@drawable/ic_toolbar_sort_descending"
         android:title="@string/filter"
@@ -78,6 +84,10 @@
                     <item
                         android:id="@+id/actionSortSphere"
                         android:title="@string/by_sphere"/>
+
+                    <item
+                        android:id="@+id/actionSortLevel"
+                        android:title="@string/by_level"/>
                 </menu>
             </item>
         </menu>

@@ -54,6 +54,7 @@ class ListHabitsMenuBehaviorTest : BaseUnitTest() {
         super.setUp()
         every { adapter.setFilter(any()) } returns Unit
         every { adapter.refresh() } returns Unit
+        every { prefs.isDayTiersEnabled } returns true
         behavior = ListHabitsMenuBehavior(screen, adapter, prefs, themeSwitcher)
         resetCalls(adapter)
     }
@@ -120,6 +121,19 @@ class ListHabitsMenuBehaviorTest : BaseUnitTest() {
         behavior.onSortByStatus()
         verify { adapter.primaryOrder = HabitList.Order.BY_STATUS_DESC }
         verify(notCalled) { adapter.secondaryOrder = any() }
+    }
+
+    @Test
+    fun testOnSortLevel() {
+        behavior.onSortByLevel()
+        verify { adapter.primaryOrder = HabitList.Order.BY_DAY_TIER }
+    }
+
+    @Test
+    fun testOnSortLevelDisabled() {
+        every { prefs.isDayTiersEnabled } returns false
+        behavior.onSortByLevel()
+        verify(notCalled) { adapter.primaryOrder = HabitList.Order.BY_DAY_TIER }
     }
 
     @Test

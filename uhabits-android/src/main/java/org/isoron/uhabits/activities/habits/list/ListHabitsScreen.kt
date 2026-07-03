@@ -265,10 +265,6 @@ class ListHabitsScreen(
         (activity as MainNavigationHost).navigate(MainDestination.SETTINGS)
     }
 
-    override fun showTodayScreen() {
-        (activity as MainNavigationHost).navigate(MainDestination.TODAY)
-    }
-
     override fun showReportsScreen() {
         (activity as MainNavigationHost).navigate(MainDestination.STATISTICS)
     }

@@ -65,6 +65,11 @@ class ListHabitsMenu(
         val sortScore = menu.findItem(R.id.actionSortScore)
         val sortStatus = menu.findItem(R.id.actionSortStatus)
         val sortSphere = menu.findItem(R.id.actionSortSphere)
+        val sortLevel = menu.findItem(R.id.actionSortLevel)
+        sortLevel.isVisible = preferences.isDayTiersEnabled
+        if (!preferences.isDayTiersEnabled && preferences.defaultPrimaryOrder == HabitList.Order.BY_DAY_TIER) {
+            preferences.defaultPrimaryOrder = HabitList.Order.BY_POSITION
+        }
         val arrowUp = styledResources.getDrawable(R.attr.iconArrowUp)
         val arrowDown = styledResources.getDrawable(R.attr.iconArrowDown)
         when (preferences.defaultPrimaryOrder) {
@@ -78,6 +83,7 @@ class ListHabitsMenu(
             HabitList.Order.BY_STATUS_DESC -> sortStatus.icon = arrowUp
             HabitList.Order.BY_POSITION -> sortManual.icon = arrowUp
             HabitList.Order.BY_SPHERE -> sortSphere.icon = arrowUp
+            HabitList.Order.BY_DAY_TIER -> sortLevel.icon = arrowUp
         }
     }
 
@@ -122,6 +128,12 @@ class ListHabitsMenu(
 
             R.id.actionSortSphere -> {
                 behavior.onSortBySphere()
+                return true
+            }
+
+            R.id.actionSortLevel -> {
+                if (!preferences.isDayTiersEnabled) return true
+                behavior.onSortByLevel()
                 return true
             }
 

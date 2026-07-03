@@ -50,10 +50,6 @@ class ListHabitsMenuBehavior(
         screen.showSettingsScreen()
     }
 
-    fun onViewToday() {
-        screen.showTodayScreen()
-    }
-
     fun onViewReports() {
         screen.showReportsScreen()
     }
@@ -94,6 +90,11 @@ class ListHabitsMenuBehavior(
         adapter.primaryOrder = HabitList.Order.BY_SPHERE
     }
 
+    fun onSortByLevel() {
+        if (!preferences.isDayTiersEnabled) return
+        adapter.primaryOrder = HabitList.Order.BY_DAY_TIER
+    }
+
     private fun onSortToggleBy(defaultOrder: HabitList.Order, reversedOrder: HabitList.Order) {
         if (adapter.primaryOrder != defaultOrder) {
             if (adapter.primaryOrder != reversedOrder) {
@@ -111,6 +112,9 @@ class ListHabitsMenuBehavior(
     }
 
     fun onPreferencesChanged() {
+        if (!preferences.isDayTiersEnabled && adapter.primaryOrder == HabitList.Order.BY_DAY_TIER) {
+            adapter.primaryOrder = HabitList.Order.BY_POSITION
+        }
         updateAdapterFilter()
     }
 
@@ -146,7 +150,6 @@ class ListHabitsMenuBehavior(
         fun showFAQScreen()
         fun showSettingsScreen()
         fun showSelectHabitTypeDialog()
-        fun showTodayScreen()
         fun showReportsScreen()
     }
 
