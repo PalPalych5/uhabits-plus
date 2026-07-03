@@ -251,10 +251,10 @@
     <string name="manually">Вручную</string>
     <string name="by_name">По названию</string>
     <string name="by_color">По цвету</string>
-    <string name="by_score">По результату</string>
-    <string name="by_status">По статусу</string>
+    <string name="by_score">По силе привычки</string>
+    <string name="by_status">По выполнению сегодня</string>
     <string name="by_sphere">По сферам</string>
-    <string name="by_level">По уровню</string>
+    <string name="by_level">По уровню дня</string>
     <string name="export">Экспортировать</string>
     <string name="long_press_to_edit">Нажмите и удерживайте, чтобы изменить значение</string>
     <string name="value">Значение</string>

@@ -34,7 +34,6 @@ import nl.dionsegijn.konfetti.xml.KonfettiView
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.common.views.ScrollableChart
-import org.isoron.uhabits.activities.common.views.TaskProgressBar
 import org.isoron.uhabits.activities.habits.list.views.EmptyListView
 import org.isoron.uhabits.activities.habits.list.views.HabitCardListAdapter
 import org.isoron.uhabits.activities.habits.list.views.HabitCardListView
@@ -82,7 +81,6 @@ class ListHabitsRootView(
     val konfettiView = KonfettiView(context).apply {
         translationZ = 10f
     }
-    val progressBar = TaskProgressBar(context, runner)
     val hintView: HintView
     val header = HeaderView(context, preferences, midnightTimer)
 
@@ -101,9 +99,6 @@ class ListHabitsRootView(
             }
             addBelow(llEmpty, header, height = MATCH_PARENT) {
                 it.topMargin = dp(3f).toInt()
-            }
-            addBelow(progressBar, header) {
-                it.topMargin = dp(-6.0f).toInt()
             }
             addAtBottom(hintView)
         }

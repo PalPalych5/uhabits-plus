@@ -59,8 +59,7 @@ class HeaderView(
 
     init {
         setScrollerBucketSize(dim(R.dimen.checkmarkWidth).toInt())
-        setBackgroundColor(palette.surface)
-        elevation = dp(2.0f)
+        elevation = 0f
     }
 
     override fun atMidnight() {
