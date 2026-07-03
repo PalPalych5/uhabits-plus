@@ -62,8 +62,14 @@ class TimerForegroundService : Service() {
         if (state.habitId != habitId) return
         when (command) {
             TimerNotificationAction.PAUSE,
-            TimerNotificationAction.RESUME,
-            TimerNotificationAction.START_BREAK -> manager.startOrPause(habit)
+            TimerNotificationAction.RESUME -> manager.startOrPause(habit)
+            TimerNotificationAction.START_BREAK -> {
+                if (state.isOvertime && state.phase == PomodoroPhase.FOCUS) {
+                    manager.takeBreakManually(habit)
+                } else {
+                    manager.startOrPause(habit)
+                }
+            }
             TimerNotificationAction.FINISH -> manager.finish(habit)
             TimerNotificationAction.RESET -> manager.reset(habit)
         }

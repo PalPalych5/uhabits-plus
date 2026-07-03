@@ -115,4 +115,32 @@ class TimerSessionEngineTest {
         assertEquals(50_000, snap.focusDurationMillis)
         assertEquals(20_000, snap.breakDurationMillis)
     }
+
+    @Test
+    fun overtimeModeFocusDoesNotSwitchAutomatically() {
+        engine.isAutoSwitch = false
+        engine.switchMode(1, "Reading", TimerMode.POMODORO)
+        engine.start(1, "Reading")
+
+        now += TimerSessionEngine.FOCUS_MILLIS
+
+        assertEquals(PomodoroCompletion.FOCUS, engine.tick())
+
+        assertEquals(PomodoroPhase.FOCUS, engine.snapshot().phase)
+        assertTrue(engine.snapshot().isRunning)
+        assertFalse(engine.snapshot().isOvertime)
+
+        assertEquals(0, engine.snapshot().displayMillis)
+
+        now += 5_000
+
+        assertEquals(null, engine.tick())
+        assertEquals(5_000, engine.snapshot().displayMillis)
+        assertTrue(engine.snapshot().isOvertime)
+
+        engine.transitionToBreakManually()
+        assertFalse(engine.snapshot().isRunning)
+        assertEquals(PomodoroPhase.BREAK, engine.snapshot().phase)
+        assertFalse(engine.snapshot().isOvertime)
+    }
 }

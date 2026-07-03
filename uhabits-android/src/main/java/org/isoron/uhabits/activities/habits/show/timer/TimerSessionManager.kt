@@ -44,6 +44,7 @@ class TimerSessionManager(
     private val handler = Handler(Looper.getMainLooper())
     private val ticker = object : Runnable {
         override fun run() {
+            engine.isAutoSwitch = preferences.getBoolean("pref_pomodoro_auto_switch", true)
             val completion = engine.tick()
             if (completion != null) {
                 handleCompletion(completion)
@@ -72,6 +73,7 @@ class TimerSessionManager(
 
             val startedAt = if (isRunning) startedAtWallClock else 0L
 
+            engine.isAutoSwitch = preferences.getBoolean("pref_pomodoro_auto_switch", true)
             engine.restore(
                 habitId = habitId,
                 habitName = habitName,
@@ -91,7 +93,10 @@ class TimerSessionManager(
         }
     }
 
-    fun snapshot(): TimerSessionSnapshot = engine.snapshot()
+    fun snapshot(): TimerSessionSnapshot {
+        engine.isAutoSwitch = preferences.getBoolean("pref_pomodoro_auto_switch", true)
+        return engine.snapshot()
+    }
 
     fun prepare(habit: Habit) {
         applyStoredDurations(habit)
@@ -99,9 +104,11 @@ class TimerSessionManager(
 
     fun durations(habit: Habit): PomodoroDurations {
         val key = habitPreferenceKey(habit)
+        val defaultFocus = preferences.getInt("pref_pomodoro_default_focus_minutes", DEFAULT_FOCUS_MINUTES)
+        val defaultBreak = preferences.getInt("pref_pomodoro_default_break_minutes", DEFAULT_BREAK_MINUTES)
         return PomodoroDurations(
-            focusMinutes = preferences.getInt("${key}_focus", DEFAULT_FOCUS_MINUTES),
-            breakMinutes = preferences.getInt("${key}_break", DEFAULT_BREAK_MINUTES)
+            focusMinutes = preferences.getInt("${key}_focus", defaultFocus),
+            breakMinutes = preferences.getInt("${key}_break", defaultBreak)
         )
     }
 
@@ -155,6 +162,20 @@ class TimerSessionManager(
         syncForegroundService()
         notifyListeners()
         return changed
+    }
+
+    fun takeBreakManually(habit: Habit) {
+        val id = habit.id!!
+        val state = engine.snapshot()
+        if (state.habitId != id || state.mode != TimerMode.POMODORO || state.phase != PomodoroPhase.FOCUS) return
+
+        saveElapsed(id, state.elapsedMillis)
+        engine.transitionToBreakManually()
+
+        restartTickerIfNeeded()
+        persistState()
+        syncForegroundService()
+        notifyListeners()
     }
 
     fun finish(habit: Habit) {

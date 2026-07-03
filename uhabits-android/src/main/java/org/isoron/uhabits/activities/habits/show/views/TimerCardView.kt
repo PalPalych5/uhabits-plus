@@ -41,6 +41,7 @@ class TimerCardView : LinearLayout {
     private lateinit var minuteWheel: MinuteWheelView
     private lateinit var buttons: LinearLayout
     private lateinit var startPauseBtn: Button
+    private lateinit var takeBreakBtn: Button
     private lateinit var finishBtn: Button
     private lateinit var resetBtn: Button
     private var activeColor: Int = 0
@@ -127,9 +128,11 @@ class TimerCardView : LinearLayout {
             gravity = Gravity.CENTER
         }
         startPauseBtn = actionButton { toggleTimer() }
+        takeBreakBtn = actionButton { habit?.let { manager?.takeBreakManually(it) } }
         finishBtn = actionButton { habit?.let { manager?.finish(it) } }
         resetBtn = actionButton { habit?.let { manager?.reset(it) } }
         buttons.addView(startPauseBtn, buttonParams())
+        buttons.addView(takeBreakBtn, buttonParams())
         buttons.addView(finishBtn, buttonParams())
         buttons.addView(resetBtn, LayoutParams(WRAP_CONTENT, dp(40f).toInt()))
         normalContainer.addView(buttons, LayoutParams(MATCH_PARENT, WRAP_CONTENT))
@@ -189,7 +192,7 @@ class TimerCardView : LinearLayout {
         val conflict = sharedState.hasActiveSession && sharedState.habitId != currentHabit.id
         val state = if (sharedState.habitId == currentHabit.id || conflict) sharedState else TimerSessionSnapshot()
 
-        updateTimeDisplay(state.displayMillis)
+        updateTimeDisplay(state.displayMillis, state.isOvertime)
         stopwatchTab.text = context.getString(R.string.timer_mode_stopwatch).uppercase()
         pomodoroTab.text = context.getString(R.string.timer_mode_pomodoro).uppercase()
         statusView.text = when {
@@ -209,10 +212,13 @@ class TimerCardView : LinearLayout {
                 context.getString(R.string.pomodoro_start_break)
             else -> context.getString(R.string.timer_start)
         }
+        takeBreakBtn.text = context.getString(R.string.pomodoro_start_break)
         finishBtn.text = context.getString(R.string.timer_finish)
         resetBtn.text = context.getString(R.string.timer_reset)
 
         startPauseBtn.isEnabled = !conflict
+        takeBreakBtn.visibility = if (state.mode == TimerMode.POMODORO && state.phase == PomodoroPhase.FOCUS && state.isOvertime) View.VISIBLE else View.GONE
+        takeBreakBtn.isEnabled = !conflict
         finishBtn.visibility = if (state.mode == TimerMode.POMODORO && state.phase == PomodoroPhase.BREAK) View.GONE else View.VISIBLE
         finishBtn.isEnabled = !conflict && state.elapsedMillis > 0
         resetBtn.isEnabled = !conflict && state.habitId == currentHabit.id && state.hasActiveSession
@@ -281,6 +287,7 @@ class TimerCardView : LinearLayout {
         transitionInProgress = true
         timeDisplay.isClickable = false
         startPauseBtn.isEnabled = false
+        takeBreakBtn.isEnabled = false
         finishBtn.isEnabled = false
         resetBtn.isEnabled = false
         focusEditorTab.isEnabled = false
@@ -373,21 +380,23 @@ class TimerCardView : LinearLayout {
         pomodoroTab.alpha = if (state.mode == TimerMode.POMODORO) 1f else if (canSwitch) 0.6f else 0.3f
     }
 
-    private fun updateTimeDisplay(millis: Long) {
+    private fun updateTimeDisplay(millis: Long, isOvertime: Boolean = false) {
         val totalSeconds = millis / 1000
         val hours = totalSeconds / 3600
         val minutes = (totalSeconds % 3600) / 60
         val seconds = totalSeconds % 60
+        val prefix = if (isOvertime) "+" else ""
         timeDisplay.text = if (hours > 0) {
-            String.format("%02d:%02d:%02d", hours, minutes, seconds)
+            String.format("%s%02d:%02d:%02d", prefix, hours, minutes, seconds)
         } else {
-            String.format("%02d:%02d", minutes, seconds)
+            String.format("%s%02d:%02d", prefix, minutes, seconds)
         }
     }
 
     private fun styleButtons() {
         val resources = StyledResources(context)
         styleButton(startPauseBtn, if (startPauseBtn.isEnabled) activeColor else resources.getColor(R.attr.contrast40), resources)
+        styleButton(takeBreakBtn, if (takeBreakBtn.isEnabled) activeColor else resources.getColor(R.attr.contrast40), resources)
         styleButton(finishBtn, if (finishBtn.isEnabled) activeColor else resources.getColor(R.attr.contrast40), resources)
         styleButton(resetBtn, if (resetBtn.isEnabled) activeColor else resources.getColor(R.attr.contrast40), resources)
     }

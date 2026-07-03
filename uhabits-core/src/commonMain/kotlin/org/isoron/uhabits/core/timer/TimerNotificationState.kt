@@ -18,7 +18,8 @@ data class TimerNotificationState(
     val isRunning: Boolean,
     val displayMillis: Long,
     val chronometerMode: TimerChronometerMode,
-    val actions: List<TimerNotificationAction>
+    val actions: List<TimerNotificationAction>,
+    val isOvertime: Boolean = false
 )
 
 fun TimerSessionSnapshot.toNotificationState(): TimerNotificationState? {
@@ -27,6 +28,7 @@ fun TimerSessionSnapshot.toNotificationState(): TimerNotificationState? {
     val chronometerMode = when {
         !isRunning -> TimerChronometerMode.STATIC
         mode == TimerMode.STOPWATCH -> TimerChronometerMode.COUNT_UP
+        isOvertime -> TimerChronometerMode.COUNT_UP
         else -> TimerChronometerMode.COUNT_DOWN
     }
     val primaryAction = when {
@@ -40,6 +42,13 @@ fun TimerSessionSnapshot.toNotificationState(): TimerNotificationState? {
     } else {
         TimerNotificationAction.RESET
     }
+
+    val actionsList = if (isOvertime && phase == PomodoroPhase.FOCUS) {
+        listOf(primaryAction, TimerNotificationAction.START_BREAK, terminalAction)
+    } else {
+        listOf(primaryAction, terminalAction)
+    }
+
     return TimerNotificationState(
         habitId = id,
         habitName = habitName,
@@ -48,6 +57,7 @@ fun TimerSessionSnapshot.toNotificationState(): TimerNotificationState? {
         isRunning = isRunning,
         displayMillis = displayMillis,
         chronometerMode = chronometerMode,
-        actions = listOf(primaryAction, terminalAction)
+        actions = actionsList,
+        isOvertime = isOvertime
     )
 }
