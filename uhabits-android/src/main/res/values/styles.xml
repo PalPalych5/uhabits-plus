@@ -65,23 +65,24 @@
         <item name="android:textColorAlertDialogListItem">@color/grey_800</item>
         <item name="singleLineTitle">false</item>
         <item name="dialogFormLabelColor">@color/white</item>
+        <item name="bottomNavigationBackground">?attr/contrast0</item>
     </style>
 
     <style name="AppBaseThemeDark" parent="@style/ThemeOverlay.MaterialComponents.Dark.ActionBar">
         <item name="aboutScreenColor">@color/blue_300</item>
-        <item name="actionModeBackground">@color/grey_800</item>
+        <item name="actionModeBackground">@color/theme_surface_variant_dark</item>
         <item name="android:alertDialogTheme">@style/CustomMaterialAlertDialog</item>
         <item name="android:dialogTheme">@style/CustomMaterialDialog</item>
         <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
         <item name="android:textColor">@color/grey_100</item>
         <item name="cardBackground">@drawable/card_dark_background</item>
-        <item name="cardBgColor">@color/grey_850</item>
+        <item name="cardBgColor">@color/theme_surface_dark</item>
         <item name="colorAccent">?aboutScreenColor</item>
         <item name="colorPrimary">@color/grey_950</item>
         <item name="colorPrimaryDark">@color/black</item>
         <item name="dialogIconChangeColor">@drawable/ic_action_color_dark</item>
-        <item name="headerBackgroundColor">@color/grey_900</item>
-        <item name="highlightedBackgroundColor">@color/grey_800</item>
+        <item name="headerBackgroundColor">@color/theme_surface_dark</item>
+        <item name="highlightedBackgroundColor">@color/theme_surface_variant_dark</item>
         <item name="iconAdd">@drawable/ic_action_add_dark</item>
         <item name="iconArchive">@drawable/ic_action_archive_dark</item>
         <item name="iconChangeColor">@drawable/ic_action_color_dark</item>
@@ -90,14 +91,14 @@
         <item name="iconUnarchive">@drawable/ic_action_unarchive_dark</item>
         <item name="iconArrowUp">@drawable/ic_arrow_up_dark</item>
         <item name="iconArrowDown">@drawable/ic_arrow_down_dark</item>
-        <item name="contrast0">@color/grey_900</item>
-        <item name="contrast20">@color/grey_800</item>
+        <item name="contrast0">@color/theme_surface_dark</item>
+        <item name="contrast20">@color/theme_surface_variant_dark</item>
         <item name="contrast40">@color/grey_750</item>
         <item name="contrast60">@color/grey_500</item>
         <item name="contrast80">@color/grey_300</item>
         <item name="contrast100">@color/grey_100</item>
         <item name="palette">@array/darkPalette</item>
-        <item name="popupMenuBackground">@color/black</item>
+        <item name="popupMenuBackground">@color/theme_surface_dark</item>
         <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.Material</item>
         <item name="scrollableRecyclerViewStyle">@style/ScrollableRecyclerViewStyle</item>
         <item name="selectedBackground">@drawable/selected_box</item>
@@ -107,13 +108,14 @@
         <item name="widgetBackgroundAlpha">1</item>
         <item name="widgetShadowAlpha">0.25</item>
         <item name="windowActionModeOverlay">true</item>
-        <item name="windowBackgroundColor">@color/grey_900</item>
+        <item name="windowBackgroundColor">@color/theme_background_dark</item>
         <item name="buttonBarNegativeButtonStyle">@style/DialogButtonStyle</item>
         <item name="buttonBarPositiveButtonStyle">@style/DialogButtonStyle</item>
         <item name="buttonBarNeutralButtonStyle">@style/DialogButtonStyle</item>
         <item name="android:textColorAlertDialogListItem">@color/grey_100</item>
         <item name="singleLineTitle">false</item>
         <item name="dialogFormLabelColor">@color/grey_800</item>
+        <item name="bottomNavigationBackground">@color/theme_surface_dark</item>
     </style>
 
     <style name="AppBaseThemeDark.PureBlack">
@@ -124,10 +126,10 @@
         <item name="colorPrimary">@color/black</item>
         <item name="colorPrimaryDark">@color/black</item>
         <item name="headerBackgroundColor">@color/black</item>
-        <item name="highlightedBackgroundColor">@color/black</item>
+        <item name="highlightedBackgroundColor">@color/theme_surface_variant_amoled</item>
         <item name="contrast0">@color/black</item>
-        <item name="contrast20">@color/grey_900</item>
-        <item name="contrast40">@color/grey_800</item>
+        <item name="contrast20">@color/theme_surface_amoled</item>
+        <item name="contrast40">@color/theme_surface_variant_amoled</item>
         <item name="contrast60">@color/grey_500</item>
         <item name="contrast80">@color/grey_400</item>
         <item name="contrast100">@color/grey_200</item>
@@ -136,6 +138,7 @@
         <item name="windowBackgroundColor">@color/black</item>
         <item name="preferenceTheme">@style/PreferenceThemeOverlay.v14.Material.PureBlack</item>
         <item name="dialogFormLabelColor">@color/grey_800</item>
+        <item name="bottomNavigationBackground">@color/black</item>
     </style>
 
     <style name="BaseDialog" parent="Theme.MaterialComponents.Light.Dialog">
@@ -150,8 +153,8 @@
     </style>
 
     <style name="BaseDialogDark" parent="Theme.MaterialComponents.Dialog">
-        <item name="contrast0">@color/grey_900</item>
-        <item name="contrast20">@color/grey_800</item>
+        <item name="contrast0">@color/theme_surface_dark</item>
+        <item name="contrast20">@color/theme_surface_variant_dark</item>
         <item name="contrast40">@color/grey_750</item>
         <item name="contrast60">@color/grey_500</item>
         <item name="contrast80">@color/grey_300</item>

@@ -117,7 +117,7 @@ class BatchCreateRepetitionCommandTest : BaseUnitTest() {
     fun testBatchSkip() {
         val testNote = "Batch skipped for test"
         
-        // Find habits eligible for skip (simulating what the UI/Today screen filter does)
+        // Find habits eligible for skip (simulating what the Habits skip-day filter does)
         val habitsToSkip = mutableListOf<Habit>()
         for (h in habitList) {
             val origVal = h.originalEntries.get(today).value

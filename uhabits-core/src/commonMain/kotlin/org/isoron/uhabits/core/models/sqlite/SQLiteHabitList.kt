@@ -96,7 +96,7 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
             (h.originalEntries as SQLiteEntryList).habitId = h.id
             (h.originalEntries as SQLiteEntryList).habitUuid = h.uuid
             // Populate computedEntries, scores, and streaks from raw DB entries so that
-            // TodayScreenStateBuilder / HabitCardListCache never see an empty computed cache.
+            // Statistics overview / HabitCardListCache never see an empty computed cache.
             // Without this call, any sync or DB reload would leave computedEntries empty,
             // causing all habits to show 0 / UNKNOWN in the UI.
             h.recompute()
@@ -160,6 +160,14 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
         get() = list.secondaryOrder
         set(order) {
             list.secondaryOrder = order
+            observable.notifyListeners()
+        }
+
+    @set:Synchronized
+    override var dayTierSortOrder: List<DayTier>
+        get() = list.dayTierSortOrder
+        set(order) {
+            list.dayTierSortOrder = order
             observable.notifyListeners()
         }
 

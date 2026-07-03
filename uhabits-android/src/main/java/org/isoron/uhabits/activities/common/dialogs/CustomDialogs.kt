@@ -8,6 +8,7 @@ package org.isoron.uhabits.activities.common.dialogs
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
+import android.graphics.PorterDuff
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.text.InputType
@@ -155,6 +156,7 @@ object CustomDialogs {
         editText.setHintTextColor(palette.onSurfaceVariant)
         editText.highlightColor = adjustAlpha(accentColor, 0.30f)
         editText.backgroundTintList = ColorStateList.valueOf(accentColor)
+        editText.textCursorDrawable?.mutate()?.setColorFilter(accentColor, PorterDuff.Mode.SRC_IN)
     }
 
     fun styleCheckBox(checkBox: android.widget.CompoundButton) {

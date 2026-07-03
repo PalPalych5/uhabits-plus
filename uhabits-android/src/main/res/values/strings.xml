@@ -28,7 +28,7 @@
     <string name="archive_title">Archive</string>
     <string name="organization">Organization</string>
     <string name="configure_spheres">Configure spheres</string>
-    <string name="configure_spheres_summary">Group habits on Today and in reports</string>
+    <string name="configure_spheres_summary">Group habits in Habits and reports</string>
     <string name="open_archive">Archive</string>
     <string name="open_archive_summary">View and restore archived habits</string>
     <string name="action_settings">Settings</string>
@@ -211,6 +211,7 @@
     <string name="by_score">By score</string>
     <string name="by_status">By status</string>
     <string name="by_sphere">By area/sphere</string>
+    <string name="by_level">By level</string>
     <string name="export">Export</string>
     <string name="long_press_to_edit">Press-and-hold to change the value</string>
     <string name="value">Value</string>
@@ -291,6 +292,7 @@
     <string name="today_status_exceeded">Exceeded</string>
     <string name="today_status_within_limit">Within limit</string>
     <string name="today_status_limit_exceeded">Limit exceeded</string>
+    <string name="today_count_left">%1$d left</string>
     <string name="per_day">per day</string>
     <string name="per_week">per week</string>
     <string name="per_month">per month</string>
@@ -332,6 +334,7 @@
     <string name="day_tier_badge_minimum">Minimum</string>
     <string name="day_tier_badge_normal">Normal</string>
     <string name="day_tier_badge_ideal">Ideal</string>
+    <string name="day_tier_badge_optional_short">Optional</string>
     <string name="habit_timer">Habit timer</string>
     <string name="timer_enabled">Enable timer and Pomodoro</string>
     <string name="timer_finish">Finish</string>
@@ -348,6 +351,12 @@
     <string name="pomodoro_edit_duration">Change Pomodoro duration</string>
     <string name="pomodoro_minute_wheel">Pomodoro duration in minutes</string>
     <string name="pomodoro_done">Done</string>
+    <string name="pref_pomodoro_category">Pomodoro</string>
+    <string name="pref_pomodoro_default_focus_title">Default focus duration</string>
+    <string name="pref_pomodoro_default_break_title">Default break duration</string>
+    <string name="pref_pomodoro_auto_switch_title">Auto-transition to break</string>
+    <string name="pref_pomodoro_auto_switch_summary">Automatically transition to the break phase when the focus timer completes. If disabled, the timer continues running in overtime mode.</string>
+    <string name="pref_pomodoro_invalid_range">Please enter a value between %1$d and %2$d</string>
     <string name="habit_block">Habit Sphere</string>
     <string name="habit_block_unassigned">Other</string>
     <string name="manage_blocks">Manage Spheres</string>
@@ -433,7 +442,7 @@
     <string name="pref_enable_day_tiers_title">Enable day tiers</string>
     <string name="pref_enable_day_tiers_summary">Show and track daily minimum/normal/ideal goals</string>
     <string name="pref_enable_habit_spheres_title">Enable habit areas/spheres</string>
-    <string name="pref_enable_habit_spheres_summary">Group habits by blocks/spheres on the Today screen and in reports</string>
+    <string name="pref_enable_habit_spheres_summary">Group habits by blocks/spheres in Habits and reports</string>
     <string name="custom_color">Custom color</string>
     <string name="reset_to_default_color">Reset to default color</string>
     <string name="custom_color_picker_title">Custom color</string>
@@ -473,9 +482,12 @@
     <string name="custom_color_invalid_hex_detail">Enter exactly 6 HEX characters, for example #55B868</string>
     <string name="custom_color_degrees">%1$d°</string>
     <string name="custom_color_percent">%1$d%%</string>
-    <string name="pref_show_today_tab_title">Show Today tab</string>
-    <string name="pref_show_today_tab_description">Show or hide the Today dashboard in the bottom navigation menu</string>
-    <string name="pref_start_destination_title">Start destination</string>
+    <string name="pref_habit_group_separators_title">Group separators</string>
+    <string name="pref_habit_group_separators_summary">Add subtle visual spacing between groups in the Habits list</string>
+    <string name="pref_day_tier_sort_order_title">Level sort order</string>
+    <string name="move_up">Up</string>
+    <string name="move_down">Down</string>
+    <string name="reset_default">Reset</string>
     <string name="action_skip_day">Skip day</string>
     <string name="skip_day_dialog_title">Skip day</string>
     <string name="skip_day_dialog_message">Apply skip to %1$d remaining habits that still have no explicit entry today.</string>
@@ -496,7 +508,7 @@
     <string name="today_show_more">Show more</string>
     <string name="today_show_less">Show less</string>
     <string name="today_events_title">Analytics and events</string>
-    <string name="pref_habits_today_title">Habits &amp; Today</string>
+    <string name="pref_habits_title">Habits</string>
     <string name="pref_statistics_title">Statistics</string>
     <string name="pref_data_backup_title">Data &amp; Backup</string>
     <string name="pref_developer_section_title">Developer</string>
@@ -531,4 +543,14 @@
     <string name="color_purple">Purple</string>
     <string name="color_pink">Pink</string>
     <string name="color_custom">Custom</string>
+
+    <!-- Habit card corners -->
+    <string name="pref_habit_card_corners_title">Habit card corners</string>
+    <string name="pref_card_rounding_title">Corner radii</string>
+    <string name="pref_habits_card_corners_title">Habits card corners</string>
+    <string name="pref_statistics_card_corners_title">Statistics card corners</string>
+    <string name="pref_habit_card_corners_rectangular">Rectangular (0 dp)</string>
+    <string name="pref_habit_card_corners_default">8 dp (Default)</string>
+    <string name="statistics_daily_overview_title">Daily overview</string>
+    <string name="statistics_daily_focus_minutes">Focus time: %1$s min</string>
 </resources>

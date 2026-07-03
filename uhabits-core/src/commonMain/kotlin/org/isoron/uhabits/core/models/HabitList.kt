@@ -92,6 +92,9 @@ abstract class HabitList : Iterable<Habit> {
     abstract fun getFiltered(matcher: HabitMatcher?): HabitList
     abstract var primaryOrder: Order
     abstract var secondaryOrder: Order
+    open var dayTierSortOrder: List<DayTier>
+        get() = DayTier.entries
+        set(value) {}
 
     /**
      * Returns the index of the given habit in the list, or -1 if the list does
@@ -229,6 +232,7 @@ abstract class HabitList : Iterable<Habit> {
         BY_STATUS_ASC,
         BY_STATUS_DESC,
         BY_POSITION,
-        BY_SPHERE
+        BY_SPHERE,
+        BY_DAY_TIER
     }
 }

@@ -20,6 +20,7 @@ package org.isoron.uhabits.core.models.memory
 
 import org.isoron.platform.Synchronized
 import org.isoron.platform.time.LocalDate
+import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitBlock
 import org.isoron.uhabits.core.models.HabitList
@@ -61,6 +62,13 @@ open class MemoryHabitList : HabitList {
             resort()
         }
 
+    override var dayTierSortOrder: List<DayTier> = DayTier.entries
+        set(value) {
+            field = value.ifEmpty { DayTier.entries }
+            comparator = getComposedComparatorByOrder(primaryOrder, secondaryOrder)
+            resort()
+        }
+
     private var comparator: Comparator<Habit>? =
         getComposedComparatorByOrder(primaryOrder, secondaryOrder)
     private var parent: MemoryHabitList? = null
@@ -75,6 +83,7 @@ open class MemoryHabitList : HabitList {
         this.comparator = comparator
         primaryOrder = parent.primaryOrder
         secondaryOrder = parent.secondaryOrder
+        dayTierSortOrder = parent.dayTierSortOrder
         setBlocks(parent.getBlocks())
         parent.observable.addListener { loadFromParent() }
         loadFromParent()
@@ -180,6 +189,13 @@ open class MemoryHabitList : HabitList {
             if (posCompare != 0) return@Comparator posCompare
             h1.name.compareTo(h2.name)
         }
+        val tierComparator = Comparator<Habit> { h1, h2 ->
+            val tierCompare = dayTierSortIndex(h1.dayTier).compareTo(dayTierSortIndex(h2.dayTier))
+            if (tierCompare != 0) return@Comparator tierCompare
+            val posCompare = h1.position.compareTo(h2.position)
+            if (posCompare != 0) return@Comparator posCompare
+            h1.name.compareTo(h2.name)
+        }
         return when {
             order === Order.BY_POSITION -> positionComparator
             order === Order.BY_NAME_ASC -> nameComparatorAsc
@@ -191,8 +207,14 @@ open class MemoryHabitList : HabitList {
             order === Order.BY_STATUS_DESC -> statusComparatorDesc
             order === Order.BY_STATUS_ASC -> statusComparatorAsc
             order === Order.BY_SPHERE -> sphereComparator
+            order === Order.BY_DAY_TIER -> tierComparator
             else -> throw IllegalStateException()
         }
+    }
+
+    private fun dayTierSortIndex(tier: DayTier): Int {
+        val index = dayTierSortOrder.indexOf(tier)
+        return if (index >= 0) index else DayTier.entries.indexOf(tier)
     }
 
     @Synchronized

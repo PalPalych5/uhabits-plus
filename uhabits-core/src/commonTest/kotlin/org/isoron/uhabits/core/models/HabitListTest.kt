@@ -134,6 +134,20 @@ class HabitListTest : BaseUnitTest() {
         assertEquals(h1, list.getByPosition(1))
         assertEquals(h4, list.getByPosition(2))
         assertEquals(h2, list.getByPosition(3))
+        h1.dayTier = DayTier.NORMAL
+        h2.dayTier = DayTier.OPTIONAL
+        h3.dayTier = DayTier.MINIMUM
+        h4.dayTier = DayTier.IDEAL
+        list.primaryOrder = HabitList.Order.BY_DAY_TIER
+        assertEquals(h3, list.getByPosition(0))
+        assertEquals(h1, list.getByPosition(1))
+        assertEquals(h4, list.getByPosition(2))
+        assertEquals(h2, list.getByPosition(3))
+        list.dayTierSortOrder = listOf(DayTier.OPTIONAL, DayTier.MINIMUM, DayTier.NORMAL, DayTier.IDEAL)
+        assertEquals(h2, list.getByPosition(0))
+        assertEquals(h3, list.getByPosition(1))
+        assertEquals(h1, list.getByPosition(2))
+        assertEquals(h4, list.getByPosition(3))
     }
 
     @Test

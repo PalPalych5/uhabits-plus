@@ -25,6 +25,7 @@
     <attr name="highlightedBackgroundColor" format="reference"/>
     <attr name="useHabitColorAsPrimary" format="boolean"/>
     <attr name="aboutScreenColor" format="reference"/>
+    <attr name="bottomNavigationBackground" format="color|reference"/>
 
     <attr name="contrast0" format="reference"/>
     <attr name="contrast20" format="reference"/>

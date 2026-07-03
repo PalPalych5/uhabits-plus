@@ -11,6 +11,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.appcompat.app.AppCompatDialogFragment
+import androidx.appcompat.app.AppCompatDialog
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.core.models.Entry
@@ -37,7 +38,8 @@ class NumberDialog : AppCompatDialogFragment() {
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val appComponent = (requireActivity().application as HabitsApplication).component
         val prefs = appComponent.preferences
-        view = CheckmarkPopupBinding.inflate(LayoutInflater.from(context))
+        val dialog = AppCompatDialog(requireContext(), R.style.CustomTransparentDialogTheme)
+        view = CheckmarkPopupBinding.inflate(LayoutInflater.from(dialog.context))
         arrayOf(view.yesBtn).forEach {
             it.setTextColor(requireArguments().getInt("color"))
         }
@@ -84,8 +86,9 @@ class NumberDialog : AppCompatDialogFragment() {
             save()
             true
         }
+        CustomDialogs.stylePlainEditText(view.notes)
+        CustomDialogs.stylePlainEditText(view.value)
         view.value.requestFocusWithKeyboard()
-        val dialog = Dialog(requireContext())
         dialog.setContentView(view.root)
         dialog.window?.apply {
             setBackgroundDrawableResource(android.R.color.transparent)

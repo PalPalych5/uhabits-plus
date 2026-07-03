@@ -95,6 +95,25 @@
         <item>0</item>
     </string-array>
 
+    <string-array name="pref_habit_card_corners_entries">
+        <item>@string/pref_habit_card_corners_rectangular</item>
+        <item>4 dp</item>
+        <item>@string/pref_habit_card_corners_default</item>
+        <item>12 dp</item>
+        <item>16 dp</item>
+        <item>24 dp</item>
+    </string-array>
+
+    <string-array name="pref_habit_card_corners_values" translatable="false">
+        <item>0</item>
+        <item>4</item>
+        <item>8</item>
+        <item>12</item>
+        <item>16</item>
+        <item>24</item>
+    </string-array>
+
+
     <string-array name="pref_theme_entries">
         <item>System default</item>
         <item>Light</item>
@@ -209,18 +228,5 @@
         <item>vi-VN</item>
         <item>zh-CN</item>
         <item>zh-TW</item>
-    </string-array>
-    <string-array name="pref_start_destination_entries">
-        <item>@string/today</item>
-        <item>@string/habits_title</item>
-        <item>@string/reports_title</item>
-        <item>@string/settings</item>
-    </string-array>
-
-    <string-array name="pref_start_destination_values" translatable="false">
-        <item>TODAY</item>
-        <item>HABITS</item>
-        <item>REPORTS</item>
-        <item>SETTINGS</item>
     </string-array>
 </resources>

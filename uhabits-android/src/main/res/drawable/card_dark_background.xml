@@ -52,7 +52,7 @@
         android:left="0.5dp"
         android:right="0.5dp">
         <shape>
-            <solid android:color="@color/grey_850"/>
+            <solid android:color="?attr/cardBgColor"/>
         </shape>
     </item>
 </layer-list>

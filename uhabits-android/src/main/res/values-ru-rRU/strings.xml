@@ -24,7 +24,7 @@
     <string name="archive_title">Архив</string>
     <string name="organization">Организация</string>
     <string name="configure_spheres">Настроить сферы</string>
-    <string name="configure_spheres_summary">Группировка привычек на экране «Сегодня» и в отчётах</string>
+    <string name="configure_spheres_summary">Группировка привычек в списке привычек и отчётах</string>
     <string name="open_archive">Архив</string>
     <string name="open_archive_summary">Просмотр и восстановление архивированных привычек</string>
     <string name="action_settings">Настройки</string>
@@ -254,6 +254,7 @@
     <string name="by_score">По результату</string>
     <string name="by_status">По статусу</string>
     <string name="by_sphere">По сферам</string>
+    <string name="by_level">По уровню</string>
     <string name="export">Экспортировать</string>
     <string name="long_press_to_edit">Нажмите и удерживайте, чтобы изменить значение</string>
     <string name="value">Значение</string>
@@ -334,6 +335,7 @@
     <string name="today_status_exceeded">Превышено</string>
     <string name="today_status_within_limit">В пределах лимита</string>
     <string name="today_status_limit_exceeded">Лимит превышен</string>
+    <string name="today_count_left">Осталось %1$d</string>
     <string name="per_day">за день</string>
     <string name="per_week">за неделю</string>
     <string name="per_month">за месяц</string>
@@ -372,6 +374,7 @@
     <string name="day_tier_badge_minimum">Минимум</string>
     <string name="day_tier_badge_normal">Норма</string>
     <string name="day_tier_badge_ideal">Идеал</string>
+    <string name="day_tier_badge_optional_short">Опц.</string>
     <string name="habit_timer">Таймер привычки</string>
     <string name="timer_enabled">Включить таймер и Pomodoro</string>
     <string name="timer_finish">Завершить</string>
@@ -436,7 +439,7 @@
     <string name="pref_enable_day_tiers_title">Включить уровни дня</string>
     <string name="pref_enable_day_tiers_summary">Показывать и отслеживать минимум, норму и идеальный день</string>
     <string name="pref_enable_habit_spheres_title">Включить сферы привычек</string>
-    <string name="pref_enable_habit_spheres_summary">Группировать привычки по сферам на экране «Сегодня» и в отчётах</string>
+    <string name="pref_enable_habit_spheres_summary">Группировать привычки по сферам в списке привычек и отчётах</string>
     <string name="custom_color">Свой цвет</string>
     <string name="reset_to_default_color">Сбросить на цвет по умолчанию</string>
     <string name="custom_color_picker_title">Свой цвет</string>
@@ -476,9 +479,12 @@
     <string name="custom_color_invalid_hex_detail">Введите ровно 6 HEX-символов, например #55B868</string>
     <string name="custom_color_degrees">%1$d°</string>
     <string name="custom_color_percent">%1$d%%</string>
-    <string name="pref_show_today_tab_title">Показывать вкладку Сегодня</string>
-    <string name="pref_show_today_tab_description">Показывать или скрывать экран «Сегодня» в меню навигации</string>
-    <string name="pref_start_destination_title">Стартовый раздел</string>
+    <string name="pref_habit_group_separators_title">Разделители групп</string>
+    <string name="pref_habit_group_separators_summary">Добавлять легкие визуальные интервалы между группами в списке привычек</string>
+    <string name="pref_day_tier_sort_order_title">Порядок уровней</string>
+    <string name="move_up">Выше</string>
+    <string name="move_down">Ниже</string>
+    <string name="reset_default">Сбросить</string>
     <string name="action_skip_day">Пропустить день</string>
     <string name="skip_day_dialog_title">Пропустить день</string>
     <string name="skip_day_dialog_message">Применить пропуск к %1$d оставшимся привычкам, у которых сегодня ещё нет явной отметки.</string>
@@ -499,7 +505,7 @@
     <string name="today_show_more">Показать еще</string>
     <string name="today_show_less">Свернуть</string>
     <string name="today_events_title">Аналитика и события</string>
-    <string name="pref_habits_today_title">Привычки и Сегодня</string>
+    <string name="pref_habits_title">Привычки</string>
     <string name="pref_statistics_title">Статистика</string>
     <string name="pref_data_backup_title">Данные и Резервные копии</string>
     <string name="pref_developer_section_title">Разработчик</string>
@@ -534,4 +540,22 @@
     <string name="color_purple">Фиолетовый</string>
     <string name="color_pink">Розовый</string>
     <string name="color_custom">Пользовательский</string>
+
+    <!-- Pomodoro settings -->
+    <string name="pref_pomodoro_category">Помодоро</string>
+    <string name="pref_pomodoro_default_focus_title">Длительность фокуса по умолчанию</string>
+    <string name="pref_pomodoro_default_break_title">Длительность отдыха по умолчанию</string>
+    <string name="pref_pomodoro_auto_switch_title">Автопереключение на отдых</string>
+    <string name="pref_pomodoro_auto_switch_summary">Автоматически переходить к перерыву по завершении таймера фокуса. Если отключено, таймер продолжит считать в режиме сверхурочного времени.</string>
+    <string name="pref_pomodoro_invalid_range">Пожалуйста, введите значение от %1$d до %2$d</string>
+
+    <!-- Habit card corners -->
+    <string name="pref_habit_card_corners_title">Скругление карточек</string>
+    <string name="pref_card_rounding_title">Скругления</string>
+    <string name="pref_habits_card_corners_title">Скругление Привычек</string>
+    <string name="pref_statistics_card_corners_title">Скругление Статистики</string>
+    <string name="pref_habit_card_corners_rectangular">Прямоугольные (0 dp)</string>
+    <string name="pref_habit_card_corners_default">8 dp (По умолчанию)</string>
+    <string name="statistics_daily_overview_title">Сводка дня</string>
+    <string name="statistics_daily_focus_minutes">Фокус-время: %1$s мин</string>
 </resources>

@@ -74,18 +74,18 @@ abstract class Theme {
 open class LightTheme : Theme()
 
 open class DarkTheme : Theme() {
-    override val appBackgroundColor = Color(0x212121)
-    override val cardBackgroundColor = Color(0x303030)
-    override val headerBackgroundColor = Color(0x212121)
-    override val headerBorderColor = Color(0xcccccc)
-    override val headerTextColor = Color(0x9E9E9E)
-    override val highContrastTextColor = Color(0xF5F5F5)
-    override val itemBackgroundColor = Color(0xffffff)
-    override val lowContrastTextColor = Color(0x424242)
-    override val mediumContrastTextColor = Color(0x9E9E9E)
-    override val statusBarBackgroundColor = Color(0x333333)
-    override val toolbarBackgroundColor = Color(0xf4f4f4)
-    override val toolbarColor = Color(0xffffff)
+    override val appBackgroundColor = Color(0x111318)
+    override val cardBackgroundColor = Color(0x1A1D23)
+    override val headerBackgroundColor = Color(0x111318)
+    override val headerBorderColor = Color(0x242830)
+    override val headerTextColor = Color(0xAEB3BD)
+    override val highContrastTextColor = Color(0xF1F2F5)
+    override val itemBackgroundColor = Color(0x1A1D23)
+    override val lowContrastTextColor = Color(0x242830)
+    override val mediumContrastTextColor = Color(0xAEB3BD)
+    override val statusBarBackgroundColor = Color(0x111318)
+    override val toolbarBackgroundColor = Color(0x111318)
+    override val toolbarColor = Color(0x1A1D23)
 
     override fun color(paletteIndex: Int): Color {
         return when (paletteIndex) {
@@ -117,7 +117,7 @@ open class DarkTheme : Theme() {
 class PureBlackTheme : DarkTheme() {
     override val appBackgroundColor = Color(0x000000)
     override val cardBackgroundColor = Color(0x000000)
-    override val lowContrastTextColor = Color(0x212121)
+    override val lowContrastTextColor = Color(0x121212)
 }
 
 class WidgetTheme : LightTheme() {
