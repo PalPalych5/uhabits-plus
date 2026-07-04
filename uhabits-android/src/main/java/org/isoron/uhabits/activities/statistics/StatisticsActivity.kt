@@ -18,7 +18,10 @@
  */
 package org.isoron.uhabits.activities.statistics
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.content.Context
+import android.util.Log
 import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -26,6 +29,8 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -34,11 +39,14 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
+import android.widget.ScrollView
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
+import android.view.animation.DecelerateInterpolator
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.doOnPreDraw
 import androidx.fragment.app.Fragment
 import com.google.android.material.tabs.TabLayout
 import org.isoron.platform.time.*
@@ -54,6 +62,7 @@ import org.isoron.uhabits.core.models.*
 import org.isoron.uhabits.core.models.Entry.Companion.SKIP
 import org.isoron.uhabits.core.ui.screens.statistics.StatisticsOverviewState
 import org.isoron.uhabits.core.ui.screens.statistics.StatisticsOverviewStateBuilder
+import org.isoron.uhabits.core.ui.screens.statistics.StatisticsTierProgress
 import org.isoron.uhabits.core.ui.screens.statistics.formatStatisticsValue
 import org.isoron.uhabits.databinding.ActivityStatisticsBinding
 import org.isoron.platform.gui.toInt
@@ -77,6 +86,31 @@ class StatisticsFragment : Fragment() {
     private var currentTab = ReportTab.DAY
     private lateinit var currentAnchorDate: LocalDate
     private lateinit var dateFormatter: JavaLocalDateFormatter
+    private var activeReportGeneration = 0
+    private var hasRenderedStatisticsOnce = false
+    private var pendingReportRunnable: Runnable? = null
+    private var pendingReportForceRender = false
+    private var lastRenderedReportKey: ReportKey? = null
+    private val reportRequestHandler = Handler(Looper.getMainLooper())
+    private val overviewRingViews = ArrayList<StatisticsOverviewRingView>()
+
+    private var isWaitingForTabTransitionEnd = false
+    private var pendingChoreography: Runnable? = null
+    private var lastRenderedSignature: RenderSignature? = null
+    private var lastRenderedDbRefreshTime: Long = 0L
+    private var lastSelectedSpherePosition: Int = AdapterView.INVALID_POSITION
+    private var lastSelectedHabitStatusPosition: Int = AdapterView.INVALID_POSITION
+    private var lastSelectedGoalTypePosition: Int = AdapterView.INVALID_POSITION
+
+    private data class ReportKey(
+        val tab: ReportTab,
+        val start: LocalDate,
+        val end: LocalDate,
+        val sphereId: Long?,
+        val statusFilter: String,
+        val goalTypeFilter: String,
+        val habitCount: Int
+    )
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -104,6 +138,7 @@ class StatisticsFragment : Fragment() {
         binding.tvDateRange.setTextColor(palette.onSurface)
         binding.btnPrev.imageTintList = ColorStateList.valueOf(palette.onSurface)
         binding.btnNext.imageTintList = ColorStateList.valueOf(palette.onSurface)
+        binding.refreshProgressBar.indeterminateTintList = ColorStateList.valueOf(palette.accent)
 
         val activity = requireActivity() as AppCompatActivity
         activity.window.statusBarColor = palette.background
@@ -123,20 +158,27 @@ class StatisticsFragment : Fragment() {
         setupTabs()
         setupListeners()
         setupFilters()
-        updateReport()
-        binding.tabLayout.getTabAt(currentTab.ordinal)?.select()
+        requestReportUpdate("create_view", delayMs = INITIAL_REPORT_DELAY_MS)
         return binding.root
     }
 
     override fun onResume() {
         super.onResume()
-        viewBinding?.let { updateReport() }
+        viewBinding?.let {
+            requestReportUpdate("resume", delayMs = INITIAL_REPORT_DELAY_MS)
+        }
         (activity as? MainNavigationHost)?.setHabitCreationAvailable(false)
+    }
+
+    override fun onPause() {
+        cancelPendingReportUpdate()
+        cancelReportAnimations(resetRingsToFinal = true)
+        super.onPause()
     }
 
     fun refresh() {
         if (viewBinding != null && isAdded) {
-            updateReport()
+            requestReportUpdate("external_refresh", forceRender = true)
         }
     }
 
@@ -149,6 +191,18 @@ class StatisticsFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        activeReportGeneration++
+        cancelPendingReportUpdate()
+        cancelReportAnimations(resetRingsToFinal = true)
+        hasRenderedStatisticsOnce = false
+        lastRenderedReportKey = null
+        isWaitingForTabTransitionEnd = false
+        pendingChoreography = null
+        lastRenderedSignature = null
+        lastRenderedDbRefreshTime = 0L
+        lastSelectedSpherePosition = AdapterView.INVALID_POSITION
+        lastSelectedHabitStatusPosition = AdapterView.INVALID_POSITION
+        lastSelectedGoalTypePosition = AdapterView.INVALID_POSITION
         viewBinding = null
         super.onDestroyView()
     }
@@ -160,6 +214,7 @@ class StatisticsFragment : Fragment() {
         tabLayout.addTab(tabLayout.newTab().setText(R.string.reports_tab_month))
         tabLayout.addTab(tabLayout.newTab().setText(R.string.reports_tab_year))
         tabLayout.addTab(tabLayout.newTab().setText(R.string.reports_tab_all))
+        tabLayout.getTabAt(currentTab.ordinal)?.select()
 
         tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
             override fun onTabSelected(tab: TabLayout.Tab) {
@@ -171,7 +226,7 @@ class StatisticsFragment : Fragment() {
                     4 -> ReportTab.ALL
                     else -> ReportTab.DAY
                 }
-                updateReport()
+                requestReportUpdate("tab_selected")
             }
             override fun onTabUnselected(tab: TabLayout.Tab) {}
             override fun onTabReselected(tab: TabLayout.Tab) {}
@@ -234,9 +289,25 @@ class StatisticsFragment : Fragment() {
         binding.spinnerHabitStatus.setPadding(padStartEnd, padTopBottom, padStartEnd, padTopBottom)
         binding.spinnerGoalType.setPadding(padStartEnd, padTopBottom, padStartEnd, padTopBottom)
 
+        binding.spinnerHabitStatus.setSelection(1)
+
+        lastSelectedSpherePosition = binding.spinnerSphere.selectedItemPosition
+        lastSelectedHabitStatusPosition = binding.spinnerHabitStatus.selectedItemPosition
+        lastSelectedGoalTypePosition = binding.spinnerGoalType.selectedItemPosition
+
         val onSelected = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
-                updateReport()
+                if (parent == binding.spinnerSphere) {
+                    if (lastSelectedSpherePosition == position) return
+                    lastSelectedSpherePosition = position
+                } else if (parent == binding.spinnerHabitStatus) {
+                    if (lastSelectedHabitStatusPosition == position) return
+                    lastSelectedHabitStatusPosition = position
+                } else if (parent == binding.spinnerGoalType) {
+                    if (lastSelectedGoalTypePosition == position) return
+                    lastSelectedGoalTypePosition = position
+                }
+                requestReportUpdate("filter_selected")
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -292,7 +363,7 @@ class StatisticsFragment : Fragment() {
             }
             ReportTab.ALL -> currentAnchorDate
         }
-        updateReport()
+        requestReportUpdate("date_navigation")
     }
 
     private fun getActiveRange(): Pair<LocalDate, LocalDate> {
@@ -338,10 +409,10 @@ class StatisticsFragment : Fragment() {
         }
     }
 
-    private fun updateReport() {
-        val (start, end) = getActiveRange()
-        updateReportHeader(start, end)
-
+    private fun showInitialLoading() {
+        cancelReportAnimations(resetRingsToFinal = true)
+        binding.refreshProgressBar.visibility = View.GONE
+        binding.reportContentContainer.alpha = 1f
         binding.reportContentContainer.removeAllViews()
         val loadingText = TextView(requireContext()).apply {
             text = getString(R.string.reports_loading)
@@ -351,39 +422,246 @@ class StatisticsFragment : Fragment() {
             setTextColor(palette.onSurfaceVariant)
         }
         binding.reportContentContainer.addView(loadingText)
+    }
 
-        val selectedSphereId = getSelectedSphereId()
-        val selectedStatus = getSelectedHabitStatus()
-        val selectedGoalType = getSelectedGoalType()
+    private fun showRefreshingState() {
+        binding.refreshProgressBar.visibility = View.VISIBLE
+        binding.reportContentContainer.alpha = 1f
+    }
+
+    private fun hideRefreshingState() {
+        binding.refreshProgressBar.visibility = View.GONE
+        binding.reportContentContainer.alpha = 1f
+    }
+
+    private fun requestReportUpdate(
+        _reason: String,
+        delayMs: Long = REPORT_UPDATE_COALESCE_MS,
+        forceRender: Boolean = false
+    ) {
+        if (viewBinding == null || !isAdded) return
+        if (!hasRenderedStatisticsOnce && binding.reportContentContainer.childCount == 0) {
+            showInitialLoading()
+        }
+        pendingReportForceRender = pendingReportForceRender || forceRender
+        pendingReportRunnable?.let(reportRequestHandler::removeCallbacks)
+        val runnable = Runnable {
+            pendingReportRunnable = null
+            val shouldForceRender = pendingReportForceRender
+            pendingReportForceRender = false
+            if (viewBinding == null || !isAdded) return@Runnable
+            val key = buildReportKey() ?: return@Runnable
+            if (!shouldForceRender && hasRenderedStatisticsOnce && key == lastRenderedReportKey) {
+                hideRefreshingState()
+                return@Runnable
+            }
+            updateReport(key, shouldForceRender)
+        }
+        pendingReportRunnable = runnable
+        reportRequestHandler.postDelayed(runnable, delayMs)
+    }
+
+    private fun cancelPendingReportUpdate() {
+        pendingReportRunnable?.let(reportRequestHandler::removeCallbacks)
+        pendingReportRunnable = null
+        pendingReportForceRender = false
+    }
+
+    private fun buildReportKey(): ReportKey? {
+        if (viewBinding == null || !isAdded) return null
+        val (start, end) = getActiveRange()
+        return ReportKey(
+            tab = currentTab,
+            start = start,
+            end = end,
+            sphereId = getSelectedSphereId(),
+            statusFilter = getSelectedHabitStatus(),
+            goalTypeFilter = getSelectedGoalType(),
+            habitCount = runCatching { component.habitList.size() }.getOrDefault(-1)
+        )
+    }
+
+    fun onTabTransitionStarted() {
+        if (DEBUG_STATISTICS_REFRESH) {
+            Log.d("StatisticsRefreshTrace", "onTabTransitionStarted: isWaiting=$isWaitingForTabTransitionEnd")
+        }
+        isWaitingForTabTransitionEnd = true
+        pendingChoreography = null
+    }
+
+    fun onTabTransitionEnded() {
+        if (DEBUG_STATISTICS_REFRESH) {
+            Log.d("StatisticsRefreshTrace", "onTabTransitionEnded: hasPending=${pendingChoreography != null}")
+        }
+        isWaitingForTabTransitionEnd = false
+        val run = pendingChoreography
+        pendingChoreography = null
+        run?.run()
+    }
+
+    private fun performViewUpdate(result: StatisticsData) {
+        val scrollView = binding.reportContentContainer.parent as? ScrollView
+        val currentScrollY = scrollView?.scrollY ?: 0
+
+        binding.reportContentContainer.removeAllViews()
+        overviewRingViews.clear()
+        if (result.totalDays == 0) {
+            addNoDataView()
+        } else {
+            renderStatistics(result)
+        }
+
+        scrollView?.post {
+            if (viewBinding != null) {
+                scrollView.scrollTo(0, currentScrollY)
+            }
+        }
+    }
+
+    private fun renderReport(result: StatisticsData, generation: Int, fullReveal: Boolean) {
+        if (DEBUG_STATISTICS_REFRESH) {
+            Log.d("StatisticsRefreshTrace", "renderReport: gen=$generation, fullReveal=$fullReveal, lifecycle=${lifecycle.currentState}")
+        }
+        if (viewBinding == null || !isAdded || generation != activeReportGeneration) return
+        hideRefreshingState()
+        cancelReportAnimations(resetRingsToFinal = true)
+
+        if (!fullReveal && hasRenderedStatisticsOnce) {
+            // Container crossfade: fade out to 0.95f over 120ms
+            binding.reportContentContainer.animate()
+                .alpha(0.95f)
+                .setDuration(120)
+                .setListener(object : AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: Animator) {
+                        if (viewBinding == null || !isAdded || generation != activeReportGeneration) return
+                        performViewUpdate(result)
+                        
+                        binding.reportContentContainer.animate()
+                            .alpha(1.0f)
+                            .setDuration(200)
+                            .setListener(object : AnimatorListenerAdapter() {
+                                override fun onAnimationEnd(animation: Animator) {
+                                    if (viewBinding == null || !isAdded || generation != activeReportGeneration) return
+                                    binding.reportContentContainer.alpha = 1f
+                                }
+                            })
+                            .start()
+                            
+                        startOverviewRingAnimations(animated = true)
+                    }
+                })
+                .start()
+        } else {
+            performViewUpdate(result)
+            
+            if (isWaitingForTabTransitionEnd) {
+                pendingChoreography = Runnable {
+                    if (viewBinding != null && isAdded) {
+                        if (areSystemAnimationsEnabled()) {
+                            scheduleReportChoreography(generation, fullReveal = true)
+                        } else {
+                            setReportViewsFinalState()
+                            startOverviewRingAnimations(animated = false)
+                        }
+                    }
+                }
+                if (areSystemAnimationsEnabled()) {
+                    val cards = reportCardViews()
+                    val offset = dp(12f)
+                    cards.forEach { card ->
+                        card.animate().setListener(null).cancel()
+                        card.alpha = 0f
+                        card.translationX = 0f
+                        card.translationY = offset
+                    }
+                }
+            } else {
+                if (areSystemAnimationsEnabled()) {
+                    scheduleReportChoreography(generation, fullReveal = true)
+                } else {
+                    setReportViewsFinalState()
+                    startOverviewRingAnimations(animated = false)
+                }
+            }
+        }
+    }
+
+    private fun updateReport(reportKey: ReportKey, forceRender: Boolean) {
+        val start = reportKey.start
+        val end = reportKey.end
+        updateReportHeader(start, end)
+
+        if (!hasRenderedStatisticsOnce) {
+            showInitialLoading()
+        } else {
+            showRefreshingState()
+        }
 
         val habits = component.habitList.toList()
         val blocks = component.habitList.getBlocks()
+        val taskGeneration = ++activeReportGeneration
+        cancelReportAnimations(resetRingsToFinal = true)
 
         component.taskRunner.execute(object : org.isoron.uhabits.core.tasks.Task {
             private var calculatedData: StatisticsData? = null
 
             override suspend fun doInBackground() {
                 calculatedData = calculateStatistics(
+                    tab = reportKey.tab,
                     habits = habits,
                     blocks = blocks,
                     start = start,
                     end = end,
-                    sphereId = selectedSphereId,
-                    statusFilter = selectedStatus,
-                    goalTypeFilter = selectedGoalType
+                    sphereId = reportKey.sphereId,
+                    statusFilter = reportKey.statusFilter,
+                    goalTypeFilter = reportKey.goalTypeFilter
                 )
             }
 
             override fun onPostExecute() {
-                if (viewBinding == null || !isAdded) return
-                binding.reportContentContainer.removeAllViews()
+                if (viewBinding == null || !isAdded || taskGeneration != activeReportGeneration) return
+                if (reportKey != buildReportKey()) return
                 val result = calculatedData ?: return
-                renderStatistics(result)
+                
+                val signature = RenderSignature.from(reportKey, result)
+                val currentDbRefreshTime = component.preferences.syncLastUiRefreshAt
+                val dbChanged = currentDbRefreshTime > lastRenderedDbRefreshTime
+
+                if (!forceRender && hasRenderedStatisticsOnce && signature == lastRenderedSignature && !dbChanged) {
+                    if (DEBUG_STATISTICS_REFRESH) {
+                        Log.d("StatisticsRefreshTrace", "updateReport.onPostExecute: signature matches and no db changes, skipping render")
+                    }
+                    hideRefreshingState()
+                    return
+                }
+
+                val isFirstRender = !hasRenderedStatisticsOnce
+                if (isFirstRender) {
+                    renderReport(result, taskGeneration, fullReveal = true)
+                    hasRenderedStatisticsOnce = true
+                } else {
+                    renderReport(result, taskGeneration, fullReveal = false)
+                }
+                lastRenderedReportKey = reportKey
+                lastRenderedSignature = signature
+                lastRenderedDbRefreshTime = currentDbRefreshTime
             }
         })
     }
 
+    private fun addNoDataView() {
+        val noDataTv = TextView(requireContext()).apply {
+            text = getString(R.string.reports_no_data)
+            gravity = Gravity.CENTER
+            textSize = 15f
+            setPadding(0, dp(40f).toInt(), 0, 0)
+            setTextColor(palette.onSurfaceVariant)
+        }
+        binding.reportContentContainer.addView(noDataTv)
+    }
+
     private fun calculateStatistics(
+        tab: ReportTab,
         habits: List<Habit>,
         blocks: List<HabitBlock>,
         start: LocalDate,
@@ -402,7 +680,7 @@ class StatisticsFragment : Fragment() {
         }
 
         var rangeStart = start
-        if (currentTab == ReportTab.ALL) {
+        if (tab == ReportTab.ALL) {
             var oldestDate: LocalDate? = null
             for (habit in filteredHabits) {
                 val known = habit.computedEntries.getKnown()
@@ -586,7 +864,7 @@ class StatisticsFragment : Fragment() {
         }
 
         val scoresList = ArrayList<org.isoron.uhabits.core.models.Score>()
-        val numChartPoints = when (currentTab) {
+        val numChartPoints = when (tab) {
             ReportTab.DAY -> 30
             ReportTab.WEEK -> 12
             ReportTab.MONTH -> 6
@@ -594,7 +872,7 @@ class StatisticsFragment : Fragment() {
             ReportTab.ALL -> 12
         }
 
-        val step = when (currentTab) {
+        val step = when (tab) {
             ReportTab.DAY, ReportTab.WEEK -> 1
             ReportTab.MONTH -> 3
             ReportTab.YEAR, ReportTab.ALL -> 30
@@ -628,6 +906,57 @@ class StatisticsFragment : Fragment() {
 
         val completionPercentage = if (totalDays > 0) (completedDays * 100.0 / totalDays).roundToInt() else 0
 
+        val tierCompleted = mutableMapOf<DayTier, Int>()
+        val tierTotal = mutableMapOf<DayTier, Int>()
+        for (tier in DayTier.entries) {
+            tierCompleted[tier] = 0
+            tierTotal[tier] = 0
+        }
+        var skippedCount = 0
+
+        var dateIter = rangeStart
+        while (dateIter <= end) {
+            for (habit in filteredHabits) {
+                if (habit.isDateIncludedInStatistics(dateIter)) {
+                    val entry = habit.computedEntries.get(dateIter)
+                    if (entry.value == Entry.SKIP) {
+                        skippedCount++
+                    } else {
+                        val tier = habit.dayTier
+                        tierTotal[tier] = tierTotal[tier]!! + 1
+                        if (isHabitCompleted(habit, entry)) {
+                            tierCompleted[tier] = tierCompleted[tier]!! + 1
+                        }
+                    }
+                }
+            }
+            dateIter = dateIter.plus(1)
+        }
+
+        val tiersList = DayTier.entries.map { tier ->
+            val (comp, tot) = when (tier) {
+                DayTier.MINIMUM -> {
+                    Pair(tierCompleted[DayTier.MINIMUM] ?: 0, tierTotal[DayTier.MINIMUM] ?: 0)
+                }
+                DayTier.NORMAL -> {
+                    val compSum = (tierCompleted[DayTier.MINIMUM] ?: 0) + (tierCompleted[DayTier.NORMAL] ?: 0)
+                    val totSum = (tierTotal[DayTier.MINIMUM] ?: 0) + (tierTotal[DayTier.NORMAL] ?: 0)
+                    Pair(compSum, totSum)
+                }
+                DayTier.IDEAL -> {
+                    val compSum = (tierCompleted[DayTier.MINIMUM] ?: 0) + (tierCompleted[DayTier.NORMAL] ?: 0) + (tierCompleted[DayTier.IDEAL] ?: 0)
+                    val totSum = (tierTotal[DayTier.MINIMUM] ?: 0) + (tierTotal[DayTier.NORMAL] ?: 0) + (tierTotal[DayTier.IDEAL] ?: 0)
+                    Pair(compSum, totSum)
+                }
+                DayTier.OPTIONAL -> {
+                    val compSum = DayTier.entries.sumOf { tierCompleted[it] ?: 0 }
+                    val totSum = DayTier.entries.sumOf { tierTotal[it] ?: 0 }
+                    Pair(compSum, totSum)
+                }
+            }
+            StatisticsTierProgress(tier, comp, tot)
+        }
+
         return StatisticsData(
             start = start,
             end = end,
@@ -645,7 +974,9 @@ class StatisticsFragment : Fragment() {
             sphereFocusHours = sphereFocusList,
             habitStats = habitCompletionStats,
             weekdayFrequency = weekdayList,
-            heatmapRates = heatmapRates
+            heatmapRates = heatmapRates,
+            tiers = tiersList,
+            skippedCount = skippedCount
         )
     }
 
@@ -1126,13 +1457,14 @@ class StatisticsFragment : Fragment() {
             layoutParams = LinearLayout.LayoutParams(ringSize, ringSize)
             addView(
                 StatisticsOverviewRingView(requireContext()).apply {
+                    overviewRingViews.add(this)
                     layoutParams = FrameLayout.LayoutParams(
                         ringSize,
                         ringSize,
                         Gravity.CENTER
                     )
                     setRings(
-                        levels.map { level ->
+                        data = levels.map { level ->
                             StatisticsOverviewRingView.RingData(
                                 progress = if (level.totalCount == 0) {
                                     0f
@@ -1145,7 +1477,8 @@ class StatisticsFragment : Fragment() {
                                     if (palette.isPureBlack) 0.12f else 0.18f
                                 )
                             )
-                        }
+                        },
+                        displayAtZero = areSystemAnimationsEnabled()
                     )
                 }
             )
@@ -1228,12 +1561,7 @@ class StatisticsFragment : Fragment() {
     }
 
     private fun tierLabel(tier: DayTier): String {
-        return when (tier) {
-            DayTier.MINIMUM -> getString(R.string.day_tier_badge_minimum)
-            DayTier.NORMAL -> getString(R.string.day_tier_badge_normal)
-            DayTier.IDEAL -> getString(R.string.day_tier_badge_ideal)
-            DayTier.OPTIONAL -> getString(R.string.day_tier_optional)
-        }
+        return getString(tier.badgeResId)
     }
 
     private fun tierColor(tier: DayTier): Int {
@@ -1297,13 +1625,185 @@ class StatisticsFragment : Fragment() {
         return Pair(cardContainer, contentLayout)
     }
 
+    private fun scheduleReportChoreography(generation: Int, fullReveal: Boolean) {
+        val cards = reportCardViews()
+        if (cards.isEmpty()) {
+            startOverviewRingAnimations(animated = true)
+            return
+        }
+        val offset = dp(if (fullReveal) 12f else 8f)
+        cards.forEach { card ->
+            card.animate().setListener(null).cancel()
+            card.alpha = 0f
+            card.translationX = 0f
+            card.translationY = offset
+        }
+        binding.reportContentContainer.doOnPreDraw {
+            it.postOnAnimation {
+                if (viewBinding == null || !isAdded || generation != activeReportGeneration) {
+                    cancelReportAnimations(resetRingsToFinal = true)
+                    return@postOnAnimation
+                }
+                revealPreparedReportCards(cards, generation, fullReveal)
+            }
+        }
+    }
+
+    private fun revealPreparedReportCards(
+        cards: List<View>,
+        generation: Int,
+        fullReveal: Boolean
+    ) {
+        val duration = if (fullReveal) CARD_REVEAL_DURATION_MS else CARD_REFRESH_REVEAL_DURATION_MS
+        val stagger = if (fullReveal) CARD_REVEAL_STAGGER_MS else CARD_REFRESH_REVEAL_STAGGER_MS
+        var ringAnimationStarted = false
+
+        cards.forEachIndexed { index, card ->
+            card.animate().setListener(null).cancel()
+            val startDelay = index * stagger
+            card.animate()
+                .alpha(1f)
+                .translationY(0f)
+                .setDuration(duration)
+                .setStartDelay(startDelay)
+                .setInterpolator(DecelerateInterpolator())
+                .setListener(object : AnimatorListenerAdapter() {
+                    private var cancelled = false
+
+                    override fun onAnimationCancel(animation: Animator) {
+                        cancelled = true
+                        resetReportView(card)
+                    }
+
+                    override fun onAnimationEnd(animation: Animator) {
+                        card.animate().setListener(null)
+                        resetReportView(card)
+                        if (index == 0 && !ringAnimationStarted && generation == activeReportGeneration) {
+                            ringAnimationStarted = true
+                            startOverviewRingAnimations(animated = true)
+                        }
+                        if (!cancelled && index == cards.lastIndex && generation != activeReportGeneration) {
+                            cancelReportAnimations(resetRingsToFinal = true)
+                        }
+                    }
+                })
+                .start()
+        }
+    }
+
+    private fun reportCardViews(): List<View> {
+        val container = binding.reportContentContainer
+        return (0 until container.childCount)
+            .map { index -> container.getChildAt(index) }
+            .filter { child -> child.visibility == View.VISIBLE }
+    }
+
+    private fun cancelReportAnimations(resetRingsToFinal: Boolean) {
+        viewBinding?.let { binding ->
+            binding.reportContentContainer.animate().setListener(null).cancel()
+            binding.reportContentContainer.alpha = 1f
+            reportCardViews().forEach { child ->
+                child.animate().setListener(null).cancel()
+                resetReportView(child)
+            }
+            overviewRingViews.forEach { ring ->
+                ring.cancelProgressAnimation(jumpToEnd = resetRingsToFinal)
+            }
+        }
+    }
+
+    private fun setReportViewsFinalState() {
+        binding.reportContentContainer.alpha = 1f
+        reportCardViews().forEach { resetReportView(it) }
+    }
+
+    private fun resetReportView(view: View) {
+        view.alpha = 1f
+        view.translationX = 0f
+        view.translationY = 0f
+    }
+
+    private fun startOverviewRingAnimations(animated: Boolean) {
+        overviewRingViews.forEach { ring ->
+            if (animated && areSystemAnimationsEnabled()) {
+                ring.animateProgress(RING_PROGRESS_DURATION_MS)
+            } else {
+                ring.cancelProgressAnimation(jumpToEnd = true)
+            }
+        }
+    }
+
+    private fun areSystemAnimationsEnabled(): Boolean {
+        return runCatching {
+            android.provider.Settings.Global.getFloat(
+                requireContext().contentResolver,
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f
+            ) != 0f
+        }.getOrDefault(true)
+    }
+
     private fun dp(value: Float) = binding.root.dp(value)
 
+    private data class RenderSignature(
+        val reportKey: ReportKey,
+        val totalDays: Int,
+        val completedDays: Int,
+        val totalFocusHours: Double,
+        val limitViolations: Int,
+        val missedGoals: Int,
+        val completionPercentage: Int,
+        val completedHabitsCount: Int,
+        val bestStreak: Int,
+        val bestSphereName: String?,
+        val worstSphereName: String?,
+        val scoreChartCount: Int,
+        val sphereFocusHoursCount: Int,
+        val habitStatsCount: Int,
+        val weekdayFrequencyCount: Int,
+        val heatmapRatesCount: Int,
+        val tiers: List<StatisticsTierProgress>,
+        val skippedCount: Int
+    ) {
+        companion object {
+            fun from(reportKey: ReportKey, data: StatisticsData): RenderSignature {
+                return RenderSignature(
+                    reportKey = reportKey,
+                    totalDays = data.totalDays,
+                    completedDays = data.completedDays,
+                    totalFocusHours = data.totalFocusHours,
+                    limitViolations = data.limitViolations,
+                    missedGoals = data.missedGoals,
+                    completionPercentage = data.completionPercentage,
+                    completedHabitsCount = data.completedHabitsCount,
+                    bestStreak = data.bestStreak,
+                    bestSphereName = data.bestSphereName,
+                    worstSphereName = data.worstSphereName,
+                    scoreChartCount = data.scoreChartData.size,
+                    sphereFocusHoursCount = data.sphereFocusHours.size,
+                    habitStatsCount = data.habitStats.size,
+                    weekdayFrequencyCount = data.weekdayFrequency.size,
+                    heatmapRatesCount = data.heatmapRates.size,
+                    tiers = data.tiers,
+                    skippedCount = data.skippedCount
+                )
+            }
+        }
+    }
+
     companion object {
+        private const val DEBUG_STATISTICS_REFRESH = false
         private const val STATE_TAB = "reports.tab"
         private const val STATE_YEAR = "reports.year"
         private const val STATE_MONTH = "reports.month"
         private const val STATE_DAY = "reports.day"
+        private const val CARD_REVEAL_DURATION_MS = 280L
+        private const val CARD_REFRESH_REVEAL_DURATION_MS = 165L
+        private const val CARD_REVEAL_STAGGER_MS = 80L
+        private const val CARD_REFRESH_REVEAL_STAGGER_MS = 35L
+        private const val RING_PROGRESS_DURATION_MS = 800L
+        private const val REPORT_UPDATE_COALESCE_MS = 80L
+        private const val INITIAL_REPORT_DELAY_MS = 80L
     }
 }
 
@@ -1333,7 +1833,9 @@ data class StatisticsData(
     val sphereFocusHours: List<Pair<HabitBlock, Double>>,
     val habitStats: List<HabitCompletionStat>,
     val weekdayFrequency: List<Pair<DayOfWeek, Double>>,
-    val heatmapRates: Map<LocalDate, Float>
+    val heatmapRates: Map<LocalDate, Float>,
+    val tiers: List<StatisticsTierProgress>,
+    val skippedCount: Int
 )
 
 data class HabitCompletionStat(
@@ -1466,3 +1968,11 @@ class HeatmapView @JvmOverloads constructor(
         return (color and 0x00FFFFFF) or (alpha shl 24)
     }
 }
+
+private val DayTier.badgeResId: Int
+    get() = when (this) {
+        DayTier.MINIMUM -> R.string.day_tier_badge_minimum
+        DayTier.NORMAL -> R.string.day_tier_badge_normal
+        DayTier.IDEAL -> R.string.day_tier_badge_ideal
+        DayTier.OPTIONAL -> R.string.day_tier_badge_optional_short
+    }

@@ -43,6 +43,9 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
         private const val STATE_TAB = "selected_tab"
         private const val STATE_HEX = "hex_value"
         private const val STATE_ERROR = "validation_error"
+        private const val STATE_HUE = "current_hue"
+        private const val STATE_SATURATION = "current_saturation"
+        private const val STATE_VALUE = "current_value"
 
         fun newInstance(color: Int, theme: Int) = CustomColorBottomSheet().apply {
             arguments = Bundle().apply {
@@ -58,6 +61,9 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
     private var validationError: String? = null
     private var savedHex: String? = null
     private var updatingControls = false
+    private var currentHue = 0f
+    private var currentSaturation = 1f
+    private var currentValue = 1f
     private lateinit var themedContext: Context
 
     private lateinit var preview: MaterialCardView
@@ -92,6 +98,13 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
         selectedTab = savedInstanceState?.getInt(STATE_TAB) ?: 0
         savedHex = savedInstanceState?.getString(STATE_HEX)
         validationError = savedInstanceState?.getString(STATE_ERROR)
+        if (savedInstanceState != null) {
+            currentHue = savedInstanceState.getFloat(STATE_HUE)
+            currentSaturation = savedInstanceState.getFloat(STATE_SATURATION)
+            currentValue = savedInstanceState.getFloat(STATE_VALUE)
+        } else {
+            syncCanonicalHsvFromColor(currentColor, preserveHue = false)
+        }
     }
 
     override fun onCreateView(
@@ -147,6 +160,9 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
         outState.putInt(STATE_TAB, tabs.selectedTabPosition.coerceAtLeast(0))
         outState.putString(STATE_HEX, hexInput.text?.toString())
         outState.putString(STATE_ERROR, validationError)
+        outState.putFloat(STATE_HUE, currentHue)
+        outState.putFloat(STATE_SATURATION, currentSaturation)
+        outState.putFloat(STATE_VALUE, currentValue)
     }
 
     private fun bindViews(view: View) {
@@ -220,7 +236,7 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
         val normalThumb = resources.getDimensionPixelSize(R.dimen.color_picker_slider_thumb_radius)
         val pressedThumb = resources.getDimensionPixelSize(R.dimen.color_picker_slider_thumb_radius_pressed)
 
-        hsvSliders.forEach { slider ->
+        hsvSliders.forEachIndexed { index, slider ->
             slider.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
                 override fun onStartTrackingTouch(slider: Slider) {
                     slider.thumbRadius = pressedThumb
@@ -232,10 +248,17 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
             })
             slider.addOnChangeListener { _, _, fromUser ->
                 if (fromUser && !updatingControls) {
-                    val color = Color.HSVToColor(
-                        floatArrayOf(hsvSliders[0].value, hsvSliders[1].value / 100f, hsvSliders[2].value / 100f)
+                    when (index) {
+                        0 -> currentHue = slider.value.coerceIn(0f, 360f)
+                        1 -> currentSaturation = (slider.value / 100f).coerceIn(0f, 1f)
+                        2 -> currentValue = (slider.value / 100f).coerceIn(0f, 1f)
+                    }
+                    updateControls(
+                        Color.HSVToColor(floatArrayOf(currentHue, currentSaturation, currentValue)),
+                        updateHex = true,
+                        updateHsvSliders = false,
+                        preserveHue = true
                     )
-                    updateControls(color, updateHex = true)
                 }
             }
         }
@@ -257,22 +280,30 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
                             rgbSliders[1].value.roundToInt(),
                             rgbSliders[2].value.roundToInt()
                         ),
-                        updateHex = true
+                        updateHex = true,
+                        updateHsvSliders = true,
+                        preserveHue = true
                     )
                 }
             }
         }
     }
 
-    private fun updateControls(color: Int, updateHex: Boolean) {
+    private fun updateControls(
+        color: Int,
+        updateHex: Boolean,
+        updateHsvSliders: Boolean = true,
+        preserveHue: Boolean = true
+    ) {
         currentColor = color or Color.BLACK
         updatingControls = true
 
-        val hsv = FloatArray(3)
-        Color.colorToHSV(currentColor, hsv)
-        hsvSliders[0].value = hsv[0].coerceIn(0f, 360f)
-        hsvSliders[1].value = (hsv[1] * 100f).coerceIn(0f, 100f)
-        hsvSliders[2].value = (hsv[2] * 100f).coerceIn(0f, 100f)
+        if (updateHsvSliders) {
+            syncCanonicalHsvFromColor(currentColor, preserveHue)
+            hsvSliders[0].value = currentHue.coerceIn(0f, 360f)
+            hsvSliders[1].value = (currentSaturation * 100f).coerceIn(0f, 100f)
+            hsvSliders[2].value = (currentValue * 100f).coerceIn(0f, 100f)
+        }
         rgbSliders[0].value = Color.red(currentColor).toFloat()
         rgbSliders[1].value = Color.green(currentColor).toFloat()
         rgbSliders[2].value = Color.blue(currentColor).toFloat()
@@ -301,6 +332,16 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
         hexLayout.error = null
         updateDoneButton()
         updatingControls = false
+    }
+
+    private fun syncCanonicalHsvFromColor(color: Int, preserveHue: Boolean) {
+        val hsv = FloatArray(3)
+        Color.colorToHSV(color or Color.BLACK, hsv)
+        if (!preserveHue || (hsv[1] > 0f && hsv[2] > 0f)) {
+            currentHue = hsv[0].coerceIn(0f, 360f)
+        }
+        currentSaturation = hsv[1].coerceIn(0f, 1f)
+        currentValue = hsv[2].coerceIn(0f, 1f)
     }
 
     private fun updateDoneButton() {

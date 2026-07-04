@@ -104,6 +104,14 @@
         </LinearLayout>
     </HorizontalScrollView>
 
+    <ProgressBar
+        android:id="@+id/refreshProgressBar"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:indeterminate="true"
+        android:visibility="gone" />
+
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent">

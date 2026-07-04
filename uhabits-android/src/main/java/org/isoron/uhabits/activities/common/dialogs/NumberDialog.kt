@@ -113,12 +113,12 @@ class NumberDialog : AppCompatDialogFragment() {
         val separator = DecimalFormatSymbols.getInstance().decimalSeparator
         view.value.keyListener = DigitsKeyListener.getInstance("0123456789$separator")
 
-        // https://github.com/flutter/flutter/issues/61175
         val currKeyboard = Settings.Secure.getString(
             requireContext().contentResolver,
             Settings.Secure.DEFAULT_INPUT_METHOD
         )
-        if (currKeyboard.contains("swiftkey") || currKeyboard.contains("samsung")) {
+        if (currKeyboard?.contains("swiftkey", ignoreCase = true) == true ||
+            currKeyboard?.contains("samsung", ignoreCase = true) == true) {
             view.value.inputType = EditorInfo.TYPE_CLASS_TEXT
         }
     }

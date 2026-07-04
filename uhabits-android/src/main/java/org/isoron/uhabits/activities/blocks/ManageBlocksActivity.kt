@@ -146,11 +146,7 @@ class ManageBlocksActivity : AppCompatActivity() {
                 }
             }
             val emptyTextView = TextView(this).apply {
-                text = if (Locale.getDefault().language == "ru") {
-                    "Нет сфер. Создайте новую сферу, чтобы сгруппировать привычки."
-                } else {
-                    "No spheres yet. Create a sphere to group your habits."
-                }
+                text = getString(R.string.manage_blocks_empty_state)
                 textSize = 15f
                 gravity = android.view.Gravity.CENTER
                 setTextColor(palette.onSurfaceVariant)
@@ -248,11 +244,7 @@ class ManageBlocksActivity : AppCompatActivity() {
             val count = allHabits.count { it.blockId == block.id }
             if (count > 0) {
                 val metadataView = TextView(this).apply {
-                    text = if (Locale.getDefault().language == "ru") {
-                        "Привычек: $count"
-                    } else {
-                        "Habits: $count"
-                    }
+                    text = getString(R.string.manage_blocks_habit_count, count)
                     textSize = 13f
                     setTextColor(palette.onSurfaceVariant)
                     layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {

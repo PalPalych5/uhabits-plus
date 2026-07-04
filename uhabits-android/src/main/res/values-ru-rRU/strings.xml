@@ -558,4 +558,8 @@
     <string name="pref_habit_card_corners_default">8 dp (По умолчанию)</string>
     <string name="statistics_daily_overview_title">Сводка дня</string>
     <string name="statistics_daily_focus_minutes">Фокус-время: %1$s мин</string>
+    <string name="manage_blocks_empty_state">Нет сфер. Создайте новую сферу, чтобы сгруппировать привычки.</string>
+    <string name="manage_blocks_habit_count">Привычек: %1$d</string>
+    <string name="reports_no_data">Нет данных</string>
+    <string name="reports_refreshing">Обновление…</string>
 </resources>

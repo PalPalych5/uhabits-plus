@@ -1,13 +1,20 @@
 package org.isoron.uhabits.activities.main
 
 import android.Manifest.permission.POST_NOTIFICATIONS
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.content.pm.PackageManager.PERMISSION_GRANTED
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.MenuItem
+import android.view.View
+import android.view.ViewGroup
+import android.view.animation.AccelerateInterpolator
+import android.view.animation.DecelerateInterpolator
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
@@ -20,6 +27,7 @@ import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
 import org.isoron.uhabits.activities.blocks.ManageBlocksActivity
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.habits.edit.HabitTypeDialog
 import org.isoron.uhabits.activities.habits.list.ListHabitsDisplayMode
 import org.isoron.uhabits.activities.habits.list.ListHabitsFragment
@@ -29,7 +37,6 @@ import org.isoron.uhabits.activities.settings.AccentColorManager
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 import org.isoron.uhabits.core.tasks.Task
-import org.isoron.uhabits.core.ui.ThemeSwitcher.Companion.THEME_DARK
 import org.isoron.uhabits.database.AutoBackup
 import org.isoron.uhabits.databinding.ActivityMainBinding
 import org.isoron.uhabits.sync.SyncRunResult
@@ -47,6 +54,8 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     private var currentResolvedNightMode = false
     private var permissionAlreadyRequested = false
     private var updatingBottomNavigation = false
+    private var isBottomTabTransitionRunning = false
+    private var tabTransitionToken = 0
 
     private val permissionLauncher = registerForActivityResult(RequestPermission()) { granted ->
         if (granted) scheduleReminders()
@@ -105,7 +114,13 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                 R.id.navigationSettings -> MainDestination.SETTINGS
                 else -> return@setOnItemSelectedListener false
             }
-            navigate(destination)
+            if (destination == navigationState.current.bottomItemDestination) {
+                return@setOnItemSelectedListener true
+            }
+            if (isBottomTabTransitionRunning) {
+                return@setOnItemSelectedListener false
+            }
+            navigateFromBottomTab(destination)
             true
         }
     }
@@ -145,7 +160,112 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         return fragment
     }
 
-    private fun showDestination(destination: MainDestination) {
+    private fun showDestination(destination: MainDestination, animateFrom: MainDestination? = null) {
+        val source = animateFrom
+        val shouldAnimate = source != null &&
+            canAnimateMainTabTransition(source, destination) &&
+            areSystemAnimationsEnabled()
+        if (!shouldAnimate) {
+            tabTransitionToken++
+            cancelTabTransitionAnimations()
+            showDestinationImmediately(destination)
+            return
+        }
+
+        val sourceFragment = supportFragmentManager.findFragmentByTag(tagFor(source!!))
+        val sourceView = sourceFragment?.view
+        val target = fragmentFor(destination)
+        if (sourceView == null || sourceView.width == 0 || binding.mainContent.width == 0) {
+            tabTransitionToken++
+            cancelTabTransitionAnimations()
+            showDestinationImmediately(destination)
+            return
+        }
+
+        val token = ++tabTransitionToken
+        val direction = tabOrder(destination) - tabOrder(source)
+        val slideDistance = if (destination == MainDestination.STATISTICS) {
+            TAB_STATISTICS_SLIDE_DP
+        } else {
+            TAB_SLIDE_DP
+        }
+        val slide = dp(slideDistance) * if (direction >= 0) 1f else -1f
+        isBottomTabTransitionRunning = true
+        (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionStarted()
+        updateBottomSelection(destination, animate = true, previous = source)
+
+        sourceView.animate().setListener(null).cancel()
+        target.view?.animate()?.setListener(null)?.cancel()
+        sourceView.animate()
+            .alpha(0f)
+            .translationX(-slide / 2f)
+            .setDuration(TAB_FADE_OUT_MS)
+            .setInterpolator(AccelerateInterpolator())
+            .setListener(object : AnimatorListenerAdapter() {
+                private var cancelled = false
+
+                override fun onAnimationCancel(animation: Animator) {
+                    cancelled = true
+                    resetFragmentRoot(sourceView)
+                    resetFragmentRoot(target.view)
+                    if (tabTransitionToken == token) {
+                        isBottomTabTransitionRunning = false
+                        (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionEnded()
+                    }
+                }
+
+                override fun onAnimationEnd(animation: Animator) {
+                    sourceView.animate().setListener(null)
+                    if (cancelled || tabTransitionToken != token) return
+                    showDestinationImmediately(destination, updateBottomNavigation = false)
+                    val targetView = target.view
+                    if (targetView == null) {
+                        resetFragmentRoot(sourceView)
+                        isBottomTabTransitionRunning = false
+                        (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionEnded()
+                        return
+                    }
+                    targetView.alpha = 0f
+                    targetView.translationX = slide
+                    targetView.animate().setListener(null).cancel()
+                    targetView.animate()
+                        .alpha(1f)
+                        .translationX(0f)
+                        .setDuration(TAB_FADE_IN_MS)
+                        .setInterpolator(DecelerateInterpolator())
+                        .setListener(object : AnimatorListenerAdapter() {
+                            private var innerCancelled = false
+
+                            override fun onAnimationCancel(animation: Animator) {
+                                innerCancelled = true
+                                resetFragmentRoot(sourceView)
+                                resetFragmentRoot(targetView)
+                                if (tabTransitionToken == token) {
+                                    isBottomTabTransitionRunning = false
+                                    (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionEnded()
+                                }
+                            }
+
+                            override fun onAnimationEnd(animation: Animator) {
+                                targetView.animate().setListener(null)
+                                resetFragmentRoot(sourceView)
+                                resetFragmentRoot(targetView)
+                                if (!innerCancelled && tabTransitionToken == token) {
+                                    isBottomTabTransitionRunning = false
+                                    (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionEnded()
+                                }
+                            }
+                        })
+                        .start()
+                }
+            })
+            .start()
+    }
+
+    private fun showDestinationImmediately(
+        destination: MainDestination,
+        updateBottomNavigation: Boolean = true
+    ) {
         val target = fragmentFor(destination)
         val transaction = supportFragmentManager.beginTransaction()
         supportFragmentManager.fragments.forEach { fragment ->
@@ -166,13 +286,19 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                 }
             )
         }
-        updateBottomSelection(destination)
+        if (updateBottomNavigation) updateBottomSelection(destination)
         setHabitCreationAvailable(
             destination == MainDestination.HABITS
         )
     }
 
-    private fun updateBottomSelection(destination: MainDestination) {
+    private fun updateBottomSelection(
+        destination: MainDestination,
+        animate: Boolean = false,
+        previous: MainDestination? = null
+    ) {
+        val previousBottom = previous?.bottomItemDestination ?: navigationState.current.bottomItemDestination
+        val nextBottom = destination.bottomItemDestination
         val itemId = when (destination.bottomItemDestination) {
             MainDestination.HABITS -> R.id.navigationHabits
             MainDestination.STATISTICS -> R.id.navigationReports
@@ -182,6 +308,13 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         updatingBottomNavigation = true
         binding.bottomNavigation.selectedItemId = itemId
         updatingBottomNavigation = false
+        animateBottomNavigationItems(previousBottom, nextBottom, animate)
+    }
+
+    private fun navigateFromBottomTab(destination: MainDestination) {
+        val previous = navigationState.current
+        if (!navigationState.navigate(destination)) return
+        showDestination(destination, animateFrom = previous)
     }
 
     override fun navigate(destination: MainDestination) {
@@ -334,8 +467,30 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
     private fun applyAccentColor() {
         val colorStateList = AccentColorManager.getAccentColorStateList(this, prefs)
+        val palette = MainTabsThemeBridge.resolve(this)
         binding.bottomNavigation.itemIconTintList = colorStateList
         binding.bottomNavigation.itemTextColor = colorStateList
+        binding.bottomNavigation.setItemActiveIndicatorEnabled(true)
+        binding.bottomNavigation.setItemActiveIndicatorColor(
+            ColorStateList.valueOf(
+                MainTabsThemeBridge.withAlpha(
+                    palette.accent,
+                    when {
+                        palette.isPureBlack -> 0.14f
+                        palette.isDark -> 0.16f
+                        else -> 0.12f
+                    }
+                )
+            )
+        )
+        binding.bottomNavigation.setItemActiveIndicatorWidth(dp(72f).toInt())
+        binding.bottomNavigation.setItemActiveIndicatorHeight(dp(36f).toInt())
+        binding.bottomNavigation.setItemActiveIndicatorMarginHorizontal(dp(4f).toInt())
+        animateBottomNavigationItems(
+            previous = navigationState.current.bottomItemDestination,
+            current = navigationState.current.bottomItemDestination,
+            animate = false
+        )
     }
 
     private fun requestNotificationPermissionAndSchedule() {
@@ -379,6 +534,117 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         return destName?.let { runCatching { MainDestination.valueOf(it) }.getOrNull() }
     }
 
+    private fun canAnimateMainTabTransition(
+        previous: MainDestination,
+        destination: MainDestination
+    ): Boolean {
+        val from = previous.bottomItemDestination
+        val to = destination.bottomItemDestination
+        return from != to && isMainTab(from) && isMainTab(to)
+    }
+
+    private fun isMainTab(destination: MainDestination): Boolean {
+        return destination == MainDestination.HABITS ||
+            destination == MainDestination.STATISTICS ||
+            destination == MainDestination.SETTINGS
+    }
+
+    private fun tabOrder(destination: MainDestination): Int {
+        return when (destination.bottomItemDestination) {
+            MainDestination.HABITS -> 0
+            MainDestination.STATISTICS -> 1
+            MainDestination.SETTINGS -> 2
+            MainDestination.ARCHIVE -> 0
+        }
+    }
+
+    private fun areSystemAnimationsEnabled(): Boolean {
+        return runCatching {
+            android.provider.Settings.Global.getFloat(
+                contentResolver,
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f
+            ) != 0f
+        }.getOrDefault(true)
+    }
+
+    private fun cancelTabTransitionAnimations() {
+        isBottomTabTransitionRunning = false
+        supportFragmentManager.fragments.forEach { fragment ->
+            fragment.view?.let { view ->
+                view.animate().setListener(null).cancel()
+                resetFragmentRoot(view)
+            }
+        }
+        (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionEnded()
+    }
+
+    private fun resetFragmentRoot(view: View?) {
+        view ?: return
+        view.alpha = 1f
+        view.translationX = 0f
+        view.translationY = 0f
+    }
+
+    private fun animateBottomNavigationItems(
+        previous: MainDestination,
+        current: MainDestination,
+        animate: Boolean
+    ) {
+        val ids = intArrayOf(
+            R.id.navigationHabits,
+            R.id.navigationReports,
+            R.id.navigationSettings
+        )
+        ids.forEach { id ->
+            val itemView = bottomNavigationItemView(id) ?: return@forEach
+            val destination = destinationForBottomItem(id)
+            val active = destination == current.bottomItemDestination
+            val shouldAnimate = animate &&
+                (destination == previous.bottomItemDestination || active) &&
+                areSystemAnimationsEnabled()
+            itemView.animate().setListener(null).cancel()
+            val targetScale = if (active) 1.06f else 1f
+            val targetTranslationY = if (active) -dp(1.5f) else 0f
+            val targetAlpha = if (active) 1f else 0.92f
+            if (shouldAnimate) {
+                itemView.animate()
+                    .scaleX(targetScale)
+                    .scaleY(targetScale)
+                    .translationY(targetTranslationY)
+                    .alpha(targetAlpha)
+                    .setDuration(BOTTOM_NAV_ANIMATION_MS)
+                    .setInterpolator(DecelerateInterpolator())
+                    .start()
+            } else {
+                itemView.scaleX = targetScale
+                itemView.scaleY = targetScale
+                itemView.translationY = targetTranslationY
+                itemView.alpha = targetAlpha
+            }
+        }
+    }
+
+    private fun bottomNavigationItemView(itemId: Int): View? {
+        val menuView = binding.bottomNavigation.getChildAt(0) as? ViewGroup ?: return null
+        val index = (0 until binding.bottomNavigation.menu.size()).firstOrNull { index ->
+            binding.bottomNavigation.menu.getItem(index).itemId == itemId
+        } ?: return null
+        return if (index < menuView.childCount) menuView.getChildAt(index) else null
+    }
+
+    private fun destinationForBottomItem(itemId: Int): MainDestination {
+        return when (itemId) {
+            R.id.navigationReports -> MainDestination.STATISTICS
+            R.id.navigationSettings -> MainDestination.SETTINGS
+            else -> MainDestination.HABITS
+        }
+    }
+
+    private fun dp(value: Float): Float {
+        return value * resources.displayMetrics.density
+    }
+
     companion object {
         private const val EXTRA_DESTINATION = "main.destination"
         private const val STATE_CURRENT = "main.current"
@@ -388,6 +654,11 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         private const val TAG_SETTINGS = "main.settings"
 
         private const val EXTRA_RESTORE_SUCCESS = "main.restore_success"
+        private const val TAB_FADE_OUT_MS = 100L
+        private const val TAB_FADE_IN_MS = 180L
+        private const val BOTTOM_NAV_ANIMATION_MS = 190L
+        private const val TAB_SLIDE_DP = 12f
+        private const val TAB_STATISTICS_SLIDE_DP = 4f
 
         fun intent(
             context: Context,

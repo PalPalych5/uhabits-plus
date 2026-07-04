@@ -58,7 +58,12 @@ object StatisticsOverviewStateBuilder {
             totalCount = countable.size,
             focusMinutes = items.sumOf { it.focusMinutes },
             tiers = DayTier.entries.map { tier ->
-                val tierItems = countable.filter { it.tier == tier }
+                val tierItems = when (tier) {
+                    DayTier.MINIMUM -> countable.filter { it.tier == DayTier.MINIMUM }
+                    DayTier.NORMAL -> countable.filter { it.tier == DayTier.MINIMUM || it.tier == DayTier.NORMAL }
+                    DayTier.IDEAL -> countable.filter { it.tier == DayTier.MINIMUM || it.tier == DayTier.NORMAL || it.tier == DayTier.IDEAL }
+                    DayTier.OPTIONAL -> countable
+                }
                 StatisticsTierProgress(
                     tier = tier,
                     completedCount = tierItems.count { it.completed },

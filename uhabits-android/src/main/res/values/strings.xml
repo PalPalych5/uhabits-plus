@@ -553,4 +553,8 @@
     <string name="pref_habit_card_corners_default">8 dp (Default)</string>
     <string name="statistics_daily_overview_title">Daily overview</string>
     <string name="statistics_daily_focus_minutes">Focus time: %1$s min</string>
+    <string name="manage_blocks_empty_state">No spheres yet. Create a sphere to group your habits.</string>
+    <string name="manage_blocks_habit_count">Habits: %1$d</string>
+    <string name="reports_no_data">No data</string>
+    <string name="reports_refreshing">Updating…</string>
 </resources>
