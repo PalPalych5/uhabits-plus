@@ -18,6 +18,8 @@ import org.isoron.uhabits.widgets.WidgetUpdater
 import kotlin.random.Random
 
 object DemoDataGenerator {
+    private const val DEMO_HABIT_UUID_PREFIX = "dec0de0a0000000000000000"
+    private const val DEMO_BLOCK_UUID_PREFIX = "dec0de0b0000000000000000"
 
     fun generate(
         context: Context,
@@ -40,27 +42,28 @@ object DemoDataGenerator {
             db.run("DELETE FROM HabitBlocks")
         } else {
             // Delete only demo habits
-            val toRemove = habitList.filter { it.name.startsWith("[Demo] ") }
+            val toRemove = habitList.filter { isDemoHabit(it) }
             for (h in toRemove) {
                 habitList.remove(h)
             }
             // Delete only demo blocks
-            val demoBlocks = blockRepo.findAll().filter { it.name.startsWith("[Demo] ") }
+            val demoBlocks = blockRepo.findAll().filter { isDemoBlock(it) }
             for (b in demoBlocks) {
                 blockRepo.delete(b.id!!)
             }
+            hardDeleteDemoUuidRows(db)
         }
         
         // 2. Insert Habit Blocks (spheres)
         val blockIds = mutableMapOf<String, Long>()
         
         val blocks = listOf(
-            HabitBlockData(name = "[Demo] Health", color = 7, icon = "favorite", position = 0),
-            HabitBlockData(name = "[Demo] Study", color = 11, icon = "school", position = 1),
-            HabitBlockData(name = "[Demo] Sport", color = 6, icon = "directions_run", position = 2),
-            HabitBlockData(name = "[Demo] Mind", color = 13, icon = "spa", position = 3),
-            HabitBlockData(name = "[Demo] Work", color = 1, icon = "work", position = 4),
-            HabitBlockData(name = "[Demo] Household", color = 16, icon = "home", position = 5)
+            HabitBlockData(name = "Health", color = 7, icon = "favorite", position = 0, uuid = demoBlockUuid(0)),
+            HabitBlockData(name = "Study", color = 11, icon = "school", position = 1, uuid = demoBlockUuid(1)),
+            HabitBlockData(name = "Sport", color = 6, icon = "directions_run", position = 2, uuid = demoBlockUuid(2)),
+            HabitBlockData(name = "Mind", color = 13, icon = "spa", position = 3, uuid = demoBlockUuid(3)),
+            HabitBlockData(name = "Work", color = 1, icon = "work", position = 4, uuid = demoBlockUuid(4)),
+            HabitBlockData(name = "Household", color = 16, icon = "home", position = 5, uuid = demoBlockUuid(5))
         )
         
         for (b in blocks) {
@@ -482,10 +485,11 @@ object DemoDataGenerator {
             val rand = Random(42) // Fixed random seed
             val entryRepo = modelFactory.entryRepository
             
-            for (spec in specs) {
+            for ((index, spec) in specs.withIndex()) {
                 // Build Habit object
                 val habit = modelFactory.buildHabit()
-                habit.name = "[Demo] " + spec.name // clearly label seeded data as demo data
+                habit.uuid = demoHabitUuid(index)
+                habit.name = spec.name
                 habit.description = spec.description
                 habit.question = spec.question
                 habit.type = spec.type
@@ -497,7 +501,7 @@ object DemoDataGenerator {
                 habit.dayTier = spec.dayTier
                 habit.timerEnabled = spec.timerEnabled
                 habit.isArchived = spec.isArchived
-                habit.blockId = spec.blockName?.let { blockIds["[Demo] " + it] }
+                habit.blockId = spec.blockName?.let { blockIds[it] }
                 
                 // Add to habitList, which inserts main row + extensions and adds to in-memory list
                 habitList.add(habit)
@@ -536,5 +540,49 @@ object DemoDataGenerator {
         habitList.observable.notifyListeners()
         cache.refreshAllHabits()
         widgetUpdater?.updateWidgets()
+    }
+
+    private fun isDemoHabit(habit: Habit): Boolean {
+        return habit.uuid?.startsWith(DEMO_HABIT_UUID_PREFIX) == true ||
+            habit.name.startsWith("[Demo] ", ignoreCase = true)
+    }
+
+    private fun isDemoBlock(block: HabitBlockData): Boolean {
+        return block.uuid?.startsWith(DEMO_BLOCK_UUID_PREFIX) == true ||
+            block.name.startsWith("[Demo] ", ignoreCase = true)
+    }
+
+    private fun demoHabitUuid(index: Int): String {
+        return DEMO_HABIT_UUID_PREFIX + index.toString(16).padStart(8, '0')
+    }
+
+    private fun demoBlockUuid(index: Int): String {
+        return DEMO_BLOCK_UUID_PREFIX + index.toString(16).padStart(8, '0')
+    }
+
+    private fun hardDeleteDemoUuidRows(db: org.isoron.platform.io.Database) {
+        val habitLike = "$DEMO_HABIT_UUID_PREFIX%"
+        val blockLike = "$DEMO_BLOCK_UUID_PREFIX%"
+        db.run(
+            "DELETE FROM Repetitions WHERE habit IN (SELECT id FROM Habits WHERE uuid LIKE ?)"
+        ) {
+            bindText(1, habitLike)
+        }
+        db.run(
+            "DELETE FROM HabitGoals WHERE habit_id IN (SELECT id FROM Habits WHERE uuid LIKE ?)"
+        ) {
+            bindText(1, habitLike)
+        }
+        db.run(
+            "DELETE FROM HabitExtensions WHERE habit_id IN (SELECT id FROM Habits WHERE uuid LIKE ?)"
+        ) {
+            bindText(1, habitLike)
+        }
+        db.run("DELETE FROM Habits WHERE uuid LIKE ?") {
+            bindText(1, habitLike)
+        }
+        db.run("DELETE FROM HabitBlocks WHERE uuid LIKE ?") {
+            bindText(1, blockLike)
+        }
     }
 }
