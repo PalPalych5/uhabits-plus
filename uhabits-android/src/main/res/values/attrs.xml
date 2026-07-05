@@ -70,4 +70,6 @@
     <attr name="colorPickerSliderThumbStroke" format="color|reference" />
     <attr name="colorPickerSliderFocus" format="color|reference" />
     <attr name="colorPickerDanger" format="color|reference" />
+    <attr name="colorPickerTabBackground" format="color|reference" />
+    <attr name="colorPickerTabIndicator" format="color|reference" />
 </resources>

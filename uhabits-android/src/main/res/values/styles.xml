@@ -457,6 +457,8 @@
         <item name="colorPickerSliderThumbStroke">@color/color_picker_slider_thumb_stroke_light</item>
         <item name="colorPickerSliderFocus">@color/color_picker_slider_focus_light</item>
         <item name="colorPickerDanger">@color/color_picker_danger_light</item>
+        <item name="colorPickerTabBackground">?attr/colorPickerSurfaceVariant</item>
+        <item name="colorPickerTabIndicator">?attr/colorPickerSurface</item>
     </style>
 
     <style name="ColorPickerFullScreenTheme.Dark" parent="Theme.MaterialComponents.NoActionBar">
@@ -476,6 +478,8 @@
         <item name="colorPickerSliderThumbStroke">@color/color_picker_slider_thumb_stroke_dark</item>
         <item name="colorPickerSliderFocus">@color/color_picker_slider_focus_dark</item>
         <item name="colorPickerDanger">@color/color_picker_danger_dark</item>
+        <item name="colorPickerTabBackground">?attr/colorPickerSurface</item>
+        <item name="colorPickerTabIndicator">?attr/colorPickerSurfaceVariant</item>
     </style>
 
     <style name="ColorPickerFullScreenTheme.Amoled" parent="ColorPickerFullScreenTheme.Dark">
@@ -490,9 +494,11 @@
         <item name="colorPickerSliderInactive">@color/color_picker_slider_inactive_amoled</item>
         <item name="colorPickerSliderThumbStroke">@color/color_picker_slider_thumb_stroke_amoled</item>
         <item name="colorPickerSliderFocus">@color/color_picker_slider_focus_amoled</item>
+        <item name="colorPickerTabBackground">?attr/colorPickerSurface</item>
+        <item name="colorPickerTabIndicator">?attr/colorPickerSurfaceVariant</item>
     </style>
-
-    <style name="ColorPickerBottomSheetTheme" parent="Theme.MaterialComponents.Light.BottomSheetDialog">
+    <style name="ColorPickerBottomSheetTheme" parent="Theme.MaterialComponents.Light.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/ColorPicker.BottomSheet</item>
         <item name="colorPickerBackground">@color/color_picker_background_light</item>
         <item name="colorPickerSurface">@color/color_picker_surface_light</item>
         <item name="colorPickerSurfaceVariant">@color/color_picker_surface_variant_light</item>
@@ -504,9 +510,12 @@
         <item name="colorPickerSliderThumbStroke">@color/color_picker_slider_thumb_stroke_light</item>
         <item name="colorPickerSliderFocus">@color/color_picker_slider_focus_light</item>
         <item name="colorPickerDanger">@color/color_picker_danger_light</item>
+        <item name="colorPickerTabBackground">?attr/colorPickerSurfaceVariant</item>
+        <item name="colorPickerTabIndicator">?attr/colorPickerSurface</item>
     </style>
-
+ 
     <style name="ColorPickerBottomSheetTheme.Dark" parent="Theme.MaterialComponents.BottomSheetDialog">
+        <item name="bottomSheetStyle">@style/ColorPicker.BottomSheet</item>
         <item name="colorPickerBackground">@color/color_picker_background_dark</item>
         <item name="colorPickerSurface">@color/color_picker_surface_dark</item>
         <item name="colorPickerSurfaceVariant">@color/color_picker_surface_variant_dark</item>
@@ -518,8 +527,10 @@
         <item name="colorPickerSliderThumbStroke">@color/color_picker_slider_thumb_stroke_dark</item>
         <item name="colorPickerSliderFocus">@color/color_picker_slider_focus_dark</item>
         <item name="colorPickerDanger">@color/color_picker_danger_dark</item>
+        <item name="colorPickerTabBackground">?attr/colorPickerSurface</item>
+        <item name="colorPickerTabIndicator">?attr/colorPickerSurfaceVariant</item>
     </style>
-
+ 
     <style name="ColorPickerBottomSheetTheme.Amoled" parent="ColorPickerBottomSheetTheme.Dark">
         <item name="colorPickerBackground">@color/color_picker_background_amoled</item>
         <item name="colorPickerSurface">@color/color_picker_surface_amoled</item>
@@ -532,6 +543,14 @@
         <item name="colorPickerSliderThumbStroke">@color/color_picker_slider_thumb_stroke_amoled</item>
         <item name="colorPickerSliderFocus">@color/color_picker_slider_focus_amoled</item>
         <item name="colorPickerDanger">@color/color_picker_danger_dark</item>
+        <item name="colorPickerTabBackground">?attr/colorPickerSurface</item>
+        <item name="colorPickerTabIndicator">?attr/colorPickerSurfaceVariant</item>
+    </style>
+
+    <style name="ColorPicker.BottomSheet" parent="Widget.Design.BottomSheet.Modal">
+        <item name="backgroundTint">@android:color/transparent</item>
+        <item name="android:background">@android:color/transparent</item>
+        <item name="elevation">0dp</item>
     </style>
 
     <style name="ColorPicker.SliderLabel" parent="@android:style/Widget.TextView">

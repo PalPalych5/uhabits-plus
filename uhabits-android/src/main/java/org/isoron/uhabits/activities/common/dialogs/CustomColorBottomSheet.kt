@@ -26,7 +26,6 @@ import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.card.MaterialCardView
 import com.google.android.material.slider.Slider
-import com.google.android.material.tabs.TabLayout
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import org.isoron.uhabits.R
@@ -68,7 +67,9 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
 
     private lateinit var preview: MaterialCardView
     private lateinit var previewValue: TextView
-    private lateinit var tabs: TabLayout
+    private lateinit var tabHex: TextView
+    private lateinit var tabHsv: TextView
+    private lateinit var tabRgb: TextView
     private lateinit var hexPanel: View
     private lateinit var hsvPanel: View
     private lateinit var rgbPanel: View
@@ -134,9 +135,7 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
             updatingControls = false
         }
         validationError = restoredError
-        hexLayout.error = validationError
-        tabs.getTabAt(selectedTab)?.select()
-        showPanel(selectedTab)
+        selectTab(selectedTab)
     }
 
     override fun onStart() {
@@ -156,8 +155,7 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        outState.putInt(STATE_COLOR, currentColor)
-        outState.putInt(STATE_TAB, tabs.selectedTabPosition.coerceAtLeast(0))
+        outState.putInt(STATE_TAB, selectedTab)
         outState.putString(STATE_HEX, hexInput.text?.toString())
         outState.putString(STATE_ERROR, validationError)
         outState.putFloat(STATE_HUE, currentHue)
@@ -168,7 +166,9 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
     private fun bindViews(view: View) {
         preview = view.findViewById(R.id.custom_color_preview)
         previewValue = view.findViewById(R.id.custom_color_preview_value)
-        tabs = view.findViewById(R.id.custom_color_tabs)
+        tabHex = view.findViewById(R.id.custom_color_tab_hex)
+        tabHsv = view.findViewById(R.id.custom_color_tab_hsv)
+        tabRgb = view.findViewById(R.id.custom_color_tab_rgb)
         hexPanel = view.findViewById(R.id.custom_color_hex_panel)
         hsvPanel = view.findViewById(R.id.custom_color_hsv_panel)
         rgbPanel = view.findViewById(R.id.custom_color_rgb_panel)
@@ -199,11 +199,27 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun setupTabs() {
-        tabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
-            override fun onTabSelected(tab: TabLayout.Tab) = showPanel(tab.position)
-            override fun onTabUnselected(tab: TabLayout.Tab) = Unit
-            override fun onTabReselected(tab: TabLayout.Tab) = Unit
-        })
+        tabHex.setOnClickListener { selectTab(0) }
+        tabHsv.setOnClickListener { selectTab(1) }
+        tabRgb.setOnClickListener { selectTab(2) }
+    }
+
+    private fun selectTab(position: Int) {
+        selectedTab = position
+
+        val activeBg = ContextCompat.getDrawable(themedContext, R.drawable.color_picker_segment_selected)
+        val activeTextColor = resolveColor(R.attr.colorPickerOnSurface)
+        val inactiveTextColor = resolveColor(R.attr.colorPickerOnSurfaceVariant)
+
+        tabHex.background = if (position == 0) activeBg else null
+        tabHsv.background = if (position == 1) activeBg else null
+        tabRgb.background = if (position == 2) activeBg else null
+
+        tabHex.setTextColor(if (position == 0) activeTextColor else inactiveTextColor)
+        tabHsv.setTextColor(if (position == 1) activeTextColor else inactiveTextColor)
+        tabRgb.setTextColor(if (position == 2) activeTextColor else inactiveTextColor)
+
+        showPanel(position)
     }
 
     private fun showPanel(position: Int) {
@@ -412,8 +428,7 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
         val parsed = ColorPickerUtils.parseHex(hexInput.text?.toString().orEmpty())
         if (parsed == null || validationError != null) {
             validationError = getString(R.string.custom_color_invalid_hex_detail)
-            hexLayout.error = validationError
-            tabs.getTabAt(0)?.select()
+            selectTab(0)
             hexInput.requestFocus()
             return
         }

@@ -75,25 +75,53 @@
                 android:textStyle="bold" />
         </com.google.android.material.card.MaterialCardView>
 
-        <com.google.android.material.tabs.TabLayout
+        <LinearLayout
             android:id="@+id/custom_color_tabs"
             android:layout_width="match_parent"
             android:layout_height="52dp"
-            android:background="@drawable/color_picker_tabs_background"
-            app:tabIndicator="@drawable/color_picker_tab_indicator"
-            app:tabIndicatorColor="?attr/colorPickerSurface"
-            app:tabIndicatorFullWidth="true"
-            app:tabIndicatorGravity="stretch"
-            app:tabMode="fixed"
-            app:tabRippleColor="?attr/colorPickerBorder"
-            app:tabSelectedTextColor="?attr/colorPickerOnSurface"
-            app:tabTextAppearance="@style/ColorPicker.TabText"
-            app:tabTextColor="?attr/colorPickerOnSurfaceVariant">
+            android:background="@drawable/color_picker_segment_container"
+            android:orientation="horizontal"
+            android:padding="4dp"
+            android:clipChildren="true"
+            android:clipToPadding="true"
+            android:weightSum="3">
 
-            <com.google.android.material.tabs.TabItem android:text="@string/custom_color_tab_hex" />
-            <com.google.android.material.tabs.TabItem android:text="@string/custom_color_tab_hsv" />
-            <com.google.android.material.tabs.TabItem android:text="@string/custom_color_tab_rgb" />
-        </com.google.android.material.tabs.TabLayout>
+            <TextView
+                android:id="@+id/custom_color_tab_hex"
+                style="@style/ColorPicker.TabText"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="@string/custom_color_tab_hex"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="@null" />
+
+            <TextView
+                android:id="@+id/custom_color_tab_hsv"
+                style="@style/ColorPicker.TabText"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="@string/custom_color_tab_hsv"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="@null" />
+
+            <TextView
+                android:id="@+id/custom_color_tab_rgb"
+                style="@style/ColorPicker.TabText"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="@string/custom_color_tab_rgb"
+                android:clickable="true"
+                android:focusable="true"
+                android:background="@null" />
+        </LinearLayout>
 
         <FrameLayout
             android:layout_width="match_parent"
