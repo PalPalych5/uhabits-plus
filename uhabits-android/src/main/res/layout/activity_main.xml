@@ -17,15 +17,115 @@
             android:layout_height="0dp"
             android:layout_weight="1" />
 
-        <com.google.android.material.bottomnavigation.BottomNavigationView
-            android:id="@+id/bottomNavigation"
+        <!-- Container for Custom Bottom Navigation and Sliding Indicator -->
+        <FrameLayout
+            android:id="@+id/bottomNavigationContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="?attr/bottomNavigationBackground"
-            app:itemIconTint="?attr/colorAccent"
-            app:itemTextColor="?attr/contrast100"
-            app:labelVisibilityMode="labeled"
-            app:menu="@menu/main_navigation" />
+            android:background="?attr/bottomNavigationBackground">
+
+            <!-- Horizontal Tab Bar (Compact 50dp height) -->
+            <LinearLayout
+                android:id="@+id/bottomNavigation"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="50dp"
+                android:orientation="horizontal"
+                android:baselineAligned="false">
+
+                <!-- Habits Item -->
+                <LinearLayout
+                    android:id="@+id/btnNavHabits"
+                    android:layout_width="0dp"
+                    android:layout_height="50dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@android:color/transparent">
+
+                    <ImageView
+                        android:id="@+id/iconHabits"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_nav_habits"
+                        android:contentDescription="@string/habits_title" />
+
+                    <TextView
+                        android:id="@+id/labelHabits"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="1dp"
+                        android:textSize="11sp"
+                        android:singleLine="true"
+                        android:ellipsize="end"
+                        android:text="@string/habits_title" />
+                </LinearLayout>
+
+                <!-- Reports/Statistics Item -->
+                <LinearLayout
+                    android:id="@+id/btnNavReports"
+                    android:layout_width="0dp"
+                    android:layout_height="50dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@android:color/transparent">
+
+                    <ImageView
+                        android:id="@+id/iconReports"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_nav_reports"
+                        android:contentDescription="@string/reports_title" />
+
+                    <TextView
+                        android:id="@+id/labelReports"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="1dp"
+                        android:textSize="11sp"
+                        android:singleLine="true"
+                        android:ellipsize="end"
+                        android:text="@string/reports_title" />
+                </LinearLayout>
+
+                <!-- Settings Item -->
+                <LinearLayout
+                    android:id="@+id/btnNavSettings"
+                    android:layout_width="0dp"
+                    android:layout_height="50dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@android:color/transparent">
+
+                    <ImageView
+                        android:id="@+id/iconSettings"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_nav_settings"
+                        android:contentDescription="@string/settings" />
+
+                    <TextView
+                        android:id="@+id/labelSettings"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="1dp"
+                        android:textSize="11sp"
+                        android:singleLine="true"
+                        android:ellipsize="end"
+                        android:text="@string/settings" />
+                </LinearLayout>
+
+            </LinearLayout>
+
+        </FrameLayout>
     </LinearLayout>
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
