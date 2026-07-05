@@ -279,7 +279,7 @@
     </style>
 
     <style name="ScrollableRecyclerViewStyle" parent="android:Widget">
-        <item name="android:scrollbars">vertical</item>
+        <item name="android:scrollbars">none</item>
     </style>
 
     <style name="SelectHabitTypeButton">

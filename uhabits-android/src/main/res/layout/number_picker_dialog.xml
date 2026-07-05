@@ -104,7 +104,7 @@
                     android:id="@+id/etNotes"
                     android:inputType="textCapSentences|textMultiLine"
                     style="@style/FormInput"
-                    android:scrollbars="vertical"
+                    android:scrollbars="none"
                     android:hint="@string/example_notes"/>
 
             </LinearLayout>

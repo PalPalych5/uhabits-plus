@@ -78,11 +78,14 @@ class HabitCardListView(
         attachToRecyclerView(this@HabitCardListView)
     }
 
+
+
     init {
         setHasFixedSize(true)
         isLongClickable = true
         layoutManager = LinearLayoutManager(context)
         addItemDecoration(GroupSeparatorDecoration())
+        isVerticalScrollBarEnabled = false
         applyBottomInset()
         super.setAdapter(adapter)
     }
