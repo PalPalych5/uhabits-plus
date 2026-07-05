@@ -67,13 +67,11 @@
                 android:visibility="gone"
                 android:contentDescription="@null" />
 
-            <androidx.appcompat.widget.SwitchCompat
+            <org.isoron.uhabits.activities.settings.SettingsSwitchView
                 android:id="@+id/accessorySwitch"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:visibility="gone"
-                android:clickable="false"
-                android:focusable="false" />
+                android:layout_width="42dp"
+                android:layout_height="24dp"
+                android:visibility="gone" />
 
             <TextView
                 android:id="@+id/accessoryValue"

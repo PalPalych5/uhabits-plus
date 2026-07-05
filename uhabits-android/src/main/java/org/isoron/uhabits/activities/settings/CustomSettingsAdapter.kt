@@ -2,17 +2,21 @@ package org.isoron.uhabits.activities.settings
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.animation.ValueAnimator
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
+import android.text.TextUtils
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
 import android.widget.TextView
-import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import org.isoron.uhabits.core.preferences.Preferences
 
 sealed class SettingItem {
@@ -68,7 +72,12 @@ class CustomSettingsAdapter(
     private val prefs: Preferences,
     private var items: List<SettingItem>
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-    private val expandedSummaryKeys = mutableSetOf<String>()
+    private var pendingAddedKeys = emptySet<String>()
+    private var paletteSignature = currentPaletteSignature()
+
+    init {
+        setHasStableIds(true)
+    }
 
     private val isNightMode: Boolean
         get() = SettingsThemePaletteResolver.resolve(context, prefs).isDark
@@ -133,8 +142,41 @@ class CustomSettingsAdapter(
     }
 
     fun updateItems(newItems: List<SettingItem>) {
+        val newPaletteSignature = currentPaletteSignature()
+        if (newPaletteSignature != paletteSignature) {
+            paletteSignature = newPaletteSignature
+            items = newItems
+            pendingAddedKeys = emptySet()
+            notifyDataSetChanged()
+            return
+        }
+
+        val oldItems = items
+        val oldKeys = oldItems.mapTo(mutableSetOf()) { stableKeyFor(it) }
+        val addedKeys = newItems.mapTo(mutableSetOf()) { stableKeyFor(it) }.apply {
+            removeAll(oldKeys)
+        }
+        val diffResult = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+            override fun getOldListSize(): Int = oldItems.size
+
+            override fun getNewListSize(): Int = newItems.size
+
+            override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+                return stableKeyFor(oldItems[oldItemPosition]) == stableKeyFor(newItems[newItemPosition])
+            }
+
+            override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
+                return contentSame(oldItems[oldItemPosition], newItems[newItemPosition])
+            }
+        })
         items = newItems
-        notifyDataSetChanged()
+        paletteSignature = newPaletteSignature
+        pendingAddedKeys = if (ValueAnimator.areAnimatorsEnabled()) addedKeys else emptySet()
+        diffResult.dispatchUpdatesTo(this)
+    }
+
+    override fun getItemId(position: Int): Long {
+        return stableKeyFor(items[position]).hashCode().toLong()
     }
 
     override fun getItemViewType(position: Int): Int {
@@ -232,8 +274,10 @@ class CustomSettingsAdapter(
 
                 holder.titleText.setTextColor(ContextCompat.getColor(context, if (isNightMode) R.color.grey_100 else R.color.grey_800))
                 holder.itemView.setOnClickListener(null)
+                holder.itemView.setOnLongClickListener(null)
                 holder.itemView.isClickable = false
                 holder.summaryText.setOnClickListener(null)
+                holder.summaryText.setOnLongClickListener(null)
                 holder.summaryText.isClickable = false
 
                 // Icon Tinting
@@ -249,7 +293,7 @@ class CustomSettingsAdapter(
                         holder.iconImg.setImageResource(item.iconRes)
                         holder.titleText.text = item.title
                         if (!item.summary.isNullOrBlank()) {
-                            bindSummary(holder, item.key, item.summary, isInteractive = item.onClick != null)
+                            bindSummary(holder, item.summary)
                         }
                         if (item.isDanger) {
                             holder.titleText.setTextColor(ContextCompat.getColor(context, R.color.red_500))
@@ -257,29 +301,32 @@ class CustomSettingsAdapter(
                         holder.chevronImg.visibility = if (item.onClick != null) View.VISIBLE else View.GONE
                         if (item.onClick != null) {
                             holder.itemView.setOnClickListener { item.onClick.invoke() }
-                        } else if (shouldAllowSummaryExpansion(item.summary)) {
-                            holder.itemView.setOnClickListener {
-                                toggleSummary(item.key)
-                            }
                         }
                     }
                     is SettingItem.Switch -> {
                         holder.iconImg.setImageResource(item.iconRes)
                         holder.titleText.text = item.title
                         if (!item.summary.isNullOrBlank()) {
-                            bindSummary(holder, item.key, item.summary, isInteractive = false)
+                            bindSummary(holder, item.summary)
                         }
                         holder.switchComp.visibility = View.VISIBLE
                         holder.switchComp.setOnCheckedChangeListener(null)
-                        holder.switchComp.isChecked = item.checked
-                        
-                        // Tint switch dynamically
-                        AccentColorManager.tintSwitch(holder.switchComp, context, prefs)
+                        holder.switchComp.configure(
+                            accentColor = AccentColorManager.getAccentColor(context, prefs),
+                            isDark = palette.isDark,
+                            isPureBlack = palette.isPureBlack
+                        )
+                        holder.switchComp.bindChecked(item.checked)
+                        holder.switchComp.setOnCheckedChangeListener(
+                            object : SettingsSwitchView.OnCheckedChangeListener {
+                                override fun onCheckedChanged(view: SettingsSwitchView, checked: Boolean) {
+                                    item.onCheckedChange(checked)
+                                }
+                            }
+                        )
 
                         holder.itemView.setOnClickListener {
-                            val nextVal = !holder.switchComp.isChecked
-                            holder.switchComp.isChecked = nextVal
-                            item.onCheckedChange(nextVal)
+                            holder.switchComp.setCheckedAnimated(!holder.switchComp.isChecked)
                         }
                     }
                     is SettingItem.Value -> {
@@ -293,7 +340,7 @@ class CustomSettingsAdapter(
                     is SettingItem.ColorPicker -> {
                         holder.iconImg.setImageResource(item.iconRes)
                         holder.titleText.text = item.title
-                        bindSummary(holder, item.key, item.summary, isInteractive = true)
+                        bindSummary(holder, item.summary)
                         
                         // Color Swatch setup
                         holder.colorSwatch.visibility = View.VISIBLE
@@ -313,37 +360,110 @@ class CustomSettingsAdapter(
                 }
             }
         }
+        animateAddedItemIfNeeded(holder.itemView, item)
+    }
+
+    private fun animateAddedItemIfNeeded(view: View, item: SettingItem) {
+        val key = stableKeyFor(item)
+        if (!pendingAddedKeys.contains(key)) return
+        pendingAddedKeys = pendingAddedKeys - key
+        view.animate().setListener(null).cancel()
+        view.alpha = 0f
+        view.translationY = dp(10f)
+        view.animate()
+            .alpha(1f)
+            .translationY(0f)
+            .setDuration(220L)
+            .setInterpolator(DecelerateInterpolator())
+            .start()
+    }
+
+    private fun stableKeyFor(item: SettingItem): String {
+        return when (item) {
+            is SettingItem.Header -> "header:${item.title}"
+            is SettingItem.Navigation -> "navigation:${item.key}"
+            is SettingItem.Switch -> "switch:${item.key}"
+            is SettingItem.Value -> "value:${item.key}"
+            is SettingItem.SegmentedTheme -> "segmented:${item.key}"
+            is SettingItem.ColorPicker -> "color:${item.key}"
+        }
+    }
+
+    private fun contentSame(oldItem: SettingItem, newItem: SettingItem): Boolean {
+        if (oldItem::class != newItem::class) return false
+        return when {
+            oldItem is SettingItem.Header && newItem is SettingItem.Header ->
+                oldItem.title == newItem.title
+            oldItem is SettingItem.Navigation && newItem is SettingItem.Navigation ->
+                oldItem.key == newItem.key &&
+                    oldItem.iconRes == newItem.iconRes &&
+                    oldItem.title == newItem.title &&
+                    oldItem.summary == newItem.summary &&
+                    oldItem.isDanger == newItem.isDanger &&
+                    (oldItem.onClick != null) == (newItem.onClick != null)
+            oldItem is SettingItem.Switch && newItem is SettingItem.Switch ->
+                oldItem.key == newItem.key &&
+                    oldItem.iconRes == newItem.iconRes &&
+                    oldItem.title == newItem.title &&
+                    oldItem.summary == newItem.summary &&
+                    oldItem.checked == newItem.checked
+            oldItem is SettingItem.Value && newItem is SettingItem.Value ->
+                oldItem.key == newItem.key &&
+                    oldItem.iconRes == newItem.iconRes &&
+                    oldItem.title == newItem.title &&
+                    oldItem.valueText == newItem.valueText
+            oldItem is SettingItem.SegmentedTheme && newItem is SettingItem.SegmentedTheme ->
+                oldItem.key == newItem.key &&
+                    oldItem.iconRes == newItem.iconRes &&
+                    oldItem.title == newItem.title &&
+                    oldItem.themeValue == newItem.themeValue &&
+                    oldItem.pureBlackValue == newItem.pureBlackValue
+            oldItem is SettingItem.ColorPicker && newItem is SettingItem.ColorPicker ->
+                oldItem.key == newItem.key &&
+                    oldItem.iconRes == newItem.iconRes &&
+                    oldItem.title == newItem.title &&
+                    oldItem.summary == newItem.summary &&
+                    oldItem.colorString == newItem.colorString
+            else -> false
+        }
+    }
+
+    private fun dp(value: Float): Float {
+        return value * context.resources.displayMetrics.density
+    }
+
+    private fun currentPaletteSignature(): String {
+        val palette = SettingsThemePaletteResolver.resolve(context, prefs)
+        val accent = AccentColorManager.getAccentColor(context, prefs)
+        return "$accent:${palette.isDark}:${palette.isPureBlack}"
     }
 
     private fun bindSummary(
         holder: RowViewHolder,
-        key: String,
-        summary: String,
-        isInteractive: Boolean
+        summary: String
     ) {
         holder.summaryText.text = summary
         holder.summaryText.visibility = View.VISIBLE
-        val isExpanded = expandedSummaryKeys.contains(key)
-        holder.summaryText.maxLines = if (isExpanded) 6 else 3
-        holder.summaryText.ellipsize = if (isExpanded) null else android.text.TextUtils.TruncateAt.END
+        holder.summaryText.maxLines = if (shouldAllowSummaryPreview(summary)) 3 else 2
+        holder.summaryText.ellipsize = TextUtils.TruncateAt.END
 
-        if (!isInteractive && shouldAllowSummaryExpansion(summary)) {
-            holder.summaryText.isClickable = true
-            holder.summaryText.setOnClickListener { toggleSummary(key) }
-            holder.itemView.setOnClickListener { toggleSummary(key) }
+        if (shouldAllowSummaryPreview(summary)) {
+            val showPreview = View.OnLongClickListener {
+                CustomDialogs.showInfoDialog(
+                    context = holder.itemView.context,
+                    title = holder.titleText.text,
+                    message = summary
+                )
+                true
+            }
+            holder.itemView.setOnLongClickListener(showPreview)
+            holder.summaryText.setOnLongClickListener(showPreview)
         }
     }
 
-    private fun shouldAllowSummaryExpansion(summary: String?): Boolean {
+    private fun shouldAllowSummaryPreview(summary: String?): Boolean {
         if (summary.isNullOrBlank()) return false
         return summary.length > 72 || summary.contains('\n')
-    }
-
-    private fun toggleSummary(key: String) {
-        if (!expandedSummaryKeys.add(key)) {
-            expandedSummaryKeys.remove(key)
-        }
-        notifyDataSetChanged()
     }
 
     override fun getItemCount(): Int = items.size
@@ -367,7 +487,7 @@ class CustomSettingsAdapter(
         val titleText: TextView = view.findViewById(R.id.rowTitle)
         val summaryText: TextView = view.findViewById(R.id.rowSummary)
         val chevronImg: ImageView = view.findViewById(R.id.accessoryChevron)
-        val switchComp: SwitchCompat = view.findViewById(R.id.accessorySwitch)
+        val switchComp: SettingsSwitchView = view.findViewById(R.id.accessorySwitch)
         val valueText: TextView = view.findViewById(R.id.accessoryValue)
         val colorSwatch: View = view.findViewById(R.id.accessoryColorSwatch)
         val divider: View = view.findViewById(R.id.rowDivider)
