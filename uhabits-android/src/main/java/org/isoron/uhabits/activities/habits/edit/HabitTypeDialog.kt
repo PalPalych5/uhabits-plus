@@ -30,6 +30,9 @@ import org.isoron.uhabits.databinding.SelectHabitTypeBinding
 import org.isoron.uhabits.intents.IntentFactory
 
 class HabitTypeDialog : AppCompatDialogFragment() {
+    private val createArchived: Boolean
+        get() = arguments?.getBoolean(ARG_CREATE_ARCHIVED) == true
+
     override fun getTheme() = R.style.Translucent
 
     override fun onCreateView(
@@ -40,13 +43,21 @@ class HabitTypeDialog : AppCompatDialogFragment() {
         val binding = SelectHabitTypeBinding.inflate(inflater, container, false)
 
         binding.buttonYesNo.setOnClickListener {
-            val intent = IntentFactory().startEditActivity(requireActivity(), HabitType.YES_NO.value)
+            val intent = IntentFactory().startEditActivity(
+                requireActivity(),
+                HabitType.YES_NO.value,
+                createArchived
+            )
             startActivity(intent)
             dismiss()
         }
 
         binding.buttonMeasurable.setOnClickListener {
-            val intent = IntentFactory().startEditActivity(requireActivity(), HabitType.NUMERICAL.value)
+            val intent = IntentFactory().startEditActivity(
+                requireActivity(),
+                HabitType.NUMERICAL.value,
+                createArchived
+            )
             startActivity(intent)
             dismiss()
         }
@@ -56,5 +67,17 @@ class HabitTypeDialog : AppCompatDialogFragment() {
         }
 
         return binding.root
+    }
+
+    companion object {
+        private const val ARG_CREATE_ARCHIVED = "createArchived"
+
+        fun newInstance(createArchived: Boolean = false): HabitTypeDialog {
+            return HabitTypeDialog().apply {
+                arguments = Bundle().apply {
+                    putBoolean(ARG_CREATE_ARCHIVED, createArchived)
+                }
+            }
+        }
     }
 }

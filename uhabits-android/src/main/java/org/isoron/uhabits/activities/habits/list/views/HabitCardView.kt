@@ -320,7 +320,12 @@ class HabitCardView(
     }
 
     private fun updateBackground(isSelected: Boolean) {
-        val fill = if (isSelected) palette.surfaceVariant else palette.surface
+        val showBorders = preferences.showHabitCardBorders
+        val fill = when {
+            isSelected -> palette.surfaceVariant
+            showBorders -> palette.surface
+            else -> android.graphics.Color.TRANSPARENT
+        }
         val stroke = if (isSelected) MainTabsThemeBridge.withAlpha(palette.accent, 0.65f) else palette.border
         val radius = dp(preferences.habitsCardCornerRadius.toFloat())
         val strokeWidth = dp(if (isSelected) 1.5f else 1f).toInt().coerceAtLeast(1)
@@ -328,7 +333,9 @@ class HabitCardView(
             shape = GradientDrawable.RECTANGLE
             cornerRadius = radius
             setColor(fill)
-            setStroke(strokeWidth, stroke)
+            if (showBorders || isSelected) {
+                setStroke(strokeWidth, stroke)
+            }
         }
         val maskDrawable = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
@@ -340,6 +347,7 @@ class HabitCardView(
             contentDrawable,
             maskDrawable
         )
+        innerFrame.elevation = if (showBorders || isSelected) dp(1f) else 0f
     }
 
     companion object {

@@ -221,7 +221,9 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         if (item.itemId == R.id.actionAddHabit) {
-            HabitTypeDialog().show(parentFragmentManager, "habitType")
+            HabitTypeDialog.newInstance(
+                createArchived = displayMode == ListHabitsDisplayMode.ARCHIVE
+            ).show(parentFragmentManager, "habitType")
             return true
         }
         if (item.itemId == R.id.actionSync) {

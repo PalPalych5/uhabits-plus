@@ -101,6 +101,7 @@ class EditHabitActivity : AppCompatActivity() {
     var timerEnabled = false
     var blockId: Long? = 7L
     private var hasIndividualColor = false
+    private var createArchived = false
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -139,6 +140,7 @@ class EditHabitActivity : AppCompatActivity() {
             binding.targetInput.setText(habit.targetValue.toString())
         } else {
             habitType = HabitType.fromInt(intent.getIntExtra("habitType", HabitType.YES_NO.value))
+            createArchived = intent.getBooleanExtra("createArchived", false)
             timerEnabled = habitType == HabitType.NUMERICAL
         }
 
@@ -156,6 +158,7 @@ class EditHabitActivity : AppCompatActivity() {
             val savedBlockId = state.getLong("blockId", -1L)
             blockId = if (savedBlockId == -1L) null else savedBlockId
             hasIndividualColor = state.getBoolean("hasIndividualColor", habitId >= 0)
+            createArchived = state.getBoolean("createArchived", false)
         } else if (habitId < 0) {
             color = defaultColorForCurrentBlock()
         }
@@ -422,6 +425,9 @@ class EditHabitActivity : AppCompatActivity() {
             habit.timerEnabled = false
         }
         habit.type = habitType
+        if (habitId < 0 && createArchived) {
+            habit.isArchived = true
+        }
 
         if (habitId >= 0 && original != null && didGoalBundleChange(original, habit)) {
             showGoalChangeDialog(
@@ -530,6 +536,7 @@ class EditHabitActivity : AppCompatActivity() {
             putBoolean("timerEnabled", binding.timerEnabledSwitch.isChecked)
             putLong("blockId", blockId ?: -1L)
             putBoolean("hasIndividualColor", hasIndividualColor)
+            putBoolean("createArchived", createArchived)
             putBoolean("colorPickerOpen", colorPicker?.isAdded == true)
             colorPicker?.let {
                 putInt("colorPickerDraftColor", it.snapshotDraftColor())
