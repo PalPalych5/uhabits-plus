@@ -248,6 +248,36 @@ object CustomDialogs {
         return dialog
     }
 
+    fun showInfoDialog(
+        context: Context,
+        title: CharSequence,
+        message: CharSequence,
+        positiveText: CharSequence = context.getString(R.string.done_label)
+    ): AlertDialog {
+        val builder = MaterialAlertDialogBuilder(context, R.style.CustomTransparentDialogTheme)
+        val dialog = builder.create()
+        val dialogContext = dialog.context
+
+        val view = LayoutInflater.from(dialogContext)
+            .inflate(R.layout.dialog_custom_confirm, null)
+        val dialogTitle = view.findViewById<TextView>(R.id.dialog_title)
+        val dialogMessage = view.findViewById<TextView>(R.id.dialog_message)
+        val btnNegative = view.findViewById<Button>(R.id.button_negative)
+        val btnPositive = view.findViewById<Button>(R.id.button_positive)
+
+        dialogTitle.text = title
+        dialogMessage.text = message
+        btnNegative.visibility = View.GONE
+        btnPositive.text = positiveText
+        btnPositive.setOnClickListener { dialog.dismiss() }
+
+        dialog.setView(view, 0, 0, 0, 0)
+        dialog.show()
+        styleDialogShell(dialog, view)
+        styleText(dialogTitle, dialogMessage, null, btnPositive, null, false)
+        return dialog
+    }
+
     fun showInputDialog(
         context: Context,
         title: CharSequence,

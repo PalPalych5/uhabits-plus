@@ -170,6 +170,7 @@
     <string name="choose_folder">Choose folder</string>
     <string name="bug_report_failed">Failed to generate bug report.</string>
     <string name="generate_bug_report">Generate bug report</string>
+    <string name="generate_bug_report_summary">Creates a diagnostic report that can be shared for troubleshooting.</string>
     <string name="troubleshooting">Troubleshooting</string>
     <string name="help_translate">Help translate this app</string>
     <string name="night_mode">Dark theme</string>
@@ -199,6 +200,7 @@
     <string name="led_notifications">Notification light</string>
     <string name="led_notifications_description">Shows a blinking light for reminders. Only available in phones with LED notification lights.</string>
     <string name="repair_database">Repair database</string>
+    <string name="repair_database_summary">Checks and repairs local database inconsistencies.</string>
     <string name="database_repaired">Database repaired.</string>
     <string name="uncheck">Uncheck</string>
     <string name="toggle">Toggle</string>
@@ -422,9 +424,15 @@
     <string name="developer_settings_title">Developer settings</string>
     <string name="developer_mode_title">Enable developer mode</string>
     <string name="supabase_url_title">Supabase URL</string>
+    <string name="supabase_url_summary">Backend project URL used for sync.</string>
     <string name="supabase_anon_key_title">Supabase anon key</string>
+    <string name="supabase_anon_key_summary">Public API key used to connect to Supabase.</string>
+    <string name="encryption_key_title">Encryption key</string>
+    <string name="encryption_key_summary">Local key used to encrypt synced data.</string>
     <string name="sync_export_diagnostics_title">Export sync diagnostics</string>
+    <string name="sync_export_diagnostics_summary">Creates a sync troubleshooting report.</string>
     <string name="sync_refresh_screens_title">Refresh screens</string>
+    <string name="sync_refresh_screens_summary">Forces visible screens to reload their data.</string>
     <string name="sync_diagnostics_export_error">Could not export sync diagnostics.</string>
     <string name="sync_screens_refreshed">Screens refreshed.</string>
     <string name="help_category">Help</string>
@@ -453,12 +461,12 @@
     <string name="custom_color_invalid_hex">Invalid HEX code</string>
     <string name="demo_data_category_title">Demo Data (Debug Only)</string>
     <string name="demo_data_seed_title">Generate Demo Data</string>
-    <string name="demo_data_seed_summary">Seeds demo habits and 730 days of history, removing only existing [Demo] items</string>
+    <string name="demo_data_seed_summary">Creates sample habits with generated history.</string>
     <string name="demo_data_reset_title">Reset Demo Data</string>
-    <string name="demo_data_reset_summary">Wipes the entire database and generates the demo dataset</string>
+    <string name="demo_data_reset_summary">Deletes generated demo habits and creates them again.</string>
     <string name="demo_data_confirm_title">Generate Demo Data?</string>
     <string name="demo_data_confirm_reset_title">Reset Demo Data?</string>
-    <string name="demo_data_confirm_message">This will update demo habits and spheres, removing any existing [Demo] habits and blocks. Non-demo user data will not be affected. Do you want to proceed?</string>
+    <string name="demo_data_confirm_message">This will update generated demo habits and spheres. Non-demo user data will not be affected. Do you want to proceed?</string>
     <string name="demo_data_confirm_reset_message">Warning: This will wipe the entire local database (all your habits, spheres, and history) and replace it with demo data. This action cannot be undone. Are you sure you want to proceed?</string>
     <string name="demo_data_confirm_proceed">Proceed</string>
     <string name="demo_data_generating">Generating demo data...</string>
@@ -551,6 +559,8 @@
     <string name="pref_statistics_card_corners_title">Statistics card corners</string>
     <string name="pref_habit_card_corners_rectangular">Rectangular (0 dp)</string>
     <string name="pref_habit_card_corners_default">8 dp (Default)</string>
+    <string name="settings_show_habit_card_borders_title">Habit row outlines</string>
+    <string name="settings_show_habit_card_borders_summary">Show borders around habit rows</string>
     <string name="statistics_daily_overview_title">Daily overview</string>
     <string name="statistics_daily_focus_minutes">Focus time: %1$s min</string>
     <string name="manage_blocks_empty_state">No spheres yet. Create a sphere to group your habits.</string>

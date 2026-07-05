@@ -192,6 +192,13 @@ open class Preferences(private val storage: Storage) {
             notifyCardCornersChanged()
         }
 
+    open var showHabitCardBorders: Boolean
+        get() = storage.getBoolean("pref_show_habit_card_borders", true)
+        set(enabled) {
+            storage.putBoolean("pref_show_habit_card_borders", enabled)
+            notifyHabitListAppearanceChanged()
+        }
+
     open var habitsCardCornerRadius: Int
         get() {
             val radius = storage.getInt("pref_habits_card_corner_radius", -1)

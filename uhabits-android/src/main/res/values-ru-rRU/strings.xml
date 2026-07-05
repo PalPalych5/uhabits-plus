@@ -195,9 +195,15 @@
     <string name="developer_settings_title">Настройки разработчика</string>
     <string name="developer_mode_title">Включить режим разработчика</string>
     <string name="supabase_url_title">Supabase URL</string>
+    <string name="supabase_url_summary">Адрес backend-проекта для синхронизации.</string>
     <string name="supabase_anon_key_title">Supabase anon key</string>
+    <string name="supabase_anon_key_summary">Публичный API-ключ для подключения к Supabase.</string>
+    <string name="encryption_key_title">Ключ шифрования</string>
+    <string name="encryption_key_summary">Локальный ключ для шифрования синхронизируемых данных.</string>
     <string name="sync_export_diagnostics_title">Экспорт диагностики синхронизации</string>
+    <string name="sync_export_diagnostics_summary">Создаёт отчёт для диагностики синхронизации.</string>
     <string name="sync_refresh_screens_title">Обновить экраны</string>
+    <string name="sync_refresh_screens_summary">Принудительно обновляет данные на экранах.</string>
     <string name="sync_diagnostics_export_error">Не удалось экспортировать диагностику синхронизации.</string>
     <string name="sync_screens_refreshed">Экраны обновлены.</string>
     <string name="select_public_backup_folder">Выбрать папку для резервных копий</string>
@@ -213,6 +219,7 @@
     <string name="choose_folder">Выбрать папку</string>
     <string name="bug_report_failed">Ошибка генерации отчёта об ошибке.</string>
     <string name="generate_bug_report">Сгенерировать отчёт об ошибке</string>
+    <string name="generate_bug_report_summary">Создаёт диагностический отчёт для поиска причин проблемы.</string>
     <string name="troubleshooting">Устранение неполадок</string>
     <string name="help_translate">Помогите перевести это приложение</string>
     <string name="night_mode">Ночной режим</string>
@@ -242,6 +249,7 @@
     <string name="led_notifications">Световая индикация</string>
     <string name="led_notifications_description">Мигать индикатором для напоминаний. Доступно только в телефонах со светодиодным индикатором событий.</string>
     <string name="repair_database">Исправить базу данных</string>
+    <string name="repair_database_summary">Проверяет и исправляет ошибки в локальной базе данных.</string>
     <string name="database_repaired">База данных исправлена.</string>
     <string name="uncheck">Снять отметку</string>
     <string name="toggle">Переключить</string>
@@ -450,12 +458,12 @@
     <string name="custom_color_invalid_hex">Неверный HEX код</string>
     <string name="demo_data_category_title">Демо-данные (только отладка)</string>
     <string name="demo_data_seed_title">Создать демо-данные</string>
-    <string name="demo_data_seed_summary">Создать демо-привычки с историей за 730 дней, удалив только существующие [Demo] элементы</string>
+    <string name="demo_data_seed_summary">Создаёт пример привычек с сгенерированной историей.</string>
     <string name="demo_data_reset_title">Сбросить демо-данные</string>
-    <string name="demo_data_reset_summary">Полностью очищает базу данных и генерирует демо-данные заново</string>
+    <string name="demo_data_reset_summary">Удаляет демо-привычки и создаёт их заново.</string>
     <string name="demo_data_confirm_title">Создать демо-данные?</string>
     <string name="demo_data_confirm_reset_title">Сбросить демо-данные?</string>
-    <string name="demo_data_confirm_message">Это обновит демонстрационные привычки и сферы, удалив только существующие [Demo] привычки и сферы. Пользовательские данные не изменятся. Продолжить?</string>
+    <string name="demo_data_confirm_message">Это обновит сгенерированные демо-привычки и сферы. Пользовательские данные не изменятся. Продолжить?</string>
     <string name="demo_data_confirm_reset_message">Внимание: это полностью очистит локальную базу данных (все ваши привычки, сферы и историю) и заменит их демо-данными. Действие необратимо. Вы уверены, что хотите продолжить?</string>
     <string name="demo_data_confirm_proceed">Продолжить</string>
     <string name="demo_data_generating">Генерация демо-данных...</string>
@@ -556,6 +564,8 @@
     <string name="pref_statistics_card_corners_title">Скругление Статистики</string>
     <string name="pref_habit_card_corners_rectangular">Прямоугольные (0 dp)</string>
     <string name="pref_habit_card_corners_default">8 dp (По умолчанию)</string>
+    <string name="settings_show_habit_card_borders_title">Окантовки привычек</string>
+    <string name="settings_show_habit_card_borders_summary">Показывать рамки вокруг привычек</string>
     <string name="statistics_daily_overview_title">Сводка дня</string>
     <string name="statistics_daily_focus_minutes">Фокус-время: %1$s мин</string>
     <string name="manage_blocks_empty_state">Нет сфер. Создайте новую сферу, чтобы сгруппировать привычки.</string>
