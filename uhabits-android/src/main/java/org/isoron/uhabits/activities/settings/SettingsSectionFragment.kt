@@ -6,6 +6,8 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
@@ -15,6 +17,8 @@ import org.isoron.uhabits.utils.applyToolbarInsets
 
 class SettingsSectionFragment : Fragment() {
     private var binding: FragmentSettingsSectionBinding? = null
+    private val showToolbar: Boolean
+        get() = arguments?.getBoolean(ARG_SHOW_TOOLBAR, true) ?: true
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -23,17 +27,37 @@ class SettingsSectionFragment : Fragment() {
     ): View {
         val viewBinding = FragmentSettingsSectionBinding.inflate(inflater, container, false)
         binding = viewBinding
-        viewBinding.toolbar.root.apply {
-            applyToolbarInsets()
-            visibility = View.GONE
-            minimumHeight = 0
-            layoutParams = layoutParams.apply {
-                height = ViewGroup.LayoutParams.WRAP_CONTENT
+        if (showToolbar) {
+            viewBinding.toolbar.root.apply {
+                applyToolbarInsets()
+                visibility = View.VISIBLE
+            }
+        } else {
+            viewBinding.statusBarScrim.visibility = View.VISIBLE
+            viewBinding.toolbar.root.apply {
+                visibility = View.GONE
+                minimumHeight = 0
+                layoutParams = layoutParams.apply {
+                    height = 0
+                }
+            }
+            (viewBinding.settingsContent.layoutParams as? android.widget.RelativeLayout.LayoutParams)?.let {
+                it.removeRule(android.widget.RelativeLayout.BELOW)
+                it.addRule(android.widget.RelativeLayout.BELOW, R.id.statusBarScrim)
+                viewBinding.settingsContent.layoutParams = it
+            }
+            ViewCompat.setOnApplyWindowInsetsListener(viewBinding.statusBarScrim) { scrim, insets ->
+                val statusBars = insets.getInsets(WindowInsetsCompat.Type.statusBars())
+                val cutout = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
+                scrim.layoutParams = scrim.layoutParams.apply {
+                    height = maxOf(statusBars.top, cutout.top)
+                }
+                insets
             }
         }
         if (savedInstanceState == null) {
             childFragmentManager.beginTransaction()
-                .replace(R.id.settingsContent, SettingsFragment())
+                .replace(R.id.settingsContent, SettingsFragment.newInstance(compactTopInset = !showToolbar))
                 .commitNow()
         }
         applyNeutralToolbarAndSystemBars()
@@ -55,6 +79,7 @@ class SettingsSectionFragment : Fragment() {
 
         // 2. Set neutral Toolbar background and flat elevation
         binding.toolbar.root.background = android.graphics.drawable.ColorDrawable(palette.background)
+        binding.statusBarScrim.background = android.graphics.drawable.ColorDrawable(palette.background)
         binding.toolbar.root.elevation = 0f
         activity.window.statusBarColor = palette.background
         activity.window.navigationBarColor = if (palette.isPureBlack) palette.background else palette.surface
@@ -67,5 +92,17 @@ class SettingsSectionFragment : Fragment() {
     override fun onDestroyView() {
         binding = null
         super.onDestroyView()
+    }
+
+    companion object {
+        private const val ARG_SHOW_TOOLBAR = "showToolbar"
+
+        fun mainTab(): SettingsSectionFragment {
+            return SettingsSectionFragment().apply {
+                arguments = Bundle().apply {
+                    putBoolean(ARG_SHOW_TOOLBAR, false)
+                }
+            }
+        }
     }
 }

@@ -43,6 +43,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.DefaultItemAnimator
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.slider.Slider
@@ -105,6 +106,8 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
 
     private lateinit var recyclerView: RecyclerView
     private lateinit var adapter: CustomSettingsAdapter
+    private val useCompactTopInset: Boolean
+        get() = arguments?.getBoolean(ARG_COMPACT_TOP_INSET, false) ?: false
 
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -157,17 +160,22 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
 
         recyclerView = view.findViewById(R.id.settingsRecyclerView)
         recyclerView.layoutManager = LinearLayoutManager(requireContext())
-        val topSpacing = (2 * resources.displayMetrics.density).toInt()
-        val bottomSpacing = (16 * resources.displayMetrics.density).toInt()
+        recyclerView.itemAnimator = DefaultItemAnimator().apply {
+            addDuration = 220L
+            removeDuration = 180L
+            moveDuration = 220L
+            changeDuration = 0L
+            supportsChangeAnimations = false
+        }
+        val contentTopSpacing = ((if (useCompactTopInset) 4 else 8) * resources.displayMetrics.density).toInt()
+        val contentBottomSpacing = recyclerView.paddingBottom
         ViewCompat.setOnApplyWindowInsetsListener(recyclerView) { recycler, insets ->
             val systemBarsInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            val displayCutoutInsets = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
-            val topInset = maxOf(systemBarsInsets.top, displayCutoutInsets.top)
             recycler.setPadding(
                 recycler.paddingLeft,
-                topInset + topSpacing,
+                contentTopSpacing,
                 recycler.paddingRight,
-                systemBarsInsets.bottom + bottomSpacing
+                systemBarsInsets.bottom + contentBottomSpacing
             )
             insets
         }
@@ -196,9 +204,38 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             widgetUpdater!!.updateWidgets()
         }
         AndroidBackupManager.dataChanged("org.isoron.uhabits.plus")
+        if (!shouldRebuildSettingsListForPreference(key)) return
         activity?.runOnUiThread {
             rebuildSettingsList()
         }
+    }
+
+    private fun shouldRebuildSettingsListForPreference(key: String?): Boolean {
+        return key == null || key in setOf(
+            "pref_theme",
+            "pref_pure_black",
+            "pref_app_language",
+            "pref_first_weekday",
+            "pref_accent_color",
+            "pref_widget_opacity",
+            "pref_habit_card_corner_radius",
+            "pref_habits_card_corner_radius",
+            "pref_statistics_card_corner_radius",
+            "pref_enable_habit_spheres",
+            "pref_enable_day_tiers",
+            "pref_day_tier_sort_order",
+            "pref_developer",
+            "pref_sync_status",
+            "pref_sync_status_detail",
+            "pref_sync_last_success_at",
+            "pref_sync_review_required",
+            "pref_sync_review_reason",
+            "pref_sync_account_email",
+            "pref_sync_base_url",
+            "pref_sync_key",
+            "pref_sync_encryption_key",
+            "publicBackupFolder"
+        )
     }
 
     private fun rebuildSettingsList() {
@@ -282,7 +319,6 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 checked = prefs.isConfettiAnimationDisabled,
                 onCheckedChange = { checked ->
                     prefs.isConfettiAnimationDisabled = checked
-                    rebuildSettingsList()
                 }
             )
         )
@@ -312,6 +348,19 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 title = getString(R.string.pref_card_rounding_title),
                 summary = buildCardRoundingSummary(),
                 onClick = { showCardRoundingDialog() }
+            )
+        )
+
+        items.add(
+            SettingItem.Switch(
+                key = "pref_show_habit_card_borders",
+                iconRes = R.drawable.ic_settings_layout_list,
+                title = getString(R.string.settings_show_habit_card_borders_title),
+                summary = getString(R.string.settings_show_habit_card_borders_summary),
+                checked = prefs.showHabitCardBorders,
+                onCheckedChange = { checked ->
+                    prefs.showHabitCardBorders = checked
+                }
             )
         )
 
@@ -362,7 +411,7 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             items.add(
                 SettingItem.Navigation(
                     key = "pref_day_tier_sort_order",
-                    iconRes = R.drawable.ic_settings_tiers,
+                    iconRes = R.drawable.ic_settings_arrows_sort,
                     title = getString(R.string.pref_day_tier_sort_order_title),
                     summary = dayTierSortOrderSummary(),
                     onClick = { showDayTierSortOrderDialog() }
@@ -373,13 +422,12 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         items.add(
             SettingItem.Switch(
                 key = "pref_habit_group_separators",
-                iconRes = R.drawable.ic_settings_squares,
+                iconRes = R.drawable.ic_settings_separator_horizontal,
                 title = getString(R.string.pref_habit_group_separators_title),
                 summary = getString(R.string.pref_habit_group_separators_summary),
                 checked = prefs.areHabitGroupSeparatorsEnabled,
                 onCheckedChange = { checked ->
                     prefs.areHabitGroupSeparatorsEnabled = checked
-                    rebuildSettingsList()
                 }
             )
         )
@@ -393,7 +441,6 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 checked = prefs.isShortToggleEnabled,
                 onCheckedChange = { checked ->
                     prefs.isShortToggleEnabled = checked
-                    rebuildSettingsList()
                 }
             )
         )
@@ -407,7 +454,6 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 checked = prefs.isCheckmarkSequenceReversed,
                 onCheckedChange = { checked ->
                     prefs.isCheckmarkSequenceReversed = checked
-                    rebuildSettingsList()
                 }
             )
         )
@@ -421,7 +467,6 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 checked = prefs.isSkipEnabled,
                 onCheckedChange = { checked ->
                     prefs.isSkipEnabled = checked
-                    rebuildSettingsList()
                 }
             )
         )
@@ -435,7 +480,6 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 checked = prefs.areQuestionMarksEnabled,
                 onCheckedChange = { checked ->
                     prefs.areQuestionMarksEnabled = checked
-                    rebuildSettingsList()
                 }
             )
         )
@@ -459,7 +503,6 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 checked = prefs.isMidnightDelayEnabled,
                 onCheckedChange = { checked ->
                     prefs.isMidnightDelayEnabled = checked
-                    rebuildSettingsList()
                 }
             )
         )
@@ -473,7 +516,6 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 checked = prefs.shouldMakeNotificationsSticky(),
                 onCheckedChange = { checked ->
                     prefs.setNotificationsSticky(checked)
-                    rebuildSettingsList()
                 }
             )
         )
@@ -527,7 +569,6 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 checked = prefs.isPomodoroAutoSwitch,
                 onCheckedChange = { checked ->
                     prefs.isPomodoroAutoSwitch = checked
-                    rebuildSettingsList()
                 }
             )
         )
@@ -646,6 +687,7 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 key = "repairDB",
                 iconRes = R.drawable.ic_settings_repair,
                 title = getString(R.string.repair_database),
+                summary = getString(R.string.repair_database_summary),
                 onClick = { actionHandler().onSettingsAction(SettingsAction.REPAIR_DATABASE) }
             )
         )
@@ -655,6 +697,7 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 key = "bugReport",
                 iconRes = R.drawable.ic_settings_bug,
                 title = getString(R.string.generate_bug_report),
+                summary = getString(R.string.generate_bug_report_summary),
                 onClick = { actionHandler().onSettingsAction(SettingsAction.BUG_REPORT) }
             )
         )
@@ -671,7 +714,6 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 checked = prefs.isSyncEnabled,
                 onCheckedChange = { checked ->
                     prefs.isSyncEnabled = checked
-                    rebuildSettingsList()
                 }
             )
         )
@@ -803,7 +845,7 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                     key = "pref_sync_base_url",
                     iconRes = R.drawable.ic_settings_link,
                     title = getString(R.string.supabase_url_title),
-                    summary = sharedPrefs?.getString("pref_sync_base_url", "") ?: "",
+                    summary = getString(R.string.supabase_url_summary),
                     onClick = { showDeveloperEditTextDialog("pref_sync_base_url", getString(R.string.supabase_url_title)) }
                 )
             )
@@ -813,7 +855,7 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                     key = "pref_sync_key",
                     iconRes = R.drawable.ic_settings_key,
                     title = getString(R.string.supabase_anon_key_title),
-                    summary = sharedPrefs?.getString("pref_sync_key", "") ?: "",
+                    summary = getString(R.string.supabase_anon_key_summary),
                     onClick = { showDeveloperEditTextDialog("pref_sync_key", getString(R.string.supabase_anon_key_title)) }
                 )
             )
@@ -822,17 +864,18 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 SettingItem.Navigation(
                     key = "pref_encryption_key",
                     iconRes = R.drawable.ic_settings_lock,
-                    title = "Encryption key",
-                    summary = sharedPrefs?.getString("pref_encryption_key", "") ?: "",
-                    onClick = { showDeveloperEditTextDialog("pref_encryption_key", "Encryption key") }
+                    title = getString(R.string.encryption_key_title),
+                    summary = getString(R.string.encryption_key_summary),
+                    onClick = { showDeveloperEditTextDialog("pref_encryption_key", getString(R.string.encryption_key_title)) }
                 )
             )
 
             items.add(
                 SettingItem.Navigation(
                     key = "exportSyncDiagnostics",
-                    iconRes = R.drawable.ic_settings_bug,
+                    iconRes = R.drawable.ic_settings_report_analytics,
                     title = getString(R.string.sync_export_diagnostics_title),
+                    summary = getString(R.string.sync_export_diagnostics_summary),
                     onClick = { exportSyncDiagnostics() }
                 )
             )
@@ -842,6 +885,7 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                     key = "refreshScreens",
                     iconRes = R.drawable.ic_settings_sync,
                     title = getString(R.string.sync_refresh_screens_title),
+                    summary = getString(R.string.sync_refresh_screens_summary),
                     onClick = { refreshScreensForDiagnostics() }
                 )
             )
@@ -1722,5 +1766,14 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     companion object {
         private const val RINGTONE_REQUEST_CODE = 1
         private const val PUBLIC_BACKUP_REQUEST_CODE = 2
+        private const val ARG_COMPACT_TOP_INSET = "compactTopInset"
+
+        fun newInstance(compactTopInset: Boolean = false): SettingsFragment {
+            return SettingsFragment().apply {
+                arguments = Bundle().apply {
+                    putBoolean(ARG_COMPACT_TOP_INSET, compactTopInset)
+                }
+            }
+        }
     }
 }

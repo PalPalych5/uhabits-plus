@@ -40,6 +40,12 @@ import org.isoron.uhabits.core.tasks.Task
 import org.isoron.uhabits.database.AutoBackup
 import org.isoron.uhabits.databinding.ActivityMainBinding
 import org.isoron.uhabits.sync.SyncRunResult
+import android.widget.ImageView
+import android.widget.TextView
+import androidx.core.content.ContextCompat
+import android.annotation.SuppressLint
+import android.view.MotionEvent
+import org.isoron.uhabits.utils.applyBottomInset
 import org.isoron.uhabits.utils.applyRootViewInsets
 import org.isoron.uhabits.utils.restartWithFade
 
@@ -53,9 +59,11 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     private var currentTheme = 0
     private var currentResolvedNightMode = false
     private var permissionAlreadyRequested = false
-    private var updatingBottomNavigation = false
     private var isBottomTabTransitionRunning = false
     private var tabTransitionToken = 0
+    private lateinit var habitsTabAnimator: TabAnimator
+    private lateinit var reportsTabAnimator: TabAnimator
+    private lateinit var settingsTabAnimator: TabAnimator
 
     private val permissionLauncher = registerForActivityResult(RequestPermission()) { granted ->
         if (granted) scheduleReminders()
@@ -74,6 +82,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         binding.root.applyRootViewInsets()
+        binding.bottomNavigationContainer.applyBottomInset()
         setContentView(binding.root)
         if (intent.getBooleanExtra(EXTRA_RESTORE_SUCCESS, false)) {
             Toast.makeText(this, R.string.restore_backup_success, Toast.LENGTH_LONG).show()
@@ -105,24 +114,50 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         }
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     private fun setupBottomNavigation() {
-        binding.bottomNavigation.setOnItemSelectedListener { item ->
-            if (updatingBottomNavigation) return@setOnItemSelectedListener true
-            val destination = when (item.itemId) {
-                R.id.navigationHabits -> MainDestination.HABITS
-                R.id.navigationReports -> MainDestination.STATISTICS
-                R.id.navigationSettings -> MainDestination.SETTINGS
-                else -> return@setOnItemSelectedListener false
-            }
-            if (destination == navigationState.current.bottomItemDestination) {
-                return@setOnItemSelectedListener true
-            }
-            if (isBottomTabTransitionRunning) {
-                return@setOnItemSelectedListener false
-            }
-            navigateFromBottomTab(destination)
-            true
+        habitsTabAnimator = TabAnimator(binding.iconHabits, binding.labelHabits)
+        reportsTabAnimator = TabAnimator(binding.iconReports, binding.labelReports)
+        settingsTabAnimator = TabAnimator(binding.iconSettings, binding.labelSettings)
+
+        binding.btnNavHabits.setOnClickListener {
+            onBottomItemClicked(MainDestination.HABITS)
         }
+        binding.btnNavReports.setOnClickListener {
+            onBottomItemClicked(MainDestination.STATISTICS)
+        }
+        binding.btnNavSettings.setOnClickListener {
+            onBottomItemClicked(MainDestination.SETTINGS)
+        }
+
+        setupScaleOnPress(binding.btnNavHabits)
+        setupScaleOnPress(binding.btnNavReports)
+        setupScaleOnPress(binding.btnNavSettings)
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun setupScaleOnPress(view: View) {
+        view.setOnTouchListener { v, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.animate().scaleX(0.98f).scaleY(0.98f).setDuration(80).start()
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(150).start()
+                }
+            }
+            false
+        }
+    }
+
+    private fun onBottomItemClicked(destination: MainDestination) {
+        if (destination == navigationState.current.bottomItemDestination) {
+            return
+        }
+        if (isBottomTabTransitionRunning) {
+            return
+        }
+        navigateFromBottomTab(destination)
     }
 
     private fun setupBackHandling() {
@@ -151,7 +186,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         val fragment = when (destination) {
             MainDestination.HABITS, MainDestination.ARCHIVE -> ListHabitsFragment()
             MainDestination.STATISTICS -> StatisticsFragment()
-            MainDestination.SETTINGS -> SettingsSectionFragment()
+            MainDestination.SETTINGS -> SettingsSectionFragment.mainTab()
         }
         supportFragmentManager.beginTransaction()
             .add(R.id.mainContent, fragment, tag)
@@ -297,18 +332,39 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         animate: Boolean = false,
         previous: MainDestination? = null
     ) {
-        val previousBottom = previous?.bottomItemDestination ?: navigationState.current.bottomItemDestination
-        val nextBottom = destination.bottomItemDestination
         val itemId = when (destination.bottomItemDestination) {
             MainDestination.HABITS -> R.id.navigationHabits
             MainDestination.STATISTICS -> R.id.navigationReports
             MainDestination.SETTINGS -> R.id.navigationSettings
             MainDestination.ARCHIVE -> R.id.navigationHabits
         }
-        updatingBottomNavigation = true
-        binding.bottomNavigation.selectedItemId = itemId
-        updatingBottomNavigation = false
-        animateBottomNavigationItems(previousBottom, nextBottom, animate)
+
+        val activeColor = AccentColorManager.getAccentColor(this, prefs)
+        val inactiveColor = ContextCompat.getColor(
+            this,
+            if (AndroidThemeSwitcher(this, prefs).isNightMode) R.color.grey_500 else R.color.grey_600
+        )
+
+        val habitsActive = itemId == R.id.navigationHabits
+        val reportsActive = itemId == R.id.navigationReports
+        val settingsActive = itemId == R.id.navigationSettings
+
+        // Update colors
+        habitsTabAnimator.updateColors(activeColor, inactiveColor)
+        reportsTabAnimator.updateColors(activeColor, inactiveColor)
+        settingsTabAnimator.updateColors(activeColor, inactiveColor)
+
+        // Animate or snap selection state
+        val shouldAnimate = animate && areSystemAnimationsEnabled()
+        if (shouldAnimate) {
+            habitsTabAnimator.animateTo(habitsActive)
+            reportsTabAnimator.animateTo(reportsActive)
+            settingsTabAnimator.animateTo(settingsActive)
+        } else {
+            habitsTabAnimator.snapTo(habitsActive)
+            reportsTabAnimator.snapTo(reportsActive)
+            settingsTabAnimator.snapTo(settingsActive)
+        }
     }
 
     private fun navigateFromBottomTab(destination: MainDestination) {
@@ -466,31 +522,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     private fun applyAccentColor() {
-        val colorStateList = AccentColorManager.getAccentColorStateList(this, prefs)
-        val palette = MainTabsThemeBridge.resolve(this)
-        binding.bottomNavigation.itemIconTintList = colorStateList
-        binding.bottomNavigation.itemTextColor = colorStateList
-        binding.bottomNavigation.setItemActiveIndicatorEnabled(true)
-        binding.bottomNavigation.setItemActiveIndicatorColor(
-            ColorStateList.valueOf(
-                MainTabsThemeBridge.withAlpha(
-                    palette.accent,
-                    when {
-                        palette.isPureBlack -> 0.14f
-                        palette.isDark -> 0.16f
-                        else -> 0.12f
-                    }
-                )
-            )
-        )
-        binding.bottomNavigation.setItemActiveIndicatorWidth(dp(72f).toInt())
-        binding.bottomNavigation.setItemActiveIndicatorHeight(dp(36f).toInt())
-        binding.bottomNavigation.setItemActiveIndicatorMarginHorizontal(dp(4f).toInt())
-        animateBottomNavigationItems(
-            previous = navigationState.current.bottomItemDestination,
-            current = navigationState.current.bottomItemDestination,
-            animate = false
-        )
+        updateBottomSelection(navigationState.current)
     }
 
     private fun requestNotificationPermissionAndSchedule() {
@@ -586,60 +618,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         view.translationY = 0f
     }
 
-    private fun animateBottomNavigationItems(
-        previous: MainDestination,
-        current: MainDestination,
-        animate: Boolean
-    ) {
-        val ids = intArrayOf(
-            R.id.navigationHabits,
-            R.id.navigationReports,
-            R.id.navigationSettings
-        )
-        ids.forEach { id ->
-            val itemView = bottomNavigationItemView(id) ?: return@forEach
-            val destination = destinationForBottomItem(id)
-            val active = destination == current.bottomItemDestination
-            val shouldAnimate = animate &&
-                (destination == previous.bottomItemDestination || active) &&
-                areSystemAnimationsEnabled()
-            itemView.animate().setListener(null).cancel()
-            val targetScale = if (active) 1.06f else 1f
-            val targetTranslationY = if (active) -dp(1.5f) else 0f
-            val targetAlpha = if (active) 1f else 0.92f
-            if (shouldAnimate) {
-                itemView.animate()
-                    .scaleX(targetScale)
-                    .scaleY(targetScale)
-                    .translationY(targetTranslationY)
-                    .alpha(targetAlpha)
-                    .setDuration(BOTTOM_NAV_ANIMATION_MS)
-                    .setInterpolator(DecelerateInterpolator())
-                    .start()
-            } else {
-                itemView.scaleX = targetScale
-                itemView.scaleY = targetScale
-                itemView.translationY = targetTranslationY
-                itemView.alpha = targetAlpha
-            }
-        }
-    }
 
-    private fun bottomNavigationItemView(itemId: Int): View? {
-        val menuView = binding.bottomNavigation.getChildAt(0) as? ViewGroup ?: return null
-        val index = (0 until binding.bottomNavigation.menu.size()).firstOrNull { index ->
-            binding.bottomNavigation.menu.getItem(index).itemId == itemId
-        } ?: return null
-        return if (index < menuView.childCount) menuView.getChildAt(index) else null
-    }
-
-    private fun destinationForBottomItem(itemId: Int): MainDestination {
-        return when (itemId) {
-            R.id.navigationReports -> MainDestination.STATISTICS
-            R.id.navigationSettings -> MainDestination.SETTINGS
-            else -> MainDestination.HABITS
-        }
-    }
 
     private fun dp(value: Float): Float {
         return value * resources.displayMetrics.density
@@ -656,7 +635,6 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         private const val EXTRA_RESTORE_SUCCESS = "main.restore_success"
         private const val TAB_FADE_OUT_MS = 100L
         private const val TAB_FADE_IN_MS = 180L
-        private const val BOTTOM_NAV_ANIMATION_MS = 190L
         private const val TAB_SLIDE_DP = 12f
         private const val TAB_STATISTICS_SLIDE_DP = 4f
 
@@ -671,4 +649,68 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             }
     }
+
+    private class TabAnimator(
+        private val iconView: ImageView,
+        private val labelView: TextView
+    ) {
+        private var animator: android.animation.ValueAnimator? = null
+        private var activeColor: Int = 0
+        private var inactiveColor: Int = 0
+
+        var progress: Float = 0f
+            set(value) {
+                field = value
+
+                // Scale icon
+                val scale = 1.0f + (0.06f * value) // Subtle 1.0 to 1.06 scale
+                iconView.scaleX = scale
+                iconView.scaleY = scale
+
+                // Alpha
+                val alpha = 0.54f + (0.46f * value) // 0.54 to 1.0
+                iconView.alpha = alpha
+                labelView.alpha = alpha
+
+                // Color blending
+                val color = blendColors(inactiveColor, activeColor, value)
+                iconView.setColorFilter(color)
+                labelView.setTextColor(color)
+            }
+
+        fun updateColors(active: Int, inactive: Int) {
+            this.activeColor = active
+            this.inactiveColor = inactive
+            progress = progress // Force color re-evaluation
+        }
+
+        fun animateTo(active: Boolean) {
+            val target = if (active) 1f else 0f
+            if (progress == target) return
+            animator?.cancel()
+            animator = android.animation.ValueAnimator.ofFloat(progress, target).apply {
+                duration = 200
+                interpolator = android.view.animation.DecelerateInterpolator()
+                addUpdateListener { animator ->
+                    progress = animator.animatedValue as Float
+                }
+                start()
+            }
+        }
+
+        fun snapTo(active: Boolean) {
+            animator?.cancel()
+            progress = if (active) 1f else 0f
+        }
+
+        private fun blendColors(color1: Int, color2: Int, ratio: Float): Int {
+            val inverseRatio = 1f - ratio
+            val a = (android.graphics.Color.alpha(color1) * inverseRatio + android.graphics.Color.alpha(color2) * ratio).toInt()
+            val r = (android.graphics.Color.red(color1) * inverseRatio + android.graphics.Color.red(color2) * ratio).toInt()
+            val g = (android.graphics.Color.green(color1) * inverseRatio + android.graphics.Color.green(color2) * ratio).toInt()
+            val b = (android.graphics.Color.blue(color1) * inverseRatio + android.graphics.Color.blue(color2) * ratio).toInt()
+            return android.graphics.Color.argb(a, r, g, b)
+        }
+    }
 }
+
