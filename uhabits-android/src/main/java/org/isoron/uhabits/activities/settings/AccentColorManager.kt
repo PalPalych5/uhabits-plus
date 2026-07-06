@@ -26,22 +26,8 @@ object AccentColorManager {
     }
 
     fun getAccentColorName(context: Context, prefs: Preferences): String {
-        val value = getAccentColorString(prefs)
-        val resId = when {
-            value == "preset:red" -> R.string.color_red
-            value == "preset:orange" -> R.string.color_orange
-            value == "preset:green" -> R.string.color_green
-            value == "preset:teal" -> R.string.color_teal
-            value == "preset:blue" -> R.string.color_blue
-            value == "preset:purple" -> R.string.color_purple
-            value == "preset:pink" -> R.string.color_pink
-            value.startsWith("custom:") -> {
-                val hex = value.removePrefix("custom:").uppercase()
-                return "#$hex"
-            }
-            else -> R.string.color_blue
-        }
-        return context.getString(resId)
+        val color = getAccentColor(context, prefs)
+        return ColorPickerUtils.toHex(color)
     }
 
     fun toPaletteColor(value: String): PaletteColor {
@@ -84,7 +70,13 @@ object AccentColorManager {
 
     fun getAccentColor(context: Context, prefs: Preferences): Int {
         val themeSwitcher = AndroidThemeSwitcher(context, prefs)
-        val theme = themeSwitcher.currentTheme
+        val isNight = themeSwitcher.isNightMode
+        val isPureBlack = prefs.isPureBlackEnabled
+        val theme = when {
+            isNight && isPureBlack -> org.isoron.uhabits.core.ui.views.PureBlackTheme()
+            isNight -> org.isoron.uhabits.core.ui.views.DarkTheme()
+            else -> org.isoron.uhabits.core.ui.views.LightTheme()
+        }
         val valueString = getAccentColorString(prefs)
         
         return if (valueString.startsWith("preset:")) {

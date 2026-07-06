@@ -82,8 +82,8 @@ class StatisticsFragment : Fragment() {
     private val sres get() = binding.root.sres
     private val palette get() = MainTabsThemeBridge.resolve(requireContext())
 
-    private enum class ReportTab { DAY, WEEK, MONTH, YEAR, ALL }
-    private var currentTab = ReportTab.DAY
+    internal enum class ReportTab { DAY, WEEK, MONTH, YEAR, ALL }
+    internal var currentTab = ReportTab.DAY
     private lateinit var currentAnchorDate: LocalDate
     private lateinit var dateFormatter: JavaLocalDateFormatter
     private var activeReportGeneration = 0
@@ -102,7 +102,7 @@ class StatisticsFragment : Fragment() {
     private var lastSelectedHabitStatusPosition: Int = AdapterView.INVALID_POSITION
     private var lastSelectedGoalTypePosition: Int = AdapterView.INVALID_POSITION
 
-    private data class ReportKey(
+    internal data class ReportKey(
         val tab: ReportTab,
         val start: LocalDate,
         val end: LocalDate,
@@ -111,6 +111,11 @@ class StatisticsFragment : Fragment() {
         val goalTypeFilter: String,
         val habitCount: Int
     )
+
+    private fun clampAnchorDateToCurrentPeriod() {
+        val firstWeekdayNum = getFirstWeekdayNumberAccordingToLocale()
+        currentAnchorDate = clampAnchorDateToLatestAllowed(currentAnchorDate, currentTab, firstWeekdayNum)
+    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -154,6 +159,7 @@ class StatisticsFragment : Fragment() {
                 it.getInt(STATE_DAY)
             )
         } ?: getToday()
+        clampAnchorDateToCurrentPeriod()
 
         setupTabs()
         setupListeners()
@@ -226,6 +232,7 @@ class StatisticsFragment : Fragment() {
                     4 -> ReportTab.ALL
                     else -> ReportTab.DAY
                 }
+                clampAnchorDateToCurrentPeriod()
                 requestReportUpdate("tab_selected")
             }
             override fun onTabUnselected(tab: TabLayout.Tab) {}
@@ -343,6 +350,10 @@ class StatisticsFragment : Fragment() {
     }
 
     private fun navigateDate(direction: Int) {
+        val firstWeekdayNum = getFirstWeekdayNumberAccordingToLocale()
+        if (direction > 0 && isLatestAllowedPeriod(currentAnchorDate, currentTab, firstWeekdayNum)) {
+            return
+        }
         currentAnchorDate = when (currentTab) {
             ReportTab.DAY -> currentAnchorDate.plus(direction)
             ReportTab.WEEK -> currentAnchorDate.plus(direction * 7)
@@ -363,6 +374,7 @@ class StatisticsFragment : Fragment() {
             }
             ReportTab.ALL -> currentAnchorDate
         }
+        clampAnchorDateToCurrentPeriod()
         requestReportUpdate("date_navigation")
     }
 
@@ -406,6 +418,11 @@ class StatisticsFragment : Fragment() {
                 else -> ""
             }
             binding.tvDateRange.text = rangeText
+
+            val firstWeekdayNum = getFirstWeekdayNumberAccordingToLocale()
+            val nextEnabled = !isLatestAllowedPeriod(currentAnchorDate, currentTab, firstWeekdayNum)
+            binding.btnNext.isEnabled = nextEnabled
+            binding.btnNext.alpha = if (nextEnabled) 1.0f else 0.35f
         }
     }
 
@@ -689,7 +706,7 @@ class StatisticsFragment : Fragment() {
                     oldestDate = date
                 }
             }
-            rangeStart = oldestDate ?: getToday().minus(365)
+            rangeStart = oldestDate ?: getToday()
         }
 
         var totalDays = 0
@@ -958,7 +975,7 @@ class StatisticsFragment : Fragment() {
         }
 
         return StatisticsData(
-            start = start,
+            start = rangeStart,
             end = end,
             totalDays = totalDays,
             completedDays = completedDays,
@@ -976,7 +993,8 @@ class StatisticsFragment : Fragment() {
             weekdayFrequency = weekdayList,
             heatmapRates = heatmapRates,
             tiers = tiersList,
-            skippedCount = skippedCount
+            skippedCount = skippedCount,
+            filteredHabits = filteredHabits
         )
     }
 
@@ -992,7 +1010,7 @@ class StatisticsFragment : Fragment() {
             position = 1000
         )
 
-        addDailyOverviewCard()
+        addPeriodOverviewCard(result)
 
         // 1. Overview Metrics Card
         val (summaryCard, summaryContent) = createCard(getString(R.string.overview))
@@ -1426,9 +1444,20 @@ class StatisticsFragment : Fragment() {
         return row
     }
 
-    private fun addDailyOverviewCard() {
-        val overview = StatisticsOverviewStateBuilder.build(component.habitList)
-        val (card, content) = createCard(getString(R.string.statistics_daily_overview_title))
+    private fun addPeriodOverviewCard(result: StatisticsData) {
+        val overview = StatisticsOverviewStateBuilder.build(
+            habits = result.filteredHabits,
+            start = result.start,
+            end = result.end
+        )
+        val titleRes = when (currentTab) {
+            ReportTab.DAY -> R.string.statistics_daily_overview_title
+            ReportTab.WEEK -> R.string.statistics_weekly_overview_title
+            ReportTab.MONTH -> R.string.statistics_monthly_overview_title
+            ReportTab.YEAR -> R.string.statistics_yearly_overview_title
+            ReportTab.ALL -> R.string.statistics_all_time_overview_title
+        }
+        val (card, content) = createCard(getString(titleRes))
         if (!component.preferences.isDayTiersEnabled) {
             content.addView(createOverviewTextOnly(overview))
         } else {
@@ -1745,7 +1774,7 @@ class StatisticsFragment : Fragment() {
 
     private fun dp(value: Float) = binding.root.dp(value)
 
-    private data class RenderSignature(
+    internal data class RenderSignature(
         val reportKey: ReportKey,
         val totalDays: Int,
         val completedDays: Int,
@@ -1757,16 +1786,20 @@ class StatisticsFragment : Fragment() {
         val bestStreak: Int,
         val bestSphereName: String?,
         val worstSphereName: String?,
-        val scoreChartCount: Int,
-        val sphereFocusHoursCount: Int,
-        val habitStatsCount: Int,
-        val weekdayFrequencyCount: Int,
-        val heatmapRatesCount: Int,
+        val scoreChartHash: Int,
+        val sphereFocusHoursHash: Int,
+        val habitStatsHash: Int,
+        val weekdayFrequencyHash: Int,
+        val heatmapRatesHash: Int,
         val tiers: List<StatisticsTierProgress>,
         val skippedCount: Int
     ) {
         companion object {
             fun from(reportKey: ReportKey, data: StatisticsData): RenderSignature {
+                val habitStatsHash = data.habitStats.map { stat ->
+                    listOf(stat.habit.id, stat.habit.name, stat.habit.color, stat.completedDays, stat.totalDays)
+                }.hashCode()
+
                 return RenderSignature(
                     reportKey = reportKey,
                     totalDays = data.totalDays,
@@ -1779,11 +1812,11 @@ class StatisticsFragment : Fragment() {
                     bestStreak = data.bestStreak,
                     bestSphereName = data.bestSphereName,
                     worstSphereName = data.worstSphereName,
-                    scoreChartCount = data.scoreChartData.size,
-                    sphereFocusHoursCount = data.sphereFocusHours.size,
-                    habitStatsCount = data.habitStats.size,
-                    weekdayFrequencyCount = data.weekdayFrequency.size,
-                    heatmapRatesCount = data.heatmapRates.size,
+                    scoreChartHash = data.scoreChartData.hashCode(),
+                    sphereFocusHoursHash = data.sphereFocusHours.hashCode(),
+                    habitStatsHash = habitStatsHash,
+                    weekdayFrequencyHash = data.weekdayFrequency.hashCode(),
+                    heatmapRatesHash = data.heatmapRates.hashCode(),
                     tiers = data.tiers,
                     skippedCount = data.skippedCount
                 )
@@ -1835,7 +1868,8 @@ data class StatisticsData(
     val weekdayFrequency: List<Pair<DayOfWeek, Double>>,
     val heatmapRates: Map<LocalDate, Float>,
     val tiers: List<StatisticsTierProgress>,
-    val skippedCount: Int
+    val skippedCount: Int,
+    val filteredHabits: List<Habit>
 )
 
 data class HabitCompletionStat(
@@ -1843,6 +1877,46 @@ data class HabitCompletionStat(
     val completedDays: Int,
     val totalDays: Int
 )
+
+internal fun isLatestAllowedPeriod(
+    anchorDate: LocalDate,
+    tab: StatisticsFragment.ReportTab,
+    firstWeekdayNum: Int
+): Boolean {
+    val today = getToday()
+    return when (tab) {
+        StatisticsFragment.ReportTab.DAY -> {
+            anchorDate >= today
+        }
+        StatisticsFragment.ReportTab.WEEK -> {
+            val firstWeekday = DayOfWeek.entries[firstWeekdayNum - 1]
+            val anchorWeekStart = anchorDate.startOfWeek(firstWeekday)
+            val todayWeekStart = today.startOfWeek(firstWeekday)
+            anchorWeekStart >= todayWeekStart
+        }
+        StatisticsFragment.ReportTab.MONTH -> {
+            val anchorMonthStart = anchorDate.startOfMonth()
+            val todayMonthStart = today.startOfMonth()
+            anchorMonthStart >= todayMonthStart
+        }
+        StatisticsFragment.ReportTab.YEAR -> {
+            anchorDate.year >= today.year
+        }
+        StatisticsFragment.ReportTab.ALL -> true
+    }
+}
+
+internal fun clampAnchorDateToLatestAllowed(
+    anchorDate: LocalDate,
+    tab: StatisticsFragment.ReportTab,
+    firstWeekdayNum: Int
+): LocalDate {
+    val today = getToday()
+    if (!isLatestAllowedPeriod(anchorDate, tab, firstWeekdayNum)) {
+        return anchorDate
+    }
+    return today
+}
 
 class HeatmapView @JvmOverloads constructor(
     context: Context,

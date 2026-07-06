@@ -84,6 +84,11 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         binding.root.applyRootViewInsets()
         binding.bottomNavigationContainer.applyBottomInset()
         setContentView(binding.root)
+
+        val palette = MainTabsThemeBridge.resolve(this)
+        binding.mainRoot.setBackgroundColor(palette.background)
+        binding.mainContent.setBackgroundColor(palette.background)
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(palette.background))
         if (intent.getBooleanExtra(EXTRA_RESTORE_SUCCESS, false)) {
             Toast.makeText(this, R.string.restore_backup_success, Toast.LENGTH_LONG).show()
             intent.removeExtra(EXTRA_RESTORE_SUCCESS)
@@ -210,7 +215,17 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         val sourceFragment = supportFragmentManager.findFragmentByTag(tagFor(source!!))
         val sourceView = sourceFragment?.view
         val target = fragmentFor(destination)
-        if (sourceView == null || sourceView.width == 0 || binding.mainContent.width == 0) {
+
+        // Show target fragment and set its max lifecycle to RESUMED, and source fragment to STARTED
+        val transaction = supportFragmentManager.beginTransaction()
+        transaction.show(target).setMaxLifecycle(target, Lifecycle.State.RESUMED)
+        sourceFragment?.let {
+            transaction.setMaxLifecycle(it, Lifecycle.State.STARTED)
+        }
+        transaction.commitNowAllowingStateLoss()
+
+        val targetView = target.view
+        if (sourceView == null || targetView == null || sourceView.width == 0 || binding.mainContent.width == 0) {
             tabTransitionToken++
             cancelTabTransitionAnimations()
             showDestinationImmediately(destination)
@@ -229,20 +244,47 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionStarted()
         updateBottomSelection(destination, animate = true, previous = source)
 
+        if (target is ListHabitsFragment) {
+            target.setDisplayMode(
+                if (destination == MainDestination.ARCHIVE) {
+                    ListHabitsDisplayMode.ARCHIVE
+                } else {
+                    ListHabitsDisplayMode.NORMAL
+                }
+            )
+        }
+        setHabitCreationAvailable(destination == MainDestination.HABITS)
+
+        // Cancel running animations on source and target views
         sourceView.animate().setListener(null).cancel()
-        target.view?.animate()?.setListener(null)?.cancel()
+        targetView.animate().setListener(null).cancel()
+
+        // Prepare targetView
+        targetView.alpha = 0f
+        targetView.translationX = slide
+        targetView.bringToFront()
+
+        val duration = TAB_FADE_IN_MS
+
         sourceView.animate()
-            .alpha(0f)
-            .translationX(-slide / 2f)
-            .setDuration(TAB_FADE_OUT_MS)
+            .alpha(0.95f)
+            .translationX(-slide * 0.3f)
+            .setDuration(duration)
             .setInterpolator(AccelerateInterpolator())
+            .start()
+
+        targetView.animate()
+            .alpha(1f)
+            .translationX(0f)
+            .setDuration(duration)
+            .setInterpolator(DecelerateInterpolator())
             .setListener(object : AnimatorListenerAdapter() {
                 private var cancelled = false
 
                 override fun onAnimationCancel(animation: Animator) {
                     cancelled = true
                     resetFragmentRoot(sourceView)
-                    resetFragmentRoot(target.view)
+                    resetFragmentRoot(targetView)
                     if (tabTransitionToken == token) {
                         isBottomTabTransitionRunning = false
                         (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionEnded()
@@ -250,48 +292,24 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                 }
 
                 override fun onAnimationEnd(animation: Animator) {
-                    sourceView.animate().setListener(null)
+                    targetView.animate().setListener(null)
                     if (cancelled || tabTransitionToken != token) return
-                    showDestinationImmediately(destination, updateBottomNavigation = false)
-                    val targetView = target.view
-                    if (targetView == null) {
-                        resetFragmentRoot(sourceView)
-                        isBottomTabTransitionRunning = false
-                        (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionEnded()
-                        return
+
+                    // Animation complete, now we hide the source fragment and any other non-target fragments
+                    val hideTransaction = supportFragmentManager.beginTransaction()
+                    supportFragmentManager.fragments.forEach { fragment ->
+                        if (fragment == target) {
+                            hideTransaction.show(fragment).setMaxLifecycle(fragment, Lifecycle.State.RESUMED)
+                        } else {
+                            hideTransaction.hide(fragment).setMaxLifecycle(fragment, Lifecycle.State.STARTED)
+                        }
                     }
-                    targetView.alpha = 0f
-                    targetView.translationX = slide
-                    targetView.animate().setListener(null).cancel()
-                    targetView.animate()
-                        .alpha(1f)
-                        .translationX(0f)
-                        .setDuration(TAB_FADE_IN_MS)
-                        .setInterpolator(DecelerateInterpolator())
-                        .setListener(object : AnimatorListenerAdapter() {
-                            private var innerCancelled = false
+                    hideTransaction.commitNowAllowingStateLoss()
 
-                            override fun onAnimationCancel(animation: Animator) {
-                                innerCancelled = true
-                                resetFragmentRoot(sourceView)
-                                resetFragmentRoot(targetView)
-                                if (tabTransitionToken == token) {
-                                    isBottomTabTransitionRunning = false
-                                    (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionEnded()
-                                }
-                            }
-
-                            override fun onAnimationEnd(animation: Animator) {
-                                targetView.animate().setListener(null)
-                                resetFragmentRoot(sourceView)
-                                resetFragmentRoot(targetView)
-                                if (!innerCancelled && tabTransitionToken == token) {
-                                    isBottomTabTransitionRunning = false
-                                    (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionEnded()
-                                }
-                            }
-                        })
-                        .start()
+                    resetFragmentRoot(sourceView)
+                    resetFragmentRoot(targetView)
+                    isBottomTabTransitionRunning = false
+                    (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionEnded()
                 }
             })
             .start()

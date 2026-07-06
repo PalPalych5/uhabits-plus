@@ -567,6 +567,10 @@
     <string name="settings_show_habit_card_borders_title">Окантовки привычек</string>
     <string name="settings_show_habit_card_borders_summary">Показывать рамки вокруг привычек</string>
     <string name="statistics_daily_overview_title">Сводка дня</string>
+    <string name="statistics_weekly_overview_title">Сводка за неделю</string>
+    <string name="statistics_monthly_overview_title">Сводка за месяц</string>
+    <string name="statistics_yearly_overview_title">Сводка за год</string>
+    <string name="statistics_all_time_overview_title">Сводка за всё время</string>
     <string name="statistics_daily_focus_minutes">Фокус-время: %1$s мин</string>
     <string name="manage_blocks_empty_state">Нет сфер. Создайте новую сферу, чтобы сгруппировать привычки.</string>
     <string name="manage_blocks_habit_count">Привычек: %1$d</string>

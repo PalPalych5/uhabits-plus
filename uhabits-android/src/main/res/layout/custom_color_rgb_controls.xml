@@ -4,8 +4,8 @@
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:layout_marginBottom="18dp"
+        android:layout_height="46dp"
+        android:layout_marginBottom="2dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -27,13 +27,28 @@
             app:tickVisible="false"
             app:trackColorInactive="?attr/colorPickerSliderInactive"
             app:trackHeight="3dp" />
-        <TextView android:id="@+id/custom_color_red_value" style="@style/ColorPicker.SliderValue" />
+        <EditText
+            android:id="@+id/custom_color_red_value"
+            android:layout_width="56dp"
+            android:layout_height="32dp"
+            android:background="@drawable/color_picker_value_badge"
+            android:gravity="center"
+            android:inputType="number"
+            android:maxLength="3"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:textSize="14sp"
+            android:fontFamily="sans-serif-medium"
+            android:textColor="?attr/colorPickerOnSurface"
+            android:includeFontPadding="false"
+            android:padding="0dp"
+            android:imeOptions="actionDone" />
     </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="44dp"
-        android:layout_marginBottom="18dp"
+        android:layout_height="46dp"
+        android:layout_marginBottom="2dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -55,12 +70,27 @@
             app:tickVisible="false"
             app:trackColorInactive="?attr/colorPickerSliderInactive"
             app:trackHeight="3dp" />
-        <TextView android:id="@+id/custom_color_green_value" style="@style/ColorPicker.SliderValue" />
+        <EditText
+            android:id="@+id/custom_color_green_value"
+            android:layout_width="56dp"
+            android:layout_height="32dp"
+            android:background="@drawable/color_picker_value_badge"
+            android:gravity="center"
+            android:inputType="number"
+            android:maxLength="3"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:textSize="14sp"
+            android:fontFamily="sans-serif-medium"
+            android:textColor="?attr/colorPickerOnSurface"
+            android:includeFontPadding="false"
+            android:padding="0dp"
+            android:imeOptions="actionDone" />
     </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="44dp"
+        android:layout_height="46dp"
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
@@ -82,6 +112,21 @@
             app:tickVisible="false"
             app:trackColorInactive="?attr/colorPickerSliderInactive"
             app:trackHeight="3dp" />
-        <TextView android:id="@+id/custom_color_blue_value" style="@style/ColorPicker.SliderValue" />
+        <EditText
+            android:id="@+id/custom_color_blue_value"
+            android:layout_width="56dp"
+            android:layout_height="32dp"
+            android:background="@drawable/color_picker_value_badge"
+            android:gravity="center"
+            android:inputType="number"
+            android:maxLength="3"
+            android:maxLines="1"
+            android:singleLine="true"
+            android:textSize="14sp"
+            android:fontFamily="sans-serif-medium"
+            android:textColor="?attr/colorPickerOnSurface"
+            android:includeFontPadding="false"
+            android:padding="0dp"
+            android:imeOptions="actionDone" />
     </LinearLayout>
 </merge>

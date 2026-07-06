@@ -37,39 +37,68 @@ data class StatisticsTierProgress(
 
 object StatisticsOverviewStateBuilder {
     fun build(habitList: HabitList, date: LocalDate = getToday()): StatisticsOverviewState {
-        val items = habitList
-            .toList()
-            .filter { !it.isArchived }
-            .filter { it.isDateIncludedInStatistics(date) }
-            .map { habit ->
-                val entry = habit.computedEntries.get(date)
-                OverviewItem(
-                    tier = habit.dayTier,
-                    completed = habit.isCompletedForOverview(entry),
-                    skipped = entry.value == Entry.SKIP,
-                    focusMinutes = habit.focusMinutesForOverview(entry)
-                )
-            }
+        val activeHabits = habitList.toList().filter { !it.isArchived }
+        return build(activeHabits, date, date)
+    }
 
-        val countable = items.filter { !it.skipped }
-        return StatisticsOverviewState(
-            date = date,
-            completedCount = countable.count { it.completed },
-            totalCount = countable.size,
-            focusMinutes = items.sumOf { it.focusMinutes },
-            tiers = DayTier.entries.map { tier ->
+    fun build(habits: List<Habit>, start: LocalDate, end: LocalDate): StatisticsOverviewState {
+        var totalCompleted = 0
+        var totalCount = 0
+        var totalFocusMinutes = 0.0
+        val tierCompleted = mutableMapOf<DayTier, Int>()
+        val tierTotal = mutableMapOf<DayTier, Int>()
+        for (tier in DayTier.entries) {
+            tierCompleted[tier] = 0
+            tierTotal[tier] = 0
+        }
+
+        var curr = start
+        while (curr <= end) {
+            val items = habits
+                .filter { it.isDateIncludedInStatistics(curr) }
+                .map { habit ->
+                    val entry = habit.computedEntries.get(curr)
+                    OverviewItem(
+                        tier = habit.dayTier,
+                        completed = habit.isCompletedForOverview(entry),
+                        skipped = entry.value == Entry.SKIP,
+                        focusMinutes = habit.focusMinutesForOverview(entry)
+                    )
+                }
+
+            val countable = items.filter { !it.skipped }
+            totalCompleted += countable.count { it.completed }
+            totalCount += countable.size
+            totalFocusMinutes += items.sumOf { it.focusMinutes }
+
+            for (tier in DayTier.entries) {
                 val tierItems = when (tier) {
                     DayTier.MINIMUM -> countable.filter { it.tier == DayTier.MINIMUM }
                     DayTier.NORMAL -> countable.filter { it.tier == DayTier.MINIMUM || it.tier == DayTier.NORMAL }
                     DayTier.IDEAL -> countable.filter { it.tier == DayTier.MINIMUM || it.tier == DayTier.NORMAL || it.tier == DayTier.IDEAL }
                     DayTier.OPTIONAL -> countable
                 }
-                StatisticsTierProgress(
-                    tier = tier,
-                    completedCount = tierItems.count { it.completed },
-                    totalCount = tierItems.size
-                )
+                tierCompleted[tier] = tierCompleted[tier]!! + tierItems.count { it.completed }
+                tierTotal[tier] = tierTotal[tier]!! + tierItems.size
             }
+
+            curr = curr.plus(1)
+        }
+
+        val tiersList = DayTier.entries.map { tier ->
+            StatisticsTierProgress(
+                tier = tier,
+                completedCount = tierCompleted[tier] ?: 0,
+                totalCount = tierTotal[tier] ?: 0
+            )
+        }
+
+        return StatisticsOverviewState(
+            date = start,
+            completedCount = totalCompleted,
+            totalCount = totalCount,
+            focusMinutes = totalFocusMinutes,
+            tiers = tiersList
         )
     }
 

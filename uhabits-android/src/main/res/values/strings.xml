@@ -562,6 +562,10 @@
     <string name="settings_show_habit_card_borders_title">Habit row outlines</string>
     <string name="settings_show_habit_card_borders_summary">Show borders around habit rows</string>
     <string name="statistics_daily_overview_title">Daily overview</string>
+    <string name="statistics_weekly_overview_title">Weekly overview</string>
+    <string name="statistics_monthly_overview_title">Monthly overview</string>
+    <string name="statistics_yearly_overview_title">Yearly overview</string>
+    <string name="statistics_all_time_overview_title">All-time overview</string>
     <string name="statistics_daily_focus_minutes">Focus time: %1$s min</string>
     <string name="manage_blocks_empty_state">No spheres yet. Create a sphere to group your habits.</string>
     <string name="manage_blocks_habit_count">Habits: %1$d</string>

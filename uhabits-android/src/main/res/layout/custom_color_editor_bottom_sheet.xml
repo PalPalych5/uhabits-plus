@@ -21,43 +21,16 @@
             android:layout_width="36dp"
             android:layout_height="4dp"
             android:layout_gravity="center_horizontal"
-            android:layout_marginBottom="20dp"
+            android:layout_marginBottom="16dp"
             android:background="@drawable/color_picker_sheet_handle" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/custom_color_picker_title"
-                android:textColor="?attr/colorPickerOnSurface"
-                android:fontFamily="sans-serif-medium"
-                android:textSize="21sp"
-                android:textStyle="normal" />
-
-            <ImageButton
-                android:id="@+id/custom_color_close"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
-                android:background="@drawable/color_picker_close_background"
-                android:contentDescription="@string/custom_color_close"
-                android:padding="11dp"
-                android:src="@drawable/ic_action_cancel"
-                app:tint="?attr/colorPickerOnSurface" />
-        </LinearLayout>
 
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/custom_color_preview"
             android:layout_width="match_parent"
-            android:layout_height="96dp"
-            android:layout_marginTop="20dp"
-            android:layout_marginBottom="16dp"
-            app:cardCornerRadius="22dp"
+            android:layout_height="62dp"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="12dp"
+            app:cardCornerRadius="16dp"
             app:cardElevation="0dp">
 
             <TextView
@@ -65,68 +38,99 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="start|bottom"
-                android:layout_margin="16dp"
+                android:layout_margin="8dp"
                 android:background="@drawable/color_picker_hex_badge"
                 android:fontFamily="monospace"
-                android:paddingHorizontal="14dp"
-                android:paddingVertical="7dp"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="3dp"
                 android:textColor="@android:color/white"
-                android:textSize="15sp"
+                android:textSize="14sp"
                 android:textStyle="bold" />
         </com.google.android.material.card.MaterialCardView>
 
-        <LinearLayout
+        <FrameLayout
             android:id="@+id/custom_color_tabs"
             android:layout_width="match_parent"
-            android:layout_height="52dp"
+            android:layout_height="48dp"
+            android:layout_marginBottom="12dp"
             android:background="@drawable/color_picker_segment_container"
-            android:orientation="horizontal"
-            android:padding="4dp"
-            android:clipChildren="true"
-            android:clipToPadding="true"
-            android:weightSum="3">
+            android:padding="4dp">
 
-            <TextView
-                android:id="@+id/custom_color_tab_hex"
-                style="@style/ColorPicker.TabText"
-                android:layout_width="0dp"
+            <!-- Tab indicator container for sliding pill -->
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:text="@string/custom_color_tab_hex"
-                android:clickable="true"
-                android:focusable="true"
-                android:background="@null" />
+                android:orientation="horizontal"
+                android:weightSum="3">
 
-            <TextView
-                android:id="@+id/custom_color_tab_hsv"
-                style="@style/ColorPicker.TabText"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:text="@string/custom_color_tab_hsv"
-                android:clickable="true"
-                android:focusable="true"
-                android:background="@null" />
+                <View
+                    android:id="@+id/custom_color_tab_indicator"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="@drawable/color_picker_segment_selected" />
 
-            <TextView
-                android:id="@+id/custom_color_tab_rgb"
-                style="@style/ColorPicker.TabText"
-                android:layout_width="0dp"
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:visibility="invisible" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:visibility="invisible" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:text="@string/custom_color_tab_rgb"
-                android:clickable="true"
-                android:focusable="true"
-                android:background="@null" />
-        </LinearLayout>
+                android:orientation="horizontal"
+                android:weightSum="3">
+
+                <TextView
+                    android:id="@+id/custom_color_tab_hex"
+                    style="@style/ColorPicker.TabText"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/custom_color_tab_hex"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@null" />
+
+                <TextView
+                    android:id="@+id/custom_color_tab_hsv"
+                    style="@style/ColorPicker.TabText"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/custom_color_tab_hsv"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@null" />
+
+                <TextView
+                    android:id="@+id/custom_color_tab_rgb"
+                    style="@style/ColorPicker.TabText"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="@string/custom_color_tab_rgb"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:background="@null" />
+            </LinearLayout>
+        </FrameLayout>
 
         <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp">
+            android:layout_marginTop="4dp">
 
             <LinearLayout
                 android:id="@+id/custom_color_hex_panel"
@@ -157,14 +161,22 @@
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/custom_color_hex_input"
                         android:layout_width="match_parent"
-                        android:layout_height="52dp"
+                        android:layout_height="46dp"
+                        android:gravity="center_vertical|start"
+                        android:paddingStart="16dp"
+                        android:paddingEnd="16dp"
+                        android:paddingTop="8dp"
+                        android:paddingBottom="8dp"
+                        android:includeFontPadding="false"
                         android:digits="0123456789ABCDEFabcdef#"
                         android:fontFamily="monospace"
                         android:inputType="textCapCharacters|textNoSuggestions"
                         android:maxLength="7"
                         android:singleLine="true"
+                        android:imeOptions="actionDone"
                         android:textColor="?attr/colorPickerOnSurface"
-                        android:textSize="18sp" />
+                        android:textSize="16sp"
+                        android:textAppearance="?attr/textAppearanceSubtitle1" />
                 </com.google.android.material.textfield.TextInputLayout>
             </LinearLayout>
 
@@ -192,13 +204,13 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="16dp"
             android:orientation="horizontal">
 
             <TextView
                 android:id="@+id/custom_color_cancel"
                 android:layout_width="0dp"
-                android:layout_height="48dp"
+                android:layout_height="52dp"
                 android:layout_weight="1"
                 android:alpha="1"
                 android:background="@null"
@@ -216,7 +228,7 @@
             <androidx.appcompat.widget.AppCompatButton
                 android:id="@+id/custom_color_done"
                 android:layout_width="0dp"
-                android:layout_height="48dp"
+                android:layout_height="52dp"
                 android:layout_marginStart="12dp"
                 android:layout_weight="1"
                 android:background="@null"

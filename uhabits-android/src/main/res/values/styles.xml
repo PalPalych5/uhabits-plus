@@ -440,11 +440,16 @@
         <item name="android:windowAnimationStyle">@null</item>
     </style>
 
+    <style name="ColorPickerFullScreenWindowAnimation">
+        <item name="android:windowEnterAnimation">@anim/color_picker_slide_in_right</item>
+        <item name="android:windowExitAnimation">@anim/color_picker_slide_out_right</item>
+    </style>
+
     <style name="ColorPickerFullScreenTheme" parent="Theme.MaterialComponents.Light.NoActionBar">
         <item name="android:windowIsFloating">false</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowFullscreen">false</item>
-        <item name="android:windowAnimationStyle">@android:style/Animation.Activity</item>
+        <item name="android:windowAnimationStyle">@style/ColorPickerFullScreenWindowAnimation</item>
         <item name="android:windowBackground">@color/color_picker_background_light</item>
         <item name="colorPickerBackground">@color/color_picker_background_light</item>
         <item name="colorPickerSurface">@color/color_picker_surface_light</item>
@@ -465,7 +470,7 @@
         <item name="android:windowIsFloating">false</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowFullscreen">false</item>
-        <item name="android:windowAnimationStyle">@android:style/Animation.Activity</item>
+        <item name="android:windowAnimationStyle">@style/ColorPickerFullScreenWindowAnimation</item>
         <item name="android:windowBackground">@color/color_picker_background_dark</item>
         <item name="colorPickerBackground">@color/color_picker_background_dark</item>
         <item name="colorPickerSurface">@color/color_picker_surface_dark</item>
@@ -483,6 +488,7 @@
     </style>
 
     <style name="ColorPickerFullScreenTheme.Amoled" parent="ColorPickerFullScreenTheme.Dark">
+        <item name="android:windowAnimationStyle">@style/ColorPickerFullScreenWindowAnimation</item>
         <item name="android:windowBackground">@color/color_picker_background_amoled</item>
         <item name="colorPickerBackground">@color/color_picker_background_amoled</item>
         <item name="colorPickerSurface">@color/color_picker_surface_amoled</item>
@@ -577,7 +583,7 @@
         <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:letterSpacing">0</item>
         <item name="android:textAllCaps">false</item>
-        <item name="android:textSize">16sp</item>
+        <item name="android:textSize">18sp</item>
         <item name="android:textStyle">normal</item>
     </style>
 

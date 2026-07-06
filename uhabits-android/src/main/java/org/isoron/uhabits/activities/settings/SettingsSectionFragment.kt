@@ -78,8 +78,10 @@ class SettingsSectionFragment : Fragment() {
         val palette = SettingsThemePaletteResolver.resolve(requireContext(), prefs)
 
         // 2. Set neutral Toolbar background and flat elevation
-        binding.toolbar.root.background = android.graphics.drawable.ColorDrawable(palette.background)
-        binding.statusBarScrim.background = android.graphics.drawable.ColorDrawable(palette.background)
+        binding.root.setBackgroundColor(palette.background)
+        binding.settingsContent.setBackgroundColor(palette.background)
+        binding.toolbar.root.setBackgroundColor(palette.background)
+        binding.statusBarScrim.setBackgroundColor(palette.background)
         binding.toolbar.root.elevation = 0f
         activity.window.statusBarColor = palette.background
         activity.window.navigationBarColor = if (palette.isPureBlack) palette.background else palette.surface

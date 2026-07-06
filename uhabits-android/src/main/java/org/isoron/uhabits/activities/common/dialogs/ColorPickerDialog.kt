@@ -56,6 +56,7 @@ class ColorPickerDialog : AppCompatDialogFragment() {
         private const val STATE_DEFAULT_COLOR = "state_default_color"
         private const val STATE_DRAFT_COLOR = "state_draft_color"
         private const val STATE_SOURCE = "state_source"
+        private const val STATE_LAST_CUSTOM_COLOR = "state_last_custom_color"
         internal const val CUSTOM_COLOR_RESULT = "custom_color_result"
         internal const val CUSTOM_COLOR_VALUE = "custom_color_value"
 
@@ -80,6 +81,7 @@ class ColorPickerDialog : AppCompatDialogFragment() {
     private var initialColor = ColorPickerUtils.DEFAULT_COLOR
     private var defaultColor = ColorPickerUtils.DEFAULT_COLOR
     private var draftColor = ColorPickerUtils.DEFAULT_COLOR
+    private var lastCustomColor = ColorPickerUtils.DEFAULT_COLOR
     private var themeMode = THEME_LIGHT
     private var source = ColorSource.DEFAULT
     private var pendingDraftColor: Int? = null
@@ -88,6 +90,7 @@ class ColorPickerDialog : AppCompatDialogFragment() {
 
     private lateinit var previewSwatch: ColorSwatchView
     private lateinit var customSwatch: ColorSwatchView
+    private lateinit var customHexSummary: TextView
     private lateinit var cancelButton: TextView
     private lateinit var applyButton: TextView
     private lateinit var swatches: List<ColorSwatchView>
@@ -130,6 +133,8 @@ class ColorPickerDialog : AppCompatDialogFragment() {
                 draftColor in ColorPickerUtils.presetColors -> ColorSource.PRESET
                 else -> ColorSource.CUSTOM
             }
+        lastCustomColor = savedInstanceState?.getInt(STATE_LAST_CUSTOM_COLOR)
+            ?: if (source == ColorSource.CUSTOM) draftColor else ColorPickerUtils.DEFAULT_COLOR
 
         childFragmentManager.setFragmentResultListener(CUSTOM_COLOR_RESULT, this) { _, result ->
             updateDraft(result.getInt(CUSTOM_COLOR_VALUE), ColorSource.CUSTOM)
@@ -150,6 +155,7 @@ class ColorPickerDialog : AppCompatDialogFragment() {
         val actions = view.findViewById<View>(R.id.color_picker_actions)
         previewSwatch = view.findViewById(R.id.color_picker_preview_swatch)
         customSwatch = view.findViewById(R.id.custom_color_preview)
+        customHexSummary = view.findViewById(R.id.custom_color_hex_summary)
         cancelButton = view.findViewById(R.id.color_picker_cancel)
         applyButton = view.findViewById(R.id.color_picker_apply)
 
@@ -175,7 +181,6 @@ class ColorPickerDialog : AppCompatDialogFragment() {
             listener?.onColorPicked(draftColor.toPaletteColor(requireContext()))
             dismiss()
         }
-
         updateDraft(draftColor, source)
     }
 
@@ -200,13 +205,20 @@ class ColorPickerDialog : AppCompatDialogFragment() {
         outState.putInt(STATE_DEFAULT_COLOR, defaultColor)
         outState.putInt(STATE_DRAFT_COLOR, draftColor)
         outState.putString(STATE_SOURCE, source.name)
+        outState.putInt(STATE_LAST_CUSTOM_COLOR, lastCustomColor)
     }
 
     private fun setupPalette(grid: GridLayout) {
         val size = resources.getDimensionPixelSize(R.dimen.color_picker_swatch_touch_size)
+        val density = resources.displayMetrics.density
+        val paddingY = (5f * density + 0.5f).toInt()
         swatches = ColorPickerUtils.presetColors.mapIndexed { index, color ->
             ColorSwatchView(requireContext()).apply {
                 swatchColor = color
+                val col = index % 6
+                val leftPadding = (col * 1.2f * density + 0.5f).toInt()
+                val rightPadding = ((6f - col * 1.2f) * density + 0.5f).toInt()
+                setPadding(leftPadding, paddingY, rightPadding, paddingY)
                 layoutParams = GridLayout.LayoutParams(
                     GridLayout.spec(index / 6),
                     GridLayout.spec(index % 6, 1f)
@@ -223,15 +235,21 @@ class ColorPickerDialog : AppCompatDialogFragment() {
         if (!this::previewSwatch.isInitialized) {
             draftColor = color
             source = newSource
+            if (newSource == ColorSource.CUSTOM) {
+                lastCustomColor = color
+            }
             return
         }
         draftColor = color or Color.BLACK
         source = newSource
+        if (newSource == ColorSource.CUSTOM) {
+            lastCustomColor = draftColor
+        }
 
         previewSwatch.apply {
             swatchColor = draftColor
             showSelectionRing = false
-            showCheckmark = true
+            showCheckmark = false
             isSelected = true
             contentDescription = getString(R.string.color_picker_preview_description, ColorPickerUtils.toHex(draftColor))
         }
@@ -243,6 +261,7 @@ class ColorPickerDialog : AppCompatDialogFragment() {
             showCheckmark = customIsSelected
             isSelected = customIsSelected
         }
+        customHexSummary.text = ColorPickerUtils.toHex(draftColor)
         swatches.forEach { swatch ->
             swatch.isSelected = source != ColorSource.CUSTOM && swatch.swatchColor == draftColor
             swatch.contentDescription = getString(

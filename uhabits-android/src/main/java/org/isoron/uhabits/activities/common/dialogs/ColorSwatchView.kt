@@ -67,14 +67,22 @@ class ColorSwatchView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val cx = width / 2f
-        val cy = height / 2f
+        val paddingLeft = paddingLeft
+        val paddingTop = paddingTop
+        val paddingRight = paddingRight
+        val paddingBottom = paddingBottom
+
+        val cx = paddingLeft + (width - paddingLeft - paddingRight) / 2f
+        val cy = paddingTop + (height - paddingTop - paddingBottom) / 2f
+        val availableWidth = width - paddingLeft - paddingRight
+        val availableHeight = height - paddingTop - paddingBottom
+
         val reservedSpace = when {
             showSelectionRing -> 4f
             showSpectrum -> 4f
             else -> 0.5f
         }
-        val swatchRadius = min(width, height) / 2f - reservedSpace * density
+        val swatchRadius = min(availableWidth, availableHeight) / 2f - reservedSpace * density
 
         fillPaint.shader = if (showSpectrum) {
             SweepGradient(
