@@ -132,6 +132,8 @@
     <string name="history_stack_widget" formatted="false">History Stack Widget</string>
     <string name="streaks_stack_widget" formatted="false">Streaks Stack Widget</string>
     <string name="best_streaks">Best streaks</string>
+    <string name="streak_card_title">Streaks</string>
+    <string name="latest_streak">Latest streak</string>
     <string name="every_day">Every day</string>
     <string name="every_week">Every week</string>
     <string name="help">Help &amp; guide</string>

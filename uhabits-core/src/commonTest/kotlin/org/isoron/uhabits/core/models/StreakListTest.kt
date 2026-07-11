@@ -64,4 +64,33 @@ class StreakListTest : BaseUnitTest() {
         assertEquals(1, best.size)
         assertEquals(1, best[0].length)
     }
+
+    @Test
+    fun testGetLatest_prefersNewestOverLongest() {
+        habit.originalEntries.clear()
+        habit.originalEntries.add(Entry(today, Entry.YES_MANUAL))
+        habit.originalEntries.add(Entry(today.minus(5), Entry.YES_MANUAL))
+        habit.originalEntries.add(Entry(today.minus(6), Entry.YES_MANUAL))
+        habit.originalEntries.add(Entry(today.minus(7), Entry.YES_MANUAL))
+        habit.recompute()
+
+        assertEquals(Streak(today, today), streaks.getLatest())
+    }
+
+    @Test
+    fun testGetLatest_returnsNullWhenEmpty() {
+        habit.originalEntries.clear()
+        habit.recompute()
+
+        assertEquals(null, streaks.getLatest())
+    }
+
+    @Test
+    fun testGetLatest_canAlsoBeBest() {
+        habit.originalEntries.clear()
+        habit.originalEntries.add(Entry(today, Entry.YES_MANUAL))
+        habit.recompute()
+
+        assertEquals(streaks.getBest(1).single(), streaks.getLatest())
+    }
 }

@@ -130,6 +130,8 @@
     <string name="frequency">Частота</string>
     <string name="checkmark">Галочка</string>
     <string name="best_streaks">Лучшие серии</string>
+    <string name="streak_card_title">Серии</string>
+    <string name="latest_streak">Последняя серия</string>
     <string name="every_day">Каждый день</string>
     <string name="every_week">Каждую неделю</string>
     <string name="help">Помощь и руководство</string>

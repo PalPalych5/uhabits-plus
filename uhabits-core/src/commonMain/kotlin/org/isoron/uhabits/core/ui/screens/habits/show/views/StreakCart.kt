@@ -26,6 +26,7 @@ import org.isoron.uhabits.core.ui.views.Theme
 
 data class StreakCardState(
     val color: PaletteColor,
+    val latestStreak: Streak?,
     val bestStreaks: List<Streak>,
     val theme: Theme
 )
@@ -33,9 +34,14 @@ data class StreakCardState(
 class StreakCartPresenter {
     companion object {
         fun buildState(habit: Habit, theme: Theme): StreakCardState {
+            val latestStreak = habit.streaks.getLatest()
             return StreakCardState(
                 color = habit.color,
-                bestStreaks = habit.streaks.getBest(10),
+                latestStreak = latestStreak,
+                bestStreaks = habit.streaks
+                    .getBest(11)
+                    .filterNot { it == latestStreak }
+                    .take(10),
                 theme = theme
             )
         }

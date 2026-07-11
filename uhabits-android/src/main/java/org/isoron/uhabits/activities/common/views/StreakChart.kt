@@ -44,6 +44,7 @@ class StreakChart : View {
     private var paint: Paint? = null
     private var minLength: Long = 0
     private var maxLength: Long = 0
+    private var maxLengthOverride: Long? = null
     private lateinit var colors: IntArray
     private lateinit var textColors: IntArray
     private var rect: RectF? = null
@@ -103,6 +104,12 @@ class StreakChart : View {
         initColors()
         updateMaxMinLengths()
         requestLayout()
+    }
+
+    fun setMaxLengthOverride(maxLength: Long?) {
+        maxLengthOverride = maxLength
+        updateMaxMinLengths()
+        postInvalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -231,6 +238,7 @@ class StreakChart : View {
     private fun updateMaxMinLengths() {
         maxLength = 0
         minLength = Long.MAX_VALUE
+        maxLabelWidth = 0f
         shouldShowLabels = true
         val df = dateFormatter ?: return
         for (s in streaks!!) {
@@ -240,6 +248,7 @@ class StreakChart : View {
             val lw2 = paint!!.measureText(df.longFormat(s.end))
             maxLabelWidth = max(maxLabelWidth, max(lw1, lw2))
         }
+        maxLength = max(maxLength, maxLengthOverride ?: 0)
         if (internalWidth - 2 * maxLabelWidth < internalWidth * 0.25f) {
             maxLabelWidth = 0f
             shouldShowLabels = false
