@@ -128,6 +128,9 @@ object CustomDialogs {
         message?.setTextColor(palette.onSurfaceVariant)
         negativeButton?.setTextColor(palette.onSurfaceVariant)
         neutralButton?.setTextColor(palette.onSurfaceVariant)
+        negativeButton?.textSize = 14f
+        positiveButton?.textSize = 14f
+        neutralButton?.textSize = 14f
 
         if (positiveButton != null) {
             val color = if (isDestructive) resolveErrorColor(context) else accentColor
@@ -154,8 +157,44 @@ object CustomDialogs {
 
         editText.setTextColor(palette.onSurface)
         editText.setHintTextColor(palette.onSurfaceVariant)
+        editText.textSize = 16f
         editText.highlightColor = adjustAlpha(accentColor, 0.30f)
         editText.backgroundTintList = ColorStateList.valueOf(accentColor)
+        editText.textCursorDrawable?.mutate()?.setColorFilter(accentColor, PorterDuff.Mode.SRC_IN)
+    }
+
+    fun styleCompactNumberInput(editText: EditText) {
+        val context = editText.context
+        val palette = resolvePalette(context)
+        val accentColor = resolveAccentColor(context)
+        val density = context.resources.displayMetrics.density
+
+        editText.setTextColor(palette.onSurface)
+        editText.setHintTextColor(palette.onSurfaceVariant)
+        editText.textSize = 16f
+        editText.gravity = android.view.Gravity.CENTER
+        editText.backgroundTintList = null
+
+        val focusedDrawable = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 6f * density
+            setColor(palette.background)
+            setStroke((1.5f * density).toInt().coerceAtLeast(2), accentColor)
+        }
+        val defaultDrawable = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 6f * density
+            setColor(palette.background)
+            setStroke((1f * density).toInt().coerceAtLeast(1), palette.border)
+        }
+
+        val selector = android.graphics.drawable.StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), focusedDrawable)
+            addState(intArrayOf(), defaultDrawable)
+        }
+        editText.background = selector
+
+        editText.highlightColor = adjustAlpha(accentColor, 0.30f)
         editText.textCursorDrawable?.mutate()?.setColorFilter(accentColor, PorterDuff.Mode.SRC_IN)
     }
 
@@ -164,25 +203,37 @@ object CustomDialogs {
         CompoundButtonCompat.setButtonTintList(checkBox, ColorStateList.valueOf(accentColor))
         val palette = resolvePalette(checkBox.context)
         checkBox.setTextColor(palette.onSurface)
+        checkBox.textSize = 16f
+        checkBox.minHeight = (44f * checkBox.resources.displayMetrics.density).toInt()
+        if (checkBox is RadioButton) {
+            checkBox.scaleX = 0.82f
+            checkBox.scaleY = 0.82f
+        }
     }
 
     fun styleChoiceRow(radio: RadioButton, label: TextView) {
         val palette = resolvePalette(label.context)
         val accentColor = resolveAccentColor(label.context)
         label.setTextColor(palette.onSurface)
+        label.textSize = 16f
+        radio.minHeight = (44f * radio.resources.displayMetrics.density).toInt()
+        radio.minimumHeight = radio.minHeight
+        radio.scaleX = 0.82f
+        radio.scaleY = 0.82f
         CompoundButtonCompat.setButtonTintList(radio, ColorStateList.valueOf(accentColor))
     }
 
-    /**
-     * Recursive visual walker helper to tint standard views that are dynamically inflated
-     * inside custom sub-dialog fragments. Works as a fallback, though explicit binding is preferred.
-     */
     fun styleCustomViewElements(view: View) {
         val palette = resolvePalette(view.context)
 
         fun walk(v: View) {
             if (v is EditText) {
-                stylePlainEditText(v)
+                val idStr = try { v.resources.getResourceEntryName(v.id) } catch (e: Exception) { "" }
+                if (idStr.endsWith("TextView") || idStr.contains("xTimes") || idStr.contains("everyX")) {
+                    styleCompactNumberInput(v)
+                } else {
+                    stylePlainEditText(v)
+                }
             } else if (v is android.widget.CompoundButton) {
                 styleCheckBox(v)
             } else if (v is TextView && v !is Button) {

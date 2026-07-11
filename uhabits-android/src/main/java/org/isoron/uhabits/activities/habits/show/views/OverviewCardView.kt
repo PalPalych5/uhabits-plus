@@ -52,7 +52,7 @@ class OverviewCardView(context: Context, attrs: AttributeSet) : LinearLayout(con
         binding.scoreRing.setColor(androidColor)
         binding.scoreRing.setPercentage(state.scoreToday)
 
-        binding.title.setTextColor(androidColor)
+        binding.title.setTextColor(res.getColor(R.attr.contrast100))
         binding.totalCountLabel.setTextColor(androidColor)
         binding.totalCountLabel.text = state.totalCount.toString()
         binding.yearDiffLabel.setTextColor(if (state.scoreYearDiff >= 0) androidColor else inactiveColor)

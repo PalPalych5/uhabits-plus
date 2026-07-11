@@ -173,6 +173,10 @@
         <item name="backgroundTint">@android:color/transparent</item>
     </style>
 
+    <style name="CustomTransparentDialogTheme.NoAnimation" parent="CustomTransparentDialogTheme">
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+
     <style name="PreferenceThemeOverlay.v14.Material.PureBlack">
         <item name="colorControlHighlight">@color/white_a0</item>
     </style>
@@ -630,6 +634,11 @@
         <item name="colorPrimary">?attr/colorPrimary</item>
         <item name="colorAccent">?attr/aboutScreenColor</item>
         <item name="shapeAppearanceMediumComponent">@style/DialogShapeAppearance</item>
+    </style>
+
+    <style name="CompactPopupAnimation">
+        <item name="android:windowEnterAnimation">@anim/compact_popup_enter</item>
+        <item name="android:windowExitAnimation">@anim/compact_popup_exit</item>
     </style>
 
 </resources>

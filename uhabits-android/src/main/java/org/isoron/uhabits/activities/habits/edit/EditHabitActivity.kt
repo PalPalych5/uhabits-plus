@@ -19,18 +19,27 @@
 
 package org.isoron.uhabits.activities.habits.edit
 
+import android.animation.ObjectAnimator
 import android.annotation.SuppressLint
 import android.content.res.ColorStateList
 import android.content.res.Resources
+import android.graphics.Canvas
+import android.graphics.ColorFilter
+import android.graphics.PixelFormat
+import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.text.Html
 import android.text.Spanned
 import android.text.format.DateFormat
 import android.view.MenuItem
 import android.view.View
+import android.view.animation.PathInterpolator
 import android.widget.ArrayAdapter
+import android.widget.TextView
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.graphics.drawable.DrawableCompat
 import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.DialogFragment
@@ -68,6 +77,7 @@ import org.isoron.uhabits.utils.applyRootViewInsets
 import org.isoron.uhabits.utils.applyToolbarInsets
 import org.isoron.uhabits.utils.dismissCurrentAndShow
 import org.isoron.uhabits.utils.formatTime
+import org.isoron.uhabits.utils.StyledResources
 import org.isoron.uhabits.utils.toFormattedString
 
 fun formatFrequency(freqNum: Int, freqDen: Int, resources: Resources) = when {
@@ -78,6 +88,62 @@ fun formatFrequency(freqNum: Int, freqDen: Int, resources: Resources) = when {
     freqNum == 1 && freqDen > 1 -> resources.getString(R.string.every_x_days, freqDen)
     freqDen == 7 -> resources.getString(R.string.x_times_per_week, freqNum)
     else -> resources.getString(R.string.x_times_per_y_days, freqNum, freqDen)
+}
+
+private const val DROPDOWN_ARROW_ANIMATION_MS = 160L
+
+private class RotatingDropdownArrowDrawable(
+    private val delegate: Drawable
+) : Drawable() {
+    var rotation: Float = 0f
+        set(value) {
+            field = value
+            invalidateSelf()
+    }
+
+    override fun draw(canvas: Canvas) {
+        val currentBounds = bounds
+        val saveCount = canvas.save()
+        canvas.rotate(rotation, currentBounds.exactCenterX(), currentBounds.exactCenterY())
+        delegate.bounds = currentBounds
+        delegate.draw(canvas)
+        canvas.restoreToCount(saveCount)
+    }
+
+    override fun setAlpha(alpha: Int) {
+        delegate.alpha = alpha
+    }
+
+    override fun setColorFilter(colorFilter: ColorFilter?) {
+        delegate.colorFilter = colorFilter
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+
+    override fun getIntrinsicWidth(): Int = delegate.intrinsicWidth
+
+    override fun getIntrinsicHeight(): Int = delegate.intrinsicHeight
+}
+
+private class DropdownArrowHandle(
+    private val arrow: RotatingDropdownArrowDrawable
+) {
+    private val interpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
+    private var animator: ObjectAnimator? = null
+
+    fun open() = rotateTo(180f)
+
+    fun close() = rotateTo(0f)
+
+    private fun rotateTo(targetRotation: Float) {
+        animator?.cancel()
+        animator = ObjectAnimator.ofFloat(arrow, "rotation", arrow.rotation, targetRotation).apply {
+            duration = DROPDOWN_ARROW_ANIMATION_MS
+            interpolator = this@DropdownArrowHandle.interpolator
+            start()
+        }
+    }
 }
 
 class EditHabitActivity : AppCompatActivity() {
@@ -243,9 +309,19 @@ class EditHabitActivity : AppCompatActivity() {
             picker.dismissCurrentAndShow(supportFragmentManager, "colorPicker")
         }
 
+        val booleanFrequencyArrow = configureDropdownArrow(binding.booleanFrequencyPicker)
+        val numericalFrequencyArrow = configureDropdownArrow(binding.numericalFrequencyPicker)
+        val targetTypeArrow = configureDropdownArrow(binding.targetTypePicker)
+        val dayTierArrow = configureDropdownArrow(binding.dayTierPicker)
+        val habitBlockArrow = configureDropdownArrow(binding.habitBlockPicker)
+        val reminderTimeArrow = configureDropdownArrow(binding.reminderTimePicker)
+        val reminderDateArrow = configureDropdownArrow(binding.reminderDatePicker)
+
         populateFrequency()
         binding.booleanFrequencyPicker.setOnClickListener {
+            booleanFrequencyArrow.open()
             val picker = FrequencyPickerDialog(freqNum, freqDen)
+            picker.onDismissCallback = { booleanFrequencyArrow.close() }
             picker.onFrequencyPicked = { num, den ->
                 freqNum = num
                 freqDen = den
@@ -256,11 +332,12 @@ class EditHabitActivity : AppCompatActivity() {
 
         populateTargetType()
         binding.targetTypePicker.setOnClickListener {
+            targetTypeArrow.open()
             val options = listOf(
                 getString(R.string.target_type_at_least),
                 getString(R.string.target_type_at_most)
             )
-            CustomDialogs.showSingleChoiceDialog(
+            val dialog = CustomDialogs.showSingleChoiceDialog(
                 context = this,
                 title = getString(R.string.target_type),
                 options = options,
@@ -272,13 +349,15 @@ class EditHabitActivity : AppCompatActivity() {
                 }
                 populateTargetType()
             }
+            dialog.setOnDismissListener { targetTypeArrow.close() }
         }
 
         populateDayTier()
         binding.dayTierPicker.setOnClickListener {
+            dayTierArrow.open()
             val tiers = DayTier.entries
             val labels = tiers.map { getString(it.labelResId) }
-            CustomDialogs.showSingleChoiceDialog(
+            val dialog = CustomDialogs.showSingleChoiceDialog(
                 context = this,
                 title = getString(R.string.day_tier),
                 options = labels,
@@ -287,15 +366,17 @@ class EditHabitActivity : AppCompatActivity() {
                 dayTier = tiers[which]
                 populateDayTier()
             }
+            dialog.setOnDismissListener { dayTierArrow.close() }
         }
         binding.timerEnabledSwitch.isChecked = timerEnabled
 
         binding.habitBlockPicker.setOnClickListener {
+            habitBlockArrow.open()
             val component = (application as HabitsApplication).component
             val blocks = component.habitList.getBlocks()
             val items = blocks.map { getBlockDisplayName(it) }
 
-            CustomDialogs.showSingleChoiceDialog(
+            val dialog = CustomDialogs.showSingleChoiceDialog(
                 context = this,
                 title = getString(R.string.habit_block),
                 options = items,
@@ -316,9 +397,11 @@ class EditHabitActivity : AppCompatActivity() {
                 populateHabitBlock()
                 updateColors()
             }
+            dialog.setOnDismissListener { habitBlockArrow.close() }
         }
 
         binding.numericalFrequencyPicker.setOnClickListener {
+            numericalFrequencyArrow.open()
             val options = listOf(
                 getString(R.string.every_day),
                 getString(R.string.every_week),
@@ -329,7 +412,7 @@ class EditHabitActivity : AppCompatActivity() {
                 30 -> 2
                 else -> 0
             }
-            CustomDialogs.showSingleChoiceDialog(
+            val dialog = CustomDialogs.showSingleChoiceDialog(
                 context = this,
                 title = getString(R.string.frequency),
                 options = options,
@@ -342,10 +425,12 @@ class EditHabitActivity : AppCompatActivity() {
                 }
                 populateFrequency()
             }
+            dialog.setOnDismissListener { numericalFrequencyArrow.close() }
         }
 
         populateReminder()
         binding.reminderTimePicker.setOnClickListener {
+            reminderTimeArrow.open()
             val currentHour = if (reminderHour >= 0) reminderHour else 8
             val currentMin = if (reminderMin >= 0) reminderMin else 0
             val is24HourMode = DateFormat.is24HourFormat(this)
@@ -369,11 +454,14 @@ class EditHabitActivity : AppCompatActivity() {
                 is24HourMode,
                 androidColor
             )
+            dialog.setDismissListener { reminderTimeArrow.close() }
             dialog.dismissCurrentAndShow(supportFragmentManager, "timePicker")
         }
 
         binding.reminderDatePicker.setOnClickListener {
+            reminderDateArrow.open()
             val dialog = WeekdayPickerDialog()
+            dialog.onDismissCallback = { reminderDateArrow.close() }
 
             dialog.setListener { days: WeekdayList ->
                 reminderDays = days
@@ -508,10 +596,9 @@ class EditHabitActivity : AppCompatActivity() {
     private fun updateColors() {
         androidColor = themeSwitcher.currentTheme.color(color).toInt()
         binding.colorButton.backgroundTintList = ColorStateList.valueOf(androidColor)
-        if (!themeSwitcher.isNightMode) {
-            window.statusBarColor = androidColor
-            binding.toolbar.setBackgroundColor(androidColor)
-        }
+        val res = StyledResources(this)
+        window.statusBarColor = res.getColor(R.attr.colorPrimaryDark)
+        binding.toolbar.setBackgroundColor(res.getColor(R.attr.colorPrimary))
     }
 
     private fun getFormattedValidationError(@StringRes resId: Int): Spanned {
@@ -582,6 +669,15 @@ class EditHabitActivity : AppCompatActivity() {
     private fun updateTimerVisibility() {
         val isMinute = binding.unitInput.text.toString().isMinuteUnit()
         binding.timerEnabledOuterBox.visibility = if (isMinute) View.VISIBLE else View.GONE
+    }
+
+    private fun configureDropdownArrow(field: TextView): DropdownArrowHandle {
+        val base = AppCompatResources.getDrawable(this, R.drawable.ic_arrow_drop_down_dark)!!
+            .mutate()
+        DrawableCompat.setTint(base, StyledResources(this).getColor(R.attr.contrast60))
+        val arrow = RotatingDropdownArrowDrawable(base)
+        field.setCompoundDrawablesRelativeWithIntrinsicBounds(null, null, arrow, null)
+        return DropdownArrowHandle(arrow)
     }
 
     private fun didGoalBundleChange(original: Habit, modified: Habit): Boolean {

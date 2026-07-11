@@ -19,22 +19,29 @@
 package org.isoron.uhabits.activities.habits.show.views
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.util.AttributeSet
 import android.view.LayoutInflater
-import android.view.View
-import android.widget.AdapterView
 import android.widget.LinearLayout
 import org.isoron.platform.gui.toInt
 import org.isoron.platform.time.JavaLocalDateFormatter
+import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.views.CompactPopupMenu.Entry.Item
 import org.isoron.uhabits.core.ui.screens.habits.show.views.BarCardPresenter
 import org.isoron.uhabits.core.ui.screens.habits.show.views.BarCardState
 import org.isoron.uhabits.core.ui.views.BarChart
 import org.isoron.uhabits.databinding.ShowHabitBarBinding
+import org.isoron.uhabits.utils.StyledResources
 import java.util.Locale
 
 class BarCardView(context: Context, attrs: AttributeSet) : LinearLayout(context, attrs) {
 
     private var binding = ShowHabitBarBinding.inflate(LayoutInflater.from(context), this)
+    private val sres = StyledResources(context)
+    private val numericalLabels = resources.getStringArray(R.array.strengthIntervalNames)
+    private val boolLabels = resources.getStringArray(R.array.strengthIntervalNamesWithoutDay)
+    private var selectedNumericalPosition = 0
+    private var selectedBoolPosition = 0
 
     fun setState(state: BarCardState) {
         val androidColor = state.theme.color(state.color).toInt()
@@ -46,44 +53,51 @@ class BarCardView(context: Context, attrs: AttributeSet) : LinearLayout(context,
         binding.chart.resetDataOffset()
         binding.chart.postInvalidate()
 
-        binding.title.setTextColor(androidColor)
+        binding.title.setTextColor(sres.getColor(R.attr.contrast100))
+        selectedNumericalPosition = state.numericalSpinnerPosition
+        selectedBoolPosition = state.boolSpinnerPosition
+        binding.numericalSpinner.text =
+            numericalLabels.getOrElse(state.numericalSpinnerPosition) { "" }
+        binding.boolSpinner.text = boolLabels.getOrElse(state.boolSpinnerPosition) { "" }
+        binding.numericalSpinnerArrow.imageTintList =
+            ColorStateList.valueOf(sres.getColor(R.attr.contrast80))
+        binding.boolSpinnerArrow.imageTintList =
+            ColorStateList.valueOf(sres.getColor(R.attr.contrast80))
+        binding.numericalSpinnerContainer.visibility = VISIBLE
+        binding.boolSpinnerContainer.visibility = VISIBLE
         if (state.isNumerical) {
-            binding.boolSpinner.visibility = GONE
+            binding.boolSpinnerContainer.visibility = GONE
         } else {
-            binding.numericalSpinner.visibility = GONE
+            binding.numericalSpinnerContainer.visibility = GONE
         }
-
-        binding.numericalSpinner.setSelection(state.numericalSpinnerPosition)
-        binding.boolSpinner.setSelection(state.boolSpinnerPosition)
     }
 
     fun setListener(presenter: BarCardPresenter) {
-        binding.boolSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: AdapterView<*>?,
-                view: View?,
-                position: Int,
-                id: Long
-            ) {
-                presenter.onBoolSpinnerPosition(position)
-            }
-
-            override fun onNothingSelected(parent: AdapterView<*>?) {
-            }
+        binding.boolSpinnerContainer.setOnClickListener {
+            showPeriodSelectorPopup(
+                anchor = binding.boolSpinnerContainer,
+                arrow = binding.boolSpinnerArrow,
+                entries = boolLabels.mapIndexed { index, label ->
+                    Item(
+                        id = index,
+                        title = label,
+                        selected = index == selectedBoolPosition,
+                    )
+                },
+            ) { position -> presenter.onBoolSpinnerPosition(position) }
         }
-        binding.numericalSpinner.onItemSelectedListener =
-            object : AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(
-                    parent: AdapterView<*>?,
-                    view: View?,
-                    position: Int,
-                    id: Long
-                ) {
-                    presenter.onNumericalSpinnerPosition(position)
-                }
-
-                override fun onNothingSelected(parent: AdapterView<*>?) {
-                }
-            }
+        binding.numericalSpinnerContainer.setOnClickListener {
+            showPeriodSelectorPopup(
+                anchor = binding.numericalSpinnerContainer,
+                arrow = binding.numericalSpinnerArrow,
+                entries = numericalLabels.mapIndexed { index, label ->
+                    Item(
+                        id = index,
+                        title = label,
+                        selected = index == selectedNumericalPosition,
+                    )
+                },
+            ) { position -> presenter.onNumericalSpinnerPosition(position) }
+        }
     }
 }

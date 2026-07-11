@@ -31,20 +31,21 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center"
+        android:baselineAligned="false"
         android:orientation="horizontal">
 
         <FrameLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_weight="5">
+            android:layout_weight="3">
 
             <org.isoron.uhabits.activities.common.views.RingView
                 android:id="@+id/scoreRing"
-                android:layout_width="30dp"
-                android:layout_height="30dp"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
                 android:layout_gravity="center"
                 habit:percentage="0"
-                habit:textSize="12"
+                habit:textSize="11"
                 habit:thickness="5"/>
 
         </FrameLayout>
@@ -53,18 +54,25 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="4"
+            android:gravity="center"
             android:orientation="vertical">
 
             <TextView
                 android:id="@+id/scoreLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"/>
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:textSize="15sp"/>
 
             <TextView
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
                 android:text="@string/score"
-                android:textColor="?attr/contrast60"/>
+                android:textColor="?attr/contrast60"
+                android:textSize="13sp"/>
 
         </LinearLayout>
 
@@ -72,18 +80,25 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="4"
+            android:gravity="center"
             android:orientation="vertical">
 
             <TextView
                 android:id="@+id/monthDiffLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"/>
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:textSize="15sp"/>
 
             <TextView
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
                 android:text="@string/month"
-                android:textColor="?attr/contrast60"/>
+                android:textColor="?attr/contrast60"
+                android:textSize="13sp"/>
 
         </LinearLayout>
 
@@ -91,18 +106,25 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="4"
+            android:gravity="center"
             android:orientation="vertical">
 
             <TextView
                 android:id="@+id/yearDiffLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"/>
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:textSize="15sp"/>
 
             <TextView
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
                 android:text="@string/year"
-                android:textColor="?attr/contrast60"/>
+                android:textColor="?attr/contrast60"
+                android:textSize="13sp"/>
 
         </LinearLayout>
 
@@ -110,18 +132,25 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="4"
+            android:gravity="center"
             android:orientation="vertical">
 
             <TextView
                 android:id="@+id/totalCountLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"/>
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:textSize="15sp"/>
 
             <TextView
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:gravity="center"
+                android:includeFontPadding="false"
                 android:text="@string/total"
-                android:textColor="?attr/contrast60"/>
+                android:textColor="?attr/contrast60"
+                android:textSize="13sp"/>
 
         </LinearLayout>
     </LinearLayout>

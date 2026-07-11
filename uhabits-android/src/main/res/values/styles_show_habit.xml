@@ -21,17 +21,33 @@
 <resources>
     <style name="ShowHabit" />
 
+    <style name="ShowHabit.Card" parent="CardCommon">
+        <item name="android:layout_marginBottom">10dp</item>
+        <item name="android:layout_marginLeft">0dp</item>
+        <item name="android:layout_marginRight">0dp</item>
+        <item name="android:layout_marginStart">0dp</item>
+        <item name="android:layout_marginEnd">0dp</item>
+        <item name="android:elevation">0dp</item>
+        <item name="android:background">?attr/cardBgColor</item>
+        <item name="android:paddingLeft">20dp</item>
+        <item name="android:paddingRight">20dp</item>
+        <item name="android:paddingStart">20dp</item>
+        <item name="android:paddingEnd">20dp</item>
+    </style>
+
     <style name="ShowHabit.Subtitle">
-        <item name="android:background">?headerBackgroundColor</item>
+        <item name="android:background">?attr/cardBgColor</item>
         <item name="android:orientation">vertical</item>
-        <item name="android:elevation">2dp</item>
-        <item name="android:paddingBottom">10dp</item>
-        <item name="android:paddingEnd">10dp</item>
-        <item name="android:paddingLeft">60dp</item>
-        <item name="android:paddingRight">10dp</item>
-        <item name="android:paddingStart">60dp</item>
-        <item name="android:paddingTop">15dp</item>
+        <item name="android:elevation">0dp</item>
+        <item name="android:gravity">center_horizontal</item>
+        <item name="android:paddingBottom">3dp</item>
+        <item name="android:paddingEnd">24dp</item>
+        <item name="android:paddingLeft">24dp</item>
+        <item name="android:paddingRight">24dp</item>
+        <item name="android:paddingStart">24dp</item>
+        <item name="android:paddingTop">3dp</item>
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginBottom">6dp</item>
     </style>
 </resources>

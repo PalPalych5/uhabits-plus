@@ -20,6 +20,7 @@
 package org.isoron.uhabits.activities.common.dialogs
 
 import android.app.Dialog
+import android.content.DialogInterface
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.widget.EditText
@@ -29,6 +30,7 @@ import android.widget.TextView
 import android.widget.Button
 import android.widget.FrameLayout
 import android.view.ViewGroup
+import android.view.WindowManager
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatDialogFragment
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -44,6 +46,7 @@ class FrequencyPickerDialog(
     private val binding get() = _binding!!
 
     var onFrequencyPicked: (num: Int, den: Int) -> Unit = { _, _ -> }
+    var onDismissCallback: () -> Unit = {}
 
     constructor() : this(1, 1)
 
@@ -120,7 +123,13 @@ class FrequencyPickerDialog(
             if (hasFocus) check(binding.xTimesPerYDaysRadioButton)
         }
 
-        val dialog = MaterialAlertDialogBuilder(requireActivity(), R.style.CustomTransparentDialogTheme).create()
+        val dialog = MaterialAlertDialogBuilder(requireActivity(), R.style.CustomTransparentDialogTheme_NoAnimation).create()
+        dialog.window?.let { window ->
+            window.attributes = window.attributes.apply {
+                alpha = 0f
+                windowAnimations = 0
+            }
+        }
         val dialogContext = dialog.context
         val view = LayoutInflater.from(dialogContext)
             .inflate(R.layout.dialog_custom_view, null)
@@ -148,9 +157,33 @@ class FrequencyPickerDialog(
             CustomDialogs.styleDialogShell(dialog, view)
             CustomDialogs.styleText(dialogTitle, null, btnNegative, btnPositive, null, isDestructive = false)
             CustomDialogs.styleCustomViewElements(bindingRoot)
+            CustomDialogs.styleCompactNumberInput(binding.everyXDaysTextView)
+            CustomDialogs.styleCompactNumberInput(binding.xTimesPerWeekTextView)
+            CustomDialogs.styleCompactNumberInput(binding.xTimesPerMonthTextView)
+            CustomDialogs.styleCompactNumberInput(binding.xTimesPerYDaysXTextView)
+            CustomDialogs.styleCompactNumberInput(binding.xTimesPerYDaysYTextView)
+            showAfterFinalLayout(dialog, view)
         }
 
         return dialog
+    }
+
+    private fun showAfterFinalLayout(dialog: AlertDialog, root: android.view.View) {
+        root.post {
+            dialog.window?.let { window ->
+                window.attributes = window.attributes.apply {
+                    alpha = 1f
+                    windowAnimations = 0
+                }
+                window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            }
+        }
+    }
+
+    override fun onDismiss(dialog: DialogInterface) {
+        super.onDismiss(dialog)
+        onDismissCallback()
     }
 
     private fun addBeforeAfterText(
@@ -160,7 +193,11 @@ class FrequencyPickerDialog(
         val parts = str.split("%d")
         for (i in parts.indices) {
             container.addView(
-                TextView(activity).apply { text = parts[i].trim() },
+                TextView(activity).apply {
+                    text = parts[i].trim()
+                    textSize = 16f
+                    includeFontPadding = false
+                },
                 2 * i + 1
             )
         }

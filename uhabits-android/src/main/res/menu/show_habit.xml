@@ -22,45 +22,24 @@
       xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <item
-        android:id="@+id/export"
-        android:title="@string/export"
-        app:showAsAction="never"/>
-
-    <item
-        android:id="@+id/action_archive_habit"
-        android:title="@string/archive"
-        app:showAsAction="never" />
-
-    <item
-        android:id="@+id/action_unarchive_habit"
-        android:title="@string/unarchive"
-        app:showAsAction="never"/>
-
-    <item
-        android:id="@+id/action_delete"
-        android:title="@string/delete"
-        app:showAsAction="never"/>
-
-    <item
-        android:id="@+id/action_soft_reset_statistics"
-        android:title="@string/start_statistics_over"
-        app:showAsAction="never"/>
-
-    <item
-        android:id="@+id/action_hard_reset_statistics"
-        android:title="@string/reset_statistics"
-        app:showAsAction="never"/>
-
-    <item
         android:id="@+id/action_edit_habit"
         android:icon="?iconEdit"
         android:title="@string/edit"
         app:showAsAction="ifRoom"/>
 
     <item
-        android:id="@+id/action_randomize"
-        android:title="Randomize"
-        android:visible="false"
-        app:showAsAction="never"/>
+        android:id="@+id/action_more_habit"
+        android:icon="@drawable/ic_toolbar_more_vertical"
+        android:title="@string/today_show_more"
+        app:iconTint="@color/white"
+        app:showAsAction="always"/>
+
+    <item android:id="@+id/export" android:title="@string/export" android:visible="false" />
+    <item android:id="@+id/action_archive_habit" android:title="@string/archive" android:visible="false" />
+    <item android:id="@+id/action_unarchive_habit" android:title="@string/unarchive" android:visible="false" />
+    <item android:id="@+id/action_soft_reset_statistics" android:title="@string/start_statistics_over" android:visible="false" />
+    <item android:id="@+id/action_hard_reset_statistics" android:title="@string/reset_statistics" android:visible="false" />
+    <item android:id="@+id/action_delete" android:title="@string/delete" android:visible="false" />
+    <item android:id="@+id/action_randomize" android:title="Randomize" android:visible="false" />
 
 </menu>

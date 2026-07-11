@@ -21,10 +21,10 @@ package org.isoron.uhabits.activities.habits.show.views
 import android.annotation.SuppressLint
 import android.content.Context
 import android.util.AttributeSet
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.LinearLayout
-import org.isoron.platform.gui.toInt
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.habits.edit.formatFrequency
 import org.isoron.uhabits.activities.habits.list.views.toShortString
@@ -32,29 +32,38 @@ import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.ui.screens.habits.show.views.SubtitleCardState
 import org.isoron.uhabits.databinding.ShowHabitSubtitleBinding
 import org.isoron.uhabits.utils.InterfaceUtils
+import org.isoron.uhabits.utils.StyledResources
 import org.isoron.uhabits.utils.formatTime
 
 class SubtitleCardView(context: Context, attrs: AttributeSet) : LinearLayout(context, attrs) {
 
     private val binding = ShowHabitSubtitleBinding.inflate(LayoutInflater.from(context), this)
+    private val sres = StyledResources(context)
 
     init {
         val fontAwesome = InterfaceUtils.getFontAwesome(context)
         binding.targetIcon.typeface = fontAwesome
         binding.frequencyIcon.typeface = fontAwesome
         binding.reminderIcon.typeface = fontAwesome
+        val iconSizePx = InterfaceUtils.dpToPixels(context, 14f)
+        listOf(binding.targetIcon, binding.frequencyIcon, binding.reminderIcon).forEach {
+            it.setTextSize(TypedValue.COMPLEX_UNIT_PX, iconSizePx)
+            it.minWidth = InterfaceUtils.dpToPixels(context, 14f).toInt()
+            it.minHeight = 0
+            it.minimumHeight = 0
+            it.includeFontPadding = false
+        }
     }
 
     @SuppressLint("SetTextI18n")
     fun setState(state: SubtitleCardState) {
-        val color = state.theme.color(state.color).toInt()
         val reminder = state.reminder
         binding.frequencyLabel.text = formatFrequency(
             state.frequency.numerator,
             state.frequency.denominator,
             resources
         )
-        binding.questionLabel.setTextColor(color)
+        binding.questionLabel.setTextColor(sres.getColor(R.attr.contrast80))
         binding.questionLabel.text = state.question
         binding.reminderLabel.text = if (reminder != null) {
             formatTime(context, reminder.hour, reminder.minute)

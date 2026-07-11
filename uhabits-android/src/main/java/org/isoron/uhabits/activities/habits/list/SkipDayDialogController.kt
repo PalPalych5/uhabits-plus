@@ -1,5 +1,6 @@
 package org.isoron.uhabits.activities.habits.list
 
+import android.text.InputType
 import android.view.View
 import android.widget.Button
 import android.widget.CheckBox
@@ -66,13 +67,13 @@ class SkipDayDialogController(
         container.addView(
             TextView(context).apply {
                 text = fragment.getString(R.string.skip_day_dialog_message, remainingHabits.size)
-                textSize = 14f
+                textSize = 16f
             }
         )
         container.addView(
             TextView(context).apply {
                 text = fragment.getString(R.string.skip_day_dialog_impact)
-                textSize = 13f
+                textSize = 15f
                 alpha = 0.72f
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -95,6 +96,8 @@ class SkipDayDialogController(
         val radioAll = RadioButton(context).apply {
             id = View.generateViewId()
             text = fragment.getString(R.string.skip_day_all)
+            textSize = 16f
+            minHeight = (48 * density).toInt()
             isChecked = true
         }
         radioGroup.addView(radioAll)
@@ -102,6 +105,8 @@ class SkipDayDialogController(
         val radioSphere = RadioButton(context).apply {
             id = View.generateViewId()
             text = fragment.getString(R.string.skip_day_by_sphere)
+            textSize = 16f
+            minHeight = (48 * density).toInt()
         }
         if (blocks.isNotEmpty() || hasSphereless) radioGroup.addView(radioSphere)
         container.addView(radioGroup)
@@ -116,6 +121,8 @@ class SkipDayDialogController(
         val sphereCheckboxes = blocks.map { block ->
             CheckBox(context).apply {
                 text = block.name
+                textSize = 16f
+                minHeight = (48 * density).toInt()
                 tag = block.id
                 isChecked = true
             }
@@ -126,6 +133,8 @@ class SkipDayDialogController(
         if (hasSphereless) {
             spherelessCheckbox = CheckBox(context).apply {
                 text = fragment.getString(R.string.skip_day_other_sphere)
+                textSize = 16f
+                minHeight = (48 * density).toInt()
                 isChecked = true
             }
             checklistContainer.addView(spherelessCheckbox)
@@ -138,6 +147,13 @@ class SkipDayDialogController(
 
         val noteEditText = EditText(context).apply {
             hint = fragment.getString(R.string.skip_day_note_hint)
+            textSize = 16f
+            minHeight = (64 * density).toInt()
+            maxLines = 3
+            setSingleLine(false)
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT

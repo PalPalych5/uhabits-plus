@@ -22,6 +22,7 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="?windowBackgroundColor"
     android:orientation="vertical">
 
     <androidx.appcompat.widget.Toolbar
@@ -32,8 +33,8 @@
 
     <ScrollView
         android:id="@+id/scrollView"
-        android:layout_width="fill_parent"
-        android:layout_height="wrap_content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
         android:layout_below="@id/toolbar"
         android:background="?windowBackgroundColor"
         android:clipToPadding="false"
@@ -50,47 +51,47 @@
 
             <org.isoron.uhabits.activities.habits.show.views.TimerCardView
                 android:id="@+id/timerCard"
-                style="@style/Card"
+                style="@style/ShowHabit.Card"
                 android:visibility="gone" />
 
             <org.isoron.uhabits.activities.habits.show.views.NotesCardView
                 android:id="@+id/notesCard"
-                style="@style/Card"
+                style="@style/ShowHabit.Card"
                 android:gravity="center" />
 
             <org.isoron.uhabits.activities.habits.show.views.OverviewCardView
                 android:id="@+id/overviewCard"
-                style="@style/Card"
+                style="@style/ShowHabit.Card"
                 android:paddingTop="12dp" />
 
             <org.isoron.uhabits.activities.habits.show.views.TargetCardView
                 android:id="@+id/targetCard"
-                style="@style/Card"
+                style="@style/ShowHabit.Card"
                 android:paddingTop="12dp" />
 
             <org.isoron.uhabits.activities.habits.show.views.ScoreCardView
                 android:id="@+id/scoreCard"
-                style="@style/Card"
+                style="@style/ShowHabit.Card"
                 android:gravity="center" />
 
             <org.isoron.uhabits.activities.habits.show.views.BarCardView
                 android:id="@+id/barCard"
-                style="@style/Card"
+                style="@style/ShowHabit.Card"
                 android:gravity="center" />
 
             <org.isoron.uhabits.activities.habits.show.views.HistoryCardView
                 android:id="@+id/historyCard"
-                style="@style/Card"
+                style="@style/ShowHabit.Card"
                 android:gravity="center"
                 android:paddingBottom="0dp" />
 
             <org.isoron.uhabits.activities.habits.show.views.StreakCardView
                 android:id="@+id/streakCard"
-                style="@style/Card" />
+                style="@style/ShowHabit.Card" />
 
             <org.isoron.uhabits.activities.habits.show.views.FrequencyCardView
                 android:id="@+id/frequencyCard"
-                style="@style/Card" />
+                style="@style/ShowHabit.Card" />
 
         </LinearLayout>
     </ScrollView>

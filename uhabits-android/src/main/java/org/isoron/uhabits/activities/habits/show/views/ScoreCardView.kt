@@ -19,23 +19,31 @@
 package org.isoron.uhabits.activities.habits.show.views
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.util.AttributeSet
 import android.view.LayoutInflater
-import android.view.View
-import android.widget.AdapterView
 import android.widget.LinearLayout
 import org.isoron.platform.gui.toInt
+import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.views.CompactPopupMenu.Entry.Item
 import org.isoron.uhabits.core.ui.screens.habits.show.views.ScoreCardPresenter
 import org.isoron.uhabits.core.ui.screens.habits.show.views.ScoreCardState
 import org.isoron.uhabits.databinding.ShowHabitScoreBinding
+import org.isoron.uhabits.utils.StyledResources
 
 class ScoreCardView(context: Context, attrs: AttributeSet) : LinearLayout(context, attrs) {
     private var binding = ShowHabitScoreBinding.inflate(LayoutInflater.from(context), this)
+    private val sres = StyledResources(context)
+    private val labels = resources.getStringArray(R.array.strengthIntervalNames)
+    private var selectedPosition = 0
 
     fun setState(state: ScoreCardState) {
         val androidColor = state.theme.color(state.color).toInt()
-        binding.title.setTextColor(androidColor)
-        binding.spinner.setSelection(state.spinnerPosition)
+        selectedPosition = state.spinnerPosition
+        binding.title.setTextColor(sres.getColor(R.attr.contrast100))
+        binding.periodSelector.text = labels.getOrElse(state.spinnerPosition) { "" }
+        binding.periodSelectorArrow.imageTintList =
+            ColorStateList.valueOf(sres.getColor(R.attr.contrast80))
         binding.scoreView.setScores(state.scores)
         binding.scoreView.reset()
         binding.scoreView.setBucketSize(state.bucketSize)
@@ -43,18 +51,18 @@ class ScoreCardView(context: Context, attrs: AttributeSet) : LinearLayout(contex
     }
 
     fun setListener(presenter: ScoreCardPresenter) {
-        binding.spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: AdapterView<*>?,
-                view: View?,
-                position: Int,
-                id: Long
-            ) {
-                presenter.onSpinnerPosition(position)
-            }
-
-            override fun onNothingSelected(parent: AdapterView<*>?) {
-            }
+        binding.periodSelectorContainer.setOnClickListener {
+            showPeriodSelectorPopup(
+                anchor = binding.periodSelectorContainer,
+                arrow = binding.periodSelectorArrow,
+                entries = labels.mapIndexed { index, label ->
+                    Item(
+                        id = index,
+                        title = label,
+                        selected = index == selectedPosition,
+                    )
+                },
+            ) { position -> presenter.onSpinnerPosition(position) }
         }
     }
 }

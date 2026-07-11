@@ -178,12 +178,13 @@ fun View.setupToolbar(
     title: String,
     color: PaletteColor,
     theme: Theme,
-    displayHomeAsUpEnabled: Boolean = true
+    displayHomeAsUpEnabled: Boolean = true,
+    useHabitColor: Boolean = true
 ) {
     toolbar.elevation = InterfaceUtils.dpToPixels(context, 2f)
     val res = StyledResources(context)
     toolbar.title = title
-    val toolbarColor = if (!res.getBoolean(R.attr.useHabitColorAsPrimary)) {
+    val toolbarColor = if (!useHabitColor || !res.getBoolean(R.attr.useHabitColorAsPrimary)) {
         StyledResources(context).getColor(R.attr.colorPrimary)
     } else {
         theme.color(color).toInt()
@@ -266,7 +267,7 @@ fun View.applyRootViewInsets() {
         val left = maxOf(systemBarsInsets.left, displayCutoutInsets.left)
         val right = maxOf(systemBarsInsets.right, displayCutoutInsets.right)
         view.setPadding(left, 0, right, 0)
-        view.background = ColorDrawable(Color.BLACK)
+        view.background = ColorDrawable(StyledResources(context).getColor(R.attr.windowBackgroundColor))
         insets
     }
 }

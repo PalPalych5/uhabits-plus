@@ -45,17 +45,18 @@
             app:title="@string/create_habit"
             app:titleTextColor="@color/white">
 
-            <com.google.android.material.button.MaterialButton
+            <ImageButton
                 android:id="@+id/buttonSave"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
                 android:layout_gravity="end"
                 android:layout_marginEnd="16dp"
-                android:text="@string/save"
-                android:textColor="@color/white"
-                app:rippleColor="@color/white"
-                app:strokeColor="@color/white" />
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/save"
+                android:padding="12dp"
+                android:scaleType="center"
+                android:src="@drawable/ic_toolbar_check"
+                app:tint="@color/white" />
         </androidx.appcompat.widget.Toolbar>
 
     </com.google.android.material.appbar.AppBarLayout>

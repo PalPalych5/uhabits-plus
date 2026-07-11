@@ -32,6 +32,7 @@ import java.util.Locale
 class WeekdayPickerDialog : AppCompatDialogFragment() {
     private var selectedDays: BooleanArray? = null
     private var listener: OnWeekdaysPickedListener? = null
+    var onDismissCallback: () -> Unit = {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -119,6 +120,11 @@ class WeekdayPickerDialog : AppCompatDialogFragment() {
 
     fun setSelectedDays(days: WeekdayList) {
         selectedDays = days.toArray()
+    }
+
+    override fun onDismiss(dialog: DialogInterface) {
+        super.onDismiss(dialog)
+        onDismissCallback()
     }
 
     fun interface OnWeekdaysPickedListener {

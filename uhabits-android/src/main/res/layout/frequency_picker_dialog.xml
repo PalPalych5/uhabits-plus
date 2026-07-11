@@ -20,16 +20,16 @@
 
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="wrap_content"
         android:layout_margin="0dp"
-        android:paddingTop="16dp"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
+        android:paddingTop="4dp"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
         android:orientation="vertical">
 
     <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="48dp"
+            android:layout_height="44dp"
             android:gravity="center_vertical">
 
         <RadioButton
@@ -40,6 +40,7 @@
         <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:textSize="16sp"
                 android:text="@string/every_day" />
 
     </LinearLayout>
@@ -47,7 +48,7 @@
     <LinearLayout
             android:id="@+id/everyXDaysContainer"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
+            android:layout_height="44dp"
             android:gravity="center_vertical">
 
         <RadioButton
@@ -57,7 +58,7 @@
 
         <EditText
                 android:id="@+id/everyXDaysTextView"
-                android:layout_width="50dp"
+                android:layout_width="56dp"
                 android:layout_height="40dp"
                 android:gravity="center"
                 android:background="@drawable/bg_input_box"
@@ -65,6 +66,8 @@
                 android:layout_marginEnd="8dp"
                 android:inputType="number"
                 android:maxLength="3"
+                android:textSize="16sp"
+                android:includeFontPadding="false"
                 android:text="3" />
 
     </LinearLayout>
@@ -72,7 +75,7 @@
     <LinearLayout
             android:id="@+id/xTimesPerWeekContainer"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
+            android:layout_height="44dp"
             android:gravity="center_vertical">
 
         <RadioButton
@@ -82,7 +85,7 @@
 
         <EditText
                 android:id="@+id/xTimesPerWeekTextView"
-                android:layout_width="50dp"
+                android:layout_width="56dp"
                 android:layout_height="40dp"
                 android:gravity="center"
                 android:background="@drawable/bg_input_box"
@@ -90,6 +93,8 @@
                 android:layout_marginEnd="8dp"
                 android:inputType="number"
                 android:maxLength="1"
+                android:textSize="16sp"
+                android:includeFontPadding="false"
                 android:text="3" />
 
 
@@ -98,7 +103,7 @@
     <LinearLayout
             android:id="@+id/xTimesPerMonthContainer"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
+            android:layout_height="44dp"
             android:gravity="center_vertical">
 
         <RadioButton
@@ -108,7 +113,7 @@
 
         <EditText
                 android:id="@+id/xTimesPerMonthTextView"
-                android:layout_width="50dp"
+                android:layout_width="56dp"
                 android:layout_height="40dp"
                 android:gravity="center"
                 android:background="@drawable/bg_input_box"
@@ -116,6 +121,8 @@
                 android:layout_marginEnd="8dp"
                 android:inputType="number"
                 android:maxLength="2"
+                android:textSize="16sp"
+                android:includeFontPadding="false"
                 android:text="10" />
 
     </LinearLayout>
@@ -123,7 +130,7 @@
     <LinearLayout
         android:id="@+id/xTimesPerYDaysContainer"
         android:layout_width="match_parent"
-        android:layout_height="48dp"
+        android:layout_height="44dp"
         android:gravity="center_vertical">
 
         <RadioButton
@@ -133,7 +140,7 @@
 
         <EditText
             android:id="@+id/xTimesPerYDaysXTextView"
-            android:layout_width="50dp"
+            android:layout_width="56dp"
             android:layout_height="40dp"
             android:gravity="center"
             android:background="@drawable/bg_input_box"
@@ -141,12 +148,14 @@
             android:layout_marginEnd="8dp"
             android:inputType="number"
             android:maxLength="3"
+            android:textSize="16sp"
+            android:includeFontPadding="false"
             android:text="3" />
 
 
         <EditText
             android:id="@+id/xTimesPerYDaysYTextView"
-            android:layout_width="50dp"
+            android:layout_width="56dp"
             android:layout_height="40dp"
             android:gravity="center"
             android:background="@drawable/bg_input_box"
@@ -154,6 +163,8 @@
             android:layout_marginEnd="8dp"
             android:inputType="number"
             android:maxLength="3"
+            android:textSize="16sp"
+            android:includeFontPadding="false"
             android:text="14" />
 
     </LinearLayout>

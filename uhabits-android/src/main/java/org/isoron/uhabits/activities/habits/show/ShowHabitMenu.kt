@@ -21,7 +21,9 @@ package org.isoron.uhabits.activities.habits.show
 
 import android.view.Menu
 import android.view.MenuItem
+import android.view.View
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.views.CompactPopupMenu
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitMenuPresenter
 
@@ -32,19 +34,21 @@ class ShowHabitMenu(
 ) {
     fun onCreateOptionsMenu(menu: Menu): Boolean {
         activity.menuInflater.inflate(R.menu.show_habit, menu)
-        if (preferences.isDeveloper) {
-            menu.findItem(R.id.action_randomize).isVisible = true
-        }
-        menu.findItem(R.id.action_archive_habit).isVisible = presenter.canArchive()
-        menu.findItem(R.id.action_unarchive_habit).isVisible = presenter.canUnarchive()
-
         return true
     }
 
     fun onOptionsItemSelected(item: MenuItem): Boolean {
-        when (item.itemId) {
+        return performAction(item.itemId)
+    }
+
+    private fun performAction(itemId: Int): Boolean {
+        when (itemId) {
             R.id.action_edit_habit -> {
                 presenter.onEditHabit()
+                return true
+            }
+            R.id.action_more_habit -> {
+                showOverflowMenu(activity.findViewById(itemId) ?: activity.window.decorView)
                 return true
             }
             R.id.action_archive_habit -> {
@@ -78,5 +82,51 @@ class ShowHabitMenu(
             }
         }
         return false
+    }
+
+    private fun showOverflowMenu(anchor: View) {
+        val archiveItem = if (presenter.canArchive()) {
+            CompactPopupMenu.Entry.Item(
+                id = R.id.action_archive_habit,
+                title = activity.getString(R.string.archive),
+            )
+        } else {
+            CompactPopupMenu.Entry.Item(
+                id = R.id.action_unarchive_habit,
+                title = activity.getString(R.string.unarchive),
+                visible = presenter.canUnarchive(),
+            )
+        }
+        CompactPopupMenu.show(
+            anchor = anchor,
+            entries = listOf(
+                CompactPopupMenu.Entry.Item(
+                    id = R.id.export,
+                    title = activity.getString(R.string.export),
+                ),
+                archiveItem,
+                CompactPopupMenu.Entry.Divider,
+                CompactPopupMenu.Entry.Item(
+                    id = R.id.action_soft_reset_statistics,
+                    title = activity.getString(R.string.start_statistics_over),
+                ),
+                CompactPopupMenu.Entry.Item(
+                    id = R.id.action_hard_reset_statistics,
+                    title = activity.getString(R.string.reset_statistics),
+                ),
+                CompactPopupMenu.Entry.Item(
+                    id = R.id.action_randomize,
+                    title = "Randomize",
+                    visible = preferences.isDeveloper,
+                ),
+                CompactPopupMenu.Entry.Divider,
+                CompactPopupMenu.Entry.Item(
+                    id = R.id.action_delete,
+                    title = activity.getString(R.string.delete),
+                    destructive = true,
+                ),
+            ),
+            maxWidthDp = 250
+        ) { id -> performAction(id) }
     }
 }
