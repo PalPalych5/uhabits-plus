@@ -10,6 +10,8 @@
  */
 package org.isoron.uhabits.activities.statistics
 
+import org.isoron.platform.time.DayOfWeek
+import org.isoron.platform.time.JavaLocalDateFormatter
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.setToday
 import org.isoron.uhabits.BaseAndroidJVMTest
@@ -20,6 +22,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import java.util.Locale
 
 class StatisticsActivityTest : BaseAndroidJVMTest() {
 
@@ -51,6 +54,57 @@ class StatisticsActivityTest : BaseAndroidJVMTest() {
         // Year view
         assertTrue(isLatestAllowedPeriod(today, StatisticsFragment.ReportTab.YEAR, 1))
         assertFalse(isLatestAllowedPeriod(today.minus(365), StatisticsFragment.ReportTab.YEAR, 1))
+    }
+
+    @Test
+    fun testCurrentWeekRangeDoesNotIncludeFutureDates() {
+        val today = LocalDate(2015, 1, 25)
+        val range = statisticsActiveRange(today, StatisticsFragment.ReportTab.WEEK, 1)
+
+        assertEquals(LocalDate(2015, 1, 25), range.first)
+        assertEquals(today, range.second)
+    }
+
+    @Test
+    fun testCurrentMonthRangeDoesNotIncludeFutureDates() {
+        val today = LocalDate(2015, 1, 25)
+        val range = statisticsActiveRange(today, StatisticsFragment.ReportTab.MONTH, 1)
+
+        assertEquals(LocalDate(2015, 1, 1), range.first)
+        assertEquals(today, range.second)
+    }
+
+    @Test
+    fun testCurrentYearRangeDoesNotIncludeFutureDates() {
+        val today = LocalDate(2015, 1, 25)
+        val range = statisticsActiveRange(today, StatisticsFragment.ReportTab.YEAR, 1)
+
+        assertEquals(LocalDate(2015, 1, 1), range.first)
+        assertEquals(today, range.second)
+    }
+
+    @Test
+    fun testStatisticsScoreChartDatesAreNewestFirst() {
+        val today = LocalDate(2015, 1, 25)
+        val dates = statisticsScoreChartDates(today, numChartPoints = 4, step = 7)
+
+        assertEquals(
+            listOf(
+                LocalDate(2015, 1, 25),
+                LocalDate(2015, 1, 18),
+                LocalDate(2015, 1, 11),
+                LocalDate(2015, 1, 4)
+            ),
+            dates
+        )
+    }
+
+    @Test
+    fun testWeekdayLabelsMatchActualDayOfWeek() {
+        val formatter = JavaLocalDateFormatter(Locale.US)
+
+        assertEquals("Monday", statisticsWeekdayLabel(formatter, DayOfWeek.MONDAY))
+        assertEquals("Sunday", statisticsWeekdayLabel(formatter, DayOfWeek.SUNDAY))
     }
 
     @Test

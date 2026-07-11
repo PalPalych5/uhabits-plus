@@ -59,8 +59,8 @@ import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.activities.main.MainNavigationHost
 import org.isoron.uhabits.activities.common.views.ScoreChart
 import org.isoron.uhabits.core.models.*
-import org.isoron.uhabits.core.models.Entry.Companion.SKIP
 import org.isoron.uhabits.core.ui.screens.statistics.StatisticsOverviewState
+import org.isoron.uhabits.core.ui.screens.statistics.StatisticsCompletionPolicy
 import org.isoron.uhabits.core.ui.screens.statistics.StatisticsOverviewStateBuilder
 import org.isoron.uhabits.core.ui.screens.statistics.StatisticsTierProgress
 import org.isoron.uhabits.core.ui.screens.statistics.formatStatisticsValue
@@ -70,7 +70,6 @@ import org.isoron.uhabits.utils.applyToolbarInsets
 import org.isoron.uhabits.utils.dp
 import org.isoron.uhabits.utils.sres
 import java.util.Locale
-import kotlin.math.max
 import kotlin.math.roundToInt
 
 class StatisticsFragment : Fragment() {
@@ -379,27 +378,8 @@ class StatisticsFragment : Fragment() {
     }
 
     private fun getActiveRange(): Pair<LocalDate, LocalDate> {
-        return when (currentTab) {
-            ReportTab.DAY -> Pair(currentAnchorDate, currentAnchorDate)
-            ReportTab.WEEK -> {
-                val firstWeekdayNum = getFirstWeekdayNumberAccordingToLocale()
-                val firstWeekday = DayOfWeek.entries[firstWeekdayNum - 1]
-                val start = currentAnchorDate.startOfWeek(firstWeekday)
-                Pair(start, start.plus(6))
-            }
-            ReportTab.MONTH -> {
-                val start = currentAnchorDate.startOfMonth()
-                Pair(start, start.plus(start.monthLength - 1))
-            }
-            ReportTab.YEAR -> {
-                val start = LocalDate(currentAnchorDate.year, 1, 1)
-                val end = LocalDate(currentAnchorDate.year, 12, 31)
-                Pair(start, end)
-            }
-            ReportTab.ALL -> {
-                Pair(getToday().minus(3650), getToday())
-            }
-        }
+        val firstWeekdayNum = getFirstWeekdayNumberAccordingToLocale()
+        return statisticsActiveRange(currentAnchorDate, currentTab, firstWeekdayNum)
     }
 
     private fun updateReportHeader(start: LocalDate, end: LocalDate) {
@@ -716,11 +696,21 @@ class StatisticsFragment : Fragment() {
         var missedGoals = 0
 
         val dateRates = mutableMapOf<LocalDate, Float>()
+        val dateTotals = mutableMapOf<LocalDate, Int>()
         val sphereFocusMap = mutableMapOf<Long?, Double>()
         val weekdayCompleted = DoubleArray(7)
         val weekdayTotal = DoubleArray(7)
+        val tierCompleted = mutableMapOf<DayTier, Int>()
+        val tierTotal = mutableMapOf<DayTier, Int>()
+        for (tier in DayTier.entries) {
+            tierCompleted[tier] = 0
+            tierTotal[tier] = 0
+        }
+        var skippedCount = 0
 
         val habitCompletionStats = mutableListOf<HabitCompletionStat>()
+        val firstWeekdayNum = getFirstWeekdayNumberAccordingToLocale()
+        val firstWeekday = DayOfWeek.entries[firstWeekdayNum - 1]
 
         for (habit in filteredHabits) {
             var hStart = rangeStart
@@ -732,82 +722,42 @@ class StatisticsFragment : Fragment() {
 
             var hTotal = 0
             var hCompleted = 0
+            val completions = StatisticsCompletionPolicy.evaluate(habit, hStart, end, firstWeekday)
 
-            val denominator = habit.frequency.denominator
-            if (habit.isNumerical && habit.targetType == NumericalHabitType.AT_MOST && (denominator == 7 || denominator == 30)) {
-                if (denominator == 7) {
-                    val firstWeekdayNum = getFirstWeekdayNumberAccordingToLocale()
-                    val firstWeekday = DayOfWeek.entries[firstWeekdayNum - 1]
-                    var wStart = hStart.startOfWeek(firstWeekday)
-                    while (wStart <= end) {
-                        val weekEntries = habit.statisticsEntries(wStart, wStart.plus(6))
-                        if (weekEntries.isNotEmpty() && !weekEntries.all { it.value == SKIP }) {
-                            hTotal++
-                            val weekSum = weekEntries.filter { it.value != SKIP }.sumOf { max(0, it.value) } / 1000.0
-                            if (weekSum > habit.targetValue) {
-                                limitViolations++
-                            } else if (weekEntries.any { it.value != Entry.UNKNOWN }) {
-                                hCompleted++
-                            }
-                        }
-                        wStart = wStart.plus(7)
-                    }
-                } else {
-                    var mStart = hStart.startOfMonth()
-                    while (mStart <= end) {
-                        val monthLength = mStart.monthLength
-                        val monthEntries = habit.statisticsEntries(mStart, mStart.plus(monthLength - 1))
-                        if (monthEntries.isNotEmpty() && !monthEntries.all { it.value == SKIP }) {
-                            hTotal++
-                            val monthSum = monthEntries.filter { it.value != SKIP }.sumOf { max(0, it.value) } / 1000.0
-                            if (monthSum > habit.targetValue) {
-                                limitViolations++
-                            } else if (monthEntries.any { it.value != Entry.UNKNOWN }) {
-                                hCompleted++
-                            }
-                        }
-                        mStart = mStart.plus(monthLength)
-                    }
+            for (completion in completions) {
+                if (completion.skipped) {
+                    skippedCount++
                 }
-            } else {
-                var curr = hStart
-                while (curr <= end) {
-                    if (habit.isDateIncludedInStatistics(curr)) {
-                        val entry = habit.computedEntries.get(curr)
-                        if (entry.value != Entry.SKIP) {
-                            hTotal++
-                            val isCompleted = isHabitCompleted(habit, entry)
-                            if (isCompleted) {
-                                hCompleted++
-                            } else {
-                                missedGoals++
-                            }
+                if (!completion.countable) continue
 
-                            val rateIncrement = if (isCompleted) 1f else 0f
-                            dateRates[curr] = (dateRates[curr] ?: 0f) + rateIncrement
+                hTotal++
+                dateTotals[completion.date] = (dateTotals[completion.date] ?: 0) + 1
+                dateRates[completion.date] = (dateRates[completion.date] ?: 0f) +
+                    if (completion.completed) 1f else 0f
 
-                            val dow = curr.dayOfWeek
-                            weekdayTotal[dow.ordinal] += 1.0
-                            if (isCompleted) {
-                                weekdayCompleted[dow.ordinal] += 1.0
-                            }
+                val dow = completion.date.dayOfWeek
+                weekdayTotal[dow.ordinal] += 1.0
+                if (completion.completed) {
+                    hCompleted++
+                    weekdayCompleted[dow.ordinal] += 1.0
+                }
+                if (completion.failed) {
+                    missedGoals++
+                }
+                if (completion.limitViolation) {
+                    limitViolations++
+                }
 
-                            val goal = habit.goalAt(curr)
-                            if (habit.isNumerical && goal.targetType == NumericalHabitType.AT_LEAST && goal.unit.isMinuteUnit()) {
-                                val valDouble = if (entry.value != Entry.UNKNOWN) entry.value / 1000.0 else 0.0
-                                val hours = valDouble / 60.0
-                                totalFocusHours += hours
-                                sphereFocusMap[habit.blockId] = (sphereFocusMap[habit.blockId] ?: 0.0) + hours
-                            }
+                val tier = habit.dayTier
+                tierTotal[tier] = tierTotal[tier]!! + 1
+                if (completion.completed) {
+                    tierCompleted[tier] = tierCompleted[tier]!! + 1
+                }
 
-                            if (habit.isNumerical && goal.targetType == NumericalHabitType.AT_MOST && entry.value != Entry.UNKNOWN) {
-                                if (entry.value / 1000.0 > goal.targetValue) {
-                                    limitViolations++
-                                }
-                            }
-                        }
-                    }
-                    curr = curr.plus(1)
+                if (completion.focusMinutes > 0.0) {
+                    val hours = completion.focusMinutes / 60.0
+                    totalFocusHours += hours
+                    sphereFocusMap[habit.blockId] = (sphereFocusMap[habit.blockId] ?: 0.0) + hours
                 }
             }
 
@@ -820,12 +770,7 @@ class StatisticsFragment : Fragment() {
 
         val heatmapRates = mutableMapOf<LocalDate, Float>()
         for ((date, completedCount) in dateRates) {
-            var activeCount = 0
-            for (h in filteredHabits) {
-                if (h.isDateIncludedInStatistics(date) && h.computedEntries.get(date).value != Entry.SKIP) {
-                    activeCount++
-                }
-            }
+            val activeCount = dateTotals[date] ?: 0
             if (activeCount > 0) {
                 heatmapRates[date] = completedCount / activeCount.toFloat()
             }
@@ -895,16 +840,15 @@ class StatisticsFragment : Fragment() {
             ReportTab.YEAR, ReportTab.ALL -> 30
         }
 
-        for (i in (numChartPoints - 1) downTo 0) {
-            val d = end.minus(i * step)
+        for (d in statisticsScoreChartDates(end, numChartPoints, step)) {
             var dayCompleted = 0
             var dayTotal = 0
             for (habit in filteredHabits) {
-                if (!habit.isDateIncludedInStatistics(d)) continue
-                val entry = habit.computedEntries.get(d)
-                if (entry.value == Entry.SKIP) continue
+                val completion = StatisticsCompletionPolicy.evaluate(habit, d, d, firstWeekday)
+                    .firstOrNull { it.countable }
+                    ?: continue
                 dayTotal++
-                if (isHabitCompleted(habit, entry)) {
+                if (completion.completed) {
                     dayCompleted++
                 }
             }
@@ -922,33 +866,6 @@ class StatisticsFragment : Fragment() {
         sphereFocusList.sortByDescending { it.second }
 
         val completionPercentage = if (totalDays > 0) (completedDays * 100.0 / totalDays).roundToInt() else 0
-
-        val tierCompleted = mutableMapOf<DayTier, Int>()
-        val tierTotal = mutableMapOf<DayTier, Int>()
-        for (tier in DayTier.entries) {
-            tierCompleted[tier] = 0
-            tierTotal[tier] = 0
-        }
-        var skippedCount = 0
-
-        var dateIter = rangeStart
-        while (dateIter <= end) {
-            for (habit in filteredHabits) {
-                if (habit.isDateIncludedInStatistics(dateIter)) {
-                    val entry = habit.computedEntries.get(dateIter)
-                    if (entry.value == Entry.SKIP) {
-                        skippedCount++
-                    } else {
-                        val tier = habit.dayTier
-                        tierTotal[tier] = tierTotal[tier]!! + 1
-                        if (isHabitCompleted(habit, entry)) {
-                            tierCompleted[tier] = tierCompleted[tier]!! + 1
-                        }
-                    }
-                }
-            }
-            dateIter = dateIter.plus(1)
-        }
 
         val tiersList = DayTier.entries.map { tier ->
             val (comp, tot) = when (tier) {
@@ -1111,7 +1028,6 @@ class StatisticsFragment : Fragment() {
         // 4. Weekday Frequency Card
         if (currentTab != ReportTab.DAY && result.weekdayFrequency.isNotEmpty()) {
             val (weekdayCard, weekdayContent) = createCard(getString(R.string.reports_weekday_frequency))
-            val dayNames = JavaLocalDateFormatter(Locale.getDefault()).longWeekdayNames(DayOfWeek.SATURDAY)
 
             for (i in 0 until 7) {
                 val dow = when (i) {
@@ -1126,16 +1042,7 @@ class StatisticsFragment : Fragment() {
 
                 val stat = result.weekdayFrequency.find { it.first == dow } ?: continue
                 val rate = stat.second
-                val nameIdx = when (dow) {
-                    DayOfWeek.SUNDAY -> 0
-                    DayOfWeek.MONDAY -> 1
-                    DayOfWeek.TUESDAY -> 2
-                    DayOfWeek.WEDNESDAY -> 3
-                    DayOfWeek.THURSDAY -> 4
-                    DayOfWeek.FRIDAY -> 5
-                    DayOfWeek.SATURDAY -> 6
-                }
-                val dowName = dayNames.getOrNull(nameIdx) ?: dow.name
+                val dowName = statisticsWeekdayLabel(dateFormatter, dow)
 
                 val weekdayRow = createSphereRowWithProgress(
                     PaletteColor(17),
@@ -1213,64 +1120,6 @@ class StatisticsFragment : Fragment() {
         layout.addView(titleView)
         layout.addView(valueView)
         return layout
-    }
-
-    private fun getPeriodTotalAndTarget(habit: Habit, date: LocalDate): Pair<Double, Double> {
-        val goal = habit.goalAt(date)
-        val denominator = goal.frequency.denominator
-        val targetValue = goal.targetValue
-        return when (denominator) {
-            7 -> {
-                val firstWeekdayNum = getFirstWeekdayNumberAccordingToLocale()
-                val firstWeekday = DayOfWeek.values()[firstWeekdayNum - 1]
-                val startOfWeek = date.startOfWeek(firstWeekday)
-                val endOfWeek = startOfWeek.plus(6)
-                val weekEntries = habit.statisticsEntries(startOfWeek, endOfWeek)
-                val weekSum = weekEntries.groupedSum(
-                    truncateField = TruncateField.WEEK_NUMBER,
-                    firstWeekday = firstWeekdayNum,
-                    isNumerical = true
-                ).firstOrNull()?.value ?: 0
-                Pair(weekSum / 1000.0, targetValue)
-            }
-            30 -> {
-                val startOfMonth = date.startOfMonth()
-                val endOfMonth = startOfMonth.plus(date.monthLength - 1)
-                val monthEntries = habit.statisticsEntries(startOfMonth, endOfMonth)
-                val monthSum = monthEntries.groupedSum(
-                    truncateField = TruncateField.MONTH,
-                    isNumerical = true
-                ).firstOrNull()?.value ?: 0
-                Pair(monthSum / 1000.0, targetValue)
-            }
-            else -> {
-                val entry = habit.computedEntries.get(date)
-                val valDouble = if (entry.value != Entry.UNKNOWN && entry.value != Entry.SKIP) entry.value / 1000.0 else 0.0
-                Pair(valDouble, targetValue)
-            }
-        }
-    }
-
-    private fun isHabitCompleted(habit: Habit, entry: Entry): Boolean {
-        if (habit.type == HabitType.NUMERICAL) {
-            if (entry.value == Entry.UNKNOWN) return false
-            val goal = habit.goalAt(entry.date)
-            val value = entry.value / 1000.0
-            return when (goal.targetType) {
-                NumericalHabitType.AT_LEAST -> value >= goal.targetValue
-                NumericalHabitType.AT_MOST -> {
-                    val denominator = goal.frequency.denominator
-                    if (denominator == 7 || denominator == 30) {
-                        val (periodActual, periodTarget) = getPeriodTotalAndTarget(habit, entry.date)
-                        periodActual <= periodTarget
-                    } else {
-                        value <= goal.targetValue
-                    }
-                }
-            }
-        } else {
-            return entry.value == Entry.YES_MANUAL || entry.value == Entry.YES_AUTO
-        }
     }
 
     private fun getLocalizedBlockName(block: HabitBlock): String {
@@ -1904,6 +1753,49 @@ internal fun isLatestAllowedPeriod(
         }
         StatisticsFragment.ReportTab.ALL -> true
     }
+}
+
+internal fun statisticsActiveRange(
+    anchorDate: LocalDate,
+    tab: StatisticsFragment.ReportTab,
+    firstWeekdayNum: Int
+): Pair<LocalDate, LocalDate> {
+    val today = getToday()
+    val range = when (tab) {
+        StatisticsFragment.ReportTab.DAY -> Pair(anchorDate, anchorDate)
+        StatisticsFragment.ReportTab.WEEK -> {
+            val firstWeekday = DayOfWeek.entries[firstWeekdayNum - 1]
+            val start = anchorDate.startOfWeek(firstWeekday)
+            Pair(start, start.plus(6))
+        }
+        StatisticsFragment.ReportTab.MONTH -> {
+            val start = anchorDate.startOfMonth()
+            Pair(start, start.plus(start.monthLength - 1))
+        }
+        StatisticsFragment.ReportTab.YEAR -> {
+            val start = LocalDate(anchorDate.year, 1, 1)
+            Pair(start, LocalDate(anchorDate.year, 12, 31))
+        }
+        StatisticsFragment.ReportTab.ALL -> Pair(today.minus(3650), today)
+    }
+    val clampedEnd = minOf(range.second, today)
+    val clampedStart = if (range.first.isNewerThan(clampedEnd)) clampedEnd else range.first
+    return Pair(clampedStart, clampedEnd)
+}
+
+internal fun statisticsScoreChartDates(
+    end: LocalDate,
+    numChartPoints: Int,
+    step: Int
+): List<LocalDate> {
+    return (0 until numChartPoints).map { i -> end.minus(i * step) }
+}
+
+internal fun statisticsWeekdayLabel(
+    formatter: JavaLocalDateFormatter,
+    dayOfWeek: DayOfWeek
+): String {
+    return formatter.longWeekdayName(dayOfWeek)
 }
 
 internal fun clampAnchorDateToLatestAllowed(
