@@ -66,43 +66,46 @@
     </LinearLayout>
 
     <!-- Filters Bar -->
-    <HorizontalScrollView
-        android:id="@+id/filtersScrollView"
+    <LinearLayout
+        android:id="@+id/filtersBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:scrollbars="none"
         android:background="@android:color/transparent"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
         android:paddingStart="12dp"
         android:paddingEnd="12dp"
         android:paddingBottom="8dp">
 
-        <LinearLayout
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnFilters"
+            style="@style/Statistics.FilterButton"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:layout_height="48dp"
+            android:layout_marginEnd="8dp"
+            android:text="@string/statistics_filters_button"
+            app:icon="@drawable/ic_statistics_filter"
+            app:iconGravity="textStart"
+            app:iconPadding="8dp"
+            app:iconSize="20dp" />
 
-            <Spinner
-                android:id="@+id/spinnerSphere"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:minHeight="32dp" />
+        <HorizontalScrollView
+            android:id="@+id/filtersScrollView"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:fillViewport="true"
+            android:scrollbars="none">
 
-            <Spinner
-                android:id="@+id/spinnerHabitStatus"
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/activeFilterChips"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginEnd="8dp"
-                android:minHeight="32dp" />
-
-            <Spinner
-                android:id="@+id/spinnerGoalType"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:minHeight="32dp" />
-        </LinearLayout>
-    </HorizontalScrollView>
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                app:chipSpacingHorizontal="6dp"
+                app:singleLine="true" />
+        </HorizontalScrollView>
+    </LinearLayout>
 
     <ProgressBar
         android:id="@+id/refreshProgressBar"
