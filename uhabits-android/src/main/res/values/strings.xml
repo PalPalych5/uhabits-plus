@@ -131,9 +131,9 @@
     <string name="score_stack_widget" formatted="false">Score Stack Widget</string>
     <string name="history_stack_widget" formatted="false">History Stack Widget</string>
     <string name="streaks_stack_widget" formatted="false">Streaks Stack Widget</string>
-    <string name="best_streaks">Best streaks</string>
+    <string name="best_streaks">Best</string>
     <string name="streak_card_title">Streaks</string>
-    <string name="latest_streak">Latest streak</string>
+    <string name="latest_streak">Latest</string>
     <string name="every_day">Every day</string>
     <string name="every_week">Every week</string>
     <string name="help">Help &amp; guide</string>
@@ -573,4 +573,52 @@
     <string name="manage_blocks_habit_count">Habits: %1$d</string>
     <string name="reports_no_data">No data</string>
     <string name="reports_refreshing">Updating…</string>
+    <string name="statistics_insights_strong">Strong</string>
+    <string name="statistics_insights_attention">Needs Attention</string>
+    <string name="statistics_insights_no_strong">No strong habits found.</string>
+    <string name="statistics_insights_no_attention">No habits require attention.</string>
+    <string name="statistics_insight_consecutive_skips">%d skips in a row</string>
+    <string name="statistics_insight_streak">Current streak: %d days</string>
+    <string name="statistics_insight_stable">Stable performance</string>
+    <string name="statistics_rhythm_insight">%1$s is your weakest day, %2$d%% below average.</string>
+    <string name="statistics_stability_perfect">Perfect</string>
+    <string name="statistics_stability_partial">Partial</string>
+    <string name="statistics_stability_failed">Missed</string>
+    <string name="statistics_filters_button">Filters</string>
+    <string name="statistics_filters_title">Filters</string>
+    <string name="statistics_filters_sphere">Sphere</string>
+    <string name="statistics_filters_status">Habits</string>
+    <string name="statistics_filters_goal_type">Goal type</string>
+    <string name="statistics_filters_tier">Day tier</string>
+    <string name="statistics_filters_all_types">All types</string>
+    <string name="statistics_filters_all_tiers">All tiers</string>
+    <string name="statistics_filters_active">Active</string>
+    <string name="statistics_filters_archived">Archived</string>
+    <string name="statistics_filters_boolean">Yes / No</string>
+    <string name="statistics_filters_numerical">Numerical</string>
+    <string name="statistics_filters_reset">Reset</string>
+    <string name="statistics_filters_apply">Apply</string>
+    <string name="statistics_since_date">Since %s</string>
+    <string name="statistics_no_habits_for_filters">No habits match active filters</string>
+    <string name="statistics_no_history_for_period">No history for this period</string>
+    <string name="statistics_reset_filters">Reset filters</string>
+    <string name="statistics_average_progress">Average progress</string>
+    <string name="statistics_completed_of_total">Completed %1$d of %2$d</string>
+    <plurals name="statistics_habits_count">
+        <item quantity="one">%d habit</item>
+        <item quantity="other">%d habits</item>
+    </plurals>
+    <string name="statistics_vs_previous_period">%s vs previous period</string>
+    <string name="statistics_focus_total">Focus time: %s</string>
+    <string name="statistics_no_habits_short">No habits</string>
+    <string name="statistics_calendar_last_twelve_months">Activity calendar (last 12 months)</string>
+    <string name="statistics_habits_title">Habits</string>
+    <string name="statistics_status_pending">remaining</string>
+    <string name="statistics_status_on_track">on track</string>
+    <string name="statistics_status_violated">violated</string>
+    <string name="statistics_status_missed">missed</string>
+    <string name="statistics_status_skipped">skipped</string>
+    <string name="statistics_duration_minutes">%d min</string>
+    <string name="statistics_duration_hours">%d h</string>
+    <string name="statistics_duration_hours_minutes">%1$d h %2$d min</string>
 </resources>
