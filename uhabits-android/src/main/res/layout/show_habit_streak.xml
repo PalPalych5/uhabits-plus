@@ -30,6 +30,7 @@
         android:layout_height="wrap_content"
         android:layout_marginBottom="4dp"
         android:gravity="center"
+        android:textAlignment="center"
         android:text="@string/latest_streak"
         android:textSize="@dimen/smallTextSize"/>
 
@@ -45,6 +46,7 @@
         android:layout_height="wrap_content"
         android:layout_marginBottom="4dp"
         android:gravity="center"
+        android:textAlignment="center"
         android:text="@string/best_streaks"
         android:textSize="@dimen/smallTextSize"/>
 

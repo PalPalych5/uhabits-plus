@@ -238,7 +238,7 @@
                 android:text="@string/pomodoro_done"
                 android:textAllCaps="false"
                 android:textSize="16sp"
-                android:textStyle="normal"
+                android:textStyle="bold"
                 android:translationZ="0dp" />
         </LinearLayout>
     </LinearLayout>

@@ -281,7 +281,7 @@ class ColorPickerDialog : AppCompatDialogFragment() {
         val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(draftColor)
         val textColor = if (luminance > 0.5) 0xFF1C1B1F.toInt() else Color.WHITE
         applyButton.setTextColor(textColor)
-        applyButton.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        applyButton.typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         applyButton.background = createActionButtonBackground(
             fillColor = draftColor,
             strokeColor = borderColor,

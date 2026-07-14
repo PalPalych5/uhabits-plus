@@ -973,7 +973,7 @@ class CustomColorBottomSheet : BottomSheetDialogFragment() {
         val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(currentColor)
         val textColor = if (luminance > 0.5) 0xFF1C1B1F.toInt() else Color.WHITE
         doneButton.setTextColor(textColor)
-        doneButton.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        doneButton.typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
         doneButton.background = createActionButtonBackground(
             fillColor = currentColor,
             strokeColor = borderColor,

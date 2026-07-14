@@ -209,6 +209,6 @@
             android:text="@string/color_picker_apply"
             android:textAllCaps="false"
             android:textSize="16sp"
-            android:textStyle="normal" />
+            android:textStyle="bold" />
     </LinearLayout>
 </LinearLayout>
