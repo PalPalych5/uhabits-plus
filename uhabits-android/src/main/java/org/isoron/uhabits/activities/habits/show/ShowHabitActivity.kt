@@ -20,9 +20,12 @@ package org.isoron.uhabits.activities.habits.show
 
 import android.Manifest
 import android.content.ContentUris
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import android.view.Menu
 import android.view.MenuItem
@@ -50,6 +53,8 @@ import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import org.isoron.uhabits.activities.common.dialogs.ConfirmDeleteDialog
 import org.isoron.uhabits.activities.common.dialogs.HistoryEditorDialog
 import org.isoron.uhabits.activities.common.dialogs.NumberDialog
+import org.isoron.uhabits.activities.habits.show.timer.PomodoroAlertIssue
+import org.isoron.uhabits.activities.habits.show.timer.PomodoroCompletionNotifier
 import org.isoron.uhabits.core.commands.Command
 import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.models.Habit
@@ -138,7 +143,9 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
         view.initTimer(
             habit,
             appComponent.timerSessionManager,
-            ::ensureTimerNotificationPermission
+            appComponent.pomodoroCompletionNotifier,
+            ::ensureTimerNotificationPermission,
+            ::openPomodoroAlertSettings
         )
         view.setListener(presenter)
         view.applyRootViewInsets()
@@ -164,6 +171,7 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
             (it as HistoryEditorDialog).setOnDateClickedListener(presenter.historyCardPresenter)
         }
         screen.refresh()
+        view.refreshTimerAlertHealth()
     }
 
     override fun onPause() {
@@ -189,6 +197,33 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
         } else {
             onReady()
         }
+    }
+
+    private fun openPomodoroAlertSettings(issue: PomodoroAlertIssue) {
+        val intent = when (issue) {
+            PomodoroAlertIssue.NOTIFICATIONS_DISABLED -> Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            }
+            PomodoroAlertIssue.CHANNEL_DISABLED,
+            PomodoroAlertIssue.CHANNEL_SILENT -> {
+                (applicationContext as HabitsApplication).component
+                    .pomodoroCompletionNotifier.ensureChannel()
+                Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                    putExtra(Settings.EXTRA_CHANNEL_ID, PomodoroCompletionNotifier.CHANNEL_ID)
+                }
+            }
+            PomodoroAlertIssue.EXACT_ALARMS_DISABLED -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                } else {
+                    return
+                }
+            }
+        }
+        runCatching { startActivity(intent) }
     }
 
     inner class Screen : ShowHabitMenuPresenter.Screen, ShowHabitPresenter.Screen {

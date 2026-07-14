@@ -2,9 +2,25 @@ package org.isoron.uhabits.core.timer
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class TimerNotificationStateTest {
+    @Test
+    fun completionCardReplacesActiveProgressCard() {
+        val overtime = TimerSessionSnapshot(
+            habitId = 1,
+            mode = TimerMode.POMODORO,
+            isRunning = true,
+            elapsedMillis = 61_000,
+            completionTriggered = true
+        )
+
+        assertFalse(overtime.shouldShowProgressNotification(completionDisplayActive = true))
+        assertTrue(overtime.shouldShowProgressNotification(completionDisplayActive = false))
+    }
+
     @Test
     fun inactiveSessionHasNoNotification() {
         assertNull(TimerSessionSnapshot().toNotificationState())

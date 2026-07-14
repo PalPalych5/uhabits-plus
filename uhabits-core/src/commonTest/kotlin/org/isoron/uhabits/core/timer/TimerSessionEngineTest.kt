@@ -117,6 +117,47 @@ class TimerSessionEngineTest {
     }
 
     @Test
+    fun restoresUnhandledOverdueCompletion() {
+        engine.isAutoSwitch = false
+        engine.restore(
+            habitId = 42L,
+            habitName = "Running",
+            mode = TimerMode.POMODORO,
+            phase = PomodoroPhase.FOCUS,
+            isRunning = true,
+            accumulatedMillis = 0,
+            startedAtMillis = now - 30_000,
+            focusDurationMillis = 20_000,
+            breakDurationMillis = 10_000,
+            completionTriggered = false
+        )
+
+        assertEquals(PomodoroCompletion.FOCUS, engine.tick())
+        assertTrue(engine.snapshot().completionTriggered)
+        assertEquals(null, engine.tick())
+    }
+
+    @Test
+    fun restoresHandledOverdueCompletionWithoutRepeatingIt() {
+        engine.isAutoSwitch = false
+        engine.restore(
+            habitId = 42L,
+            habitName = "Running",
+            mode = TimerMode.POMODORO,
+            phase = PomodoroPhase.FOCUS,
+            isRunning = true,
+            accumulatedMillis = 0,
+            startedAtMillis = now - 30_000,
+            focusDurationMillis = 20_000,
+            breakDurationMillis = 10_000,
+            completionTriggered = true
+        )
+
+        assertEquals(null, engine.tick())
+        assertTrue(engine.snapshot().completionTriggered)
+    }
+
+    @Test
     fun overtimeModeFocusDoesNotSwitchAutomatically() {
         engine.isAutoSwitch = false
         engine.switchMode(1, "Reading", TimerMode.POMODORO)

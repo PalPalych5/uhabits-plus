@@ -26,6 +26,8 @@ import org.isoron.platform.io.AndroidFileOpener
 import org.isoron.platform.io.DatabaseOpener
 import org.isoron.platform.io.FileOpener
 import org.isoron.uhabits.core.AppScope
+import org.isoron.uhabits.activities.habits.show.timer.PomodoroAlarmScheduler
+import org.isoron.uhabits.activities.habits.show.timer.PomodoroCompletionNotifier
 import org.isoron.uhabits.activities.habits.show.timer.TimerSessionManager
 import org.isoron.uhabits.backup.BackupManager
 import org.isoron.uhabits.core.commands.CommandRunner
@@ -90,6 +92,8 @@ abstract class HabitsApplicationComponent(
     abstract val reminderController: ReminderController
     abstract val syncCoordinator: SyncCoordinator
     abstract val taskRunner: TaskRunner
+    abstract val pomodoroAlarmScheduler: PomodoroAlarmScheduler
+    abstract val pomodoroCompletionNotifier: PomodoroCompletionNotifier
     abstract val timerSessionManager: TimerSessionManager
     abstract val widgetPreferences: WidgetPreferences
     abstract val widgetUpdater: WidgetUpdater
@@ -163,11 +167,35 @@ abstract class HabitsApplicationComponent(
 
     @AppScope
     @Provides
+    open fun pomodoroAlarmScheduler(
+        @AppContext context: Context
+    ): PomodoroAlarmScheduler = PomodoroAlarmScheduler(context)
+
+    @AppScope
+    @Provides
+    open fun pomodoroCompletionNotifier(
+        @AppContext context: Context,
+        habitList: HabitList,
+        alarmScheduler: PomodoroAlarmScheduler
+    ): PomodoroCompletionNotifier = PomodoroCompletionNotifier(context, habitList, alarmScheduler)
+
+    @AppScope
+    @Provides
     open fun timerSessionManager(
         @AppContext context: Context,
         habitList: HabitList,
-        commandRunner: CommandRunner
-    ): TimerSessionManager = TimerSessionManager(context, habitList, commandRunner)
+        commandRunner: CommandRunner,
+        preferences: Preferences,
+        alarmScheduler: PomodoroAlarmScheduler,
+        completionNotifier: PomodoroCompletionNotifier
+    ): TimerSessionManager = TimerSessionManager(
+        context,
+        habitList,
+        commandRunner,
+        preferences,
+        alarmScheduler,
+        completionNotifier
+    )
 
     @AppScope
     @Provides

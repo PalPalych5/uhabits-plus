@@ -18,7 +18,8 @@ data class TimerSessionSnapshot(
     val breakDurationMillis: Long = 5 * 60 * 1000L,
     val startedAtMillis: Long = 0,
     val accumulatedMillis: Long = 0,
-    val isOvertime: Boolean = false
+    val isOvertime: Boolean = false,
+    val completionTriggered: Boolean = false
 ) {
     val hasActiveSession: Boolean
         get() = isRunning || elapsedMillis > 0 || phase == PomodoroPhase.BREAK
@@ -63,7 +64,8 @@ class TimerSessionEngine(private val clock: () -> Long) {
             breakDurationMillis = breakDurationMillis,
             startedAtMillis = startedAtMillis,
             accumulatedMillis = accumulatedMillis,
-            isOvertime = isOvertime
+            isOvertime = isOvertime,
+            completionTriggered = completionTriggered
         )
     }
 
@@ -76,7 +78,8 @@ class TimerSessionEngine(private val clock: () -> Long) {
         accumulatedMillis: Long,
         startedAtMillis: Long,
         focusDurationMillis: Long,
-        breakDurationMillis: Long
+        breakDurationMillis: Long,
+        completionTriggered: Boolean? = null
     ) {
         this.habitId = habitId
         this.habitName = habitName
@@ -87,7 +90,8 @@ class TimerSessionEngine(private val clock: () -> Long) {
         this.startedAtMillis = startedAtMillis
         this.focusDurationMillis = focusDurationMillis
         this.breakDurationMillis = breakDurationMillis
-        this.completionTriggered = (currentElapsedMillis() >= phaseDurationMillis())
+        this.completionTriggered = completionTriggered
+            ?: (currentElapsedMillis() >= phaseDurationMillis())
     }
 
     fun configurePomodoro(
@@ -171,10 +175,14 @@ class TimerSessionEngine(private val clock: () -> Long) {
     }
 
     fun transitionToBreakManually() {
+        transitionToNextPhaseManually()
+    }
+
+    fun transitionToNextPhaseManually() {
         isRunning = false
         startedAtMillis = 0
         accumulatedMillis = 0
-        phase = PomodoroPhase.BREAK
+        phase = if (phase == PomodoroPhase.FOCUS) PomodoroPhase.BREAK else PomodoroPhase.FOCUS
         completionTriggered = false
     }
 

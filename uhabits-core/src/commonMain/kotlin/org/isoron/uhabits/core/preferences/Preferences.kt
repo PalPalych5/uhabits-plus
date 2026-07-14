@@ -291,6 +291,14 @@ open class Preferences(private val storage: Storage) {
         get() = storage.getBoolean("pref_pomodoro_auto_switch", true)
         set(value) = storage.putBoolean("pref_pomodoro_auto_switch", value)
 
+    open var isPomodoroFocusAlertEnabled: Boolean
+        get() = storage.getBoolean("pref_pomodoro_focus_alert", true)
+        set(value) = storage.putBoolean("pref_pomodoro_focus_alert", value)
+
+    open var isPomodoroBreakAlertEnabled: Boolean
+        get() = storage.getBoolean("pref_pomodoro_break_alert", true)
+        set(value) = storage.putBoolean("pref_pomodoro_break_alert", value)
+
 
     open var lastAppVersion: Int
         get() = storage.getInt("last_version", 0)

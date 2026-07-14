@@ -23,6 +23,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.SharedPreferences.OnSharedPreferenceChangeListener
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Process
@@ -66,6 +67,8 @@ import org.isoron.uhabits.activities.main.SettingsAction
 import org.isoron.uhabits.activities.main.SettingsActionHandler
 import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import org.isoron.uhabits.activities.common.dialogs.ColorPickerDialogFactory
+import org.isoron.uhabits.activities.habits.show.timer.PomodoroCompletionNotifier
+import org.isoron.uhabits.activities.habits.show.timer.TimerForegroundService
 import org.isoron.uhabits.core.commands.ClearAllEntriesCommand
 import org.isoron.uhabits.core.commands.SetGlobalStatisticsStartDateCommand
 import org.isoron.uhabits.core.models.DayTier
@@ -95,6 +98,7 @@ import kotlin.system.exitProcess
 class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     private var sharedPrefs: SharedPreferences? = null
     private var ringtoneManager: RingtoneManager? = null
+    private lateinit var pomodoroCompletionNotifier: PomodoroCompletionNotifier
     private lateinit var prefs: Preferences
     private lateinit var intentFactory: IntentFactory
     private lateinit var backupManager: BackupManager
@@ -135,6 +139,7 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         val appContext = requireContext().applicationContext
         if (appContext is HabitsApplication) {
             prefs = appContext.component.preferences
+            pomodoroCompletionNotifier = appContext.component.pomodoroCompletionNotifier
             widgetUpdater = appContext.component.widgetUpdater
             intentFactory = appContext.component.intentFactory
             backupManager = appContext.component.backupManager
@@ -573,6 +578,72 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             )
         )
 
+        items.add(
+            SettingItem.Switch(
+                key = "pref_pomodoro_focus_alert",
+                iconRes = R.drawable.ic_settings_pomodoro_focus,
+                title = getString(R.string.pref_pomodoro_focus_alert_title),
+                summary = getString(R.string.pref_pomodoro_focus_alert_summary),
+                checked = prefs.isPomodoroFocusAlertEnabled,
+                onCheckedChange = { checked ->
+                    prefs.isPomodoroFocusAlertEnabled = checked
+                }
+            )
+        )
+
+        items.add(
+            SettingItem.Switch(
+                key = "pref_pomodoro_break_alert",
+                iconRes = R.drawable.ic_settings_pomodoro_break,
+                title = getString(R.string.pref_pomodoro_break_alert_title),
+                summary = getString(R.string.pref_pomodoro_break_alert_summary),
+                checked = prefs.isPomodoroBreakAlertEnabled,
+                onCheckedChange = { checked ->
+                    prefs.isPomodoroBreakAlertEnabled = checked
+                }
+            )
+        )
+
+        items.add(
+            SettingItem.Navigation(
+                key = "pomodoroProgressChannel",
+                iconRes = R.drawable.ic_settings_notification,
+                title = getString(R.string.pref_pomodoro_progress_channel_title),
+                summary = getString(R.string.pref_pomodoro_progress_channel_summary),
+                onClick = { openPomodoroProgressChannelSettings() }
+            )
+        )
+
+        items.add(
+            SettingItem.Navigation(
+                key = "pomodoroAlertChannel",
+                iconRes = R.drawable.ic_settings_notification_ringing,
+                title = getString(R.string.pref_pomodoro_alert_channel_title),
+                summary = pomodoroChannelSummary(),
+                onClick = { openPomodoroChannelSettings() }
+            )
+        )
+
+        items.add(
+            SettingItem.Navigation(
+                key = "pomodoroExactAlarm",
+                iconRes = R.drawable.ic_settings_clock,
+                title = getString(R.string.pref_pomodoro_exact_alarm_title),
+                summary = pomodoroExactAlarmSummary(),
+                onClick = { openExactAlarmSettings() }
+            )
+        )
+
+        items.add(
+            SettingItem.Navigation(
+                key = "pomodoroTestAlert",
+                iconRes = R.drawable.ic_settings_notification,
+                title = getString(R.string.pref_pomodoro_test_alert_title),
+                summary = getString(R.string.pref_pomodoro_test_alert_summary),
+                onClick = { testPomodoroAlert() }
+            )
+        )
+
         // 3. Статистика
         items.add(SettingItem.Header(getString(R.string.pref_statistics_title)))
 
@@ -951,6 +1022,64 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 ).show()
             }
         }
+    }
+
+    private fun pomodoroChannelSummary(): String {
+        val health = pomodoroCompletionNotifier.health()
+        return when {
+            !health.notificationsEnabled -> getString(R.string.pref_pomodoro_alert_notifications_off)
+            !health.channelEnabled -> getString(R.string.pref_pomodoro_alert_channel_off)
+            health.hasSound && health.hasVibration -> getString(R.string.pref_pomodoro_alert_sound_vibration)
+            health.hasSound -> getString(R.string.pref_pomodoro_alert_sound_only)
+            health.hasVibration -> getString(R.string.pref_pomodoro_alert_vibration_only)
+            else -> getString(R.string.pref_pomodoro_alert_silent)
+        }
+    }
+
+    private fun pomodoroExactAlarmSummary(): String = if (pomodoroCompletionNotifier.health().exactAlarmsEnabled) {
+        getString(R.string.pref_pomodoro_exact_alarm_enabled)
+    } else {
+        getString(R.string.pref_pomodoro_exact_alarm_disabled)
+    }
+
+    private fun openPomodoroChannelSettings() {
+        pomodoroCompletionNotifier.ensureChannel()
+        val intent = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, requireContext().packageName)
+            putExtra(Settings.EXTRA_CHANNEL_ID, PomodoroCompletionNotifier.CHANNEL_ID)
+        }
+        runCatching { startActivity(intent) }
+    }
+
+    private fun openPomodoroProgressChannelSettings() {
+        TimerForegroundService.ensureNotificationChannel(requireContext())
+        val intent = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, requireContext().packageName)
+            putExtra(Settings.EXTRA_CHANNEL_ID, TimerForegroundService.CHANNEL_ID)
+        }
+        runCatching { startActivity(intent) }
+    }
+
+    private fun openExactAlarmSettings() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+            data = Uri.parse("package:${requireContext().packageName}")
+        }
+        runCatching { startActivity(intent) }
+    }
+
+    private fun testPomodoroAlert() {
+        val health = pomodoroCompletionNotifier.health()
+        if (!health.notificationsEnabled || !health.channelEnabled) {
+            Toast.makeText(
+                requireContext(),
+                R.string.pref_pomodoro_test_alert_unavailable,
+                Toast.LENGTH_LONG
+            ).show()
+            openPomodoroChannelSettings()
+            return
+        }
+        pomodoroCompletionNotifier.showTestNotification()
     }
 
     private fun dayTierSortOrderSummary(): String {

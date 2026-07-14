@@ -25,6 +25,8 @@ import android.widget.FrameLayout
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.isMinuteUnit
 import org.isoron.uhabits.activities.habits.show.timer.TimerSessionManager
+import org.isoron.uhabits.activities.habits.show.timer.PomodoroAlertIssue
+import org.isoron.uhabits.activities.habits.show.timer.PomodoroCompletionNotifier
 import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitPresenter
 import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitState
 import org.isoron.uhabits.databinding.ShowHabitBinding
@@ -83,11 +85,16 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
     fun initTimer(
         habit: Habit,
         manager: TimerSessionManager,
-        requestNotificationPermission: (onReady: () -> Unit) -> Unit
+        completionNotifier: PomodoroCompletionNotifier,
+        requestNotificationPermission: (onReady: () -> Unit) -> Unit,
+        onFixAlertIssue: (PomodoroAlertIssue) -> Unit
     ) {
         habitUnit = habit.unit
         isTimerEnabled = habit.timerEnabled
         binding.timerCard.setNotificationPermissionRequester(requestNotificationPermission)
+        binding.timerCard.setAlertHealth(completionNotifier::health, onFixAlertIssue)
         binding.timerCard.setHabit(habit, manager)
     }
+
+    fun refreshTimerAlertHealth() = binding.timerCard.refreshAlertHealth()
 }

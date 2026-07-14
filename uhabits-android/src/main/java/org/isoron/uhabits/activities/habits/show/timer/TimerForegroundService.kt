@@ -33,7 +33,7 @@ class TimerForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        createNotificationChannel()
+        ensureNotificationChannel(this)
         manager = (applicationContext as HabitsApplication).component.timerSessionManager
         manager.addListener(listener)
     }
@@ -78,6 +78,15 @@ class TimerForegroundService : Service() {
     private fun syncNotification(force: Boolean = false) {
         if (!::manager.isInitialized) return
         val snapshot = manager.snapshot()
+        if (!manager.shouldShowProgressNotification()) {
+            lastRenderKey = null
+            if (isForeground) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                isForeground = false
+            }
+            stopSelf()
+            return
+        }
         val state = snapshot.toNotificationState()
         if (state == null) {
             lastRenderKey = null
@@ -127,9 +136,9 @@ class TimerForegroundService : Service() {
             .setContentTitle(state.habitName)
             .setContentIntent(contentIntent)
             .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setSilent(true)
             .setShowWhen(false)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
 
@@ -200,20 +209,6 @@ class TimerForegroundService : Service() {
         )
     }
 
-    private fun createNotificationChannel() {
-        val notificationManager = getSystemService(NotificationManager::class.java)
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            getString(R.string.timer_notification_channel),
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = getString(R.string.timer_notification_channel_description)
-            setSound(null, null)
-            enableVibration(false)
-        }
-        notificationManager.createNotificationChannel(channel)
-    }
-
     private fun formatMillis(millis: Long): String {
         val totalSeconds = (millis / 1000.0).roundToLong().coerceAtLeast(0)
         val hours = totalSeconds / 3600
@@ -245,7 +240,7 @@ class TimerForegroundService : Service() {
     }
 
     companion object {
-        private const val CHANNEL_ID = "TIMER"
+        const val CHANNEL_ID = "TIMER_PROGRESS_V2"
         private const val NOTIFICATION_ID = 7350
         private const val EXTRA_COMMAND = "timer.command"
         private const val EXTRA_HABIT_ID = "timer.habitId"
@@ -259,6 +254,21 @@ class TimerForegroundService : Service() {
 
         fun stop(context: Context) {
             context.stopService(Intent(context, TimerForegroundService::class.java))
+        }
+
+        fun ensureNotificationChannel(context: Context) {
+            val notificationManager = context.getSystemService(NotificationManager::class.java)
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                context.getString(R.string.timer_notification_channel),
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = context.getString(R.string.timer_notification_channel_description)
+                setSound(null, null)
+                enableVibration(false)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            }
+            notificationManager.createNotificationChannel(channel)
         }
     }
 }

@@ -17,6 +17,8 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.habits.show.timer.PomodoroAlertHealth
+import org.isoron.uhabits.activities.habits.show.timer.PomodoroAlertIssue
 import org.isoron.uhabits.activities.habits.show.timer.TimerSessionManager
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.timer.PomodoroPhase
@@ -32,6 +34,9 @@ class TimerCardView : LinearLayout {
     private lateinit var stopwatchTab: TextView
     private lateinit var pomodoroTab: TextView
     private lateinit var statusView: TextView
+    private lateinit var alertWarningRow: LinearLayout
+    private lateinit var alertWarningText: TextView
+    private lateinit var alertWarningButton: Button
     private lateinit var sceneContainer: FrameLayout
     private lateinit var normalContainer: LinearLayout
     private lateinit var timeDisplay: TextView
@@ -50,6 +55,9 @@ class TimerCardView : LinearLayout {
     private var transitionInProgress = false
     private var sceneAnimator: ValueAnimator? = null
     private var requestNotificationPermission: ((onReady: () -> Unit) -> Unit)? = null
+    private var alertHealthProvider: (() -> PomodoroAlertHealth)? = null
+    private var onFixAlertIssue: ((PomodoroAlertIssue) -> Unit)? = null
+    private var currentAlertIssue: PomodoroAlertIssue? = null
 
     constructor(context: Context) : super(context) { initView() }
     constructor(context: Context, attrs: AttributeSet) : super(context, attrs) { initView() }
@@ -78,6 +86,30 @@ class TimerCardView : LinearLayout {
             visibility = View.GONE
         }
         addView(statusView, LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+            bottomMargin = dp(8f).toInt()
+        })
+
+        alertWarningRow = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+        }
+        alertWarningText = TextView(context).apply {
+            textSize = 13f
+            setTextColor(StyledResources(context).getColor(R.attr.contrast60))
+        }
+        alertWarningButton = actionButton {
+            currentAlertIssue?.let { onFixAlertIssue?.invoke(it) }
+        }.apply {
+            text = context.getString(R.string.pomodoro_alert_fix)
+            minHeight = dp(40f).toInt()
+            minimumHeight = dp(40f).toInt()
+        }
+        alertWarningRow.addView(alertWarningText, LayoutParams(0, WRAP_CONTENT, 1f).apply {
+            rightMargin = dp(8f).toInt()
+        })
+        alertWarningRow.addView(alertWarningButton, LayoutParams(WRAP_CONTENT, dp(40f).toInt()))
+        addView(alertWarningRow, LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
             bottomMargin = dp(8f).toInt()
         })
 
@@ -159,6 +191,17 @@ class TimerCardView : LinearLayout {
         requestNotificationPermission = requester
     }
 
+    fun setAlertHealth(
+        provider: () -> PomodoroAlertHealth,
+        onFixIssue: (PomodoroAlertIssue) -> Unit
+    ) {
+        alertHealthProvider = provider
+        onFixAlertIssue = onFixIssue
+        updateUIState()
+    }
+
+    fun refreshAlertHealth() = updateUIState()
+
     fun setColor(color: Int) {
         activeColor = color
         statusView.setTextColor(color)
@@ -230,6 +273,42 @@ class TimerCardView : LinearLayout {
         if (isEditingDuration && !canConfigureDuration) exitDurationEditor()
         styleTabs(state, conflict)
         styleButtons()
+        updateAlertWarning(state, conflict)
+    }
+
+    private fun updateAlertWarning(state: TimerSessionSnapshot, conflict: Boolean) {
+        currentAlertIssue = null
+        if (conflict || state.mode != TimerMode.POMODORO) {
+            alertWarningRow.visibility = View.GONE
+            return
+        }
+        val health = alertHealthProvider?.invoke() ?: run {
+            alertWarningRow.visibility = View.GONE
+            return
+        }
+        currentAlertIssue = when {
+            !health.notificationsEnabled -> PomodoroAlertIssue.NOTIFICATIONS_DISABLED
+            !health.channelEnabled -> PomodoroAlertIssue.CHANNEL_DISABLED
+            !health.hasSound && !health.hasVibration -> PomodoroAlertIssue.CHANNEL_SILENT
+            !health.exactAlarmsEnabled -> PomodoroAlertIssue.EXACT_ALARMS_DISABLED
+            else -> null
+        }
+        val issue = currentAlertIssue
+        if (issue == null) {
+            alertWarningRow.visibility = View.GONE
+            return
+        }
+        alertWarningText.setText(
+            when (issue) {
+                PomodoroAlertIssue.NOTIFICATIONS_DISABLED -> R.string.pomodoro_alert_notifications_disabled
+                PomodoroAlertIssue.CHANNEL_DISABLED -> R.string.pomodoro_alert_channel_disabled
+                PomodoroAlertIssue.CHANNEL_SILENT -> R.string.pomodoro_alert_channel_silent
+                PomodoroAlertIssue.EXACT_ALARMS_DISABLED -> R.string.pomodoro_alert_exact_disabled
+            }
+        )
+        alertWarningRow.visibility = View.VISIBLE
+        val resources = StyledResources(context)
+        styleButton(alertWarningButton, activeColor, resources)
     }
 
     private fun enterDurationEditor() {

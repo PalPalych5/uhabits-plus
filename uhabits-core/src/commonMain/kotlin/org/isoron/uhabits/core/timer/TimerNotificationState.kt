@@ -22,6 +22,9 @@ data class TimerNotificationState(
     val isOvertime: Boolean = false
 )
 
+fun TimerSessionSnapshot.shouldShowProgressNotification(completionDisplayActive: Boolean): Boolean =
+    hasActiveSession && !completionDisplayActive
+
 fun TimerSessionSnapshot.toNotificationState(): TimerNotificationState? {
     val id = habitId ?: return null
     if (!hasActiveSession) return null
