@@ -49,6 +49,7 @@ class ScoreChart : ScrollableChart {
     private var pGraph: Paint? = null
     private var rect: RectF? = null
     private var prevRect: RectF? = null
+    private val plotBounds = RectF()
     private var baseSize = 0
     private var internalPaddingTop = 0
     private var columnWidth = 0f
@@ -127,35 +128,34 @@ class ScoreChart : ScrollableChart {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val activeCanvas: Canvas?
+        val activeCanvas: Canvas
         if (isTransparencyEnabled) {
             if (internalDrawingCache == null) initCache(width, height)
-            activeCanvas = cacheCanvas
+            activeCanvas = cacheCanvas!!
             internalDrawingCache!!.eraseColor(Color.TRANSPARENT)
         } else {
             activeCanvas = canvas
         }
         if (scores == null) return
-        rect!![0f, 0f, nColumns * columnWidth] = columnHeight.toFloat()
-        rect!!.offset(0f, internalPaddingTop.toFloat())
-        drawGrid(activeCanvas, rect)
+        drawGrid(activeCanvas, plotBounds)
         pText!!.color = textColor
         pGraph!!.color = primaryColor
         prevRect!!.setEmpty()
         previousMonthText = ""
         previousYearText = ""
         skipYear = 0
+        val graphSaveCount = activeCanvas.save()
+        activeCanvas.clipRect(plotBounds)
         for (k in 0 until nColumns) {
             val offset = nColumns - k - 1 + dataOffset
             if (offset >= scores!!.size) continue
             val score = scores!![offset].value
-            val date = scores!![offset].date
             val height = (columnHeight * score).toInt()
             rect!![0f, 0f, baseSize.toFloat()] = baseSize.toFloat()
             rect!!.offset(
-                k * columnWidth + (columnWidth - baseSize) / 2,
+                plotBounds.left + k * columnWidth + (columnWidth - baseSize) / 2,
                 (
-                    internalPaddingTop + columnHeight - height - baseSize / 2
+                    plotBounds.bottom - height - baseSize / 2
                     ).toFloat()
             )
             if (!prevRect!!.isEmpty) {
@@ -164,9 +164,14 @@ class ScoreChart : ScrollableChart {
             }
             if (k == nColumns - 1) drawMarker(activeCanvas, rect)
             prevRect!!.set(rect!!)
-            rect!![0f, 0f, columnWidth] = columnHeight.toFloat()
-            rect!!.offset(k * columnWidth, internalPaddingTop.toFloat())
-            drawFooter(activeCanvas, rect, date)
+        }
+        activeCanvas.restoreToCount(graphSaveCount)
+        for (k in 0 until nColumns) {
+            val offset = nColumns - k - 1 + dataOffset
+            if (offset >= scores!!.size) continue
+            rect!![0f, 0f, columnWidth] = (8 * baseSize).toFloat()
+            rect!!.offset(plotBounds.left + k * columnWidth, internalPaddingTop.toFloat())
+            drawFooter(activeCanvas, rect, scores!![offset].date)
         }
         if (activeCanvas !== canvas) canvas.drawBitmap(internalDrawingCache!!, 0f, 0f, null)
     }
@@ -195,13 +200,22 @@ class ScoreChart : ScrollableChart {
         columnWidth = baseSize.toFloat()
         columnWidth = max(columnWidth, maxDayWidth * 1.5f)
         columnWidth = max(columnWidth, maxMonthWidth * 1.2f)
-        nColumns = (width / columnWidth).toInt()
-        columnWidth = width.toFloat() / nColumns
-        setScrollerBucketSize(columnWidth.toInt())
-        columnHeight = 8 * baseSize
-        val minStrokeWidth = dpToPixels(context, 1f)
         pGraph!!.textSize = baseSize * 0.5f
         pGraph!!.strokeWidth = baseSize * 0.1f
+        val markerRadius = baseSize * 0.275f
+        val graphInset = markerRadius + pGraph!!.strokeWidth / 2f
+        val yAxisLabelWidth = pText!!.measureText("100%") + em
+        plotBounds.set(
+            max(graphInset, yAxisLabelWidth),
+            internalPaddingTop + graphInset,
+            width - graphInset,
+            internalPaddingTop + 8 * baseSize - graphInset
+        )
+        nColumns = max(1, (plotBounds.width() / columnWidth).toInt())
+        columnWidth = plotBounds.width() / nColumns
+        setScrollerBucketSize(columnWidth.toInt())
+        columnHeight = plotBounds.height().toInt()
+        val minStrokeWidth = dpToPixels(context, 1f)
         pGrid!!.strokeWidth = min(minStrokeWidth, baseSize * 0.05f)
         if (isTransparencyEnabled) initCache(width, height)
     }
@@ -251,26 +265,27 @@ class ScoreChart : ScrollableChart {
     private fun drawGrid(canvas: Canvas?, rGrid: RectF?) {
         val nRows = 5
         val rowHeight = rGrid!!.height() / nRows
+        var y = rGrid.top
         pText!!.textAlign = Paint.Align.LEFT
         pText!!.color = textColor
         pGrid!!.color = gridColor
         for (i in 0 until nRows) {
             canvas!!.drawText(
                 String.format("%d%%", 100 - i * 100 / nRows),
-                rGrid.left + 0.5f * em,
-                rGrid.top + 1f * em,
+                max(0f, rGrid.left - pText!!.measureText("100%") - 0.5f * em),
+                y + 1f * em,
                 pText!!
             )
             canvas.drawLine(
                 rGrid.left,
-                rGrid.top,
+                y,
                 rGrid.right,
-                rGrid.top,
+                y,
                 pGrid!!
             )
-            rGrid.offset(0f, rowHeight)
+            y += rowHeight
         }
-        canvas!!.drawLine(rGrid.left, rGrid.top, rGrid.right, rGrid.top, pGrid!!)
+        canvas!!.drawLine(rGrid.left, y, rGrid.right, y, pGrid!!)
     }
 
     private fun drawLine(canvas: Canvas?, rectFrom: RectF?, rectTo: RectF?) {
