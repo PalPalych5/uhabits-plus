@@ -41,7 +41,7 @@
             android:exported="true">
             <meta-data
                 android:name="android.support.PARENT_ACTIVITY"
-                android:value=".activities.main.MainActivity" />
+                android:value="org.isoron.uhabits.activities.main.MainActivity" />
         </activity>
 
         <meta-data
@@ -76,7 +76,7 @@
             android:label="@string/title_activity_show_habit">
             <meta-data
                 android:name="android.support.PARENT_ACTIVITY"
-                android:value=".activities.main.MainActivity" />
+                android:value="org.isoron.uhabits.activities.main.MainActivity" />
         </activity>
 
         <activity
@@ -84,7 +84,7 @@
             android:label="@string/settings">
             <meta-data
                 android:name="android.support.PARENT_ACTIVITY"
-                android:value=".activities.main.MainActivity" />
+                android:value="org.isoron.uhabits.activities.main.MainActivity" />
         </activity>
 
         <activity
@@ -97,7 +97,7 @@
             android:label="@string/manage_blocks">
             <meta-data
                 android:name="android.support.PARENT_ACTIVITY"
-                android:value=".activities.habits.edit.EditHabitActivity" />
+                android:value="org.isoron.uhabits.activities.habits.edit.EditHabitActivity" />
         </activity>
 
         <activity
@@ -105,7 +105,7 @@
             android:label="@string/reports_title">
             <meta-data
                 android:name="android.support.PARENT_ACTIVITY"
-                android:value=".activities.main.MainActivity" />
+                android:value="org.isoron.uhabits.activities.main.MainActivity" />
         </activity>
 
         <activity
@@ -140,7 +140,7 @@
             android:label="@string/about">
             <meta-data
                 android:name="android.support.PARENT_ACTIVITY"
-                android:value=".activities.main.MainActivity" />
+                android:value="org.isoron.uhabits.activities.main.MainActivity" />
         </activity>
 
         <activity
