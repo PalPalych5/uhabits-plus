@@ -1,0 +1,39 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!--
+      Lucide "database-backup" by the Lucide Contributors, ISC License.
+      Source: https://github.com/lucide-icons/lucide
+      Geometry preserved; the SVG ellipse is expressed as an equivalent vector path.
+    -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M21,5a9,3 0,1 1,-18,0a9,3 0,1 1,18,0"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M3,12a9,3 0,0 0,5,2.69M21,9.3V5"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M3,5v14a9,3 0,0 0,6.47,2.88M12,12v4h4"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2" />
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M13,20a5,5 0,0 0,9,-3a4.5,4.5 0,0 0,-4.5,-4.5c-1.33,0 -2.54,0.54 -3.41,1.41L12,16"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2" />
+</vector>

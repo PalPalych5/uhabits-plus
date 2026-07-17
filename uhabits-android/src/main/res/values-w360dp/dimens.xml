@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="settings_card_horizontal_margin">16dp</dimen>
+    <dimen name="settings_card_vertical_gap_half">5dp</dimen>
+    <dimen name="settings_home_min_height">68dp</dimen>
+    <dimen name="settings_home_padding_start">18dp</dimen>
+    <dimen name="settings_home_padding_end">16dp</dimen>
+    <dimen name="settings_home_padding_vertical">11dp</dimen>
+    <dimen name="settings_home_icon_size">24dp</dimen>
+    <dimen name="settings_home_icon_gap">16dp</dimen>
+    <dimen name="settings_home_title_size">18sp</dimen>
+    <dimen name="settings_home_end_icon_gap">12dp</dimen>
+    <dimen name="settings_detail_row_min_height">52dp</dimen>
+    <dimen name="settings_status_min_height">60dp</dimen>
+    <dimen name="settings_subsection_min_height">38dp</dimen>
+</resources>

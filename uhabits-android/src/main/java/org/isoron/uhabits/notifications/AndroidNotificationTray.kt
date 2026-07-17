@@ -68,8 +68,23 @@ class AndroidNotificationTray(
         date: LocalDate,
         reminderTime: Long
     ) {
+        notify(habit, notificationId, date, reminderTime, isTest = false)
+        active.add(notificationId)
+    }
+
+    fun showTestNotification(habit: Habit, date: LocalDate, reminderTime: Long) {
+        notify(habit, TEST_NOTIFICATION_ID, date, reminderTime, isTest = true)
+    }
+
+    private fun notify(
+        habit: Habit,
+        notificationId: Int,
+        date: LocalDate,
+        reminderTime: Long,
+        isTest: Boolean
+    ) {
         val notificationManager = NotificationManagerCompat.from(context)
-        val notification = buildNotification(habit, reminderTime, date)
+        val notification = buildNotification(habit, reminderTime, date, isTest = isTest)
         createAndroidNotificationChannel(context)
         try {
             notificationManager.notify(notificationId, notification)
@@ -83,88 +98,86 @@ class AndroidNotificationTray(
                 habit,
                 reminderTime,
                 date,
-                disableSound = true
+                disableSound = true,
+                isTest = isTest
             )
             notificationManager.notify(notificationId, n)
         }
-        active.add(notificationId)
     }
 
     fun buildNotification(
         habit: Habit,
         reminderTime: Long,
         date: LocalDate,
-        disableSound: Boolean = false
+        disableSound: Boolean = false,
+        isTest: Boolean = false
     ): Notification {
-        val addRepetitionAction = Action(
-            R.drawable.ic_action_check,
-            context.getString(R.string.yes),
-            pendingIntents.addCheckmark(habit, date)
-        )
-
-        val removeRepetitionAction = Action(
-            R.drawable.ic_action_cancel,
-            context.getString(R.string.no),
-            pendingIntents.removeRepetition(habit, date)
-        )
-
-        val enterAction = Action(
-            R.drawable.ic_action_check,
-            context.getString(R.string.enter),
-            pendingIntents.showNumberPicker(habit, date)
-        )
-
-        val wearableBg = decodeResource(context.resources, R.drawable.stripe)
-
-        // Even though the set of actions is the same on the phone and
-        // on the watch, Pebble requires us to add them to the
-        // WearableExtender.
-        val wearableExtender = WearableExtender().setBackground(wearableBg)
-
         val defaultText = context.getString(R.string.default_reminder_question)
         val builder = Builder(context, REMINDERS_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(habit.name)
             .setContentText(if (habit.question.isBlank()) defaultText else habit.question)
             .setContentIntent(pendingIntents.showHabit(habit))
-            .setDeleteIntent(pendingIntents.dismissNotification(habit))
             .setSound(null)
             .setWhen(reminderTime)
             .setShowWhen(true)
-            .setOngoing(preferences.shouldMakeNotificationsSticky())
+            .setAutoCancel(isTest)
+            .setOngoing(!isTest && preferences.shouldMakeNotificationsSticky())
 
-        if (habit.isNumerical) {
-            wearableExtender.addAction(enterAction)
-            builder.addAction(enterAction)
-        } else {
-            wearableExtender
-                .addAction(addRepetitionAction)
-                .addAction(removeRepetitionAction)
-            builder
-                .addAction(addRepetitionAction)
-                .addAction(removeRepetitionAction)
+        if (!isTest) {
+            val addRepetitionAction = Action(
+                R.drawable.ic_action_check,
+                context.getString(R.string.yes),
+                pendingIntents.addCheckmark(habit, date)
+            )
+            val removeRepetitionAction = Action(
+                R.drawable.ic_action_cancel,
+                context.getString(R.string.no),
+                pendingIntents.removeRepetition(habit, date)
+            )
+            val enterAction = Action(
+                R.drawable.ic_action_check,
+                context.getString(R.string.enter),
+                pendingIntents.showNumberPicker(habit, date)
+            )
+            val wearableExtender = WearableExtender()
+                .setBackground(decodeResource(context.resources, R.drawable.stripe))
+
+            builder.setDeleteIntent(pendingIntents.dismissNotification(habit))
+            if (habit.isNumerical) {
+                wearableExtender.addAction(enterAction)
+                builder.addAction(enterAction)
+            } else {
+                wearableExtender
+                    .addAction(addRepetitionAction)
+                    .addAction(removeRepetitionAction)
+                builder
+                    .addAction(addRepetitionAction)
+                    .addAction(removeRepetitionAction)
+            }
+
+            if (SDK_INT < Build.VERSION_CODES.S) {
+                val snoozeAction = Action(
+                    R.drawable.ic_action_snooze,
+                    context.getString(R.string.snooze),
+                    pendingIntents.snoozeNotification(habit)
+                )
+                wearableExtender.addAction(snoozeAction)
+                builder.addAction(snoozeAction)
+            }
+            builder.extend(wearableExtender)
         }
 
         if (!disableSound) {
             builder.setSound(ringtoneManager.getURI())
         }
 
-        if (SDK_INT < Build.VERSION_CODES.S) {
-            val snoozeAction = Action(
-                R.drawable.ic_action_snooze,
-                context.getString(R.string.snooze),
-                pendingIntents.snoozeNotification(habit)
-            )
-            wearableExtender.addAction(snoozeAction)
-            builder.addAction(snoozeAction)
-        }
-
-        builder.extend(wearableExtender)
         return builder.build()
     }
 
     companion object {
         private const val REMINDERS_CHANNEL_ID = "REMINDERS"
+        private const val TEST_NOTIFICATION_ID = Int.MAX_VALUE
         fun createAndroidNotificationChannel(context: Context) {
             val notificationManager = context.getSystemService(Activity.NOTIFICATION_SERVICE)
                 as NotificationManager

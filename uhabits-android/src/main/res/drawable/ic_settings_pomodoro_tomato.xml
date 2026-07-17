@@ -1,0 +1,30 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!--
+      Adapted from Arcticons "tomato" by the Arcticons Team, CC BY-SA 4.0.
+      Source: https://github.com/Arcticons-Team/Arcticons
+      Changes: normalized to 24dp, removed the decorative accent strokes, and subtly
+      flattened and optically offset the lower contour.
+    -->
+    <group
+        android:scaleX="0.5"
+        android:scaleY="0.5">
+        <path
+            android:fillColor="#00000000"
+            android:pathData="m36.386,11.078l-0.003,-0.002c-0.013,-0.01 -0.03,-0.014 -0.042,-0.023a1.27,1.27 0,0 0,-0.582 -1.178c-1.996,-1.28 -5.856,-3.147 -9.68,-1.615V5.355c0,-1.19 -0.863,-2.16 -1.923,-2.16h-1.723c-1.061,0 -1.924,0.97 -1.924,2.16v3.182c-1.724,-0.307 -5.48,-0.61 -9.09,1.545a1.28,1.28 0,0 0,-0.546 1.572c0.023,0.061 0.065,0.107 0.095,0.162l-0.24,0.06c-0.182,0.048 -0.358,0.14 -0.51,0.264C5.948,15.692 3.5,20.757 3.5,26.035c0,9.4 8.9,17.2 20.1,17.2s20.9,-7.8 20.9,-17.2c0,-5.921 -2.957,-11.373 -8.114,-14.957"
+            android:strokeColor="#FF000000"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="4" />
+        <path
+            android:fillColor="#00000000"
+            android:pathData="M36.383,11.076c-2.72,-0.465 -6.043,-0.856 -6.62,1.261c-0.095,0.642 0.207,1.27 0.769,1.601c2.016,1.227 3.122,2.536 3.71,4.426c-2.426,-1.839 -6.342,-3.418 -8.385,-2.187a1.6,1.6 0,0 0,-0.473 1.154c0.075,4.814 -1.588,8.043 -2.556,9.504c-0.923,-1.957 -1.208,-6.167 -1.156,-9.627a1.576,1.576 0,0 0,-1.387 -1.582c-2.825,-0.28 -5.458,1.272 -7.67,2.867c0.908,-1.658 2.235,-3.214 3.663,-4.269c0.678,-0.449 1.437,-0.977 1.305,-1.9c-0.732,-2.544 -4.37,-1.832 -6.615,-0.508"
+            android:strokeColor="#FF000000"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="4" />
+    </group>
+</vector>

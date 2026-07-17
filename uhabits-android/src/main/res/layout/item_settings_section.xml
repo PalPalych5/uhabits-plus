@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:minHeight="@dimen/settings_home_min_height"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="@dimen/settings_home_padding_start"
+    android:paddingTop="@dimen/settings_home_padding_vertical"
+    android:paddingEnd="@dimen/settings_home_padding_end"
+    android:paddingBottom="@dimen/settings_home_padding_vertical"
+    android:clickable="true"
+    android:focusable="true">
+
+    <ImageView
+        android:id="@+id/sectionIcon"
+        android:layout_width="@dimen/settings_home_icon_size"
+        android:layout_height="@dimen/settings_home_icon_size"
+        android:layout_marginEnd="@dimen/settings_home_icon_gap"
+        android:contentDescription="@null" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/sectionTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-medium"
+            android:textSize="@dimen/settings_home_title_size" />
+
+        <TextView
+            android:id="@+id/sectionSummary"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:textSize="@dimen/settings_home_summary_size" />
+    </LinearLayout>
+
+    <ImageView
+        android:id="@+id/sectionChevron"
+        android:layout_width="@dimen/settings_home_end_icon_size"
+        android:layout_height="@dimen/settings_home_end_icon_size"
+        android:layout_marginStart="@dimen/settings_home_end_icon_gap"
+        android:contentDescription="@null"
+        android:src="@drawable/ic_chevron_right" />
+</LinearLayout>

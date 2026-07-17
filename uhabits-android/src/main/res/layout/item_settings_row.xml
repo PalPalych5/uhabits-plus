@@ -10,17 +10,17 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:minHeight="56dp"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="10dp"
-        android:paddingBottom="10dp">
+        android:minHeight="@dimen/settings_detail_row_min_height"
+        android:paddingStart="@dimen/settings_detail_padding_start"
+        android:paddingEnd="@dimen/settings_detail_padding_end"
+        android:paddingTop="@dimen/settings_detail_padding_vertical"
+        android:paddingBottom="@dimen/settings_detail_padding_vertical">
 
         <ImageView
             android:id="@+id/rowIcon"
-            android:layout_width="22dp"
-            android:layout_height="22dp"
-            android:layout_marginEnd="12dp"
+            android:layout_width="@dimen/settings_detail_icon_size"
+            android:layout_height="@dimen/settings_detail_icon_size"
+            android:layout_marginEnd="@dimen/settings_detail_icon_gap"
             android:tint="?attr/contrast60"
             android:contentDescription="@null" />
 
@@ -46,7 +46,7 @@
                 android:textColor="?attr/contrast60"
                 android:layout_marginTop="2dp"
                 android:lineSpacingExtra="1dp"
-                android:maxLines="3"
+                android:maxLines="2"
                 android:ellipsize="end"
                 android:visibility="gone" />
         </LinearLayout>
@@ -55,7 +55,7 @@
             android:id="@+id/accessoryContainer"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
+            android:layout_marginStart="@dimen/settings_detail_accessory_gap"
             android:layout_gravity="center_vertical">
 
             <ImageView
@@ -69,8 +69,8 @@
 
             <org.isoron.uhabits.activities.settings.SettingsSwitchView
                 android:id="@+id/accessorySwitch"
-                android:layout_width="42dp"
-                android:layout_height="24dp"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
                 android:visibility="gone" />
 
             <TextView
@@ -93,7 +93,7 @@
         android:id="@+id/rowDivider"
         android:layout_width="match_parent"
         android:layout_height="1dp"
-        android:layout_marginStart="50dp"
-        android:layout_marginEnd="16dp"
+        android:layout_marginStart="@dimen/settings_detail_row_divider_start"
+        android:layout_marginEnd="@dimen/settings_detail_divider_end"
         android:background="?attr/contrast20" />
 </LinearLayout>

@@ -14,6 +14,7 @@ interface MainNavigationHost {
     fun navigate(destination: MainDestination)
     fun navigateBack(): Boolean
     fun setHabitCreationAvailable(available: Boolean)
+    fun setBottomNavigationVisible(visible: Boolean, animate: Boolean)
 }
 
 enum class SettingsAction {

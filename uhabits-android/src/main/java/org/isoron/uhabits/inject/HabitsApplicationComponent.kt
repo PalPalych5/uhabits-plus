@@ -80,6 +80,7 @@ abstract class HabitsApplicationComponent(
     abstract val genericImporter: GenericImporter
     abstract val habitCardListCache: HabitCardListCache
     abstract val habitList: HabitList
+    abstract val androidNotificationTray: AndroidNotificationTray
     abstract val intentFactory: IntentFactory
     abstract val intentParser: IntentParser
     abstract val logging: Logging

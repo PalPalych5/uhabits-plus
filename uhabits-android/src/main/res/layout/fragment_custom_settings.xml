@@ -7,7 +7,8 @@
         android:id="@+id/settingsRecyclerView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:layout_gravity="center_horizontal"
         android:scrollbars="none"
         android:paddingBottom="16dp"
-        android:clipToPadding="true" />
+        android:clipToPadding="false" />
 </FrameLayout>

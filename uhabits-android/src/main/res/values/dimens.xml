@@ -18,6 +18,34 @@
   -->
 
 <resources>
+    <dimen name="settings_toolbar_touch_target">48dp</dimen>
+    <dimen name="settings_content_max_width">640dp</dimen>
+    <dimen name="settings_card_horizontal_margin">12dp</dimen>
+    <dimen name="settings_card_vertical_gap_half">4dp</dimen>
+    <dimen name="settings_card_radius">12dp</dimen>
+    <dimen name="settings_home_min_height">64dp</dimen>
+    <dimen name="settings_home_padding_start">14dp</dimen>
+    <dimen name="settings_home_padding_end">12dp</dimen>
+    <dimen name="settings_home_padding_vertical">10dp</dimen>
+    <dimen name="settings_home_icon_size">22dp</dimen>
+    <dimen name="settings_home_icon_gap">12dp</dimen>
+    <dimen name="settings_home_title_size">17sp</dimen>
+    <dimen name="settings_home_summary_size">13sp</dimen>
+    <dimen name="settings_home_end_icon_size">20dp</dimen>
+    <dimen name="settings_home_end_icon_gap">10dp</dimen>
+    <dimen name="settings_detail_row_min_height">52dp</dimen>
+    <dimen name="settings_status_min_height">56dp</dimen>
+    <dimen name="settings_subsection_min_height">36dp</dimen>
+    <dimen name="settings_detail_padding_start">18dp</dimen>
+    <dimen name="settings_detail_padding_end">16dp</dimen>
+    <dimen name="settings_detail_padding_vertical">8dp</dimen>
+    <dimen name="settings_detail_icon_size">22dp</dimen>
+    <dimen name="settings_detail_icon_gap">12dp</dimen>
+    <dimen name="settings_detail_accessory_gap">12dp</dimen>
+    <dimen name="settings_detail_icon_column_width">34dp</dimen>
+    <dimen name="settings_detail_row_divider_start">52dp</dimen>
+    <dimen name="settings_detail_group_divider_start">18dp</dimen>
+    <dimen name="settings_detail_divider_end">16dp</dimen>
     <dimen name="baseSize">20dp</dimen>
     <dimen name="checkmarkWidth">48dp</dimen>
     <dimen name="checkmarkHeight">48dp</dimen>

@@ -12,9 +12,9 @@ import android.os.Bundle
 import android.util.Log
 import android.view.MenuItem
 import android.view.View
-import android.view.ViewGroup
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.DecelerateInterpolator
+import android.view.animation.PathInterpolator
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
@@ -60,10 +60,13 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     private var currentResolvedNightMode = false
     private var permissionAlreadyRequested = false
     private var isBottomTabTransitionRunning = false
+    private var pendingArchiveBack = false
     private var tabTransitionToken = 0
     private lateinit var habitsTabAnimator: TabAnimator
     private lateinit var reportsTabAnimator: TabAnimator
     private lateinit var settingsTabAnimator: TabAnimator
+    private var bottomNavigationNaturalHeight = 0
+    private var bottomNavigationAnimationToken = 0
 
     private val permissionLauncher = registerForActivityResult(RequestPermission()) { granted ->
         if (granted) scheduleReminders()
@@ -84,6 +87,9 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         binding.root.applyRootViewInsets()
         binding.bottomNavigationContainer.applyBottomInset()
         setContentView(binding.root)
+        binding.bottomNavigationContainer.post {
+            bottomNavigationNaturalHeight = binding.bottomNavigationContainer.height
+        }
 
         val palette = MainTabsThemeBridge.resolve(this)
         binding.mainRoot.setBackgroundColor(palette.background)
@@ -94,7 +100,10 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
             intent.removeExtra(EXTRA_RESTORE_SUCCESS)
         }
 
-        var startDest = savedInstanceState?.getString(STATE_CURRENT)?.let {
+        var startDest = intent.getStringExtra(EXTRA_RECREATE_DESTINATION)?.let {
+            intent.removeExtra(EXTRA_RECREATE_DESTINATION)
+            parseDestination(it)
+        } ?: savedInstanceState?.getString(STATE_CURRENT)?.let {
             parseDestination(it)
         } ?: destinationFromIntent(intent)
 
@@ -201,6 +210,11 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     private fun showDestination(destination: MainDestination, animateFrom: MainDestination? = null) {
+        when (destination) {
+            MainDestination.ARCHIVE -> setBottomNavigationVisible(false, false)
+            MainDestination.SETTINGS -> Unit
+            else -> setBottomNavigationVisible(true, false)
+        }
         val source = animateFrom
         val shouldAnimate = source != null &&
             canAnimateMainTabTransition(source, destination) &&
@@ -343,6 +357,11 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         setHabitCreationAvailable(
             destination == MainDestination.HABITS
         )
+        when (destination) {
+            MainDestination.ARCHIVE -> setBottomNavigationVisible(false, false)
+            MainDestination.SETTINGS -> Unit
+            else -> setBottomNavigationVisible(true, false)
+        }
     }
 
     private fun updateBottomSelection(
@@ -392,15 +411,126 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     override fun navigate(destination: MainDestination) {
+        if (isBottomTabTransitionRunning) return
+        val previous = navigationState.current
         if (!navigationState.navigate(destination)) return
-        showDestination(destination)
+        if (previous == MainDestination.SETTINGS && destination == MainDestination.ARCHIVE) {
+            showArchiveTransition(previous, destination, returning = false)
+        } else {
+            showDestination(destination)
+        }
     }
 
     override fun navigateBack(): Boolean {
+        if (isBottomTabTransitionRunning) {
+            if (navigationState.current == MainDestination.ARCHIVE) pendingArchiveBack = true
+            return true
+        }
+        val previous = navigationState.current
         val destination = navigationState.navigateBack()
         if (destination == null) return false
-        showDestination(destination)
+        if (previous == MainDestination.ARCHIVE && destination == MainDestination.SETTINGS) {
+            showArchiveTransition(previous, destination, returning = true)
+        } else {
+            showDestination(destination)
+        }
         return true
+    }
+
+    private fun showArchiveTransition(
+        sourceDestination: MainDestination,
+        targetDestination: MainDestination,
+        returning: Boolean
+    ) {
+        pendingArchiveBack = false
+        setBottomNavigationVisible(false, false)
+        val source = supportFragmentManager.findFragmentByTag(tagFor(sourceDestination))
+        val target = fragmentFor(targetDestination)
+        (source as? SettingsSectionFragment)?.setArchiveTransitionInFlight(true)
+        (target as? SettingsSectionFragment)?.setArchiveTransitionInFlight(true)
+        if (target is ListHabitsFragment) target.setDisplayMode(ListHabitsDisplayMode.ARCHIVE)
+
+        supportFragmentManager.beginTransaction()
+            .show(target)
+            .setMaxLifecycle(target, Lifecycle.State.RESUMED)
+            .apply { source?.let { setMaxLifecycle(it, Lifecycle.State.STARTED) } }
+            .commitNowAllowingStateLoss()
+
+        val sourceView = source?.view
+        val targetView = target.view
+        val motionEnabled = !prefs.isConfettiAnimationDisabled && areSystemAnimationsEnabled()
+        if (!motionEnabled || sourceView == null || targetView == null || binding.mainContent.width == 0) {
+            showDestinationImmediately(targetDestination, updateBottomNavigation = false)
+            setBottomNavigationVisible(false, false)
+            (source as? SettingsSectionFragment)?.setArchiveTransitionInFlight(false)
+            (target as? SettingsSectionFragment)?.setArchiveTransitionInFlight(false)
+            return
+        }
+
+        val token = ++tabTransitionToken
+        val direction = if (binding.root.layoutDirection == View.LAYOUT_DIRECTION_RTL) -1f else 1f
+        val width = binding.mainContent.width.toFloat()
+        val fullSlide = width * direction
+        val sourceOffset = width * 0.18f * direction
+        val duration = if (returning) ARCHIVE_POP_MS else ARCHIVE_PUSH_MS
+        isBottomTabTransitionRunning = true
+        sourceView.animate().setListener(null).cancel()
+        targetView.animate().setListener(null).cancel()
+
+        if (returning) {
+            targetView.translationX = -sourceOffset
+            targetView.alpha = 0.94f
+        } else {
+            targetView.translationX = fullSlide
+            targetView.alpha = 1f
+        }
+        targetView.bringToFront()
+
+        sourceView.animate()
+            .translationX(if (returning) fullSlide else -sourceOffset)
+            .alpha(if (returning) 1f else 0.94f)
+            .setDuration(duration)
+            .setInterpolator(PathInterpolator(0.2f, 0f, 0f, 1f))
+            .start()
+        targetView.animate()
+            .translationX(0f)
+            .alpha(1f)
+            .setDuration(duration)
+            .setInterpolator(PathInterpolator(0.2f, 0f, 0f, 1f))
+            .setListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    targetView.animate().setListener(null)
+                    if (tabTransitionToken != token) return
+                    val transaction = supportFragmentManager.beginTransaction()
+                    supportFragmentManager.fragments.forEach { fragment ->
+                        if (fragment == target) {
+                            transaction.show(fragment).setMaxLifecycle(fragment, Lifecycle.State.RESUMED)
+                        } else {
+                            transaction.hide(fragment).setMaxLifecycle(fragment, Lifecycle.State.STARTED)
+                        }
+                    }
+                    transaction.commitNowAllowingStateLoss()
+                    resetFragmentRoot(sourceView)
+                    resetFragmentRoot(targetView)
+                    isBottomTabTransitionRunning = false
+                    setBottomNavigationVisible(false, false)
+                    (source as? SettingsSectionFragment)?.setArchiveTransitionInFlight(false)
+                    (target as? SettingsSectionFragment)?.setArchiveTransitionInFlight(false)
+                    if (pendingArchiveBack) {
+                        pendingArchiveBack = false
+                        binding.root.post { navigateBack() }
+                    }
+                }
+
+                override fun onAnimationCancel(animation: Animator) {
+                    resetFragmentRoot(sourceView)
+                    resetFragmentRoot(targetView)
+                    if (tabTransitionToken == token) isBottomTabTransitionRunning = false
+                    (source as? SettingsSectionFragment)?.setArchiveTransitionInFlight(false)
+                    (target as? SettingsSectionFragment)?.setArchiveTransitionInFlight(false)
+                }
+            })
+            .start()
     }
 
     override fun setHabitCreationAvailable(available: Boolean) {
@@ -438,8 +568,8 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     private fun handleIncomingIntent(intent: Intent) {
-        val destination = destinationFromIntent(intent)
-        if (destination != navigationState.current) navigate(destination)
+        val destination = intent.getStringExtra(EXTRA_DESTINATION)?.let(::parseDestination)
+        if (destination != null && destination != navigationState.current) navigate(destination)
         if (intent.action != null) habitsFragment().handleIntent(intent)
         intent.action = null
     }
@@ -505,6 +635,46 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         super.onDestroy()
     }
 
+    override fun setBottomNavigationVisible(visible: Boolean, animate: Boolean) {
+        val container = binding.bottomNavigationContainer
+        if (container.height > 0) bottomNavigationNaturalHeight = container.height
+        val naturalHeight = bottomNavigationNaturalHeight.takeIf { it > 0 }
+            ?: (50 * resources.displayMetrics.density).toInt()
+        val shouldAnimate = animate && !prefs.isConfettiAnimationDisabled && areSystemAnimationsEnabled()
+        bottomNavigationAnimationToken++
+        val token = bottomNavigationAnimationToken
+        container.animate().setListener(null).cancel()
+
+        if (!shouldAnimate) {
+            container.visibility = if (visible) View.VISIBLE else View.GONE
+            container.translationY = 0f
+            container.alpha = 1f
+            return
+        }
+        if (visible && container.visibility == View.VISIBLE && container.translationY == 0f) return
+        if (!visible && container.visibility != View.VISIBLE) return
+
+        if (visible) {
+            container.visibility = View.VISIBLE
+            container.translationY = naturalHeight.toFloat()
+            container.alpha = 0.96f
+        }
+        container.animate()
+            .translationY(if (visible) 0f else naturalHeight.toFloat())
+            .alpha(if (visible) 1f else 0.96f)
+            .setDuration(if (visible) 250L else 220L)
+            .setInterpolator(PathInterpolator(0.2f, 0f, 0f, 1f))
+            .setListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    if (token != bottomNavigationAnimationToken) return
+                    container.visibility = if (visible) View.VISIBLE else View.GONE
+                    container.translationY = 0f
+                    container.alpha = 1f
+                }
+            })
+            .start()
+    }
+
     override fun onQuestionMarksChanged() = Unit
 
     override fun onSyncFinished() {
@@ -532,6 +702,15 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     override fun onNavigationPreferencesChanged() = Unit
+
+    fun recreateForThemeChange() {
+        currentTheme = prefs.theme
+        pureBlack = prefs.isPureBlackEnabled
+        currentResolvedNightMode = AndroidThemeSwitcher(this, prefs).isNightMode
+        intent.removeExtra(EXTRA_DESTINATION)
+        intent.putExtra(EXTRA_RECREATE_DESTINATION, MainDestination.SETTINGS.name)
+        recreate()
+    }
 
     override fun onSyncPreferencesChanged() {
         runOnUiThread {
@@ -644,6 +823,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
     companion object {
         private const val EXTRA_DESTINATION = "main.destination"
+        private const val EXTRA_RECREATE_DESTINATION = "main.recreate_destination"
         private const val STATE_CURRENT = "main.current"
         private const val STATE_HISTORY = "main.history"
         private const val TAG_HABITS = "main.habits"
@@ -655,6 +835,8 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         private const val TAB_FADE_IN_MS = 180L
         private const val TAB_SLIDE_DP = 12f
         private const val TAB_STATISTICS_SLIDE_DP = 4f
+        private const val ARCHIVE_PUSH_MS = 280L
+        private const val ARCHIVE_POP_MS = 250L
 
         fun intent(
             context: Context,

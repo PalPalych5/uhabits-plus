@@ -19,6 +19,8 @@
 package org.isoron.uhabits.activities.settings
 
 import android.app.backup.BackupManager as AndroidBackupManager
+import android.app.NotificationManager
+import android.animation.ValueAnimator
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.SharedPreferences.OnSharedPreferenceChangeListener
@@ -34,17 +36,19 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.appcompat.app.AlertDialog
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
 import androidx.core.os.LocaleListCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.DefaultItemAnimator
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.slider.Slider
@@ -93,9 +97,10 @@ import org.isoron.uhabits.utils.DemoDataGenerator
 import java.text.DateFormat
 import java.io.File
 import java.util.Locale
+import kotlin.math.min
 import kotlin.system.exitProcess
 
-class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
+open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     private var sharedPrefs: SharedPreferences? = null
     private var ringtoneManager: RingtoneManager? = null
     private lateinit var pomodoroCompletionNotifier: PomodoroCompletionNotifier
@@ -110,6 +115,9 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
 
     private lateinit var recyclerView: RecyclerView
     private lateinit var adapter: CustomSettingsAdapter
+    private var visibleItems: List<SettingItem> = emptyList()
+    private var manualSyncInProgress = false
+    private var statisticsDialog: AlertDialog? = null
     private val useCompactTopInset: Boolean
         get() = arguments?.getBoolean(ARG_COMPACT_TOP_INSET, false) ?: false
 
@@ -164,23 +172,38 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         view.setBackgroundColor(palette.background)
 
         recyclerView = view.findViewById(R.id.settingsRecyclerView)
-        recyclerView.layoutManager = LinearLayoutManager(requireContext())
-        recyclerView.itemAnimator = DefaultItemAnimator().apply {
-            addDuration = 220L
-            removeDuration = 180L
-            moveDuration = 220L
-            changeDuration = 0L
-            supportsChangeAnimations = false
+        view.addOnLayoutChangeListener { _, left, _, right, _, _, _, _, _ ->
+            val maxWidth = resources.getDimensionPixelSize(R.dimen.settings_content_max_width)
+            val targetWidth = min(right - left, maxWidth)
+            when (val params = recyclerView.layoutParams) {
+                is FrameLayout.LayoutParams -> {
+                    if (params.width != targetWidth || params.gravity != android.view.Gravity.CENTER_HORIZONTAL) {
+                        params.width = targetWidth
+                        params.gravity = android.view.Gravity.CENTER_HORIZONTAL
+                        recyclerView.layoutParams = params
+                    }
+                }
+                is LinearLayout.LayoutParams -> {
+                    if (params.width != targetWidth || params.gravity != android.view.Gravity.CENTER_HORIZONTAL) {
+                        params.width = targetWidth
+                        params.gravity = android.view.Gravity.CENTER_HORIZONTAL
+                        recyclerView.layoutParams = params
+                    }
+                }
+            }
         }
+        recyclerView.layoutManager = LinearLayoutManager(requireContext())
+        recyclerView.itemAnimator = SettingsItemAnimator { motionEnabled() }
         val contentTopSpacing = ((if (useCompactTopInset) 4 else 8) * resources.displayMetrics.density).toInt()
         val contentBottomSpacing = recyclerView.paddingBottom
         ViewCompat.setOnApplyWindowInsetsListener(recyclerView) { recycler, insets ->
             val systemBarsInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val bottomInset = if (useCompactTopInset) 0 else systemBarsInsets.bottom
             recycler.setPadding(
                 recycler.paddingLeft,
                 contentTopSpacing,
                 recycler.paddingRight,
-                systemBarsInsets.bottom + contentBottomSpacing
+                bottomInset + contentBottomSpacing
             )
             insets
         }
@@ -203,788 +226,440 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         super.onPause()
     }
 
+    override fun onDestroyView() {
+        statisticsDialog?.dismiss()
+        statisticsDialog = null
+        super.onDestroyView()
+    }
+
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences, key: String?) {
         if (key == "pref_widget_opacity" && widgetUpdater != null) {
             Log.d("SettingsFragment", "updating widgets")
             widgetUpdater!!.updateWidgets()
         }
         AndroidBackupManager.dataChanged("org.isoron.uhabits.plus")
-        if (!shouldRebuildSettingsListForPreference(key)) return
         activity?.runOnUiThread {
             rebuildSettingsList()
         }
     }
 
-    private fun shouldRebuildSettingsListForPreference(key: String?): Boolean {
-        return key == null || key in setOf(
-            "pref_theme",
-            "pref_pure_black",
-            "pref_app_language",
-            "pref_first_weekday",
-            "pref_accent_color",
-            "pref_widget_opacity",
-            "pref_habit_card_corner_radius",
-            "pref_habits_card_corner_radius",
-            "pref_statistics_card_corner_radius",
-            "pref_enable_habit_spheres",
-            "pref_enable_day_tiers",
-            "pref_day_tier_sort_order",
-            "pref_developer",
-            "pref_sync_status",
-            "pref_sync_status_detail",
-            "pref_sync_last_success_at",
-            "pref_sync_review_required",
-            "pref_sync_review_reason",
-            "pref_sync_account_email",
-            "pref_sync_base_url",
-            "pref_sync_key",
-            "pref_sync_encryption_key",
-            "publicBackupFolder"
-        )
-    }
-
     private fun rebuildSettingsList() {
-        if (!isAdded) return
-        val items = mutableListOf<SettingItem>()
-
-        // 1. Внешний вид
-        items.add(SettingItem.Header(getString(R.string.appearance)))
-        
-        // Тема (Segmented)
-        items.add(
-            SettingItem.SegmentedTheme(
-                key = "pref_theme",
-                iconRes = R.drawable.ic_settings_theme,
-                title = getString(R.string.theme),
-                themeValue = prefs.theme,
-                pureBlackValue = prefs.isPureBlackEnabled,
-                onSegmentSelected = { newTheme, newPureBlack ->
-                    prefs.theme = newTheme
-                    prefs.isPureBlackEnabled = newPureBlack
-                    val switcher = AndroidThemeSwitcher(requireContext(), prefs)
-                    switcher.apply()
-                    reloadSettingsScreen()
-                }
-            )
-        )
-
-        // Язык
-        val languageTag = sharedPrefs?.getString("pref_app_language", "ru-RU") ?: "ru-RU"
-        val languageIndex = resources.getStringArray(R.array.pref_app_language_values).indexOf(languageTag)
-        val languageEntry = if (languageIndex >= 0) {
-            resources.getStringArray(R.array.pref_app_language_entries)[languageIndex]
-        } else {
-            languageTag
+        if (!isAdded || !::adapter.isInitialized) return
+        val sections = buildList {
+            add(buildAppearanceSection())
+            add(buildHabitsSection())
+            add(buildNotificationsSection())
+            add(buildPomodoroSection())
+            add(buildStatisticsSection())
+            add(buildDataSection())
+            add(buildSyncSection())
+            add(buildHelpSection())
+            if (prefs.isDeveloper) add(buildDeveloperSection())
         }
-        items.add(
-            SettingItem.Navigation(
-                key = "pref_app_language",
-                iconRes = R.drawable.ic_settings_globe,
-                title = getString(R.string.language),
-                summary = languageEntry,
-                onClick = { showLanguageDialog() }
-            )
-        )
-
-        // Первый день недели
-        val currentFirstWeekday = prefs.firstWeekday.daysSinceSunday + 1
-        val dayNames = JavaLocalDateFormatter(Locale.getDefault()).longWeekdayNames(DayOfWeek.SATURDAY)
-        val weekdaySummary = dayNames[currentFirstWeekday % 7]
-        items.add(
-            SettingItem.Navigation(
-                key = "pref_first_weekday",
-                iconRes = R.drawable.ic_settings_calendar,
-                title = getString(R.string.first_day_of_the_week),
-                summary = weekdaySummary,
-                onClick = { showWeekdayDialog() }
-            )
-        )
-
-        // Акцентный цвет
-        val accentColorString = AccentColorManager.getAccentColorString(prefs)
-        val accentColorName = AccentColorManager.getAccentColorName(requireContext(), prefs)
-        items.add(
-            SettingItem.ColorPicker(
-                key = "pref_accent_color",
-                iconRes = R.drawable.ic_settings_droplet,
-                title = getString(R.string.accent_color),
-                summary = accentColorName,
-                colorString = accentColorString,
-                onClick = { showAccentColorPicker() }
-            )
-        )
-
-        // Анимации
-        items.add(
-            SettingItem.Switch(
-                key = "pref_disable_animation",
-                iconRes = R.drawable.ic_settings_animation,
-                title = getString(R.string.pref_animations_title),
-                summary = getString(R.string.pref_animations_description),
-                checked = prefs.isConfettiAnimationDisabled,
-                onCheckedChange = { checked ->
-                    prefs.isConfettiAnimationDisabled = checked
-                }
-            )
-        )
-
-        // Непрозрачность виджета
-        val opacityValue = sharedPrefs?.getString("pref_widget_opacity", "255") ?: "255"
-        val opacityIndex = resources.getStringArray(R.array.widget_opacity_values).indexOf(opacityValue)
-        val opacityEntry = if (opacityIndex >= 0) {
-            resources.getStringArray(R.array.widget_opacity_entries)[opacityIndex]
-        } else {
-            opacityValue
-        }
-        items.add(
-            SettingItem.Navigation(
-                key = "pref_widget_opacity",
-                iconRes = R.drawable.ic_settings_opacity,
-                title = getString(R.string.widget_opacity_title),
-                summary = opacityEntry,
-                onClick = { showWidgetOpacityDialog() }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "pref_card_rounding",
-                iconRes = R.drawable.ic_settings_corners,
-                title = getString(R.string.pref_card_rounding_title),
-                summary = buildCardRoundingSummary(),
-                onClick = { showCardRoundingDialog() }
-            )
-        )
-
-        items.add(
-            SettingItem.Switch(
-                key = "pref_show_habit_card_borders",
-                iconRes = R.drawable.ic_settings_layout_list,
-                title = getString(R.string.settings_show_habit_card_borders_title),
-                summary = getString(R.string.settings_show_habit_card_borders_summary),
-                checked = prefs.showHabitCardBorders,
-                onCheckedChange = { checked ->
-                    prefs.showHabitCardBorders = checked
-                }
-            )
-        )
-
-        // 2. Привычки
-        items.add(SettingItem.Header(getString(R.string.pref_habits_title)))
-
-        items.add(
-            SettingItem.Switch(
-                key = "pref_enable_habit_spheres",
-                iconRes = R.drawable.ic_settings_spheres,
-                title = getString(R.string.pref_enable_habit_spheres_title),
-                summary = getString(R.string.pref_enable_habit_spheres_summary),
-                checked = prefs.isHabitSpheresEnabled,
-                onCheckedChange = { checked ->
-                    prefs.isHabitSpheresEnabled = checked
-                    rebuildSettingsList()
-                }
-            )
-        )
-
-        if (prefs.isHabitSpheresEnabled) {
-            items.add(
-                SettingItem.Navigation(
-                    key = "configureSpheres",
-                    iconRes = R.drawable.ic_settings_configure_spheres,
-                    title = getString(R.string.configure_spheres),
-                    summary = getString(R.string.configure_spheres_summary),
-                    onClick = { actionHandler().onSettingsAction(SettingsAction.MANAGE_SPHERES) }
-                )
-            )
-        }
-
-        items.add(
-            SettingItem.Switch(
-                key = "pref_enable_day_tiers",
-                iconRes = R.drawable.ic_settings_tiers,
-                title = getString(R.string.pref_enable_day_tiers_title),
-                summary = getString(R.string.pref_enable_day_tiers_summary),
-                checked = prefs.isDayTiersEnabled,
-                onCheckedChange = { checked ->
-                    prefs.isDayTiersEnabled = checked
-                    rebuildSettingsList()
-                }
-            )
-        )
-
-        if (prefs.isDayTiersEnabled) {
-            items.add(
-                SettingItem.Navigation(
-                    key = "pref_day_tier_sort_order",
-                    iconRes = R.drawable.ic_settings_arrows_sort,
-                    title = getString(R.string.pref_day_tier_sort_order_title),
-                    summary = dayTierSortOrderSummary(),
-                    onClick = { showDayTierSortOrderDialog() }
-                )
-            )
-        }
-
-        items.add(
-            SettingItem.Switch(
-                key = "pref_habit_group_separators",
-                iconRes = R.drawable.ic_settings_separator_horizontal,
-                title = getString(R.string.pref_habit_group_separators_title),
-                summary = getString(R.string.pref_habit_group_separators_summary),
-                checked = prefs.areHabitGroupSeparatorsEnabled,
-                onCheckedChange = { checked ->
-                    prefs.areHabitGroupSeparatorsEnabled = checked
-                }
-            )
-        )
-
-        items.add(
-            SettingItem.Switch(
-                key = "pref_short_toggle",
-                iconRes = R.drawable.ic_settings_check,
-                title = getString(R.string.pref_toggle_title),
-                summary = getString(R.string.pref_toggle_description_2),
-                checked = prefs.isShortToggleEnabled,
-                onCheckedChange = { checked ->
-                    prefs.isShortToggleEnabled = checked
-                }
-            )
-        )
-
-        items.add(
-            SettingItem.Switch(
-                key = "pref_checkmark_reverse_order",
-                iconRes = R.drawable.ic_settings_reverse,
-                title = getString(R.string.reverse_days),
-                summary = getString(R.string.reverse_days_description),
-                checked = prefs.isCheckmarkSequenceReversed,
-                onCheckedChange = { checked ->
-                    prefs.isCheckmarkSequenceReversed = checked
-                }
-            )
-        )
-
-        items.add(
-            SettingItem.Switch(
-                key = "pref_skip_enabled",
-                iconRes = R.drawable.ic_settings_fast_forward,
-                title = getString(R.string.pref_skip_title),
-                summary = getString(R.string.pref_skip_description),
-                checked = prefs.isSkipEnabled,
-                onCheckedChange = { checked ->
-                    prefs.isSkipEnabled = checked
-                }
-            )
-        )
-
-        items.add(
-            SettingItem.Switch(
-                key = "pref_unknown_enabled",
-                iconRes = R.drawable.ic_settings_question,
-                title = getString(R.string.pref_unknown_title),
-                summary = getString(R.string.pref_unknown_description),
-                checked = prefs.areQuestionMarksEnabled,
-                onCheckedChange = { checked ->
-                    prefs.areQuestionMarksEnabled = checked
-                }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "openArchive",
-                iconRes = R.drawable.ic_settings_archive,
-                title = getString(R.string.open_archive),
-                summary = getString(R.string.open_archive_summary),
-                onClick = { actionHandler().onSettingsAction(SettingsAction.OPEN_ARCHIVE) }
-            )
-        )
-
-        items.add(
-            SettingItem.Switch(
-                key = "pref_midnight_delay",
-                iconRes = R.drawable.ic_settings_clock,
-                title = getString(R.string.pref_midnight_delay_title),
-                summary = getString(R.string.pref_midnight_delay_description),
-                checked = prefs.isMidnightDelayEnabled,
-                onCheckedChange = { checked ->
-                    prefs.isMidnightDelayEnabled = checked
-                }
-            )
-        )
-
-        items.add(
-            SettingItem.Switch(
-                key = "pref_sticky_notifications",
-                iconRes = R.drawable.ic_settings_notification_ringing,
-                title = getString(R.string.sticky_notifications),
-                summary = getString(R.string.sticky_notifications_description),
-                checked = prefs.shouldMakeNotificationsSticky(),
-                onCheckedChange = { checked ->
-                    prefs.setNotificationsSticky(checked)
-                }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "reminderCustomize",
-                iconRes = R.drawable.ic_settings_notification,
-                title = getString(R.string.customize_notification),
-                summary = getString(R.string.customize_notification_summary),
-                onClick = {
-                    org.isoron.uhabits.notifications.AndroidNotificationTray.createAndroidNotificationChannel(requireContext())
-                    val intent = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
-                        putExtra(Settings.EXTRA_APP_PACKAGE, requireContext().packageName)
-                        putExtra(Settings.EXTRA_CHANNEL_ID, org.isoron.uhabits.core.ui.NotificationTray.REMINDERS_CHANNEL_ID)
-                    }
-                    startActivity(intent)
-                }
-            )
-        )
-
-        // Pomodoro
-        items.add(SettingItem.Header(getString(R.string.pref_pomodoro_category)))
-
-        items.add(
-            SettingItem.Navigation(
-                key = "pref_pomodoro_default_focus_minutes",
-                iconRes = R.drawable.ic_settings_pomodoro_focus,
-                title = getString(R.string.pref_pomodoro_default_focus_title),
-                summary = getString(R.string.pomodoro_minutes_short, prefs.pomodoroDefaultFocusMinutes),
-                onClick = { showPomodoroDefaultMinutesDialog(isBreak = false) }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "pref_pomodoro_default_break_minutes",
-                iconRes = R.drawable.ic_settings_pomodoro_break,
-                title = getString(R.string.pref_pomodoro_default_break_title),
-                summary = getString(R.string.pomodoro_minutes_short, prefs.pomodoroDefaultBreakMinutes),
-                onClick = { showPomodoroDefaultMinutesDialog(isBreak = true) }
-            )
-        )
-
-        items.add(
-            SettingItem.Switch(
-                key = "pref_pomodoro_auto_switch",
-                iconRes = R.drawable.ic_settings_pomodoro_auto,
-                title = getString(R.string.pref_pomodoro_auto_switch_title),
-                summary = getString(R.string.pref_pomodoro_auto_switch_summary),
-                checked = prefs.isPomodoroAutoSwitch,
-                onCheckedChange = { checked ->
-                    prefs.isPomodoroAutoSwitch = checked
-                }
-            )
-        )
-
-        items.add(
-            SettingItem.Switch(
-                key = "pref_pomodoro_focus_alert",
-                iconRes = R.drawable.ic_settings_pomodoro_focus,
-                title = getString(R.string.pref_pomodoro_focus_alert_title),
-                summary = getString(R.string.pref_pomodoro_focus_alert_summary),
-                checked = prefs.isPomodoroFocusAlertEnabled,
-                onCheckedChange = { checked ->
-                    prefs.isPomodoroFocusAlertEnabled = checked
-                }
-            )
-        )
-
-        items.add(
-            SettingItem.Switch(
-                key = "pref_pomodoro_break_alert",
-                iconRes = R.drawable.ic_settings_pomodoro_break,
-                title = getString(R.string.pref_pomodoro_break_alert_title),
-                summary = getString(R.string.pref_pomodoro_break_alert_summary),
-                checked = prefs.isPomodoroBreakAlertEnabled,
-                onCheckedChange = { checked ->
-                    prefs.isPomodoroBreakAlertEnabled = checked
-                }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "pomodoroProgressChannel",
-                iconRes = R.drawable.ic_settings_notification,
-                title = getString(R.string.pref_pomodoro_progress_channel_title),
-                summary = getString(R.string.pref_pomodoro_progress_channel_summary),
-                onClick = { openPomodoroProgressChannelSettings() }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "pomodoroAlertChannel",
-                iconRes = R.drawable.ic_settings_notification_ringing,
-                title = getString(R.string.pref_pomodoro_alert_channel_title),
-                summary = pomodoroChannelSummary(),
-                onClick = { openPomodoroChannelSettings() }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "pomodoroExactAlarm",
-                iconRes = R.drawable.ic_settings_clock,
-                title = getString(R.string.pref_pomodoro_exact_alarm_title),
-                summary = pomodoroExactAlarmSummary(),
-                onClick = { openExactAlarmSettings() }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "pomodoroTestAlert",
-                iconRes = R.drawable.ic_settings_notification,
-                title = getString(R.string.pref_pomodoro_test_alert_title),
-                summary = getString(R.string.pref_pomodoro_test_alert_summary),
-                onClick = { testPomodoroAlert() }
-            )
-        )
-
-        // 3. Статистика
-        items.add(SettingItem.Header(getString(R.string.pref_statistics_title)))
-
-        items.add(
-            SettingItem.Navigation(
-                key = "softResetStatistics",
-                iconRes = R.drawable.ic_settings_statistics,
-                title = getString(R.string.start_statistics_over),
-                summary = getString(R.string.count_statistics_from_date),
-                onClick = { showGlobalStatisticsStartDateDialog() }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "hardResetStatistics",
-                iconRes = R.drawable.ic_settings_trash,
-                title = getString(R.string.reset_statistics),
-                summary = getString(R.string.delete_entries_forever),
-                isDanger = true,
-                onClick = { showHardResetStatisticsDialog() }
-            )
-        )
-
-        // 4. Данные и резервное копирование
-        items.add(SettingItem.Header(getString(R.string.pref_data_backup_title)))
-
-        val backupStatusText = getBackupStatusSummaryText()
-        items.add(
-            SettingItem.Navigation(
-                key = "backupStatus",
-                iconRes = R.drawable.ic_settings_backup_history,
-                title = getString(R.string.backup_status_title),
-                summary = backupStatusText
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "exportDB",
-                iconRes = R.drawable.ic_settings_backup_upload,
-                title = getString(R.string.backup_now),
-                summary = getString(R.string.export_full_backup_summary),
-                onClick = { actionHandler().onSettingsAction(SettingsAction.EXPORT_DATABASE) }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "restoreBackup",
-                iconRes = R.drawable.ic_settings_backup_restore,
-                title = getString(R.string.restore_backup),
-                summary = getString(R.string.restore_backup_local_summary),
-                onClick = { showRestoreBackupDialog(BackupSource.PRIVATE) }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "exportCSV",
-                iconRes = R.drawable.ic_settings_export_csv,
-                title = getString(R.string.export_to_csv),
-                summary = getString(R.string.export_as_csv_summary),
-                onClick = { actionHandler().onSettingsAction(SettingsAction.EXPORT_CSV) }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "importData",
-                iconRes = R.drawable.ic_settings_import,
-                title = getString(R.string.import_data),
-                summary = getString(R.string.import_data_summary),
-                onClick = { actionHandler().onSettingsAction(SettingsAction.IMPORT_DATA) }
-            )
-        )
-
-        val publicFolderUriString = sharedPrefs?.getString("publicBackupFolder", null)
-        val publicFolderSummary = getPublicBackupFolderSummaryText(publicFolderUriString)
-        items.add(
-            SettingItem.Navigation(
-                key = "publicBackupFolder",
-                iconRes = R.drawable.ic_settings_folder,
-                title = getString(R.string.select_public_backup_folder),
-                summary = publicFolderSummary,
-                onClick = { launchPublicBackupFolderPicker() }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "backupToPublicFolder",
-                iconRes = R.drawable.ic_settings_folder_upload,
-                title = getString(R.string.backup_to_public_folder),
-                summary = getString(R.string.backup_to_public_folder_summary),
-                onClick = { performPublicBackup() }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "restorePublicBackup",
-                iconRes = R.drawable.ic_settings_folder_restore,
-                title = getString(R.string.restore_public_backup),
-                summary = getString(R.string.restore_public_backup_summary),
-                onClick = { showRestoreBackupDialog(BackupSource.PUBLIC) }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "repairDB",
-                iconRes = R.drawable.ic_settings_repair,
-                title = getString(R.string.repair_database),
-                summary = getString(R.string.repair_database_summary),
-                onClick = { actionHandler().onSettingsAction(SettingsAction.REPAIR_DATABASE) }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "bugReport",
-                iconRes = R.drawable.ic_settings_bug,
-                title = getString(R.string.generate_bug_report),
-                summary = getString(R.string.generate_bug_report_summary),
-                onClick = { actionHandler().onSettingsAction(SettingsAction.BUG_REPORT) }
-            )
-        )
-
-        // 5. Синхронизация
-        items.add(SettingItem.Header(getString(R.string.sync_title)))
-
-        items.add(
-            SettingItem.Switch(
-                key = "pref_sync_enabled",
-                iconRes = R.drawable.ic_settings_cloud_sync,
-                title = getString(R.string.sync_enable_title),
-                summary = getString(R.string.sync_enable_summary),
-                checked = prefs.isSyncEnabled,
-                onCheckedChange = { checked ->
-                    prefs.isSyncEnabled = checked
-                }
-            )
-        )
-
-        val accountEmail = runCatching { syncCoordinator.currentAccountEmail() }.getOrNull()
-        items.add(
-            SettingItem.Navigation(
-                key = "syncAccount",
-                iconRes = R.drawable.ic_settings_account,
-                title = getString(R.string.sync_account_title),
-                summary = accountEmail ?: getString(R.string.sync_signed_out)
-            )
-        )
-
-        if (accountEmail == null) {
-            items.add(
-                SettingItem.Navigation(
-                    key = "syncSignIn",
-                    iconRes = R.drawable.ic_settings_login,
-                    title = getString(R.string.sync_sign_in),
-                    summary = getString(R.string.sync_sign_in_summary),
-                    onClick = { showSyncSignInDialog() }
-                )
+        val detailId = detailSectionId()
+        visibleItems = if (detailId == null) {
+            SettingsListComposer.composeHome(
+                sections = sections,
+                accessibilityDescription = { section ->
+                    getString(R.string.settings_section_open_accessibility, section.title, section.summary)
+                },
+                onSectionClick = { (parentFragment as? SettingsNavigationController)?.openSettingsSection(it) }
             )
         } else {
-            items.add(
-                SettingItem.Navigation(
-                    key = "syncSignOut",
-                    iconRes = R.drawable.ic_settings_logout,
-                    title = getString(R.string.sync_sign_out),
-                    summary = getString(R.string.sync_sign_out_summary),
-                    onClick = { performSignOut() }
-                )
-            )
+            val section = sections.firstOrNull { it.id == detailId }
+            if (section == null) {
+                (parentFragment as? SettingsNavigationController)?.popSettingsDetail()
+                return
+            } else {
+                SettingsListComposer.composeDetail(section)
+            }
         }
-
-        val syncStatusText = getSyncStatusSummaryText()
-        items.add(
-            SettingItem.Navigation(
-                key = "syncStatus",
-                iconRes = R.drawable.ic_settings_backup_history,
-                title = getString(R.string.sync_status_title),
-                summary = syncStatusText
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "syncNow",
-                iconRes = R.drawable.ic_settings_sync,
-                title = getString(R.string.sync_now),
-                summary = getString(R.string.sync_now_summary),
-                onClick = {
-                    if (prefs.isSyncReviewRequired) {
-                        showSyncReviewDialog()
-                    } else {
-                        performSyncNow(allowAfterReview = false)
-                    }
-                }
-            )
-        )
-
-        if (prefs.isSyncReviewRequired) {
-            val reviewSummary = prefs.syncReviewReason.ifBlank { getString(R.string.sync_review_required_summary) }
-            items.add(
-                SettingItem.Navigation(
-                    key = "syncReview",
-                    iconRes = R.drawable.ic_settings_git_merge,
-                    title = getString(R.string.sync_review_required_title),
-                    summary = reviewSummary,
-                    onClick = { showSyncReviewDialog() }
-                )
-            )
-        }
-
-        // 6. Справка
-        items.add(SettingItem.Header(getString(R.string.help_category)))
-
-        items.add(
-            SettingItem.Navigation(
-                key = "help",
-                iconRes = R.drawable.ic_settings_help,
-                title = getString(R.string.help),
-                onClick = { activity?.startActivitySafely(intentFactory.viewFAQ(requireContext())) }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "rateApp",
-                iconRes = R.drawable.ic_settings_rate,
-                title = getString(R.string.pref_rate_this_app),
-                onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.playStoreURL)))
-                    activity?.startActivitySafely(intent)
-                }
-            )
-        )
-
-        items.add(
-            SettingItem.Navigation(
-                key = "about",
-                iconRes = R.drawable.ic_settings_info,
-                title = getString(R.string.about),
-                onClick = { startActivity(intentFactory.startAboutActivity(requireContext())) }
-            )
-        )
-
-        // 7. Настройки разработчика (prefs.isDeveloper)
-        val isDevMode = prefs.isDeveloper
-        items.add(SettingItem.Header(getString(R.string.pref_developer_section_title)))
-
-        items.add(
-            SettingItem.Switch(
-                key = "pref_developer",
-                iconRes = R.drawable.ic_settings_terminal,
-                title = getString(R.string.developer_mode_title),
-                checked = prefs.isDeveloper,
-                onCheckedChange = { checked ->
-                    prefs.isDeveloper = checked
-                    rebuildSettingsList()
-                }
-            )
-        )
-
-        if (isDevMode) {
-            items.add(
-                SettingItem.Navigation(
-                    key = "pref_sync_base_url",
-                    iconRes = R.drawable.ic_settings_link,
-                    title = getString(R.string.supabase_url_title),
-                    summary = getString(R.string.supabase_url_summary),
-                    onClick = { showDeveloperEditTextDialog("pref_sync_base_url", getString(R.string.supabase_url_title)) }
-                )
-            )
-
-            items.add(
-                SettingItem.Navigation(
-                    key = "pref_sync_key",
-                    iconRes = R.drawable.ic_settings_key,
-                    title = getString(R.string.supabase_anon_key_title),
-                    summary = getString(R.string.supabase_anon_key_summary),
-                    onClick = { showDeveloperEditTextDialog("pref_sync_key", getString(R.string.supabase_anon_key_title)) }
-                )
-            )
-
-            items.add(
-                SettingItem.Navigation(
-                    key = "pref_encryption_key",
-                    iconRes = R.drawable.ic_settings_lock,
-                    title = getString(R.string.encryption_key_title),
-                    summary = getString(R.string.encryption_key_summary),
-                    onClick = { showDeveloperEditTextDialog("pref_encryption_key", getString(R.string.encryption_key_title)) }
-                )
-            )
-
-            items.add(
-                SettingItem.Navigation(
-                    key = "exportSyncDiagnostics",
-                    iconRes = R.drawable.ic_settings_report_analytics,
-                    title = getString(R.string.sync_export_diagnostics_title),
-                    summary = getString(R.string.sync_export_diagnostics_summary),
-                    onClick = { exportSyncDiagnostics() }
-                )
-            )
-
-            items.add(
-                SettingItem.Navigation(
-                    key = "refreshScreens",
-                    iconRes = R.drawable.ic_settings_sync,
-                    title = getString(R.string.sync_refresh_screens_title),
-                    summary = getString(R.string.sync_refresh_screens_summary),
-                    onClick = { refreshScreensForDiagnostics() }
-                )
-            )
-
-            items.add(
-                SettingItem.Navigation(
-                    key = "seedDemoData",
-                    iconRes = R.drawable.ic_settings_demo_data,
-                    title = getString(R.string.demo_data_seed_title),
-                    summary = getString(R.string.demo_data_seed_summary),
-                    onClick = { showSeedConfirmationDialog(isReset = false) }
-                )
-            )
-
-            items.add(
-                SettingItem.Navigation(
-                    key = "resetDemoData",
-                    iconRes = R.drawable.ic_settings_trash,
-                    title = getString(R.string.demo_data_reset_title),
-                    summary = getString(R.string.demo_data_reset_summary),
-                    isDanger = true,
-                    onClick = { showSeedConfirmationDialog(isReset = true) }
-                )
-            )
-        }
-
-        adapter.updateItems(items)
+        adapter.updateItems(visibleItems)
     }
+
+    protected fun detailSectionId(): SettingsSectionId? = arguments
+        ?.getString(ARG_DETAIL_SECTION)
+        ?.let { runCatching { SettingsSectionId.valueOf(it) }.getOrNull() }
+
+    protected fun saveListScrollState(): android.os.Parcelable? =
+        if (::recyclerView.isInitialized) recyclerView.layoutManager?.onSaveInstanceState() else null
+
+    protected fun restoreListScrollState(state: android.os.Parcelable?) {
+        if (state == null || !::recyclerView.isInitialized) return
+        recyclerView.post { recyclerView.layoutManager?.onRestoreInstanceState(state) }
+    }
+
+    private fun motionEnabled(): Boolean = !prefs.isConfettiAnimationDisabled &&
+        (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ValueAnimator.areAnimatorsEnabled())
+
+    private fun buildAppearanceSection(): SettingsSectionDefinition {
+        val languageTag = sharedPrefs?.getString("pref_app_language", "ru-RU") ?: "ru-RU"
+        val languageValues = resources.getStringArray(R.array.pref_app_language_values)
+        val languageEntries = resources.getStringArray(R.array.pref_app_language_entries)
+        val languageEntry = languageEntries.getOrNull(languageValues.indexOf(languageTag))
+            ?: Locale.forLanguageTag(languageTag).getDisplayName(Locale.getDefault())
+        val weekday = prefs.firstWeekday.daysSinceSunday + 1
+        val dayNames = JavaLocalDateFormatter(Locale.getDefault()).longWeekdayNames(DayOfWeek.SATURDAY)
+        val opacityValue = sharedPrefs?.getString("pref_widget_opacity", "255") ?: "255"
+        val opacityValues = resources.getStringArray(R.array.widget_opacity_values)
+        val opacityEntries = resources.getStringArray(R.array.widget_opacity_entries)
+        val themeEntries = resources.getStringArray(R.array.pref_theme_entries)
+        val themeEntry = when {
+            prefs.theme == 0 -> themeEntries[0]
+            prefs.theme == 2 -> themeEntries[1]
+            prefs.isPureBlackEnabled -> "AMOLED"
+            else -> themeEntries[2]
+        }
+        return SettingsSectionModel.fromItems(
+            SettingsSectionId.APPEARANCE,
+            R.drawable.ic_settings_theme,
+            getString(R.string.appearance),
+            getString(
+                R.string.settings_summary_appearance,
+                themeEntry,
+                AccentColorManager.getAccentColorName(requireContext(), prefs)
+            ),
+            listOf(
+                subsection("appearance_main", getString(R.string.settings_subsection_appearance_main)),
+                SettingItem.SegmentedTheme(
+                    "pref_theme",
+                    R.drawable.ic_settings_theme,
+                    getString(R.string.theme),
+                    prefs.theme,
+                    prefs.isPureBlackEnabled,
+                    { theme, pureBlack ->
+                        prefs.theme = theme
+                        prefs.isPureBlackEnabled = pureBlack
+                        (requireActivity() as? MainActivity)?.recreateForThemeChange()
+                            ?: requireActivity().recreate()
+                    },
+                    childPresentation()
+                ),
+                navigation("pref_app_language", R.drawable.ic_settings_globe, getString(R.string.language), languageEntry) { showLanguageDialog() },
+                navigation("pref_first_weekday", R.drawable.ic_settings_calendar, getString(R.string.first_day_of_the_week), dayNames[weekday % 7]) { showWeekdayDialog() },
+                SettingItem.ColorPicker(
+                    "pref_accent_color",
+                    R.drawable.ic_settings_droplet,
+                    getString(R.string.accent_color),
+                    AccentColorManager.getAccentColorName(requireContext(), prefs),
+                    AccentColorManager.getAccentColorString(prefs),
+                    { showAccentColorPicker() },
+                    childPresentation()
+                ),
+                subsection("appearance_interface", getString(R.string.settings_subsection_interface)),
+                settingSwitch(
+                    "pref_disable_animation",
+                    R.drawable.ic_settings_animation,
+                    getString(R.string.pref_animations_title),
+                    getString(R.string.pref_animations_description),
+                    prefs.isConfettiAnimationDisabled
+                ) { prefs.isConfettiAnimationDisabled = it },
+                navigation(
+                    "pref_widget_opacity",
+                    R.drawable.ic_settings_opacity,
+                    getString(R.string.widget_opacity_title),
+                    opacityEntries.getOrNull(opacityValues.indexOf(opacityValue)) ?: opacityValue
+                ) { showWidgetOpacityDialog() },
+                navigation("pref_card_rounding", R.drawable.ic_settings_corners, getString(R.string.pref_card_rounding_title), buildCardRoundingSummary()) { showCardRoundingDialog() },
+                settingSwitch(
+                    "pref_show_habit_card_borders",
+                    R.drawable.ic_settings_layout_list,
+                    getString(R.string.settings_show_habit_card_borders_title),
+                    getString(R.string.settings_show_habit_card_borders_summary),
+                    prefs.showHabitCardBorders
+                ) { prefs.showHabitCardBorders = it }
+            )
+        )
+    }
+
+    private fun buildHabitsSection(): SettingsSectionDefinition {
+        val summary = when {
+            prefs.isHabitSpheresEnabled && prefs.isDayTiersEnabled -> getString(R.string.settings_summary_habits_both)
+            prefs.isHabitSpheresEnabled -> getString(R.string.settings_summary_habits_spheres)
+            prefs.isDayTiersEnabled -> getString(R.string.settings_summary_habits_tiers)
+            else -> getString(R.string.settings_summary_habits_off)
+        }
+        return SettingsSectionModel.fromItems(
+            SettingsSectionId.HABITS,
+            R.drawable.ic_settings_spheres,
+            getString(R.string.settings_section_habits_day),
+            summary,
+            buildList {
+                add(subsection("habits_spheres", getString(R.string.settings_subsection_spheres)))
+                add(settingSwitch("pref_enable_habit_spheres", R.drawable.ic_settings_spheres, getString(R.string.pref_enable_habit_spheres_title), getString(R.string.pref_enable_habit_spheres_summary), prefs.isHabitSpheresEnabled) { prefs.isHabitSpheresEnabled = it })
+                if (prefs.isHabitSpheresEnabled) add(navigation("configureSpheres", R.drawable.ic_settings_configure_spheres, getString(R.string.configure_spheres), getString(R.string.configure_spheres_summary), showIcon = true) { actionHandler().onSettingsAction(SettingsAction.MANAGE_SPHERES) })
+                add(subsection("habits_tiers", getString(R.string.settings_subsection_day_tiers)))
+                add(settingSwitch("pref_enable_day_tiers", R.drawable.ic_settings_tiers, getString(R.string.pref_enable_day_tiers_title), getString(R.string.pref_enable_day_tiers_summary), prefs.isDayTiersEnabled) { prefs.isDayTiersEnabled = it })
+                if (prefs.isDayTiersEnabled) add(navigation("pref_day_tier_sort_order", R.drawable.ic_settings_arrows_sort, getString(R.string.pref_day_tier_sort_order_title), dayTierSortOrderSummary()) { showDayTierSortOrderDialog() })
+                add(subsection("habits_behavior", getString(R.string.settings_subsection_behavior)))
+                add(settingSwitch("pref_habit_group_separators", R.drawable.ic_settings_separator_horizontal, getString(R.string.pref_habit_group_separators_title), null, prefs.areHabitGroupSeparatorsEnabled) { prefs.areHabitGroupSeparatorsEnabled = it })
+                add(settingSwitch("pref_short_toggle", R.drawable.ic_settings_check, getString(R.string.settings_short_press_title), getString(R.string.settings_short_press_summary), prefs.isShortToggleEnabled) { prefs.isShortToggleEnabled = it })
+                add(settingSwitch("pref_checkmark_reverse_order", R.drawable.ic_settings_reverse, getString(R.string.reverse_days), getString(R.string.reverse_days_description), prefs.isCheckmarkSequenceReversed) { prefs.isCheckmarkSequenceReversed = it })
+                add(settingSwitch("pref_skip_enabled", R.drawable.ic_settings_fast_forward, getString(R.string.pref_skip_title), getString(R.string.settings_skip_summary_short), prefs.isSkipEnabled) { prefs.isSkipEnabled = it })
+                add(settingSwitch("pref_unknown_enabled", R.drawable.ic_settings_question, getString(R.string.pref_unknown_title), getString(R.string.settings_unknown_summary_short), prefs.areQuestionMarksEnabled) { prefs.areQuestionMarksEnabled = it })
+                add(
+                    settingSwitch(
+                        "pref_midnight_delay",
+                        R.drawable.ic_settings_clock,
+                        getString(R.string.pref_midnight_delay_title),
+                        getString(
+                            R.string.settings_midnight_summary_short,
+                            SettingsDateFormatter.formatHour(prefs.midnightDelayHours, Locale.getDefault())
+                        ),
+                        prefs.isMidnightDelayEnabled
+                    ) { prefs.isMidnightDelayEnabled = it }
+                )
+                add(subsection("habits_archive", getString(R.string.settings_subsection_archive)))
+                add(navigation("openArchive", R.drawable.ic_settings_archive, getString(R.string.open_archive), getString(R.string.open_archive_summary), showIcon = true) { actionHandler().onSettingsAction(SettingsAction.OPEN_ARCHIVE) })
+            }
+        )
+    }
+
+    private fun buildNotificationsSection() = SettingsSectionModel.fromItems(
+        SettingsSectionId.NOTIFICATIONS,
+        R.drawable.ic_settings_notification_ringing,
+        getString(R.string.settings_section_notifications),
+        notificationOverviewSummary(),
+        listOf(
+            subsection("notifications_general", getString(R.string.settings_subsection_habit_reminders)),
+            settingSwitch("pref_sticky_notifications", R.drawable.ic_settings_notification, getString(R.string.sticky_notifications), getString(R.string.sticky_notifications_description), prefs.shouldMakeNotificationsSticky()) { prefs.setNotificationsSticky(it) },
+            navigation("reminderCustomize", R.drawable.ic_settings_bell_cog, getString(R.string.settings_reminder_channel_title), notificationChannelSummary(), showIcon = true) { openReminderChannelSettings() },
+            navigation("reminderTest", R.drawable.ic_settings_bell_check, getString(R.string.settings_reminder_test_title), getString(R.string.settings_reminder_test_summary)) { testHabitReminder() },
+            subsection("notifications_pomodoro", getString(R.string.settings_subsection_pomodoro_completion)),
+            settingSwitch("pref_pomodoro_focus_alert", R.drawable.ic_settings_pomodoro_focus, getString(R.string.pref_pomodoro_focus_alert_title), null, prefs.isPomodoroFocusAlertEnabled) { prefs.isPomodoroFocusAlertEnabled = it },
+            settingSwitch("pref_pomodoro_break_alert", R.drawable.ic_settings_pomodoro_break, getString(R.string.pref_pomodoro_break_alert_title), null, prefs.isPomodoroBreakAlertEnabled) { prefs.isPomodoroBreakAlertEnabled = it },
+            navigation("pomodoroAlertChannel", R.drawable.ic_settings_clock_cog, getString(R.string.settings_pomodoro_channel_title), pomodoroChannelSummary(), showIcon = true) { openPomodoroChannelSettings() },
+            navigation("pomodoroTestAlert", R.drawable.ic_settings_clock_check, getString(R.string.settings_pomodoro_test_title), getString(R.string.settings_pomodoro_test_summary)) { testPomodoroAlert() },
+            subsection("notifications_delivery", getString(R.string.settings_subsection_timer_timing)),
+            navigation("pomodoroProgressChannel", R.drawable.ic_settings_lock, getString(R.string.pref_pomodoro_progress_channel_title), getString(R.string.pref_pomodoro_progress_channel_summary)) { openPomodoroProgressChannelSettings() },
+            navigation("pomodoroExactAlarm", R.drawable.ic_settings_clock, getString(R.string.pref_pomodoro_exact_alarm_title), pomodoroExactAlarmSummary()) { openExactAlarmSettings() }
+        )
+    )
+
+    private fun buildPomodoroSection(): SettingsSectionDefinition {
+        return SettingsSectionModel.fromItems(
+            SettingsSectionId.POMODORO,
+            R.drawable.ic_settings_pomodoro_tomato,
+            getString(R.string.pref_pomodoro_category),
+            getString(
+                R.string.settings_summary_pomodoro,
+                prefs.pomodoroDefaultFocusMinutes,
+                prefs.pomodoroDefaultBreakMinutes
+            ),
+            listOf(
+                subsection("pomodoro_intervals", getString(R.string.settings_subsection_intervals)),
+                navigation("pref_pomodoro_default_focus_minutes", R.drawable.ic_settings_pomodoro_focus, getString(R.string.pref_pomodoro_default_focus_title), getString(R.string.pomodoro_minutes_short, prefs.pomodoroDefaultFocusMinutes)) { showPomodoroDefaultMinutesDialog(false) },
+                navigation("pref_pomodoro_default_break_minutes", R.drawable.ic_settings_pomodoro_break, getString(R.string.pref_pomodoro_default_break_title), getString(R.string.pomodoro_minutes_short, prefs.pomodoroDefaultBreakMinutes)) { showPomodoroDefaultMinutesDialog(true) },
+                subsection("pomodoro_automation", getString(R.string.settings_subsection_automation)),
+                settingSwitch("pref_pomodoro_auto_switch", R.drawable.ic_settings_pomodoro_auto, getString(R.string.pref_pomodoro_auto_switch_title), getString(R.string.pref_pomodoro_auto_switch_summary), prefs.isPomodoroAutoSwitch) { prefs.isPomodoroAutoSwitch = it }
+            )
+        )
+    }
+
+    private fun buildStatisticsSection(): SettingsSectionDefinition {
+        val start = (requireContext().applicationContext as HabitsApplication)
+            .component.habitList.globalStatisticsStartDate
+        val summary = start?.let {
+            getString(
+                R.string.settings_statistics_from_date,
+                SettingsDateFormatter.formatDate(it, Locale.getDefault())
+            )
+        }
+            ?: getString(R.string.settings_statistics_all_time)
+        return SettingsSectionModel.fromItems(
+            SettingsSectionId.STATISTICS,
+            R.drawable.ic_settings_statistics,
+            getString(R.string.pref_statistics_title),
+            summary,
+            emptyList(),
+            homeAction = { showGlobalStatisticsStartDateDialog() }
+        )
+    }
+
+    private fun buildDataSection(): SettingsSectionDefinition {
+        val backupSummary = getBackupStatusSummaryText()
+        val publicFolder = sharedPrefs?.getString("publicBackupFolder", null)
+        return SettingsSectionModel.fromItems(
+            SettingsSectionId.DATA,
+            R.drawable.ic_settings_backup_history,
+            getString(R.string.pref_data_backup_title),
+            backupSummary,
+            buildList {
+                add(subsection("data_status", getString(R.string.settings_subsection_last_backup)))
+                add(SettingItem.Status("backupStatus", R.drawable.ic_settings_backup_history, getString(R.string.backup_status_title), backupSummary, false, childPresentation()))
+                add(subsection("data_create", getString(R.string.settings_subsection_create_backup)))
+                add(navigation("exportDB", R.drawable.ic_settings_backup_upload, getString(R.string.backup_now), getString(R.string.export_full_backup_summary), showIcon = true) { actionHandler().onSettingsAction(SettingsAction.EXPORT_DATABASE) })
+                add(navigation("publicBackupFolder", R.drawable.ic_settings_folder, getString(R.string.select_public_backup_folder), getPublicBackupFolderSummaryText(publicFolder), showIcon = true) { launchPublicBackupFolderPicker() })
+                add(navigation("backupToPublicFolder", R.drawable.ic_settings_folder_upload, getString(R.string.backup_to_public_folder), getString(R.string.backup_to_public_folder_summary), showIcon = true) { performPublicBackup() })
+                add(subsection("data_transfer", getString(R.string.settings_subsection_import_export)))
+                add(navigation("exportCSV", R.drawable.ic_settings_export_csv, getString(R.string.export_to_csv), getString(R.string.export_as_csv_summary), showIcon = true) { actionHandler().onSettingsAction(SettingsAction.EXPORT_CSV) })
+                add(navigation("importData", R.drawable.ic_settings_import, getString(R.string.import_data), getString(R.string.import_data_summary), showIcon = true) { actionHandler().onSettingsAction(SettingsAction.IMPORT_DATA) })
+                add(subsection("data_restore", getString(R.string.settings_subsection_restore)))
+                add(navigation("restoreBackup", R.drawable.ic_settings_database_down, getString(R.string.restore_backup), getString(R.string.restore_backup_local_summary), showIcon = true) { showRestoreBackupDialog() })
+                add(subsection("data_delete", getString(R.string.settings_subsection_delete_data), destructive = true))
+                add(navigation("hardResetStatistics", R.drawable.ic_settings_trash, getString(R.string.reset_statistics), getString(R.string.delete_entries_forever), showIcon = true, danger = true) { showHardResetStatisticsDialog() })
+            }
+        )
+    }
+
+    private fun buildSyncSection(): SettingsSectionDefinition {
+        val email = runCatching { syncCoordinator.currentAccountEmail() }.getOrNull()
+        val syncing = manualSyncInProgress || prefs.syncStatus == "syncing"
+        val stableStatusSummary = getSyncStatusSummaryText(preserveLastSuccessWhileSyncing = syncing)
+        return SettingsSectionModel.fromItems(
+            SettingsSectionId.SYNC,
+            R.drawable.ic_settings_cloud_sync,
+            getString(R.string.sync_title),
+            stableStatusSummary,
+            buildList {
+                add(subsection("sync_account", getString(R.string.settings_subsection_account_status)))
+                add(
+                    SettingItem.Status(
+                        key = "syncStatus",
+                        iconRes = R.drawable.ic_settings_history,
+                        title = getString(R.string.sync_status_title),
+                        summary = stableStatusSummary,
+                        showProgress = syncing,
+                        presentation = childPresentation(),
+                        reserveProgressSpace = true
+                    )
+                )
+                add(settingSwitch("pref_sync_enabled", R.drawable.ic_settings_cloud_sync, getString(R.string.sync_enable_title), getString(R.string.sync_enable_summary), prefs.isSyncEnabled) { prefs.isSyncEnabled = it })
+                add(
+                    SettingItem.Status(
+                        "syncAccount",
+                        R.drawable.ic_settings_account,
+                        getString(R.string.sync_account_title),
+                        email?.let { getString(R.string.sync_account_connected, it) }
+                            ?: getString(R.string.sync_signed_out),
+                        false,
+                        childPresentation()
+                    )
+                )
+                if (email == null) {
+                    add(navigation("syncSignIn", R.drawable.ic_settings_login, getString(R.string.sync_sign_in), getString(R.string.sync_sign_in_summary), showIcon = true) { showSyncSignInDialog() })
+                } else {
+                    add(navigation("syncSignOut", R.drawable.ic_settings_logout, getString(R.string.sync_sign_out), getString(R.string.sync_sign_out_summary), showIcon = true) { performSignOut() })
+                }
+                add(subsection("sync_actions", getString(R.string.settings_subsection_actions)))
+                add(navigation(
+                    "syncNow",
+                    R.drawable.ic_settings_sync,
+                    getString(R.string.sync_now),
+                    getString(R.string.sync_now_summary),
+                    showIcon = true,
+                    enabled = !syncing,
+                    busy = syncing
+                ) { if (prefs.isSyncReviewRequired) showSyncReviewDialog() else performSyncNow(false) })
+                if (prefs.isSyncReviewRequired) {
+                    add(navigation("syncReview", R.drawable.ic_settings_git_merge, getString(R.string.sync_review_required_title), getString(R.string.sync_review_required_summary), showIcon = true) { showSyncReviewDialog() })
+                }
+            }
+        )
+    }
+
+    private fun buildHelpSection() = SettingsSectionModel.fromItems(
+        SettingsSectionId.HELP,
+        R.drawable.ic_settings_lifebuoy,
+        getString(R.string.settings_section_help_app),
+        getString(R.string.version_n, BuildConfig.VERSION_NAME),
+        listOf(
+            navigation("help", R.drawable.ic_settings_lifebuoy, getString(R.string.help), showIcon = true) { activity?.startActivitySafely(intentFactory.viewFAQ(requireContext())) },
+            navigation("rateApp", R.drawable.ic_settings_rate, getString(R.string.pref_rate_this_app), showIcon = true) {
+                activity?.startActivitySafely(Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.playStoreURL))))
+            },
+            navigation("about", R.drawable.ic_settings_info, getString(R.string.about), getString(R.string.version_n, BuildConfig.VERSION_NAME), showIcon = true) {
+                startActivity(intentFactory.startAboutActivity(requireContext()))
+            }
+        )
+    )
+
+    private fun buildDeveloperSection() = SettingsSectionModel.fromItems(
+        SettingsSectionId.DEVELOPER,
+        R.drawable.ic_settings_terminal,
+        getString(R.string.pref_developer_section_title),
+        getString(R.string.settings_summary_developer),
+        listOf(
+            settingSwitch("pref_developer", R.drawable.ic_settings_terminal, getString(R.string.developer_mode_title), null, prefs.isDeveloper) { prefs.isDeveloper = it },
+            subsection("developer_connection", getString(R.string.settings_subsection_connection)),
+            navigation("pref_sync_base_url", R.drawable.ic_settings_link, getString(R.string.supabase_url_title), getString(R.string.supabase_url_summary)) { showDeveloperEditTextDialog("pref_sync_base_url", getString(R.string.supabase_url_title)) },
+            navigation("pref_sync_key", R.drawable.ic_settings_key, getString(R.string.supabase_anon_key_title), getString(R.string.supabase_anon_key_summary)) { showDeveloperEditTextDialog("pref_sync_key", getString(R.string.supabase_anon_key_title)) },
+            subsection("developer_diagnostics", getString(R.string.settings_subsection_diagnostics)),
+            navigation("exportSyncDiagnostics", R.drawable.ic_settings_report_analytics, getString(R.string.sync_export_diagnostics_title), getString(R.string.sync_export_diagnostics_summary), showIcon = true) { exportSyncDiagnostics() },
+            navigation("bugReport", R.drawable.ic_settings_bug, getString(R.string.generate_bug_report), getString(R.string.generate_bug_report_summary), showIcon = true) { actionHandler().onSettingsAction(SettingsAction.BUG_REPORT) }
+        )
+    )
+
+    private fun childPresentation(showIcon: Boolean = true, enabled: Boolean = true) =
+        SettingPresentation(showIcon = showIcon, enabled = enabled)
+
+    private fun subsection(key: String, title: String, destructive: Boolean = false) =
+        SettingItem.Subsection(key, title, destructive, childPresentation())
+
+    private fun navigation(
+        key: String,
+        iconRes: Int,
+        title: String,
+        summary: String? = null,
+        showIcon: Boolean = true,
+        enabled: Boolean = true,
+        busy: Boolean = false,
+        danger: Boolean = false,
+        onClick: (() -> Unit)?
+    ) = SettingItem.Navigation(
+        key = key,
+        iconRes = SettingsIconRegistry.resolve(key, iconRes),
+        title = title,
+        summary = summary,
+        isDanger = danger,
+        onClick = onClick,
+        isBusy = busy,
+        presentation = childPresentation(showIcon, enabled)
+    )
+
+    private fun settingSwitch(
+        key: String,
+        iconRes: Int,
+        title: String,
+        summary: String?,
+        checked: Boolean,
+        onCheckedChange: (Boolean) -> Unit
+    ) = SettingItem.Switch(
+        key,
+        SettingsIconRegistry.resolve(key, iconRes),
+        title,
+        summary,
+        checked,
+        onCheckedChange,
+        childPresentation()
+    )
+
+    private fun notificationChannelSummary(): String {
+        if (!NotificationManagerCompat.from(requireContext()).areNotificationsEnabled()) {
+            return getString(R.string.settings_notifications_off)
+        }
+        val channel = requireContext().getSystemService(NotificationManager::class.java)
+            .getNotificationChannel(org.isoron.uhabits.core.ui.NotificationTray.REMINDERS_CHANNEL_ID)
+            ?: return getString(R.string.settings_notifications_ready)
+        if (channel.importance == NotificationManager.IMPORTANCE_NONE) {
+            return getString(R.string.settings_notification_channel_off)
+        }
+        return getString(
+            when {
+                channel.sound != null && channel.shouldVibrate() -> R.string.pref_pomodoro_alert_sound_vibration
+                channel.sound != null -> R.string.pref_pomodoro_alert_sound_only
+                channel.shouldVibrate() -> R.string.pref_pomodoro_alert_vibration_only
+                else -> R.string.pref_pomodoro_alert_silent
+            }
+        )
+    }
+
+    private fun notificationOverviewSummary(): String =
+        if (NotificationManagerCompat.from(requireContext()).areNotificationsEnabled()) {
+            getString(R.string.settings_notifications_overview)
+        } else {
+            getString(R.string.settings_notifications_off)
+        }
 
     private fun showPomodoroDefaultMinutesDialog(isBreak: Boolean) {
         val initialValue = if (isBreak) {
@@ -1051,6 +726,15 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         runCatching { startActivity(intent) }
     }
 
+    private fun openReminderChannelSettings() {
+        org.isoron.uhabits.notifications.AndroidNotificationTray.createAndroidNotificationChannel(requireContext())
+        val intent = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, requireContext().packageName)
+            putExtra(Settings.EXTRA_CHANNEL_ID, org.isoron.uhabits.core.ui.NotificationTray.REMINDERS_CHANNEL_ID)
+        }
+        runCatching { startActivity(intent) }
+    }
+
     private fun openPomodoroProgressChannelSettings() {
         TimerForegroundService.ensureNotificationChannel(requireContext())
         val intent = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
@@ -1080,6 +764,41 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             return
         }
         pomodoroCompletionNotifier.showTestNotification()
+    }
+
+    private fun testHabitReminder() {
+        org.isoron.uhabits.notifications.AndroidNotificationTray.createAndroidNotificationChannel(requireContext())
+        val channel = requireContext().getSystemService(NotificationManager::class.java)
+            .getNotificationChannel(org.isoron.uhabits.core.ui.NotificationTray.REMINDERS_CHANNEL_ID)
+        if (
+            !NotificationManagerCompat.from(requireContext()).areNotificationsEnabled() ||
+            channel?.importance == NotificationManager.IMPORTANCE_NONE
+        ) {
+            Toast.makeText(
+                requireContext(),
+                R.string.settings_reminder_test_unavailable,
+                Toast.LENGTH_LONG
+            ).show()
+            openReminderChannelSettings()
+            return
+        }
+
+        val app = requireContext().applicationContext as HabitsApplication
+        val habit = app.component.habitList.firstOrNull { !it.isArchived && it.hasReminder() }
+        if (habit == null) {
+            Toast.makeText(
+                requireContext(),
+                R.string.settings_reminder_test_no_habit,
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        app.component.androidNotificationTray.showTestNotification(
+            habit,
+            getToday(),
+            System.currentTimeMillis()
+        )
     }
 
     private fun dayTierSortOrderSummary(): String {
@@ -1416,11 +1135,17 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         }
         val uri = Uri.parse(uriString)
         val path = fullPathFor(uri)
-        return path ?: uriString
+        return path ?: getString(R.string.backup_external_folder_selected)
     }
 
-    private fun getSyncStatusSummaryText(): String {
+    private fun getSyncStatusSummaryText(preserveLastSuccessWhileSyncing: Boolean = false): String {
         val dateFormat = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, Locale.getDefault())
+        if (preserveLastSuccessWhileSyncing && prefs.syncLastSuccessAt > 0L) {
+            return getString(
+                R.string.sync_status_success,
+                dateFormat.format(prefs.syncLastSuccessAt)
+            )
+        }
         return when (prefs.syncStatus) {
             "success" -> getString(
                 R.string.sync_status_success,
@@ -1428,7 +1153,7 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             )
             "error" -> getString(
                 R.string.sync_status_error,
-                prefs.syncStatusDetail.ifBlank { getString(R.string.could_not_export) }
+                getString(R.string.sync_error_short)
             )
             "syncing" -> getString(R.string.sync_status_syncing)
             "signed_out" -> getString(R.string.sync_status_signed_out)
@@ -1451,20 +1176,16 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         startActivityForResult(intent, PUBLIC_BACKUP_REQUEST_CODE)
     }
 
-    private fun showRestoreBackupDialog(source: BackupSource) {
-        if (source == BackupSource.PUBLIC && !ensurePublicBackupFolderReady()) return
-
-        val backups = when (source) {
-            BackupSource.PRIVATE -> backupManager.listLocalBackups()
-            BackupSource.PUBLIC -> backupManager.listPublicBackups()
-        }
+    private fun showRestoreBackupDialog() {
+        val backups = backupManager.listBackups()
         val dateFormat = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, Locale.getDefault())
         val items = backups.map { it.name }
-        val summaries = backups.map { "${dateFormat.format(it.modifiedAt)} • ${formatSize(it.sizeBytes)}" }
-        val emptyMessageId = if (source == BackupSource.PUBLIC) {
-            R.string.backup_restore_no_public_backups
-        } else {
-            R.string.backup_restore_no_backups
+        val summaries = backups.map { entry ->
+            val source = getString(
+                if (entry.source == BackupSource.PRIVATE) R.string.backup_source_local
+                else R.string.backup_source_public
+            )
+            "$source • ${dateFormat.format(entry.modifiedAt)} • ${formatSize(entry.sizeBytes)}"
         }
 
         CustomDialogs.showSimpleListDialog(
@@ -1472,7 +1193,7 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             title = getString(R.string.restore_backup),
             items = items,
             summaries = summaries,
-            emptyStateMessage = getString(emptyMessageId)
+            emptyStateMessage = getString(R.string.backup_restore_no_backups)
         ) { which ->
             showRestoreBackupConfirmation(backups[which])
         }
@@ -1682,33 +1403,39 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     }
 
     private fun performSyncNow(allowAfterReview: Boolean) {
-        CoroutineScope(Dispatchers.Main).launch {
+        if (manualSyncInProgress) return
+        manualSyncInProgress = true
+        viewLifecycleOwner.lifecycleScope.launch {
             rebuildSettingsList()
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    syncCoordinator.runSync(manual = true, allowAfterReview = allowAfterReview)
+            try {
+                val result = runCatching {
+                    withContext(Dispatchers.IO) {
+                        syncCoordinator.runSync(manual = true, allowAfterReview = allowAfterReview)
+                    }
+                }.getOrElse {
+                    SyncRunResult.Failure(
+                        "Синхронизация сейчас недоступна.",
+                        it.message ?: it::class.simpleName
+                    )
                 }
-            }.getOrElse {
-                SyncRunResult.Failure(
-                    "Синхронизация сейчас недоступна.",
-                    it.message ?: it::class.simpleName
-                )
+                when (result) {
+                    is SyncRunResult.Success -> {
+                        reloadVisibleHabitScreens("manual_sync_success")
+                        Toast.makeText(
+                            requireContext(),
+                            getString(R.string.sync_result_success, result.pushed, result.pulled),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    is SyncRunResult.Failure -> {
+                        Toast.makeText(requireContext(), result.userMessage, Toast.LENGTH_LONG).show()
+                    }
+                    is SyncRunResult.Skipped -> Unit
+                }
+            } finally {
+                manualSyncInProgress = false
+                if (isAdded) rebuildSettingsList()
             }
-            when (result) {
-                is SyncRunResult.Success -> {
-                    reloadVisibleHabitScreens("manual_sync_success")
-                    Toast.makeText(
-                        requireContext(),
-                        getString(R.string.sync_result_success, result.pushed, result.pulled),
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-                is SyncRunResult.Failure -> {
-                    Toast.makeText(requireContext(), result.userMessage, Toast.LENGTH_LONG).show()
-                }
-                is SyncRunResult.Skipped -> Unit
-            }
-            rebuildSettingsList()
         }
     }
 
@@ -1812,13 +1539,14 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     }
 
     private fun showGlobalStatisticsStartDateDialog() {
+        if (statisticsDialog?.isShowing == true) return
         val options = listOf(
             getString(R.string.today),
             getString(R.string.this_monday),
             getString(R.string.next_monday),
             getString(R.string.select_date)
         )
-        CustomDialogs.showSingleChoiceDialog(
+        statisticsDialog = CustomDialogs.showSingleChoiceDialog(
             context = requireContext(),
             title = getString(R.string.count_statistics_from_date),
             options = options,
@@ -1832,7 +1560,7 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 2 -> applyGlobalStatisticsStart(thisMonday().plus(7))
                 else -> showDatePicker { date -> applyGlobalStatisticsStart(date) }
             }
-        }
+        }.also { dialog -> dialog.setOnDismissListener { if (statisticsDialog === dialog) statisticsDialog = null } }
     }
 
     private fun applyGlobalStatisticsStart(date: LocalDate?) {
@@ -1840,6 +1568,7 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         app.component.commandRunner.run(
             SetGlobalStatisticsStartDateCommand(app.component.habitList, date)
         )
+        rebuildSettingsList()
     }
 
     private fun showHardResetStatisticsDialog() {
@@ -1859,13 +1588,13 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
 
     private fun showDatePicker(callback: (LocalDate?) -> Unit) {
         val today = getToday()
-        CustomDialogs.showDatePickerDialog(
+        statisticsDialog = CustomDialogs.showDatePickerDialog(
             context = requireContext(),
             title = getString(R.string.select_date),
             initialDate = today
         ) { date ->
             callback(date)
-        }
+        }.also { dialog -> dialog.setOnDismissListener { if (statisticsDialog === dialog) statisticsDialog = null } }
     }
 
     private fun thisMonday(): LocalDate {
@@ -1896,6 +1625,7 @@ class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         private const val RINGTONE_REQUEST_CODE = 1
         private const val PUBLIC_BACKUP_REQUEST_CODE = 2
         private const val ARG_COMPACT_TOP_INSET = "compactTopInset"
+        internal const val ARG_DETAIL_SECTION = "settingsDetailSection"
 
         fun newInstance(compactTopInset: Boolean = false): SettingsFragment {
             return SettingsFragment().apply {
