@@ -178,7 +178,12 @@ class TimerSessionManager(
         val state = engine.snapshot()
         if (state.habitId != id || state.mode != TimerMode.POMODORO || state.phase != PomodoroPhase.FOCUS) return
 
-        if (!state.completionTriggered) saveElapsed(id, state.elapsedMillis)
+        val unrecorded = if (state.completionTriggered) {
+            (state.elapsedMillis - state.focusDurationMillis).coerceAtLeast(0L)
+        } else {
+            state.elapsedMillis
+        }
+        saveElapsed(id, unrecorded)
         engine.transitionToBreakManually()
 
         restartTickerIfNeeded()
@@ -193,7 +198,12 @@ class TimerSessionManager(
         val elapsed = engine.finish(habit.id!!)
         handler.removeCallbacks(ticker)
         clearCompletionDisplay()
-        if (elapsed > 0 && !state.completionTriggered) saveElapsed(habit.id!!, elapsed)
+        val unrecorded = if (state.completionTriggered && state.phase == PomodoroPhase.FOCUS) {
+            (elapsed - state.focusDurationMillis).coerceAtLeast(0L)
+        } else {
+            elapsed
+        }
+        if (unrecorded > 0) saveElapsed(habit.id!!, unrecorded)
         persistState()
         refreshAlarm()
         syncForegroundService()
@@ -384,7 +394,7 @@ class TimerSessionManager(
             .putLong(KEY_ALARM_REVISION, alarmRevision)
             .putLong(KEY_COMPLETION_EVENT_ID, lastCompletionEventId)
             .putBoolean(KEY_COMPLETION_DISPLAY_ACTIVE, completionDisplayActive)
-        if (state.hasActiveSession) {
+        if (state.habitId != null) {
             editor.putLong("pref_timer_habit_id", state.habitId ?: -1L)
             editor.putString("pref_timer_habit_name", state.habitName)
             editor.putString("pref_timer_mode", state.mode.name)

@@ -79,11 +79,50 @@ class TimerSessionEngineTest {
         now += 90_000
         assertEquals(90_000, engine.finish(1))
         assertFalse(engine.snapshot().hasActiveSession)
+        assertEquals(TimerMode.POMODORO, engine.snapshot().mode)
+        assertEquals(PomodoroPhase.FOCUS, engine.snapshot().phase)
+        assertEquals(TimerSessionEngine.FOCUS_MILLIS, engine.snapshot().displayMillis)
 
         engine.start(1, "Reading")
         now += 30_000
         assertTrue(engine.reset(1))
         assertEquals(0, engine.snapshot().elapsedMillis)
+        assertEquals(TimerMode.POMODORO, engine.snapshot().mode)
+    }
+
+    @Test
+    fun finishingBreakKeepsConfiguredPomodoroReadyForNextCycle() {
+        engine.configurePomodoro(1, "Reading", 60_000, 30_000)
+        engine.switchMode(1, "Reading", TimerMode.POMODORO)
+        engine.start(1, "Reading")
+        now += 60_000
+        assertEquals(PomodoroCompletion.FOCUS, engine.tick())
+        engine.start(1, "Reading")
+        now += 30_000
+        assertEquals(PomodoroCompletion.BREAK, engine.tick())
+
+        val nextCycle = engine.snapshot()
+        assertEquals(TimerMode.POMODORO, nextCycle.mode)
+        assertEquals(PomodoroPhase.FOCUS, nextCycle.phase)
+        assertFalse(nextCycle.hasActiveSession)
+        assertEquals(60_000, nextCycle.displayMillis)
+        assertEquals(0, engine.finish(1))
+        assertEquals(TimerMode.POMODORO, engine.snapshot().mode)
+        assertEquals(60_000, engine.snapshot().displayMillis)
+    }
+
+    @Test
+    fun resettingBreakKeepsPomodoroAndItsDurations() {
+        engine.configurePomodoro(1, "Reading", 60_000, 30_000)
+        engine.switchMode(1, "Reading", TimerMode.POMODORO)
+        engine.start(1, "Reading")
+        now += 60_000
+        engine.tick()
+
+        assertTrue(engine.reset(1))
+        assertEquals(TimerMode.POMODORO, engine.snapshot().mode)
+        assertEquals(PomodoroPhase.FOCUS, engine.snapshot().phase)
+        assertEquals(60_000, engine.snapshot().displayMillis)
     }
 
     @Test
@@ -183,5 +222,17 @@ class TimerSessionEngineTest {
         assertFalse(engine.snapshot().isRunning)
         assertEquals(PomodoroPhase.BREAK, engine.snapshot().phase)
         assertFalse(engine.snapshot().isOvertime)
+    }
+
+    @Test
+    fun finishingOvertimeReturnsTheFullFocusTime() {
+        engine.isAutoSwitch = false
+        engine.switchMode(1, "Reading", TimerMode.POMODORO)
+        engine.start(1, "Reading")
+        now += TimerSessionEngine.FOCUS_MILLIS
+        assertEquals(PomodoroCompletion.FOCUS, engine.tick())
+        now += 16_000
+
+        assertEquals(TimerSessionEngine.FOCUS_MILLIS + 16_000, engine.finish(1))
     }
 }

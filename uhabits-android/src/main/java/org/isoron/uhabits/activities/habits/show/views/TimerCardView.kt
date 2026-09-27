@@ -2,18 +2,30 @@ package org.isoron.uhabits.activities.habits.show.views
 
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
+import android.animation.ObjectAnimator
 import android.animation.ValueAnimator
 import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.util.AttributeSet
 import android.view.Gravity
 import android.view.View
+import android.os.Build
+import android.transition.ChangeBounds
+import android.transition.TransitionManager
+import android.view.MotionEvent
 import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.PathInterpolator
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
+import androidx.core.graphics.ColorUtils
 import android.widget.FrameLayout
+import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import org.isoron.uhabits.R
@@ -27,6 +39,12 @@ import org.isoron.uhabits.core.timer.TimerSessionSnapshot
 import org.isoron.uhabits.utils.StyledResources
 
 class TimerCardView : LinearLayout {
+    private val standardInterpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
+    private val expandInterpolator = PathInterpolator(0.1f, 0.9f, 0.2f, 1f)
+    private val collapseInterpolator = PathInterpolator(0.3f, 0f, 0.8f, 0.15f)
+    private var currentPrimaryIconRes: Int = 0
+    private var isPrimaryIconTransitioning: Boolean = false
+    private var isCollapsingRow: Boolean = false
     private var habit: Habit? = null
     private var manager: TimerSessionManager? = null
     private val listener = TimerSessionManager.Listener { updateUIState() }
@@ -45,10 +63,10 @@ class TimerCardView : LinearLayout {
     private lateinit var breakEditorTab: TextView
     private lateinit var minuteWheel: MinuteWheelView
     private lateinit var buttons: LinearLayout
-    private lateinit var startPauseBtn: Button
-    private lateinit var takeBreakBtn: Button
-    private lateinit var finishBtn: Button
-    private lateinit var resetBtn: Button
+    private lateinit var startPauseBtn: ImageButton
+    private lateinit var takeBreakBtn: ImageButton
+    private lateinit var finishBtn: ImageButton
+    private lateinit var resetBtn: ImageButton
     private var activeColor: Int = 0
     private var isEditingDuration = false
     private var isEditingBreak = false
@@ -74,10 +92,10 @@ class TimerCardView : LinearLayout {
         stopwatchTab = modeTab { switchMode(TimerMode.STOPWATCH) }
         pomodoroTab = modeTab { switchMode(TimerMode.POMODORO) }
         modeSelector.addView(stopwatchTab, LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
-            rightMargin = dp(16f).toInt()
+            rightMargin = dp(8f).toInt()
         })
         modeSelector.addView(pomodoroTab, LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
-        addView(modeSelector, LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { bottomMargin = dp(8f).toInt() })
+        addView(modeSelector, LayoutParams(MATCH_PARENT, dp(48f).toInt()).apply { bottomMargin = dp(8f).toInt() })
 
         statusView = TextView(context).apply {
             textSize = 14f
@@ -126,6 +144,9 @@ class TimerCardView : LinearLayout {
             setPadding(0, dp(4f).toInt(), 0, dp(4f).toInt())
             contentDescription = context.getString(R.string.pomodoro_edit_duration)
             setOnClickListener { enterDurationEditor() }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                defaultFocusHighlightEnabled = false
+            }
         }
         normalContainer.addView(timeDisplay, LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
             bottomMargin = dp(16f).toInt()
@@ -158,15 +179,63 @@ class TimerCardView : LinearLayout {
         buttons = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER
+            clipChildren = false
+            clipToPadding = false
         }
-        startPauseBtn = actionButton { toggleTimer() }
-        takeBreakBtn = actionButton { habit?.let { manager?.takeBreakManually(it) } }
-        finishBtn = actionButton { habit?.let { manager?.finish(it) } }
-        resetBtn = actionButton { habit?.let { manager?.reset(it) } }
-        buttons.addView(startPauseBtn, buttonParams())
-        buttons.addView(takeBreakBtn, buttonParams())
-        buttons.addView(finishBtn, buttonParams())
-        buttons.addView(resetBtn, LayoutParams(WRAP_CONTENT, dp(40f).toInt()))
+        val iconSize = dp(48f).toInt()
+        val iconGap = dp(16f).toInt()
+        val deltaX = dp(64f)
+        val resources = StyledResources(context)
+        val secondarySurface = resources.getColor(R.attr.contrast0)
+        val secondaryStroke = resources.getColor(R.attr.contrast40)
+        val strokeWidth = dp(1f).toInt()
+        val baseRipple = (resources.getColor(R.attr.contrast100) and 0x00FFFFFF) or 0x18000000
+
+        resetBtn = timerIconButton(R.drawable.ic_timer_reset) {
+            habit?.let { manager?.reset(it) }
+        }.apply {
+            background = createCircularRipple(secondarySurface, baseRipple, secondaryStroke, strokeWidth)
+            contentDescription = context.getString(R.string.timer_reset)
+            tooltipText = contentDescription
+            visibility = View.INVISIBLE
+            alpha = 0f
+            scaleX = 0.5f
+            scaleY = 0.5f
+            translationX = deltaX
+        }
+        startPauseBtn = timerIconButton(R.drawable.ic_timer_play) { toggleTimer() }.apply {
+            background = createCircularRipple(secondarySurface, baseRipple, secondaryStroke, strokeWidth)
+            translationZ = dp(2f)
+        }
+        takeBreakBtn = timerIconButton(R.drawable.ic_settings_pomodoro_break) {
+            habit?.let { manager?.takeBreakManually(it) }
+        }.apply {
+            background = createCircularRipple(secondarySurface, baseRipple, secondaryStroke, strokeWidth)
+            contentDescription = context.getString(R.string.pomodoro_start_break)
+            tooltipText = contentDescription
+            visibility = View.GONE
+            alpha = 0f
+            scaleX = 0.5f
+            scaleY = 0.5f
+            translationX = 0f
+        }
+        finishBtn = timerIconButton(R.drawable.ic_timer_finish) {
+            habit?.let { manager?.finish(it) }
+        }.apply {
+            background = createCircularRipple(secondarySurface, baseRipple, secondaryStroke, strokeWidth)
+            contentDescription = context.getString(R.string.timer_finish)
+            tooltipText = contentDescription
+            visibility = View.INVISIBLE
+            alpha = 0f
+            scaleX = 0.5f
+            scaleY = 0.5f
+            translationX = -deltaX
+        }
+
+        buttons.addView(resetBtn, LayoutParams(iconSize, iconSize).apply { marginEnd = iconGap })
+        buttons.addView(startPauseBtn, LayoutParams(iconSize, iconSize).apply { marginEnd = iconGap })
+        buttons.addView(takeBreakBtn, LayoutParams(iconSize, iconSize).apply { marginEnd = iconGap })
+        buttons.addView(finishBtn, LayoutParams(iconSize, iconSize))
         normalContainer.addView(buttons, LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         sceneContainer.addView(
             normalContainer,
@@ -184,7 +253,8 @@ class TimerCardView : LinearLayout {
         this.habit = habit
         this.manager = manager
         manager.prepare(habit)
-        if (isAttachedToWindow) manager.addListener(listener) else updateUIState()
+        if (isAttachedToWindow) manager.addListener(listener)
+        updateUIState()
     }
 
     fun setNotificationPermissionRequester(requester: (onReady: () -> Unit) -> Unit) {
@@ -206,6 +276,15 @@ class TimerCardView : LinearLayout {
         activeColor = color
         statusView.setTextColor(color)
         timeDisplay.setTextColor(color)
+        timeDisplay.background = RippleDrawable(
+            ColorStateList.valueOf((color and 0x00FFFFFF) or 0x22000000),
+            null,
+            GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(12f)
+                setColor(Color.WHITE)
+            }
+        )
         if (::focusEditorTab.isInitialized) updateEditorTabs()
         updateUIState()
     }
@@ -248,23 +327,45 @@ class TimerCardView : LinearLayout {
         }
         statusView.visibility = if (statusView.text.isEmpty()) View.GONE else View.VISIBLE
 
-        startPauseBtn.text = when {
+        val isOvertimeFocus = state.mode == TimerMode.POMODORO &&
+            state.phase == PomodoroPhase.FOCUS &&
+            state.isOvertime &&
+            !conflict
+
+        val hasElapsed = state.elapsedMillis > 0L
+        val isSessionActive = state.hasActiveSession || hasElapsed
+        val isCurrentHabitSession = state.habitId == currentHabit.id
+
+        startPauseBtn.isEnabled = !conflict
+        val primaryIconRes = if (state.isRunning) R.drawable.ic_timer_pause else R.drawable.ic_timer_play
+        updatePrimaryIcon(primaryIconRes)
+        val primaryAction = when {
             state.isRunning -> context.getString(R.string.timer_pause)
-            state.elapsedMillis > 0 -> context.getString(R.string.timer_resume)
+            hasElapsed -> context.getString(R.string.timer_resume)
             state.mode == TimerMode.POMODORO && state.phase == PomodoroPhase.BREAK ->
                 context.getString(R.string.pomodoro_start_break)
             else -> context.getString(R.string.timer_start)
         }
-        takeBreakBtn.text = context.getString(R.string.pomodoro_start_break)
-        finishBtn.text = context.getString(R.string.timer_finish)
-        resetBtn.text = context.getString(R.string.timer_reset)
+        startPauseBtn.contentDescription = primaryAction
+        startPauseBtn.tooltipText = primaryAction
 
-        startPauseBtn.isEnabled = !conflict
-        takeBreakBtn.visibility = if (state.mode == TimerMode.POMODORO && state.phase == PomodoroPhase.FOCUS && state.isOvertime) View.VISIBLE else View.GONE
-        takeBreakBtn.isEnabled = !conflict
-        finishBtn.visibility = if (state.mode == TimerMode.POMODORO && state.phase == PomodoroPhase.BREAK) View.GONE else View.VISIBLE
-        finishBtn.isEnabled = !conflict && state.elapsedMillis > 0
-        resetBtn.isEnabled = !conflict && state.habitId == currentHabit.id && state.hasActiveSession
+        val canReset = !conflict && isCurrentHabitSession && (isSessionActive || state.phase == PomodoroPhase.BREAK)
+        resetBtn.isEnabled = canReset
+
+        takeBreakBtn.isEnabled = isOvertimeFocus
+
+        val isBreakPhase = state.mode == TimerMode.POMODORO && state.phase == PomodoroPhase.BREAK
+        val canFinish = !conflict && (isBreakPhase || hasElapsed)
+        finishBtn.isEnabled = canFinish
+
+        updateButtonRow(canReset, isOvertimeFocus, canFinish)
+        val finishAction = if (isBreakPhase) {
+            context.getString(R.string.pomodoro_break_completed)
+        } else {
+            context.getString(R.string.timer_finish)
+        }
+        finishBtn.contentDescription = finishAction
+        finishBtn.tooltipText = finishAction
         val canConfigureDuration = !conflict && !state.isRunning &&
             state.elapsedMillis == 0L && state.phase == PomodoroPhase.FOCUS &&
             state.mode == TimerMode.POMODORO
@@ -474,19 +575,290 @@ class TimerCardView : LinearLayout {
 
     private fun styleButtons() {
         val resources = StyledResources(context)
-        styleButton(startPauseBtn, if (startPauseBtn.isEnabled) activeColor else resources.getColor(R.attr.contrast40), resources)
-        styleButton(takeBreakBtn, if (takeBreakBtn.isEnabled) activeColor else resources.getColor(R.attr.contrast40), resources)
-        styleButton(finishBtn, if (finishBtn.isEnabled) activeColor else resources.getColor(R.attr.contrast40), resources)
-        styleButton(resetBtn, if (resetBtn.isEnabled) activeColor else resources.getColor(R.attr.contrast40), resources)
+        val disabledColor = resources.getColor(R.attr.contrast40)
+
+        startPauseBtn.imageTintList = ColorStateList.valueOf(
+            if (startPauseBtn.isEnabled) activeColor else disabledColor
+        )
+        resetBtn.imageTintList = ColorStateList.valueOf(
+            if (resetBtn.isEnabled) activeColor else disabledColor
+        )
+        takeBreakBtn.imageTintList = ColorStateList.valueOf(
+            if (takeBreakBtn.isEnabled) activeColor else disabledColor
+        )
+        finishBtn.imageTintList = ColorStateList.valueOf(
+            if (finishBtn.isEnabled) activeColor else disabledColor
+        )
+    }
+
+    private fun updatePrimaryIcon(iconRes: Int) {
+        if (currentPrimaryIconRes == iconRes) return
+        val wasSet = currentPrimaryIconRes != 0
+        currentPrimaryIconRes = iconRes
+        if (isAttachedToWindow && wasSet) {
+            if (isPrimaryIconTransitioning) {
+                startPauseBtn.setImageResource(iconRes)
+                startPauseBtn.imageAlpha = 255
+                return
+            }
+            isPrimaryIconTransitioning = true
+            val fadeOut = ObjectAnimator.ofInt(startPauseBtn, "imageAlpha", 255, 0).apply {
+                duration = 80L
+                interpolator = standardInterpolator
+            }
+            val fadeIn = ObjectAnimator.ofInt(startPauseBtn, "imageAlpha", 0, 255).apply {
+                duration = 140L
+                interpolator = expandInterpolator
+            }
+            fadeOut.addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    startPauseBtn.setImageResource(iconRes)
+                    fadeIn.start()
+                }
+            })
+            fadeIn.addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    isPrimaryIconTransitioning = false
+                }
+            })
+            fadeOut.start()
+        } else {
+            startPauseBtn.setImageResource(iconRes)
+            startPauseBtn.imageAlpha = 255
+        }
+    }
+
+    private fun updateButtonRow(
+        canReset: Boolean,
+        isOvertimeFocus: Boolean,
+        canFinish: Boolean
+    ) {
+        val deltaX = dp(64f)
+
+        if (!isAttachedToWindow) {
+            resetBtn.visibility = if (canReset) View.VISIBLE else View.INVISIBLE
+            resetBtn.alpha = if (canReset) 1f else 0f
+            resetBtn.scaleX = if (canReset) 1f else 0.5f
+            resetBtn.scaleY = if (canReset) 1f else 0.5f
+            resetBtn.translationX = if (canReset) 0f else deltaX
+
+            takeBreakBtn.visibility = if (isOvertimeFocus) View.VISIBLE else View.GONE
+            takeBreakBtn.alpha = if (isOvertimeFocus) 1f else 0f
+            takeBreakBtn.scaleX = if (isOvertimeFocus) 1f else 0.5f
+            takeBreakBtn.scaleY = if (isOvertimeFocus) 1f else 0.5f
+            takeBreakBtn.translationX = 0f
+
+            finishBtn.visibility = if (canFinish) View.VISIBLE else View.INVISIBLE
+            finishBtn.alpha = if (canFinish) 1f else 0f
+            finishBtn.scaleX = if (canFinish) 1f else 0.5f
+            finishBtn.scaleY = if (canFinish) 1f else 0.5f
+            finishBtn.translationX = if (canFinish) 0f else -deltaX
+            return
+        }
+
+        val targetAnySideVisible = canReset || canFinish || isOvertimeFocus
+        val currently4Buttons = takeBreakBtn.visibility == View.VISIBLE
+
+        if (!targetAnySideVisible) {
+            if (isCollapsingRow) return
+            val anyCurrentlyVisible = (resetBtn.visibility == View.VISIBLE && resetBtn.alpha > 0.1f) ||
+                (finishBtn.visibility == View.VISIBLE && finishBtn.alpha > 0.1f) ||
+                (takeBreakBtn.visibility == View.VISIBLE && takeBreakBtn.alpha > 0.1f)
+
+            if (!anyCurrentlyVisible) {
+                resetBtn.visibility = View.INVISIBLE
+                finishBtn.visibility = View.INVISIBLE
+                takeBreakBtn.visibility = View.GONE
+                return
+            }
+
+            isCollapsingRow = true
+            resetBtn.animate().cancel()
+            finishBtn.animate().cancel()
+            takeBreakBtn.animate().cancel()
+
+            val finishCollapseOffsetX = if (currently4Buttons) -dp(128f) else -dp(64f)
+
+            resetBtn.animate()
+                .translationX(deltaX)
+                .alpha(0f)
+                .scaleX(0.5f)
+                .scaleY(0.5f)
+                .setDuration(260L)
+                .setInterpolator(collapseInterpolator)
+                .start()
+
+            if (currently4Buttons) {
+                takeBreakBtn.animate()
+                    .translationX(-deltaX)
+                    .alpha(0f)
+                    .scaleX(0.5f)
+                    .scaleY(0.5f)
+                    .setDuration(260L)
+                    .setInterpolator(collapseInterpolator)
+                    .start()
+            }
+
+            finishBtn.animate()
+                .translationX(finishCollapseOffsetX)
+                .alpha(0f)
+                .scaleX(0.5f)
+                .scaleY(0.5f)
+                .setDuration(260L)
+                .setInterpolator(collapseInterpolator)
+                .withEndAction {
+                    isCollapsingRow = false
+                    resetBtn.visibility = View.INVISIBLE
+                    resetBtn.translationX = deltaX
+                    resetBtn.alpha = 0f
+                    resetBtn.scaleX = 0.5f
+                    resetBtn.scaleY = 0.5f
+
+                    finishBtn.visibility = View.INVISIBLE
+                    finishBtn.translationX = -deltaX
+                    finishBtn.alpha = 0f
+                    finishBtn.scaleX = 0.5f
+                    finishBtn.scaleY = 0.5f
+
+                    if (currently4Buttons) {
+                        takeBreakBtn.visibility = View.GONE
+                        takeBreakBtn.translationX = 0f
+                        takeBreakBtn.alpha = 0f
+                        takeBreakBtn.scaleX = 0.5f
+                        takeBreakBtn.scaleY = 0.5f
+                        TransitionManager.beginDelayedTransition(
+                            buttons,
+                            ChangeBounds().apply {
+                                duration = 200L
+                                interpolator = expandInterpolator
+                            }
+                        )
+                    }
+                }
+                .start()
+            return
+        }
+
+        if (isOvertimeFocus && takeBreakBtn.visibility != View.VISIBLE) {
+            TransitionManager.beginDelayedTransition(
+                buttons,
+                ChangeBounds().apply {
+                    duration = 300L
+                    interpolator = expandInterpolator
+                }
+            )
+            takeBreakBtn.visibility = View.VISIBLE
+            takeBreakBtn.alpha = 0f
+            takeBreakBtn.scaleX = 0.4f
+            takeBreakBtn.scaleY = 0.4f
+            takeBreakBtn.translationX = 0f
+            takeBreakBtn.animate().cancel()
+            takeBreakBtn.animate()
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(300L)
+                .setInterpolator(expandInterpolator)
+                .start()
+        } else if (!isOvertimeFocus && takeBreakBtn.visibility == View.VISIBLE && !isCollapsingRow) {
+            takeBreakBtn.animate().cancel()
+            takeBreakBtn.animate()
+                .alpha(0f)
+                .scaleX(0.4f)
+                .scaleY(0.4f)
+                .setDuration(220L)
+                .setInterpolator(collapseInterpolator)
+                .withEndAction {
+                    TransitionManager.beginDelayedTransition(
+                        buttons,
+                        ChangeBounds().apply {
+                            duration = 240L
+                            interpolator = expandInterpolator
+                        }
+                    )
+                    takeBreakBtn.visibility = View.GONE
+                    takeBreakBtn.translationX = 0f
+                }
+                .start()
+        }
+
+        if (canReset && (resetBtn.visibility != View.VISIBLE || resetBtn.alpha < 0.5f)) {
+            resetBtn.animate().cancel()
+            resetBtn.visibility = View.VISIBLE
+            if (resetBtn.alpha < 0.1f) {
+                resetBtn.alpha = 0f
+                resetBtn.scaleX = 0.5f
+                resetBtn.scaleY = 0.5f
+                resetBtn.translationX = deltaX
+            }
+            resetBtn.animate()
+                .translationX(0f)
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(320L)
+                .setInterpolator(expandInterpolator)
+                .start()
+        }
+
+        if (canFinish && (finishBtn.visibility != View.VISIBLE || finishBtn.alpha < 0.5f)) {
+            finishBtn.animate().cancel()
+            finishBtn.visibility = View.VISIBLE
+            if (finishBtn.alpha < 0.1f) {
+                finishBtn.alpha = 0f
+                finishBtn.scaleX = 0.5f
+                finishBtn.scaleY = 0.5f
+                finishBtn.translationX = if (isOvertimeFocus) -dp(128f) else -deltaX
+            }
+            finishBtn.animate()
+                .translationX(0f)
+                .alpha(1f)
+                .scaleX(1f)
+                .scaleY(1f)
+                .setDuration(320L)
+                .setInterpolator(expandInterpolator)
+                .start()
+        }
+    }
+
+    private fun createCircularRipple(
+        contentColor: Int,
+        rippleColor: Int,
+        strokeColor: Int? = null,
+        strokeWidthPx: Int = 0
+    ): RippleDrawable {
+        val content = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(contentColor)
+            if (strokeColor != null && strokeWidthPx > 0) {
+                setStroke(strokeWidthPx, strokeColor)
+            }
+        }
+        val mask = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(Color.WHITE)
+        }
+        return RippleDrawable(ColorStateList.valueOf(rippleColor), content, mask)
     }
 
     private fun styleButton(button: Button, color: Int, resources: StyledResources) {
         button.setTextColor(color)
-        button.background = GradientDrawable().apply {
+        val content = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = dp(20f)
             setStroke(dp(1.5f).toInt(), color)
             setColor(resources.getColor(R.attr.contrast0))
+        }
+        val mask = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(20f)
+            setColor(Color.WHITE)
+        }
+        val rippleColor = (color and 0x00FFFFFF) or 0x26000000
+        button.background = RippleDrawable(ColorStateList.valueOf(rippleColor), content, mask)
+        button.stateListAnimator = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            button.defaultFocusHighlightEnabled = false
         }
     }
 
@@ -495,6 +867,19 @@ class TimerCardView : LinearLayout {
         setTypeface(null, Typeface.BOLD)
         gravity = Gravity.CENTER
         setPadding(dp(12f).toInt(), dp(6f).toInt(), dp(12f).toInt(), dp(6f).toInt())
+        val ripple = RippleDrawable(
+            ColorStateList.valueOf(StyledResources(context).getColor(R.attr.contrast20)),
+            null,
+            GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(16f)
+                setColor(Color.WHITE)
+            }
+        )
+        background = ripple
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            defaultFocusHighlightEnabled = false
+        }
         setOnClickListener { onClick() }
     }
 
@@ -504,11 +889,62 @@ class TimerCardView : LinearLayout {
         setTypeface(null, Typeface.BOLD)
         gravity = Gravity.CENTER
         setPadding(dp(16f).toInt(), 0, dp(16f).toInt(), 0)
+        val ripple = RippleDrawable(
+            ColorStateList.valueOf(StyledResources(context).getColor(R.attr.contrast20)),
+            null,
+            GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(16f)
+                setColor(Color.WHITE)
+            }
+        )
+        background = ripple
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            defaultFocusHighlightEnabled = false
+        }
         setOnClickListener { onClick() }
     }
 
     private fun actionButton(onClick: () -> Unit) = Button(context).apply {
-        setPadding(dp(16f).toInt(), 0, dp(16f).toInt(), 0)
+        setPadding(dp(12f).toInt(), 0, dp(12f).toInt(), 0)
+        setOnClickListener { onClick() }
+    }
+
+    private fun timerIconButton(iconRes: Int, onClick: () -> Unit) = ImageButton(context).apply {
+        setImageResource(iconRes)
+        scaleType = ImageView.ScaleType.CENTER_INSIDE
+        val pad = dp(12f).toInt()
+        setPadding(pad, pad, pad, pad)
+        background = null
+        foreground = null
+        isFocusable = false
+        clipToOutline = true
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            defaultFocusHighlightEnabled = false
+        }
+        setOnTouchListener { v, event ->
+            if (isEnabled) {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        v.animate()
+                            .scaleX(0.94f)
+                            .scaleY(0.94f)
+                            .setDuration(80L)
+                            .setInterpolator(standardInterpolator)
+                            .start()
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        v.animate()
+                            .scaleX(1f)
+                            .scaleY(1f)
+                            .setDuration(120L)
+                            .setInterpolator(standardInterpolator)
+                            .start()
+                    }
+                }
+            }
+            false
+        }
         setOnClickListener { onClick() }
     }
 
@@ -521,12 +957,19 @@ class TimerCardView : LinearLayout {
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         manager?.addListener(listener)
+        updateUIState()
     }
 
     override fun onDetachedFromWindow() {
         sceneAnimator?.cancel()
         normalContainer.animate().cancel()
         editorContainer.animate().cancel()
+        startPauseBtn.animate().cancel()
+        resetBtn.animate().cancel()
+        takeBreakBtn.animate().cancel()
+        finishBtn.animate().cancel()
+        isCollapsingRow = false
+        isPrimaryIconTransitioning = false
         manager?.removeListener(listener)
         super.onDetachedFromWindow()
     }
