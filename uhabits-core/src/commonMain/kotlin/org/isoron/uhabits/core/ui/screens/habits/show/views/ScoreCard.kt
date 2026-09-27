@@ -61,7 +61,9 @@ class ScoreCardPresenter(
         ): ScoreCardState {
             val bucketSize = BUCKET_SIZES[spinnerPosition]
             val today = getToday()
-            val oldest = habit.computedEntries.getKnown().lastOrNull()?.date ?: today
+            val oldest = habit.effectiveStatisticsStartDate()
+                ?: habit.computedEntries.getKnown().lastOrNull()?.date
+                ?: today
 
             val scores = habit.scores.getByInterval(oldest, today).groupBy { score ->
                 truncateDate(getTruncateField(bucketSize), score.date, firstWeekday)

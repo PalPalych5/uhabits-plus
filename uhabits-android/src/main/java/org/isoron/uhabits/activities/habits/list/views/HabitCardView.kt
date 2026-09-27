@@ -273,10 +273,7 @@ class HabitCardView(
 
     private fun copyAttributesFrom(h: Habit) {
         fun getActiveColor(habit: Habit): Int {
-            return when (habit.isArchived) {
-                true -> MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.82f)
-                false -> currentTheme().color(habit.color).toInt()
-            }
+            return currentTheme().color(habit.color).toInt()
         }
 
         val c = getActiveColor(h)

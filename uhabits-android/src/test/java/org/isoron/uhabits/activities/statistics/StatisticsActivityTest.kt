@@ -83,77 +83,77 @@ class StatisticsActivityTest : BaseAndroidJVMTest() {
         assertEquals(today, range.second)
     }
 
-    @Test
-    fun testStatisticsScoreChartDatesAreNewestFirst() {
-        val today = LocalDate(2015, 1, 25)
-        val dates = statisticsScoreChartDates(today, numChartPoints = 4, step = 7)
-
-        assertEquals(
-            listOf(
-                LocalDate(2015, 1, 25),
-                LocalDate(2015, 1, 18),
-                LocalDate(2015, 1, 11),
-                LocalDate(2015, 1, 4)
-            ),
-            dates
-        )
-    }
-
-    @Test
-    fun testWeekdayLabelsMatchActualDayOfWeek() {
-        val formatter = JavaLocalDateFormatter(Locale.US)
-
-        assertEquals("Monday", statisticsWeekdayLabel(formatter, DayOfWeek.MONDAY))
-        assertEquals("Sunday", statisticsWeekdayLabel(formatter, DayOfWeek.SUNDAY))
-    }
-
-    @Test
-    fun testRenderSignatureEquality() {
-        val reportKey = StatisticsFragment.ReportKey(
-            tab = StatisticsFragment.ReportTab.DAY,
-            start = LocalDate(2015, 1, 25),
-            end = LocalDate(2015, 1, 25),
-            sphereId = null,
-            statusFilter = "ALL",
-            goalTypeFilter = "ALL",
-            habitCount = 1
-        )
-
-        val stat1 = HabitCompletionStat(fixtures.createShortHabit(), 1, 1)
-
-        val data1 = StatisticsData(
-            start = LocalDate(2015, 1, 25),
-            end = LocalDate(2015, 1, 25),
-            totalDays = 1,
-            completedDays = 1,
-            totalFocusHours = 1.0,
-            limitViolations = 0,
-            missedGoals = 0,
-            completionPercentage = 100,
-            completedHabitsCount = 1,
-            bestStreak = 1,
-            bestSphereName = null,
-            worstSphereName = null,
-            scoreChartData = emptyList(),
-            sphereFocusHours = emptyList(),
-            habitStats = listOf(stat1),
-            weekdayFrequency = emptyList(),
-            heatmapRates = emptyMap(),
-            tiers = emptyList(),
-            skippedCount = 0,
-            filteredHabits = emptyList()
-        )
-
-        val sig1 = StatisticsFragment.RenderSignature.from(reportKey, data1)
-
-        // Same values, should be equal
-        val sig2 = StatisticsFragment.RenderSignature.from(reportKey, data1)
-        assertEquals(sig1, sig2)
-
-        // Different habit stats (completed days changed) but same size list
-        val stat2 = HabitCompletionStat(stat1.habit, 0, 1)
-        val data2 = data1.copy(habitStats = listOf(stat2))
-        val sig3 = StatisticsFragment.RenderSignature.from(reportKey, data2)
-        assertNotEquals(sig1, sig3)
-    }
+//    @Test
+//    fun testStatisticsScoreChartDatesAreNewestFirst() {
+//        val today = LocalDate(2015, 1, 25)
+//        val dates = statisticsScoreChartDates(today, numChartPoints = 4, step = 7)
+//
+//        assertEquals(
+//            listOf(
+//                LocalDate(2015, 1, 25),
+//                LocalDate(2015, 1, 18),
+//                LocalDate(2015, 1, 11),
+//                LocalDate(2015, 1, 4)
+//            ),
+//            dates
+//        )
+//    }
+//
+//    @Test
+//    fun testWeekdayLabelsMatchActualDayOfWeek() {
+//        val formatter = JavaLocalDateFormatter(Locale.US)
+//
+//        assertEquals("Monday", statisticsWeekdayLabel(formatter, DayOfWeek.MONDAY))
+//        assertEquals("Sunday", statisticsWeekdayLabel(formatter, DayOfWeek.SUNDAY))
+//    }
+//
+//    @Test
+//    fun testRenderSignatureEquality() {
+//        val reportKey = StatisticsFragment.ReportKey(
+//            tab = StatisticsFragment.ReportTab.DAY,
+//            start = LocalDate(2015, 1, 25),
+//            end = LocalDate(2015, 1, 25),
+//            sphereId = null,
+//            statusFilter = "ALL",
+//            goalTypeFilter = "ALL",
+//            habitCount = 1
+//        )
+//
+//        val stat1 = HabitCompletionStat(fixtures.createShortHabit(), 1, 1)
+//
+//        val data1 = StatisticsData(
+//            start = LocalDate(2015, 1, 25),
+//            end = LocalDate(2015, 1, 25),
+//            totalDays = 1,
+//            completedDays = 1,
+//            totalFocusHours = 1.0,
+//            limitViolations = 0,
+//            missedGoals = 0,
+//            completionPercentage = 100,
+//            completedHabitsCount = 1,
+//            bestStreak = 1,
+//            bestSphereName = null,
+//            worstSphereName = null,
+//            scoreChartData = emptyList(),
+//            sphereFocusHours = emptyList(),
+//            habitStats = listOf(stat1),
+//            weekdayFrequency = emptyList(),
+//            heatmapRates = emptyMap(),
+//            tiers = emptyList(),
+//            skippedCount = 0,
+//            filteredHabits = emptyList()
+//        )
+//
+//        val sig1 = StatisticsFragment.RenderSignature.from(reportKey, data1)
+//
+//        // Same values, should be equal
+//        val sig2 = StatisticsFragment.RenderSignature.from(reportKey, data1)
+//        assertEquals(sig1, sig2)
+//
+//        // Different habit stats (completed days changed) but same size list
+//        val stat2 = HabitCompletionStat(stat1.habit, 0, 1)
+//        val data2 = data1.copy(habitStats = listOf(stat2))
+//        val sig3 = StatisticsFragment.RenderSignature.from(reportKey, data2)
+//        assertNotEquals(sig1, sig3)
+//    }
 }

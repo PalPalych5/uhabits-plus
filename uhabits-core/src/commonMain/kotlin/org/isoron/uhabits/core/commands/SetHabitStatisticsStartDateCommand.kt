@@ -13,9 +13,9 @@ data class SetHabitStatisticsStartDateCommand(
     override fun run() {
         val habit = habitList.getById(habitId) ?: throw HabitNotFoundException()
         habit.statisticsStartDate = statisticsStartDate
+        habit.recompute()
         habitList.update(habit)
         habit.observable.notifyListeners()
-        habit.recompute()
         habitList.resort()
         (habitList as? SQLiteHabitList)?.syncManager?.enqueueHabitUpdate(habit)
     }

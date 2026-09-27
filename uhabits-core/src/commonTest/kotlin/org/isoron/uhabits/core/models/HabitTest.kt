@@ -167,6 +167,8 @@ class HabitTest : BaseUnitTest() {
         h.statisticsStartDate = getToday()
         h.recompute()
         assertFalse(h.isCompletedOn(getToday().minus(1)))
+        assertEquals(Entry.YES_MANUAL, h.originalEntries.get(getToday().minus(1)).value)
+        assertEquals(0.0, h.scores[getToday()].value)
     }
 
     @Test

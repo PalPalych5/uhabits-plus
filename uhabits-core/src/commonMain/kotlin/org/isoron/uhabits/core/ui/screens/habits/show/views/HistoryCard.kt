@@ -158,7 +158,9 @@ class HistoryCardPresenter(
             theme: Theme
         ): HistoryCardState {
             val today = getToday()
-            val oldest = habit.computedEntries.getKnown().lastOrNull()?.date ?: today
+            val oldest = habit.effectiveStatisticsStartDate()
+                ?: habit.computedEntries.getKnown().lastOrNull()?.date
+                ?: today
             val entries = habit.computedEntries.getByInterval(oldest, today)
             val firstWeekdayNum = firstWeekday.daysSinceSunday + 1
             val series = if (habit.isNumerical) {

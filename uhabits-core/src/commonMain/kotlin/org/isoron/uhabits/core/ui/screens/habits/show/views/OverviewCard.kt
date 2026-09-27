@@ -45,7 +45,7 @@ class OverviewCardPresenter {
             val scoreLastMonth = scores[lastMonth].value.toFloat()
             val scoreLastYear = scores[lastYear].value.toFloat()
             val totalCount = habit.originalEntries.getKnown()
-                .filter { it.value == Entry.YES_MANUAL }
+                .filter { it.value == Entry.YES_MANUAL && habit.isDateIncludedInStatistics(it.date) }
                 .count()
                 .toLong()
             return OverviewCardState(

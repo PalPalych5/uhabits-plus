@@ -169,8 +169,8 @@ open class EntryList {
      * @return total number of checkmarks by month versus day of week
      */
     @Synchronized
-    fun computeWeekdayFrequency(isNumerical: Boolean): HashMap<LocalDate, Array<Int>> {
-        val entries = getKnown()
+    fun computeWeekdayFrequency(isNumerical: Boolean, from: LocalDate? = null): HashMap<LocalDate, Array<Int>> {
+        val entries = getKnown().filter { from == null || !it.date.isOlderThan(from) }
         val map = hashMapOf<LocalDate, Array<Int>>()
         for (entry in entries) {
             val weekday = (entry.date.dayOfWeek.daysSinceSunday + 1) % 7

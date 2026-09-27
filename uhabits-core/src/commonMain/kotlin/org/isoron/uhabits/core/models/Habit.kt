@@ -204,8 +204,6 @@ data class Habit(
         val to = today.plus(30)
         val entries = computedEntries.getKnown()
         var from = effectiveStatisticsStartDate() ?: entries.lastOrNull()?.date ?: today
-        val oldestEntry = entries.lastOrNull()?.date
-        if (oldestEntry != null && oldestEntry.isOlderThan(from)) from = oldestEntry
         if (from.isNewerThan(to)) from = to
 
         scores.recompute(

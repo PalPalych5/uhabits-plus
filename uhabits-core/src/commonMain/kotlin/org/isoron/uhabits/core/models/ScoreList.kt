@@ -93,7 +93,7 @@ class ScoreList {
 
             if (entry.value != Entry.SKIP) {
                 val percentageCompleted = if (habit.isNumerical) {
-                    val rollingSum = sumNumericalWindow(computedEntries, date, denominator)
+                    val rollingSum = sumNumericalWindow(habit, computedEntries, date, denominator)
                     val normalizedRollingSum = rollingSum / 1000.0
                     if (goal.targetType == NumericalHabitType.AT_MOST) {
                         if (goal.targetValue > 0) {
@@ -110,7 +110,7 @@ class ScoreList {
                         }
                     }
                 } else {
-                    val rollingSum = sumBooleanWindow(computedEntries, date, denominator)
+                    val rollingSum = sumBooleanWindow(habit, computedEntries, date, denominator)
                     min(1.0, rollingSum / numerator)
                 }
                 previousValue = compute(freq, previousValue, percentageCompleted)
@@ -121,18 +121,20 @@ class ScoreList {
         }
     }
 
-    private fun sumNumericalWindow(computedEntries: EntryList, date: LocalDate, denominator: Int): Int {
+    private fun sumNumericalWindow(habit: Habit, computedEntries: EntryList, date: LocalDate, denominator: Int): Int {
         var sum = 0
         for (offset in 0 until denominator) {
-            sum += max(0, computedEntries.get(date.minus(offset)).value)
+            val day = date.minus(offset)
+            if (habit.isDateIncludedInStatistics(day)) sum += max(0, computedEntries.get(day).value)
         }
         return sum
     }
 
-    private fun sumBooleanWindow(computedEntries: EntryList, date: LocalDate, denominator: Int): Double {
+    private fun sumBooleanWindow(habit: Habit, computedEntries: EntryList, date: LocalDate, denominator: Int): Double {
         var sum = 0.0
         for (offset in 0 until denominator) {
-            if (computedEntries.get(date.minus(offset)).value == Entry.YES_MANUAL) {
+            val day = date.minus(offset)
+            if (habit.isDateIncludedInStatistics(day) && computedEntries.get(day).value == Entry.YES_MANUAL) {
                 sum += 1.0
             }
         }
