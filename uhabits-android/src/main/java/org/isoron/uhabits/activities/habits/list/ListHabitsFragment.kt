@@ -96,6 +96,21 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             pendingIntent = null
             handleIntent(it)
         }
+        activity.onBackPressedDispatcher.addCallback(
+            this,
+            object : androidx.activity.OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    if (menuController.isSearchActive) {
+                        menuController.closeSearch()
+                    } else if (displayMode == ListHabitsDisplayMode.ARCHIVE) {
+                        (activity as? MainNavigationHost)?.navigateBack()
+                    } else {
+                        isEnabled = false
+                        activity.onBackPressedDispatcher.onBackPressed()
+                    }
+                }
+            }
+        )
     }
 
     override fun onStart() {
@@ -201,9 +216,10 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
     }
 
     override fun onPrepareOptionsMenu(menu: Menu) {
+        menuController.onPrepare(menu)
         val syncItem = menu.findItem(R.id.actionSync)
         val syncCoordinator = appComponent.syncCoordinator
-        val syncEnabled = syncCoordinator.isSyncReady()
+        val syncEnabled = syncCoordinator.isSyncReady() && !menuController.isSearchActive
         if (syncItem != null) {
             syncItem.isVisible = syncEnabled
             if (syncCoordinator.isSyncing) {
@@ -215,11 +231,39 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             }
         }
         updateMenuVisibility(menu)
+        updateToolbarNavigation()
         rootView.applyToolbarIconTint(menu)
         super.onPrepareOptionsMenu(menu)
     }
 
+    private fun updateToolbarNavigation() {
+        if (displayMode == ListHabitsDisplayMode.ARCHIVE) {
+            rootView.tbar.setNavigationIcon(R.drawable.ic_settings_back)
+            rootView.tbar.setNavigationOnClickListener {
+                (activity as? MainNavigationHost)?.navigateBack()
+            }
+        } else if (menuController.isSearchActive) {
+            rootView.tbar.setNavigationIcon(R.drawable.ic_settings_back)
+            rootView.tbar.setNavigationContentDescription(android.R.string.cancel)
+            rootView.tbar.setNavigationOnClickListener {
+                menuController.closeSearch()
+            }
+        } else {
+            rootView.tbar.navigationIcon = null
+            rootView.tbar.setNavigationOnClickListener(null)
+        }
+    }
+
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == android.R.id.home) {
+            if (menuController.isSearchActive) {
+                menuController.closeSearch()
+                return true
+            }
+            if (displayMode == ListHabitsDisplayMode.ARCHIVE) {
+                return (activity as MainNavigationHost).navigateBack()
+            }
+        }
         if (item.itemId == R.id.actionAddHabit) {
             HabitTypeDialog.newInstance(
                 createArchived = displayMode == ListHabitsDisplayMode.ARCHIVE
@@ -238,9 +282,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             ).show()
             return true
         }
-        if (item.itemId == android.R.id.home && displayMode == ListHabitsDisplayMode.ARCHIVE) {
-            return (activity as MainNavigationHost).navigateBack()
-        }
+
         requireActivity().invalidateOptionsMenu()
         return menuController.onItemSelected(item) || super.onOptionsItemSelected(item)
     }
@@ -301,8 +343,10 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
     }
 
     private fun updateMenuVisibility(menu: Menu) {
-        menu.findItem(R.id.action_filter)?.isVisible = displayMode == ListHabitsDisplayMode.NORMAL
-        menu.findItem(R.id.actionSkipDay)?.isVisible = displayMode == ListHabitsDisplayMode.NORMAL
+        val inNormalMode = displayMode == ListHabitsDisplayMode.NORMAL && !menuController.isSearchActive
+        menu.findItem(R.id.action_filter)?.isVisible = inNormalMode
+        menu.findItem(R.id.actionSkipDay)?.isVisible = inNormalMode
+        menu.findItem(R.id.actionAddHabit)?.isVisible = inNormalMode
     }
 
     fun onHostStartup() {

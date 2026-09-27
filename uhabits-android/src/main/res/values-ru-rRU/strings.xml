@@ -68,6 +68,8 @@
     <string name="streaks">Рекорды</string>
     <string name="no_habits_found">У вас нет активных привычек</string>
     <string name="no_habits_left_to_do">Вы закончили на сегодня!</string>
+    <string name="no_search_results">Ничего не найдено</string>
+    <string name="search_habits">Поиск привычек…</string>
     <string name="long_press_to_toggle">Нажмите и удерживайте, чтобы установить или снять галочку</string>
     <string name="reminder_off">Выкл</string>
     <string name="create_habit">Добавить привычку</string>
@@ -245,6 +247,7 @@
     <string name="reminder_sound">Звук напоминания</string>
     <string name="none">Без звука</string>
     <string name="filter">Фильтр</string>
+    <string name="search">Поиск</string>
     <string name="hide_completed">Скрыть завершённые</string>
     <string name="hide_entered" comment="&quot;Hide entered&quot; appears in place of &quot;hide completed&quot; if the user has enabled the question marks option. This option hides all habits that have any data entered, not just the ones that have been completed. This allows the user to hide habits that have already failed early in the day.">Скрыть введённые</string>
     <string name="hide_archived">Скрыть архивированные</string>

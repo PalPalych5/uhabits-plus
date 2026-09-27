@@ -217,7 +217,13 @@ class HabitCardListAdapter(
         cache.refreshAllHabits()
     }
 
+    var currentFilter: HabitMatcher = HabitMatcher()
+        private set
+
+    fun isSearching(): Boolean = currentFilter.searchQuery.isNotBlank()
+
     override fun setFilter(matcher: HabitMatcher) {
+        currentFilter = matcher
         cache.setFilter(matcher)
     }
 

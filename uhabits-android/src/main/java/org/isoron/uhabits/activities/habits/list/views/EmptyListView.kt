@@ -82,6 +82,12 @@ class EmptyListView(context: Context) : LinearLayout(context) {
         textTextView.text = str(R.string.no_habits_found)
     }
 
+    fun showNotFound() {
+        visibility = VISIBLE
+        iconTextView.text = str(R.string.fa_search)
+        textTextView.text = str(R.string.no_search_results)
+    }
+
     fun hide() {
         visibility = GONE
     }

@@ -20,13 +20,19 @@
 package org.isoron.uhabits.activities.habits.list
 
 import android.content.Context
+import android.graphics.Color
+import android.util.TypedValue
 import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
+import android.view.View
+import android.widget.ImageView
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SearchView
 import me.tatarka.inject.annotations.Inject
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.ui.screens.habits.list.ListHabitsMenuBehavior
@@ -42,8 +48,28 @@ class ListHabitsMenu(
     val behavior: ListHabitsMenuBehavior
 ) {
     val activity = context as AppCompatActivity
-    private var menu: Menu? = null
-    private var isSearchActive = false
+    var menu: Menu? = null
+        private set
+    var isSearchActive = false
+        private set
+
+    fun closeSearch() {
+        if (!isSearchActive) return
+        isSearchActive = false
+        behavior.onSearchQueryChanged("")
+        activity.invalidateOptionsMenu()
+    }
+
+    fun openSearch() {
+        isSearchActive = true
+        activity.invalidateOptionsMenu()
+    }
+
+    fun onPrepare(menu: Menu) {
+        this.menu = menu
+        menu.setGroupVisible(R.id.actionItems, !isSearchActive)
+        menu.findItem(R.id.actionSearchContainer)?.isVisible = isSearchActive
+    }
 
     fun onCreate(inflater: MenuInflater, menu: Menu) {
         this.menu = menu
@@ -67,11 +93,11 @@ class ListHabitsMenu(
     }
 
     private fun createSearchBar(menu: Menu) {
-        val searchContainer = menu.findItem(R.id.actionSearchContainer)
+        val searchContainer = menu.findItem(R.id.actionSearchContainer) ?: return
         searchContainer.isVisible = isSearchActive
-        menu.setGroupVisible(R.id.actionItems, !isSearchActive)
-        with(searchContainer.actionView as SearchView) {
-            queryHint = activity.getString(R.string.search)
+        val searchView = searchContainer.actionView as? SearchView ?: return
+        searchView.apply {
+            queryHint = activity.getString(R.string.search_habits)
             isIconified = false
             setQuery(behavior.searchQuery, false)
             setOnQueryTextListener(object : SearchView.OnQueryTextListener {
@@ -82,10 +108,26 @@ class ListHabitsMenu(
                 }
             })
             setOnCloseListener {
-                isSearchActive = false
-                menu.setGroupVisible(R.id.actionItems, true)
-                activity.invalidateOptionsMenu()
+                closeSearch()
                 true
+            }
+
+            val palette = MainTabsThemeBridge.resolve(activity)
+            findViewById<View>(androidx.appcompat.R.id.search_plate)?.setBackgroundColor(Color.TRANSPARENT)
+            val searchSrcText = findViewById<TextView>(androidx.appcompat.R.id.search_src_text)
+            searchSrcText?.setTextColor(palette.onSurface)
+            searchSrcText?.setHintTextColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.45f))
+            searchSrcText?.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+
+            val closeBtn = findViewById<ImageView>(androidx.appcompat.R.id.search_close_btn)
+            closeBtn?.setColorFilter(palette.onSurface)
+            closeBtn?.setOnClickListener {
+                if (!query.isNullOrEmpty()) {
+                    setQuery("", false)
+                    behavior.onSearchQueryChanged("")
+                } else {
+                    closeSearch()
+                }
             }
         }
     }
@@ -171,8 +213,7 @@ class ListHabitsMenu(
             }
 
             R.id.actionSearch -> {
-                isSearchActive = true
-                activity.invalidateOptionsMenu()
+                openSearch()
                 return true
             }
 

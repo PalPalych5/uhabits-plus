@@ -33,7 +33,7 @@
 
     <!--<string translatable="false" name="fa_glass">&#xf000;</string>-->
 	<!--<string translatable="false" name="fa_music">&#xf001;</string>-->
-	<!--<string translatable="false" name="fa_search">&#xf002;</string>-->
+	<string translatable="false" name="fa_search">&#xf002;</string>
 	<!--<string translatable="false" name="fa_envelope_o">&#xf003;</string>-->
 	<!--<string translatable="false" name="fa_heart">&#xf004;</string>-->
 	<!--<string translatable="false" name="fa_user">&#xf007;</string>-->
