@@ -1,6 +1,6 @@
 # Build the project
 
-This pages describes how to download and build the app from the source code. If you are having trouble building the project, please do not hesitate to open a new issue.
+This page describes how to download and build the app from the source code. If you are having trouble building the project, please do not hesitate to open a new issue.
 
 ## Contents
 
@@ -11,7 +11,7 @@ This pages describes how to download and build the app from the source code. If 
 
 ### Step 1: Install git
 
-The package `git` is required for downloading the source code of the app and submitting changes GitHub. Please see [the git book](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) for further instructions. If you are planning to submit pull requests in the future, it is recommended to [generate and configure your SSH keys](https://help.github.com/en/github/authenticating-to-github/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent).
+The package `git` is required for downloading the source code of the app and submitting changes to GitHub. Please see [the git book](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) for further instructions. If you are planning to submit pull requests in the future, it is recommended to [generate and configure your SSH keys](https://help.github.com/en/github/authenticating-to-github/generating-a-new-ssh-key-and-adding-it-to-the-ssh-agent).
 
 ### Step 2: Download and install Android Studio
 
@@ -39,34 +39,33 @@ The repository will be downloaded to the directory `uhabits`.
 
 ## Build from the command line
 
-The following instructions were tested on **Ubuntu Linux 18.04 LTS** and may need to be modified for other operating systems.
+The following instructions were tested on **Ubuntu Linux 24.04 LTS** and may need to be modified for other operating systems.
 
 ### Step 1: Install basic packages
 
-To build the application, some basic packages are required. The package `git` is required to download the source code, while `openjdk-8-jdk-headless` is required for compiling Java and Kotlin files.
+To build the application, some basic packages are required. The package `git` is required to download the source code, while `openjdk-17-jdk-headless` is required for compiling Java and Kotlin files.
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y git openjdk-8-jdk-headless
+sudo apt-get install -y git openjdk-17-jdk-headless
 ```
 
 **IMPORTANT:** Newer JDK versions have not been tested and may not work correctly.
 
-
 ### Step 2: Install Android SDK tools
 
-The Android SDK tools contains many necessary tools for developing and debugging Android applications. It can be obtained as part of Android Studio, but, for simple command line usage, it can also be downloaded individually.
+The Android SDK tools contain many of the necessary tools for developing and debugging Android applications. They can be obtained as part of Android Studio, but, for simple command line usage, it is recommended to install the **command-line tools** directly, since that is what `build.sh` and the CI pipeline expect.
 
-1. Download the file `sdk-tools-linux-4333796.zip` (or a newer version) from <https://developer.android.com/studio/#downloads>, and extract it somewhere. In this guide, we assume that it was extracted to `/opt/android-sdk/tools`; that is, the script `/opt/android-sdk/tools/bin/sdkmanager` should exist.
+1. Download the latest `commandlinetools-linux-*.zip` from <https://developer.android.com/studio#command-line-tools-only>, and extract it to `/opt/android-sdk/cmdline-tools/latest` so that the script `/opt/android-sdk/cmdline-tools/latest/bin/sdkmanager` exists.
 
 2. Append the following lines to `~/.profile`, so that other tools can locate your Android SDK installation. It is necessary to restart your terminal for these changes to take effect.
 ```bash
-export PATH="$PATH:/opt/android-sdk/tools/bin"
-export PATH="$PATH:/opt/android-sdk/platform-tools"
 export ANDROID_HOME="/opt/android-sdk"
+export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin"
+export PATH="$PATH:$ANDROID_HOME/platform-tools"
 ```
 
-3. Accept all Android SDK licenses, by running
+3. Accept all Android SDK licenses by running:
 ```bash
 yes | sdkmanager --licenses
 ```

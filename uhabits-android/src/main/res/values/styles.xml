@@ -68,7 +68,7 @@
         <item name="bottomNavigationBackground">?attr/contrast0</item>
     </style>
 
-    <style name="AppBaseThemeDark" parent="@style/ThemeOverlay.MaterialComponents.Dark.ActionBar">
+    <style name="AppBaseThemeDark" parent="@style/Theme.MaterialComponents.NoActionBar">
         <item name="aboutScreenColor">@color/blue_300</item>
         <item name="actionModeBackground">@color/theme_surface_variant_dark</item>
         <item name="android:alertDialogTheme">@style/CustomMaterialAlertDialog</item>
@@ -507,7 +507,8 @@
         <item name="colorPickerTabBackground">?attr/colorPickerSurface</item>
         <item name="colorPickerTabIndicator">?attr/colorPickerSurfaceVariant</item>
     </style>
-    <style name="ColorPickerBottomSheetTheme" parent="Theme.MaterialComponents.Light.BottomSheetDialog">
+
+    <style name="ColorPickerBottomSheetTheme" parent="Theme.MaterialComponents.Light.BottomSheetDialog">
         <item name="bottomSheetStyle">@style/ColorPicker.BottomSheet</item>
         <item name="colorPickerBackground">@color/color_picker_background_light</item>
         <item name="colorPickerSurface">@color/color_picker_surface_light</item>

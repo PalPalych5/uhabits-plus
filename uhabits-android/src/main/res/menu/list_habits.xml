@@ -24,73 +24,86 @@
     tools:context=".MainActivity">
 
     <item
-        android:id="@+id/actionAddHabit"
-        android:icon="@drawable/ic_toolbar_add"
-        android:title="@string/create_habit"
-        app:showAsAction="always" />
+        android:id="@+id/actionSearchContainer"
+        android:title="@string/search"
+        app:actionViewClass="androidx.appcompat.widget.SearchView"
+        app:showAsAction="always"/>
 
-    <item
-        android:id="@+id/actionSync"
-        android:icon="@drawable/ic_toolbar_refresh"
-        android:title="@string/sync_now"
-        app:showAsAction="always" />
+    <group android:id="@+id/actionItems">
+        <item
+            android:id="@+id/actionAddHabit"
+            android:icon="@drawable/ic_toolbar_add"
+            android:title="@string/create_habit"
+            app:showAsAction="always" />
 
-    <item
-        android:id="@+id/actionSkipDay"
-        android:icon="@drawable/ic_toolbar_skip_day"
-        android:title="@string/action_skip_day"
-        app:showAsAction="always" />
+        <item
+            android:id="@+id/actionSync"
+            android:icon="@drawable/ic_toolbar_refresh"
+            android:title="@string/sync_now"
+            app:showAsAction="always" />
 
-    <item
-        android:id="@+id/action_filter"
-        android:icon="@drawable/ic_toolbar_sort_descending"
-        android:title="@string/filter"
-        app:showAsAction="always">
-        <menu>
-            <item
-                android:id="@+id/actionHideArchived"
-                android:checkable="true"
-                android:enabled="true"
-                android:title="@string/hide_archived"/>
+        <item
+            android:id="@+id/actionSkipDay"
+            android:icon="@drawable/ic_toolbar_skip_day"
+            android:title="@string/action_skip_day"
+            app:showAsAction="always" />
 
-            <item
-                android:id="@+id/actionHideCompleted"
-                android:checkable="true"
-                android:enabled="true"
-                android:title="@string/hide_completed"/>
+        <item
+            android:id="@+id/action_filter"
+            android:icon="@drawable/ic_toolbar_sort_descending"
+            android:title="@string/filter"
+            app:showAsAction="always">
+            <menu>
+                <item
+                    android:id="@+id/actionHideArchived"
+                    android:checkable="true"
+                    android:enabled="true"
+                    android:title="@string/hide_archived"/>
 
-            <item android:title="@string/sort">
-                <menu>
-                    <item
-                        android:id="@+id/actionSortManual"
-                        android:title="@string/manually"/>
+                <item
+                    android:id="@+id/actionHideCompleted"
+                    android:checkable="true"
+                    android:enabled="true"
+                    android:title="@string/hide_completed"/>
 
-                    <item
-                        android:id="@+id/actionSortName"
-                        android:title="@string/by_name"/>
+                <item android:title="@string/sort">
+                    <menu>
+                        <item
+                            android:id="@+id/actionSortManual"
+                            android:title="@string/manually"/>
 
-                    <item
-                        android:id="@+id/actionSortColor"
-                        android:title="@string/by_color"/>
+                        <item
+                            android:id="@+id/actionSortName"
+                            android:title="@string/by_name"/>
 
-                    <item
-                        android:id="@+id/actionSortScore"
-                        android:title="@string/by_score"/>
+                        <item
+                            android:id="@+id/actionSortColor"
+                            android:title="@string/by_color"/>
 
-                    <item
-                        android:id="@+id/actionSortStatus"
-                        android:title="@string/by_status"/>
+                        <item
+                            android:id="@+id/actionSortScore"
+                            android:title="@string/by_score"/>
 
-                    <item
-                        android:id="@+id/actionSortSphere"
-                        android:title="@string/by_sphere"/>
+                        <item
+                            android:id="@+id/actionSortStatus"
+                            android:title="@string/by_status"/>
 
-                    <item
-                        android:id="@+id/actionSortLevel"
-                        android:title="@string/by_level"/>
-                </menu>
-            </item>
-        </menu>
-    </item>
+                        <item
+                            android:id="@+id/actionSortSphere"
+                            android:title="@string/by_sphere"/>
+
+                        <item
+                            android:id="@+id/actionSortLevel"
+                            android:title="@string/by_level"/>
+                    </menu>
+                </item>
+
+                <item
+                    android:id="@+id/actionSearch"
+                    android:enabled="true"
+                    android:title="@string/search"/>
+            </menu>
+        </item>
+    </group>
 
 </menu>

@@ -73,6 +73,7 @@ import org.isoron.uhabits.core.models.Reminder
 import org.isoron.uhabits.core.models.WeekdayList
 import org.isoron.uhabits.core.models.isMinuteUnit
 import org.isoron.uhabits.databinding.ActivityEditHabitBinding
+import org.isoron.uhabits.utils.applyBottomInset
 import org.isoron.uhabits.utils.applyRootViewInsets
 import org.isoron.uhabits.utils.applyToolbarInsets
 import org.isoron.uhabits.utils.dismissCurrentAndShow
@@ -178,6 +179,7 @@ class EditHabitActivity : AppCompatActivity() {
 
         binding = ActivityEditHabitBinding.inflate(layoutInflater)
         binding.root.applyRootViewInsets()
+        binding.root.applyBottomInset()
         binding.toolbar.applyToolbarInsets()
         setContentView(binding.root)
 

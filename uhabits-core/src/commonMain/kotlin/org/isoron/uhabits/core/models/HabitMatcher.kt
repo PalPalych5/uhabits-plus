@@ -23,7 +23,8 @@ data class HabitMatcher(
     val isArchivedRequired: Boolean = false,
     val isReminderRequired: Boolean = false,
     val isCompletedAllowed: Boolean = true,
-    val isEnteredAllowed: Boolean = true
+    val isEnteredAllowed: Boolean = true,
+    val searchQuery: String = ""
 ) {
     fun matches(habit: Habit): Boolean {
         if (isArchivedRequired && !habit.isArchived) return false
@@ -31,6 +32,16 @@ data class HabitMatcher(
         if (isReminderRequired && !habit.hasReminder()) return false
         if (!isCompletedAllowed && habit.isCompletedToday()) return false
         if (!isEnteredAllowed && habit.isEnteredToday()) return false
+        if (searchQuery.isNotEmpty()) {
+            val q = searchQuery.trim()
+            if (q.isNotEmpty() &&
+                !habit.name.contains(q, ignoreCase = true) &&
+                !habit.question.contains(q, ignoreCase = true) &&
+                !habit.description.contains(q, ignoreCase = true)
+            ) {
+                return false
+            }
+        }
         return true
     }
 

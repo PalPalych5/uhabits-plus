@@ -24,6 +24,7 @@ import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SearchView
 import me.tatarka.inject.annotations.Inject
 import org.isoron.uhabits.R
 import org.isoron.uhabits.core.models.HabitList
@@ -40,11 +41,20 @@ class ListHabitsMenu(
     private val preferences: Preferences,
     val behavior: ListHabitsMenuBehavior
 ) {
-    val activity = (context as AppCompatActivity)
+    val activity = context as AppCompatActivity
+    private var menu: Menu? = null
+    private var isSearchActive = false
 
     fun onCreate(inflater: MenuInflater, menu: Menu) {
+        this.menu = menu
         menu.clear()
         inflater.inflate(R.menu.list_habits, menu)
+        createSearchBar(menu)
+        createMenuItems(menu)
+        updateArrows(menu)
+    }
+
+    private fun createMenuItems(menu: Menu) {
         val hideArchivedItem = menu.findItem(R.id.actionHideArchived)
         val hideCompletedItem = menu.findItem(R.id.actionHideCompleted)
         hideArchivedItem.isChecked = !preferences.showArchived
@@ -54,7 +64,30 @@ class ListHabitsMenu(
         } else {
             hideCompletedItem.title = activity.resources.getString(R.string.hide_completed)
         }
-        updateArrows(menu)
+    }
+
+    private fun createSearchBar(menu: Menu) {
+        val searchContainer = menu.findItem(R.id.actionSearchContainer)
+        searchContainer.isVisible = isSearchActive
+        menu.setGroupVisible(R.id.actionItems, !isSearchActive)
+        with(searchContainer.actionView as SearchView) {
+            queryHint = activity.getString(R.string.search)
+            isIconified = false
+            setQuery(behavior.searchQuery, false)
+            setOnQueryTextListener(object : SearchView.OnQueryTextListener {
+                override fun onQueryTextSubmit(query: String) = false
+                override fun onQueryTextChange(newText: String): Boolean {
+                    behavior.onSearchQueryChanged(newText)
+                    return true
+                }
+            })
+            setOnCloseListener {
+                isSearchActive = false
+                menu.setGroupVisible(R.id.actionItems, true)
+                activity.invalidateOptionsMenu()
+                true
+            }
+        }
     }
 
     private fun updateArrows(menu: Menu) {
@@ -134,6 +167,12 @@ class ListHabitsMenu(
             R.id.actionSortLevel -> {
                 if (!preferences.isDayTiersEnabled) return true
                 behavior.onSortByLevel()
+                return true
+            }
+
+            R.id.actionSearch -> {
+                isSearchActive = true
+                activity.invalidateOptionsMenu()
                 return true
             }
 
