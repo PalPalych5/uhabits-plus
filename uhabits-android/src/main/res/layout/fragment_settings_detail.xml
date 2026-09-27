@@ -11,20 +11,25 @@
         android:minHeight="56dp"
         android:theme="@style/ThemeOverlay.AppCompat.ActionBar">
 
-        <TextView
-            android:id="@+id/settingsDetailTitle"
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:ellipsize="end"
-            android:fontFamily="sans-serif-medium"
-            android:gravity="center_vertical"
-            android:maxLines="1"
-            android:paddingEnd="16dp"
-            android:textSize="22sp"
-            android:autoSizeTextType="uniform"
-            android:autoSizeMinTextSize="16sp"
-            android:autoSizeMaxTextSize="22sp"
-            android:autoSizeStepGranularity="1sp" />
+            android:paddingEnd="16dp">
+
+            <TextView
+                android:id="@+id/settingsDetailTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:maxLines="1"
+                android:textSize="22sp"
+                android:autoSizeTextType="uniform"
+                android:autoSizeMinTextSize="16sp"
+                android:autoSizeMaxTextSize="22sp"
+                android:autoSizeStepGranularity="1sp" />
+        </FrameLayout>
     </androidx.appcompat.widget.Toolbar>
 
     <androidx.recyclerview.widget.RecyclerView

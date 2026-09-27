@@ -114,6 +114,8 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     private var widgetUpdater: WidgetUpdater? = null
 
     private lateinit var recyclerView: RecyclerView
+    protected val isRecyclerViewInitialized: Boolean
+        get() = ::recyclerView.isInitialized
     private lateinit var adapter: CustomSettingsAdapter
     private var visibleItems: List<SettingItem> = emptyList()
     private var manualSyncInProgress = false
@@ -263,7 +265,9 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 accessibilityDescription = { section ->
                     getString(R.string.settings_section_open_accessibility, section.title, section.summary)
                 },
-                onSectionClick = { (parentFragment as? SettingsNavigationController)?.openSettingsSection(it) }
+                onSectionClick = { source ->
+                    (parentFragment as? SettingsNavigationController)?.openSettingsSection(source)
+                }
             )
         } else {
             val section = sections.firstOrNull { it.id == detailId }
@@ -277,7 +281,7 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         adapter.updateItems(visibleItems)
     }
 
-    protected fun detailSectionId(): SettingsSectionId? = arguments
+    internal fun detailSectionId(): SettingsSectionId? = arguments
         ?.getString(ARG_DETAIL_SECTION)
         ?.let { runCatching { SettingsSectionId.valueOf(it) }.getOrNull() }
 
@@ -287,6 +291,41 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     protected fun restoreListScrollState(state: android.os.Parcelable?) {
         if (state == null || !::recyclerView.isInitialized) return
         recyclerView.post { recyclerView.layoutManager?.onRestoreInstanceState(state) }
+    }
+
+    internal fun captureHomeScrollState(): android.os.Parcelable? = saveListScrollState()
+
+    internal fun restoreHomeScrollState(state: android.os.Parcelable?, onReady: () -> Unit) {
+        if (!::recyclerView.isInitialized) {
+            onReady()
+            return
+        }
+        recyclerView.layoutManager?.onRestoreInstanceState(state)
+        recyclerView.postOnAnimation(onReady)
+    }
+
+    internal fun resolveSectionSource(
+        sectionId: SettingsSectionId,
+        onResolved: (SettingsTransitionSource?) -> Unit,
+    ) {
+        if (!::recyclerView.isInitialized) {
+            onResolved(null)
+            return
+        }
+        val position = visibleItems.indexOfFirst { it is SettingItem.Section && it.sectionId == sectionId }
+        if (position < 0) {
+            onResolved(null)
+            return
+        }
+        recyclerView.scrollToPosition(position)
+        recyclerView.postOnAnimation {
+            recyclerView.postOnAnimation {
+                val source = recyclerView.findViewHolderForAdapterPosition(position)?.itemView?.let { card ->
+                    SettingsTransitionSource(sectionId, card)
+                }
+                onResolved(source)
+            }
+        }
     }
 
     private fun motionEnabled(): Boolean = !prefs.isConfettiAnimationDisabled &&

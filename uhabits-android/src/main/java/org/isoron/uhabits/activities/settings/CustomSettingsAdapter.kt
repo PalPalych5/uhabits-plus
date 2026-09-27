@@ -6,6 +6,7 @@ import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
 import android.text.TextUtils
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ProgressBar
@@ -51,7 +52,7 @@ sealed class SettingItem {
         val title: String,
         val summary: String,
         val accessibilityDescription: String,
-        val onClick: () -> Unit
+        val onClick: (SettingsTransitionSource?) -> Unit
     ) : SettingItem() {
         override val stableKey: String = "section:${sectionId.name}"
     }
@@ -559,7 +560,7 @@ class CustomSettingsAdapter(
 
     private fun bindSection(
         holder: SectionViewHolder,
-        item: SettingItem.Section
+        item: SettingItem.Section,
     ) {
         val palette = SettingsThemePaletteResolver.resolve(context, prefs)
         holder.iconImg.setImageResource(item.iconRes)
@@ -581,11 +582,39 @@ class CustomSettingsAdapter(
                 info.className = android.widget.Button::class.java.name
             }
         })
-        holder.itemView.setOnClickListener { item.onClick() }
+        holder.itemView.setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> view.animate()
+                    .scaleX(SettingsTransitionSpec.PRESSED_SCALE)
+                    .scaleY(SettingsTransitionSpec.PRESSED_SCALE)
+                    .setDuration(SettingsTransitionSpec.PRESS_DURATION)
+                    .setInterpolator(SettingsTransitionSpec.PRINCIPAL_INTERPOLATOR)
+                    .start()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> view.animate()
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setDuration(SettingsTransitionSpec.PRESS_DURATION)
+                    .setInterpolator(SettingsTransitionSpec.PRINCIPAL_INTERPOLATOR)
+                    .start()
+            }
+            false
+        }
+        holder.itemView.setOnClickListener {
+            item.onClick(SettingsTransitionSource(item.sectionId, holder.itemView))
+        }
         holder.itemView.isClickable = true
         holder.itemView.isFocusable = true
         holder.chevron.animate().setListener(null).cancel()
         holder.chevron.rotation = 0f
+    }
+
+    override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
+        holder.itemView.animate().setListener(null).cancel()
+        holder.itemView.scaleX = 1f
+        holder.itemView.scaleY = 1f
+        holder.itemView.alpha = 1f
+        holder.itemView.isPressed = false
+        super.onViewRecycled(holder)
     }
 
     private fun bindRowIcon(holder: RowViewHolder, iconRes: Int, visible: Boolean) {

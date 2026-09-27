@@ -23,11 +23,15 @@ class SettingsDetailFragment : SettingsFragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         val sectionId = checkNotNull(detailSectionId())
+        val prepareMorph = arguments?.getBoolean(ARG_PREPARE_MORPH, false) == true
+        arguments?.putBoolean(ARG_PREPARE_MORPH, false)
+        if (prepareMorph && savedInstanceState == null) view.alpha = 0f
+        val title = view.findViewById<TextView>(R.id.settingsDetailTitle)
+        title.text = sectionTitle(sectionId)
         val toolbar = view.findViewById<Toolbar>(R.id.settingsDetailToolbar)
         val app = requireContext().applicationContext as HabitsApplication
         val palette = SettingsThemePaletteResolver.resolve(requireContext(), app.component.preferences)
-        val title = view.findViewById<TextView>(R.id.settingsDetailTitle)
-        title.text = sectionTitle(sectionId)
+
         title.setTextColor(palette.onSurface)
         toolbar.setBackgroundColor(palette.background)
         toolbar.contentInsetStartWithNavigation = 0
@@ -45,6 +49,7 @@ class SettingsDetailFragment : SettingsFragment() {
             (parentFragment as? SettingsNavigationController)?.popSettingsDetail()
         }
         ViewCompat.setAccessibilityHeading(toolbar, true)
+
         restoreListScrollState(
             (parentFragment as? SettingsNavigationController)?.detailScrollState(sectionId)
         )
@@ -57,6 +62,11 @@ class SettingsDetailFragment : SettingsFragment() {
         }
         super.onDestroyView()
     }
+
+    internal fun transitionToolbar(): View? = view?.findViewById(R.id.settingsDetailToolbar)
+
+    internal fun transitionBody(): androidx.recyclerview.widget.RecyclerView? =
+        view?.findViewById(R.id.settingsRecyclerView)
 
     private fun sectionTitle(id: SettingsSectionId): String = getString(
         when (id) {
@@ -73,10 +83,16 @@ class SettingsDetailFragment : SettingsFragment() {
     )
 
     companion object {
-        fun newInstance(sectionId: SettingsSectionId): SettingsDetailFragment =
+        private const val ARG_PREPARE_MORPH = "prepareMorph"
+
+        fun newInstance(
+            sectionId: SettingsSectionId,
+            prepareMorph: Boolean = false,
+        ): SettingsDetailFragment =
             SettingsDetailFragment().apply {
                 arguments = Bundle().apply {
                     putString(ARG_DETAIL_SECTION, sectionId.name)
+                    putBoolean(ARG_PREPARE_MORPH, prepareMorph)
                 }
             }
     }

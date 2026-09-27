@@ -21,9 +21,11 @@ import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.main.MainNavigationHost
 import org.isoron.uhabits.databinding.FragmentSettingsSectionBinding
 import org.isoron.uhabits.utils.applyToolbarInsets
+import android.view.ViewTreeObserver
 
 interface SettingsNavigationController {
     fun openSettingsSection(sectionId: SettingsSectionId)
+    fun openSettingsSection(source: SettingsTransitionSource)
     fun popSettingsDetail(): Boolean
     fun saveDetailScrollState(sectionId: SettingsSectionId, state: Parcelable?)
     fun detailScrollState(sectionId: SettingsSectionId): Parcelable?
@@ -31,18 +33,14 @@ interface SettingsNavigationController {
 
 class SettingsSectionFragment : Fragment(), SettingsNavigationController {
     private var binding: FragmentSettingsSectionBinding? = null
-    private var navigationInFlight = false
-    private var pendingPop = false
     private var externalNavigationInFlight = false
     private var backGuardUntil = 0L
     private val detailScrollStates = mutableMapOf<SettingsSectionId, Parcelable>()
+    private var homeScrollState: Parcelable? = null
     private var backCallback: OnBackPressedCallback? = null
+    private var morphController: SettingsCardMorphController? = null
     private val backStackChangedListener = FragmentManager.OnBackStackChangedListener {
-        navigationInFlight = false
-        val shouldPop = pendingPop && hasDetail()
-        pendingPop = false
         updateNavigationChrome()
-        if (shouldPop) binding?.root?.post { popSettingsDetail() }
     }
     private val showToolbar: Boolean
         get() = arguments?.getBoolean(ARG_SHOW_TOOLBAR, true) ?: true
@@ -106,6 +104,10 @@ class SettingsSectionFragment : Fragment(), SettingsNavigationController {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         normalizeLegacyStatisticsDetail()
+        morphController = SettingsCardMorphController(
+            requireActivity().findViewById(R.id.settingsTransitionOverlayHost)
+        )
+        if (hasDetail()) morphController?.markDetail() else morphController?.markHome()
         backCallback = object : OnBackPressedCallback(false) {
             override fun handleOnBackPressed() {
                 popSettingsDetail()
@@ -119,18 +121,17 @@ class SettingsSectionFragment : Fragment(), SettingsNavigationController {
 
     override fun openSettingsSection(sectionId: SettingsSectionId) {
         if (sectionId == SettingsSectionId.STATISTICS) return
-        if (navigationInFlight || childFragmentManager.isStateSaved || currentDetail() != null) return
+        if (childFragmentManager.isStateSaved || currentDetail() != null) return
+        if (morphController?.state != SettingsCardMorphController.State.IDLE_HOME) return
         val home = childFragmentManager.findFragmentByTag(TAG_HOME) ?: return
-        navigationInFlight = true
-        pendingPop = false
         backCallback?.isEnabled = true
         val transaction = childFragmentManager.beginTransaction()
         if (motionEnabled()) {
             transaction.setCustomAnimations(
-                R.anim.settings_detail_enter,
-                R.anim.settings_home_exit,
-                R.anim.settings_home_pop_enter,
-                R.anim.settings_detail_pop_exit
+                android.R.anim.fade_in,
+                android.R.anim.fade_out,
+                android.R.anim.fade_in,
+                android.R.anim.fade_out
             )
         }
         transaction
@@ -139,20 +140,121 @@ class SettingsSectionFragment : Fragment(), SettingsNavigationController {
             .add(R.id.settingsContent, SettingsDetailFragment.newInstance(sectionId), detailTag(sectionId))
             .addToBackStack(sectionId.name)
             .commit()
+        morphController?.markDetail()
         updateBottomNavigation(detailVisible = true, animate = motionEnabled())
+    }
+
+    override fun openSettingsSection(source: SettingsTransitionSource) {
+        if (source.sectionId == SettingsSectionId.STATISTICS) return
+        if (childFragmentManager.isStateSaved || currentDetail() != null) return
+        val home = childFragmentManager.findFragmentByTag(TAG_HOME) as? SettingsFragment ?: return
+
+        if (!motionEnabled()) {
+            openSettingsSection(source.sectionId)
+            return
+        }
+
+        val controller = morphController ?: return
+        if (!controller.reserveForward()) return
+        homeScrollState = home.captureHomeScrollState()
+        backCallback?.isEnabled = true
+
+        val detail = SettingsDetailFragment.newInstance(source.sectionId, prepareMorph = true)
+        val transaction = childFragmentManager.beginTransaction()
+        transaction.add(R.id.settingsContent, detail, detailTag(source.sectionId))
+        transaction.addToBackStack(source.sectionId.name)
+        transaction.commit()
+
+        childFragmentManager.executePendingTransactions()
+
+        val detailView = detail.view
+        val bottomNav = requireActivity().findViewById<View>(R.id.bottomNavigationContainer)
+
+        if (detailView != null) {
+            detailView.awaitLaidOut {
+                val toolbar = detail.transitionToolbar()
+                val body = detail.transitionBody()
+                if (toolbar == null || body == null) {
+                    settleDetailImmediately(home, detail)
+                    return@awaitLaidOut
+                }
+                controller.animateForward(
+                    source = source,
+                    detailRoot = detailView,
+                    detailToolbar = toolbar,
+                    detailBody = body,
+                    bottomNavigation = bottomNav,
+                    onDetailCommitted = {
+                        if (!home.isHidden) {
+                            childFragmentManager.beginTransaction()
+                                .hide(home)
+                                .setMaxLifecycle(home, Lifecycle.State.STARTED)
+                                .commitNowAllowingStateLoss()
+                        }
+                    },
+                    onComplete = { queuedBack ->
+                        updateNavigationChrome(animateBottomBar = false)
+                        if (queuedBack) binding?.root?.post { popSettingsDetail() }
+                    },
+                )
+            }
+        } else {
+            settleDetailImmediately(home, detail)
+        }
     }
 
     override fun popSettingsDetail(): Boolean {
         if (externalNavigationInFlight || SystemClock.uptimeMillis() < backGuardUntil) return true
-        if (navigationInFlight) {
-            pendingPop = true
-            backCallback?.isEnabled = true
-            return true
-        }
+        if (morphController?.requestBackDuringForward() == true) return true
         if (!hasDetail() || childFragmentManager.isStateSaved) return false
-        navigationInFlight = true
+        val detail = currentDetail() ?: return false
+        val sectionId = detail.detailSectionId()
+        val controller = morphController ?: return false
+        if (!controller.reserveReturn()) return true
         backCallback?.isEnabled = true
-        childFragmentManager.popBackStack()
+
+        if (sectionId != null && motionEnabled()) {
+            val home = childFragmentManager.findFragmentByTag(TAG_HOME) as? SettingsFragment
+            val bottomNav = requireActivity().findViewById<View>(R.id.bottomNavigationContainer)
+
+            if (home != null) {
+                childFragmentManager.beginTransaction()
+                    .show(home)
+                    .setMaxLifecycle(home, Lifecycle.State.RESUMED)
+                    .commitNow()
+
+                home.restoreHomeScrollState(homeScrollState) {
+                    home.resolveSectionSource(sectionId) { resolvedSource ->
+                        val toolbar = detail.transitionToolbar()
+                        val body = detail.transitionBody()
+                        if (toolbar == null || body == null) {
+                            completeReturnImmediately()
+                            return@resolveSectionSource
+                        }
+                        controller.animateReturn(
+                            source = resolvedSource,
+                            detailRoot = detail.requireView(),
+                            detailToolbar = toolbar,
+                            detailBody = body,
+                            bottomNavigation = bottomNav,
+                            onHomeCommitted = {
+                                if (childFragmentManager.backStackEntryCount > 0) {
+                                    childFragmentManager.popBackStackImmediate()
+                                }
+                            },
+                            onComplete = {
+                                backCallback?.isEnabled = hasDetail()
+                                updateNavigationChrome(animateBottomBar = false)
+                            },
+                        )
+                    }
+                }
+            } else {
+                completeReturnImmediately()
+            }
+        } else {
+            completeReturnImmediately()
+        }
         return true
     }
 
@@ -167,6 +269,27 @@ class SettingsSectionFragment : Fragment(), SettingsNavigationController {
     }
 
     override fun detailScrollState(sectionId: SettingsSectionId): Parcelable? = detailScrollStates[sectionId]
+
+    private fun settleDetailImmediately(home: Fragment, detail: SettingsDetailFragment) {
+        detail.view?.alpha = 1f
+        if (!home.isHidden) {
+            childFragmentManager.beginTransaction()
+                .hide(home)
+                .setMaxLifecycle(home, Lifecycle.State.STARTED)
+                .commitNowAllowingStateLoss()
+        }
+        morphController?.cancelAndSettle(SettingsCardMorphController.SettleTarget.DETAIL)
+        updateNavigationChrome(animateBottomBar = false)
+    }
+
+    private fun completeReturnImmediately() {
+        if (childFragmentManager.backStackEntryCount > 0) {
+            childFragmentManager.popBackStackImmediate()
+        }
+        morphController?.cancelAndSettle(SettingsCardMorphController.SettleTarget.HOME)
+        backCallback?.isEnabled = hasDetail()
+        updateNavigationChrome(animateBottomBar = false)
+    }
 
     override fun onSaveInstanceState(outState: Bundle) {
         val states = Bundle().apply {
@@ -185,8 +308,15 @@ class SettingsSectionFragment : Fragment(), SettingsNavigationController {
 
     private fun updateNavigationChrome(animateBottomBar: Boolean = motionEnabled()) {
         val detailVisible = hasDetail()
-        backCallback?.isEnabled = !isHidden && (detailVisible || navigationInFlight)
-        updateBottomNavigation(detailVisible, animateBottomBar)
+        val transitionState = morphController?.state
+        backCallback?.isEnabled = !isHidden &&
+            (detailVisible || transitionState != SettingsCardMorphController.State.IDLE_HOME)
+        if (transitionState == SettingsCardMorphController.State.IDLE_HOME ||
+            transitionState == SettingsCardMorphController.State.IDLE_DETAIL ||
+            transitionState == null
+        ) {
+            updateBottomNavigation(detailVisible, animateBottomBar)
+        }
     }
 
     private fun updateBottomNavigation(detailVisible: Boolean, animate: Boolean) {
@@ -227,6 +357,11 @@ class SettingsSectionFragment : Fragment(), SettingsNavigationController {
         updateNavigationChrome(animateBottomBar = false)
     }
 
+    override fun onPause() {
+        settleInterruptedTransition()
+        super.onPause()
+    }
+
     private fun registerBackCallback() {
         val callback = backCallback ?: return
         callback.remove()
@@ -235,8 +370,31 @@ class SettingsSectionFragment : Fragment(), SettingsNavigationController {
 
     override fun onHiddenChanged(hidden: Boolean) {
         super.onHiddenChanged(hidden)
-        if (hidden) resetChildTransforms()
+        if (hidden) {
+            settleInterruptedTransition()
+            resetChildTransforms()
+        }
         updateNavigationChrome()
+    }
+
+    private fun settleInterruptedTransition() {
+        val controller = morphController ?: return
+        if (controller.state == SettingsCardMorphController.State.IDLE_HOME ||
+            controller.state == SettingsCardMorphController.State.IDLE_DETAIL
+        ) return
+        if (hasDetail()) {
+            val home = childFragmentManager.findFragmentByTag(TAG_HOME)
+            if (home != null && !home.isHidden && !childFragmentManager.isStateSaved) {
+                childFragmentManager.beginTransaction()
+                    .hide(home)
+                    .setMaxLifecycle(home, Lifecycle.State.STARTED)
+                    .commitNowAllowingStateLoss()
+            }
+            currentDetail()?.view?.alpha = 1f
+            controller.cancelAndSettle(SettingsCardMorphController.SettleTarget.DETAIL)
+        } else {
+            controller.cancelAndSettle(SettingsCardMorphController.SettleTarget.HOME)
+        }
     }
 
     private fun resetChildTransforms() {
@@ -277,9 +435,12 @@ class SettingsSectionFragment : Fragment(), SettingsNavigationController {
 
     override fun onDestroyView() {
         childFragmentManager.removeOnBackStackChangedListener(backStackChangedListener)
+        morphController?.cancelAndSettle(
+            if (hasDetail()) SettingsCardMorphController.SettleTarget.DETAIL
+            else SettingsCardMorphController.SettleTarget.HOME
+        )
+        morphController = null
         backCallback = null
-        navigationInFlight = false
-        pendingPop = false
         externalNavigationInFlight = false
         backGuardUntil = 0L
         binding = null
@@ -298,4 +459,18 @@ class SettingsSectionFragment : Fragment(), SettingsNavigationController {
             arguments = Bundle().apply { putBoolean(ARG_SHOW_TOOLBAR, false) }
         }
     }
+}
+
+private inline fun View.awaitLaidOut(crossinline action: () -> Unit) {
+    if (isAttachedToWindow && width > 0 && height > 0) {
+        postOnAnimation { action() }
+        return
+    }
+    viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+        override fun onPreDraw(): Boolean {
+            viewTreeObserver.removeOnPreDrawListener(this)
+            action()
+            return true
+        }
+    })
 }

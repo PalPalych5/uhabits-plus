@@ -18,7 +18,7 @@ class SettingsListComposerTest {
 
     @Test
     fun homeContainsOnlyCompactSections() {
-        val items = SettingsListComposer.composeHome(sections, { it.title }, {})
+        val items = SettingsListComposer.composeHome(sections, { it.title }, { _ -> })
 
         assertEquals(3, items.size)
         assertTrue(items.all { it is SettingItem.Section })
@@ -50,9 +50,9 @@ class SettingsListComposerTest {
         val item = SettingsListComposer.composeHome(
             listOf(statistics),
             { it.title },
-            { openedSections++ }
+            { _ -> openedSections++ }
         ).single() as SettingItem.Section
-        item.onClick()
+        item.onClick(null)
 
         assertEquals(1, directActions)
         assertEquals(0, openedSections)

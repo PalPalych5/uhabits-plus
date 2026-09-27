@@ -73,7 +73,7 @@ object SettingsListComposer {
     fun composeHome(
         sections: List<SettingsSectionModel>,
         accessibilityDescription: (SettingsSectionModel) -> String,
-        onSectionClick: (SettingsSectionId) -> Unit
+        onSectionClick: (SettingsTransitionSource) -> Unit
     ): List<SettingItem> = sections.map { section ->
         SettingItem.Section(
             sectionId = section.id,
@@ -82,7 +82,15 @@ object SettingsListComposer {
             title = section.title,
             summary = section.summary,
             accessibilityDescription = accessibilityDescription(section),
-            onClick = section.homeAction ?: { onSectionClick(section.id) }
+            onClick = { source ->
+                if (section.homeAction != null) {
+                    section.homeAction.invoke()
+                } else {
+                    if (source != null) {
+                        onSectionClick(source)
+                    }
+                }
+            }
         )
     }
 
