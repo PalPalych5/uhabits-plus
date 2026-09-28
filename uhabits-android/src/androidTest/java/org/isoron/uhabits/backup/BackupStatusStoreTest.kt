@@ -3,11 +3,10 @@ package org.isoron.uhabits.backup
 import androidx.preference.PreferenceManager
 import org.isoron.uhabits.BaseAndroidTest
 import org.junit.Test
-import kotlin.test.assertEquals
 
 class BackupStatusStoreTest : BaseAndroidTest() {
     @Test
-    fun recordsSuccessAndFailure() {
+    fun testRecordsSuccessAndFailure() {
         PreferenceManager.getDefaultSharedPreferences(targetContext).edit().clear().commit()
         val store = BackupStatusStore(targetContext)
 

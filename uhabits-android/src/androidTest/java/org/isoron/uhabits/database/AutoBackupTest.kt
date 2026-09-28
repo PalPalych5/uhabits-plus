@@ -34,12 +34,12 @@ class AutoBackupTest : BaseAndroidTest() {
         createTestFiles(basedir, 30)
         touch("${basedir.path}/foreign.txt", 1)
 
-        val autoBackup = AutoBackup(targetContext)
+        val autoBackup = AutoBackup(targetContext) { 40 * DateUtils.DAY_LENGTH }
         autoBackup.run(keep = 5)
 
-        for (k in 1..25) assertDoesNotExist("${basedir.path}/Loop Habits Backup 1970-01-01 0000$k.db")
-        for (k in 26..30) assertExists("${basedir.path}/Loop Habits Backup 1970-01-01 0000$k.db")
-        assertExists("${basedir.path}/Loop Habits Backup 1970-02-10 000000.db")
+        for (k in 1..26) assertDoesNotExist("${basedir.path}/Loop Habits Backup 1970-01-01 0000$k.db")
+        for (k in 27..30) assertExists("${basedir.path}/Loop Habits Backup 1970-01-01 0000$k.db")
+        assertEquals(5, appComponent.backupManager.listLocalBackups().size)
         assertExists("${basedir.path}/foreign.txt")
     }
 

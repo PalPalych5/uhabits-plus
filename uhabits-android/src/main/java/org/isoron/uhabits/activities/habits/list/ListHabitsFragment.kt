@@ -85,7 +85,6 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
                 !selecting && displayMode == ListHabitsDisplayMode.NORMAL
             )
         }
-        Thread.setDefaultUncaughtExceptionHandler(BaseExceptionHandler(activity))
         initialized = true
         applyDisplayMode()
         if (startupPending) {
@@ -100,13 +99,24 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             this,
             object : androidx.activity.OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
-                    if (menuController.isSearchActive) {
+                    if (!this@ListHabitsFragment.isVisible) {
+                        isEnabled = false
+                        try {
+                            activity.onBackPressedDispatcher.onBackPressed()
+                        } finally {
+                            isEnabled = true
+                        }
+                    } else if (menuController.isSearchActive) {
                         menuController.closeSearch()
                     } else if (displayMode == ListHabitsDisplayMode.ARCHIVE) {
                         (activity as? MainNavigationHost)?.navigateBack()
                     } else {
                         isEnabled = false
-                        activity.onBackPressedDispatcher.onBackPressed()
+                        try {
+                            activity.onBackPressedDispatcher.onBackPressed()
+                        } finally {
+                            isEnabled = true
+                        }
                     }
                 }
             }

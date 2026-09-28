@@ -22,14 +22,18 @@ import android.util.Log
 import org.isoron.platform.io.UserFile
 import org.isoron.platform.io.begin
 import org.isoron.platform.io.commit
+import org.isoron.platform.io.rollback
 import org.isoron.uhabits.core.io.GenericImporter
 import org.isoron.uhabits.core.models.ModelFactory
+import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.sqlite.SQLModelFactory
+import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 import org.isoron.uhabits.core.tasks.Task
 
 class ImportDataTask(
     private val importer: GenericImporter,
     modelFactory: ModelFactory,
+    private val habitList: HabitList,
     private val file: UserFile,
     private val listener: Listener
 ) : Task {
@@ -44,6 +48,7 @@ class ImportDataTask(
                     importer.importHabitsFromFile(file)
                     result = SUCCESS
                     modelFactory.database.commit()
+                    (habitList as? SQLiteHabitList)?.reloadAndNotify()
                 } else {
                     result = NOT_RECOGNIZED
                     modelFactory.database.commit()
@@ -52,8 +57,12 @@ class ImportDataTask(
         } catch (e: Exception) {
             result = FAILED
             Log.e("ImportDataTask", "Import failed", e)
-            // On failure, commit anyway to close the transaction
-            try { modelFactory.database.commit() } catch (_: Exception) {}
+            try {
+                modelFactory.database.rollback()
+            } catch (rollbackError: Exception) {
+                Log.e("ImportDataTask", "Import rollback failed", rollbackError)
+            }
+            (habitList as? SQLiteHabitList)?.reloadAndNotify()
         }
     }
 

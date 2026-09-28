@@ -138,13 +138,18 @@ class ListHabitsScreen(
     private fun onOpenDocumentResult(resultCode: Int, data: Intent?) {
         if (data == null) return
         if (resultCode != Activity.RESULT_OK) return
+        var tempFile: File? = null
         try {
-            val inStream = activity.contentResolver.openInputStream(data.data!!)!!
-            val cacheDir = activity.externalCacheDir
-            val tempFile = File.createTempFile("import", "", cacheDir)
-            inStream.copyTo(tempFile)
-            onImportData(JavaUserFile(tempFile.toPath())) { tempFile.delete() }
-        } catch (e: IOException) {
+            val uri = data.data ?: throw IOException("Import document has no URI")
+            tempFile = File.createTempFile("import", "", activity.cacheDir)
+            val destination = tempFile
+            (activity.contentResolver.openInputStream(uri)
+                ?: throw IOException("Cannot open import document")).use { input ->
+                destination.outputStream().use { output -> input.copyTo(output) }
+            }
+            onImportData(JavaUserFile(destination.toPath())) { destination.delete() }
+        } catch (e: Exception) {
+            tempFile?.delete()
             activity.showMessage(activity.resources.getString(R.string.could_not_import))
             e.printStackTrace()
         }

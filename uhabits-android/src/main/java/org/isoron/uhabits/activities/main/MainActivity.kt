@@ -81,7 +81,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         currentTheme = prefs.theme
         currentResolvedNightMode = themeSwitcher.isNightMode
         prefs.addListener(this)
-        Thread.setDefaultUncaughtExceptionHandler(BaseExceptionHandler(this))
+        BaseExceptionHandler.install(this)
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         binding.root.applyRootViewInsets()

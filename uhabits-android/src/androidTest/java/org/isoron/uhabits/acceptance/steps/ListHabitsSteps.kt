@@ -40,7 +40,7 @@ object ListHabitsSteps {
             MenuItem.ABOUT -> clickTextInsideOverflowMenu(R.string.about)
             MenuItem.HELP -> clickTextInsideOverflowMenu(R.string.help)
             MenuItem.SETTINGS -> clickTextInsideOverflowMenu(R.string.settings)
-            MenuItem.ADD -> clickViewWithId(R.id.actionCreateHabit)
+            MenuItem.ADD -> clickViewWithId(R.id.actionAddHabit)
             MenuItem.EDIT -> clickViewWithId(R.id.action_edit_habit)
             MenuItem.DELETE -> clickTextInsideOverflowMenu(R.string.delete)
             MenuItem.ARCHIVE -> clickTextInsideOverflowMenu(R.string.archive)

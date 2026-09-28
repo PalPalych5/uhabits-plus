@@ -18,9 +18,10 @@
  */
 package org.isoron.uhabits
 
-import android.app.Activity
+import android.content.Context
 
-class BaseExceptionHandler(private val activity: Activity) : Thread.UncaughtExceptionHandler {
+class BaseExceptionHandler(context: Context) : Thread.UncaughtExceptionHandler {
+    private val applicationContext = context.applicationContext
 
     private val originalHandler: Thread.UncaughtExceptionHandler? =
         Thread.getDefaultUncaughtExceptionHandler()
@@ -30,10 +31,19 @@ class BaseExceptionHandler(private val activity: Activity) : Thread.UncaughtExce
         if (thread == null) return
         try {
             ex.printStackTrace()
-            AndroidBugReporter(activity).dumpBugReportToFile()
+            AndroidBugReporter(applicationContext).dumpBugReportToFile()
         } catch (e: Exception) {
             e.printStackTrace()
         }
         originalHandler?.uncaughtException(thread, ex)
+    }
+
+    companion object {
+        @Synchronized
+        fun install(context: Context) {
+            if (Thread.getDefaultUncaughtExceptionHandler() !is BaseExceptionHandler) {
+                Thread.setDefaultUncaughtExceptionHandler(BaseExceptionHandler(context))
+            }
+        }
     }
 }

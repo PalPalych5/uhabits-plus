@@ -25,7 +25,10 @@ import org.isoron.platform.time.DateUtils
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.backup.BackupManager
 
-class AutoBackup(private val context: Context) {
+class AutoBackup(
+    private val context: Context,
+    private val currentTimeMillis: () -> Long = System::currentTimeMillis
+) {
     private val backupManager: BackupManager
         get() = (context.applicationContext as HabitsApplication).component.backupManager
 
@@ -33,7 +36,7 @@ class AutoBackup(private val context: Context) {
         Log.i("AutoBackup", "Starting automatic backups...")
         val files = backupManager.listBackups()
         val newestTimestamp = files.maxOfOrNull { it.modifiedAt } ?: 0L
-        val now = DateUtils.getLocalTime()
+        val now = currentTimeMillis()
         if (now - newestTimestamp > DateUtils.DAY_LENGTH) {
             backupManager.backupNow(keep)
         } else {

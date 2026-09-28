@@ -89,7 +89,7 @@ class SyncCoordinator(
     init {
         commandRunner.addListener(object : CommandRunner.Listener {
             override fun onCommandFinished(command: Command) {
-                if (isAutoSyncPaused || isSyncing) return
+                if (isAutoSyncPaused) return
                 if (command is org.isoron.uhabits.core.commands.CreateRepetitionCommand ||
                     command is org.isoron.uhabits.core.commands.AddNumericalEntryOpCommand ||
                     command is org.isoron.uhabits.core.commands.BatchCreateRepetitionCommand ||
@@ -102,7 +102,11 @@ class SyncCoordinator(
                     command is org.isoron.uhabits.core.commands.ClearAllEntriesCommand ||
                     command is org.isoron.uhabits.core.commands.EditHabitGoalCommand
                 ) {
-                    scheduleBackgroundSync("local_change")
+                    if (isSyncing) {
+                        synchronized(this@SyncCoordinator) { isPendingSync = true }
+                    } else {
+                        scheduleBackgroundSync("local_change")
+                    }
                 }
             }
         })
@@ -440,7 +444,13 @@ class SyncCoordinator(
                 val pulledForeignEvents = pull.events.filter { it.deviceId != deviceIdProvider.value() }
                 val skipped = applyRemoteEvents(pulledForeignEvents)
                 val applied = pulledForeignEvents.size - skipped
-                preferences.syncLastLogId = pull.latestLogId
+                // Retry unresolved child events on the next pull instead of losing them forever.
+                val firstSkippedLogId = lastSkippedRemoteLogId
+                preferences.syncLastLogId = if (firstSkippedLogId != null) {
+                    minOf(pull.latestLogId, firstSkippedLogId - 1)
+                } else {
+                    pull.latestLogId
+                }
                 preferences.syncLastSuccessAt = System.currentTimeMillis()
                 preferences.syncStatus = "success"
 
@@ -484,6 +494,9 @@ class SyncCoordinator(
                 isSyncing = false
             }
             notifySyncStateChanged(false, result)
+            if (synchronized(this@SyncCoordinator) { isPendingSync }) {
+                scheduleBackgroundSync("local_change_during_sync")
+            }
         }
     }
 
@@ -1213,8 +1226,10 @@ class SyncCoordinator(
 
     /** Accumulated during applyRemoteEvents for diagnostics display. */
     private val lastUnresolvedHabitBlocks = mutableListOf<UnresolvedHabitBlock>()
+    private var lastSkippedRemoteLogId: Long? = null
 
     internal fun applyRemoteEvents(events: List<RemoteSyncEvent>): Int {
+        lastSkippedRemoteLogId = null
         if (events.isEmpty()) return 0
         // Do NOT run destructive cleanupDuplicateDefaultBlocks here.
         // Duplicate blocks are less harmful than losing habit-sphere assignments.
@@ -1243,6 +1258,7 @@ class SyncCoordinator(
                 }
                 if (!applied) {
                     skipped++
+                    lastSkippedRemoteLogId = minOf(lastSkippedRemoteLogId ?: event.logId, event.logId)
                     Log.w("SyncCoordinator", "Skipped remote event ${event.entityType} uuid=${event.entityUuid} (missing parent habit)")
                 }
             }

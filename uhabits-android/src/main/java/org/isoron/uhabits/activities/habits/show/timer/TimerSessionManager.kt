@@ -244,7 +244,10 @@ class TimerSessionManager(
     @Synchronized
     fun dismissCompletionNotification(eventId: Long): Boolean {
         if (eventId != lastCompletionEventId) return false
-        completionNotifier.cancelCompletion()
+        clearCompletionDisplay()
+        persistState()
+        syncForegroundService()
+        notifyListeners()
         return true
     }
 

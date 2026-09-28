@@ -139,21 +139,45 @@ object DatabaseUtils {
         val db = SQLiteDatabase.openDatabase(file.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
         return try {
             val version = db.version
-            if (version > DATABASE_VERSION) {
+            if (version <= 0 || version > DATABASE_VERSION) {
                 return org.isoron.uhabits.backup.BackupValidationResult(
                     isValid = false,
-                    errorMessage = "Backup uses newer database version"
+                    errorMessage = "Backup has an unsupported database version"
                 )
             }
 
-            val tables = db.rawQuery(
-                "select count(*) from sqlite_master where name='Habits' or name='Repetitions'",
-                null
-            ).use {
-                it.moveToFirst()
-                it.getInt(0)
+            val integrity = db.rawQuery("PRAGMA quick_check", null).use {
+                if (it.moveToFirst()) it.getString(0) else null
             }
-            if (tables != 2) {
+            if (integrity != "ok") {
+                return org.isoron.uhabits.backup.BackupValidationResult(
+                    isValid = false,
+                    errorMessage = "Backup database failed integrity check"
+                )
+            }
+
+            val requiredTables = buildList {
+                add("Habits")
+                add("Repetitions")
+                if (version >= 26) add("HabitExtensions")
+                if (version >= 27) add("HabitBlocks")
+                if (version >= 28) {
+                    add("HabitGoals")
+                    add("AppSettings")
+                }
+                if (version >= 29) {
+                    add("SyncQueue")
+                    add("EntryOps")
+                }
+            }
+            val presentTables = db.rawQuery(
+                "select name from sqlite_master where type='table'", null
+            ).use { cursor ->
+                buildSet {
+                    while (cursor.moveToNext()) add(cursor.getString(0))
+                }
+            }
+            if (!presentTables.containsAll(requiredTables)) {
                 org.isoron.uhabits.backup.BackupValidationResult(
                     isValid = false,
                     errorMessage = "Backup is missing required tables"
@@ -177,10 +201,14 @@ object DatabaseUtils {
         val parent = requireNotNull(dbFile.parentFile)
         val restoreTemp = File(parent, "${dbFile.name}.restore.tmp")
         val rollbackFile = File(parent, "${dbFile.name}.rollback")
-        cleanupSidecars(dbFile)
         cleanupSidecars(restoreTemp)
         if (restoreTemp.exists()) restoreTemp.delete()
-        if (rollbackFile.exists()) rollbackFile.delete()
+        if (rollbackFile.exists()) {
+            if (dbFile.exists()) {
+                throw IOException("Previous database restore rollback requires manual recovery")
+            }
+            Files.move(rollbackFile.toPath(), dbFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
+        }
 
         stagedBackupFile.copyTo(restoreTemp, overwrite = true)
 
@@ -203,7 +231,13 @@ object DatabaseUtils {
             }
         }
 
+        val migratedValidation = validateDatabaseBackup(restoreTemp)
+        require(migratedValidation.isValid && migratedValidation.databaseVersion == DATABASE_VERSION) {
+            migratedValidation.errorMessage ?: "Migrated backup is invalid"
+        }
+
         closeDatabase()
+        cleanupSidecars(dbFile)
 
         try {
             if (dbFile.exists()) {
@@ -224,7 +258,9 @@ object DatabaseUtils {
             openDatabase().close()
             rollbackFile.delete()
         } catch (e: Exception) {
-            if (!dbFile.exists() && rollbackFile.exists()) {
+            closeDatabase()
+            if (rollbackFile.exists()) {
+                cleanupSidecars(dbFile)
                 Files.move(
                     rollbackFile.toPath(),
                     dbFile.toPath(),
@@ -235,10 +271,8 @@ object DatabaseUtils {
             initializeDatabase(context)
             throw e
         } finally {
-            cleanupSidecars(dbFile)
             cleanupSidecars(restoreTemp)
             restoreTemp.delete()
-            rollbackFile.delete()
         }
     }
 

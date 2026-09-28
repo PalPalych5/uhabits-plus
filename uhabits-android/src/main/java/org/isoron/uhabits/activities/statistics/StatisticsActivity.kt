@@ -93,6 +93,28 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
 
     private var currentFilters = StatisticsFilterState()
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        childFragmentManager.setFragmentResultListener(
+            StatisticsFiltersBottomSheet.RESULT_KEY, this
+        ) { _, result ->
+            val updated = StatisticsFilterState(
+                sphereId = result.getLong("sphere_id", Long.MIN_VALUE).takeUnless { it == Long.MIN_VALUE },
+                habitStatus = enumValueOrDefault(result.getString("habit_status"), StatisticsHabitStatusFilter.ACTIVE),
+                goalType = enumValueOrDefault(result.getString("goal_type"), StatisticsGoalTypeFilter.ALL),
+                tier = result.getString("day_tier")?.let { name -> DayTier.entries.firstOrNull { it.name == name } }
+            )
+            if (updated != currentFilters) {
+                currentFilters = updated
+                renderActiveFilterChips()
+                requestReportUpdate("filter_selected", forceRender = true)
+            }
+        }
+    }
+
+    private inline fun <reified T : Enum<T>> enumValueOrDefault(value: String?, fallback: T): T =
+        enumValues<T>().firstOrNull { it.name == value } ?: fallback
+
     internal data class ReportKey(
         val tab: ReportTab,
         val start: LocalDate,
@@ -149,6 +171,14 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
                 it.getInt(STATE_DAY)
             )
         } ?: getToday()
+        savedInstanceState?.let { state ->
+            currentFilters = StatisticsFilterState(
+                sphereId = state.getLong(STATE_FILTER_SPHERE, Long.MIN_VALUE).takeUnless { it == Long.MIN_VALUE },
+                habitStatus = enumValueOrDefault(state.getString(STATE_FILTER_STATUS), StatisticsHabitStatusFilter.ACTIVE),
+                goalType = enumValueOrDefault(state.getString(STATE_FILTER_GOAL), StatisticsGoalTypeFilter.ALL),
+                tier = state.getString(STATE_FILTER_TIER)?.let { name -> DayTier.entries.firstOrNull { it.name == name } }
+            )
+        }
         clampAnchorDateToCurrentPeriod()
 
         setupTabs()
@@ -189,6 +219,10 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         outState.putInt(STATE_YEAR, currentAnchorDate.year)
         outState.putInt(STATE_MONTH, currentAnchorDate.month)
         outState.putInt(STATE_DAY, currentAnchorDate.day)
+        outState.putLong(STATE_FILTER_SPHERE, currentFilters.sphereId ?: Long.MIN_VALUE)
+        outState.putString(STATE_FILTER_STATUS, currentFilters.habitStatus.name)
+        outState.putString(STATE_FILTER_GOAL, currentFilters.goalType.name)
+        outState.putString(STATE_FILTER_TIER, currentFilters.tier?.name)
         super.onSaveInstanceState(outState)
     }
 
@@ -251,12 +285,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
                 fragmentManager = childFragmentManager,
                 initialState = currentFilters,
                 blocks = component.habitList.getBlocks()
-            ) { updated ->
-                if (updated == currentFilters) return@show
-                currentFilters = updated
-                renderActiveFilterChips()
-                requestReportUpdate("filter_selected", forceRender = true)
-            }
+            )
         }
         renderActiveFilterChips()
     }
@@ -1075,6 +1104,10 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         private const val STATE_YEAR = "reports.year"
         private const val STATE_MONTH = "reports.month"
         private const val STATE_DAY = "reports.day"
+        private const val STATE_FILTER_SPHERE = "reports.filter.sphere"
+        private const val STATE_FILTER_STATUS = "reports.filter.status"
+        private const val STATE_FILTER_GOAL = "reports.filter.goal"
+        private const val STATE_FILTER_TIER = "reports.filter.tier"
         private const val REPORT_UPDATE_COALESCE_MS = 80L
         private const val INITIAL_REPORT_DELAY_MS = 80L
     }

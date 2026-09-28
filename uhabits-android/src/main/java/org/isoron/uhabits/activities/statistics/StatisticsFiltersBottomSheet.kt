@@ -32,7 +32,6 @@ import org.isoron.uhabits.core.ui.screens.statistics.StatisticsGoalTypeFilter
 import org.isoron.uhabits.core.ui.screens.statistics.StatisticsHabitStatusFilter
 
 class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
-    private var onApply: ((StatisticsFilterState) -> Unit)? = null
     private var selectedSphereId: Long? = null
     private var selectedStatus = StatisticsHabitStatusFilter.ACTIVE
     private var selectedGoalType = StatisticsGoalTypeFilter.ALL
@@ -70,14 +69,7 @@ class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
             renderSelections(view)
         }
         view.findViewById<View>(R.id.applyFiltersButton).setOnClickListener {
-            onApply?.invoke(
-                StatisticsFilterState(
-                    sphereId = selectedSphereId,
-                    habitStatus = selectedStatus,
-                    goalType = selectedGoalType,
-                    tier = selectedTier
-                )
-            )
+            parentFragmentManager.setFragmentResult(RESULT_KEY, Bundle().also(::writeSelection))
             dismiss()
         }
     }
@@ -269,6 +261,7 @@ class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
     private data class SphereOption(val id: Long, val name: String)
 
     companion object {
+        const val RESULT_KEY = "statistics_filters_result"
         private const val TAG = "statistics_filters"
         private const val ARG_SPHERE_ID = "sphere_id"
         private const val ARG_STATUS = "habit_status"
@@ -281,15 +274,13 @@ class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
         fun show(
             fragmentManager: FragmentManager,
             initialState: StatisticsFilterState,
-            blocks: List<HabitBlock>,
-            onApply: (StatisticsFilterState) -> Unit
+            blocks: List<HabitBlock>
         ) {
             if (fragmentManager.findFragmentByTag(TAG) != null) return
             val selectableBlocks = blocks
                 .filter { it.id != null }
                 .sortedWith(compareBy<HabitBlock> { it.position }.thenBy { it.name })
             StatisticsFiltersBottomSheet().apply {
-                this.onApply = onApply
                 arguments = Bundle().apply {
                     putLong(ARG_SPHERE_ID, initialState.sphereId ?: NO_SPHERE_ID)
                     putString(ARG_STATUS, initialState.habitStatus.name)

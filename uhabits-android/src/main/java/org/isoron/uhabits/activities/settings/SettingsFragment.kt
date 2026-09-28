@@ -1387,7 +1387,8 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             if (hasPending) {
                 Toast.makeText(requireContext(), "Отправка несохраненных изменений перед выходом...", Toast.LENGTH_SHORT).show()
                 val syncResult = syncCoordinator.runSync(manual = true)
-                if (syncResult is SyncRunResult.Failure) {
+                if (syncResult !is SyncRunResult.Success ||
+                    withContext(Dispatchers.IO) { syncCoordinator.hasPendingLocalChanges() }) {
                     CustomDialogs.showConfirmDialog(
                         context = requireContext(),
                         title = getString(R.string.sync_sign_out_warning_title),

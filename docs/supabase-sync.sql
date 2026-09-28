@@ -183,7 +183,8 @@ begin
                 when excluded.deleted_at is not null then excluded.deleted_at
                 when public.habit_blocks.deleted_at is not null and public.habit_blocks.deleted_at > excluded.updated_at then public.habit_blocks.deleted_at
                 else null
-            end;
+            end
+        where excluded.updated_at >= public.habit_blocks.updated_at;
     elsif new.entity_type = 'habit' then
         insert into public.habits (
             user_id, uuid, name, description, question, freq_num, freq_den, color, archived, type,
@@ -238,7 +239,8 @@ begin
                 when excluded.deleted_at is not null then excluded.deleted_at
                 when public.habits.deleted_at is not null and public.habits.deleted_at > excluded.updated_at then public.habits.deleted_at
                 else null
-            end;
+            end
+        where excluded.updated_at >= public.habits.updated_at;
     elsif new.entity_type = 'habit_goal' then
         insert into public.habit_goals (
             user_id, uuid, habit_uuid, effective_timestamp, freq_num, freq_den,
@@ -268,7 +270,8 @@ begin
                 when excluded.deleted_at is not null then excluded.deleted_at
                 when public.habit_goals.deleted_at is not null and public.habit_goals.deleted_at > excluded.updated_at then public.habit_goals.deleted_at
                 else null
-            end;
+            end
+        where excluded.updated_at >= public.habit_goals.updated_at;
     elsif new.entity_type = 'entry' then
         insert into public.entries (
             user_id, uuid, habit_uuid, entry_date, value, notes, updated_at, deleted_at
@@ -291,7 +294,8 @@ begin
                 when excluded.deleted_at is not null then excluded.deleted_at
                 when public.entries.deleted_at is not null and public.entries.deleted_at > excluded.updated_at then public.entries.deleted_at
                 else null
-            end;
+            end
+        where excluded.updated_at >= public.entries.updated_at;
     elsif new.entity_type = 'entry_op' then
         insert into public.entry_ops (
             user_id, op_uuid, habit_uuid, entry_date, delta_value, op_type, notes, device_id, created_at, deleted_at
@@ -323,7 +327,8 @@ begin
         on conflict (user_id, setting_key) do update
         set long_value = excluded.long_value,
             updated_at = greatest(public.app_settings_sync.updated_at, excluded.updated_at),
-            deleted_at = excluded.deleted_at;
+            deleted_at = excluded.deleted_at
+        where excluded.updated_at >= public.app_settings_sync.updated_at;
     end if;
     return new;
 end

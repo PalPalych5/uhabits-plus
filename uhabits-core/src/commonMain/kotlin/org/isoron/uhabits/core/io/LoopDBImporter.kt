@@ -34,6 +34,8 @@ import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.commands.CreateHabitCommand
 import org.isoron.uhabits.core.commands.EditHabitCommand
 import org.isoron.uhabits.core.database.HabitData
+import org.isoron.uhabits.core.database.HabitBlockData
+import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.HabitGoal
@@ -41,6 +43,7 @@ import org.isoron.uhabits.core.models.ModelFactory
 import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
+import org.isoron.uhabits.core.models.sqlite.SQLModelFactory
 import org.isoron.uhabits.core.utils.isSQLite3File
 
 /**
@@ -79,32 +82,45 @@ class LoopDBImporter(
 
     override suspend fun importHabitsFromFile(file: UserFile) {
         val db = opener.open(file.pathString)
+        try {
         db.migrateTo(DATABASE_VERSION) { version ->
             val filename = org.isoron.platform.io.format("%02d.sql", version)
             fileOpener.openResourceFile("migrations/$filename").lines().joinToString("\n")
         }
 
         val globalStatsStart = loadGlobalStatsStart(db)
-        habitList.globalStatisticsStartDate = globalStatsStart
+        if (globalStatsStart != null) habitList.globalStatisticsStartDate = globalStatsStart
+        val blockIds = importBlocks(db)
         val habitDataList = loadHabits(db)
         for (habitData in habitDataList) {
             var habit = habitList.getByUUID(habitData.uuid)
+            val extension = loadExtension(db, habitData.id!!)
 
             if (habit == null) {
                 habit = modelFactory.buildHabit()
                 val imported = habitData.copy(id = null)
                 SQLiteHabitList.copyTo(imported, habit)
+                extension?.let {
+                    habit.dayTier = DayTier.fromString(it.dayTier)
+                    habit.timerEnabled = it.timerEnabled
+                    habit.blockId = it.blockId?.let(blockIds::get)
+                }
                 CreateHabitCommand(modelFactory, habitList, habit).run()
             } else {
                 val modified = modelFactory.buildHabit()
                 SQLiteHabitList.copyTo(habitData.copy(id = habit.id), modified)
+                extension?.let {
+                    modified.dayTier = DayTier.fromString(it.dayTier)
+                    modified.timerEnabled = it.timerEnabled
+                    modified.blockId = it.blockId?.let(blockIds::get)
+                }
                 EditHabitCommand(habitList, habit.id!!, modified).run()
             }
 
             habit = habitList.getByUUID(habitData.uuid)!!
             habit.goalHistory = loadGoalHistory(db, habitData.id!!).toMutableList()
             habit.statisticsStartDate = loadHabitStatsStart(db, habitData.id!!)
-            habit.globalStatisticsStartDate = globalStatsStart
+            if (globalStatsStart != null) habit.globalStatisticsStartDate = globalStatsStart
             val entries = habit.originalEntries
 
             db.query(
@@ -124,7 +140,49 @@ class LoopDBImporter(
             habit.recompute()
         }
         habitList.resort()
-        db.close()
+        } finally {
+            db.close()
+        }
+    }
+
+    private data class ImportedExtension(val dayTier: String, val timerEnabled: Boolean, val blockId: Long?)
+
+    private fun loadExtension(db: Database, habitId: Long): ImportedExtension? = db.querySingle(
+        "SELECT day_tier, timer_enabled, block_id FROM HabitExtensions WHERE habit_id = ?",
+        habitId.toString()
+    ) { stmt ->
+        ImportedExtension(stmt.getText(0), stmt.getInt(1) != 0, stmt.getLongOrNull(2))
+    }
+
+    private fun importBlocks(db: Database): Map<Long, Long> {
+        val repository = (modelFactory as? SQLModelFactory)?.habitBlockRepository
+            ?: return emptyMap()
+        val ids = mutableMapOf<Long, Long>()
+        db.query(
+            "SELECT id, name, color, icon, position, is_archived, uuid FROM HabitBlocks WHERE deleted_at IS NULL"
+        ) { stmt ->
+            val sourceId = stmt.getLong(0)
+            val uuid = stmt.getTextOrNull(6)
+            val name = stmt.getText(1)
+            val color = stmt.getInt(2)
+            val position = stmt.getInt(4)
+            val existing = uuid?.let(repository::findByUuid)
+                ?: repository.findAll().firstOrNull {
+                    it.name == name && it.color == color && it.position == position
+                }
+            val localId = existing?.id ?: repository.insert(
+                HabitBlockData(
+                    name = name,
+                    color = color,
+                    icon = stmt.getTextOrNull(3),
+                    position = position,
+                    isArchived = stmt.getInt(5) != 0,
+                    uuid = uuid
+                )
+            )
+            ids[sourceId] = localId
+        }
+        return ids
     }
 
     private fun loadGlobalStatsStart(db: Database): LocalDate? {
