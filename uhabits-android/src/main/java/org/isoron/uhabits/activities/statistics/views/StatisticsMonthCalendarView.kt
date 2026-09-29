@@ -39,6 +39,8 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
     private var bestDayPct: String = "—"
     private var bestDayDate: String = ""
 
+    private var bestDayProgress: Double? = null
+
     private var surfaceColor: Int = 0
     private var onSurfaceColor: Int = 0
     private var onSurfaceVariantColor: Int = 0
@@ -61,10 +63,9 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
         fontFeatureSettings = "tnum"
     }
     private val sideTitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textAlign = Paint.Align.LEFT
+        textAlign = Paint.Align.CENTER
     }
-    private val sideValuePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textAlign = Paint.Align.LEFT
+    private val legendLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         fontFeatureSettings = "tnum"
     }
     private val tooltipBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
@@ -111,9 +112,11 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
         this.averageProgress = averageProgress
         val bestDay = days.filter { !it.isFuture && it.progress != null }.maxByOrNull { it.progress!! }
         if (bestDay != null && (bestDay.progress ?: 0.0) > 0.0) {
+            this.bestDayProgress = bestDay.progress
             this.bestDayPct = "${((bestDay.progress ?: 0.0) * 100).roundToInt()}%"
             this.bestDayDate = "${bestDay.date.day} ${dateFormatter.shortMonthName(bestDay.date)}"
         } else {
+            this.bestDayProgress = null
             this.bestDayPct = "—"
             this.bestDayDate = ""
         }
@@ -127,9 +130,8 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
         sideTitlePaint.color = ColorUtils.setAlphaComponent(onSurfaceVariantColor, 180)
         sideTitlePaint.textSize = sp(10f)
 
-        sideValuePaint.color = onSurfaceColor
-        sideValuePaint.textSize = sp(15f)
-        sideValuePaint.typeface = Typeface.DEFAULT_BOLD
+        legendLabelPaint.color = ColorUtils.setAlphaComponent(onSurfaceVariantColor, 180)
+        legendLabelPaint.textSize = sp(9f)
 
         tooltipBgPaint.color = ColorUtils.blendARGB(surfaceColor, onSurfaceColor, 0.18f)
         tooltipStrokePaint.color = ColorUtils.setAlphaComponent(dividerColor, 120)
@@ -158,7 +160,8 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
         val totalDays = mStart.daysUntil(mEnd) + 1
         val numWeeks = ((firstDowOffset + totalDays + 6) / 7)
 
-        val totalH = paddingTop + paddingBottom + headerHeight + (numWeeks * (cellSize + spacing)) + dp(8f)
+        // Extra space for centered intensity legend below grid
+        val totalH = paddingTop + paddingBottom + headerHeight + (numWeeks * (cellSize + spacing)) + dp(32f)
         setMeasuredDimension(width, totalH.roundToInt())
     }
 
@@ -186,7 +189,10 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
                     val dayIndex = row * 7 + col - firstDowOffset
                     if (dayIndex in 0 until (mStart.daysUntil(mEnd) + 1)) {
                         val date = mStart.plus(dayIndex)
-                        inspectedDate = date
+                        if (inspectedDate != date) {
+                            inspectedDate = date
+                            performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                        }
                         val left = startX + col * (cellSize + spacing)
                         val top = startY + row * (cellSize + spacing)
                         inspectedCellRect = RectF(left, top, left + cellSize, top + cellSize)
@@ -229,13 +235,13 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
         val startX = (width - totalGridWidth) / 2f
         var startY = paddingTop.toFloat()
 
-        // 1. LEFT SIDE: Loop-style compact score overview
-        val leftAreaWidth = startX - dp(10f)
-        if (leftAreaWidth > dp(50f)) {
-            val centerX = leftAreaWidth / 2f + dp(4f)
-            val centerY = startY + headerHeight + dp(25f)
-            val radius = dp(20f)
-            ringRect.set(centerX - radius, centerY - radius, centerX + radius, centerY + radius)
+        val ringRadius = dp(20f)
+        val ringCenterY = startY + headerHeight + dp(28f)
+
+        // 1. LEFT SIDE: Mini progress ring for Mean
+        if (startX > dp(50f)) {
+            val leftCx = startX / 2f
+            ringRect.set(leftCx - ringRadius, ringCenterY - ringRadius, leftCx + ringRadius, ringCenterY + ringRadius)
             strokePaint.strokeWidth = dp(3f)
             strokePaint.color = dividerColor
             canvas.drawArc(ringRect, -90f, 360f, false, strokePaint)
@@ -243,14 +249,32 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
                 strokePaint.color = accentColor
                 canvas.drawArc(ringRect, -90f, (it.coerceIn(0.0, 1.0) * 360).toFloat(), false, strokePaint)
             }
-            canvas.drawText(averageText, centerX,
-                centerY - (ringTextPaint.ascent() + ringTextPaint.descent()) / 2f, ringTextPaint)
-            sideTitlePaint.textAlign = Paint.Align.CENTER
+            canvas.drawText(averageText, leftCx,
+                ringCenterY - (ringTextPaint.ascent() + ringTextPaint.descent()) / 2f, ringTextPaint)
             canvas.drawText(context.getString(org.isoron.uhabits.R.string.statistics_month_average),
-                centerX, centerY + dp(33f), sideTitlePaint)
+                leftCx, ringCenterY + ringRadius + dp(14f), sideTitlePaint)
         }
 
-        // 2. CENTER: Weekday Headers
+        // 2. RIGHT SIDE: Symmetric matching mini progress ring for Best Day
+        val rightStartX = startX + totalGridWidth
+        val rightAreaWidth = width - rightStartX
+        if (rightAreaWidth > dp(50f)) {
+            val rightCx = rightStartX + rightAreaWidth / 2f
+            ringRect.set(rightCx - ringRadius, ringCenterY - ringRadius, rightCx + ringRadius, ringCenterY + ringRadius)
+            strokePaint.strokeWidth = dp(3f)
+            strokePaint.color = dividerColor
+            canvas.drawArc(ringRect, -90f, 360f, false, strokePaint)
+            bestDayProgress?.let {
+                strokePaint.color = accentColor
+                canvas.drawArc(ringRect, -90f, (it.coerceIn(0.0, 1.0) * 360).toFloat(), false, strokePaint)
+            }
+            canvas.drawText(bestDayPct, rightCx,
+                ringCenterY - (ringTextPaint.ascent() + ringTextPaint.descent()) / 2f, ringTextPaint)
+            val subLabel = if (bestDayDate.isNotEmpty()) bestDayDate else context.getString(org.isoron.uhabits.R.string.statistics_month_best_short)
+            canvas.drawText(subLabel, rightCx, ringCenterY + ringRadius + dp(14f), sideTitlePaint)
+        }
+
+        // 3. CENTER: Weekday Headers
         val headerY = startY + headerHeight * 0.65f
         for (col in 0..6) {
             val dow = DayOfWeek.entries[(firstWeekday.ordinal + col) % 7]
@@ -260,7 +284,7 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
 
         startY += headerHeight
 
-        // 3. CENTER: Month Days
+        // 4. CENTER: Month Days
         val firstDowOffset = (mStart.dayOfWeek.ordinal - firstWeekday.ordinal + 7) % 7
         var current = mStart
         var dayIndex = 0
@@ -352,41 +376,33 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
             dayIndex++
         }
 
-        // 4. RIGHT SIDE: best day and discrete intensity legend
-        val rightStartX = startX + totalGridWidth + dp(12f)
-        val rightWidth = width - rightStartX - dp(4f)
-        if (rightWidth > dp(62f)) {
-            val rightCx = rightStartX + rightWidth / 2f
-            sideTitlePaint.textAlign = Paint.Align.CENTER
-            canvas.drawText(context.getString(org.isoron.uhabits.R.string.statistics_month_best_short),
-                rightCx, startY + dp(9f), sideTitlePaint)
-            sideValuePaint.textAlign = Paint.Align.CENTER
-            sideValuePaint.color = if (bestDayPct == "—") onSurfaceVariantColor else accentColor
-            canvas.drawText(bestDayPct, rightCx, startY + dp(28f), sideValuePaint)
-            if (bestDayDate.isNotEmpty()) {
-                canvas.drawText(bestDayDate, rightCx, startY + dp(42f), sideTitlePaint)
-            }
+        // 5. CENTERED BOTTOM INTENSITY LEGEND
+        val totalDays = mStart.daysUntil(mEnd) + 1
+        val numWeeks = (firstDowOffset + totalDays + 6) / 7
+        val gridBottom = startY + numWeeks * (cellSize + spacing)
+        val legendBoxY = gridBottom + dp(10f)
 
-            val legendCell = dp(9f)
-            val legendGap = dp(3f)
-            val legendWidth = 5 * legendCell + 4 * legendGap
-            val legendX = rightCx - legendWidth / 2f
-            val boxY = startY + dp(59f)
-            val discreteAlphas = intArrayOf(245, 185, 125, 70, 0)
-            for (level in 0..4) {
-                cellPaint.color = if (level == 4) emptyPastCellColor else
-                    ColorUtils.setAlphaComponent(accentColor, discreteAlphas[level])
-                val boxX = legendX + level * (legendCell + legendGap)
-                cellRect.set(boxX, boxY, boxX + legendCell, boxY + legendCell)
-                canvas.drawRoundRect(cellRect, dp(1.5f), dp(1.5f), cellPaint)
-            }
-            sideTitlePaint.textAlign = Paint.Align.LEFT
-            canvas.drawText("100%", legendX, boxY + dp(20f), sideTitlePaint)
-            sideTitlePaint.textAlign = Paint.Align.RIGHT
-            canvas.drawText("0%", legendX + legendWidth, boxY + dp(20f), sideTitlePaint)
+        val legendCell = dp(9f)
+        val legendGap = dp(4f)
+        val legendWidth = 5 * legendCell + 4 * legendGap
+        val legendStartX = (width - legendWidth) / 2f
+        val discreteAlphas = intArrayOf(245, 185, 125, 70, 0)
+
+        for (level in 0..4) {
+            cellPaint.color = if (level == 4) emptyPastCellColor else
+                ColorUtils.setAlphaComponent(accentColor, discreteAlphas[level])
+            val boxX = legendStartX + level * (legendCell + legendGap)
+            cellRect.set(boxX, legendBoxY, boxX + legendCell, legendBoxY + legendCell)
+            canvas.drawRoundRect(cellRect, dp(1.5f), dp(1.5f), cellPaint)
         }
 
-        // 5. TOOLTIP OVERLAY (if inspected)
+        val textBaseline = legendBoxY + legendCell / 2f - (legendLabelPaint.descent() + legendLabelPaint.ascent()) / 2f
+        legendLabelPaint.textAlign = Paint.Align.RIGHT
+        canvas.drawText("100%", legendStartX - dp(6f), textBaseline, legendLabelPaint)
+        legendLabelPaint.textAlign = Paint.Align.LEFT
+        canvas.drawText("0%", legendStartX + legendWidth + dp(6f), textBaseline, legendLabelPaint)
+
+        // 6. TOOLTIP OVERLAY (positioned safely above touching finger)
         inspectedDate?.let { date ->
             val daily = daysLookup[date]
             val dateLabel = "${date.day} ${dateFormatter.shortMonthName(date)}"
@@ -400,16 +416,17 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
 
             val textW = tooltipTextPaint.measureText(tooltipStr)
             val padH = dp(8f)
-            val padV = dp(4f)
             val tipW = textW + padH * 2
             val tipH = dp(24f)
 
             val cellR = inspectedCellRect ?: return@let
             var tipX = cellR.centerX() - tipW / 2f
             tipX = tipX.coerceIn(dp(8f), width - tipW - dp(8f))
-            var tipY = cellR.top - tipH - dp(6f)
+
+            // Offset 60dp above finger so finger does not cover tooltip
+            var tipY = cellR.top - dp(60f)
             if (tipY < dp(4f)) {
-                tipY = cellR.bottom + dp(6f)
+                tipY = cellR.bottom + dp(8f)
             }
 
             tooltipRect.set(tipX, tipY, tipX + tipW, tipY + tipH)

@@ -44,13 +44,14 @@ class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
     private var selectedSphereId: Long? = null
     private var selectedStatus = StatisticsHabitStatusFilter.ACTIVE
     private var selectedGoalType = StatisticsGoalTypeFilter.ALL
-    private var selectedTier: DayTier? = null
     private var sphereOptions: List<SphereOption> = emptyList()
     private val sphereChipValues = mutableMapOf<Int, Long?>()
+    private var spheresEnabled: Boolean = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setStyle(STYLE_NORMAL, R.style.Statistics_BottomSheetDialogTheme)
+        spheresEnabled = arguments?.getBoolean(ARG_SPHERES_ENABLED, true) ?: true
         sphereOptions = readSphereOptions(requireArguments())
         restoreSelection(savedInstanceState ?: requireArguments())
     }
@@ -66,17 +67,25 @@ class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
         ViewCompat.setAccessibilityPaneTitle(view, getString(R.string.statistics_filters_title))
         applyInsets(view)
 
-        setupSphereGroup(view.findViewById(R.id.sphereChipGroup))
+        val sphereTitle = view.findViewById<View>(R.id.sphereSectionTitle)
+        val sphereGroup = view.findViewById<ChipGroup>(R.id.sphereChipGroup)
+        if (!spheresEnabled) {
+            sphereTitle?.visibility = View.GONE
+            sphereGroup?.visibility = View.GONE
+        } else {
+            sphereTitle?.visibility = View.VISIBLE
+            sphereGroup?.visibility = View.VISIBLE
+            setupSphereGroup(sphereGroup)
+        }
+
         setupStatusGroup(view.findViewById(R.id.statusChipGroup))
         setupGoalTypeGroup(view.findViewById(R.id.goalTypeChipGroup))
-        setupTierGroup(view.findViewById(R.id.tierChipGroup))
         styleSheet(view)
 
         view.findViewById<View>(R.id.resetFiltersButton).setOnClickListener {
             selectedSphereId = null
             selectedStatus = StatisticsHabitStatusFilter.ACTIVE
             selectedGoalType = StatisticsGoalTypeFilter.ALL
-            selectedTier = null
             renderSelections(view)
         }
         view.findViewById<View>(R.id.applyFiltersButton).setOnClickListener {
@@ -120,22 +129,24 @@ class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
             arrayOf(checked, normal),
             intArrayOf(colors.accent, colors.border)
         )
-        listOf(R.id.sphereChipGroup, R.id.statusChipGroup, R.id.goalTypeChipGroup, R.id.tierChipGroup)
-            .map { root.findViewById<ChipGroup>(it) }
-            .forEach { group ->
-                for (index in 0 until group.childCount) {
-                    (group.getChildAt(index) as? Chip)?.apply {
-                        chipBackgroundColor = fill
-                        chipStrokeColor = outline
-                        chipStrokeWidth = density
-                        chipCornerRadius = 8f * density
-                        setTextColor(colors.onSurface)
-                        minimumHeight = (32f * density).toInt()
-                        chipMinHeight = 32f * density
-                        textSize = 12f
-                    }
+        listOfNotNull(
+            root.findViewById<ChipGroup>(R.id.sphereChipGroup).takeIf { spheresEnabled },
+            root.findViewById<ChipGroup>(R.id.statusChipGroup),
+            root.findViewById<ChipGroup>(R.id.goalTypeChipGroup)
+        ).forEach { group ->
+            for (index in 0 until group.childCount) {
+                (group.getChildAt(index) as? Chip)?.apply {
+                    chipBackgroundColor = fill
+                    chipStrokeColor = outline
+                    chipStrokeWidth = density
+                    chipCornerRadius = 8f * density
+                    setTextColor(colors.onSurface)
+                    minimumHeight = (32f * density).toInt()
+                    chipMinHeight = 32f * density
+                    textSize = 12f
                 }
             }
+        }
         val apply = root.findViewById<MaterialButton>(R.id.applyFiltersButton)
         apply.backgroundTintList = ColorStateList.valueOf(colors.accent)
         apply.setTextColor(if (ColorUtils.calculateContrast(Color.BLACK, colors.accent) >= 4.5) Color.BLACK else Color.WHITE)
@@ -194,24 +205,12 @@ class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
         }
     }
 
-    private fun setupTierGroup(group: ChipGroup) {
-        checkTier(group)
-        group.setOnCheckedChangeListener { _, checkedId ->
-            selectedTier = when (checkedId) {
-                R.id.tierMinimumChip -> DayTier.MINIMUM
-                R.id.tierNormalChip -> DayTier.NORMAL
-                R.id.tierIdealChip -> DayTier.IDEAL
-                R.id.tierOptionalChip -> DayTier.OPTIONAL
-                else -> null
-            }
-        }
-    }
-
     private fun renderSelections(root: View) {
-        checkSphere(root.findViewById(R.id.sphereChipGroup))
+        if (spheresEnabled) {
+            checkSphere(root.findViewById(R.id.sphereChipGroup))
+        }
         checkStatus(root.findViewById(R.id.statusChipGroup))
         checkGoalType(root.findViewById(R.id.goalTypeChipGroup))
-        checkTier(root.findViewById(R.id.tierChipGroup))
     }
 
     private fun checkSphere(group: ChipGroup) {
@@ -242,19 +241,6 @@ class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
         )
     }
 
-    private fun checkTier(group: ChipGroup) {
-        group.check(
-            when (selectedTier) {
-                DayTier.MINIMUM -> R.id.tierMinimumChip
-                DayTier.NORMAL -> R.id.tierNormalChip
-                DayTier.IDEAL -> R.id.tierIdealChip
-                DayTier.OPTIONAL -> R.id.tierOptionalChip
-                null -> R.id.tierAllChip
-            }
-        )
-    }
-
-
     private fun restoreSelection(source: Bundle) {
         selectedSphereId = source.getLong(ARG_SPHERE_ID, NO_SPHERE_ID)
             .takeUnless { it == NO_SPHERE_ID }
@@ -266,16 +252,12 @@ class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
             source.getString(ARG_GOAL_TYPE),
             StatisticsGoalTypeFilter.ALL
         )
-        selectedTier = source.getString(ARG_TIER)?.let { tierName ->
-            DayTier.entries.firstOrNull { it.name == tierName }
-        }
     }
 
     private fun writeSelection(target: Bundle) {
         target.putLong(ARG_SPHERE_ID, selectedSphereId ?: NO_SPHERE_ID)
         target.putString(ARG_STATUS, selectedStatus.name)
         target.putString(ARG_GOAL_TYPE, selectedGoalType.name)
-        target.putString(ARG_TIER, selectedTier?.name)
     }
 
     private fun readSphereOptions(source: Bundle): List<SphereOption> {
@@ -313,7 +295,7 @@ class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
         private const val ARG_SPHERE_ID = "sphere_id"
         private const val ARG_STATUS = "habit_status"
         private const val ARG_GOAL_TYPE = "goal_type"
-        private const val ARG_TIER = "day_tier"
+        private const val ARG_SPHERES_ENABLED = "spheres_enabled"
         private const val ARG_BLOCK_IDS = "block_ids"
         private const val ARG_BLOCK_NAMES = "block_names"
         private const val NO_SPHERE_ID = Long.MIN_VALUE
@@ -321,7 +303,8 @@ class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
         fun show(
             fragmentManager: FragmentManager,
             initialState: StatisticsFilterState,
-            blocks: List<HabitBlock>
+            blocks: List<HabitBlock>,
+            spheresEnabled: Boolean = true
         ) {
             if (fragmentManager.findFragmentByTag(TAG) != null) return
             val selectableBlocks = blocks
@@ -332,7 +315,7 @@ class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
                     putLong(ARG_SPHERE_ID, initialState.sphereId ?: NO_SPHERE_ID)
                     putString(ARG_STATUS, initialState.habitStatus.name)
                     putString(ARG_GOAL_TYPE, initialState.goalType.name)
-                    putString(ARG_TIER, initialState.tier?.name)
+                    putBoolean(ARG_SPHERES_ENABLED, spheresEnabled)
                     putLongArray(ARG_BLOCK_IDS, selectableBlocks.map { it.id!! }.toLongArray())
                     putStringArrayList(ARG_BLOCK_NAMES, ArrayList(selectableBlocks.map { it.name }))
                 }

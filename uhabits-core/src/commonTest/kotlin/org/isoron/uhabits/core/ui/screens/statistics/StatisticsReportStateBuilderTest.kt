@@ -5,6 +5,7 @@ import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.core.BaseUnitTest
 import org.isoron.uhabits.core.models.DayTier
+import org.isoron.uhabits.core.models.DayTierScope
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.Habit
@@ -1006,6 +1007,123 @@ class StatisticsReportStateBuilderTest : BaseUnitTest() {
         assertEquals(2024, state.trendBuckets[0].start.year)
         assertEquals(2025, state.trendBuckets[1].start.year)
         assertEquals(2026, state.trendBuckets[2].start.year)
+    }
+
+    @Test
+    fun testDayTierScopeCumulativeSemantics() {
+        val today = LocalDate(2026, 9, 29)
+        val hMin = fixtures.createEmptyHabit().apply {
+            dayTier = DayTier.MINIMUM
+            statisticsStartDate = today
+            originalEntries.add(Entry(today, Entry.YES_MANUAL))
+            recompute()
+        }
+        val hNorm = fixtures.createEmptyHabit().apply {
+            dayTier = DayTier.NORMAL
+            statisticsStartDate = today
+            originalEntries.add(Entry(today, Entry.NO))
+            recompute()
+        }
+        val hIdeal = fixtures.createEmptyHabit().apply {
+            dayTier = DayTier.IDEAL
+            statisticsStartDate = today
+            originalEntries.add(Entry(today, Entry.NO))
+            recompute()
+        }
+        val hOpt = fixtures.createEmptyHabit().apply {
+            dayTier = DayTier.OPTIONAL
+            statisticsStartDate = today
+            originalEntries.add(Entry(today, Entry.YES_MANUAL))
+            recompute()
+        }
+
+        val allHabits = listOf(hMin, hNorm, hIdeal, hOpt)
+
+        // 1. MINIMUM scope
+        val stateMin = StatisticsReportStateBuilder.build(
+            habits = allHabits, period = StatisticsPeriod.DAY,
+            start = today, end = today, today = today, firstWeekday = DayOfWeek.MONDAY,
+            filters = StatisticsFilterState(tierScope = DayTierScope.MINIMUM)
+        )
+        assertEquals(1.0, stateMin.overallProgress)
+        assertEquals(1, stateMin.matchingHabits)
+        // Independent tier breakdown
+        assertEquals(1.0, stateMin.tierProgress[DayTier.MINIMUM])
+        assertEquals(0.0, stateMin.tierProgress[DayTier.NORMAL])
+        assertEquals(0.0, stateMin.tierProgress[DayTier.IDEAL])
+        assertEquals(1.0, stateMin.tierProgress[DayTier.OPTIONAL])
+
+        // 2. UP_TO_NORMAL scope: Minimum (1.0) + Normal (0.0) -> average 0.5
+        val stateNorm = StatisticsReportStateBuilder.build(
+            habits = allHabits, period = StatisticsPeriod.DAY,
+            start = today, end = today, today = today, firstWeekday = DayOfWeek.MONDAY,
+            filters = StatisticsFilterState(tierScope = DayTierScope.UP_TO_NORMAL)
+        )
+        assertEquals(0.5, stateNorm.overallProgress)
+        assertEquals(2, stateNorm.matchingHabits)
+
+        // 3. UP_TO_IDEAL scope: Minimum (1.0) + Normal (0.0) + Ideal (0.0) -> average 1/3
+        val stateIdeal = StatisticsReportStateBuilder.build(
+            habits = allHabits, period = StatisticsPeriod.DAY,
+            start = today, end = today, today = today, firstWeekday = DayOfWeek.MONDAY,
+            filters = StatisticsFilterState(tierScope = DayTierScope.UP_TO_IDEAL)
+        )
+        assertEquals(1.0 / 3.0, stateIdeal.overallProgress!!, 0.0001)
+        assertEquals(3, stateIdeal.matchingHabits)
+
+        // 4. ALL scope: Minimum (1.0) + Normal (0.0) + Ideal (0.0) + Optional (1.0) -> average 2/4 = 0.5
+        val stateAll = StatisticsReportStateBuilder.build(
+            habits = allHabits, period = StatisticsPeriod.DAY,
+            start = today, end = today, today = today, firstWeekday = DayOfWeek.MONDAY,
+            filters = StatisticsFilterState(tierScope = DayTierScope.ALL)
+        )
+        assertEquals(0.5, stateAll.overallProgress)
+        assertEquals(4, stateAll.matchingHabits)
+    }
+
+    @Test
+    fun testTiersDisabledCalculatesOverAllHabits() {
+        val today = LocalDate(2026, 9, 29)
+        val hMin = fixtures.createEmptyHabit().apply {
+            dayTier = DayTier.MINIMUM
+            statisticsStartDate = today
+            originalEntries.add(Entry(today, Entry.YES_MANUAL))
+            recompute()
+        }
+        val hNorm = fixtures.createEmptyHabit().apply {
+            dayTier = DayTier.NORMAL
+            statisticsStartDate = today
+            originalEntries.add(Entry(today, Entry.NO))
+            recompute()
+        }
+        val allHabits = listOf(hMin, hNorm)
+
+        // With dayTiersEnabled = false, calculates over all habits even if tierScope is MINIMUM
+        val state = StatisticsReportStateBuilder.build(
+            habits = allHabits, period = StatisticsPeriod.DAY,
+            start = today, end = today, today = today, firstWeekday = DayOfWeek.MONDAY,
+            filters = StatisticsFilterState(tierScope = DayTierScope.MINIMUM, dayTiersEnabled = false)
+        )
+        assertEquals(0.5, state.overallProgress)
+        assertEquals(2, state.matchingHabits)
+    }
+
+    @Test
+    fun testSpheresDisabledYieldsEmptySphereProgress() {
+        val today = LocalDate(2026, 9, 29)
+        val h = fixtures.createEmptyHabit().apply {
+            blockId = 1L
+            dayTier = DayTier.MINIMUM
+            statisticsStartDate = today
+            originalEntries.add(Entry(today, Entry.YES_MANUAL))
+            recompute()
+        }
+        val state = StatisticsReportStateBuilder.build(
+            habits = listOf(h), period = StatisticsPeriod.DAY,
+            start = today, end = today, today = today, firstWeekday = DayOfWeek.MONDAY,
+            filters = StatisticsFilterState(spheresEnabled = false)
+        )
+        assertTrue(state.sphereProgress.isEmpty())
     }
 
     private fun numericalHabit(

@@ -73,8 +73,9 @@ class StatisticsPercentageBarChart @JvmOverloads constructor(
         this.dividerColor = dividerColor
 
         barPaint.color = barColor
-        gridPaint.color = ColorUtils.setAlphaComponent(dividerColor, 75)
-        gridLabelPaint.color = ColorUtils.setAlphaComponent(onSurfaceVariant, 150)
+        gridPaint.strokeWidth = dp(0.5f)
+        gridPaint.color = ColorUtils.setAlphaComponent(onSurfaceVariant, 38)
+        gridLabelPaint.color = ColorUtils.setAlphaComponent(onSurfaceVariant, 140)
         axisLabelPaint.color = onSurfaceVariant
         valueLabelPaint.color = barColor
 
@@ -83,7 +84,7 @@ class StatisticsPercentageBarChart @JvmOverloads constructor(
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = MeasureSpec.getSize(widthMeasureSpec)
-        val height = dp(140f).roundToInt()
+        val height = dp(148f).roundToInt()
         setMeasuredDimension(width, height)
     }
 
@@ -96,16 +97,19 @@ class StatisticsPercentageBarChart @JvmOverloads constructor(
 
         val plotLeft = dp(34f)
         val plotRight = w - dp(12f)
-        val plotTop = dp(18f)
+        val plotTop = dp(28f)
         val plotBottom = h - dp(24f)
         val plotHeight = plotBottom - plotTop
 
         // 1. Draw 100%, 75%, 50%, 25%, 0% horizontal grid lines and labels
+        // Like Loop BarChart, gridlines are drawn inside (75%, 50%, 25%, 0%) to keep 100% label free
         val gridPcts = intArrayOf(100, 75, 50, 25, 0)
         val labelOffset = (gridLabelPaint.descent() + gridLabelPaint.ascent()) / 2f
         for (pct in gridPcts) {
             val y = plotTop + plotHeight * (1f - pct / 100f)
-            canvas.drawLine(plotLeft, y, plotRight, y, gridPaint)
+            if (pct < 100) {
+                canvas.drawLine(plotLeft, y, plotRight, y, gridPaint)
+            }
             canvas.drawText("$pct%", plotLeft - dp(4f), y - labelOffset, gridLabelPaint)
         }
 
@@ -149,7 +153,7 @@ class StatisticsPercentageBarChart @JvmOverloads constructor(
                 }
 
                 // Label cleanly above bar
-                val valueY = if (barH > 0f) barTop - dp(4f) else plotBottom - dp(4f)
+                val valueY = if (barH > 0f) barTop - dp(5f) else plotBottom - dp(4f)
                 val labelText = "${(progress * 100).roundToInt()}%"
                 canvas.drawText(labelText, cx, valueY, valueLabelPaint)
             }

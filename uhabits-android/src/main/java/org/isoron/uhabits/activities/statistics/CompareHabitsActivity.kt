@@ -152,7 +152,13 @@ class CompareHabitsActivity : AppCompatActivity() {
                 val period = tab?.tag as? ComparePeriod ?: return
                 if (period != currentPeriod) {
                     currentPeriod = period
+                    binding.compareContentContainer.animate().cancel()
+                    binding.compareContentContainer.alpha = 0f
                     rebuildComparison()
+                    binding.compareContentContainer.animate()
+                        .alpha(1f)
+                        .setDuration(160L)
+                        .start()
                 }
             }
             override fun onTabUnselected(tab: TabLayout.Tab?) {}
@@ -169,23 +175,23 @@ class CompareHabitsActivity : AppCompatActivity() {
             val chip = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(10f).toInt(), dp(4f).toInt(), dp(6f).toInt(), dp(4f).toInt())
+                setPadding(dp(8f).toInt(), dp(2f).toInt(), dp(6f).toInt(), dp(2f).toInt())
                 background = GradientDrawable().apply {
-                    cornerRadius = dp(16f)
+                    cornerRadius = dp(14f)
                     setColor(ColorUtils.setAlphaComponent(seriesColor, 35))
                     setStroke(dp(1.2f).toInt(), seriesColor)
                 }
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT,
-                    dp(32f).toInt()
+                    dp(28f).toInt()
                 ).apply {
-                    marginEnd = dp(8f).toInt()
+                    marginEnd = dp(6f).toInt()
                 }
             }
 
             // Series indicator dot
             val dot = View(this).apply {
-                layoutParams = LinearLayout.LayoutParams(dp(8f).toInt(), dp(8f).toInt()).apply {
+                layoutParams = LinearLayout.LayoutParams(dp(6f).toInt(), dp(6f).toInt()).apply {
                     marginEnd = dp(6f).toInt()
                 }
                 background = GradientDrawable().apply {
@@ -224,7 +230,7 @@ class CompareHabitsActivity : AppCompatActivity() {
         }
 
         binding.addHabitButton.contentDescription = getString(R.string.compare_habits_add)
-        binding.addHabitButton.visibility = View.VISIBLE
+        binding.addHabitButton.visibility = if (selectedHabits.size < 4) View.VISIBLE else View.GONE
         binding.habitChipsScroll.post {
             val target = if (scrollToEnd) binding.habitChipsContainer.width else 0
             binding.habitChipsScroll.smoothScrollTo(target, 0)
@@ -234,6 +240,7 @@ class CompareHabitsActivity : AppCompatActivity() {
     private fun showHabitPickerDialog() {
         val habits = availableHabits
         val blocks = component.habitList.getBlocks().associateBy { it.id }
+        val spheresEnabled = component.preferences.isHabitSpheresEnabled
         val pending = selectedHabits.toMutableList()
         val dialog = Dialog(this)
         val surface = palette.surface
@@ -295,11 +302,43 @@ class CompareHabitsActivity : AppCompatActivity() {
         footer.addView(cancel)
         footer.addView(confirm)
         root.addView(footer)
+
+        fun renderHabitRow(habit: Habit) {
+            val row = LinearLayout(this).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                minimumHeight = dp(48f).toInt()
+                orientation = LinearLayout.HORIZONTAL
+            }
+            val indicator = TextView(this).apply {
+                textSize = 20f
+                gravity = Gravity.CENTER
+                setTextColor(themeSwitcher.currentTheme.color(habit.color).toInt())
+                layoutParams = LinearLayout.LayoutParams(dp(36f).toInt(), dp(40f).toInt())
+            }
+            fun refreshIndicator() { indicator.text = if (habit in pending) "●" else "○" }
+            refreshIndicator()
+            row.addView(indicator)
+            row.addView(TextView(this).apply {
+                text = habit.name
+                textSize = 15f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(themeColor(R.attr.contrast100))
+            })
+            row.setOnClickListener {
+                if (habit in pending) pending.remove(habit)
+                else if (pending.size < 4) pending.add(habit)
+                refreshIndicator()
+                updateAction()
+            }
+            list.addView(row)
+        }
+
         fun renderList(query: String) {
             list.removeAllViews()
-            habits.filter { it.name.contains(query, ignoreCase = true) }
-                .groupBy { it.blockId }
-                .forEach { (blockId, members) ->
+            val filtered = habits.filter { it.name.contains(query, ignoreCase = true) }
+            if (spheresEnabled) {
+                filtered.groupBy { it.blockId }.forEach { (blockId, members) ->
                     val block = blocks[blockId]
                     list.addView(TextView(this).apply {
                         text = block?.name ?: getString(R.string.compare_picker_other_sphere)
@@ -309,37 +348,13 @@ class CompareHabitsActivity : AppCompatActivity() {
                             ?: themeColor(R.attr.contrast60))
                         setPadding(0, dp(14f).toInt(), 0, dp(4f).toInt())
                     })
-                    members.forEach { habit ->
-                        val row = LinearLayout(this).apply {
-                            gravity = Gravity.CENTER_VERTICAL
-                            minimumHeight = dp(48f).toInt()
-                            orientation = LinearLayout.HORIZONTAL
-                        }
-                        val indicator = TextView(this).apply {
-                            textSize = 20f
-                            gravity = Gravity.CENTER
-                            setTextColor(themeSwitcher.currentTheme.color(habit.color).toInt())
-                            layoutParams = LinearLayout.LayoutParams(dp(36f).toInt(), dp(40f).toInt())
-                        }
-                        fun refreshIndicator() { indicator.text = if (habit in pending) "●" else "○" }
-                        refreshIndicator()
-                        row.addView(indicator)
-                        row.addView(TextView(this).apply {
-                            text = habit.name
-                            textSize = 15f
-                            maxLines = 1
-                            ellipsize = android.text.TextUtils.TruncateAt.END
-                            setTextColor(themeColor(R.attr.contrast100))
-                        })
-                        row.setOnClickListener {
-                            if (habit in pending) pending.remove(habit)
-                            else if (pending.size < 4) pending.add(habit)
-                            refreshIndicator()
-                            updateAction()
-                        }
-                        list.addView(row)
-                    }
+                    members.forEach { habit -> renderHabitRow(habit) }
                 }
+            } else {
+                filtered.sortedBy { it.name.lowercase() }.forEach { habit ->
+                    renderHabitRow(habit)
+                }
+            }
         }
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -357,16 +372,17 @@ class CompareHabitsActivity : AppCompatActivity() {
     }
 
     private fun getStartDateForPeriod(today: LocalDate): LocalDate {
-        return when (currentPeriod) {
+        val periodWindowStart = when (currentPeriod) {
             ComparePeriod.WEEK -> today.minus(6)
             ComparePeriod.MONTH -> today.minus(29)
             ComparePeriod.THREE_MONTHS -> today.minus(89)
             ComparePeriod.YEAR -> today.minus(364)
-            ComparePeriod.ALL -> {
-                selectedHabits.map { StatisticsReportStateBuilder.getHabitStartDate(it, today) }.minOrNull()
-                    ?: today
-            }
+            ComparePeriod.ALL -> LocalDate(1970, 1, 1)
         }
+        val earliestHabitStart = selectedHabits.map {
+            StatisticsReportStateBuilder.getHabitStartDate(it, today)
+        }.minOrNull() ?: today
+        return maxOf(periodWindowStart, earliestHabitStart)
     }
 
     private fun rebuildComparison() {
@@ -412,10 +428,13 @@ class CompareHabitsActivity : AppCompatActivity() {
     private fun addOverviewCard() {
         val (card, container) = createCard(getString(R.string.compare_overview))
         val theme = themeSwitcher.currentTheme
+        val today = getToday()
+        val startDate = getStartDateForPeriod(today)
 
         selectedHabits.forEachIndexed { i, habit ->
             val seriesColor = SERIES_COLORS[i % SERIES_COLORS.size]
             val state = OverviewCardPresenter.buildState(habit, theme)
+            val streakState = StreakCartPresenter.buildState(habit, theme)
 
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -445,7 +464,7 @@ class CompareHabitsActivity : AppCompatActivity() {
             })
             row.addView(headerRow)
 
-            // Metrics row: Stability, Month change, Year change, Total count
+            // Metrics row: Stability, Period change, Period completion, Streak
             val metricsRow = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 setPadding(dp(16f).toInt(), dp(4f).toInt(), 0, 0)
@@ -471,25 +490,50 @@ class CompareHabitsActivity : AppCompatActivity() {
 
             val knownEntries = habit.originalEntries.getKnown().filter { entry ->
                 val start = habit.effectiveStatisticsStartDate()
-                (start == null || entry.date >= start) && entry.date <= getToday() && entry.value != Entry.SKIP
+                (start == null || entry.date >= start) && entry.date <= today && entry.value != Entry.SKIP
             }
-            addMetric(getString(R.string.compare_stat_stability),
-                if (knownEntries.isEmpty()) "—" else "${(state.scoreToday * 100).roundToInt()}%", true)
-            val monthDelta = (state.scoreMonthDiff * 100).roundToInt()
-            addMetric(getString(R.string.compare_stat_month),
-                if (knownEntries.any { it.date <= getToday().minus(30) })
-                    "${if (monthDelta > 0) "+" else ""}$monthDelta п.п." else "—")
-            val yearDelta = (state.scoreYearDiff * 100).roundToInt()
-            addMetric(getString(R.string.compare_stat_year),
-                if (knownEntries.any { it.date <= getToday().minus(365) })
-                    "${if (yearDelta > 0) "+" else ""}$yearDelta п.п." else "—")
-            if (habit.isNumerical) {
-                addMetric(getString(R.string.compare_stat_observations),
-                    knownEntries.count { it.value != Entry.SKIP }.toString())
-            } else {
-                addMetric(getString(R.string.compare_stat_completed),
-                    knownEntries.count { it.value == Entry.YES_MANUAL || it.value == Entry.YES_AUTO }.toString())
+
+            // 1. Stability (Loop score on today)
+            val scoreToday: Double = habit.scores.getByInterval(today, today).firstOrNull()?.value ?: state.scoreToday.toDouble()
+            addMetric(
+                getString(R.string.compare_stat_stability),
+                if (knownEntries.isEmpty()) "—" else "${(scoreToday * 100).roundToInt()}%",
+                isAccent = true
+            )
+
+            // 2. Period Change (delta to start of current comparison period)
+            val habitStart = StatisticsReportStateBuilder.getHabitStartDate(habit, today)
+            val prevDate = when (currentPeriod) {
+                ComparePeriod.WEEK -> today.minus(7)
+                ComparePeriod.MONTH -> today.minus(30)
+                ComparePeriod.THREE_MONTHS -> today.minus(90)
+                ComparePeriod.YEAR -> today.minus(365)
+                ComparePeriod.ALL -> habitStart
             }
+            val scorePrev = habit.scores.getByInterval(prevDate, prevDate).firstOrNull()?.value
+            val delta = if (scorePrev != null && habitStart <= prevDate) {
+                ((scoreToday - scorePrev) * 100).roundToInt()
+            } else null
+            addMetric(
+                getString(R.string.compare_stat_change),
+                if (delta != null) "${if (delta > 0) "+" else ""}$delta п.п." else "—"
+            )
+
+            // 3. Period Completion (%)
+            val sliceProg = if (habitStart > today) null else {
+                StatisticsReportStateBuilder.evaluateHabitSlice(habit, maxOf(startDate, habitStart), today)?.progress
+            }
+            addMetric(
+                getString(R.string.compare_stat_completion),
+                if (sliceProg != null) "${(sliceProg * 100).roundToInt()}%" else "—"
+            )
+
+            // 4. Streak
+            val currStreak = streakState.latestStreak?.length ?: 0
+            addMetric(
+                getString(R.string.compare_stat_streak),
+                if (currStreak > 0) "$currStreak" else "—"
+            )
 
             row.addView(metricsRow)
             container.addView(row)
@@ -699,7 +743,14 @@ class CompareHabitsActivity : AppCompatActivity() {
 
         val allStreaks = selectedHabits.flatMap { h ->
             val st = StreakCartPresenter.buildState(h, theme)
-            listOfNotNull(st.latestStreak) + st.bestStreaks
+            val bestHist = st.bestStreaks.firstOrNull()
+            val latest = st.latestStreak
+            val record = if (latest != null && (bestHist == null || latest.length >= bestHist.length)) {
+                latest
+            } else {
+                bestHist
+            }
+            listOfNotNull(latest, record)
         }
         val sharedMax = allStreaks.maxOfOrNull { it.length }?.toLong() ?: 1L
 
@@ -734,10 +785,18 @@ class CompareHabitsActivity : AppCompatActivity() {
             })
             row.addView(header)
 
-            fun addStreak(label: Int, streaks: List<org.isoron.uhabits.core.models.Streak>, alpha: Int) {
+            val latest = streakState.latestStreak
+            val bestHist = streakState.bestStreaks.firstOrNull()
+            val recordStreak = if (latest != null && (bestHist == null || latest.length >= bestHist.length)) {
+                latest
+            } else {
+                bestHist
+            }
+
+            fun addStreak(labelRes: Int, streaks: List<org.isoron.uhabits.core.models.Streak>, alpha: Int) {
                 if (streaks.isEmpty()) return
                 row.addView(TextView(this).apply {
-                    text = getString(label)
+                    text = getString(labelRes)
                     textSize = 12f
                     gravity = Gravity.CENTER
                     setTextColor(themeColor(R.attr.contrast80))
@@ -750,8 +809,8 @@ class CompareHabitsActivity : AppCompatActivity() {
                     setStreaks(streaks)
                 })
             }
-            addStreak(R.string.compare_current_streak, listOfNotNull(streakState.latestStreak), 120)
-            addStreak(R.string.compare_best_streak, streakState.bestStreaks.take(1), 255)
+            addStreak(R.string.streak_current, listOfNotNull(streakState.latestStreak), 120)
+            addStreak(R.string.streak_record, listOfNotNull(recordStreak), 255)
 
             container.addView(row)
         }

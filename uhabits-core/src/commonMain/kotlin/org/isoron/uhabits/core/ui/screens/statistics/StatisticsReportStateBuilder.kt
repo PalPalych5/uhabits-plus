@@ -3,6 +3,7 @@ package org.isoron.uhabits.core.ui.screens.statistics
 import org.isoron.platform.time.DayOfWeek
 import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.models.DayTier
+import org.isoron.uhabits.core.models.DayTierScope
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.Habit
@@ -26,7 +27,9 @@ data class StatisticsFilterState(
     val sphereId: Long? = null,
     val habitStatus: StatisticsHabitStatusFilter = StatisticsHabitStatusFilter.ACTIVE,
     val goalType: StatisticsGoalTypeFilter = StatisticsGoalTypeFilter.ALL,
-    val tier: DayTier? = null
+    val tierScope: DayTierScope = DayTierScope.MINIMUM,
+    val dayTiersEnabled: Boolean = true,
+    val spheresEnabled: Boolean = true
 )
 
 enum class StatisticsResultStatus {
@@ -105,7 +108,12 @@ data class StatisticsReportState(
     val todayMinimumCount: Pair<Int, Int>? = null,
     val completedHabits: Int = 0,
     val habits: List<StatisticsHabitResult> = emptyList(),
-    val habitChanges: List<StatisticsHabitChange> = emptyList()
+    val habitChanges: List<StatisticsHabitChange> = emptyList(),
+    val tierScope: DayTierScope = DayTierScope.MINIMUM,
+    val dayTiersEnabled: Boolean = true,
+    val spheresEnabled: Boolean = true,
+    val averageDailyProgress: Double? = null,
+    val bestDailyProgress: Pair<LocalDate, Double>? = null
 ) {
     val tiers: List<StatisticsReportTierProgress>
         get() = DayTier.entries.map {
@@ -153,7 +161,7 @@ object StatisticsReportStateBuilder {
         shouldCancel: () -> Boolean = { false }
     ): StatisticsReportState {
         val filteredHabits = habits.filter { habit ->
-            val matchSphere = filters.sphereId == null || habit.blockId == filters.sphereId
+            val matchSphere = !filters.spheresEnabled || filters.sphereId == null || habit.blockId == filters.sphereId
             val matchStatus = when (filters.habitStatus) {
                 StatisticsHabitStatusFilter.ACTIVE -> !habit.isArchived
                 StatisticsHabitStatusFilter.ARCHIVED -> habit.isArchived
@@ -164,8 +172,13 @@ object StatisticsReportStateBuilder {
                 StatisticsGoalTypeFilter.NUMERICAL -> habit.type == HabitType.NUMERICAL
                 StatisticsGoalTypeFilter.ALL -> true
             }
-            val matchTier = filters.tier == null || habit.dayTier == filters.tier
-            matchSphere && matchStatus && matchGoalType && matchTier
+            matchSphere && matchStatus && matchGoalType
+        }
+
+        val scopeHabits = if (!filters.dayTiersEnabled) {
+            filteredHabits
+        } else {
+            filteredHabits.filter { filters.tierScope.includes(it.dayTier) }
         }
 
         val earliestStart = filteredHabits.map { getHabitStartDate(it, today) }.minOrNull() ?: today
@@ -207,7 +220,7 @@ object StatisticsReportStateBuilder {
 
         val countableResults = habitResults.filter { it.status != StatisticsResultStatus.SKIPPED }
 
-        // 2. Tier progress (independent macro-average per tier)
+        // 2. Tier progress (independent macro-average per tier across all matching habits)
         val tierProgress = DayTier.entries.associateWith { tier ->
             val tierHabits = filteredHabits.filter { it.dayTier == tier }
             if (tierHabits.isEmpty()) null
@@ -223,10 +236,16 @@ object StatisticsReportStateBuilder {
             Pair(completed, tierResults.size)
         }
         val minimumProgress = tierProgress[DayTier.MINIMUM]
-        val headlineProgress = if (filters.tier != null) tierProgress[filters.tier] else minimumProgress
-        val overallProgress = headlineProgress
 
-        // 3. Daily Minimum progress & fully closed days
+        // Single aggregate headline progress: macro-average over active scope
+        val countableScopeResults = countableResults.filter {
+            !filters.dayTiersEnabled || filters.tierScope.includes(it.habit.dayTier)
+        }
+        val overallProgress = if (countableScopeResults.isNotEmpty()) {
+            countableScopeResults.map { it.progress }.average()
+        } else null
+
+        // 3. Daily progress & fully closed days over active scope
         val dailyList = mutableListOf<StatisticsDailyProgress>()
         var hasAnyDailyMinimumGoals = false
         var d = actualStart
@@ -246,15 +265,14 @@ object StatisticsReportStateBuilder {
                     )
                 )
             } else {
-                val dailyMinHabits = filteredHabits.filter { habit ->
-                    habit.dayTier == DayTier.MINIMUM &&
-                        getHabitStartDate(habit, today) <= d &&
+                val dailyScopeHabits = scopeHabits.filter { habit ->
+                    getHabitStartDate(habit, today) <= d &&
                         habit.goalAt(d).frequency.denominator == 1
                 }
-                if (dailyMinHabits.isNotEmpty()) {
+                if (dailyScopeHabits.isNotEmpty()) {
                     hasAnyDailyMinimumGoals = true
                 }
-                val evals = dailyMinHabits.map { habit ->
+                val evals = dailyScopeHabits.map { habit ->
                     val goal = habit.goalAt(d)
                     val p = GoalPeriod(d, d, goal.frequency, goal.targetType, goal.targetValue, goal.unit)
                     evaluatePeriod(habit, p, today)
@@ -300,16 +318,22 @@ object StatisticsReportStateBuilder {
         val fullyClosedDays = dailyList.count { it.isFullyClosed }
         val eligibleFinishedDays = dailyList.count { it.isEligible }
 
-        // 4. Day-specific metrics (remaining Minimum habits and completed count)
+        val observedDays = dailyList.filter { it.date <= today && !it.isFuture && it.progress != null }
+        val averageDailyProgress = if (observedDays.isNotEmpty()) observedDays.mapNotNull { it.progress }.average() else null
+        val bestDailyProgress = observedDays
+            .sortedWith(compareByDescending<StatisticsDailyProgress> { it.progress }.thenByDescending { it.date })
+            .firstOrNull()
+            ?.let { it.date to (it.progress ?: 0.0) }
+
+        // 4. Day-specific metrics (remaining scope habits and completed count)
         val todayMinimumCount: Pair<Int, Int>?
         val remainingMinimumHabits: List<StatisticsHabitResult>
         if (period == StatisticsPeriod.DAY) {
-            val dayMinHabits = filteredHabits.filter { habit ->
-                habit.dayTier == DayTier.MINIMUM &&
-                    getHabitStartDate(habit, today) <= start &&
+            val dayScopeHabits = scopeHabits.filter { habit ->
+                getHabitStartDate(habit, today) <= start &&
                     habit.goalAt(start).frequency.denominator == 1
             }
-            val dayEvals = dayMinHabits.map { habit ->
+            val dayEvals = dayScopeHabits.map { habit ->
                 val goal = habit.goalAt(start)
                 val p = GoalPeriod(start, start, goal.frequency, goal.targetType, goal.targetValue, goal.unit)
                 habit to evaluatePeriod(habit, p, today)
@@ -337,20 +361,13 @@ object StatisticsReportStateBuilder {
             remainingMinimumHabits = emptyList()
         }
 
-        // 5. Comparison delta (percentage points) & Habit Changes
+        // 5. Comparison delta (percentage points) & Habit Changes over scope
         val comparisonWindow = getComparisonWindow(actualStart, end, period, today)
-        val targetHabits = if (filters.tier != null) {
-            filteredHabits.filter { it.dayTier == filters.tier }
-        } else {
-            val minHabits = filteredHabits.filter { it.dayTier == DayTier.MINIMUM }
-            if (minHabits.isNotEmpty()) minHabits else filteredHabits
-        }
-
         val comparisonDelta = if (comparisonWindow == null) {
             null
         } else {
-            val currProg = calculateOverallProgressForRange(targetHabits, comparisonWindow.currentStart, comparisonWindow.currentEnd, today, firstWeekday)
-            val prevProg = calculateOverallProgressForRange(targetHabits, comparisonWindow.previousStart, comparisonWindow.previousEnd, today, firstWeekday)
+            val currProg = calculateOverallProgressForRange(scopeHabits, comparisonWindow.currentStart, comparisonWindow.currentEnd, today, firstWeekday)
+            val prevProg = calculateOverallProgressForRange(scopeHabits, comparisonWindow.previousStart, comparisonWindow.previousEnd, today, firstWeekday)
             if (currProg != null && prevProg != null) {
                 currProg - prevProg
             } else null
@@ -360,7 +377,7 @@ object StatisticsReportStateBuilder {
             emptyList()
         } else {
             val sliceDays = comparisonWindow.currentStart.daysUntil(comparisonWindow.currentEnd) + 1
-            filteredHabits.mapNotNull { habit ->
+            scopeHabits.mapNotNull { habit ->
                 val habitStart = getHabitStartDate(habit, today)
                 if (habitStart.isNewerThan(comparisonWindow.previousStart) || habit.isArchived) {
                     return@mapNotNull null
@@ -401,37 +418,25 @@ object StatisticsReportStateBuilder {
                 buckets
             }
             StatisticsPeriod.YEAR -> {
-                // 12 monthly buckets for the year
-                val targetHabits = if (filters.tier != null) {
-                    filteredHabits.filter { it.dayTier == filters.tier }
-                } else {
-                    val minHabits = filteredHabits.filter { it.dayTier == DayTier.MINIMUM }
-                    if (minHabits.isNotEmpty()) minHabits else filteredHabits
-                }
+                // 12 monthly buckets for the year over scopeHabits
                 (1..12).map { month ->
                     val mStart = LocalDate(actualStart.year, month, 1)
                     val mEnd = mStart.plus(mStart.monthLength - 1)
                     val prog = if (mStart <= today) {
-                        calculateOverallProgressForRange(targetHabits, mStart, mEnd, today, firstWeekday)
+                        calculateOverallProgressForRange(scopeHabits, mStart, mEnd, today, firstWeekday)
                     } else null
                     StatisticsBucket(mStart, mEnd, prog)
                 }
             }
             StatisticsPeriod.ALL -> {
-                val targetHabits = if (filters.tier != null) {
-                    filteredHabits.filter { it.dayTier == filters.tier }
-                } else {
-                    val minHabits = filteredHabits.filter { it.dayTier == DayTier.MINIMUM }
-                    if (minHabits.isNotEmpty()) minHabits else filteredHabits
-                }
-                // Adaptive: monthly if span < 24 months, yearly if >= 24 months
+                // Adaptive: monthly if span < 24 months, yearly if >= 24 months over scopeHabits
                 val totalMonths = (end.year - actualStart.year) * 12 + (end.month - actualStart.month) + 1
                 if (totalMonths < 24) {
                     val buckets = mutableListOf<StatisticsBucket>()
                     var currMonth = actualStart.startOfMonth()
                     while (currMonth <= end) {
                         val mEnd = currMonth.plus(currMonth.monthLength - 1)
-                        val prog = calculateOverallProgressForRange(targetHabits, currMonth, mEnd, today, firstWeekday)
+                        val prog = calculateOverallProgressForRange(scopeHabits, currMonth, mEnd, today, firstWeekday)
                         buckets.add(StatisticsBucket(currMonth, mEnd, prog))
                         currMonth = currMonth.plus(currMonth.monthLength)
                     }
@@ -440,7 +445,7 @@ object StatisticsReportStateBuilder {
                     (actualStart.year..end.year).map { y ->
                         val yStart = LocalDate(y, 1, 1)
                         val yEnd = LocalDate(y, 12, 31)
-                        val prog = calculateOverallProgressForRange(targetHabits, yStart, yEnd, today, firstWeekday)
+                        val prog = calculateOverallProgressForRange(scopeHabits, yStart, yEnd, today, firstWeekday)
                         StatisticsBucket(yStart, yEnd, prog)
                     }
                 }
@@ -461,15 +466,18 @@ object StatisticsReportStateBuilder {
             }
         } else emptyList()
 
-        // 8. Spheres progress (meaningful spheres only, blockId != null)
-        val sphereResults = countableResults.filter { it.habit.blockId != null }
-        val targetSphereTier = filters.tier ?: DayTier.MINIMUM
-        val sphereProgress = sphereResults.groupBy { it.habit.blockId }.map { (blockId, items) ->
-            val tierHabitResults = items.filter { it.habit.dayTier == targetSphereTier }
-            val progress = if (tierHabitResults.isNotEmpty()) {
-                tierHabitResults.map { it.progress }.average()
-            } else null
-            StatisticsSphereProgress(blockId, progress, items.size)
+        // 8. Spheres progress (meaningful spheres only, blockId != null, scoped progress with total habit count)
+        val sphereProgress = if (!filters.spheresEnabled) {
+            emptyList()
+        } else {
+            val sphereResults = countableResults.filter { it.habit.blockId != null }
+            sphereResults.groupBy { it.habit.blockId }.map { (blockId, items) ->
+                val scopedHabits = items.filter { !filters.dayTiersEnabled || filters.tierScope.includes(it.habit.dayTier) }
+                val progress = if (scopedHabits.isNotEmpty()) {
+                    scopedHabits.map { it.progress }.average()
+                } else null
+                StatisticsSphereProgress(blockId, progress, items.size)
+            }
         }
 
         // 9. Habit stability (belongs ONLY to All Time)
@@ -483,7 +491,7 @@ object StatisticsReportStateBuilder {
             period = period,
             start = actualStart,
             end = end,
-            matchingHabits = filteredHabits.size,
+            matchingHabits = scopeHabits.size,
             hasDailyMinimumGoals = hasAnyDailyMinimumGoals,
             overallProgress = overallProgress,
             minimumProgress = minimumProgress,
@@ -499,9 +507,14 @@ object StatisticsReportStateBuilder {
             remainingMinimumHabits = remainingMinimumHabits,
             habitStability = habitStability,
             todayMinimumCount = todayMinimumCount,
-            completedHabits = countableResults.count { it.progress >= 1.0 },
+            completedHabits = countableScopeResults.count { it.progress >= 1.0 },
             habits = habitResults,
-            habitChanges = habitChanges
+            habitChanges = habitChanges,
+            tierScope = filters.tierScope,
+            dayTiersEnabled = filters.dayTiersEnabled,
+            spheresEnabled = filters.spheresEnabled,
+            averageDailyProgress = averageDailyProgress,
+            bestDailyProgress = bestDailyProgress
         )
     }
 

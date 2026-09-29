@@ -35,6 +35,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -43,6 +44,8 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.graphics.ColorUtils
 import androidx.fragment.app.Fragment
 import com.google.android.material.tabs.TabLayout
+import org.isoron.uhabits.activities.common.views.CompactPopupMenu
+import org.isoron.uhabits.activities.habits.show.views.showPeriodSelectorPopup
 import org.isoron.platform.gui.toInt
 import org.isoron.platform.time.*
 import org.isoron.uhabits.HabitsApplication
@@ -97,11 +100,10 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         childFragmentManager.setFragmentResultListener(
             StatisticsFiltersBottomSheet.RESULT_KEY, this
         ) { _, result ->
-            val updated = StatisticsFilterState(
+            val updated = currentFilters.copy(
                 sphereId = result.getLong("sphere_id", Long.MIN_VALUE).takeUnless { it == Long.MIN_VALUE },
                 habitStatus = enumValueOrDefault(result.getString("habit_status"), StatisticsHabitStatusFilter.ACTIVE),
-                goalType = enumValueOrDefault(result.getString("goal_type"), StatisticsGoalTypeFilter.ALL),
-                tier = result.getString("day_tier")?.let { name -> DayTier.entries.firstOrNull { it.name == name } }
+                goalType = enumValueOrDefault(result.getString("goal_type"), StatisticsGoalTypeFilter.ALL)
             )
             if (updated != currentFilters) {
                 currentFilters = updated
@@ -174,18 +176,24 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
                 it.getInt(STATE_DAY)
             )
         } ?: getToday()
-        savedInstanceState?.let { state ->
-            currentFilters = StatisticsFilterState(
+        currentFilters = savedInstanceState?.let { state ->
+            StatisticsFilterState(
                 sphereId = state.getLong(STATE_FILTER_SPHERE, Long.MIN_VALUE).takeUnless { it == Long.MIN_VALUE },
                 habitStatus = enumValueOrDefault(state.getString(STATE_FILTER_STATUS), StatisticsHabitStatusFilter.ACTIVE),
                 goalType = enumValueOrDefault(state.getString(STATE_FILTER_GOAL), StatisticsGoalTypeFilter.ALL),
-                tier = state.getString(STATE_FILTER_TIER)?.let { name -> DayTier.entries.firstOrNull { it.name == name } }
+                tierScope = enumValueOrDefault(state.getString(STATE_FILTER_TIER_SCOPE), DayTierScope.MINIMUM),
+                dayTiersEnabled = component.preferences.isDayTiersEnabled,
+                spheresEnabled = component.preferences.isHabitSpheresEnabled
             )
-        }
+        } ?: StatisticsFilterState(
+            dayTiersEnabled = component.preferences.isDayTiersEnabled,
+            spheresEnabled = component.preferences.isHabitSpheresEnabled
+        )
         clampAnchorDateToCurrentPeriod()
 
         setupTabs()
         setupListeners()
+        setupScopeSelector()
         setupFilters()
         requestReportUpdate("create_view", delayMs = 0L)
         return binding.root
@@ -195,9 +203,26 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         super.onResume()
         component.habitList.observable.addListener(this)
         viewBinding?.let {
+            currentFilters = currentFilters.copy(
+                dayTiersEnabled = component.preferences.isDayTiersEnabled,
+                spheresEnabled = component.preferences.isHabitSpheresEnabled
+            )
+            setupScopeSelector()
             requestReportUpdate("resume", delayMs = 0L, forceRender = true)
         }
         (activity as? MainNavigationHost)?.setHabitCreationAvailable(false)
+    }
+
+    override fun onHiddenChanged(hidden: Boolean) {
+        super.onHiddenChanged(hidden)
+        if (!hidden && viewBinding != null) {
+            currentFilters = currentFilters.copy(
+                dayTiersEnabled = component.preferences.isDayTiersEnabled,
+                spheresEnabled = component.preferences.isHabitSpheresEnabled
+            )
+            setupScopeSelector()
+            requestReportUpdate("hidden_change", delayMs = 0L, forceRender = true)
+        }
     }
 
     override fun onPause() {
@@ -225,7 +250,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         outState.putLong(STATE_FILTER_SPHERE, currentFilters.sphereId ?: Long.MIN_VALUE)
         outState.putString(STATE_FILTER_STATUS, currentFilters.habitStatus.name)
         outState.putString(STATE_FILTER_GOAL, currentFilters.goalType.name)
-        outState.putString(STATE_FILTER_TIER, currentFilters.tier?.name)
+        outState.putString(STATE_FILTER_TIER_SCOPE, currentFilters.tierScope.name)
         super.onSaveInstanceState(outState)
     }
 
@@ -298,6 +323,56 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         }
     }
 
+    private fun setupScopeSelector() {
+        if (!component.preferences.isDayTiersEnabled) {
+            binding.scopeSelectorContainer.visibility = View.GONE
+            return
+        }
+        binding.scopeSelectorContainer.visibility = View.VISIBLE
+        binding.tvScopeLabel.setTextColor(palette.onSurfaceVariant)
+        binding.tvScopeValue.setTextColor(palette.onSurface)
+        binding.scopeSelectorArrow.imageTintList = ColorStateList.valueOf(palette.onSurfaceVariant)
+        quietPressFeedback(binding.scopeSelectorContainer)
+
+        updateScopeSelectorUi()
+
+        binding.scopeSelectorContainer.setOnClickListener {
+            val scopes = DayTierScope.entries
+            val entries = scopes.mapIndexed { index, scope ->
+                CompactPopupMenu.Entry.Item(
+                    id = index,
+                    title = scopeLabel(scope),
+                    selected = scope == currentFilters.tierScope
+                )
+            }
+            showPeriodSelectorPopup(
+                anchor = binding.scopeSelectorContainer,
+                arrow = binding.scopeSelectorArrow,
+                entries = entries,
+                onItemClick = { index ->
+                    val selectedScope = scopes[index]
+                    if (selectedScope != currentFilters.tierScope) {
+                        currentFilters = currentFilters.copy(tierScope = selectedScope)
+                        updateScopeSelectorUi()
+                        requestReportUpdate("scope_change", forceRender = true)
+                    }
+                }
+            )
+        }
+    }
+
+    private fun updateScopeSelectorUi() {
+        if (viewBinding == null) return
+        binding.tvScopeValue.text = scopeLabel(currentFilters.tierScope)
+    }
+
+    private fun scopeLabel(scope: DayTierScope): String = when (scope) {
+        DayTierScope.MINIMUM -> getString(R.string.tier_scope_minimum)
+        DayTierScope.UP_TO_NORMAL -> getString(R.string.tier_scope_up_to_normal)
+        DayTierScope.UP_TO_IDEAL -> getString(R.string.tier_scope_up_to_ideal)
+        DayTierScope.ALL -> getString(R.string.tier_scope_all)
+    }
+
     private fun setupFilters() {
         binding.btnFilters.rippleColor = ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
         quietPressFeedback(binding.btnFilters)
@@ -306,7 +381,8 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
             StatisticsFiltersBottomSheet.show(
                 fragmentManager = childFragmentManager,
                 initialState = currentFilters,
-                blocks = component.habitList.getBlocks()
+                blocks = component.habitList.getBlocks(),
+                spheresEnabled = component.preferences.isHabitSpheresEnabled
             )
         }
         binding.filterScope.setOnClickListener { binding.btnFilters.performClick() }
@@ -318,8 +394,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         val activeFiltersCount = listOfNotNull(
             currentFilters.sphereId,
             currentFilters.habitStatus.takeIf { it != StatisticsHabitStatusFilter.ACTIVE },
-            currentFilters.goalType.takeIf { it != StatisticsGoalTypeFilter.ALL },
-            currentFilters.tier
+            currentFilters.goalType.takeIf { it != StatisticsGoalTypeFilter.ALL }
         ).size
 
         val labels = mutableListOf<String>()
@@ -341,21 +416,15 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
                 else R.string.reports_filter_numerical_only
             ))
         }
-        currentFilters.tier?.let { tier ->
-            labels.add(tierLabel(tier))
-        }
-
-        val scopeText = if (labels.isEmpty()) {
-            getString(R.string.statistics_filter_active_habits)
-        } else {
-            labels.joinToString(" · ")
-        }
-        binding.filterScope.text = scopeText
-        binding.filterScope.contentDescription = scopeText
 
         if (activeFiltersCount > 0) {
+            val scopeText = labels.joinToString(" · ")
+            binding.filterScope.text = scopeText
+            binding.filterScope.contentDescription = scopeText
+            binding.filterScope.visibility = View.VISIBLE
             binding.btnFilters.text = getString(R.string.statistics_filter_count, activeFiltersCount)
         } else {
+            binding.filterScope.visibility = View.GONE
             binding.btnFilters.text = getString(R.string.statistics_filters_button)
         }
     }
@@ -500,11 +569,16 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     private fun buildReportKey(): ReportKey? {
         if (viewBinding == null || !isAdded) return null
         val (start, end) = getActiveRange()
+        val updatedFilters = currentFilters.copy(
+            dayTiersEnabled = component.preferences.isDayTiersEnabled,
+            spheresEnabled = component.preferences.isHabitSpheresEnabled
+        )
+        currentFilters = updatedFilters
         return ReportKey(
             tab = currentTab,
             start = start,
             end = end,
-            filters = currentFilters,
+            filters = updatedFilters,
             habitCount = runCatching { component.habitList.size() }.getOrDefault(-1),
             dbVersion = dbVersion
         )
@@ -644,35 +718,120 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     ) {
         when (report.period) {
             StatisticsPeriod.DAY -> {
-                addTierBarsSection(container, report)
+                if (report.dayTiersEnabled) {
+                    addTierBarsSection(container, report)
+                } else {
+                    addDayOverviewSection(container, report)
+                }
+                addCompareHabitsCard(container, report)
             }
             StatisticsPeriod.WEEK -> {
                 addDailyCompletionSection(container, report)
-                addTierBarsSection(container, report)
-                addSphereSection(container, report)
+                if (report.dayTiersEnabled) {
+                    addTierBarsSection(container, report)
+                }
+                if (report.spheresEnabled) {
+                    addSphereSection(container, report)
+                }
                 addHabitChangesSection(container, report)
+                addCompareHabitsCard(container, report)
             }
             StatisticsPeriod.MONTH -> {
                 addMonthCalendarSection(container, report)
-                addTierBarsSection(container, report)
+                if (report.dayTiersEnabled) {
+                    addTierBarsSection(container, report)
+                }
                 addWeekdayRhythmSection(container, report)
-                addSphereSection(container, report)
+                if (report.spheresEnabled) {
+                    addSphereSection(container, report)
+                }
                 addHabitChangesSection(container, report)
+                addCompareHabitsCard(container, report)
             }
             StatisticsPeriod.YEAR -> {
                 addYearMonthlyBarsSection(container, report)
-                addTierBarsSection(container, report)
+                if (report.dayTiersEnabled) {
+                    addTierBarsSection(container, report)
+                }
                 addWeekdayRhythmSection(container, report)
-                addSphereSection(container, report)
+                if (report.spheresEnabled) {
+                    addSphereSection(container, report)
+                }
+                addCompareHabitsCard(container, report)
             }
             StatisticsPeriod.ALL -> {
-                addHabitStabilitySection(container, report)
                 addAllTimeHistorySection(container, report)
-                addTierBarsSection(container, report)
+                if (report.dayTiersEnabled) {
+                    addTierBarsSection(container, report)
+                }
+                if (report.spheresEnabled) {
+                    addSphereSection(container, report)
+                }
                 addWeekdayRhythmSection(container, report)
-                addSphereSection(container, report)
+                addHabitStabilitySection(container, report)
+                addCompareHabitsCard(container, report)
             }
         }
+    }
+
+    private fun addDayOverviewSection(container: LinearLayout, report: StatisticsReportState) {
+        val (card, content) = createSection(
+            titleText = getString(R.string.statistics_day_title_default),
+            secondaryText = report.overallProgress?.let { "${(it * 100).roundToInt()}%" }
+        )
+        content.addView(summaryText(getString(R.string.statistics_average_progress), 11f, palette.onSurfaceVariant))
+        val listContainer = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        report.habits.forEachIndexed { index, habitResult ->
+            if (index > 0) listContainer.addView(createDivider())
+            listContainer.addView(createReportHabitRow(habitResult))
+        }
+        content.addView(listContainer)
+        container.addView(card)
+    }
+
+    private fun addCompareHabitsCard(container: LinearLayout, report: StatisticsReportState) {
+        val (card, content) = createSection()
+        card.isClickable = true
+        card.isFocusable = true
+        card.minimumHeight = dp(56f).toInt()
+        quietPressFeedback(card)
+        card.setOnClickListener {
+            val initialPeriod = when (report.period) {
+                StatisticsPeriod.DAY, StatisticsPeriod.WEEK -> "WEEK"
+                StatisticsPeriod.MONTH -> "MONTH"
+                StatisticsPeriod.YEAR -> "YEAR"
+                StatisticsPeriod.ALL -> "ALL"
+            }
+            val intent = IntentFactory().startCompareHabitsActivity(requireContext()).apply {
+                putExtra("initial_period", initialPeriod)
+            }
+            startActivity(intent)
+        }
+
+        val row = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val texts = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        texts.addView(summaryText(getString(R.string.statistics_compare_card_title), 14f, palette.onSurface, bold = true))
+        texts.addView(summaryText(getString(R.string.statistics_compare_card_subtitle), 12f, palette.onSurfaceVariant).apply {
+            setPadding(0, dp(2f).toInt(), 0, 0)
+        })
+        row.addView(texts)
+
+        val chevron = summaryText("›", 18f, palette.accent, bold = true).apply {
+            setPadding(dp(8f).toInt(), 0, 0, 0)
+        }
+        row.addView(chevron)
+
+        content.addView(row)
+        container.addView(card)
     }
 
     private fun periodComparison(report: StatisticsReportState): String? {
@@ -684,20 +843,36 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
             else -> return null
         }
         val points = (delta * 100).roundToInt()
-        return getString(R.string.statistics_period_comparison,
-            if (points > 0) "+$points" else points.toString(), getString(previous))
+        val arrow = when {
+            points > 0 -> "↑"
+            points < 0 -> "↓"
+            else -> "="
+        }
+        val absPoints = kotlin.math.abs(points)
+        return "$arrow $absPoints ${getString(R.string.statistics_percentage_points)}\n${getString(previous)}"
     }
 
-    private fun chartMetricLabel(report: StatisticsReportState): String = when {
-        currentFilters.tier != null -> tierLabel(currentFilters.tier!!)
-        report.tierProgress[DayTier.MINIMUM] != null -> getString(R.string.statistics_minimum_metric)
-        else -> getString(R.string.statistics_average_progress)
+    private fun chartMetricLabel(report: StatisticsReportState): String {
+        if (!report.dayTiersEnabled) {
+            return getString(R.string.statistics_average_progress)
+        }
+        return when (report.tierScope) {
+            DayTierScope.MINIMUM -> getString(R.string.statistics_minimum_metric)
+            DayTierScope.UP_TO_NORMAL -> "${getString(R.string.statistics_scope_label)} ${getString(R.string.tier_scope_up_to_normal)}"
+            DayTierScope.UP_TO_IDEAL -> "${getString(R.string.statistics_scope_label)} ${getString(R.string.tier_scope_up_to_ideal)}"
+            DayTierScope.ALL -> "${getString(R.string.statistics_scope_label)} ${getString(R.string.tier_scope_all)}"
+        }
     }
 
     private fun addHabitChangesSection(container: LinearLayout, report: StatisticsReportState) {
         val changes = report.habitChanges
         if (changes.isEmpty()) return
-        val (card, content) = createSection(getString(R.string.statistics_habit_changes))
+        val titleRes = if (report.period == StatisticsPeriod.MONTH) {
+            R.string.statistics_changes_month_title
+        } else {
+            R.string.statistics_changes_week_title
+        }
+        val (card, content) = createSection(getString(titleRes))
         content.addView(summaryText(getString(R.string.statistics_habit_changes_subtitle), 11f, palette.onSurfaceVariant))
         changes.forEach { item ->
             val points = item.deltaPoints
@@ -720,7 +895,8 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
             val values = LinearLayout(requireContext()).apply { orientation = LinearLayout.HORIZONTAL }
             values.addView(summaryText("${(item.previousProgress * 100).roundToInt()}% → ${(item.currentProgress * 100).roundToInt()}%",
                 12f, palette.onSurfaceVariant), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            values.addView(summaryText("${if (points > 0) "+" else ""}$points ${getString(R.string.statistics_percentage_points)}",
+            val sign = if (points > 0) "+" else ""
+            values.addView(summaryText("$sign$points ${getString(R.string.statistics_percentage_points)}",
                 12f, palette.onSurfaceVariant))
             row.addView(values)
             content.addView(row)
@@ -826,7 +1002,12 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
 
 
     private fun addTierBarsSection(container: LinearLayout, report: StatisticsReportState) {
-        val (card, content) = createSection(getString(R.string.statistics_by_level))
+        val title = if (report.period == StatisticsPeriod.DAY) {
+            getString(R.string.statistics_day_title_by_level)
+        } else {
+            getString(R.string.statistics_by_level)
+        }
+        val (card, content) = createSection(title)
 
         val tiers = listOf(DayTier.MINIMUM, DayTier.NORMAL, DayTier.IDEAL, DayTier.OPTIONAL)
         tiers.forEachIndexed { index, tier ->
@@ -1052,27 +1233,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         val items = report.habitStability
         if (items.isEmpty()) return
 
-        val (card, content) = createSection()
-        val header = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        header.addView(summaryText(getString(R.string.statistics_habit_stability_title), 14f, palette.onSurface, true),
-            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        header.addView(summaryText("${getString(R.string.statistics_compare_action)} ›", 13f, palette.accent, true).apply {
-            minHeight = dp(48f).toInt()
-            gravity = Gravity.CENTER_VERTICAL
-            isClickable = true
-            isFocusable = true
-            quietPressFeedback(this)
-            setOnClickListener {
-                val ids = report.habitStability.mapNotNull { it.habit.id }.toLongArray()
-                startActivity(IntentFactory().startCompareHabitsActivity(requireContext()).apply {
-                    putExtra("allowed_habit_ids", ids)
-                })
-            }
-        })
-        content.addView(header)
+        val (card, content) = createSection(getString(R.string.statistics_habit_stability_title))
 
         val listContainer = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
@@ -1483,6 +1644,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         private const val STATE_FILTER_STATUS = "reports.filter.status"
         private const val STATE_FILTER_GOAL = "reports.filter.goal"
         private const val STATE_FILTER_TIER = "reports.filter.tier"
+        private const val STATE_FILTER_TIER_SCOPE = "reports.filter.tier_scope"
         private const val REPORT_UPDATE_COALESCE_MS = 80L
     }
 }

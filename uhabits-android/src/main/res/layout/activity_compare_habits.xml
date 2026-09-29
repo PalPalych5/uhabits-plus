@@ -32,7 +32,9 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:scrollbars="none"
-                android:paddingStart="16dp">
+                android:clipToPadding="false"
+                android:paddingStart="16dp"
+                android:paddingEnd="8dp">
                 <LinearLayout
                     android:id="@+id/habitChipsContainer"
                     android:layout_width="wrap_content"
@@ -42,8 +44,9 @@
             </HorizontalScrollView>
             <TextView
                 android:id="@+id/addHabitButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginEnd="8dp"
                 android:gravity="center"
                 android:text="+"
                 android:textSize="22sp"
@@ -59,8 +62,8 @@
             app:tabIndicatorColor="?attr/colorAccent"
             app:tabSelectedTextColor="?attr/colorAccent"
             app:tabTextColor="?attr/contrast60"
-            app:tabPaddingStart="12dp"
-            app:tabPaddingEnd="12dp"
+            app:tabPaddingStart="16dp"
+            app:tabPaddingEnd="16dp"
             app:tabMode="scrollable"
             app:tabGravity="start" />
     </com.google.android.material.appbar.AppBarLayout>

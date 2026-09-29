@@ -48,6 +48,7 @@
                 android:textStyle="bold" />
 
             <TextView
+                android:id="@+id/sphereSectionTitle"
                 style="@style/Statistics.FilterSectionTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -146,64 +147,6 @@
                     android:layout_height="wrap_content"
                     android:checkable="true"
                     android:text="@string/statistics_filters_numerical" />
-            </com.google.android.material.chip.ChipGroup>
-
-            <TextView
-                style="@style/Statistics.FilterSectionTitle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="@string/statistics_filters_tier" />
-
-            <com.google.android.material.chip.ChipGroup
-                android:id="@+id/tierChipGroup"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                app:chipSpacingHorizontal="4dp"
-                app:chipSpacingVertical="0dp"
-                app:selectionRequired="true"
-                app:singleSelection="true">
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/tierAllChip"
-                    style="@style/Statistics.FilterChip"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:checkable="true"
-                    android:text="@string/statistics_filters_all_tiers" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/tierMinimumChip"
-                    style="@style/Statistics.FilterChip"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:checkable="true"
-                    android:text="@string/day_tier_badge_minimum" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/tierNormalChip"
-                    style="@style/Statistics.FilterChip"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:checkable="true"
-                    android:text="@string/day_tier_badge_normal" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/tierIdealChip"
-                    style="@style/Statistics.FilterChip"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:checkable="true"
-                    android:text="@string/day_tier_badge_ideal" />
-
-                <com.google.android.material.chip.Chip
-                    android:id="@+id/tierOptionalChip"
-                    style="@style/Statistics.FilterChip"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:checkable="true"
-                    android:text="@string/day_tier_optional" />
             </com.google.android.material.chip.ChipGroup>
 
         </LinearLayout>
