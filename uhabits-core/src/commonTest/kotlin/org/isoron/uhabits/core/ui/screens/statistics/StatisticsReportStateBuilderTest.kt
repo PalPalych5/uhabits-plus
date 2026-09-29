@@ -33,6 +33,45 @@ class StatisticsReportStateBuilderTest : BaseUnitTest() {
     }
 
     @Test
+    fun testYearAndAllTimeHideHistoryBeforeStatisticsStart() {
+        val today = LocalDate(2026, 9, 29)
+        habit1.dayTier = DayTier.MINIMUM
+        habit1.statisticsStartDate = LocalDate(2026, 9, 20)
+        habit1.globalStatisticsStartDate = LocalDate(2026, 9, 19)
+        for (month in 6..8) {
+            habit1.originalEntries.add(Entry(LocalDate(2026, month, 21), Entry.YES_MANUAL))
+        }
+        habit1.originalEntries.add(Entry(LocalDate(2026, 9, 21), Entry.YES_MANUAL))
+        habit1.recompute()
+
+        val year = StatisticsReportStateBuilder.build(
+            habits = listOf(habit1), period = StatisticsPeriod.YEAR,
+            start = LocalDate(2026, 1, 1), end = LocalDate(2026, 12, 31),
+            today = today, firstWeekday = DayOfWeek.MONDAY,
+            filters = StatisticsFilterState(habitStatus = StatisticsHabitStatusFilter.ALL)
+        )
+        assertTrue(year.trendBuckets.filter { it.start.month < 9 }.all { it.progress == null })
+        assertNotNull(year.trendBuckets.first { it.start.month == 9 }.progress)
+
+        val all = StatisticsReportStateBuilder.build(
+            habits = listOf(habit1), period = StatisticsPeriod.ALL,
+            start = LocalDate(2026, 1, 1), end = today,
+            today = today, firstWeekday = DayOfWeek.MONDAY,
+            filters = StatisticsFilterState(habitStatus = StatisticsHabitStatusFilter.ALL)
+        )
+        assertEquals(LocalDate(2026, 9, 20), all.start)
+        assertTrue(all.trendBuckets.all { it.start >= LocalDate(2026, 9, 1) })
+        assertNull(StatisticsReportStateBuilder.evaluateHabitSlice(habit1,
+            LocalDate(2026, 6, 1), LocalDate(2026, 6, 30)))
+        assertNull(StatisticsReportStateBuilder.evaluateHabitSlice(habit1,
+            LocalDate(2026, 9, 22), LocalDate(2026, 9, 23))?.progress)
+        habit1.originalEntries.add(Entry(LocalDate(2026, 9, 22), Entry.NO))
+        habit1.recompute()
+        assertEquals(0.0, StatisticsReportStateBuilder.evaluateHabitSlice(habit1,
+            LocalDate(2026, 9, 22), LocalDate(2026, 9, 22))?.progress)
+    }
+
+    @Test
     fun testIndependentTiers() {
         val today = getToday()
         // Habit 1 is MINIMUM tier

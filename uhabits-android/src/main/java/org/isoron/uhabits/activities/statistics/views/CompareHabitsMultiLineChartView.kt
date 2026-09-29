@@ -95,6 +95,8 @@ class CompareHabitsMultiLineChartView @JvmOverloads constructor(
 
     fun setData(
         series: List<SeriesItem>,
+        rangeStart: LocalDate,
+        rangeEnd: LocalDate,
         surfaceColor: Int,
         onSurfaceColor: Int,
         onSurfaceVariantColor: Int,
@@ -113,10 +115,13 @@ class CompareHabitsMultiLineChartView @JvmOverloads constructor(
         tooltipBgPaint.color = ColorUtils.blendARGB(surfaceColor, onSurfaceColor, 0.16f)
         tooltipStrokePaint.color = ColorUtils.setAlphaComponent(dividerColor, 140)
 
-        // Union of sorted dates
-        val datesSet = linkedSetOf<LocalDate>()
-        series.forEach { s -> s.points.forEach { datesSet.add(it.first) } }
-        this.allDates = datesSet.sorted()
+        val dates = mutableListOf<LocalDate>()
+        var date = rangeStart
+        while (date <= rangeEnd) {
+            dates.add(date)
+            date = date.plus(1)
+        }
+        this.allDates = dates
 
         invalidate()
     }
@@ -196,7 +201,6 @@ class CompareHabitsMultiLineChartView @JvmOverloads constructor(
         }
 
         // 3. Draw visible series lines
-        val dateIndices = allDates.mapIndexed { idx, d -> d to idx }.toMap()
         seriesList.filter { it.isVisible }.forEach { series ->
             if (series.points.isEmpty()) return@forEach
             linePaint.color = series.color
@@ -206,8 +210,15 @@ class CompareHabitsMultiLineChartView @JvmOverloads constructor(
             path.reset()
             var started = false
 
-            series.points.forEach { (date, value) ->
-                val idx = dateIndices[date] ?: return@forEach
+            val pointsByDate = series.points.associate { it.first to it.second }
+            allDates.forEachIndexed { idx, date ->
+                val value = pointsByDate[date]
+                if (value == null) {
+                    if (started) canvas.drawPath(path, linePaint)
+                    path.reset()
+                    started = false
+                    return@forEachIndexed
+                }
                 val x = xForIndex(idx)
                 val frac = value.coerceIn(0.0, 1.0).toFloat()
                 val y = plotBottom - frac * plotHeight
@@ -225,7 +236,7 @@ class CompareHabitsMultiLineChartView @JvmOverloads constructor(
                     canvas.drawCircle(x, y, dp(2.8f), pointPaint)
                 }
             }
-            canvas.drawPath(path, linePaint)
+            if (started) canvas.drawPath(path, linePaint)
         }
 
         // 4. Scrubbing inspection hairline & tooltip popup

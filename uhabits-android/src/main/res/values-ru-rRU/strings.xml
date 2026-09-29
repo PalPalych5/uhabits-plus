@@ -573,7 +573,7 @@
     <string name="statistics_compare_result">Устойчивость · Loop Score</string>
     <string name="compare_habits_title">Сравнение привычек</string>
     <string name="compare_habits_add">+ Добавить</string>
-    <string name="compare_habits_min_warning">Выберите минимум 2 привычки для сравнения</string>
+    <string name="compare_habits_min_warning">Выберите 2–4 привычки</string>
     <string name="compare_overview">Обзор</string>
     <string name="compare_stability">Устойчивость</string>
     <string name="compare_stability_loop_score">Устойчивость (Loop Score)</string>
@@ -586,8 +586,8 @@
     <string name="compare_period_3months">3 месяца</string>
     <string name="compare_period_year">Год</string>
     <string name="compare_period_all">Всё время</string>
-    <string name="compare_current_streak">Текущая: %1$d</string>
-    <string name="compare_best_streak">Лучшая: %1$d</string>
+    <string name="compare_current_streak">Последняя</string>
+    <string name="compare_best_streak">Лучшие</string>
     <string name="compare_metric_percent">Процент</string>
     <string name="compare_metric_values">Значения</string>
     <string name="compare_stat_stability">Устойчивость</string>
@@ -595,6 +595,14 @@
     <string name="compare_stat_year">За год</string>
     <string name="compare_stat_total">Всего</string>
     <string name="statistics_habit_changes">Изменения</string>
+    <string name="statistics_habit_changes_subtitle">Выполнение относительно прошлого сопоставимого периода</string>
+    <string name="compare_picker_search">Поиск привычек</string>
+    <string name="compare_picker_action">Сравнить (%1$d)</string>
+    <string name="compare_picker_other_sphere">Прочее</string>
+    <string name="compare_stat_observations">Дней с данными</string>
+    <string name="compare_stat_completed">Выполнено</string>
+    <string name="statistics_minimum_metric">Выполнение Минимума</string>
+    <string name="statistics_month_best_short">Лучший</string>
     <string name="statistics_percentage_points">п.п.</string>
     <string name="statistics_no_habits_for_filters">Нет привычек по выбранным фильтрам</string>
     <string name="statistics_no_history_for_period">Нет истории за этот период</string>

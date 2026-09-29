@@ -374,7 +374,7 @@ object StatisticsReportStateBuilder {
                 if (currEval?.progress == null || prevEval?.progress == null) {
                     return@mapNotNull null
                 }
-                if (currEval.eligibleDays < 2 || prevEval.eligibleDays < 2) {
+                if (currEval.observations < 2 || prevEval.observations < 2) {
                     return@mapNotNull null
                 }
                 if (!currEval.hasEntries && !prevEval.hasEntries) {
@@ -739,6 +739,7 @@ object StatisticsReportStateBuilder {
     data class HabitSliceEvaluation(
         val progress: Double?,
         val eligibleDays: Int,
+        val observations: Int,
         val hasEntries: Boolean,
         val actual: Double,
         val target: Double
@@ -809,14 +810,17 @@ object StatisticsReportStateBuilder {
         sliceStart: LocalDate,
         sliceEnd: LocalDate
     ): HabitSliceEvaluation? {
-        val totalDays = sliceStart.daysUntil(sliceEnd) + 1
+        val statisticsStart = habit.effectiveStatisticsStartDate()
+        val effectiveStart = if (statisticsStart != null && statisticsStart > sliceStart) statisticsStart else sliceStart
+        val totalDays = effectiveStart.daysUntil(sliceEnd) + 1
         if (totalDays <= 0) return null
 
         var actual = 0.0
         var skippedDays = 0
         var hasEntries = false
+        var observations = 0
 
-        var curr = sliceStart
+        var curr = effectiveStart
         while (curr <= sliceEnd) {
             val entry = habit.computedEntries.get(curr)
             val v = entry.value
@@ -825,6 +829,7 @@ object StatisticsReportStateBuilder {
             } else {
                 if (v != Entry.UNKNOWN) {
                     hasEntries = true
+                    observations++
                 }
                 if (habit.isNumerical) {
                     if (v != Entry.UNKNOWN && v > 0) {
@@ -844,6 +849,7 @@ object StatisticsReportStateBuilder {
             return HabitSliceEvaluation(
                 progress = null,
                 eligibleDays = 0,
+                observations = 0,
                 hasEntries = false,
                 actual = 0.0,
                 target = 0.0
@@ -860,9 +866,10 @@ object StatisticsReportStateBuilder {
             expectedTarget * (eligibleDays.toDouble() / totalDays.toDouble())
         }
 
-        val progress: Double? = if (habit.isNumerical && goal.targetType == NumericalHabitType.AT_MOST) {
-            if (!hasEntries) null
-            else if (actual > target) 0.0
+        val progress: Double? = if (!hasEntries) {
+            null
+        } else if (habit.isNumerical && goal.targetType == NumericalHabitType.AT_MOST) {
+            if (actual > target) 0.0
             else 1.0
         } else {
             if (target > 0.0) minOf(actual / target, 1.0) else 1.0
@@ -871,6 +878,7 @@ object StatisticsReportStateBuilder {
         return HabitSliceEvaluation(
             progress = progress,
             eligibleDays = eligibleDays,
+            observations = observations,
             hasEntries = hasEntries,
             actual = actual,
             target = target
@@ -901,7 +909,9 @@ object StatisticsReportStateBuilder {
         val effectiveEnd = if (end.isNewerThan(today)) today else end
         if (start.isNewerThan(effectiveEnd)) return null
         val progresses = habits.mapNotNull { habit ->
-            evaluateHabitSlice(habit, start, effectiveEnd)?.progress
+            val habitStart = getHabitStartDate(habit, today)
+            if (habitStart > effectiveEnd) null
+            else evaluateHabitSlice(habit, maxOf(start, habitStart), effectiveEnd)?.progress
         }
         return if (progresses.isNotEmpty()) progresses.average() else null
     }

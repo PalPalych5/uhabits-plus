@@ -35,6 +35,7 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
     private var daysLookup: Map<LocalDate, StatisticsDailyProgress> = emptyMap()
 
     private var averageText: String = "—"
+    private var averageProgress: Double? = null
     private var bestDayPct: String = "—"
     private var bestDayDate: String = ""
 
@@ -73,6 +74,7 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
 
     private val cellRect = RectF()
     private val tooltipRect = RectF()
+    private val ringRect = RectF()
 
     // Touch inspection state
     private var inspectedDate: LocalDate? = null
@@ -101,6 +103,7 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
         this.dividerColor = dividerColor
 
         this.averageText = averageProgress?.let { "${(it * 100).roundToInt()}%" } ?: "—"
+        this.averageProgress = averageProgress
         val bestDay = days.filter { !it.isFuture && it.progress != null }.maxByOrNull { it.progress!! }
         if (bestDay != null && (bestDay.progress ?: 0.0) > 0.0) {
             this.bestDayPct = "${((bestDay.progress ?: 0.0) * 100).roundToInt()}%"
@@ -219,25 +222,32 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
         val startX = (width - totalGridWidth) / 2f
         var startY = paddingTop.toFloat()
 
-        // 1. LEFT SIDE: Compact month context
+        // 1. LEFT SIDE: Loop-style compact score overview
         val leftAreaWidth = startX - dp(10f)
         if (leftAreaWidth > dp(50f)) {
-            val leftMargin = dp(8f)
-            var statsY = startY + headerHeight + dp(2f)
-
-            // Average
-            canvas.drawText(context.getString(org.isoron.uhabits.R.string.statistics_month_average), leftMargin, statsY, sideTitlePaint)
-            statsY += dp(16f)
-            canvas.drawText(averageText, leftMargin, statsY, sideValuePaint)
-
-            statsY += dp(18f)
-            // Best day
-            canvas.drawText(context.getString(org.isoron.uhabits.R.string.statistics_month_best_day), leftMargin, statsY, sideTitlePaint)
-            statsY += dp(15f)
-            canvas.drawText(bestDayPct, leftMargin, statsY, sideValuePaint)
+            val centerX = leftAreaWidth / 2f + dp(4f)
+            val centerY = startY + headerHeight + dp(25f)
+            val radius = dp(20f)
+            ringRect.set(centerX - radius, centerY - radius, centerX + radius, centerY + radius)
+            strokePaint.strokeWidth = dp(3f)
+            strokePaint.color = dividerColor
+            canvas.drawArc(ringRect, -90f, 360f, false, strokePaint)
+            averageProgress?.let {
+                strokePaint.color = accentColor
+                canvas.drawArc(ringRect, -90f, (it.coerceIn(0.0, 1.0) * 360).toFloat(), false, strokePaint)
+            }
+            textPaint.color = onSurfaceColor
+            textPaint.textSize = sp(12f)
+            textPaint.typeface = Typeface.DEFAULT_BOLD
+            canvas.drawText(averageText, centerX,
+                centerY - (textPaint.ascent() + textPaint.descent()) / 2f, textPaint)
+            sideTitlePaint.textAlign = Paint.Align.CENTER
+            canvas.drawText(context.getString(org.isoron.uhabits.R.string.statistics_month_average),
+                centerX, centerY + dp(33f), sideTitlePaint)
+            canvas.drawText("${context.getString(org.isoron.uhabits.R.string.statistics_month_best_short)} · $bestDayPct",
+                centerX, centerY + dp(54f), sideTitlePaint)
             if (bestDayDate.isNotEmpty()) {
-                statsY += dp(13f)
-                canvas.drawText(bestDayDate, leftMargin, statsY, sideTitlePaint)
+                canvas.drawText(bestDayDate, centerX, centerY + dp(67f), sideTitlePaint)
             }
         }
 
@@ -348,12 +358,12 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
         if (width - rightStartX > dp(28f)) {
             val totalWeeks = ((firstDowOffset + mStart.daysUntil(mEnd) + 7) / 7)
             val gridTotalHeight = totalWeeks * (cellSize + spacing)
-            val legendCell = dp(7.5f)
+            val legendCell = dp(9f)
             val legendGap = dp(3.5f)
             val legendContentH = dp(12f) + 5 * legendCell + 4 * legendGap + dp(12f)
             val legendStartY = startY + (gridTotalHeight - legendContentH) / 2f
 
-            headerPaint.textSize = sp(8.5f)
+            headerPaint.textSize = sp(9f)
             headerPaint.color = onSurfaceVariantColor
             val legendCx = rightStartX + legendCell / 2f + dp(6f)
 

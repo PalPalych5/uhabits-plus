@@ -19,22 +19,36 @@
             app:navigationIcon="?attr/homeAsUpIndicator" />
 
         <!-- Selected Habit Chips Row -->
-        <HorizontalScrollView
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:scrollbars="none"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
             android:paddingTop="4dp"
             android:paddingBottom="4dp">
-
-            <LinearLayout
-                android:id="@+id/habitChipsContainer"
-                android:layout_width="wrap_content"
+            <HorizontalScrollView
+                android:id="@+id/habitChipsScroll"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:gravity="center_vertical"
-                android:orientation="horizontal" />
-        </HorizontalScrollView>
+                android:layout_weight="1"
+                android:scrollbars="none"
+                android:paddingStart="16dp">
+                <LinearLayout
+                    android:id="@+id/habitChipsContainer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal" />
+            </HorizontalScrollView>
+            <TextView
+                android:id="@+id/addHabitButton"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:gravity="center"
+                android:text="+"
+                android:textSize="22sp"
+                android:textColor="?attr/colorAccent" />
+        </LinearLayout>
 
         <!-- Period Selector Tab Bar -->
         <com.google.android.material.tabs.TabLayout
@@ -47,7 +61,8 @@
             app:tabTextColor="?attr/contrast60"
             app:tabPaddingStart="12dp"
             app:tabPaddingEnd="12dp"
-            app:tabMode="auto" />
+            app:tabMode="scrollable"
+            app:tabGravity="start" />
     </com.google.android.material.appbar.AppBarLayout>
 
     <ScrollView

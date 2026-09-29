@@ -660,8 +660,8 @@
     <string name="compare_period_3months">3 Months</string>
     <string name="compare_period_year">Year</string>
     <string name="compare_period_all">All Time</string>
-    <string name="compare_current_streak">Current streak: %1$d</string>
-    <string name="compare_best_streak">Best streak: %1$d</string>
+    <string name="compare_current_streak">Latest</string>
+    <string name="compare_best_streak">Best</string>
     <string name="compare_metric_percent">Percent</string>
     <string name="compare_metric_values">Values</string>
     <string name="compare_stat_stability">Stability</string>
@@ -669,6 +669,14 @@
     <string name="compare_stat_year">Year</string>
     <string name="compare_stat_total">Total</string>
     <string name="statistics_habit_changes">Changes</string>
+    <string name="statistics_habit_changes_subtitle">Completion versus the previous comparable period</string>
+    <string name="compare_picker_search">Search habits</string>
+    <string name="compare_picker_action">Compare (%1$d)</string>
+    <string name="compare_picker_other_sphere">Other</string>
+    <string name="compare_stat_observations">Days with data</string>
+    <string name="compare_stat_completed">Completed</string>
+    <string name="statistics_minimum_metric">Minimum completion</string>
+    <string name="statistics_month_best_short">Best</string>
     <string name="statistics_percentage_points">pp</string>
     <string name="statistics_no_habits_for_filters">No habits match active filters</string>
     <string name="statistics_no_history_for_period">No history for this period</string>

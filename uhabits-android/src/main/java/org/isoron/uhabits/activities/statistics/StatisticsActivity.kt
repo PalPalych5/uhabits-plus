@@ -455,17 +455,6 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         binding.pageTransitionHost.showInitialPage(pageScroll)
     }
 
-    private fun scheduleRefreshingIndicator() {
-        cancelRefreshingIndicator()
-        val runnable = Runnable {
-            if (viewBinding != null && isAdded) {
-                binding.refreshProgressBar.visibility = View.VISIBLE
-            }
-        }
-        loadingIndicatorRunnable = runnable
-        reportRequestHandler.postDelayed(runnable, 140L)
-    }
-
     private fun cancelRefreshingIndicator() {
         loadingIndicatorRunnable?.let(reportRequestHandler::removeCallbacks)
         loadingIndicatorRunnable = null
@@ -552,8 +541,6 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
 
         if (!hasRenderedStatisticsOnce) {
             showInitialLoading()
-        } else {
-            scheduleRefreshingIndicator()
         }
 
         val habits = component.habitList.toList()
@@ -657,7 +644,6 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     ) {
         when (report.period) {
             StatisticsPeriod.DAY -> {
-                addRemainingSection(container, report)
                 addTierBarsSection(container, report)
             }
             StatisticsPeriod.WEEK -> {
@@ -702,29 +688,41 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
             if (points > 0) "+$points" else points.toString(), getString(previous))
     }
 
+    private fun chartMetricLabel(report: StatisticsReportState): String = when {
+        currentFilters.tier != null -> tierLabel(currentFilters.tier!!)
+        report.tierProgress[DayTier.MINIMUM] != null -> getString(R.string.statistics_minimum_metric)
+        else -> getString(R.string.statistics_average_progress)
+    }
+
     private fun addHabitChangesSection(container: LinearLayout, report: StatisticsReportState) {
         val changes = report.habitChanges
         if (changes.isEmpty()) return
         val (card, content) = createSection(getString(R.string.statistics_habit_changes))
+        content.addView(summaryText(getString(R.string.statistics_habit_changes_subtitle), 11f, palette.onSurfaceVariant))
         changes.forEach { item ->
             val points = item.deltaPoints
             val row = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                minimumHeight = dp(40f).toInt()
+                orientation = LinearLayout.VERTICAL
+                minimumHeight = dp(48f).toInt()
                 quietPressFeedback(this)
                 setOnClickListener {
                     startActivity(IntentFactory().startShowHabitActivity(requireContext(), item.habit))
                 }
             }
-            row.addView(summaryText("●", 12f, themeSwitcher.currentTheme.color(item.habit.color).toInt()))
-            row.addView(summaryText(item.habit.name, 13f, palette.onSurface).apply {
+            val titleRow = LinearLayout(requireContext()).apply { orientation = LinearLayout.HORIZONTAL }
+            titleRow.addView(summaryText("●", 12f, themeSwitcher.currentTheme.color(item.habit.color).toInt()))
+            titleRow.addView(summaryText(item.habit.name, 13f, palette.onSurface).apply {
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 setPadding(dp(8f).toInt(), 0, dp(8f).toInt(), 0)
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            row.addView(summaryText("${if (points > 0) "+" else ""}$points ${getString(R.string.statistics_percentage_points)}",
+            row.addView(titleRow)
+            val values = LinearLayout(requireContext()).apply { orientation = LinearLayout.HORIZONTAL }
+            values.addView(summaryText("${(item.previousProgress * 100).roundToInt()}% → ${(item.currentProgress * 100).roundToInt()}%",
+                12f, palette.onSurfaceVariant), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            values.addView(summaryText("${if (points > 0) "+" else ""}$points ${getString(R.string.statistics_percentage_points)}",
                 12f, palette.onSurfaceVariant))
+            row.addView(values)
             content.addView(row)
         }
         container.addView(card)
@@ -916,76 +914,12 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         container.addView(card)
     }
 
-    private fun addRemainingSection(container: LinearLayout, report: StatisticsReportState) {
-        if (report.remainingMinimumHabits.isEmpty()) {
-            if (report.hasDailyMinimumGoals) {
-                val (card, content) = createSection(null)
-                content.addView(
-                    summaryText(
-                        getString(R.string.statistics_all_minimum_completed),
-                        14f,
-                        tierColor(DayTier.MINIMUM),
-                        bold = true
-                    ).apply {
-                        gravity = Gravity.CENTER_VERTICAL
-                        minHeight = dp(36f).toInt()
-                    }
-                )
-                container.addView(card)
-            }
-            return
-        }
-
-        val (card, content) = createSection(null)
-
-        val listContainer = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-            setPadding(0, dp(4f).toInt(), 0, 0)
-        }
-
-        report.remainingMinimumHabits.forEachIndexed { index, habitResult ->
-            if (index > 0) {
-                listContainer.addView(createDivider())
-            }
-            listContainer.addView(createReportHabitRow(habitResult))
-        }
-
-        val remainingCount = report.remainingMinimumHabits.size
-        val toggleHeader = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(40f).toInt()
-            isClickable = true
-            isFocusable = true
-            quietPressFeedback(this)
-            setOnClickListener {
-                val expanded = listContainer.visibility == View.VISIBLE
-                listContainer.visibility = if (expanded) View.GONE else View.VISIBLE
-            }
-        }
-
-        val toggleText = summaryText(
-            "${getString(R.string.statistics_remaining_minimum_habits_count, remainingCount)} ›",
-            14f,
-            palette.accent,
-            bold = true
-        ).apply {
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-
-        toggleHeader.addView(toggleText)
-        content.addView(toggleHeader)
-        content.addView(listContainer)
-
-        container.addView(card)
-    }
-
     private fun addDailyCompletionSection(container: LinearLayout, report: StatisticsReportState) {
         val (card, content) = createSection(
             titleText = getString(R.string.statistics_by_day),
             secondaryText = periodComparison(report)
         )
+        content.addView(summaryText(chartMetricLabel(report), 11f, palette.onSurfaceVariant))
 
         val daysByDate = report.dailyProgress.associateBy { it.date }
         val barChart = StatisticsPercentageBarChart(requireContext()).apply {
@@ -1071,6 +1005,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         val (card, content) = createSection(
             getString(R.string.statistics_by_month), periodComparison(report)
         )
+        content.addView(summaryText(chartMetricLabel(report), 11f, palette.onSurfaceVariant))
         val barChart = StatisticsPercentageBarChart(requireContext()).apply {
             val items = buckets.map { bucket ->
                 val isFuture = bucket.start.isNewerThan(getToday())
@@ -1097,6 +1032,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         val buckets = report.trendBuckets
         if (buckets.count { it.progress != null } < 2) return
         val (card, content) = createSection(getString(R.string.statistics_long_term_history))
+        content.addView(summaryText(chartMetricLabel(report), 11f, palette.onSurfaceVariant))
         val chart = org.isoron.uhabits.activities.statistics.views.StatisticsBucketChartView(requireContext()).apply {
             setData(buckets, buckets.map {
                 if (it.start.month == 1 && it.end.month == 12) it.start.year.toString()
@@ -1116,7 +1052,27 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         val items = report.habitStability
         if (items.isEmpty()) return
 
-        val (card, content) = createSection(getString(R.string.statistics_habit_stability_title))
+        val (card, content) = createSection()
+        val header = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        header.addView(summaryText(getString(R.string.statistics_habit_stability_title), 14f, palette.onSurface, true),
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        header.addView(summaryText("${getString(R.string.statistics_compare_action)} ›", 13f, palette.accent, true).apply {
+            minHeight = dp(48f).toInt()
+            gravity = Gravity.CENTER_VERTICAL
+            isClickable = true
+            isFocusable = true
+            quietPressFeedback(this)
+            setOnClickListener {
+                val ids = report.habitStability.mapNotNull { it.habit.id }.toLongArray()
+                startActivity(IntentFactory().startCompareHabitsActivity(requireContext()).apply {
+                    putExtra("allowed_habit_ids", ids)
+                })
+            }
+        })
+        content.addView(header)
 
         val listContainer = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
@@ -1167,24 +1123,6 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
             listContainer.addView(expandedContainer)
             listContainer.addView(toggle)
         }
-
-        val compareAction = summaryText(
-            "${getString(R.string.statistics_compare_habits)} ›",
-            13f,
-            palette.accent,
-            bold = true
-        ).apply {
-            minHeight = dp(38f).toInt()
-            gravity = Gravity.CENTER_VERTICAL
-            isClickable = true
-            isFocusable = true
-            setPadding(0, dp(8f).toInt(), 0, dp(4f).toInt())
-            quietPressFeedback(this)
-            setOnClickListener {
-                startActivity(IntentFactory().startCompareHabitsActivity(requireContext()))
-            }
-        }
-        listContainer.addView(compareAction)
 
         content.addView(listContainer)
         container.addView(card)
