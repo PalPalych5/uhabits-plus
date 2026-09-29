@@ -37,50 +37,50 @@ class StatisticsActivityTest : BaseAndroidJVMTest() {
         val today = LocalDate(2015, 1, 25)
 
         // Day view
-        assertTrue(isLatestAllowedPeriod(today, StatisticsFragment.ReportTab.DAY, 1)) // 1 = Sunday
-        assertTrue(isLatestAllowedPeriod(today.plus(1), StatisticsFragment.ReportTab.DAY, 1))
-        assertFalse(isLatestAllowedPeriod(today.minus(1), StatisticsFragment.ReportTab.DAY, 1))
+        assertTrue(isLatestAllowedPeriod(today, StatisticsFragment.ReportTab.DAY, DayOfWeek.SUNDAY))
+        assertTrue(isLatestAllowedPeriod(today.plus(1), StatisticsFragment.ReportTab.DAY, DayOfWeek.SUNDAY))
+        assertFalse(isLatestAllowedPeriod(today.minus(1), StatisticsFragment.ReportTab.DAY, DayOfWeek.SUNDAY))
 
         // Week view (respecting first weekday)
-        // If Sunday is first day (firstWeekdayNum = 1), today (2015-01-25) is the start of the week.
-        assertTrue(isLatestAllowedPeriod(today, StatisticsFragment.ReportTab.WEEK, 1))
-        assertTrue(isLatestAllowedPeriod(today.plus(6), StatisticsFragment.ReportTab.WEEK, 1))
-        assertFalse(isLatestAllowedPeriod(today.minus(1), StatisticsFragment.ReportTab.WEEK, 1))
+        // If Sunday is first day, today (2015-01-25) is the start of the week.
+        assertTrue(isLatestAllowedPeriod(today, StatisticsFragment.ReportTab.WEEK, DayOfWeek.SUNDAY))
+        assertTrue(isLatestAllowedPeriod(today.plus(6), StatisticsFragment.ReportTab.WEEK, DayOfWeek.SUNDAY))
+        assertFalse(isLatestAllowedPeriod(today.minus(1), StatisticsFragment.ReportTab.WEEK, DayOfWeek.SUNDAY))
 
         // Month view
-        assertTrue(isLatestAllowedPeriod(today, StatisticsFragment.ReportTab.MONTH, 1))
-        assertFalse(isLatestAllowedPeriod(today.minus(30), StatisticsFragment.ReportTab.MONTH, 1))
+        assertTrue(isLatestAllowedPeriod(today, StatisticsFragment.ReportTab.MONTH, DayOfWeek.SUNDAY))
+        assertFalse(isLatestAllowedPeriod(today.minus(30), StatisticsFragment.ReportTab.MONTH, DayOfWeek.SUNDAY))
 
         // Year view
-        assertTrue(isLatestAllowedPeriod(today, StatisticsFragment.ReportTab.YEAR, 1))
-        assertFalse(isLatestAllowedPeriod(today.minus(365), StatisticsFragment.ReportTab.YEAR, 1))
+        assertTrue(isLatestAllowedPeriod(today, StatisticsFragment.ReportTab.YEAR, DayOfWeek.SUNDAY))
+        assertFalse(isLatestAllowedPeriod(today.minus(365), StatisticsFragment.ReportTab.YEAR, DayOfWeek.SUNDAY))
     }
 
     @Test
-    fun testCurrentWeekRangeDoesNotIncludeFutureDates() {
+    fun testCurrentWeekRangeCoversFullWeek() {
         val today = LocalDate(2015, 1, 25)
-        val range = statisticsActiveRange(today, StatisticsFragment.ReportTab.WEEK, 1)
+        val range = statisticsActiveRange(today, StatisticsFragment.ReportTab.WEEK, DayOfWeek.SUNDAY)
 
         assertEquals(LocalDate(2015, 1, 25), range.first)
-        assertEquals(today, range.second)
+        assertEquals(LocalDate(2015, 1, 31), range.second)
     }
 
     @Test
-    fun testCurrentMonthRangeDoesNotIncludeFutureDates() {
+    fun testCurrentMonthRangeCoversFullMonth() {
         val today = LocalDate(2015, 1, 25)
-        val range = statisticsActiveRange(today, StatisticsFragment.ReportTab.MONTH, 1)
+        val range = statisticsActiveRange(today, StatisticsFragment.ReportTab.MONTH, DayOfWeek.SUNDAY)
 
         assertEquals(LocalDate(2015, 1, 1), range.first)
-        assertEquals(today, range.second)
+        assertEquals(LocalDate(2015, 1, 31), range.second)
     }
 
     @Test
-    fun testCurrentYearRangeDoesNotIncludeFutureDates() {
+    fun testCurrentYearRangeCoversFullYear() {
         val today = LocalDate(2015, 1, 25)
-        val range = statisticsActiveRange(today, StatisticsFragment.ReportTab.YEAR, 1)
+        val range = statisticsActiveRange(today, StatisticsFragment.ReportTab.YEAR, DayOfWeek.SUNDAY)
 
         assertEquals(LocalDate(2015, 1, 1), range.first)
-        assertEquals(today, range.second)
+        assertEquals(LocalDate(2015, 12, 31), range.second)
     }
 
 //    @Test

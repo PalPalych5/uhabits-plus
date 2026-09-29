@@ -15,13 +15,15 @@
             android:id="@+id/toolbar"
             layout="@layout/toolbar" />
 
-        <com.google.android.material.tabs.TabLayout
+        <org.isoron.uhabits.activities.statistics.views.StatisticsSwipeTabLayout
             android:id="@+id/tabLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:background="@android:color/transparent"
             app:tabTextColor="@android:color/white"
             app:tabSelectedTextColor="@android:color/white"
+            app:tabPaddingStart="0dp"
+            app:tabPaddingEnd="0dp"
             app:tabIndicatorColor="@android:color/white" />
     </com.google.android.material.appbar.AppBarLayout>
 
@@ -31,14 +33,18 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="center"
-        android:padding="8dp"
+        android:gravity="center_vertical"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
         android:background="@android:color/transparent">
 
         <androidx.appcompat.widget.AppCompatImageButton
             android:id="@+id/btnPrev"
             android:layout_width="48dp"
             android:layout_height="48dp"
+            android:padding="12dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:src="@drawable/ic_arrow_up_dark"
             android:rotation="-90"
@@ -50,7 +56,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:gravity="center"
-            android:textSize="16sp"
+            android:textSize="15sp"
             android:textStyle="bold"
             android:textColor="?attr/contrast100"
             android:text="Date Range" />
@@ -59,6 +65,7 @@
             android:id="@+id/btnNext"
             android:layout_width="48dp"
             android:layout_height="48dp"
+            android:padding="12dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:src="@drawable/ic_arrow_down_dark"
             android:rotation="-90"
@@ -73,27 +80,47 @@
         android:background="@android:color/transparent"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:paddingBottom="8dp">
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="4dp">
+
+        <TextView
+            android:id="@+id/filterScope"
+            android:layout_width="0dp"
+            android:layout_height="36dp"
+            android:layout_weight="1"
+            android:gravity="center_vertical"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textSize="13sp"
+            android:text="@string/statistics_filter_active_habits" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnFilters"
-            style="@style/Statistics.FilterButton"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="wrap_content"
-            android:layout_height="48dp"
-            android:layout_marginEnd="8dp"
+            android:layout_height="36dp"
+            android:minHeight="36dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:textSize="13sp"
+            android:textAllCaps="false"
             android:text="@string/statistics_filters_button"
             app:icon="@drawable/ic_statistics_filter"
             app:iconGravity="textStart"
-            app:iconPadding="8dp"
-            app:iconSize="20dp" />
+            app:iconPadding="4dp"
+            app:iconSize="16dp" />
+
+
+
 
         <HorizontalScrollView
             android:id="@+id/filtersScrollView"
             android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_weight="1"
+            android:layout_height="0dp"
+            android:visibility="gone"
             android:fillViewport="true"
             android:scrollbars="none">
 
@@ -115,16 +142,8 @@
         android:indeterminate="true"
         android:visibility="gone" />
 
-    <ScrollView
+    <org.isoron.uhabits.activities.statistics.views.StatisticsPageTransitionHost
+        android:id="@+id/pageTransitionHost"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:scrollbars="none">
-
-        <LinearLayout
-            android:id="@+id/reportContentContainer"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="16dp" />
-    </ScrollView>
+        android:layout_height="match_parent" />
 </LinearLayout>

@@ -603,7 +603,9 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         getString(R.string.settings_section_help_app),
         getString(R.string.version_n, BuildConfig.VERSION_NAME),
         listOf(
-            navigation("help", R.drawable.ic_settings_lifebuoy, getString(R.string.help), showIcon = true) { activity?.startActivitySafely(intentFactory.viewFAQ(requireContext())) },
+            navigation("help", R.drawable.ic_settings_lifebuoy, getString(R.string.help), showIcon = true) {
+                startActivity(Intent(requireContext(), StatisticsHelpActivity::class.java))
+            },
             navigation("rateApp", R.drawable.ic_settings_rate, getString(R.string.pref_rate_this_app), showIcon = true) {
                 activity?.startActivitySafely(Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.playStoreURL))))
             },
@@ -624,6 +626,7 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             navigation("pref_sync_base_url", R.drawable.ic_settings_link, getString(R.string.supabase_url_title), getString(R.string.supabase_url_summary)) { showDeveloperEditTextDialog("pref_sync_base_url", getString(R.string.supabase_url_title)) },
             navigation("pref_sync_key", R.drawable.ic_settings_key, getString(R.string.supabase_anon_key_title), getString(R.string.supabase_anon_key_summary)) { showDeveloperEditTextDialog("pref_sync_key", getString(R.string.supabase_anon_key_title)) },
             subsection("developer_diagnostics", getString(R.string.settings_subsection_diagnostics)),
+            navigation("seedDemoData", R.drawable.ic_settings_report_analytics, getString(R.string.demo_data_seed_title), getString(R.string.demo_data_seed_summary), showIcon = true) { showSeedConfirmationDialog(isReset = false) },
             navigation("exportSyncDiagnostics", R.drawable.ic_settings_report_analytics, getString(R.string.sync_export_diagnostics_title), getString(R.string.sync_export_diagnostics_summary), showIcon = true) { exportSyncDiagnostics() },
             navigation("bugReport", R.drawable.ic_settings_bug, getString(R.string.generate_bug_report), getString(R.string.generate_bug_report_summary), showIcon = true) { actionHandler().onSettingsAction(SettingsAction.BUG_REPORT) }
         )
@@ -996,17 +999,13 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     }
 
     private fun buildCardRoundingSummary(): String {
-        return listOf(
-            "${getString(R.string.habits_title)} ${prefs.habitsCardCornerRadius} dp",
-            "${getString(R.string.reports_title)} ${prefs.statisticsCardCornerRadius} dp"
-        ).joinToString(" · ")
+        return formatCornerRadiusSummary(prefs.habitsCardCornerRadius)
     }
 
     private fun showCardRoundingDialog() {
         val values = resources.getStringArray(R.array.pref_habit_card_corners_values)
         val allowedValues = values.map { it.toIntOrNull() ?: 8 }
         var habitsRadius = prefs.habitsCardCornerRadius
-        var statisticsRadius = prefs.statisticsCardCornerRadius
         val palette = SettingsThemePaletteResolver.resolve(requireContext(), prefs)
 
         fun sliderIndexFor(radius: Int): Float {
@@ -1082,14 +1081,6 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                     topMargin = (10 * density).toInt()
                 }
             })
-            addView(sliderBlock(getString(R.string.reports_title), statisticsRadius) { statisticsRadius = it }.apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = (10 * density).toInt()
-                }
-            })
         }
 
         CustomDialogs.showCustomViewDialog(
@@ -1098,7 +1089,6 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             contentView = content
         ) {
             prefs.habitsCardCornerRadius = habitsRadius
-            prefs.statisticsCardCornerRadius = statisticsRadius
             rebuildSettingsList()
         }
     }

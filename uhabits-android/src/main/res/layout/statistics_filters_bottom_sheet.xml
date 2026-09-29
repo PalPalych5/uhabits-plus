@@ -5,25 +5,31 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     app:cardBackgroundColor="?attr/cardBgColor"
-    app:cardCornerRadius="28dp"
+    app:cardCornerRadius="20dp"
     app:cardElevation="0dp"
     app:strokeWidth="0dp">
 
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
     <androidx.core.widget.NestedScrollView
+        android:id="@+id/statisticsFiltersScroll"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:clipToPadding="false"
-        android:fillViewport="true"
+        android:fillViewport="false"
         android:overScrollMode="ifContentScrolls">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingStart="20dp"
-            android:paddingTop="10dp"
-            android:paddingEnd="20dp"
-            android:paddingBottom="20dp">
+            android:paddingStart="16dp"
+            android:paddingTop="6dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="4dp">
 
             <View
                 android:layout_width="32dp"
@@ -34,26 +40,26 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
+                android:layout_marginTop="12dp"
                 android:fontFamily="sans-serif-medium"
                 android:text="@string/statistics_filters_title"
                 android:textColor="?attr/contrast100"
-                android:textSize="22sp"
+                android:textSize="18sp"
                 android:textStyle="bold" />
 
             <TextView
                 style="@style/Statistics.FilterSectionTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
+                android:layout_marginTop="14dp"
                 android:text="@string/statistics_filters_sphere" />
 
             <com.google.android.material.chip.ChipGroup
                 android:id="@+id/sphereChipGroup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                app:chipSpacingHorizontal="6dp"
+                android:layout_marginTop="2dp"
+                app:chipSpacingHorizontal="4dp"
                 app:chipSpacingVertical="0dp"
                 app:selectionRequired="true"
                 app:singleSelection="true" />
@@ -62,15 +68,15 @@
                 style="@style/Statistics.FilterSectionTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
+                android:layout_marginTop="10dp"
                 android:text="@string/statistics_filters_status" />
 
             <com.google.android.material.chip.ChipGroup
                 android:id="@+id/statusChipGroup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                app:chipSpacingHorizontal="6dp"
+                android:layout_marginTop="2dp"
+                app:chipSpacingHorizontal="4dp"
                 app:chipSpacingVertical="0dp"
                 app:selectionRequired="true"
                 app:singleSelection="true">
@@ -104,15 +110,15 @@
                 style="@style/Statistics.FilterSectionTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
+                android:layout_marginTop="10dp"
                 android:text="@string/statistics_filters_goal_type" />
 
             <com.google.android.material.chip.ChipGroup
                 android:id="@+id/goalTypeChipGroup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                app:chipSpacingHorizontal="6dp"
+                android:layout_marginTop="2dp"
+                app:chipSpacingHorizontal="4dp"
                 app:chipSpacingVertical="0dp"
                 app:selectionRequired="true"
                 app:singleSelection="true">
@@ -146,15 +152,15 @@
                 style="@style/Statistics.FilterSectionTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
+                android:layout_marginTop="10dp"
                 android:text="@string/statistics_filters_tier" />
 
             <com.google.android.material.chip.ChipGroup
                 android:id="@+id/tierChipGroup"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                app:chipSpacingHorizontal="6dp"
+                android:layout_marginTop="2dp"
+                app:chipSpacingHorizontal="4dp"
                 app:chipSpacingVertical="0dp"
                 app:selectionRequired="true"
                 app:singleSelection="true">
@@ -200,10 +206,17 @@
                     android:text="@string/day_tier_optional" />
             </com.google.android.material.chip.ChipGroup>
 
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
             <LinearLayout
+                android:id="@+id/filtersActions"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="24dp"
+                android:paddingStart="16dp"
+                android:paddingTop="6dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="24dp"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
@@ -211,7 +224,7 @@
                     android:id="@+id/resetFiltersButton"
                     style="@style/Statistics.FilterResetButton"
                     android:layout_width="0dp"
-                    android:layout_height="48dp"
+                    android:layout_height="40dp"
                     android:layout_marginEnd="6dp"
                     android:layout_weight="1"
                     android:text="@string/statistics_filters_reset" />
@@ -220,11 +233,10 @@
                     android:id="@+id/applyFiltersButton"
                     style="@style/Statistics.FilterActionButton"
                     android:layout_width="0dp"
-                    android:layout_height="48dp"
+                    android:layout_height="40dp"
                     android:layout_marginStart="6dp"
                     android:layout_weight="1"
                     android:text="@string/statistics_filters_apply" />
             </LinearLayout>
-        </LinearLayout>
-    </androidx.core.widget.NestedScrollView>
+    </LinearLayout>
 </com.google.android.material.card.MaterialCardView>

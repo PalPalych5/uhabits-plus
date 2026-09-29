@@ -9,6 +9,7 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import org.isoron.platform.time.LocalDate
+import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import java.util.Locale
 import kotlin.math.max
@@ -221,10 +222,11 @@ class StatisticsTrendLineView @JvmOverloads constructor(
         }
         if (selectedIndex in points.indices) {
             val pt = points[selectedIndex]
-            contentDescription = "${pt.label}: ${(pt.progress * 100).roundToInt()}%"
+            contentDescription = context.getString(R.string.statistics_trend_point_description,
+                pt.label, (pt.progress * 100).roundToInt())
         } else {
             val avg = (points.map { it.progress }.average() * 100).roundToInt()
-            contentDescription = "Trend line chart. Average: $avg%."
+            contentDescription = context.getString(R.string.statistics_trend_chart_description, avg)
         }
     }
 

@@ -651,22 +651,7 @@ class EditHabitActivity : AppCompatActivity() {
     private fun defaultColorForCurrentBlock(): PaletteColor =
         HabitColorDefaults.forBlock(blockId, currentBlocks())
 
-    private fun getBlockDisplayName(block: org.isoron.uhabits.core.models.HabitBlock): String {
-        return if (block.id in 1L..7L) {
-            when (block.id) {
-                1L -> getString(R.string.today_section_intellect)
-                2L -> getString(R.string.today_section_speech)
-                3L -> getString(R.string.today_section_body)
-                4L -> getString(R.string.today_section_care)
-                5L -> getString(R.string.today_section_routine)
-                6L -> getString(R.string.today_section_limits)
-                7L -> getString(R.string.today_section_other)
-                else -> block.name
-            }
-        } else {
-            block.name
-        }
-    }
+    private fun getBlockDisplayName(block: org.isoron.uhabits.core.models.HabitBlock): String = block.name
 
     private fun updateTimerVisibility() {
         val isMinute = binding.unitInput.text.toString().isMinuteUnit()

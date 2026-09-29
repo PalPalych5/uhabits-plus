@@ -55,6 +55,11 @@
             android:launchMode="singleTop" />
 
         <activity
+            android:name=".activities.statistics.CompareHabitsActivity"
+            android:exported="false"
+            android:label="@string/statistics_compare_habits" />
+
+        <activity
             android:name=".activities.main.MainActivity"
             android:label="@string/main_activity_title"
             android:launchMode="singleTop" />
@@ -86,6 +91,10 @@
                 android:name="android.support.PARENT_ACTIVITY"
                 android:value="org.isoron.uhabits.activities.main.MainActivity" />
         </activity>
+        <activity
+            android:name=".activities.settings.StatisticsHelpActivity"
+            android:label="@string/statistics_local_help_title"
+            android:exported="false" />
 
         <activity
             android:name=".activities.intro.IntroActivity"

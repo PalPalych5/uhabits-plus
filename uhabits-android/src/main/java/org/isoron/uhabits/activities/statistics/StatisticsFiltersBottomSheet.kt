@@ -11,6 +11,7 @@
 package org.isoron.uhabits.activities.statistics
 
 import android.graphics.Color
+import android.content.res.ColorStateList
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -18,18 +19,26 @@ import android.view.ViewGroup
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.updatePadding
+import androidx.core.widget.NestedScrollView
+import androidx.core.graphics.ColorUtils
 import androidx.fragment.app.FragmentManager
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.card.MaterialCardView
+import org.isoron.uhabits.HabitsApplication
+import org.isoron.uhabits.activities.settings.SettingsThemePaletteResolver
 import org.isoron.uhabits.R
 import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.HabitBlock
 import org.isoron.uhabits.core.ui.screens.statistics.StatisticsFilterState
 import org.isoron.uhabits.core.ui.screens.statistics.StatisticsGoalTypeFilter
 import org.isoron.uhabits.core.ui.screens.statistics.StatisticsHabitStatusFilter
+
+import android.graphics.drawable.ColorDrawable
 
 class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
     private var selectedSphereId: Long? = null
@@ -41,6 +50,7 @@ class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setStyle(STYLE_NORMAL, R.style.Statistics_BottomSheetDialogTheme)
         sphereOptions = readSphereOptions(requireArguments())
         restoreSelection(savedInstanceState ?: requireArguments())
     }
@@ -60,6 +70,7 @@ class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
         setupStatusGroup(view.findViewById(R.id.statusChipGroup))
         setupGoalTypeGroup(view.findViewById(R.id.goalTypeChipGroup))
         setupTierGroup(view.findViewById(R.id.tierChipGroup))
+        styleSheet(view)
 
         view.findViewById<View>(R.id.resetFiltersButton).setOnClickListener {
             selectedSphereId = null
@@ -76,16 +87,62 @@ class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
 
     override fun onStart() {
         super.onStart()
+        dialog?.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         (dialog as? BottomSheetDialog)
             ?.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
             ?.let { sheet ->
                 sheet.setBackgroundColor(Color.TRANSPARENT)
+                sheet.backgroundTintList = ColorStateList.valueOf(Color.TRANSPARENT)
                 sheet.elevation = 0f
+                val maxHeight = (resources.displayMetrics.heightPixels * 0.75f).toInt()
                 BottomSheetBehavior.from(sheet).apply {
+                    this.maxHeight = maxHeight
                     state = BottomSheetBehavior.STATE_EXPANDED
                     skipCollapsed = true
                 }
             }
+    }
+
+    private fun styleSheet(root: View) {
+        val prefs = (requireContext().applicationContext as HabitsApplication).component.preferences
+        val colors = SettingsThemePaletteResolver.resolve(requireContext(), prefs)
+        (root as MaterialCardView).setCardBackgroundColor(colors.surface)
+        root.findViewById<NestedScrollView>(R.id.statisticsFiltersScroll).setBackgroundColor(colors.surface)
+        root.findViewById<View>(R.id.filtersActions).setBackgroundColor(colors.surface)
+        val density = resources.displayMetrics.density
+        val checked = intArrayOf(android.R.attr.state_checked)
+        val normal = intArrayOf()
+        val fill = ColorStateList(
+            arrayOf(checked, normal),
+            intArrayOf(ColorUtils.blendARGB(colors.surface, colors.accent, 0.18f), colors.surface)
+        )
+        val outline = ColorStateList(
+            arrayOf(checked, normal),
+            intArrayOf(colors.accent, colors.border)
+        )
+        listOf(R.id.sphereChipGroup, R.id.statusChipGroup, R.id.goalTypeChipGroup, R.id.tierChipGroup)
+            .map { root.findViewById<ChipGroup>(it) }
+            .forEach { group ->
+                for (index in 0 until group.childCount) {
+                    (group.getChildAt(index) as? Chip)?.apply {
+                        chipBackgroundColor = fill
+                        chipStrokeColor = outline
+                        chipStrokeWidth = density
+                        chipCornerRadius = 8f * density
+                        setTextColor(colors.onSurface)
+                        minimumHeight = (32f * density).toInt()
+                        chipMinHeight = 32f * density
+                        textSize = 12f
+                    }
+                }
+            }
+        val apply = root.findViewById<MaterialButton>(R.id.applyFiltersButton)
+        apply.backgroundTintList = ColorStateList.valueOf(colors.accent)
+        apply.setTextColor(if (ColorUtils.calculateContrast(Color.BLACK, colors.accent) >= 4.5) Color.BLACK else Color.WHITE)
+        val reset = root.findViewById<MaterialButton>(R.id.resetFiltersButton)
+        reset.backgroundTintList = ColorStateList.valueOf(colors.surface)
+        reset.strokeColor = ColorStateList.valueOf(colors.border)
+        reset.setTextColor(colors.onSurface)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -98,7 +155,7 @@ class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
         sphereChipValues.clear()
         addSphereChip(group, null, getString(R.string.reports_filter_all_spheres))
         sphereOptions.forEach { option ->
-            addSphereChip(group, option.id, localizedSphereName(option))
+            addSphereChip(group, option.id, option.name)
         }
         checkSphere(group)
         group.setOnCheckedChangeListener { _, checkedId ->
@@ -197,16 +254,6 @@ class StatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
         )
     }
 
-    private fun localizedSphereName(option: SphereOption): String = when (option.id) {
-        1L -> getString(R.string.today_section_intellect)
-        2L -> getString(R.string.today_section_speech)
-        3L -> getString(R.string.today_section_body)
-        4L -> getString(R.string.today_section_care)
-        5L -> getString(R.string.today_section_routine)
-        6L -> getString(R.string.today_section_limits)
-        7L -> getString(R.string.today_section_other)
-        else -> option.name
-    }
 
     private fun restoreSelection(source: Bundle) {
         selectedSphereId = source.getLong(ARG_SPHERE_ID, NO_SPHERE_ID)

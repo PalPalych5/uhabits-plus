@@ -4,29 +4,30 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
-import android.widget.LinearLayout
-import android.widget.TextView
+import androidx.core.graphics.ColorUtils
 import org.isoron.platform.time.DayOfWeek
-import org.isoron.uhabits.R
-import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import kotlin.math.roundToInt
 
+/**
+ * Compact 7-column bar chart adhering strictly to Loop Habit Tracker's BarChart design language.
+ * Used for Week "By day" and Month/Year "By weekday".
+ */
 class StatisticsWeekRhythmView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
     defStyleAttr: Int = 0
-) : LinearLayout(context, attrs, defStyleAttr) {
+) : View(context, attrs, defStyleAttr) {
 
     data class RhythmItem(
         val dayOfWeek: DayOfWeek,
-        val progress: Double,
-        val label: String
+        val progress: Double?,
+        val label: String,
+        val isToday: Boolean = false,
+        val isFuture: Boolean = false
     )
-
-    private val chartView: View
-    private val insightView: TextView
 
     private var items: List<RhythmItem> = emptyList()
     private var accentColor: Int = 0
@@ -34,9 +35,6 @@ class StatisticsWeekRhythmView @JvmOverloads constructor(
     private var dividerColor: Int = 0
 
     private val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-    }
-    private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
     }
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -51,31 +49,6 @@ class StatisticsWeekRhythmView @JvmOverloads constructor(
 
     private val rect = RectF()
 
-    init {
-        orientation = VERTICAL
-        setPadding(dp(12f).toInt(), dp(12f).toInt(), dp(12f).toInt(), dp(12f).toInt())
-
-        chartView = object : View(context) {
-            override fun onDraw(canvas: Canvas) {
-                super.onDraw(canvas)
-                drawChart(canvas)
-            }
-        }.apply {
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(120f).toInt())
-        }
-
-        insightView = TextView(context).apply {
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(16f).toInt()
-            }
-            textSize = 13f
-            textAlignment = TEXT_ALIGNMENT_CENTER
-        }
-
-        addView(chartView)
-        addView(insightView)
-    }
-
     fun setData(
         data: List<RhythmItem>,
         accentColor: Int,
@@ -88,71 +61,66 @@ class StatisticsWeekRhythmView @JvmOverloads constructor(
         this.dividerColor = divider
 
         barPaint.color = accentColor
-        trackPaint.color = divider
         labelPaint.color = onSurfaceVariant
         valuePaint.color = onSurfaceVariant
 
-        chartView.invalidate()
-        generateInsight()
+        invalidate()
     }
 
-    private fun drawChart(canvas: Canvas) {
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val width = MeasureSpec.getSize(widthMeasureSpec)
+        val desiredHeight = dp(100f).roundToInt()
+        setMeasuredDimension(width, desiredHeight)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
         if (items.isEmpty()) return
 
-        val w = chartView.width.toFloat()
-        val h = chartView.height.toFloat()
+        val w = width.toFloat()
+        val h = height.toFloat()
 
-        val columnWidth = w / 7
-        val barWidth = dp(16f)
-        val maxBarHeight = h - dp(32f) // space for label and value
+        val columnWidth = w / 7f
+        val barWidth = dp(10f)
+        val baselineY = h - dp(24f)
+        val paddingTop = dp(18f)
+        val maxBarHeight = baselineY - paddingTop
 
+        // Seven fixed columns use Loop BarChart's narrow bars and quiet labels.
         items.forEachIndexed { i, item ->
-            val cx = i * columnWidth + columnWidth / 2
-            val progress = item.progress.coerceIn(0.0, 1.0).toFloat()
-            val barHeight = progress * maxBarHeight
+            val cx = i * columnWidth + columnWidth / 2f
 
-            // Draw track
-            rect.set(cx - barWidth / 2, dp(16f), cx + barWidth / 2, dp(16f) + maxBarHeight)
-            canvas.drawRoundRect(rect, barWidth / 2, barWidth / 2, trackPaint)
-
-            // Draw filled bar
-            if (barHeight > 0f) {
-                rect.set(cx - barWidth / 2, dp(16f) + maxBarHeight - barHeight, cx + barWidth / 2, dp(16f) + maxBarHeight)
-                canvas.drawRoundRect(rect, barWidth / 2, barWidth / 2, barPaint)
+            // Weekday label below baseline
+            if (item.isToday) {
+                labelPaint.color = accentColor
+                labelPaint.typeface = Typeface.DEFAULT_BOLD
+                canvas.drawText(item.label, cx, baselineY + dp(14f), labelPaint)
+            } else if (item.isFuture) {
+                labelPaint.color = ColorUtils.setAlphaComponent(onSurfaceVariantColor, 100)
+                labelPaint.typeface = Typeface.DEFAULT
+                canvas.drawText(item.label, cx, baselineY + dp(14f), labelPaint)
+            } else {
+                labelPaint.color = onSurfaceVariantColor
+                labelPaint.typeface = Typeface.DEFAULT
+                canvas.drawText(item.label, cx, baselineY + dp(14f), labelPaint)
             }
 
-            // Draw value text
-            val valueText = "${(progress * 100).roundToInt()}%"
-            canvas.drawText(valueText, cx, dp(12f), valuePaint)
+            // Data bar & percentage — no background track, matching Loop BarChart
+            if (!item.isFuture && item.progress != null) {
+                val progress = item.progress.coerceIn(0.0, 1.0).toFloat()
+                val barHeight = progress * maxBarHeight
+                val cornerR = barWidth * 0.15f
 
-            // Draw label
-            canvas.drawText(item.label, cx, h - dp(4f), labelPaint)
-        }
-    }
-
-    private fun generateInsight() {
-        if (items.isEmpty()) {
-            insightView.visibility = GONE
-            return
-        }
-
-        val validItems = items.filter { it.progress >= 0.0 }
-        if (validItems.isEmpty()) {
-            insightView.visibility = GONE
-            return
-        }
-
-        val average = validItems.map { it.progress }.average()
-        val weakest = validItems.minByOrNull { it.progress }
-
-        if (weakest != null && weakest.progress < average - 0.05) {
-            val diffPercent = ((average - weakest.progress) * 100).roundToInt()
-            insightView.visibility = VISIBLE
-            insightView.setTextColor(onSurfaceVariantColor)
-            val resourceString = context.getString(R.string.statistics_rhythm_insight)
-            insightView.text = String.format(resourceString, weakest.label, diffPercent)
-        } else {
-            insightView.visibility = GONE
+                if (barHeight > 0f) {
+                    val actualHeight = barHeight.coerceAtLeast(dp(2f))
+                    rect.set(cx - barWidth / 2f, baselineY - actualHeight, cx + barWidth / 2f, baselineY)
+                    canvas.drawRoundRect(rect, cornerR, cornerR, barPaint)
+                }
+                // A measured 0% has a label; null/no-data and future days do not.
+                val valueText = "${(progress * 100).roundToInt()}%"
+                valuePaint.color = onSurfaceVariantColor
+                canvas.drawText(valueText, cx, baselineY - barHeight.coerceAtLeast(dp(2f)) - dp(3f), valuePaint)
+            }
         }
     }
 

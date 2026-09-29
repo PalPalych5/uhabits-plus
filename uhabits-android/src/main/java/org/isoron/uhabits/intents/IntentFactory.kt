@@ -72,6 +72,15 @@ class IntentFactory() {
             data = Uri.parse(habit.uriString)
         }
 
+    fun startCompareHabitsActivity(
+        context: Context,
+        initialPeriod: String? = null,
+        initialHabitIds: LongArray? = null
+    ) = Intent(context, org.isoron.uhabits.activities.statistics.CompareHabitsActivity::class.java).apply {
+        initialPeriod?.let { putExtra("initial_period", it) }
+        initialHabitIds?.let { putExtra("initial_habit_ids", it) }
+    }
+
     fun viewFAQ(context: Context) =
         buildViewIntent(context.getString(R.string.helpURL))
 
