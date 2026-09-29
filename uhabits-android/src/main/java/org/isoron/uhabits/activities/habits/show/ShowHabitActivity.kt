@@ -75,12 +75,13 @@ import org.isoron.uhabits.utils.showMessage
 import org.isoron.uhabits.utils.showSendFileScreen
 import org.isoron.uhabits.widgets.WidgetUpdater
 
-class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
+class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoron.uhabits.core.models.ModelObservable.Listener {
 
     private lateinit var commandRunner: CommandRunner
     private lateinit var menu: ShowHabitMenu
     private lateinit var view: ShowHabitView
     private lateinit var habit: Habit
+    private lateinit var habitList: org.isoron.uhabits.core.models.HabitList
     private lateinit var preferences: Preferences
     private lateinit var themeSwitcher: AndroidThemeSwitcher
     private lateinit var widgetUpdater: WidgetUpdater
@@ -106,7 +107,7 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
         super.onCreate(savedInstanceState)
 
         val appComponent = (applicationContext as HabitsApplication).component
-        val habitList = appComponent.habitList
+        habitList = appComponent.habitList
         habit = habitList.getById(ContentUris.parseId(intent.data!!))!!
         preferences = appComponent.preferences
         commandRunner = appComponent.commandRunner
@@ -167,6 +168,8 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
     override fun onResume() {
         super.onResume()
         commandRunner.addListener(this)
+        habit.observable.addListener(this)
+        habitList.observable.addListener(this)
         supportFragmentManager.findFragmentByTag("historyEditor")?.let {
             (it as HistoryEditorDialog).setOnDateClickedListener(presenter.historyCardPresenter)
         }
@@ -177,10 +180,16 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener {
     override fun onPause() {
         dismissCurrentDialog()
         commandRunner.removeListener(this)
+        habit.observable.removeListener(this)
+        habitList.observable.removeListener(this)
         super.onPause()
     }
 
     override fun onCommandFinished(command: Command) {
+        screen.refresh()
+    }
+
+    override fun onModelChange() {
         screen.refresh()
     }
 

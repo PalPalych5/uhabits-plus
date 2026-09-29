@@ -65,6 +65,9 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
     private val sideTitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
     }
+    private val sideDatePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+    }
     private val legendLabelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         fontFeatureSettings = "tnum"
     }
@@ -129,6 +132,9 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
 
         sideTitlePaint.color = ColorUtils.setAlphaComponent(onSurfaceVariantColor, 180)
         sideTitlePaint.textSize = sp(10f)
+
+        sideDatePaint.color = ColorUtils.setAlphaComponent(onSurfaceVariantColor, 140)
+        sideDatePaint.textSize = sp(8.5f)
 
         legendLabelPaint.color = ColorUtils.setAlphaComponent(onSurfaceVariantColor, 180)
         legendLabelPaint.textSize = sp(9f)
@@ -270,8 +276,11 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
             }
             canvas.drawText(bestDayPct, rightCx,
                 ringCenterY - (ringTextPaint.ascent() + ringTextPaint.descent()) / 2f, ringTextPaint)
-            val subLabel = if (bestDayDate.isNotEmpty()) bestDayDate else context.getString(org.isoron.uhabits.R.string.statistics_month_best_short)
-            canvas.drawText(subLabel, rightCx, ringCenterY + ringRadius + dp(14f), sideTitlePaint)
+            canvas.drawText(context.getString(org.isoron.uhabits.R.string.statistics_month_best_short),
+                rightCx, ringCenterY + ringRadius + dp(14f), sideTitlePaint)
+            if (bestDayDate.isNotEmpty()) {
+                canvas.drawText(bestDayDate, rightCx, ringCenterY + ringRadius + dp(25f), sideDatePaint)
+            }
         }
 
         // 3. CENTER: Weekday Headers
@@ -423,10 +432,10 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
             var tipX = cellR.centerX() - tipW / 2f
             tipX = tipX.coerceIn(dp(8f), width - tipW - dp(8f))
 
-            // Offset 60dp above finger so finger does not cover tooltip
-            var tipY = cellR.top - dp(60f)
+            // Offset 56dp above cell so finger does not cover tooltip
+            var tipY = cellR.top - dp(56f)
             if (tipY < dp(4f)) {
-                tipY = cellR.bottom + dp(8f)
+                tipY = cellR.bottom + dp(20f)
             }
 
             tooltipRect.set(tipX, tipY, tipX + tipW, tipY + tipH)

@@ -49,12 +49,49 @@ class StatisticsPageTransitionHost @JvmOverloads constructor(
 
     fun transitionToPage(newPage: View, direction: Int, onComplete: (() -> Unit)? = null) {
         val oldPage = currentPage
-        if (oldPage == null || direction == 0 || isReducedMotion(context)) {
+        if (oldPage == null || isReducedMotion(context)) {
             removeAllViews()
             newPage.translationX = 0f
+            newPage.alpha = 1f
             addView(newPage, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
             currentPage = newPage
             onComplete?.invoke()
+            return
+        }
+
+        if (direction == 0) {
+            if (isTransitioning) {
+                oldPage.animate().cancel()
+                removeAllViews()
+            }
+            isTransitioning = true
+            newPage.translationX = 0f
+            newPage.alpha = 0f
+            addView(newPage, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+
+            val duration = 180L
+            val interpolator = FastOutSlowInInterpolator()
+
+            oldPage.animate()
+                .alpha(0f)
+                .setDuration(duration)
+                .setInterpolator(interpolator)
+                .start()
+
+            newPage.animate()
+                .alpha(1f)
+                .setDuration(duration)
+                .setInterpolator(interpolator)
+                .setListener(object : AnimatorListenerAdapter() {
+                    override fun onAnimationEnd(animation: Animator) {
+                        newPage.animate().setListener(null)
+                        removeView(oldPage)
+                        currentPage = newPage
+                        isTransitioning = false
+                        onComplete?.invoke()
+                    }
+                })
+                .start()
             return
         }
 

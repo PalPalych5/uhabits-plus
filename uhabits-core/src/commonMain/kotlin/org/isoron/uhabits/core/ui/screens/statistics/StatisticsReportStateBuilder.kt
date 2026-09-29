@@ -491,7 +491,7 @@ object StatisticsReportStateBuilder {
             period = period,
             start = actualStart,
             end = end,
-            matchingHabits = scopeHabits.size,
+            matchingHabits = countableScopeResults.size,
             hasDailyMinimumGoals = hasAnyDailyMinimumGoals,
             overallProgress = overallProgress,
             minimumProgress = minimumProgress,

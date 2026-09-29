@@ -128,6 +128,24 @@
             android:layout_weight="1" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCompare"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:minHeight="36dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:textSize="13sp"
+            android:textAllCaps="false"
+            android:text="@string/statistics_compare_action"
+            app:icon="@drawable/ic_settings_report_analytics"
+            app:iconGravity="textStart"
+            app:iconPadding="4dp"
+            app:iconSize="16dp" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/btnFilters"
             style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="wrap_content"

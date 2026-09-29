@@ -374,6 +374,23 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     }
 
     private fun setupFilters() {
+        binding.btnCompare.setTextColor(palette.accent)
+        binding.btnCompare.iconTint = ColorStateList.valueOf(palette.accent)
+        binding.btnCompare.rippleColor = ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
+        quietPressFeedback(binding.btnCompare)
+        binding.btnCompare.setOnClickListener {
+            val initialPeriod = when (currentTab) {
+                ReportTab.DAY, ReportTab.WEEK -> "WEEK"
+                ReportTab.MONTH -> "MONTH"
+                ReportTab.YEAR -> "YEAR"
+                ReportTab.ALL -> "ALL"
+            }
+            val intent = IntentFactory().startCompareHabitsActivity(requireContext()).apply {
+                putExtra("initial_period", initialPeriod)
+            }
+            startActivity(intent)
+        }
+
         binding.btnFilters.rippleColor = ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
         quietPressFeedback(binding.btnFilters)
         quietPressFeedback(binding.filterScope)
@@ -718,12 +735,10 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     ) {
         when (report.period) {
             StatisticsPeriod.DAY -> {
+                addDayOverviewSection(container, report)
                 if (report.dayTiersEnabled) {
                     addTierBarsSection(container, report)
-                } else {
-                    addDayOverviewSection(container, report)
                 }
-                addCompareHabitsCard(container, report)
             }
             StatisticsPeriod.WEEK -> {
                 addDailyCompletionSection(container, report)
@@ -734,7 +749,6 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
                     addSphereSection(container, report)
                 }
                 addHabitChangesSection(container, report)
-                addCompareHabitsCard(container, report)
             }
             StatisticsPeriod.MONTH -> {
                 addMonthCalendarSection(container, report)
@@ -746,7 +760,6 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
                     addSphereSection(container, report)
                 }
                 addHabitChangesSection(container, report)
-                addCompareHabitsCard(container, report)
             }
             StatisticsPeriod.YEAR -> {
                 addYearMonthlyBarsSection(container, report)
@@ -757,7 +770,6 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
                 if (report.spheresEnabled) {
                     addSphereSection(container, report)
                 }
-                addCompareHabitsCard(container, report)
             }
             StatisticsPeriod.ALL -> {
                 addAllTimeHistorySection(container, report)
@@ -769,7 +781,6 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
                 }
                 addWeekdayRhythmSection(container, report)
                 addHabitStabilitySection(container, report)
-                addCompareHabitsCard(container, report)
             }
         }
     }
@@ -783,54 +794,14 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         val listContainer = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
         }
-        report.habits.forEachIndexed { index, habitResult ->
+        val habitsToDisplay = report.habits.filter {
+            !report.dayTiersEnabled || report.tierScope.includes(it.habit.dayTier)
+        }
+        habitsToDisplay.forEachIndexed { index, habitResult ->
             if (index > 0) listContainer.addView(createDivider())
             listContainer.addView(createReportHabitRow(habitResult))
         }
         content.addView(listContainer)
-        container.addView(card)
-    }
-
-    private fun addCompareHabitsCard(container: LinearLayout, report: StatisticsReportState) {
-        val (card, content) = createSection()
-        card.isClickable = true
-        card.isFocusable = true
-        card.minimumHeight = dp(56f).toInt()
-        quietPressFeedback(card)
-        card.setOnClickListener {
-            val initialPeriod = when (report.period) {
-                StatisticsPeriod.DAY, StatisticsPeriod.WEEK -> "WEEK"
-                StatisticsPeriod.MONTH -> "MONTH"
-                StatisticsPeriod.YEAR -> "YEAR"
-                StatisticsPeriod.ALL -> "ALL"
-            }
-            val intent = IntentFactory().startCompareHabitsActivity(requireContext()).apply {
-                putExtra("initial_period", initialPeriod)
-            }
-            startActivity(intent)
-        }
-
-        val row = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
-        val texts = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        texts.addView(summaryText(getString(R.string.statistics_compare_card_title), 14f, palette.onSurface, bold = true))
-        texts.addView(summaryText(getString(R.string.statistics_compare_card_subtitle), 12f, palette.onSurfaceVariant).apply {
-            setPadding(0, dp(2f).toInt(), 0, 0)
-        })
-        row.addView(texts)
-
-        val chevron = summaryText("›", 18f, palette.accent, bold = true).apply {
-            setPadding(dp(8f).toInt(), 0, 0, 0)
-        }
-        row.addView(chevron)
-
-        content.addView(row)
         container.addView(card)
     }
 
@@ -1100,7 +1071,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
             titleText = getString(R.string.statistics_by_day),
             secondaryText = periodComparison(report)
         )
-        content.addView(summaryText(chartMetricLabel(report), 11f, palette.onSurfaceVariant))
+        content.addView(summaryText(getString(R.string.statistics_average_progress), 11f, palette.onSurfaceVariant))
 
         val daysByDate = report.dailyProgress.associateBy { it.date }
         val barChart = StatisticsPercentageBarChart(requireContext()).apply {
@@ -1186,7 +1157,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         val (card, content) = createSection(
             getString(R.string.statistics_by_month), periodComparison(report)
         )
-        content.addView(summaryText(chartMetricLabel(report), 11f, palette.onSurfaceVariant))
+        content.addView(summaryText(getString(R.string.statistics_average_progress), 11f, palette.onSurfaceVariant))
         val barChart = StatisticsPercentageBarChart(requireContext()).apply {
             val items = buckets.map { bucket ->
                 val isFuture = bucket.start.isNewerThan(getToday())

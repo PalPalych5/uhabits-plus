@@ -1018,67 +1018,87 @@ class StatisticsReportStateBuilderTest : BaseUnitTest() {
             originalEntries.add(Entry(today, Entry.YES_MANUAL))
             recompute()
         }
-        val hNorm = fixtures.createEmptyHabit().apply {
+        val hNorm = numericalHabit(
+            targetType = NumericalHabitType.AT_LEAST,
+            frequency = Frequency.DAILY,
+            targetValue = 10.0
+        ).apply {
             dayTier = DayTier.NORMAL
             statisticsStartDate = today
-            originalEntries.add(Entry(today, Entry.NO))
+            originalEntries.add(Entry(today, 5000)) // 5.0 out of 10.0 = 50%
             recompute()
         }
         val hIdeal = fixtures.createEmptyHabit().apply {
             dayTier = DayTier.IDEAL
             statisticsStartDate = today
-            originalEntries.add(Entry(today, Entry.NO))
+            originalEntries.add(Entry(today, Entry.NO)) // 0%
             recompute()
         }
         val hOpt = fixtures.createEmptyHabit().apply {
             dayTier = DayTier.OPTIONAL
             statisticsStartDate = today
-            originalEntries.add(Entry(today, Entry.YES_MANUAL))
+            originalEntries.add(Entry(today, Entry.YES_MANUAL)) // 100%
             recompute()
         }
 
         val allHabits = listOf(hMin, hNorm, hIdeal, hOpt)
 
-        // 1. MINIMUM scope
-        val stateMin = StatisticsReportStateBuilder.build(
-            habits = allHabits, period = StatisticsPeriod.DAY,
-            start = today, end = today, today = today, firstWeekday = DayOfWeek.MONDAY,
-            filters = StatisticsFilterState(tierScope = DayTierScope.MINIMUM)
+        // Test across all 5 periods: DAY, WEEK, MONTH, YEAR, ALL
+        val periods = listOf(
+            StatisticsPeriod.DAY to (today to today),
+            StatisticsPeriod.WEEK to (today.startOfWeek(DayOfWeek.MONDAY) to today.startOfWeek(DayOfWeek.MONDAY).plus(6)),
+            StatisticsPeriod.MONTH to (today.startOfMonth() to today.startOfMonth().plus(today.monthLength - 1)),
+            StatisticsPeriod.YEAR to (LocalDate(today.year, 1, 1) to LocalDate(today.year, 12, 31)),
+            StatisticsPeriod.ALL to (today.minus(10) to today)
         )
-        assertEquals(1.0, stateMin.overallProgress)
-        assertEquals(1, stateMin.matchingHabits)
-        // Independent tier breakdown
-        assertEquals(1.0, stateMin.tierProgress[DayTier.MINIMUM])
-        assertEquals(0.0, stateMin.tierProgress[DayTier.NORMAL])
-        assertEquals(0.0, stateMin.tierProgress[DayTier.IDEAL])
-        assertEquals(1.0, stateMin.tierProgress[DayTier.OPTIONAL])
 
-        // 2. UP_TO_NORMAL scope: Minimum (1.0) + Normal (0.0) -> average 0.5
-        val stateNorm = StatisticsReportStateBuilder.build(
-            habits = allHabits, period = StatisticsPeriod.DAY,
-            start = today, end = today, today = today, firstWeekday = DayOfWeek.MONDAY,
-            filters = StatisticsFilterState(tierScope = DayTierScope.UP_TO_NORMAL)
-        )
-        assertEquals(0.5, stateNorm.overallProgress)
-        assertEquals(2, stateNorm.matchingHabits)
+        for ((p, range) in periods) {
+            // 1. MINIMUM scope -> only hMin (100%)
+            val stateMin = StatisticsReportStateBuilder.build(
+                habits = allHabits, period = p,
+                start = range.first, end = range.second, today = today, firstWeekday = DayOfWeek.MONDAY,
+                filters = StatisticsFilterState(tierScope = DayTierScope.MINIMUM)
+            )
+            assertEquals(1.0, stateMin.overallProgress!!, 0.001, "Failed for period $p with MINIMUM")
+            assertEquals(1, stateMin.matchingHabits)
 
-        // 3. UP_TO_IDEAL scope: Minimum (1.0) + Normal (0.0) + Ideal (0.0) -> average 1/3
-        val stateIdeal = StatisticsReportStateBuilder.build(
-            habits = allHabits, period = StatisticsPeriod.DAY,
-            start = today, end = today, today = today, firstWeekday = DayOfWeek.MONDAY,
-            filters = StatisticsFilterState(tierScope = DayTierScope.UP_TO_IDEAL)
-        )
-        assertEquals(1.0 / 3.0, stateIdeal.overallProgress!!, 0.0001)
-        assertEquals(3, stateIdeal.matchingHabits)
+            // Independent tier breakdown always reports all 4 tiers
+            assertEquals(1.0, stateMin.tierProgress[DayTier.MINIMUM]!!, 0.001)
+            assertEquals(0.5, stateMin.tierProgress[DayTier.NORMAL]!!, 0.001)
+            assertEquals(0.0, stateMin.tierProgress[DayTier.IDEAL]!!, 0.001)
+            assertEquals(1.0, stateMin.tierProgress[DayTier.OPTIONAL]!!, 0.001)
 
-        // 4. ALL scope: Minimum (1.0) + Normal (0.0) + Ideal (0.0) + Optional (1.0) -> average 2/4 = 0.5
-        val stateAll = StatisticsReportStateBuilder.build(
-            habits = allHabits, period = StatisticsPeriod.DAY,
-            start = today, end = today, today = today, firstWeekday = DayOfWeek.MONDAY,
-            filters = StatisticsFilterState(tierScope = DayTierScope.ALL)
-        )
-        assertEquals(0.5, stateAll.overallProgress)
-        assertEquals(4, stateAll.matchingHabits)
+            // 2. UP_TO_NORMAL scope: Minimum (1.0) + Normal (0.5) -> average 0.75
+            val stateNorm = StatisticsReportStateBuilder.build(
+                habits = allHabits, period = p,
+                start = range.first, end = range.second, today = today, firstWeekday = DayOfWeek.MONDAY,
+                filters = StatisticsFilterState(tierScope = DayTierScope.UP_TO_NORMAL)
+            )
+            assertEquals(0.75, stateNorm.overallProgress!!, 0.001, "Failed for period $p with UP_TO_NORMAL")
+            assertEquals(2, stateNorm.matchingHabits)
+
+            // 3. UP_TO_IDEAL scope: Minimum (1.0) + Normal (0.5) + Ideal (0.0) -> average 1.5/3 = 0.50
+            val stateIdeal = StatisticsReportStateBuilder.build(
+                habits = allHabits, period = p,
+                start = range.first, end = range.second, today = today, firstWeekday = DayOfWeek.MONDAY,
+                filters = StatisticsFilterState(tierScope = DayTierScope.UP_TO_IDEAL)
+            )
+            assertEquals(0.50, stateIdeal.overallProgress!!, 0.001, "Failed for period $p with UP_TO_IDEAL")
+            assertEquals(3, stateIdeal.matchingHabits)
+
+            // 4. ALL scope: Minimum (1.0) + Normal (0.5) + Ideal (0.0) + Optional (1.0) -> average 2.5/4 = 0.625
+            val stateAll = StatisticsReportStateBuilder.build(
+                habits = allHabits, period = p,
+                start = range.first, end = range.second, today = today, firstWeekday = DayOfWeek.MONDAY,
+                filters = StatisticsFilterState(tierScope = DayTierScope.ALL)
+            )
+            assertEquals(0.625, stateAll.overallProgress!!, 0.001, "Failed for period $p with ALL")
+            assertEquals(4, stateAll.matchingHabits)
+
+            // Verify that all 4 scopes yield strictly different values
+            val values = listOf(stateMin.overallProgress, stateNorm.overallProgress, stateIdeal.overallProgress, stateAll.overallProgress)
+            assertEquals(4, values.distinct().size, "All 4 scopes must yield distinct values for period $p")
+        }
     }
 
     @Test
