@@ -55,6 +55,11 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
         textAlign = Paint.Align.CENTER
         fontFeatureSettings = "tnum"
     }
+    private val ringTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.DEFAULT_BOLD
+        fontFeatureSettings = "tnum"
+    }
     private val sideTitlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.LEFT
     }
@@ -115,7 +120,9 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
 
         headerPaint.color = onSurfaceVariantColor
         headerPaint.textSize = sp(9.5f)
-        textPaint.textSize = sp(9.5f)
+        textPaint.textSize = sp(8.5f)
+        ringTextPaint.color = onSurfaceColor
+        ringTextPaint.textSize = sp(12f)
 
         sideTitlePaint.color = ColorUtils.setAlphaComponent(onSurfaceVariantColor, 180)
         sideTitlePaint.textSize = sp(10f)
@@ -236,19 +243,11 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
                 strokePaint.color = accentColor
                 canvas.drawArc(ringRect, -90f, (it.coerceIn(0.0, 1.0) * 360).toFloat(), false, strokePaint)
             }
-            textPaint.color = onSurfaceColor
-            textPaint.textSize = sp(12f)
-            textPaint.typeface = Typeface.DEFAULT_BOLD
             canvas.drawText(averageText, centerX,
-                centerY - (textPaint.ascent() + textPaint.descent()) / 2f, textPaint)
+                centerY - (ringTextPaint.ascent() + ringTextPaint.descent()) / 2f, ringTextPaint)
             sideTitlePaint.textAlign = Paint.Align.CENTER
             canvas.drawText(context.getString(org.isoron.uhabits.R.string.statistics_month_average),
                 centerX, centerY + dp(33f), sideTitlePaint)
-            canvas.drawText("${context.getString(org.isoron.uhabits.R.string.statistics_month_best_short)} · $bestDayPct",
-                centerX, centerY + dp(54f), sideTitlePaint)
-            if (bestDayDate.isNotEmpty()) {
-                canvas.drawText(bestDayDate, centerX, centerY + dp(67f), sideTitlePaint)
-            }
         }
 
         // 2. CENTER: Weekday Headers
@@ -353,36 +352,38 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
             dayIndex++
         }
 
-        // 4. RIGHT SIDE: Vertical Discrete Intensity Legend
+        // 4. RIGHT SIDE: best day and discrete intensity legend
         val rightStartX = startX + totalGridWidth + dp(12f)
-        if (width - rightStartX > dp(28f)) {
-            val totalWeeks = ((firstDowOffset + mStart.daysUntil(mEnd) + 7) / 7)
-            val gridTotalHeight = totalWeeks * (cellSize + spacing)
+        val rightWidth = width - rightStartX - dp(4f)
+        if (rightWidth > dp(62f)) {
+            val rightCx = rightStartX + rightWidth / 2f
+            sideTitlePaint.textAlign = Paint.Align.CENTER
+            canvas.drawText(context.getString(org.isoron.uhabits.R.string.statistics_month_best_short),
+                rightCx, startY + dp(9f), sideTitlePaint)
+            sideValuePaint.textAlign = Paint.Align.CENTER
+            sideValuePaint.color = if (bestDayPct == "—") onSurfaceVariantColor else accentColor
+            canvas.drawText(bestDayPct, rightCx, startY + dp(28f), sideValuePaint)
+            if (bestDayDate.isNotEmpty()) {
+                canvas.drawText(bestDayDate, rightCx, startY + dp(42f), sideTitlePaint)
+            }
+
             val legendCell = dp(9f)
-            val legendGap = dp(3.5f)
-            val legendContentH = dp(12f) + 5 * legendCell + 4 * legendGap + dp(12f)
-            val legendStartY = startY + (gridTotalHeight - legendContentH) / 2f
-
-            headerPaint.textSize = sp(9f)
-            headerPaint.color = onSurfaceVariantColor
-            val legendCx = rightStartX + legendCell / 2f + dp(6f)
-
-            // "100%"
-            canvas.drawText("100%", legendCx, legendStartY + dp(6f), headerPaint)
-
-            var boxY = legendStartY + dp(11f)
+            val legendGap = dp(3f)
+            val legendWidth = 5 * legendCell + 4 * legendGap
+            val legendX = rightCx - legendWidth / 2f
+            val boxY = startY + dp(59f)
             val discreteAlphas = intArrayOf(245, 185, 125, 70, 0)
             for (level in 0..4) {
                 cellPaint.color = if (level == 4) emptyPastCellColor else
                     ColorUtils.setAlphaComponent(accentColor, discreteAlphas[level])
-                val boxX = legendCx - legendCell / 2f
+                val boxX = legendX + level * (legendCell + legendGap)
                 cellRect.set(boxX, boxY, boxX + legendCell, boxY + legendCell)
                 canvas.drawRoundRect(cellRect, dp(1.5f), dp(1.5f), cellPaint)
-                boxY += legendCell + legendGap
             }
-
-            // "0%"
-            canvas.drawText("0%", legendCx, boxY + dp(7f), headerPaint)
+            sideTitlePaint.textAlign = Paint.Align.LEFT
+            canvas.drawText("100%", legendX, boxY + dp(20f), sideTitlePaint)
+            sideTitlePaint.textAlign = Paint.Align.RIGHT
+            canvas.drawText("0%", legendX + legendWidth, boxY + dp(20f), sideTitlePaint)
         }
 
         // 5. TOOLTIP OVERLAY (if inspected)

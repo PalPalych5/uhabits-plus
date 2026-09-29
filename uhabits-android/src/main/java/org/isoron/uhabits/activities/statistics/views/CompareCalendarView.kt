@@ -31,7 +31,7 @@ class CompareCalendarView @JvmOverloads constructor(
     private var color = 0
     private var emptyColor = 0
     private var textColor = 0
-    private val cell get() = dp(if (monthLayout) 19f else 12f)
+    private val cell get() = dp(if (monthLayout) 19f else 17f)
     private val gap get() = dp(3f)
     private val leftInset get() = if (monthLayout) 0f else dp(24f)
     private val topInset get() = dp(20f)
@@ -92,14 +92,18 @@ class CompareCalendarView @JvmOverloads constructor(
             val slot = offset + index
             val column = if (monthLayout) slot % 7 else slot / 7
             val row = if (monthLayout) slot / 7 else slot % 7
-            if (date <= today && (statsStart == null || date >= statsStart)) {
-                val value = currentHabit.computedEntries.get(date).value
-                paint.color = when {
-                    value == Entry.UNKNOWN -> emptyColor
-                    value == Entry.SKIP -> ColorUtils.setAlphaComponent(emptyColor, 160)
-                    value == Entry.YES_MANUAL || value == Entry.YES_AUTO ||
-                        (currentHabit.isNumerical && value > 0) -> color
-                    else -> ColorUtils.setAlphaComponent(color, 60)
+            if (date <= today) {
+                paint.color = if (statsStart != null && date < statsStart) {
+                    ColorUtils.setAlphaComponent(emptyColor, 45)
+                } else {
+                    val value = currentHabit.computedEntries.get(date).value
+                    when {
+                        value == Entry.UNKNOWN -> emptyColor
+                        value == Entry.SKIP -> ColorUtils.setAlphaComponent(emptyColor, 160)
+                        value == Entry.YES_MANUAL || value == Entry.YES_AUTO ||
+                            (currentHabit.isNumerical && value > 0) -> color
+                        else -> ColorUtils.setAlphaComponent(color, 60)
+                    }
                 }
                 val x = leftInset + column * (cell + gap)
                 val y = topInset + row * (cell + gap)

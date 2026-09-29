@@ -24,6 +24,7 @@ import org.isoron.platform.time.getToday
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.common.views.FrequencyChart
 import org.isoron.uhabits.activities.common.views.StreakChart
 import org.isoron.uhabits.activities.statistics.views.CompareHabitsMultiLineChartView
@@ -77,6 +78,7 @@ class CompareHabitsActivity : AppCompatActivity() {
     private var currentPeriod = ComparePeriod.MONTH
 
     private val component get() = (application as HabitsApplication).component
+    private val palette get() = MainTabsThemeBridge.resolve(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -85,6 +87,11 @@ class CompareHabitsActivity : AppCompatActivity() {
 
         binding = ActivityCompareHabitsBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        binding.root.setBackgroundColor(palette.background)
+        (binding.toolbar.parent as View).setBackgroundColor(palette.surface)
+        binding.toolbar.setBackgroundColor(palette.surface)
+        binding.periodTabLayout.setBackgroundColor(palette.surface)
+        binding.habitChipsScroll.setBackgroundColor(palette.surface)
 
         setupToolbar()
         parseInitialIntent()
@@ -229,7 +236,7 @@ class CompareHabitsActivity : AppCompatActivity() {
         val blocks = component.habitList.getBlocks().associateBy { it.id }
         val pending = selectedHabits.toMutableList()
         val dialog = Dialog(this)
-        val surface = themeColor(R.attr.cardBackgroundColor)
+        val surface = palette.surface
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(surface)
@@ -526,7 +533,7 @@ class CompareHabitsActivity : AppCompatActivity() {
                 series = series,
                 rangeStart = startDate,
                 rangeEnd = today,
-                surfaceColor = themeColor(R.attr.cardBackgroundColor),
+                surfaceColor = palette.surface,
                 onSurfaceColor = themeColor(R.attr.contrast100),
                 onSurfaceVariantColor = themeColor(R.attr.contrast60),
                 dividerColor = themeColor(R.attr.contrast20)
@@ -616,7 +623,7 @@ class CompareHabitsActivity : AppCompatActivity() {
                 series = series,
                 rangeStart = startDate,
                 rangeEnd = today,
-                surfaceColor = themeColor(R.attr.cardBackgroundColor),
+                surfaceColor = palette.surface,
                 onSurfaceColor = themeColor(R.attr.contrast100),
                 onSurfaceVariantColor = themeColor(R.attr.contrast60),
                 dividerColor = themeColor(R.attr.contrast20)
@@ -819,7 +826,7 @@ class CompareHabitsActivity : AppCompatActivity() {
     private fun createCard(titleText: String, subtitleText: String? = null): Pair<LinearLayout, LinearLayout> {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(themeColor(R.attr.cardBackgroundColor))
+            setBackgroundColor(palette.surface)
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
