@@ -32,8 +32,8 @@ data class EditHabitCommand(
         val habit = habitList.getById(habitId) ?: throw HabitNotFoundException()
         habit.copyFrom(modified)
         habitList.update(habit)
-        habit.observable.notifyListeners()
         habit.recompute()
+        habit.observable.notifyListeners()
         habitList.resort()
         (habitList as? SQLiteHabitList)?.syncManager?.enqueueHabitUpdate(habit)
     }

@@ -58,6 +58,7 @@ class NumberDialog : AppCompatDialogFragment() {
         view.notes.setText(originalNotes)
         view.value.setText(
             when {
+                originalValue < 0.0 -> ""
                 originalValue < 0.01 -> "0"
                 else -> DecimalFormat("#.##").format(originalValue)
             }

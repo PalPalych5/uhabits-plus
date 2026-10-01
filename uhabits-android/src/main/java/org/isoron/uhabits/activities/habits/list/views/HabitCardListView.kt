@@ -264,7 +264,7 @@ class HabitCardListView(
     }
 
     private fun HabitList.Order.isGroupedOrder(): Boolean {
-        return this == HabitList.Order.BY_SPHERE ||
+        return (this == HabitList.Order.BY_SPHERE && preferences.isHabitSpheresEnabled) ||
             (this == HabitList.Order.BY_DAY_TIER && preferences.isDayTiersEnabled)
     }
 

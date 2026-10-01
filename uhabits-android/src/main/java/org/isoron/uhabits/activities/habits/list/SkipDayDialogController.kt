@@ -31,6 +31,7 @@ class SkipDayDialogController(
     fun show() {
         val today = getToday()
         val remainingHabits = habitList.filter { habit ->
+            if (habit.isArchived) return@filter false
             val originalValue = habit.originalEntries.get(today).value
             if (originalValue != Entry.UNKNOWN) return@filter false
 

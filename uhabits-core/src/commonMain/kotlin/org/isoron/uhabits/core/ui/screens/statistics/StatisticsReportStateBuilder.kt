@@ -297,7 +297,8 @@ object StatisticsReportStateBuilder {
                     val dayProgress = if (valid.isNotEmpty()) valid.average() else null
                     val isEligible = !isToday
                     val isFullyClosed = isEligible && nonSkipped.all {
-                        it.progress == 1.0 && it.status != StatisticsResultStatus.PENDING
+                        ((it.progress != null && it.progress >= 0.9999) || it.status == StatisticsResultStatus.COMPLETED) &&
+                            it.status != StatisticsResultStatus.PENDING
                     }
                     dailyList.add(
                         StatisticsDailyProgress(
@@ -340,12 +341,15 @@ object StatisticsReportStateBuilder {
             }
             val nonSkippedEvals = dayEvals.filter { it.second.status != StatisticsResultStatus.SKIPPED }
             todayMinimumCount = if (nonSkippedEvals.isNotEmpty()) {
-                val completed = nonSkippedEvals.count { it.second.progress == 1.0 && it.second.status != StatisticsResultStatus.PENDING }
+                val completed = nonSkippedEvals.count {
+                    ((it.second.progress != null && it.second.progress!! >= 0.9999) || it.second.status == StatisticsResultStatus.COMPLETED) &&
+                        it.second.status != StatisticsResultStatus.PENDING
+                }
                 Pair(completed, nonSkippedEvals.size)
             } else null
 
             remainingMinimumHabits = nonSkippedEvals
-                .filter { it.second.progress == null || it.second.progress!! < 1.0 }
+                .filter { (it.second.progress == null || it.second.progress!! < 0.9999) && it.second.status != StatisticsResultStatus.COMPLETED }
                 .map { (habit, eval) ->
                     StatisticsHabitResult(
                         habit = habit,

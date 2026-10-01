@@ -208,6 +208,9 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
         if (!prefs.isDayTiersEnabled && adapter.primaryOrder == org.isoron.uhabits.core.models.HabitList.Order.BY_DAY_TIER) {
             adapter.primaryOrder = org.isoron.uhabits.core.models.HabitList.Order.BY_POSITION
         }
+        if (!prefs.isHabitSpheresEnabled && adapter.primaryOrder == org.isoron.uhabits.core.models.HabitList.Order.BY_SPHERE) {
+            adapter.primaryOrder = org.isoron.uhabits.core.models.HabitList.Order.BY_POSITION
+        }
         adapter.applyDayTierSortOrder()
         rootView.listView.invalidateItemDecorations()
         adapter.notifyDataSetChanged()

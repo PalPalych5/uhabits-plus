@@ -507,7 +507,8 @@ class EditHabitActivity : AppCompatActivity() {
         habit.dayTier = dayTier
         habit.blockId = blockId
         if (habitType == HabitType.NUMERICAL) {
-            habit.targetValue = binding.targetInput.text.toString().toDouble()
+            val parsedTarget = binding.targetInput.text.toString().trim().replace(',', '.').toDoubleOrNull() ?: 1.0
+            habit.targetValue = parsedTarget
             habit.targetType = targetType
             habit.unit = binding.unitInput.text.trim().toString()
             habit.timerEnabled = binding.timerEnabledSwitch.isChecked && habit.unit.isMinuteUnit()
@@ -543,7 +544,9 @@ class EditHabitActivity : AppCompatActivity() {
             isValid = false
         }
         if (habitType == HabitType.NUMERICAL) {
-            if (binding.targetInput.text.isEmpty()) {
+            val targetStr = binding.targetInput.text.toString().trim().replace(',', '.')
+            val parsed = targetStr.toDoubleOrNull()
+            if (targetStr.isEmpty() || parsed == null || parsed <= 0.0) {
                 binding.targetInput.error = getString(R.string.validation_cannot_be_blank)
                 isValid = false
             }

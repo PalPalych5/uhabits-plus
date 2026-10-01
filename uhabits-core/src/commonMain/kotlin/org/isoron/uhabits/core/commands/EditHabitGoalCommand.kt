@@ -44,8 +44,8 @@ data class EditHabitGoalCommand(
         habit.copyFrom(modified)
         habit.goalHistory = newHistory.sortedBy { it.effectiveDate }.toMutableList()
         habitList.update(habit)
-        habit.observable.notifyListeners()
         habit.recompute()
+        habit.observable.notifyListeners()
         habitList.resort()
         (habitList as? SQLiteHabitList)?.syncManager?.enqueueGoalChange(habit, effectiveDate)
     }

@@ -23,6 +23,7 @@ data class AddNumericalEntryOpCommand(
         val newValue = oldValue + deltaValue
         entries.addWithDelta(date, deltaValue, newValue, notes)
         habit.recompute()
+        habit.observable.notifyListeners()
         habit.id?.let {
             habitList.refreshHabitFromDatabase(it, habit)
         }

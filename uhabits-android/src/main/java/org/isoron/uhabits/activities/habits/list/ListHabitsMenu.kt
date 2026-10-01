@@ -141,6 +141,10 @@ class ListHabitsMenu(
         val sortStatus = menu.findItem(R.id.actionSortStatus)
         val sortSphere = menu.findItem(R.id.actionSortSphere)
         val sortLevel = menu.findItem(R.id.actionSortLevel)
+        sortSphere.isVisible = preferences.isHabitSpheresEnabled
+        if (!preferences.isHabitSpheresEnabled && preferences.defaultPrimaryOrder == HabitList.Order.BY_SPHERE) {
+            preferences.defaultPrimaryOrder = HabitList.Order.BY_POSITION
+        }
         sortLevel.isVisible = preferences.isDayTiersEnabled
         if (!preferences.isDayTiersEnabled && preferences.defaultPrimaryOrder == HabitList.Order.BY_DAY_TIER) {
             preferences.defaultPrimaryOrder = HabitList.Order.BY_POSITION
@@ -202,6 +206,7 @@ class ListHabitsMenu(
             }
 
             R.id.actionSortSphere -> {
+                if (!preferences.isHabitSpheresEnabled) return true
                 behavior.onSortBySphere()
                 return true
             }

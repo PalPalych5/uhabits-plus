@@ -338,7 +338,7 @@ class StatisticsMonthCalendarView @JvmOverloads constructor(
                     fill = ColorUtils.setAlphaComponent(accentColor, alpha)
                     hasFill = true
                 }
-                progress == 0.0 -> {
+                progress != null && progress <= 0.0 -> {
                     fill = emptyPastCellColor
                     hasFill = true
                 }

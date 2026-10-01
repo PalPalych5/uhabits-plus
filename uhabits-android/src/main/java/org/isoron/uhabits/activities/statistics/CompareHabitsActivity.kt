@@ -639,15 +639,14 @@ class CompareHabitsActivity : AppCompatActivity() {
             val color = SERIES_COLORS[i % SERIES_COLORS.size]
             val points = mutableListOf<Pair<LocalDate, Double>>()
             var curr = habit.effectiveStatisticsStartDate()?.let { maxOf(startDate, it) } ?: startDate
-            val goal = habit.goalAt(today)
-
             while (curr <= today) {
                 val entry = habit.computedEntries.get(curr)
                 val value = entry.value
+                val goal = habit.goalAt(curr)
                 val normProgress = when {
                     value == Entry.SKIP || value == Entry.UNKNOWN -> null
                     habit.isNumerical -> {
-                        val target = goal.targetValue.coerceAtLeast(1.0)
+                        val target = if (goal.targetValue > 0.0) goal.targetValue else 1.0
                         (value / 1000.0 / target).coerceIn(0.0, 1.0)
                     }
                     else -> {
@@ -824,9 +823,10 @@ class CompareHabitsActivity : AppCompatActivity() {
         val theme = themeSwitcher.currentTheme
         val firstWeekday = component.preferences.firstWeekday
 
+        val today = getToday()
         val habitsWithHistory = selectedHabits.filter {
-            val from = it.effectiveStatisticsStartDate()
-            from == null || from.daysUntil(getToday()) >= 14
+            val habitStart = StatisticsReportStateBuilder.getHabitStartDate(it, today)
+            habitStart.daysUntil(today) >= 14
         }
         if (habitsWithHistory.isEmpty()) return
 
