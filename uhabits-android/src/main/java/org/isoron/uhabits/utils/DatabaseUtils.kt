@@ -37,25 +37,28 @@ import java.nio.file.StandardCopyOption
 
 object DatabaseUtils {
     private var opener: HabitsDatabaseOpener? = null
+    private var currentDatabaseFilename: String? = null
 
     @JvmStatic
-    fun getDatabaseFile(context: Context): File {
-        val databaseFilename = databaseFilename
+    fun getDatabaseFile(context: Context, filename: String? = null): File {
+        val resolvedName = filename ?: currentDatabaseFilename ?: defaultDatabaseFilename
         val root = context.filesDir.path
-        return File("$root/../databases/$databaseFilename")
+        return File("$root/../databases/$resolvedName")
     }
 
-    private val databaseFilename: String
+    private val defaultDatabaseFilename: String
         get() {
             var databaseFilename: String = DATABASE_FILENAME
             if (isTestMode()) databaseFilename = "test.db"
             return databaseFilename
         }
 
-    fun initializeDatabase(context: Context?) {
+    fun initializeDatabase(context: Context?, filename: String? = null) {
+        val resolvedName = filename ?: defaultDatabaseFilename
+        currentDatabaseFilename = resolvedName
         opener = HabitsDatabaseOpener(
             context!!,
-            databaseFilename,
+            resolvedName,
             DATABASE_VERSION
         )
     }
@@ -63,6 +66,7 @@ object DatabaseUtils {
     fun closeDatabase() {
         opener?.close()
         opener = null
+        currentDatabaseFilename = null
     }
 
     fun createDatabaseSnapshot(context: Context, tempFile: File): SnapshotInfo {

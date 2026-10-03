@@ -31,9 +31,13 @@ import org.isoron.uhabits.activities.habits.show.timer.PomodoroCompletionNotifie
 import org.isoron.uhabits.activities.habits.show.timer.TimerSessionManager
 import org.isoron.uhabits.backup.BackupManager
 import org.isoron.uhabits.core.commands.CommandRunner
+import org.isoron.uhabits.core.containers.OrganizationServiceImpl
 import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade
 import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacadeImpl
 import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
+import org.isoron.uhabits.core.containers.session.DatasetSession
+import org.isoron.uhabits.core.containers.session.DatasetSessionFactory
+import org.isoron.uhabits.core.containers.sqlite.SQLiteOrganizationStore
 import org.isoron.uhabits.core.io.GenericImporter
 import org.isoron.uhabits.core.io.Logging
 import org.isoron.uhabits.core.models.HabitList
@@ -59,6 +63,7 @@ import org.isoron.uhabits.notifications.AndroidNotificationTray
 import org.isoron.uhabits.preferences.DeviceIdentityManager
 import org.isoron.uhabits.preferences.SharedPreferencesStorage
 import org.isoron.uhabits.receivers.ReminderController
+import org.isoron.uhabits.session.DisabledSyncBackend
 import org.isoron.uhabits.sync.DeviceIdProvider
 import org.isoron.uhabits.sync.SupabaseSyncBackend
 import org.isoron.uhabits.sync.SyncAuthStore
@@ -67,13 +72,17 @@ import org.isoron.uhabits.sync.SyncCoordinator
 import org.isoron.uhabits.utils.DatabaseUtils
 import org.isoron.uhabits.widgets.WidgetUpdater
 import java.io.File
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
+@OptIn(ExperimentalUuidApi::class)
 @AppScope
 @Component
 abstract class HabitsApplicationComponent(
     @get:Provides @get:AppContext
     val appContext: Context,
-    @get:Provides val dbFile: File
+    @get:Provides val dbFile: File,
+    @get:Provides val session: DatasetSession = DatasetSessionFactory.production()
 ) {
     abstract val commandRunner: CommandRunner
     abstract val backupManager: BackupManager
@@ -142,12 +151,16 @@ abstract class HabitsApplicationComponent(
 
     @AppScope
     @Provides
-    open fun sqlModelFactory(deviceIdentityManager: DeviceIdentityManager): SQLModelFactory =
-        SQLModelFactory(
+    open fun sqlModelFactory(deviceIdentityManager: DeviceIdentityManager): SQLModelFactory {
+        val factory = SQLModelFactory(
             providedDb,
             deviceIdProvider = { deviceIdentityManager.deviceId },
             nowProvider = { System.currentTimeMillis() }
         )
+        factory.habitBlockRepository.authorityMode = session.organizationAuthority
+        factory.syncManager.authorityMode = session.organizationAuthority
+        return factory
+    }
 
     @AppScope
     @Provides
@@ -159,7 +172,12 @@ abstract class HabitsApplicationComponent(
 
     @AppScope
     @Provides
-    open fun syncBackend(): SyncBackend = SupabaseSyncBackend()
+    open fun syncBackend(): SyncBackend =
+        if (!session.capabilities.remoteCallsAllowed) {
+            DisabledSyncBackend
+        } else {
+            SupabaseSyncBackend()
+        }
 
     @AppScope
     @Provides
@@ -170,10 +188,32 @@ abstract class HabitsApplicationComponent(
     @Provides
     open fun habitOrganizationFacade(
         sqlModelFactory: SQLModelFactory
-    ): HabitOrganizationFacade = HabitOrganizationFacadeImpl(
-        mode = OrganizationAuthorityMode.LEGACY,
-        habitBlockRepository = sqlModelFactory.habitBlockRepository
-    )
+    ): HabitOrganizationFacade {
+        return if (session.organizationAuthority == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            val store = SQLiteOrganizationStore(providedDb)
+            val service = OrganizationServiceImpl(
+                store = store,
+                unitOfWork = store,
+                containerQueries = store,
+                placementQueries = store,
+                clock = { System.currentTimeMillis() },
+                idGenerator = { Uuid.random().toHexString() },
+                habitIdentityLookup = { habitRef -> sqlModelFactory.habitRepository.findByUuid(habitRef.uuid) != null }
+            )
+            HabitOrganizationFacadeImpl(
+                mode = OrganizationAuthorityMode.CONTAINER_LOCAL,
+                containerQueries = store,
+                habitPlacementQueries = store,
+                organizationService = service,
+                habitBlockRepository = sqlModelFactory.habitBlockRepository
+            )
+        } else {
+            HabitOrganizationFacadeImpl(
+                mode = OrganizationAuthorityMode.LEGACY,
+                habitBlockRepository = sqlModelFactory.habitBlockRepository
+            )
+        }
+    }
 
     @AppScope
     @Provides
@@ -206,12 +246,13 @@ abstract class HabitsApplicationComponent(
         alarmScheduler: PomodoroAlarmScheduler,
         completionNotifier: PomodoroCompletionNotifier
     ): TimerSessionManager = TimerSessionManager(
-        context,
-        habitList,
-        commandRunner,
-        preferences,
-        alarmScheduler,
-        completionNotifier
+        context = context,
+        habitList = habitList,
+        commandRunner = commandRunner,
+        appPreferences = preferences,
+        alarmScheduler = alarmScheduler,
+        completionNotifier = completionNotifier,
+        session = session
     )
 
     @AppScope

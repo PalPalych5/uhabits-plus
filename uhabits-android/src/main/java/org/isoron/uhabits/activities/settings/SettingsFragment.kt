@@ -17,6 +17,9 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 package org.isoron.uhabits.activities.settings
+import org.isoron.uhabits.session.DatasetSessionManager
+import org.isoron.uhabits.core.containers.session.DatasetActivationResult
+import org.isoron.uhabits.core.containers.session.DatasetMode
 
 import android.app.backup.BackupManager as AndroidBackupManager
 import android.app.NotificationManager
@@ -628,7 +631,18 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             subsection("developer_diagnostics", getString(R.string.settings_subsection_diagnostics)),
             navigation("seedDemoData", R.drawable.ic_settings_report_analytics, getString(R.string.demo_data_seed_title), getString(R.string.demo_data_seed_summary), showIcon = true) { showSeedConfirmationDialog(isReset = false) },
             navigation("exportSyncDiagnostics", R.drawable.ic_settings_report_analytics, getString(R.string.sync_export_diagnostics_title), getString(R.string.sync_export_diagnostics_summary), showIcon = true) { exportSyncDiagnostics() },
-            navigation("bugReport", R.drawable.ic_settings_bug, getString(R.string.generate_bug_report), getString(R.string.generate_bug_report_summary), showIcon = true) { actionHandler().onSettingsAction(SettingsAction.BUG_REPORT) }
+            navigation("bugReport", R.drawable.ic_settings_bug, getString(R.string.generate_bug_report), getString(R.string.generate_bug_report_summary), showIcon = true) { actionHandler().onSettingsAction(SettingsAction.BUG_REPORT) },
+            subsection("developer_experimental", "Экспериментальные функции"),
+            navigation(
+                "pref_container_experiment",
+                R.drawable.ic_settings_terminal,
+                "Эксперимент: UHabit Next (Разделы)",
+                if ((requireContext().applicationContext as HabitsApplication).component.session.isExperimental)
+                    "Активен изолированный эксперимент. Нажмите для возврата в продуктовый режим."
+                else
+                    "Создать изолированную копию данных и протестировать режим разделов.",
+                showIcon = true
+            ) { showContainerExperimentDialog() }
         )
     )
 
@@ -1665,4 +1679,64 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             }
         }
     }
+
+    private fun showContainerExperimentDialog() {
+        val habitsApp = requireContext().applicationContext as HabitsApplication
+        val sessionManager = habitsApp.sessionManager
+        val currentSession = habitsApp.component.session
+
+        if (currentSession.isExperimental) {
+            CustomDialogs.showConfirmDialog(
+                context = requireContext(),
+                title = "Вернуться в продуктовый режим?",
+                message = "Экспериментальная сессия будет закрыта. Ваши изменения в эксперименте останутся сохранены в отдельном файле. Продуктовая база вернётся к состоянию до эксперимента.",
+                isDestructive = false
+            ) {
+                sessionManager.clearExperimentalSelection()
+                habitsApp.shutdownForDatabaseRestoreRestart()
+                habitsApp.scheduleProcessRestart(MainDestination.HABITS)
+            }
+        } else {
+            val canActivate = sessionManager.canActivateExperiment()
+            if (canActivate is DatasetActivationResult.Blocked) {
+                Toast.makeText(requireContext(), canActivate.reason, Toast.LENGTH_LONG).show()
+                return
+            }
+
+            CustomDialogs.showConfirmDialog(
+                context = requireContext(),
+                title = "Эксперимент UHabit Next (Разделы)",
+                message = "ВНИМАНИЕ: Это независимая экспериментальная копия данных.\n\n" +
+                    "• Облачная синхронизация отключена (0 сетевых вызовов).\n" +
+                    "• Таймер и виджеты в эксперименте отключены.\n" +
+                    "• Изменения НЕ объединяются обратно с продуктовой базой.\n" +
+                    "• Исходная продуктовая база данных остаётся в полной безопасности.\n\n" +
+                    "Создать изолированную копию и перейти в эксперимент?",
+                isDestructive = false
+            ) {
+                Toast.makeText(requireContext(), "Создание изолированного датасета...", Toast.LENGTH_SHORT).show()
+                lifecycleScope.launch(Dispatchers.IO) {
+                    val result = sessionManager.createAndActivateExperiment()
+                    withContext(Dispatchers.Main) {
+                        when (result) {
+                            is DatasetActivationResult.Success -> {
+                                habitsApp.shutdownForDatabaseRestoreRestart()
+                                habitsApp.scheduleProcessRestart(MainDestination.HABITS)
+                            }
+                            is DatasetActivationResult.Blocked -> {
+                                Toast.makeText(requireContext(), result.reason, Toast.LENGTH_LONG).show()
+                            }
+                            is DatasetActivationResult.MigrationFailed -> {
+                                Toast.makeText(requireContext(), result.reason, Toast.LENGTH_LONG).show()
+                            }
+                            is DatasetActivationResult.ValidationFailed -> {
+                                Toast.makeText(requireContext(), result.reason, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 }

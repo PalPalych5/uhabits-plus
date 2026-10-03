@@ -41,12 +41,15 @@ internal abstract class WidgetComponent(
 /**
  * The Android BroadcastReceiver for Loop Habit Tracker.
  *
- *
  * All broadcast messages are received and processed by this class.
  */
 class WidgetReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val app = context.applicationContext as HabitsApplication
+        if (!app.component.session.capabilities.widgetsEnabled) {
+            Log.i(TAG, "Widgets disabled in active session, ignoring intent")
+            return
+        }
         val component = WidgetComponent::class.create(app.component)
         val parser = app.component.intentParser
         val controller = component.widgetController

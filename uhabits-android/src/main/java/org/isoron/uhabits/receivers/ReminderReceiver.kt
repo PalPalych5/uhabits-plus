@@ -33,16 +33,19 @@ import org.isoron.uhabits.core.models.Habit
 /**
  * The Android BroadcastReceiver for Loop Habit Tracker.
  *
- *
  * All broadcast messages are received and processed by this class.
  */
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
         if (context == null || intent == null) return
         if (intent.action == null) return
-        lastReceivedIntent = intent
         val app = context.applicationContext as HabitsApplication
         val appComponent = app.component
+        if (!appComponent.session.capabilities.remindersEnabled) {
+            Log.i(TAG, "Reminders disabled in active session, ignoring intent")
+            return
+        }
+        lastReceivedIntent = intent
         val habits = appComponent.habitList
         val reminderController = appComponent.reminderController
         Log.i(TAG, String.format("Received intent: %s", intent.toString()))

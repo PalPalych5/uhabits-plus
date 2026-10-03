@@ -26,15 +26,17 @@ import android.content.Context
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import androidx.preference.PreferenceManager
-import org.isoron.uhabits.activities.main.MainActivity
-import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.platform.time.computeToday
 import org.isoron.platform.time.setToday
+import org.isoron.uhabits.activities.main.MainActivity
+import org.isoron.uhabits.activities.main.MainDestination
+import org.isoron.uhabits.core.containers.session.DatasetSession
 import org.isoron.uhabits.core.database.UnsupportedDatabaseVersionException
 import org.isoron.uhabits.core.reminders.ReminderScheduler
 import org.isoron.uhabits.core.ui.NotificationTray
 import org.isoron.uhabits.inject.HabitsApplicationComponent
 import org.isoron.uhabits.inject.create
+import org.isoron.uhabits.session.DatasetSessionManager
 import org.isoron.uhabits.utils.DatabaseUtils
 import org.isoron.uhabits.widgets.WidgetUpdater
 import java.io.File
@@ -45,9 +47,11 @@ import java.io.File
 class HabitsApplication : Application() {
 
     private lateinit var context: Context
-    private lateinit var widgetUpdater: WidgetUpdater
-    private lateinit var reminderScheduler: ReminderScheduler
-    private lateinit var notificationTray: NotificationTray
+    private var widgetUpdater: WidgetUpdater? = null
+    private var reminderScheduler: ReminderScheduler? = null
+    private var notificationTray: NotificationTray? = null
+
+    val sessionManager: DatasetSessionManager by lazy { DatasetSessionManager(this) }
 
     override fun onCreate() {
         super.onCreate()
@@ -66,20 +70,22 @@ class HabitsApplication : Application() {
             }
         }
 
+        val session = sessionManager.resolveSessionOnStartup()
+
         if (isTestMode()) {
-            val db = DatabaseUtils.getDatabaseFile(context)
+            val db = DatabaseUtils.getDatabaseFile(context, session.databaseFilename)
             if (db.exists()) db.delete()
         }
 
         try {
-            DatabaseUtils.initializeDatabase(context)
+            DatabaseUtils.initializeDatabase(context, session.databaseFilename)
         } catch (e: UnsupportedDatabaseVersionException) {
-            val db = DatabaseUtils.getDatabaseFile(context)
+            val db = DatabaseUtils.getDatabaseFile(context, session.databaseFilename)
             db.renameTo(File(db.absolutePath + ".invalid"))
-            DatabaseUtils.initializeDatabase(context)
+            DatabaseUtils.initializeDatabase(context, session.databaseFilename)
         }
 
-        rebuildComponent()
+        rebuildComponent(session)
     }
 
     override fun onTerminate() {
@@ -113,11 +119,27 @@ class HabitsApplication : Application() {
         )
     }
 
-    private fun rebuildComponent() {
-        val db = DatabaseUtils.getDatabaseFile(this)
+    fun switchDatasetSession(newSession: DatasetSession) {
+        rebuildComponent(newSession)
+    }
+
+    fun rebuildComponent(session: DatasetSession = sessionManager.resolvedSession()) {
+        stopServices()
+
+        if (isComponentInitialized) {
+            runCatching { component.syncCoordinator.dispose() }
+            runCatching { component.timerSessionManager.dispose() }
+            runCatching { component.db.close() }
+        }
+
+        DatabaseUtils.closeDatabase()
+        DatabaseUtils.initializeDatabase(this, session.databaseFilename)
+
+        val db = DatabaseUtils.getDatabaseFile(this, session.databaseFilename)
         HabitsApplication.component = HabitsApplicationComponent::class.create(
             appContext = context,
-            dbFile = db
+            dbFile = db,
+            session = session
         )
 
         val prefs = component.preferences
@@ -128,27 +150,49 @@ class HabitsApplication : Application() {
         val habitList = component.habitList
         for (h in habitList) h.recompute()
 
-        widgetUpdater = component.widgetUpdater.apply {
-            startListening()
-            scheduleStartDayWidgetUpdate()
+        if (session.capabilities.widgetsEnabled) {
+            widgetUpdater = component.widgetUpdater.apply {
+                startListening()
+                scheduleStartDayWidgetUpdate()
+            }
+        } else {
+            widgetUpdater = null
         }
 
-        reminderScheduler = component.reminderScheduler
-        reminderScheduler.startListening()
+        if (session.capabilities.remindersEnabled) {
+            reminderScheduler = component.reminderScheduler.apply {
+                startListening()
+            }
 
-        notificationTray = component.notificationTray
-        notificationTray.startListening()
+            notificationTray = component.notificationTray.apply {
+                startListening()
+            }
+        } else {
+            reminderScheduler = null
+            notificationTray = null
+        }
 
         component.taskRunner.execute {
-            reminderScheduler.scheduleAll()
-            widgetUpdater.updateWidgets()
+            if (session.capabilities.remindersEnabled) {
+                reminderScheduler?.scheduleAll()
+            }
+            if (session.capabilities.widgetsEnabled) {
+                widgetUpdater?.updateWidgets()
+            }
         }
     }
 
     private fun stopServices() {
-        if (::reminderScheduler.isInitialized) reminderScheduler.stopListening()
-        if (::widgetUpdater.isInitialized) widgetUpdater.stopListening()
-        if (::notificationTray.isInitialized) notificationTray.stopListening()
+        reminderScheduler?.stopListening()
+        reminderScheduler = null
+        widgetUpdater?.stopListening()
+        widgetUpdater = null
+        notificationTray?.stopListening()
+        notificationTray = null
+        if (isComponentInitialized) {
+            runCatching { component.syncCoordinator.dispose() }
+            runCatching { component.timerSessionManager.dispose() }
+        }
     }
 
     val component: HabitsApplicationComponent
@@ -157,6 +201,8 @@ class HabitsApplication : Application() {
     companion object {
         private const val RESTORE_RESTART_REQUEST_CODE = 2001
         lateinit var component: HabitsApplicationComponent
+        val isComponentInitialized: Boolean
+            get() = ::component.isInitialized
 
         fun isTestMode(): Boolean {
             return try {

@@ -35,6 +35,7 @@ import org.isoron.uhabits.core.commands.CommandRunner
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 
 @AppScope
 @Inject
@@ -47,7 +48,8 @@ class SyncCoordinator(
     private val backend: SyncBackend,
     private val deviceIdProvider: DeviceIdProvider,
     private val widgetUpdater: WidgetUpdater,
-    private val commandRunner: CommandRunner
+    private val commandRunner: CommandRunner,
+    val session: org.isoron.uhabits.core.containers.session.DatasetSession = org.isoron.uhabits.core.containers.session.DatasetSessionFactory.production()
 ) {
     interface Listener {
         fun onSyncStateChanged(isSyncing: Boolean, lastResult: SyncRunResult?)
@@ -87,7 +89,8 @@ class SyncCoordinator(
     private val syncScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default)
 
     init {
-        commandRunner.addListener(object : CommandRunner.Listener {
+        if (session.capabilities.syncEnabled && session.mode != org.isoron.uhabits.core.containers.session.DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL) {
+            commandRunner.addListener(object : CommandRunner.Listener {
             override fun onCommandFinished(command: Command) {
                 if (isAutoSyncPaused) return
                 if (command is org.isoron.uhabits.core.commands.CreateRepetitionCommand ||
@@ -125,6 +128,7 @@ class SyncCoordinator(
                 notifySyncStateChanged(isSyncing, null)
             }
         })
+        }
     }
 
     fun hasPendingLocalChanges(): Boolean {
@@ -143,6 +147,9 @@ class SyncCoordinator(
     }
 
     fun scheduleBackgroundSync(reason: String = "command_runner") {
+        if (!session.capabilities.syncEnabled || !session.capabilities.remoteCallsAllowed || session.mode == org.isoron.uhabits.core.containers.session.DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL) {
+            return
+        }
         if (!isSyncReady()) {
             return
         }
@@ -226,6 +233,9 @@ class SyncCoordinator(
     }
 
     fun syncReadyReason(): SyncReadyReason {
+        if (!session.capabilities.syncEnabled || !session.capabilities.remoteCallsAllowed || session.mode == org.isoron.uhabits.core.containers.session.DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL) {
+            return SyncReadyReason.SYNC_DISABLED
+        }
         if (modelFactory.habitBlockRepository.authorityMode == org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode.CONTAINER_LOCAL) {
             return SyncReadyReason.SYNC_DISABLED
         }
@@ -331,6 +341,9 @@ class SyncCoordinator(
     }
 
     suspend fun signIn(email: String, password: String): SyncRunResult = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        if (!session.capabilities.remoteCallsAllowed || !session.capabilities.syncEnabled || session.mode == org.isoron.uhabits.core.containers.session.DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL) {
+            return@withContext configurationMissing("Синхронизация отключена в текущей сессии.")
+        }
         val config = requireConfig()
             ?: return@withContext configurationMissing("Укажите Supabase URL и anon key в режиме разработчика.")
         return@withContext runCatching {
@@ -349,6 +362,9 @@ class SyncCoordinator(
     }
 
     suspend fun signOut(): SyncRunResult = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        if (!session.capabilities.remoteCallsAllowed || !session.capabilities.syncEnabled || session.mode == org.isoron.uhabits.core.containers.session.DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL) {
+            return@withContext syncUnavailable("Синхронизация отключена в текущей сессии.", IllegalStateException("Sync disabled in session"))
+        }
         return@withContext runCatching {
             val session = authStore.load()
             val config = requireConfig()
@@ -370,6 +386,19 @@ class SyncCoordinator(
     }
 
     suspend fun runSync(manual: Boolean, allowAfterReview: Boolean = false, ignoreThrottle: Boolean = false): SyncRunResult = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        if (!session.capabilities.syncEnabled || !session.capabilities.remoteCallsAllowed || session.mode == org.isoron.uhabits.core.containers.session.DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL) {
+            return@withContext if (manual) {
+                val rawMsg: String? = try {
+                    context.getString(R.string.sync_status_disabled)
+                } catch (t: Throwable) {
+                    null
+                }
+                val userMsg = rawMsg ?: "Sync is disabled"
+                SyncRunResult.Failure(userMsg, "sync_disabled_in_session")
+            } else {
+                SyncRunResult.Skipped("sync_disabled_in_session")
+            }
+        }
         val readyReason = syncReadyReason()
         if (readyReason != SyncReadyReason.READY) {
             return@withContext if (manual) {
@@ -1324,6 +1353,9 @@ class SyncCoordinator(
      * - Idempotent: safe to call multiple times per sync cycle.
      */
     internal fun repairDefaultBlockUuids() {
+        if (!session.capabilities.syncEnabled || session.organizationAuthority == org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode.CONTAINER_LOCAL || session.mode == org.isoron.uhabits.core.containers.session.DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL) {
+            return
+        }
         if (modelFactory.habitBlockRepository.authorityMode == org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode.CONTAINER_LOCAL) {
             return
         }
@@ -1640,6 +1672,11 @@ class SyncCoordinator(
             return false
         }
         return event.createdAt >= localUpdatedAt
+    }
+
+    fun dispose() {
+        runCatching { syncScope.cancel() }
+        synchronized(syncListeners) { syncListeners.clear() }
     }
 }
 

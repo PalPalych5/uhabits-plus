@@ -25,23 +25,35 @@ import androidx.preference.PreferenceManager
 import me.tatarka.inject.annotations.Inject
 import org.isoron.uhabits.R
 import org.isoron.uhabits.core.AppScope
+import org.isoron.uhabits.core.containers.session.DatasetSession
+import org.isoron.uhabits.core.containers.session.DatasetSessionFactory
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.inject.AppContext
 
 @Inject
 @AppScope
 class SharedPreferencesStorage(
-    @AppContext context: Context
+    @AppContext context: Context,
+    val session: DatasetSession = DatasetSessionFactory.production()
 ) : SharedPreferences.OnSharedPreferenceChangeListener, Preferences.Storage {
 
-    private val sharedPrefs: SharedPreferences =
+    private val sharedPrefs: SharedPreferences = if (session.preferencesNamespace.isBlank()) {
         PreferenceManager.getDefaultSharedPreferences(context)
+    } else {
+        context.getSharedPreferences("uhabits_prefs_${session.preferencesNamespace}", Context.MODE_PRIVATE)
+    }
 
     private var preferences: Preferences? = null
 
     init {
         sharedPrefs.registerOnSharedPreferenceChangeListener(this)
-        PreferenceManager.setDefaultValues(context, R.xml.preferences, false)
+        if (session.preferencesNamespace.isBlank()) {
+            PreferenceManager.setDefaultValues(context, R.xml.preferences, false)
+        }
+    }
+
+    fun dispose() {
+        sharedPrefs.unregisterOnSharedPreferenceChangeListener(this)
     }
 
     override fun clear() = sharedPrefs.edit().clear().apply()

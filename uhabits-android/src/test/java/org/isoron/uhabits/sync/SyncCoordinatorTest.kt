@@ -693,5 +693,87 @@ class SyncCoordinatorTest {
         val deletedHabit = modelFactory.habitRepository.findAll().find { it.id == 10L }
         assertNull(deletedHabit)
     }
-}
 
+    @Test
+    fun testExperimentalSessionHardIsolation() = runBlocking {
+        val db = createTestDatabase()
+        val modelFactory = SQLModelFactory(db)
+        val habitList = SQLiteHabitList(modelFactory)
+        val preferences = mock<Preferences>()
+        val expMetadata = org.isoron.uhabits.core.containers.session.ExperimentalDatasetMetadata(
+            datasetId = "test-exp-uuid",
+            databaseFilename = "test-exp.db",
+            foundationVersion = 1,
+            sourceSnapshotSha256 = "dummy-sha",
+            createdAtMillis = 1000L
+        )
+        val expSession = org.isoron.uhabits.core.containers.session.DatasetSessionFactory.experimental(expMetadata)
+
+        val expCoordinator = SyncCoordinator(
+            context = FakeContext(),
+            modelFactory = modelFactory,
+            habitList = habitList,
+            preferences = preferences,
+            authStore = FakeSyncAuthStore(FakeContext()),
+            backend = org.isoron.uhabits.session.DisabledSyncBackend,
+            deviceIdProvider = { "test-device" },
+            widgetUpdater = FakeWidgetUpdater(FakeContext()),
+            commandRunner = CommandRunner(CoroutineTaskRunner(Dispatchers.Unconfined, Dispatchers.Unconfined)),
+            session = expSession
+        )
+
+        // 1. syncReadyReason must be SYNC_DISABLED
+        assertEquals(SyncCoordinator.SyncReadyReason.SYNC_DISABLED, expCoordinator.syncReadyReason())
+        assertFalse(expCoordinator.isSyncReady())
+
+        // 2. Manual runSync returns Failure with sync_disabled_in_session
+        val manualResult = expCoordinator.runSync(manual = true)
+        assertTrue(manualResult is SyncRunResult.Failure)
+        assertEquals("sync_disabled_in_session", (manualResult as SyncRunResult.Failure).technicalMessage)
+
+        // 3. Auto runSync returns Skipped with sync_disabled_in_session
+        val autoResult = expCoordinator.runSync(manual = false)
+        assertTrue(autoResult is SyncRunResult.Skipped)
+        assertEquals("sync_disabled_in_session", (autoResult as SyncRunResult.Skipped).reason)
+
+        // 4. signIn returns Failure without remote call
+        val signInResult = expCoordinator.signIn("test@example.com", "password")
+        assertTrue(signInResult is SyncRunResult.Failure)
+
+        // 5. signOut returns Failure without remote call
+        val signOutResult = expCoordinator.signOut()
+        assertTrue(signOutResult is SyncRunResult.Failure)
+
+        // 6. repairDefaultBlockUuids drops execution
+        expCoordinator.repairDefaultBlockUuids()
+
+        // 7. scheduleBackgroundSync drops execution
+        expCoordinator.scheduleBackgroundSync("test")
+
+        expCoordinator.dispose()
+        db.close()
+    }
+
+    @Test
+    fun testDisabledSyncBackendThrowsOnRemoteCalls() {
+        val config = SupabaseSyncConfig("https://example.supabase.co", "anon-key")
+        val session = SyncSession("token", "refresh", "user-id", "test@example.com", 1000L)
+
+        org.junit.Assert.assertThrows(IllegalStateException::class.java) {
+            runBlocking { org.isoron.uhabits.session.DisabledSyncBackend.signIn(config, "email", "pass") }
+        }
+
+        org.junit.Assert.assertThrows(IllegalStateException::class.java) {
+            runBlocking { org.isoron.uhabits.session.DisabledSyncBackend.refreshSession(config, session) }
+        }
+
+        org.junit.Assert.assertThrows(IllegalStateException::class.java) {
+            runBlocking { org.isoron.uhabits.session.DisabledSyncBackend.pushChanges(config, session, "dev", emptyList()) }
+        }
+
+        org.junit.Assert.assertThrows(IllegalStateException::class.java) {
+            runBlocking { org.isoron.uhabits.session.DisabledSyncBackend.pullChanges(config, session, 0L) }
+        }
+    }
+
+}

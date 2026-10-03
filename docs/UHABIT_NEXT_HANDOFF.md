@@ -74,8 +74,8 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR3 — Legacy migration planner + staging migration | Raw inventory, map/placement baseline, validation, crash/retry | Production DB replacement, invented history | PR2; policy для обнаруженных legacy anomalies | DONE |
 | PR4 — Experimental backup/restore | Full snapshot/manifest/roundtrip; version-aware import routing | Silent Container merge, production behavior change | PR3; recovery prefs/import policy | DONE |
 | PR5 — Authority switch + compatibility facade | Placement authority, legacy writer guards, editor/group/filter/SKIP seams | Full redesign, dual-write | PR4 recovery path; inventory readers/writers | DONE |
-| PR6 — Isolated DatasetSession + sync/jobs isolation | Отдельная копия, DI/session lifecycle, hard sync/job gates | Remote protocol, production cutover | PR5; timer/prefs policy; обязательные integration checks | READY |
-| PR7 — Minimal Browse prototype | Roots/children/Habits, create/move/archive, breadcrumb/search | Tasks/Focus/new statistics, full shell redesign | PR6 Foundation validated; Android visual QA | PLANNED |
+| PR6 — Isolated DatasetSession + sync/jobs isolation | Отдельная копия, DI/session lifecycle, hard sync/job gates | Remote protocol, production cutover | PR5; timer/prefs policy; обязательные integration checks | DONE |
+| PR7 — Minimal Browse prototype | Roots/children/Habits, create/move/archive, breadcrumb/search | Tasks/Focus/new statistics, full shell redesign | PR6 Foundation validated; Android visual QA | READY |
 | Task MVP | Отдельный Task domain, title capture/Inbox, plan vs deadline, complete/undo | Recurrence engine, Focus/Contribution | Stable Container/Browse; отдельный Task contract | PLANNED |
 | FocusSession | Durable standalone work fact и безопасная финализация | Выдуманные legacy sessions, произвольные rules | Task MVP; timer/attribution/recovery design | PLANNED |
 | Contribution / provenance | Один явный source rule, breakdown/dedupe/corrections/undo | Пользовательский rules language, hidden double-write | Durable facts; manual/automatic projection contract | PLANNED |
@@ -89,12 +89,12 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636)
+Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (pending commit)
 Coordination handoff: DONE
 Current repository HEAD: 51dd5bac1f2c9fa08766206b6e5ec9e73518c636
 Current branch: dev
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
-Next implementation: PR6 — Isolated DatasetSession + sync/jobs isolation (READY)
+Next implementation: PR7 — Minimal Browse prototype (READY)
 Production DB schema: v29 unchanged (repository DATABASE_VERSION)
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
@@ -108,7 +108,7 @@ Runtime/device DB и live Supabase не проверялись: `v29 unchanged` 
 
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| none | none | none | IDLE | - | - | PR5 completed, 18 PR5 tests + 80 PR1-PR4 tests passing, assembleDebug OK |
+| Antigravity | PR6 — Isolated DatasetSession + sync/jobs isolation | dev / primary | DONE | 2026-10-03 13:47 | core/containers/session, android/session, android/inject, sync, timer/reminders/widgets guards | PR6 completed, 6 core session tests + 12 sync isolation tests passing, assembleDebug OK |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
 
@@ -126,12 +126,12 @@ Handoff — coordination register, не атомарный mutex: одновре
 
 ## 7. Next actions
 
-1. PR1, PR2, PR3, PR4 и PR5 успешно завершены. Все 98 тестов в `:uhabits-core:jvmTest` пройдены без сбоев. Сборка `:uhabits-android:assembleDebug` успешна.
-2. В PR5 введена граница авторитетов через `HabitOrganizationFacade` (режимы `LEGACY` и `CONTAINER_LOCAL`). Исключён dual-write: в `CONTAINER_LOCAL` обычные правки привычки не меняют placement, перемещение идёт строго через organizational layer, а `HabitBlockRepository` защищён от записи `IllegalStateException`.
-3. Точки интеграции в Android UI (сферы в `EditHabitActivity`, группировка `BY_SPHERE` в `HabitCardListView`, группировка в `SkipDayDialogController`) адаптированы к новому фасаду с сохранением 100% обратной совместимости в `LEGACY`.
-4. Синхронизация (`SyncCoordinator`, `SyncManager`) строго изолирована и отключена в `CONTAINER_LOCAL`.
-5. По следующему явному запросу пользователя взять в работу **PR6 — Isolated DatasetSession + sync/jobs isolation**, предварительно зарегистрировав scope в Active work.
-6. Сохранять инварианты: production schema version v29 неизменна, production DB opener и migrations не трогать, production UI по умолчанию остаётся в `LEGACY`.
+1. PR1, PR2, PR3, PR4, PR5 и PR6 успешно завершены. Все 104 целевых теста в `:uhabits-core:jvmTest` (и все 479 тестов core набора) пройдены без сбоев. 12 тестов `SyncCoordinatorTest` в `:uhabits-android:testDebugUnitTest` пройдены без сбоев. Сборка `:uhabits-android:assembleDebug` успешна.
+2. В PR6 реализован изолированный runtime `DatasetSession` с отдельным SQLite-файлом `uhabits-container-experimental.db` и пространством настроек `uhabits_prefs_experimental_<datasetId>`.
+3. Реализован строгий барьер изоляции: 0 сетевых вызовов в экспериментальном режиме (`DisabledSyncBackend`, `SyncCoordinator` gates, hard guard в DI).
+4. Заблокированы фоновые мутирующие задачи в экспериментальном режиме: legacy timer заблокирован, `ReminderReceiver` и `WidgetReceiver` игнорируют события в эксперименте, активный production timer блокирует вход в эксперимент до его завершения.
+5. Реализован feature-gate в настройках приложения (Developer -> UHabit Next Container experiment) с созданием валидированного снапшота через PR3 миграцию и PR4 верификацию, безопасным выходом в production и fallback при повреждении копии.
+6. По следующему явному запросу пользователя взять в работу **PR7 — Minimal Browse prototype**, предварительно зарегистрировав scope в Active work.
 
 ## 8. PR1 contract
 
@@ -280,6 +280,37 @@ Artifacts: `uhabits-core/src/commonMain/kotlin/org/isoron/uhabits/core/container
 
 Commit: `f924d958d26bf3e297935a059383181b00d5eb97`.
 
+### 2026-10-03 — PR6 Isolated DatasetSession + runtime isolation
+
+Agent: Antigravity; session `5d910332-59de-46dc-828b-969d1ab84869`.
+
+Result:
+- Разработана модель активной сессии данных `DatasetSession` с режимами `LEGACY_PRODUCTION` и `CONTAINER_LOCAL_EXPERIMENTAL`, типизированными возможностями `DatasetCapabilities` и метаданными `ExperimentalDatasetMetadata`.
+- Реализована строгая физическая изоляция базы данных: экспериментальный датасет размещается в отдельном SQLite-файле `uhabits-container-experimental.db` без изменения схемы v29 production DB.
+- Реализован менеджер жизненного цикла сессий `DatasetSessionManager`:
+  - Безопасное создание эксперимента из snapshot production DB через конвейер PR3 миграции и PR4 валидации;
+  - Защита от потери таймера: вход в эксперимент блокируется при активном production timer (`pref_timer_is_running`);
+  - Верификация при старте (`quick_check`, проверка схемы, соответствие UUID/mode) с автоматическим безопасным откатом в `LEGACY_PRODUCTION` и фиксацией ошибки при обнаружении повреждений;
+  - Возврат в production без автоматического слияния данных: экспериментальная копия сохраняется отдельно, production DB остаётся в неизменном виде.
+- Изоляция DI графа и компонентов: `HabitsApplication.rebuildComponent` полностью утилизирует старый граф (`SyncCoordinator.dispose()`, `TimerSessionManager.dispose()`, закрытие соединения с SQLite) и инициализирует чистый граф для активной сессии.
+- Изоляция настроек: `SharedPreferencesStorage` переключается на namespaced storage `uhabits_prefs_experimental_<datasetId>` для экспериментальной сессии, оставляя дефолтные preferences незатронутыми.
+- Hard barrier сетевой синхронизации (0 remote calls):
+  - `DisabledSyncBackend` выбрасывает `IllegalStateException` при любых попытках удалённого обращения (`signIn`, `signOut`, `refreshSession`, `pushChanges`, `pullChanges`);
+  - `SyncCoordinator` блокирует все точки входа (`runSync` возвращает Failure/Skipped `sync_disabled_in_session`, отключает auto-sync слушатели, блокирует фоновые воркеры и восстановление block UUIDs).
+- Изоляция таймеров, напоминаний и виджетов:
+  - `TimerSessionManager` блокирует запуск и модификацию таймера в экспериментальном режиме;
+  - `ReminderReceiver` и `WidgetReceiver` проверяют capabilities активной сессии и отбрасывают интенты при отключении возможностей.
+- Внутренний feature gate: в секцию Developer настроек добавлен переключатель режима с диалогами подтверждения, разъясняющими изоляцию, отсутствие облачной синхронизации и отдельное хранение базы.
+- Написаны тесты:
+  - 6 комплексных тестов в `DatasetSessionTest` (контракты сессий, резолвер, независимость баз с проверкой SHA-256 хеша production DB до и после экспериментальных мутаций, запрет dual-write, циклы переключения);
+  - 2 интеграционных теста в `SyncCoordinatorTest` (полная блокировка sync в experimental сессии, исключения в `DisabledSyncBackend`).
+- Пройдены все 104 теста PR1–PR6 в `:uhabits-core:jvmTest` (479 тестов core всего), 12 тестов `SyncCoordinatorTest` в `:uhabits-android:testDebugUnitTest`, компиляция `:uhabits-android:compileDebugKotlin` и полная сборка `:uhabits-android:assembleDebug`.
+- Production `DATABASE_VERSION` (29) не изменялся, production default mode остаётся `LEGACY`.
+
+Artifacts: `uhabits-core/src/commonMain/kotlin/org/isoron/uhabits/core/containers/session/**`, `uhabits-android/src/main/java/org/isoron/uhabits/session/**`, `uhabits-android/src/main/java/org/isoron/uhabits/inject/**`, `uhabits-core/src/commonTest/kotlin/org/isoron/uhabits/core/containers/session/**`, `uhabits-android/src/test/java/org/isoron/uhabits/sync/SyncCoordinatorTest.kt`.
+
+Commit: pending.
+
 ### 2026-10-03 — PR5 Authority switch + compatibility facade
 
 Agent: Antigravity; session `8ab1214b-5966-4978-b72a-158ed05dfa6d`.
@@ -291,7 +322,7 @@ Result:
 - Адаптирован жизненный цикл привычек: `CreateHabitCommand` и `EditHabitCommand` поддерживают `initialContainerId`, `targetContainerId` и явный `changeContainer`; создание и редактирование атрибутов привычки (название, цель, напоминания и т.д.) не сбрасывают placement; удаление привычки через `DeleteHabitsCommand` сохраняет placement history и tombstone без hard purge.
 - UI-интеграция: `HabitCardListView` использует `facade.getRootGroupKey()` для группировки `BY_SPHERE` через ancestor traversal дерева контейнеров без нарушения глобального порядка; `EditHabitActivity` адаптирует выбор сферы под древовидный выбор контейнера с путями и Unassigned; диалог `SkipDayDialogController` изолирует выбор root контейнера; статистика `StatisticsReportStateBuilder` фильтрует привычки через `allowedHabitUuids`.
 - Изоляция sync: `SyncCoordinator` блокирует синхронизацию (`syncReadyReason = SYNC_DISABLED`, пропуск починки block UUIDs) в режиме `CONTAINER_LOCAL`; `SyncManager` подавляет постановку событий блоков в очередь.
-- Написаны тесты: `HabitOrganizationFacadeTest` (6 тестов) и `OrganizationAuthorityIntegrationTest` (11 комплексных тестов на SQLite с проверкой сохранения истории, глубины >= 4, блокировок dual-write и изоляции bulk/статистики).
+- Написаны тесты: `HabitOrganizationFacadeTest` (7 тестов) и `OrganizationAuthorityIntegrationTest` (11 комплексных тестов на SQLite с проверкой сохранения истории, глубины >= 4, блокировок dual-write и изоляции bulk/статистики) — суммарно 18 тестов.
 - Все 18 тестов PR5 и все 80 тестов PR1–PR4 (суммарно 98 тестов) успешно пройдены в `:uhabits-core:jvmTest`.
 - Проверена компиляция Kotlin JVM, Android Kotlin (`compileDebugKotlin`) и успешная сборка debug APK (`assembleDebug`).
 - Production `DATABASE_VERSION` (29) не изменялся, production default mode остаётся `LEGACY`.
