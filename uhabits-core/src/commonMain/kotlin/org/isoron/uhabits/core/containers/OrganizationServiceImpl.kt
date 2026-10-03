@@ -93,6 +93,17 @@ class OrganizationServiceImpl(
             val newRevision = OrganizationRevision(tx.readState().currentRevision.value + 1)
             val effectiveOpUuid = request.opUuid ?: idGenerator.nextId()
 
+            tx.recordChange(
+                OrganizationChangeRecord(
+                    revision = newRevision,
+                    opUuid = effectiveOpUuid,
+                    recordedAt = nowMillis,
+                    operationType = "CREATE_CONTAINER",
+                    origin = "USER_CHANGE",
+                    commandPayload = canonicalPayload,
+                )
+            )
+
             val siblings = tx.getAllContainers(includeDeleted = false)
                 .filter { it.parentId == request.parentId }
                 .sortedWith(compareBy({ it.siblingOrder }, { it.id.value }))
@@ -131,16 +142,6 @@ class OrganizationServiceImpl(
 
             tx.saveContainer(container)
             tx.recordContainerHistory(container, newRevision)
-            tx.recordChange(
-                OrganizationChangeRecord(
-                    revision = newRevision,
-                    opUuid = effectiveOpUuid,
-                    recordedAt = nowMillis,
-                    operationType = "CREATE_CONTAINER",
-                    origin = "USER_CHANGE",
-                    commandPayload = canonicalPayload,
-                )
-            )
             tx.updateState(newRevision)
 
             OrganizationResult.Success(container)
@@ -198,16 +199,6 @@ class OrganizationServiceImpl(
             val newRevision = OrganizationRevision(tx.readState().currentRevision.value + 1)
             val effectiveOpUuid = request.opUuid ?: idGenerator.nextId()
 
-            val updated = existing.copy(
-                name = trimmedName,
-                color = request.color,
-                icon = request.icon,
-                updatedAt = nowMillis,
-                revision = newRevision,
-            )
-
-            tx.saveContainer(updated)
-            tx.recordContainerHistory(updated, newRevision)
             tx.recordChange(
                 OrganizationChangeRecord(
                     revision = newRevision,
@@ -218,6 +209,17 @@ class OrganizationServiceImpl(
                     commandPayload = canonicalPayload,
                 )
             )
+
+            val updated = existing.copy(
+                name = trimmedName,
+                color = request.color,
+                icon = request.icon,
+                updatedAt = nowMillis,
+                revision = newRevision,
+            )
+
+            tx.saveContainer(updated)
+            tx.recordContainerHistory(updated, newRevision)
             tx.updateState(newRevision)
 
             OrganizationResult.Success(updated)
@@ -264,6 +266,17 @@ class OrganizationServiceImpl(
             val nowMillis = clock.nowMillis()
             val newRevision = OrganizationRevision(tx.readState().currentRevision.value + 1)
             val effectiveOpUuid = request.opUuid ?: idGenerator.nextId()
+
+            tx.recordChange(
+                OrganizationChangeRecord(
+                    revision = newRevision,
+                    opUuid = effectiveOpUuid,
+                    recordedAt = nowMillis,
+                    operationType = "MOVE_CONTAINER",
+                    origin = "USER_CHANGE",
+                    commandPayload = canonicalPayload,
+                )
+            )
 
             if (oldParentId == request.newParentId) {
                 // Reorder within the same parent
@@ -327,16 +340,6 @@ class OrganizationServiceImpl(
                 }
             }
 
-            tx.recordChange(
-                OrganizationChangeRecord(
-                    revision = newRevision,
-                    opUuid = effectiveOpUuid,
-                    recordedAt = nowMillis,
-                    operationType = "MOVE_CONTAINER",
-                    origin = "USER_CHANGE",
-                    commandPayload = canonicalPayload,
-                )
-            )
             tx.updateState(newRevision)
 
             OrganizationResult.Success(Unit)
@@ -386,6 +389,17 @@ class OrganizationServiceImpl(
             val newRevision = OrganizationRevision(tx.readState().currentRevision.value + 1)
             val effectiveOpUuid = request.opUuid ?: idGenerator.nextId()
 
+            tx.recordChange(
+                OrganizationChangeRecord(
+                    revision = newRevision,
+                    opUuid = effectiveOpUuid,
+                    recordedAt = nowMillis,
+                    operationType = "REORDER_CONTAINERS",
+                    origin = "USER_CHANGE",
+                    commandPayload = canonicalPayload,
+                )
+            )
+
             val siblingsById = siblings.associateBy { it.id }
             for ((index, id) in request.orderedIds.withIndex()) {
                 val container = siblingsById[id]!!
@@ -398,16 +412,6 @@ class OrganizationServiceImpl(
                 tx.recordContainerHistory(reordered, newRevision)
             }
 
-            tx.recordChange(
-                OrganizationChangeRecord(
-                    revision = newRevision,
-                    opUuid = effectiveOpUuid,
-                    recordedAt = nowMillis,
-                    operationType = "REORDER_CONTAINERS",
-                    origin = "USER_CHANGE",
-                    commandPayload = canonicalPayload,
-                )
-            )
             tx.updateState(newRevision)
 
             OrganizationResult.Success(Unit)
@@ -464,6 +468,17 @@ class OrganizationServiceImpl(
             val newRevision = OrganizationRevision(tx.readState().currentRevision.value + 1)
             val effectiveOpUuid = request.opUuid ?: idGenerator.nextId()
 
+            tx.recordChange(
+                OrganizationChangeRecord(
+                    revision = newRevision,
+                    opUuid = effectiveOpUuid,
+                    recordedAt = nowMillis,
+                    operationType = "PLACE_HABIT",
+                    origin = request.origin.name,
+                    commandPayload = canonicalPayload,
+                )
+            )
+
             val oldPlacement = tx.getHabitPlacement(request.habit)
             val oldContainerId = oldPlacement?.containerId
 
@@ -507,16 +522,6 @@ class OrganizationServiceImpl(
                 tx.recordHabitPlacementHistory(updated, newRevision)
             }
 
-            tx.recordChange(
-                OrganizationChangeRecord(
-                    revision = newRevision,
-                    opUuid = effectiveOpUuid,
-                    recordedAt = nowMillis,
-                    operationType = "PLACE_HABIT",
-                    origin = request.origin.name,
-                    commandPayload = canonicalPayload,
-                )
-            )
             tx.updateState(newRevision)
 
             OrganizationResult.Success(Unit)
@@ -566,6 +571,17 @@ class OrganizationServiceImpl(
             val newRevision = OrganizationRevision(tx.readState().currentRevision.value + 1)
             val effectiveOpUuid = request.opUuid ?: idGenerator.nextId()
 
+            tx.recordChange(
+                OrganizationChangeRecord(
+                    revision = newRevision,
+                    opUuid = effectiveOpUuid,
+                    recordedAt = nowMillis,
+                    operationType = "REORDER_HABITS",
+                    origin = "USER_CHANGE",
+                    commandPayload = canonicalPayload,
+                )
+            )
+
             val placementsByHabit = currentPlacements.associateBy { it.habit }
             for ((index, habitRef) in request.orderedHabits.withIndex()) {
                 val placement = placementsByHabit[habitRef]!!
@@ -577,16 +593,6 @@ class OrganizationServiceImpl(
                 tx.recordHabitPlacementHistory(reordered, newRevision)
             }
 
-            tx.recordChange(
-                OrganizationChangeRecord(
-                    revision = newRevision,
-                    opUuid = effectiveOpUuid,
-                    recordedAt = nowMillis,
-                    operationType = "REORDER_HABITS",
-                    origin = "USER_CHANGE",
-                    commandPayload = canonicalPayload,
-                )
-            )
             tx.updateState(newRevision)
 
             OrganizationResult.Success(Unit)
@@ -640,14 +646,6 @@ class OrganizationServiceImpl(
             val newRevision = OrganizationRevision(tx.readState().currentRevision.value + 1)
             val effectiveOpUuid = opUuid ?: idGenerator.nextId()
 
-            val updated = existing.copy(
-                isArchived = true,
-                updatedAt = nowMillis,
-                revision = newRevision,
-            )
-
-            tx.saveContainer(updated)
-            tx.recordContainerHistory(updated, newRevision)
             tx.recordChange(
                 OrganizationChangeRecord(
                     revision = newRevision,
@@ -658,6 +656,15 @@ class OrganizationServiceImpl(
                     commandPayload = canonicalPayload,
                 )
             )
+
+            val updated = existing.copy(
+                isArchived = true,
+                updatedAt = nowMillis,
+                revision = newRevision,
+            )
+
+            tx.saveContainer(updated)
+            tx.recordContainerHistory(updated, newRevision)
             tx.updateState(newRevision)
 
             OrganizationResult.Success(Unit)
@@ -707,14 +714,6 @@ class OrganizationServiceImpl(
             val newRevision = OrganizationRevision(tx.readState().currentRevision.value + 1)
             val effectiveOpUuid = opUuid ?: idGenerator.nextId()
 
-            val updated = existing.copy(
-                isArchived = false,
-                updatedAt = nowMillis,
-                revision = newRevision,
-            )
-
-            tx.saveContainer(updated)
-            tx.recordContainerHistory(updated, newRevision)
             tx.recordChange(
                 OrganizationChangeRecord(
                     revision = newRevision,
@@ -725,6 +724,15 @@ class OrganizationServiceImpl(
                     commandPayload = canonicalPayload,
                 )
             )
+
+            val updated = existing.copy(
+                isArchived = false,
+                updatedAt = nowMillis,
+                revision = newRevision,
+            )
+
+            tx.saveContainer(updated)
+            tx.recordContainerHistory(updated, newRevision)
             tx.updateState(newRevision)
 
             OrganizationResult.Success(Unit)
@@ -779,6 +787,17 @@ class OrganizationServiceImpl(
             val newRevision = OrganizationRevision(tx.readState().currentRevision.value + 1)
             val effectiveOpUuid = opUuid ?: idGenerator.nextId()
 
+            tx.recordChange(
+                OrganizationChangeRecord(
+                    revision = newRevision,
+                    opUuid = effectiveOpUuid,
+                    recordedAt = nowMillis,
+                    operationType = "DELETE_EMPTY_CONTAINER",
+                    origin = "USER_CHANGE",
+                    commandPayload = canonicalPayload,
+                )
+            )
+
             // Dense renumber remaining siblings in parent
             val remainingSiblings = tx.getAllContainers(includeDeleted = false)
                 .filter { it.parentId == parentId && it.id != id }
@@ -804,16 +823,6 @@ class OrganizationServiceImpl(
 
             tx.saveContainer(deleted)
             tx.recordContainerHistory(deleted, newRevision)
-            tx.recordChange(
-                OrganizationChangeRecord(
-                    revision = newRevision,
-                    opUuid = effectiveOpUuid,
-                    recordedAt = nowMillis,
-                    operationType = "DELETE_EMPTY_CONTAINER",
-                    origin = "USER_CHANGE",
-                    commandPayload = canonicalPayload,
-                )
-            )
             tx.updateState(newRevision)
 
             OrganizationResult.Success(Unit)
