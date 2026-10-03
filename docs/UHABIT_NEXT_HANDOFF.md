@@ -89,9 +89,9 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE
+Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636)
 Coordination handoff: DONE
-Current repository HEAD: (in-flight PR5 commit)
+Current repository HEAD: 51dd5bac1f2c9fa08766206b6e5ec9e73518c636
 Current branch: dev
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
 Next implementation: PR6 — Isolated DatasetSession + sync/jobs isolation (READY)
@@ -298,7 +298,7 @@ Result:
 
 Artifacts: `uhabits-core/src/commonMain/kotlin/org/isoron/uhabits/core/containers/facade/**`, `uhabits-android/src/main/java/org/isoron/uhabits/**`, `uhabits-core/src/commonTest/kotlin/org/isoron/uhabits/core/containers/**`.
 
-Commit: `(in-flight PR5 commit)`.
+Commit: `51dd5bac1f2c9fa08766206b6e5ec9e73518c636`.
 
 ## 11. Session close protocol
 
