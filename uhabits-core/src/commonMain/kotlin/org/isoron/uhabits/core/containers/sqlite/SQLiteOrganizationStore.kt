@@ -648,7 +648,10 @@ class SQLiteOrganizationStore(
             if (isTopLevel) {
                 try { db.run("ROLLBACK") } catch (_: Throwable) {}
             } else {
-                try { db.run("ROLLBACK TO $savepointName; RELEASE $savepointName") } catch (_: Throwable) {}
+                try {
+                    db.run("ROLLBACK TO $savepointName")
+                    db.run("RELEASE $savepointName")
+                } catch (_: Throwable) {}
             }
             throw t
         }
@@ -658,7 +661,10 @@ class SQLiteOrganizationStore(
             if (isTopLevel) {
                 try { db.run("ROLLBACK") } catch (_: Throwable) {}
             } else {
-                try { db.run("ROLLBACK TO $savepointName; RELEASE $savepointName") } catch (_: Throwable) {}
+                try {
+                    db.run("ROLLBACK TO $savepointName")
+                    db.run("RELEASE $savepointName")
+                } catch (_: Throwable) {}
             }
             return result
         }
