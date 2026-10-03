@@ -85,7 +85,7 @@ object RawLegacyInventoryReader {
                 RawLegacyBlock(
                     id = stmt.getLong(0),
                     uuid = stmt.getTextOrNull(1),
-                    name = stmt.getText(2),
+                    name = stmt.getTextOrNull(2) ?: "",
                     color = stmt.getInt(3),
                     icon = stmt.getTextOrNull(4),
                     position = stmt.getInt(5),
@@ -115,9 +115,9 @@ object RawLegacyInventoryReader {
                 RawLegacyHabit(
                     id = stmt.getLong(0),
                     uuid = stmt.getTextOrNull(1),
-                    name = stmt.getText(2),
-                    description = stmt.getText(3),
-                    question = stmt.getText(4),
+                    name = stmt.getTextOrNull(2) ?: "",
+                    description = stmt.getTextOrNull(3) ?: "",
+                    question = stmt.getTextOrNull(4) ?: "",
                     freqNum = stmt.getInt(5),
                     freqDen = stmt.getInt(6),
                     color = stmt.getInt(7),
@@ -130,7 +130,7 @@ object RawLegacyInventoryReader {
                     type = stmt.getInt(14),
                     targetValue = stmt.getReal(15),
                     targetType = stmt.getInt(16),
-                    unit = stmt.getText(17),
+                    unit = stmt.getTextOrNull(17) ?: "",
                     updatedAt = stmt.getLong(18),
                     deletedAt = stmt.getLongOrNull(19),
                 )
@@ -153,7 +153,7 @@ object RawLegacyInventoryReader {
             list.add(
                 RawLegacyExtension(
                     habitId = stmt.getLong(0),
-                    dayTier = stmt.getText(1),
+                    dayTier = stmt.getTextOrNull(1) ?: "NORMAL",
                     timerEnabled = stmt.getInt(2) != 0,
                     blockId = stmt.getLongOrNull(3),
                     statsStartTimestamp = stmt.getLongOrNull(4),
@@ -184,7 +184,7 @@ object RawLegacyInventoryReader {
                     freqDen = stmt.getInt(4),
                     targetType = stmt.getInt(5),
                     targetValue = stmt.getReal(6),
-                    unit = stmt.getText(7),
+                    unit = stmt.getTextOrNull(7) ?: "",
                     uuid = stmt.getTextOrNull(8),
                     updatedAt = stmt.getLong(9),
                     deletedAt = stmt.getLongOrNull(10),
