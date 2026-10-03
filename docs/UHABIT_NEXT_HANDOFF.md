@@ -89,8 +89,9 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE
+Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec)
 Coordination handoff: DONE
+Current repository HEAD: 9f627149
 Current branch: dev
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
 Next implementation: Task MVP / post-PR7 evaluation
@@ -391,6 +392,8 @@ Result:
   - Сборка `assembleDebug` успешна.
 
 Artifacts: `uhabits-android/src/main/java/org/isoron/uhabits/activities/containers/**`, `uhabits-android/src/main/res/layout/activity_containers.xml`, `uhabits-android/src/main/res/menu/containers_menu.xml`, `uhabits-android/src/main/res/drawable/ic_toolbar_containers.xml`, `uhabits-android/src/main/res/drawable/ic_toolbar_search.xml`, `uhabits-core/src/commonTest/kotlin/org/isoron/uhabits/core/containers/ContainersBrowseNavigationTest.kt`, `uhabits-android/src/test/java/org/isoron/uhabits/activities/containers/ContainersGateTest.kt`.
+
+Commit: `620212ec`.
 
 ## 11. Session close protocol
 
