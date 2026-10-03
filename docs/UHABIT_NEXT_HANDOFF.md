@@ -89,9 +89,9 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (pending commit)
+Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2)
 Coordination handoff: DONE
-Current repository HEAD: 51dd5bac1f2c9fa08766206b6e5ec9e73518c636
+Current repository HEAD: f4073570776b25aa17dfa17bc671b569bf8d40a2
 Current branch: dev
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
 Next implementation: PR7 — Minimal Browse prototype (READY)
@@ -108,7 +108,7 @@ Runtime/device DB и live Supabase не проверялись: `v29 unchanged` 
 
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| Antigravity | PR6 — Isolated DatasetSession + sync/jobs isolation | dev / primary | DONE | 2026-10-03 13:47 | core/containers/session, android/session, android/inject, sync, timer/reminders/widgets guards | PR6 completed, 6 core session tests + 12 sync isolation tests passing, assembleDebug OK |
+| Antigravity | PR6 — Isolated DatasetSession + sync/jobs isolation | dev / primary | DONE | 2026-10-03 13:47 | core/containers/session, android/session, android/inject, sync, timer/reminders/widgets guards | PR6 completed (commit f4073570), 6 core session tests + 12 sync isolation tests passing, assembleDebug OK |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
 
@@ -309,7 +309,7 @@ Result:
 
 Artifacts: `uhabits-core/src/commonMain/kotlin/org/isoron/uhabits/core/containers/session/**`, `uhabits-android/src/main/java/org/isoron/uhabits/session/**`, `uhabits-android/src/main/java/org/isoron/uhabits/inject/**`, `uhabits-core/src/commonTest/kotlin/org/isoron/uhabits/core/containers/session/**`, `uhabits-android/src/test/java/org/isoron/uhabits/sync/SyncCoordinatorTest.kt`.
 
-Commit: pending.
+Commit: `f4073570776b25aa17dfa17bc671b569bf8d40a2`.
 
 ### 2026-10-03 — PR5 Authority switch + compatibility facade
 
