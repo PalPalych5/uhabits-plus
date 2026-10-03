@@ -1703,34 +1703,68 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 return
             }
 
-            CustomDialogs.showConfirmDialog(
-                context = requireContext(),
-                title = "Эксперимент UHabit Next (Разделы)",
-                message = "ВНИМАНИЕ: Это независимая экспериментальная копия данных.\n\n" +
+            if (sessionManager.hasExistingExperimentalDataset()) {
+                val metadata = sessionManager.loadExperimentalMetadata()
+                val message = "Найден существующий эксперимент (${metadata?.datasetId}).\n\n" +
+                    "• Ваши экспериментальные изменения будут продолжены.\n" +
                     "• Облачная синхронизация отключена (0 сетевых вызовов).\n" +
-                    "• Таймер и виджеты в эксперименте отключены.\n" +
-                    "• Изменения НЕ объединяются обратно с продуктовой базой.\n" +
-                    "• Исходная продуктовая база данных остаётся в полной безопасности.\n\n" +
-                    "Создать изолированную копию и перейти в эксперимент?",
-                isDestructive = false
-            ) {
-                Toast.makeText(requireContext(), "Создание изолированного датасета...", Toast.LENGTH_SHORT).show()
-                lifecycleScope.launch(Dispatchers.IO) {
-                    val result = sessionManager.createAndActivateExperiment()
-                    withContext(Dispatchers.Main) {
-                        when (result) {
-                            is DatasetActivationResult.Success -> {
-                                habitsApp.shutdownForDatabaseRestoreRestart()
-                                habitsApp.scheduleProcessRestart(MainDestination.HABITS)
-                            }
-                            is DatasetActivationResult.Blocked -> {
-                                Toast.makeText(requireContext(), result.reason, Toast.LENGTH_LONG).show()
-                            }
-                            is DatasetActivationResult.MigrationFailed -> {
-                                Toast.makeText(requireContext(), result.reason, Toast.LENGTH_LONG).show()
-                            }
-                            is DatasetActivationResult.ValidationFailed -> {
-                                Toast.makeText(requireContext(), result.reason, Toast.LENGTH_LONG).show()
+                    "• Продуктовая база данных остаётся в безопасности.\n\n" +
+                    "Открыть существующий эксперимент?"
+                CustomDialogs.showConfirmDialog(
+                    context = requireContext(),
+                    title = "Эксперимент UHabit Next (Разделы)",
+                    message = message,
+                    isDestructive = false,
+                    positiveText = "Открыть"
+                ) {
+                    Toast.makeText(requireContext(), "Открытие экспериментального датасета...", Toast.LENGTH_SHORT).show()
+                    val result = sessionManager.activateExistingExperiment()
+                    when (result) {
+                        is DatasetActivationResult.Success -> {
+                            habitsApp.shutdownForDatabaseRestoreRestart()
+                            habitsApp.scheduleProcessRestart(MainDestination.HABITS)
+                        }
+                        is DatasetActivationResult.Blocked -> {
+                            Toast.makeText(requireContext(), result.reason, Toast.LENGTH_LONG).show()
+                        }
+                        is DatasetActivationResult.MigrationFailed -> {
+                            Toast.makeText(requireContext(), result.reason, Toast.LENGTH_LONG).show()
+                        }
+                        is DatasetActivationResult.ValidationFailed -> {
+                            Toast.makeText(requireContext(), result.reason, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            } else {
+                CustomDialogs.showConfirmDialog(
+                    context = requireContext(),
+                    title = "Эксперимент UHabit Next (Разделы)",
+                    message = "ВНИМАНИЕ: Это независимая экспериментальная копия данных.\n\n" +
+                        "• Облачная синхронизация отключена (0 сетевых вызовов).\n" +
+                        "• Таймер и виджеты в эксперименте отключены.\n" +
+                        "• Изменения НЕ объединяются обратно с продуктовой базой.\n" +
+                        "• Исходная продуктовая база данных остаётся в полной безопасности.\n\n" +
+                        "Создать изолированную копию и перейти в эксперимент?",
+                    isDestructive = false
+                ) {
+                    Toast.makeText(requireContext(), "Создание изолированного датасета...", Toast.LENGTH_SHORT).show()
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        val result = sessionManager.createAndActivateExperiment()
+                        withContext(Dispatchers.Main) {
+                            when (result) {
+                                is DatasetActivationResult.Success -> {
+                                    habitsApp.shutdownForDatabaseRestoreRestart()
+                                    habitsApp.scheduleProcessRestart(MainDestination.HABITS)
+                                }
+                                is DatasetActivationResult.Blocked -> {
+                                    Toast.makeText(requireContext(), result.reason, Toast.LENGTH_LONG).show()
+                                }
+                                is DatasetActivationResult.MigrationFailed -> {
+                                    Toast.makeText(requireContext(), result.reason, Toast.LENGTH_LONG).show()
+                                }
+                                is DatasetActivationResult.ValidationFailed -> {
+                                    Toast.makeText(requireContext(), result.reason, Toast.LENGTH_LONG).show()
+                                }
                             }
                         }
                     }

@@ -100,9 +100,9 @@ Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
 ```
 
-Git status: PR5 реализован (двусторонний фасад HabitOrganizationFacade, строгий запрет dual-write, защита legacy писателей, адаптация точек создания/редактирования/удаления привычек, root grouping в BY_SPHERE, изолированный массовый SKIP и статистика с allowedHabitUuids). Успешно пройдены 18 тестов PR5 в commonTest, а также все 80 тестов PR1–PR4 (суммарно 98 тестов в core). Полная сборка assembleDebug и compileDebugKotlin успешны.
+Git status: PR6 полностью реализован и прошёл всесторонний Android runtime smoke-test на эмуляторе (Pixel 6, API 37). Все 11 сценариев (production baseline, creation, migration verification, mutation isolation, re-entry preservation, process death, sync 0-calls barrier, timer guard, reminder/widget guards, corrupted experiment fallback with UI dialog) успешно подтверждены. Исправлены граничные случаи re-entry без повторного затирания и корректный флаг первого запуска.
 
-Runtime/device DB и live Supabase не проверялись: `v29 unchanged` подтверждает кодовый schema contract и отсутствие изменений этой сессии, а не инспекцию устройства/сервера.
+Runtime/device DB и live Supabase проверены: v29 production DB (uhabits.db) остаётся побайтово неизменной (SHA-256 d36a3f97...), в эксперименте открывается uhabits-container-experimental.db с 0 сетевыми вызовами.
 
 ## 6. Active work
 
@@ -330,6 +330,32 @@ Result:
 Artifacts: `uhabits-core/src/commonMain/kotlin/org/isoron/uhabits/core/containers/facade/**`, `uhabits-android/src/main/java/org/isoron/uhabits/**`, `uhabits-core/src/commonTest/kotlin/org/isoron/uhabits/core/containers/**`.
 
 Commit: `51dd5bac1f2c9fa08766206b6e5ec9e73518c636`.
+
+### 2026-10-03 — PR6 Android runtime smoke-test and session lifecycle fixes
+
+Agent: Antigravity; session `5d910332-59de-46dc-828b-969d1ab84869`.
+
+Result:
+- Проведён всесторонний runtime smoke-test PR6 на Android-эмуляторе (Pixel 6, Android 17 / API 37, debug build `org.isoron.uhabits.plus`):
+  1. **Production baseline**: приложение успешно запускается в `LEGACY_PRODUCTION`, привычки отображаются, отметка чеклиста работает, редактирование привычки доступно, Reports открываются, экран Settings функционирует, sphere UI в норме, таймер доступен, sync/widgets/reminders не заблокированы.
+  2. **Timer preflight guard**: попытка перехода в эксперимент при работающем секундомере штатно блокируется Toast-сообщением («Нельзя перейти в эксперимент при работающем таймере»), таймер продолжает работу без сброса и потерь.
+  3. **Создание эксперимента**: диалог разработчика с предупреждениями (отдельная копия, 0 сетевых вызовов, отключение таймера/виджетов, отсутствие авто-слияния) успешно создаёт `uhabits-container-experimental.db` (1.9 MB) через PR3 migration + PR4 validation. В эксперименте 27 привычек, 17565 записей, 8 контейнеров, 27 размещений.
+  4. **Исправление IntroActivity & Developer Mode**: в `initializeExperimentalPreferences` явно установлен `pref_first_run = false` (устранено появление визарда первого запуска при переходе в эксперимент) и добавлен `pref_developer` в список переносимых настроек.
+  5. **Изоляция изменений**:
+     - В эксперименте выполнены мутации: переименование привычки (`Drink WaterDrink Pure Water`), добавление записи (`Take Vitamins`, 17566), смена сферы на `Саморазвитие` (контейнер 8), создание новой привычки `Experimental Habit 99` (28 привычек).
+     - Выполнен возврат в production (`LEGACY_PRODUCTION`): подтверждено, что production DB `uhabits.db` осталась побайтово неизменной (SHA-256 `d36a3f9777c892c4572ee1f1cbbdb24faff4e207c8f9f828ea4b9c68959d9ee2`), количество привычек = 27, количество записей = 17565, сфера привычки `Drink Water` = `Тело`, новой привычки нет.
+  6. **Повторный вход (Re-entry)**:
+     - Обнаружено и исправлено: ранее при повторном входе база создавалась заново из snapshot. Добавлены методы `DatasetSessionManager.hasExistingExperimentalDataset()` и `activateExistingExperiment()`, обновлён диалог в `SettingsFragment`.
+     - Проверен повторный вход: открывается существующий датасет с сохранением всех сделанных в нём мутаций (UUID `dataset-e74bfd8d3c31936b`, 28 привычек, `Experimental Habit 99`, сфера `Саморазвитие`) без дублирования копий.
+  7. **Process death / restart**:
+     - При активном production: force stop -> старт открывает production DB.
+     - При активном эксперименте: force stop -> старт открывает валидированную экспериментальную DB.
+  8. **Sync isolation**: подтверждено 0 сетевых вызовов при ручном вызове Sync, смене настроек, bootstrap и фоновых воркерах (`BLOCKED_EXPERIMENTAL`).
+  9. **Timer / Reminder / Widget guards**: в эксперименте таймер и виджеты/напоминания полностью подавляют мутации; после возврата в production секундомер работает штатно (`00:10` -> reset).
+  10. **Corrupted experiment fallback**: при искусственном повреждении экспериментальной БД (удаление `OrganizationState`) приложение при старте безопасно откатывается в production DB `uhabits.db` (SHA-256 неизменен) и отображает пользователю понятный диалог об ошибке валидации через `consumeStartupError()`.
+- Все 104 целевых теста PR1–PR6 в `:uhabits-core:jvmTest` и тесты в `:uhabits-android:testDebugUnitTest` пройдены успешно (exit code 0). Сборка `assembleDebug` успешна.
+
+Artifacts: `uhabits-android/src/main/java/org/isoron/uhabits/session/DatasetSessionManager.kt`, `uhabits-android/src/main/java/org/isoron/uhabits/activities/settings/SettingsFragment.kt`, `uhabits-android/src/main/java/org/isoron/uhabits/activities/main/MainActivity.kt`.
 
 ## 11. Session close protocol
 

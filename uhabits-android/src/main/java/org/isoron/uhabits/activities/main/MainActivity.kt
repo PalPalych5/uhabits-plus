@@ -27,6 +27,7 @@ import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
 import org.isoron.uhabits.activities.blocks.ManageBlocksActivity
+import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.habits.edit.HabitTypeDialog
 import org.isoron.uhabits.activities.habits.list.ListHabitsDisplayMode
@@ -98,6 +99,13 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         if (intent.getBooleanExtra(EXTRA_RESTORE_SUCCESS, false)) {
             Toast.makeText(this, R.string.restore_backup_success, Toast.LENGTH_LONG).show()
             intent.removeExtra(EXTRA_RESTORE_SUCCESS)
+        }
+        (application as? HabitsApplication)?.sessionManager?.consumeStartupError()?.let { errorMessage ->
+            CustomDialogs.showInfoDialog(
+                context = this,
+                title = "Внимание",
+                message = errorMessage
+            )
         }
 
         var startDest = intent.getStringExtra(EXTRA_RECREATE_DESTINATION)?.let {

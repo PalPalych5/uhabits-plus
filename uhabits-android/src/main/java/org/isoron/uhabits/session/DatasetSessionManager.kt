@@ -177,6 +177,40 @@ class DatasetSessionManager(
     }
 
     /**
+     * Checks if a valid existing experimental dataset is already present on device.
+     */
+    fun hasExistingExperimentalDataset(): Boolean {
+        val metadata = loadExperimentalMetadata() ?: return false
+        return validateExperimental(metadata) is DatasetValidationResult.Valid
+    }
+
+    /**
+     * Re-activates an already existing, validated experimental dataset without recreating it from production.
+     */
+    fun activateExistingExperiment(): DatasetActivationResult {
+        val preflight = canActivateExperiment()
+        if (preflight !is DatasetActivationResult.Success) {
+            return preflight
+        }
+        val metadata = loadExperimentalMetadata()
+            ?: return DatasetActivationResult.Blocked("Экспериментальный датасет не найден.")
+        return when (val validation = validateExperimental(metadata)) {
+            is DatasetValidationResult.Valid -> {
+                sessionPrefs.edit()
+                    .putString(KEY_SELECTED_MODE, DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL.name)
+                    .apply()
+                DatasetActivationResult.Success(DatasetSessionFactory.experimental(metadata))
+            }
+            is DatasetValidationResult.Invalid -> {
+                DatasetActivationResult.ValidationFailed("Экспериментальный датасет повреждён: ${validation.reason}")
+            }
+            is DatasetValidationResult.Missing -> {
+                DatasetActivationResult.Blocked("Файл экспериментального датасета отсутствует: ${validation.reason}")
+            }
+        }
+    }
+
+    /**
      * Full creation pipeline:
      * 1. Validate timer is not active
      * 2. Create staging snapshot from production DB (production remains untouched)
@@ -352,7 +386,8 @@ class DatasetSessionManager(
             "pref_show_habit_card_borders",
             "pref_enable_day_tiers",
             "pref_disable_confetti_animation",
-            "pref_first_weekday"
+            "pref_first_weekday",
+            "pref_developer"
         )
         for (key in nonSensitiveKeys) {
             val all = defaultPrefs.all
@@ -367,6 +402,8 @@ class DatasetSessionManager(
         }
         // Explicitly ensure sync is disabled in experimental preferences
         editor.putBoolean("pref_sync_enabled", false)
+        // Mark first run as completed so IntroActivity does not launch
+        editor.putBoolean("pref_first_run", false)
         editor.apply()
     }
 
