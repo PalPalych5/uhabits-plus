@@ -39,9 +39,9 @@ import kotlin.uuid.Uuid
 @OptIn(ExperimentalUuidApi::class)
 class HabitOrganizationFacadeImpl(
     override val mode: OrganizationAuthorityMode = OrganizationAuthorityMode.LEGACY,
-    private val containerQueries: ContainerQueries? = null,
-    private val habitPlacementQueries: HabitPlacementQueries? = null,
-    private val organizationService: OrganizationService? = null,
+    override val containerQueries: ContainerQueries? = null,
+    override val habitPlacementQueries: HabitPlacementQueries? = null,
+    override val organizationService: OrganizationService? = null,
     private val habitBlockRepository: HabitBlockRepository? = null,
     private val blocksProvider: (() -> List<HabitBlock>)? = null,
     private val allHabitsProvider: (() -> List<Habit>)? = null

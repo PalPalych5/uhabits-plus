@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/actionSearchContainer"
+        android:title="@string/search"
+        app:actionViewClass="androidx.appcompat.widget.SearchView"
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/actionSearch"
+        android:icon="@drawable/ic_toolbar_search"
+        android:title="@string/search"
+        app:showAsAction="always" />
+
+    <item
+        android:id="@+id/actionRename"
+        android:title="@string/containers_rename"
+        android:visible="false"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/actionChangeColor"
+        android:title="@string/containers_change_color"
+        android:visible="false"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/actionMove"
+        android:title="@string/containers_move"
+        android:visible="false"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/actionArchive"
+        android:title="@string/containers_to_archive"
+        android:visible="false"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/actionRestore"
+        android:title="@string/containers_restore"
+        android:visible="false"
+        app:showAsAction="never" />
+
+</menu>

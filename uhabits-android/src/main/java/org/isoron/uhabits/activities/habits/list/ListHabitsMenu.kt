@@ -38,6 +38,9 @@ import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.ui.screens.habits.list.ListHabitsMenuBehavior
 import org.isoron.uhabits.inject.ActivityContext
 import org.isoron.uhabits.inject.ActivityScope
+import org.isoron.uhabits.HabitsApplication
+import org.isoron.uhabits.activities.containers.ContainersActivity
+import org.isoron.uhabits.core.containers.session.DatasetMode
 import org.isoron.uhabits.utils.StyledResources
 
 @Inject
@@ -69,6 +72,10 @@ class ListHabitsMenu(
         this.menu = menu
         menu.setGroupVisible(R.id.actionItems, !isSearchActive)
         menu.findItem(R.id.actionSearchContainer)?.isVisible = isSearchActive
+
+        val app = activity.application as? HabitsApplication
+        val isContainersExperimental = app?.component?.session?.mode == DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL
+        menu.findItem(R.id.actionContainers)?.isVisible = isContainersExperimental && !isSearchActive
     }
 
     fun onCreate(inflater: MenuInflater, menu: Menu) {
@@ -219,6 +226,11 @@ class ListHabitsMenu(
 
             R.id.actionSearch -> {
                 openSearch()
+                return true
+            }
+
+            R.id.actionContainers -> {
+                activity.startActivity(ContainersActivity.intent(activity))
                 return true
             }
 

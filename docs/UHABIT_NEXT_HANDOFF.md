@@ -75,7 +75,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR4 — Experimental backup/restore | Full snapshot/manifest/roundtrip; version-aware import routing | Silent Container merge, production behavior change | PR3; recovery prefs/import policy | DONE |
 | PR5 — Authority switch + compatibility facade | Placement authority, legacy writer guards, editor/group/filter/SKIP seams | Full redesign, dual-write | PR4 recovery path; inventory readers/writers | DONE |
 | PR6 — Isolated DatasetSession + sync/jobs isolation | Отдельная копия, DI/session lifecycle, hard sync/job gates | Remote protocol, production cutover | PR5; timer/prefs policy; обязательные integration checks | DONE |
-| PR7 — Minimal Browse prototype | Roots/children/Habits, create/move/archive, breadcrumb/search | Tasks/Focus/new statistics, full shell redesign | PR6 Foundation validated; Android visual QA | READY |
+| PR7 — Minimal Browse prototype | Roots/children/Habits, create/move/archive, breadcrumb/search | Tasks/Focus/new statistics, full shell redesign | PR6 Foundation validated; Android visual QA | DONE |
 | Task MVP | Отдельный Task domain, title capture/Inbox, plan vs deadline, complete/undo | Recurrence engine, Focus/Contribution | Stable Container/Browse; отдельный Task contract | PLANNED |
 | FocusSession | Durable standalone work fact и безопасная финализация | Выдуманные legacy sessions, произвольные rules | Task MVP; timer/attribution/recovery design | PLANNED |
 | Contribution / provenance | Один явный source rule, breakdown/dedupe/corrections/undo | Пользовательский rules language, hidden double-write | Durable facts; manual/automatic projection contract | PLANNED |
@@ -89,18 +89,17 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2)
+Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE
 Coordination handoff: DONE
-Current repository HEAD: f4073570776b25aa17dfa17bc671b569bf8d40a2
 Current branch: dev
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
-Next implementation: PR7 — Minimal Browse prototype (READY)
+Next implementation: Task MVP / post-PR7 evaluation
 Production DB schema: v29 unchanged (repository DATABASE_VERSION)
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
 ```
 
-Git status: PR6 полностью реализован и прошёл всесторонний Android runtime smoke-test на эмуляторе (Pixel 6, API 37). Все 11 сценариев (production baseline, creation, migration verification, mutation isolation, re-entry preservation, process death, sync 0-calls barrier, timer guard, reminder/widget guards, corrupted experiment fallback with UI dialog) успешно подтверждены. Исправлены граничные случаи re-entry без повторного затирания и корректный флаг первого запуска.
+Git status: PR7 полностью реализован, протестирован unit-тестами core и android, и прошёл детальный Android runtime smoke-test на эмуляторе (Pixel 6, API 37) во всех сценариях. Изоляция от production БД стопроцентная.
 
 Runtime/device DB и live Supabase проверены: v29 production DB (uhabits.db) остаётся побайтово неизменной (SHA-256 d36a3f97...), в эксперименте открывается uhabits-container-experimental.db с 0 сетевыми вызовами.
 
@@ -108,7 +107,7 @@ Runtime/device DB и live Supabase проверены: v29 production DB (uhabit
 
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| Antigravity | PR6 — Isolated DatasetSession + sync/jobs isolation | dev / primary | DONE | 2026-10-03 13:47 | core/containers/session, android/session, android/inject, sync, timer/reminders/widgets guards | PR6 completed (commit f4073570), 6 core session tests + 12 sync isolation tests passing, assembleDebug OK |
+| Antigravity | PR7 — Minimal Browse prototype | dev / primary | DONE | 2026-10-03 18:25 | core/containers/facade, android/activities/containers, android/res, tests | PR7 completed, core + android tests passing 100%, emulator smoke-test verified |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
 
@@ -126,12 +125,9 @@ Handoff — coordination register, не атомарный mutex: одновре
 
 ## 7. Next actions
 
-1. PR1, PR2, PR3, PR4, PR5 и PR6 успешно завершены. Все 104 целевых теста в `:uhabits-core:jvmTest` (и все 479 тестов core набора) пройдены без сбоев. 12 тестов `SyncCoordinatorTest` в `:uhabits-android:testDebugUnitTest` пройдены без сбоев. Сборка `:uhabits-android:assembleDebug` успешна.
-2. В PR6 реализован изолированный runtime `DatasetSession` с отдельным SQLite-файлом `uhabits-container-experimental.db` и пространством настроек `uhabits_prefs_experimental_<datasetId>`.
-3. Реализован строгий барьер изоляции: 0 сетевых вызовов в экспериментальном режиме (`DisabledSyncBackend`, `SyncCoordinator` gates, hard guard в DI).
-4. Заблокированы фоновые мутирующие задачи в экспериментальном режиме: legacy timer заблокирован, `ReminderReceiver` и `WidgetReceiver` игнорируют события в эксперименте, активный production timer блокирует вход в эксперимент до его завершения.
-5. Реализован feature-gate в настройках приложения (Developer -> UHabit Next Container experiment) с созданием валидированного снапшота через PR3 миграцию и PR4 верификацию, безопасным выходом в production и fallback при повреждении копии.
-6. По следующему явному запросу пользователя взять в работу **PR7 — Minimal Browse prototype**, предварительно зарегистрировав scope в Active work.
+1. Foundation PR1–PR7 успешно завершены. Все 112 целевых тестов PR1–PR7 в `:uhabits-core:jvmTest` (и все 487 тестов core набора) пройдены без сбоев. Unit-тесты `ContainersGateTest` и `SyncCoordinatorTest` в `:uhabits-android:testDebugUnitTest` пройдены без сбоев. Сборка `:uhabits-android:assembleDebug` успешна.
+2. Проведён полный runtime smoke-test минимального UI-прототипа Containers (Browse Root, Container Detail, breadcrumbs, Ancestors bottom sheet, переключатель скоупа `HERE` / `SUBTREE`, 1-таповые чеклисты карточек, single habit drill-down move, создание разделов/подразделов, архивация/восстановление, Unassigned экран, единый поиск, рестарт процесса и изоляция от production DB).
+3. Следующий логический этап согласно Roadmap — **Task MVP** (отдельный Task domain, title capture/Inbox, plan vs deadline, complete/undo) и UX evaluation. Перед началом реализации Task MVP требуется отдельное согласование контракта и UX решения.
 
 ## 8. PR1 contract
 
@@ -356,6 +352,45 @@ Result:
 - Все 104 целевых теста PR1–PR6 в `:uhabits-core:jvmTest` и тесты в `:uhabits-android:testDebugUnitTest` пройдены успешно (exit code 0). Сборка `assembleDebug` успешна.
 
 Artifacts: `uhabits-android/src/main/java/org/isoron/uhabits/session/DatasetSessionManager.kt`, `uhabits-android/src/main/java/org/isoron/uhabits/activities/settings/SettingsFragment.kt`, `uhabits-android/src/main/java/org/isoron/uhabits/activities/main/MainActivity.kt`.
+
+### 2026-10-03 — PR7 Minimal Browse prototype for Containers UI
+
+Agent: Antigravity; session `5d910332-59de-46dc-828b-969d1ab84869`.
+
+Result:
+- Реализован минимальный UX-прототип Browse для работы с Containers в режиме `CONTAINER_LOCAL_EXPERIMENTAL`:
+  - Никаких Tasks, Focus, Contributions и дополнительных вкладок (Tasks/Focus/Stats); строгий принцип «Powerful underneath, simple on the surface».
+  - Строгий нейминг: повсеместно используются термины «Раздел» / «Подраздел» (без «Папка» / Folder).
+  - Архитектурный фасад в `uhabits-core`: открыты read queries (`containerQueries`, `habitPlacementQueries`) и сервис мутаций `organizationService` в `HabitOrganizationFacade`.
+  - Core navigation tests: реализован `ContainersBrowseNavigationTest` (8 тестов, покрывающих BrowseRoot, ContainerDetail, иерархические breadcrumbs, Ancestors bottom sheet, переключатель скоупа `HERE` vs `SUBTREE`, single habit placement move, archive subtree semantics без архивации привычек и целостность unarchive).
+- Android UI реализация:
+  - Session gate: иконка «Разделы» (`actionContainers`) динамически появляется в тулбаре `MainActivity` строго при `app.component.session.mode == DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL`. При возврате в `LEGACY_PRODUCTION` иконка полностью скрыта.
+  - Полноценная `ContainersActivity` с единым контейнером контента, обработкой edge-to-edge window insets (`applyToolbarInsets()`), поддержкой палитры тем (Light/Dark/AMOLED) через `MainTabsThemeBridge` и локализацией (ru-rRU и default).
+  - Browse Root: отображение списка корневых разделов с подсчётом подразделов и привычек внутри, системного блока со строками «Без раздела» и «Архив разделов», а также FAB «+» для создания корневых разделов.
+  - Container Detail:
+    - Заголовок с названием раздела и кликабельный подзаголовок-хлебные крошки (для глубины >= 3: `Root / … / Parent ▾`).
+    - Клик по заголовку/подзаголовку тулбара открывает `AncestorsBottomSheetDialog` с отображением всей цепочки предков до корня, подсветкой текущего узла и возможностью мгновенного перехода на любой уровень предка или в корень.
+    - Аппаратная/жестовая кнопка «Назад» и кнопка «Вверх» в тулбаре выполняют строгий пошаговый переход на один уровень вверх по иерархии (level 3 -> level 2 -> level 1 -> root).
+    - Блок «Подразделы»: список прямых дочерних разделов со счётчиком вложенных подразделов и кнопкой «+» создания подраздела.
+    - Блок «Привычки»: встроенный переключатель скоупа (`ЗДЕСЬ ▾` vs `ВКЛЮЧАЯ ВЛОЖЕННЫЕ ▾`) и список привычек.
+    - Checkmark interaction fidelity: карточки привычек рендерятся через оригинальный `HabitCardView` с сохранением чеклиста, 1-таповой отметки, числовых привычек, заметок, вычисления скора и автоматического обновления UI при смене модели без бесконечной рекурсии (guard flag).
+    - Контекстное меню привычки: долгий тап по карточке привычки открывает компактный popup «Переместить в раздел…».
+  - Диалог перемещения `DrillDownMoveDialog`: bottom sheet с поиском, возможностью перемещения в корень («В корень (сделать корневым)») и пошаговой навигацией внутрь дерева разделов для выбора целевого родителя.
+  - Диалог создания раздела `CreateContainerDialog`: минималистичный bottom sheet с 3 полями: Название, Родитель (с drill-down выбором) и палитра цветов Swatches (без типов Area/Project, дедлайнов и лишних атрибутов).
+  - Семантика «Архив разделов»:
+    - В меню ⋮ раздела доступно действие «В архив» с подробным предупреждающим диалогом (раздел скрывается, но привычки внутри остаются активными).
+    - На экране «Архив разделов» отображаются только верхние узлы архивированных поддеревьев (без замусоривания дочерними узлами, находящимися в эффективном архиве).
+    - При открытии архивного раздела отображается предупреждающий баннер с кнопкой «Восстановить».
+    - Восстановление раздела штатно возвращает его и всё поддерево на исходное место под родителя; авто-репарентинг в корень исключён.
+  - Упрощённый экран «Без раздела»: список всех нераспределённых привычек в виде обычных карточек без громоздких кнопок под каждой привычкой; перемещение в раздел доступно через контекстное меню привычки.
+  - Единый поиск (Unified Search): иконка поиска в тулбаре активирует строку поиска, осуществляющую фильтрацию и по разделам (с путями цепочки), и по привычкам (с указанием родительского раздела), с прямым переходом к выбранному объекту.
+- Android Runtime smoke-test на эмуляторе:
+  - Успешно проверены все сценарии: вход в эксперимент, появление иконки, навигация по дереву до глубины 3, переименование, смена цвета, создание подраздела, drill-down перемещение привычки, переключение скоупа `ЗДЕСЬ` / `ВКЛЮЧАЯ ВЛОЖЕННЫЕ`, 1-таповая отметка чеклиста с обновлением скора, архивация поддерева, проверка корневого архива, восстановление из архива, распределение привычки из «Без раздела», поиск и клик по результату, холодный рестарт процесса с сохранением данных и возврат в `LEGACY_PRODUCTION` с подтверждением нулевого воздействия на продуктовые данные и автоматическим исчезновением иконки «Разделы».
+- Тестирование:
+  - Все целевые тесты PR1–PR7 в `:uhabits-core:jvmTest` (8 тестов `ContainersBrowseNavigationTest`, 487 тестов core всего) и тесты в `:uhabits-android:testDebugUnitTest` (`ContainersGateTest`, `SyncCoordinatorTest`) пройдены успешно (exit code 0).
+  - Сборка `assembleDebug` успешна.
+
+Artifacts: `uhabits-android/src/main/java/org/isoron/uhabits/activities/containers/**`, `uhabits-android/src/main/res/layout/activity_containers.xml`, `uhabits-android/src/main/res/menu/containers_menu.xml`, `uhabits-android/src/main/res/drawable/ic_toolbar_containers.xml`, `uhabits-android/src/main/res/drawable/ic_toolbar_search.xml`, `uhabits-core/src/commonTest/kotlin/org/isoron/uhabits/core/containers/ContainersBrowseNavigationTest.kt`, `uhabits-android/src/test/java/org/isoron/uhabits/activities/containers/ContainersGateTest.kt`.
 
 ## 11. Session close protocol
 

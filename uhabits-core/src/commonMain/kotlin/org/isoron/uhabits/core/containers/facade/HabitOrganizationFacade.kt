@@ -20,8 +20,11 @@
 package org.isoron.uhabits.core.containers.facade
 
 import org.isoron.uhabits.core.containers.ContainerId
+import org.isoron.uhabits.core.containers.ContainerQueries
+import org.isoron.uhabits.core.containers.HabitPlacementQueries
 import org.isoron.uhabits.core.containers.OrganizationResult
 import org.isoron.uhabits.core.containers.OrganizationRevision
+import org.isoron.uhabits.core.containers.OrganizationService
 import org.isoron.uhabits.core.models.PaletteColor
 
 data class OrganizationalItem(
@@ -53,6 +56,9 @@ data class HabitPlacementInfo(
  */
 interface HabitOrganizationFacade {
     val mode: OrganizationAuthorityMode
+    val containerQueries: ContainerQueries? get() = null
+    val habitPlacementQueries: HabitPlacementQueries? get() = null
+    val organizationService: OrganizationService? get() = null
 
     /**
      * Returns current placement information for the habit.

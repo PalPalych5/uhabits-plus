@@ -49,6 +49,13 @@
             app:showAsAction="always" />
 
         <item
+            android:id="@+id/actionContainers"
+            android:icon="@drawable/ic_toolbar_containers"
+            android:title="@string/containers_title"
+            android:visible="false"
+            app:showAsAction="always" />
+
+        <item
             android:id="@+id/action_filter"
             android:icon="@drawable/ic_toolbar_sort_descending"
             android:title="@string/filter"
