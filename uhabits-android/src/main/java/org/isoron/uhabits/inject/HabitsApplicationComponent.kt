@@ -31,6 +31,9 @@ import org.isoron.uhabits.activities.habits.show.timer.PomodoroCompletionNotifie
 import org.isoron.uhabits.activities.habits.show.timer.TimerSessionManager
 import org.isoron.uhabits.backup.BackupManager
 import org.isoron.uhabits.core.commands.CommandRunner
+import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade
+import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacadeImpl
+import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import org.isoron.uhabits.core.io.GenericImporter
 import org.isoron.uhabits.core.io.Logging
 import org.isoron.uhabits.core.models.HabitList
@@ -80,6 +83,7 @@ abstract class HabitsApplicationComponent(
     abstract val genericImporter: GenericImporter
     abstract val habitCardListCache: HabitCardListCache
     abstract val habitList: HabitList
+    abstract val organizationFacade: HabitOrganizationFacade
     abstract val androidNotificationTray: AndroidNotificationTray
     abstract val intentFactory: IntentFactory
     abstract val intentParser: IntentParser
@@ -164,7 +168,19 @@ abstract class HabitsApplicationComponent(
 
     @AppScope
     @Provides
-    open fun habitList(list: SQLiteHabitList): HabitList = list
+    open fun habitOrganizationFacade(
+        sqlModelFactory: SQLModelFactory
+    ): HabitOrganizationFacade = HabitOrganizationFacadeImpl(
+        mode = OrganizationAuthorityMode.LEGACY,
+        habitBlockRepository = sqlModelFactory.habitBlockRepository
+    )
+
+    @AppScope
+    @Provides
+    open fun habitList(list: SQLiteHabitList, facade: HabitOrganizationFacade): HabitList {
+        list.organizationFacade = facade
+        return list
+    }
 
     @AppScope
     @Provides

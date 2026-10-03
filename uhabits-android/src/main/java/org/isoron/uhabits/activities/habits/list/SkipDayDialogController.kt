@@ -17,6 +17,8 @@ import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import org.isoron.uhabits.core.commands.BatchCreateRepetitionCommand
 import org.isoron.uhabits.core.commands.CommandRunner
+import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade
+import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
@@ -24,7 +26,8 @@ import org.isoron.uhabits.core.models.HabitList
 class SkipDayDialogController(
     private val fragment: Fragment,
     private val habitList: HabitList,
-    private val commandRunner: CommandRunner
+    private val commandRunner: CommandRunner,
+    private val organizationFacade: HabitOrganizationFacade? = null
 ) {
     private val context get() = fragment.requireContext()
 
@@ -52,10 +55,29 @@ class SkipDayDialogController(
             return
         }
 
-        val blocks = habitList.getBlocks().filter { block ->
-            remainingHabits.any { it.blockId == block.id }
+        val isContainerLocal = organizationFacade?.mode == OrganizationAuthorityMode.CONTAINER_LOCAL
+        val rootContainers = if (isContainerLocal) {
+            organizationFacade!!.rootContainers().filter { root ->
+                val habitUuidsInRoot = organizationFacade.getHabitUuidsForContainer(root.key, subtree = true)
+                remainingHabits.any { h -> h.uuid != null && habitUuidsInRoot.contains(h.uuid) }
+            }
+        } else {
+            emptyList()
         }
-        val hasSphereless = remainingHabits.any { it.blockId == null }
+        val blocks = if (!isContainerLocal) {
+            habitList.getBlocks().filter { block ->
+                remainingHabits.any { it.blockId == block.id }
+            }
+        } else {
+            emptyList()
+        }
+        val hasSphereless = if (isContainerLocal) {
+            remainingHabits.any { h ->
+                organizationFacade!!.getRootGroupKey(h.uuid ?: "", h.blockId) == null
+            }
+        } else {
+            remainingHabits.any { it.blockId == null }
+        }
         val density = fragment.resources.displayMetrics.density
         val scrollView = ScrollView(context)
         val container = LinearLayout(context).apply {
@@ -109,7 +131,12 @@ class SkipDayDialogController(
             textSize = 16f
             minHeight = (48 * density).toInt()
         }
-        if (blocks.isNotEmpty() || hasSphereless) radioGroup.addView(radioSphere)
+        val hasGroupingOptions = if (isContainerLocal) {
+            rootContainers.isNotEmpty() || hasSphereless
+        } else {
+            blocks.isNotEmpty() || hasSphereless
+        }
+        if (hasGroupingOptions) radioGroup.addView(radioSphere)
         container.addView(radioGroup)
 
         val checklistContainer = LinearLayout(context).apply {
@@ -119,13 +146,25 @@ class SkipDayDialogController(
             setPadding(leftPad, topBottomPad, 0, topBottomPad)
             visibility = View.GONE
         }
-        val sphereCheckboxes = blocks.map { block ->
-            CheckBox(context).apply {
-                text = block.name
-                textSize = 16f
-                minHeight = (48 * density).toInt()
-                tag = block.id
-                isChecked = true
+        val sphereCheckboxes = if (isContainerLocal) {
+            rootContainers.map { root ->
+                CheckBox(context).apply {
+                    text = root.name
+                    textSize = 16f
+                    minHeight = (48 * density).toInt()
+                    tag = root.key
+                    isChecked = true
+                }
+            }
+        } else {
+            blocks.map { block ->
+                CheckBox(context).apply {
+                    text = block.name
+                    textSize = 16f
+                    minHeight = (48 * density).toInt()
+                    tag = block.id.toString()
+                    isChecked = true
+                }
             }
         }
         sphereCheckboxes.forEach { checklistContainer.addView(it) }
@@ -202,13 +241,25 @@ class SkipDayDialogController(
         skipSphereless: Boolean
     ): List<Habit> {
         if (radioAllChecked) return remainingHabits
-        val checkedBlockIds = sphereCheckboxes
-            .filter { it.isChecked }
-            .map { it.tag as Long }
-            .toSet()
-        return remainingHabits.filter { habit ->
-            val blockId = habit.blockId
-            if (blockId != null) checkedBlockIds.contains(blockId) else skipSphereless
+        val isContainerLocal = organizationFacade?.mode == OrganizationAuthorityMode.CONTAINER_LOCAL
+        if (isContainerLocal) {
+            val checkedRootKeys = sphereCheckboxes
+                .filter { it.isChecked }
+                .map { it.tag.toString() }
+                .toSet()
+            return remainingHabits.filter { habit ->
+                val rootKey = organizationFacade!!.getRootGroupKey(habit.uuid ?: "", habit.blockId)?.toString()
+                if (rootKey != null) checkedRootKeys.contains(rootKey) else skipSphereless
+            }
+        } else {
+            val checkedBlockIds = sphereCheckboxes
+                .filter { it.isChecked }
+                .mapNotNull { it.tag.toString().toLongOrNull() }
+                .toSet()
+            return remainingHabits.filter { habit ->
+                val blockId = habit.blockId
+                if (blockId != null) checkedBlockIds.contains(blockId) else skipSphereless
+            }
         }
     }
 }

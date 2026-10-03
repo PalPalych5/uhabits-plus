@@ -29,6 +29,8 @@ class OrganizationServiceImpl(
     private val habitIdentityLookup: HabitIdentityLookup,
 ) : OrganizationService {
 
+    override fun currentRevision(): OrganizationRevision = store.readState().currentRevision
+
     // ========================================================================
     // Create Container
     // ========================================================================

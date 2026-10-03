@@ -20,6 +20,8 @@ package org.isoron.uhabits.core.models.memory
 
 import org.isoron.platform.Synchronized
 import org.isoron.platform.time.LocalDate
+import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade
+import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitBlock
@@ -32,6 +34,13 @@ import org.isoron.uhabits.core.models.HabitMatcher
 open class MemoryHabitList : HabitList {
     private val list = mutableListOf<Habit>()
     private val blocksList = mutableListOf<HabitBlock>()
+
+    var organizationFacade: HabitOrganizationFacade? = null
+        set(value) {
+            field = value
+            comparator = getComposedComparatorByOrder(primaryOrder, secondaryOrder)
+            resort()
+        }
 
     override fun getBlocks(): List<HabitBlock> = blocksList
     override var globalStatisticsStartDate: LocalDate? = null
@@ -81,6 +90,7 @@ open class MemoryHabitList : HabitList {
     ) : super(matcher) {
         this.parent = parent
         this.comparator = comparator
+        this.organizationFacade = parent.organizationFacade
         primaryOrder = parent.primaryOrder
         secondaryOrder = parent.secondaryOrder
         dayTierSortOrder = parent.dayTierSortOrder
@@ -175,19 +185,43 @@ open class MemoryHabitList : HabitList {
         val statusComparatorAsc =
             Comparator { h1: Habit, h2: Habit -> statusComparatorDesc.compare(h2, h1) }
         val sphereComparator = Comparator<Habit> { h1, h2 ->
-            val b1 = blocksList.find { it.id == h1.blockId }
-            val b2 = blocksList.find { it.id == h2.blockId }
-            if (b1 != null && b2 != null) {
-                val posCompare = b1.position.compareTo(b2.position)
+            val facade = organizationFacade
+            if (facade != null && facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+                val key1 = facade.getRootGroupKey(h1.uuid!!, h1.blockId) as? String
+                val key2 = facade.getRootGroupKey(h2.uuid!!, h2.blockId) as? String
+                if (key1 != key2) {
+                    if (key1 != null && key2 != null) {
+                        val roots = facade.rootContainers()
+                        val idx1 = roots.indexOfFirst { it.key == key1 }
+                        val idx2 = roots.indexOfFirst { it.key == key2 }
+                        val r1 = if (idx1 >= 0) idx1 else Int.MAX_VALUE
+                        val r2 = if (idx2 >= 0) idx2 else Int.MAX_VALUE
+                        val c = r1.compareTo(r2)
+                        if (c != 0) return@Comparator c
+                    } else if (key1 != null) {
+                        return@Comparator -1
+                    } else {
+                        return@Comparator 1
+                    }
+                }
+                val posCompare = h1.position.compareTo(h2.position)
                 if (posCompare != 0) return@Comparator posCompare
-            } else if (b1 != null && b2 == null) {
-                return@Comparator -1
-            } else if (b1 == null && b2 != null) {
-                return@Comparator 1
+                h1.name.compareTo(h2.name)
+            } else {
+                val b1 = blocksList.find { it.id == h1.blockId }
+                val b2 = blocksList.find { it.id == h2.blockId }
+                if (b1 != null && b2 != null) {
+                    val posCompare = b1.position.compareTo(b2.position)
+                    if (posCompare != 0) return@Comparator posCompare
+                } else if (b1 != null && b2 == null) {
+                    return@Comparator -1
+                } else if (b1 == null && b2 != null) {
+                    return@Comparator 1
+                }
+                val posCompare = h1.position.compareTo(h2.position)
+                if (posCompare != 0) return@Comparator posCompare
+                h1.name.compareTo(h2.name)
             }
-            val posCompare = h1.position.compareTo(h2.position)
-            if (posCompare != 0) return@Comparator posCompare
-            h1.name.compareTo(h2.name)
         }
         val tierComparator = Comparator<Habit> { h1, h2 ->
             val tierCompare = dayTierSortIndex(h1.dayTier).compareTo(dayTierSortIndex(h2.dayTier))

@@ -38,6 +38,7 @@ import androidx.recyclerview.widget.RecyclerView
 import me.tatarka.inject.annotations.Inject
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.views.BundleSavedState
+import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.preferences.Preferences
@@ -49,9 +50,10 @@ class HabitCardListViewFactory(
     val adapter: HabitCardListAdapter,
     val cardViewFactory: HabitCardViewFactory,
     val controller: Lazy<HabitCardListController>,
-    val preferences: Preferences
+    val preferences: Preferences,
+    val organizationFacade: HabitOrganizationFacade
 ) {
-    fun create() = HabitCardListView(context, adapter, cardViewFactory, controller, preferences)
+    fun create() = HabitCardListView(context, adapter, cardViewFactory, controller, preferences, organizationFacade)
 }
 
 class HabitCardListView(
@@ -59,7 +61,8 @@ class HabitCardListView(
     private val adapter: HabitCardListAdapter,
     private val cardViewFactory: HabitCardViewFactory,
     private val controller: Lazy<HabitCardListController>,
-    private val preferences: Preferences
+    private val preferences: Preferences,
+    private val organizationFacade: HabitOrganizationFacade? = null
 ) : RecyclerView(context, null, R.attr.scrollableRecyclerViewStyle) {
 
     var checkmarkCount: Int = 0
@@ -257,7 +260,7 @@ class HabitCardListView(
 
     private fun Habit.groupKey(order: HabitList.Order): Any? {
         return when (order) {
-            HabitList.Order.BY_SPHERE -> blockId
+            HabitList.Order.BY_SPHERE -> organizationFacade?.getRootGroupKey(uuid ?: "", blockId) ?: blockId
             HabitList.Order.BY_DAY_TIER -> dayTier
             else -> null
         }

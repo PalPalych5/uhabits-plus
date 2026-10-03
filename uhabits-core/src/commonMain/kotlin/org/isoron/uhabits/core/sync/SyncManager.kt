@@ -3,6 +3,7 @@ package org.isoron.uhabits.core.sync
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 import org.isoron.platform.time.LocalDate
+import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import org.isoron.uhabits.core.database.HabitBlockData
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
@@ -23,6 +24,7 @@ class SyncManager(
     private val nowProvider: () -> Long,
     private val blockUuidProvider: (Long?) -> String? = { null }
 ) {
+    var authorityMode: OrganizationAuthorityMode = OrganizationAuthorityMode.LEGACY
     private var pausedDepth = 0
 
     fun now(): Long = nowProvider()
@@ -117,6 +119,7 @@ class SyncManager(
             }
 
     fun enqueueBlockChange(block: HabitBlockData, operationType: String) {
+        if (authorityMode == OrganizationAuthorityMode.CONTAINER_LOCAL) return
         val blockUuid = block.uuid ?: return
         enqueue(
             "habit_block",
@@ -178,6 +181,11 @@ class SyncManager(
 
     private fun habitPayload(habit: Habit): String {
         val goal = habit.currentGoal()
+        val blockUuid = if (authorityMode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            null
+        } else {
+            blockUuidProvider(habit.blockId)
+        }
         return json(
             "name" to habit.name,
             "description" to habit.description,
@@ -191,7 +199,7 @@ class SyncManager(
             "target_type" to goal.targetType.value.toString(),
             "unit" to goal.unit,
             "day_tier" to habit.dayTier.name,
-            "block_uuid" to blockUuidProvider(habit.blockId),
+            "block_uuid" to blockUuid,
             "timer_enabled" to habit.timerEnabled.toString(),
             "statistics_start" to habit.statisticsStartDate?.unixTime?.toString(),
             "reminder_hour" to habit.reminder?.hour?.toString(),

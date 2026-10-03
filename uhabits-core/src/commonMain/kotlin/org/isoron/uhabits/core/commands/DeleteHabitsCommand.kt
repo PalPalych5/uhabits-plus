@@ -18,6 +18,7 @@
  */
 package org.isoron.uhabits.core.commands
 
+import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
@@ -27,10 +28,14 @@ data class DeleteHabitsCommand(
     val selected: List<Habit>
 ) : Command {
     override fun run() {
-        val syncManager = (habitList as? SQLiteHabitList)?.syncManager
+        val sqliteList = habitList as? SQLiteHabitList
+        val syncManager = sqliteList?.syncManager
+        val authorityMode = sqliteList?.authorityMode ?: OrganizationAuthorityMode.LEGACY
         for (h in selected) {
             habitList.remove(h)
-            syncManager?.enqueueHabitDelete(h)
+            if (authorityMode == OrganizationAuthorityMode.LEGACY) {
+                syncManager?.enqueueHabitDelete(h)
+            }
         }
     }
 }

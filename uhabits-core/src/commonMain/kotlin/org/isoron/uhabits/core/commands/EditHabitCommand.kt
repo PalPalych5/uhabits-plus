@@ -18,6 +18,9 @@
  */
 package org.isoron.uhabits.core.commands
 
+import org.isoron.uhabits.core.containers.ContainerId
+import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade
+import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.HabitNotFoundException
@@ -26,15 +29,31 @@ import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 data class EditHabitCommand(
     val habitList: HabitList,
     val habitId: Long,
-    val modified: Habit
+    val modified: Habit,
+    val targetContainerId: ContainerId? = null,
+    val changeContainer: Boolean = false,
+    val organizationFacade: HabitOrganizationFacade? = null
 ) : Command {
     override fun run() {
         val habit = habitList.getById(habitId) ?: throw HabitNotFoundException()
+        val originalBlockId = habit.blockId
         habit.copyFrom(modified)
+        if (organizationFacade?.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            habit.blockId = originalBlockId
+        }
         habitList.update(habit)
         habit.recompute()
         habit.observable.notifyListeners()
         habitList.resort()
-        (habitList as? SQLiteHabitList)?.syncManager?.enqueueHabitUpdate(habit)
+        if (organizationFacade?.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            if (changeContainer) {
+                val habitUuid = habit.uuid ?: modified.uuid
+                if (habitUuid != null) {
+                    organizationFacade.placeHabit(habitUuid, targetContainerId)
+                }
+            }
+        } else {
+            (habitList as? SQLiteHabitList)?.syncManager?.enqueueHabitUpdate(habit)
+        }
     }
 }

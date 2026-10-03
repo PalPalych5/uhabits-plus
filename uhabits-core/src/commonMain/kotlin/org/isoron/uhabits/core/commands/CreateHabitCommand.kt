@@ -18,6 +18,9 @@
  */
 package org.isoron.uhabits.core.commands
 
+import org.isoron.uhabits.core.containers.ContainerId
+import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade
+import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.ModelFactory
@@ -26,13 +29,25 @@ import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 data class CreateHabitCommand(
     val modelFactory: ModelFactory,
     val habitList: HabitList,
-    val model: Habit
+    val model: Habit,
+    val initialContainerId: ContainerId? = null,
+    val organizationFacade: HabitOrganizationFacade? = null
 ) : Command {
     override fun run() {
         val habit = modelFactory.buildHabit()
         habit.copyFrom(model)
+        if (organizationFacade?.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            habit.blockId = null
+        }
         habitList.add(habit)
         habit.recompute()
-        (habitList as? SQLiteHabitList)?.syncManager?.enqueueHabitCreate(habit)
+        if (organizationFacade?.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            val habitUuid = habit.uuid ?: model.uuid
+            if (habitUuid != null) {
+                organizationFacade.placeNewHabit(habitUuid, initialContainerId)
+            }
+        } else {
+            (habitList as? SQLiteHabitList)?.syncManager?.enqueueHabitCreate(habit)
+        }
     }
 }

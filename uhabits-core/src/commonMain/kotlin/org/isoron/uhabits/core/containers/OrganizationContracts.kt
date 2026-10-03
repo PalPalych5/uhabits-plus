@@ -205,6 +205,8 @@ interface OrganizationService {
     val containerQueries: ContainerQueries
     val placementQueries: HabitPlacementQueries
 
+    fun currentRevision(): OrganizationRevision
+
     fun create(request: CreateContainer): OrganizationResult<Container>
     fun edit(request: EditContainer): OrganizationResult<Container>
     fun move(request: MoveContainer): OrganizationResult<Unit>

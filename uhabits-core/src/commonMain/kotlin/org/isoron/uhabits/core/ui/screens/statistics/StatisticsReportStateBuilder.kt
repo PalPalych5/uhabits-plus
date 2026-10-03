@@ -25,6 +25,8 @@ enum class StatisticsGoalTypeFilter {
 
 data class StatisticsFilterState(
     val sphereId: Long? = null,
+    val containerKey: String? = null,
+    val allowedHabitUuids: Set<String>? = null,
     val habitStatus: StatisticsHabitStatusFilter = StatisticsHabitStatusFilter.ACTIVE,
     val goalType: StatisticsGoalTypeFilter = StatisticsGoalTypeFilter.ALL,
     val tierScope: DayTierScope = DayTierScope.MINIMUM,
@@ -161,7 +163,11 @@ object StatisticsReportStateBuilder {
         shouldCancel: () -> Boolean = { false }
     ): StatisticsReportState {
         val filteredHabits = habits.filter { habit ->
-            val matchSphere = !filters.spheresEnabled || filters.sphereId == null || habit.blockId == filters.sphereId
+            val matchSphere = if (filters.allowedHabitUuids != null) {
+                filters.allowedHabitUuids.contains(habit.uuid)
+            } else {
+                !filters.spheresEnabled || filters.sphereId == null || habit.blockId == filters.sphereId
+            }
             val matchStatus = when (filters.habitStatus) {
                 StatisticsHabitStatusFilter.ACTIVE -> !habit.isArchived
                 StatisticsHabitStatusFilter.ARCHIVED -> habit.isArchived

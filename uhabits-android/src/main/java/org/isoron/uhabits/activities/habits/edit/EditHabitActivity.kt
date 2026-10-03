@@ -63,6 +63,8 @@ import org.isoron.uhabits.core.commands.CreateHabitCommand
 import org.isoron.uhabits.core.commands.EditHabitGoalCommand
 import org.isoron.uhabits.core.commands.EditHabitCommand
 import org.isoron.uhabits.core.commands.GoalApplyScope
+import org.isoron.uhabits.core.containers.ContainerId
+import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.Habit
@@ -167,6 +169,7 @@ class EditHabitActivity : AppCompatActivity() {
     var dayTier = DayTier.NORMAL
     var timerEnabled = false
     var blockId: Long? = 7L
+    var containerId: String? = null
     private var hasIndividualColor = false
     private var createArchived = false
 
@@ -174,6 +177,7 @@ class EditHabitActivity : AppCompatActivity() {
         super.onCreate(state)
 
         val component = (application as HabitsApplication).component
+        val facade = component.organizationFacade
         themeSwitcher = AndroidThemeSwitcher(this, component.preferences)
         themeSwitcher.apply()
 
@@ -195,6 +199,10 @@ class EditHabitActivity : AppCompatActivity() {
             dayTier = habit.dayTier
             timerEnabled = habit.timerEnabled
             blockId = habit.blockId
+            if (facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+                val placement = facade.getPlacementInfo(habit.uuid ?: "", habit.blockId)
+                containerId = placement.containerId?.value
+            }
             hasIndividualColor = true
             habit.reminder?.let {
                 reminderHour = it.hour
@@ -210,6 +218,10 @@ class EditHabitActivity : AppCompatActivity() {
             habitType = HabitType.fromInt(intent.getIntExtra("habitType", HabitType.YES_NO.value))
             createArchived = intent.getBooleanExtra("createArchived", false)
             timerEnabled = habitType == HabitType.NUMERICAL
+            if (facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+                blockId = null
+                containerId = null
+            }
         }
 
         if (state != null) {
@@ -225,6 +237,7 @@ class EditHabitActivity : AppCompatActivity() {
             timerEnabled = state.getBoolean("timerEnabled")
             val savedBlockId = state.getLong("blockId", -1L)
             blockId = if (savedBlockId == -1L) null else savedBlockId
+            containerId = state.getString("containerId")
             hasIndividualColor = state.getBoolean("hasIndividualColor", habitId >= 0)
             createArchived = state.getBoolean("createArchived", false)
         } else if (habitId < 0) {
@@ -375,31 +388,56 @@ class EditHabitActivity : AppCompatActivity() {
         binding.habitBlockPicker.setOnClickListener {
             habitBlockArrow.open()
             val component = (application as HabitsApplication).component
-            val blocks = component.habitList.getBlocks()
-            val items = blocks.map { getBlockDisplayName(it) }
+            val facade = component.organizationFacade
+            if (facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+                val containers = facade.availableContainers()
+                val items = mutableListOf<String>()
+                items.add(getString(R.string.habit_block_unassigned))
+                items.addAll(containers.map { it.path ?: it.name })
 
-            val dialog = CustomDialogs.showSingleChoiceDialog(
-                context = this,
-                title = getString(R.string.habit_block),
-                options = items,
-                selectedIndex = blocks.indexOfFirst { it.id == blockId },
-                neutralText = getString(R.string.manage_blocks),
-                onNeutral = {
-                    startActivity(android.content.Intent(this, org.isoron.uhabits.activities.blocks.ManageBlocksActivity::class.java))
+                val currentIdx = if (containerId == null) 0 else {
+                    val idx = containers.indexOfFirst { it.key == containerId }
+                    if (idx >= 0) idx + 1 else 0
                 }
-            ) { which ->
-                val selectedBlock = blocks[which]
-                color = HabitColorDefaults.afterBlockChange(
-                    currentColor = color,
-                    newBlockId = selectedBlock.id,
-                    hasIndividualColor = hasIndividualColor,
-                    blocks = blocks
-                )
-                blockId = selectedBlock.id
-                populateHabitBlock()
-                updateColors()
+
+                val dialog = CustomDialogs.showSingleChoiceDialog(
+                    context = this,
+                    title = getString(R.string.habit_block),
+                    options = items,
+                    selectedIndex = currentIdx
+                ) { which ->
+                    containerId = if (which == 0) null else containers[which - 1].key
+                    populateHabitBlock()
+                    updateColors()
+                }
+                dialog.setOnDismissListener { habitBlockArrow.close() }
+            } else {
+                val blocks = component.habitList.getBlocks()
+                val items = blocks.map { getBlockDisplayName(it) }
+
+                val dialog = CustomDialogs.showSingleChoiceDialog(
+                    context = this,
+                    title = getString(R.string.habit_block),
+                    options = items,
+                    selectedIndex = blocks.indexOfFirst { it.id == blockId },
+                    neutralText = getString(R.string.manage_blocks),
+                    onNeutral = {
+                        startActivity(android.content.Intent(this, org.isoron.uhabits.activities.blocks.ManageBlocksActivity::class.java))
+                    }
+                ) { which ->
+                    val selectedBlock = blocks[which]
+                    color = HabitColorDefaults.afterBlockChange(
+                        currentColor = color,
+                        newBlockId = selectedBlock.id,
+                        hasIndividualColor = hasIndividualColor,
+                        blocks = blocks
+                    )
+                    blockId = selectedBlock.id
+                    populateHabitBlock()
+                    updateColors()
+                }
+                dialog.setOnDismissListener { habitBlockArrow.close() }
             }
-            dialog.setOnDismissListener { habitBlockArrow.close() }
         }
 
         binding.numericalFrequencyPicker.setOnClickListener {
@@ -505,7 +543,12 @@ class EditHabitActivity : AppCompatActivity() {
 
         habit.frequency = Frequency(freqNum, freqDen)
         habit.dayTier = dayTier
-        habit.blockId = blockId
+        val facade = component.organizationFacade
+        if (facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            habit.blockId = null
+        } else {
+            habit.blockId = blockId
+        }
         if (habitType == HabitType.NUMERICAL) {
             val parsedTarget = binding.targetInput.text.toString().trim().replace(',', '.').toDoubleOrNull() ?: 1.0
             habit.targetValue = parsedTarget
@@ -528,11 +571,31 @@ class EditHabitActivity : AppCompatActivity() {
             return
         }
 
+        val isContainerLocal = facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL
+        val targetContainer = containerId?.let { ContainerId(it) }
+        val origContainerId = if (habitId >= 0 && original != null && isContainerLocal) {
+            facade.getPlacementInfo(original.uuid ?: "", original.blockId).containerId?.value
+        } else null
+        val containerChanged = isContainerLocal && (containerId != origContainerId)
+
         runSaveCommand(
             if (habitId >= 0) {
-                EditHabitCommand(component.habitList, habitId, habit)
+                EditHabitCommand(
+                    habitList = component.habitList,
+                    habitId = habitId,
+                    modified = habit,
+                    targetContainerId = targetContainer,
+                    changeContainer = containerChanged,
+                    organizationFacade = facade
+                )
             } else {
-                CreateHabitCommand(component.modelFactory, component.habitList, habit)
+                CreateHabitCommand(
+                    modelFactory = component.modelFactory,
+                    habitList = component.habitList,
+                    model = habit,
+                    initialContainerId = targetContainer,
+                    organizationFacade = facade
+                )
             }
         )
     }
@@ -627,6 +690,7 @@ class EditHabitActivity : AppCompatActivity() {
             putString("dayTier", dayTier.name)
             putBoolean("timerEnabled", binding.timerEnabledSwitch.isChecked)
             putLong("blockId", blockId ?: -1L)
+            containerId?.let { putString("containerId", it) }
             putBoolean("hasIndividualColor", hasIndividualColor)
             putBoolean("createArchived", createArchived)
             putBoolean("colorPickerOpen", colorPicker?.isAdded == true)
@@ -643,6 +707,16 @@ class EditHabitActivity : AppCompatActivity() {
 
     private fun populateHabitBlock() {
         val component = (application as HabitsApplication).component
+        val facade = component.organizationFacade
+        if (facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            if (containerId != null) {
+                val current = facade.availableContainers().firstOrNull { it.key == containerId }
+                binding.habitBlockPicker.text = current?.path ?: current?.name ?: getString(R.string.habit_block_unassigned)
+            } else {
+                binding.habitBlockPicker.text = getString(R.string.habit_block_unassigned)
+            }
+            return
+        }
         val blocks = component.habitList.getBlocks()
         val currentBlock = blocks.firstOrNull { it.id == blockId }
         binding.habitBlockPicker.text = currentBlock?.let { getBlockDisplayName(it) } ?: getString(R.string.habit_block_unassigned)

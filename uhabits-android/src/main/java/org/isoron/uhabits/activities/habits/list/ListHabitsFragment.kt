@@ -291,7 +291,8 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             SkipDayDialogController(
                 fragment = this,
                 habitList = appComponent.habitList,
-                commandRunner = appComponent.commandRunner
+                commandRunner = appComponent.commandRunner,
+                organizationFacade = appComponent.organizationFacade
             ).show()
             return true
         }

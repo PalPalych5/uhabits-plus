@@ -23,6 +23,7 @@ import org.isoron.platform.io.PreparedStatement
 import org.isoron.platform.io.StepResult
 import org.isoron.platform.io.queryLong
 import org.isoron.platform.io.run
+import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
@@ -39,6 +40,8 @@ data class HabitBlockData(
 )
 
 class HabitBlockRepository(private val db: Database) {
+    var authorityMode: OrganizationAuthorityMode = OrganizationAuthorityMode.LEGACY
+
     private val findAllStmt by lazy {
         db.prepareStatement(
             """SELECT id, name, color, icon, position, is_archived, uuid, updated_at, deleted_at
@@ -95,6 +98,9 @@ class HabitBlockRepository(private val db: Database) {
     }
 
     fun insert(data: HabitBlockData): Long {
+        check(authorityMode == OrganizationAuthorityMode.LEGACY) {
+            "Cannot insert HabitBlock in CONTAINER_LOCAL mode. HabitBlocks are frozen legacy snapshots."
+        }
         insertStmt.reset()
         bindForInsert(insertStmt, normalizeForWrite(data))
         insertStmt.step()
@@ -102,6 +108,9 @@ class HabitBlockRepository(private val db: Database) {
     }
 
     fun update(data: HabitBlockData) {
+        check(authorityMode == OrganizationAuthorityMode.LEGACY) {
+            "Cannot update HabitBlock in CONTAINER_LOCAL mode. HabitBlocks are frozen legacy snapshots."
+        }
         updateStmt.reset()
         val normalized = normalizeForWrite(data)
         bindForInsert(updateStmt, normalized)
@@ -110,6 +119,9 @@ class HabitBlockRepository(private val db: Database) {
     }
 
     fun softDelete(id: Long, deletedAt: Long) {
+        check(authorityMode == OrganizationAuthorityMode.LEGACY) {
+            "Cannot softDelete HabitBlock in CONTAINER_LOCAL mode. HabitBlocks are frozen legacy snapshots."
+        }
         val current = findById(id) ?: return
         update(
             current.copy(
@@ -119,7 +131,12 @@ class HabitBlockRepository(private val db: Database) {
         )
     }
 
-    fun delete(id: Long) = softDelete(id, deletedAt = 0)
+    fun delete(id: Long) {
+        check(authorityMode == OrganizationAuthorityMode.LEGACY) {
+            "Cannot delete HabitBlock in CONTAINER_LOCAL mode. HabitBlocks are frozen legacy snapshots."
+        }
+        softDelete(id, deletedAt = 0)
+    }
 
     fun execSQL(sql: String) = db.run(sql)
 

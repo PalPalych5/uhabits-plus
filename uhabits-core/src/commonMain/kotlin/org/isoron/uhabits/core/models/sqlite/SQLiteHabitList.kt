@@ -21,6 +21,8 @@ package org.isoron.uhabits.core.models.sqlite
 import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.Synchronized
 import org.isoron.platform.time.LocalDate
+import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade
+import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import org.isoron.uhabits.core.database.AppSettingRepository
 import org.isoron.uhabits.core.database.HabitData
 import org.isoron.uhabits.core.database.HabitGoalData
@@ -44,9 +46,6 @@ import org.isoron.uhabits.core.models.WeekdayList
 import org.isoron.uhabits.core.models.memory.MemoryHabitList
 import org.isoron.uhabits.core.sync.SyncManager
 
-/**
- * Implementation of a [HabitList] that is backed by SQLite.
- */
 @Inject
 class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
     private val repository: HabitRepository = (modelFactory as SQLModelFactory).habitRepository
@@ -60,6 +59,24 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
         (modelFactory as SQLModelFactory).syncManager
     private val list: MemoryHabitList = MemoryHabitList()
     private var loaded = false
+
+    var authorityMode: OrganizationAuthorityMode = OrganizationAuthorityMode.LEGACY
+        set(value) {
+            field = value
+            extensionRepository.authorityMode = value
+            (modelFactory as? SQLModelFactory)?.habitBlockRepository?.authorityMode = value
+            syncManager.authorityMode = value
+        }
+
+    var organizationFacade: HabitOrganizationFacade? = null
+        set(value) {
+            field = value
+            list.organizationFacade = value
+            if (value != null) {
+                authorityMode = value.mode
+            }
+        }
+
     override var globalStatisticsStartDate: LocalDate? = null
         set(value) {
             field = value
@@ -77,6 +94,7 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
         loaded = true
         list.removeAll()
         list.setBlocks(getBlocks())
+        list.organizationFacade = organizationFacade
         globalStatisticsStartDate =
             appSettingRepository.getLong(GLOBAL_STATS_START_KEY)?.let(LocalDate::fromUnixTime)
         val records = repository.findAll()
@@ -114,6 +132,9 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
         data.updatedAt = syncManager.now()
         val id = repository.insert(data)
         habit.id = id
+        if (authorityMode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            habit.blockId = null
+        }
         extensionRepository.upsert(habit.toExtensionData())
         goalRepository.replaceAll(id, habit.normalizedGoalHistory().map { it.toGoalData(id, habit.uuid!!) }, data.updatedAt)
         (habit.originalEntries as SQLiteEntryList).habitId = id
@@ -209,6 +230,9 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
 
     @Synchronized
     override fun removeAll() {
+        if (authorityMode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            throw UnsupportedOperationException("removeAll() hard purge is prohibited in CONTAINER_LOCAL mode")
+        }
         list.removeAll()
         extensionRepository.deleteAll()
         appSettingRepository.delete(GLOBAL_STATS_START_KEY)
@@ -272,6 +296,7 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
 
     override fun resort() {
         list.setBlocks(getBlocks())
+        list.organizationFacade = organizationFacade
         list.resort()
         observable.notifyListeners()
     }

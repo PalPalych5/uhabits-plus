@@ -226,6 +226,9 @@ class SyncCoordinator(
     }
 
     fun syncReadyReason(): SyncReadyReason {
+        if (modelFactory.habitBlockRepository.authorityMode == org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            return SyncReadyReason.SYNC_DISABLED
+        }
         if (!preferences.isSyncEnabled) return SyncReadyReason.SYNC_DISABLED
         if (requireConfig() == null) return SyncReadyReason.CONFIG_MISSING
         if (!isSignedIn()) return SyncReadyReason.NOT_SIGNED_IN
@@ -1321,6 +1324,9 @@ class SyncCoordinator(
      * - Idempotent: safe to call multiple times per sync cycle.
      */
     internal fun repairDefaultBlockUuids() {
+        if (modelFactory.habitBlockRepository.authorityMode == org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            return
+        }
         var repaired = 0
         for ((id, deterministicUuid) in DETERMINISTIC_DEFAULT_BLOCK_UUIDS) {
             val block = modelFactory.habitBlockRepository.findById(id) ?: continue

@@ -2,6 +2,7 @@ package org.isoron.uhabits.core.database
 
 import org.isoron.platform.io.Database
 import org.isoron.platform.io.StepResult
+import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 
 data class HabitExtensionData(
     val habitId: Long,
@@ -12,6 +13,8 @@ data class HabitExtensionData(
 )
 
 class HabitExtensionRepository(private val db: Database) {
+    var authorityMode: OrganizationAuthorityMode = OrganizationAuthorityMode.LEGACY
+
     private val findByHabitIdStmt by lazy {
         db.prepareStatement(
             "SELECT habit_id, day_tier, timer_enabled, block_id, stats_start_timestamp FROM HabitExtensions WHERE habit_id = ?"
@@ -44,12 +47,18 @@ class HabitExtensionRepository(private val db: Database) {
     }
 
     fun upsert(data: HabitExtensionData) {
+        val blockIdToWrite = if (authorityMode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            findByHabitId(data.habitId)?.blockId
+        } else {
+            data.blockId
+        }
+
         upsertStmt.reset()
         upsertStmt.bindLong(1, data.habitId)
         upsertStmt.bindText(2, data.dayTier)
         upsertStmt.bindInt(3, if (data.timerEnabled) 1 else 0)
-        if (data.blockId != null) {
-            upsertStmt.bindLong(4, data.blockId)
+        if (blockIdToWrite != null) {
+            upsertStmt.bindLong(4, blockIdToWrite)
         } else {
             upsertStmt.bindNull(4)
         }
