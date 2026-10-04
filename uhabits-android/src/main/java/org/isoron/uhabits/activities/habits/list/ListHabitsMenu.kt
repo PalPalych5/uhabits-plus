@@ -55,11 +55,13 @@ class ListHabitsMenu(
         private set
     var isSearchActive = false
         private set
+    var onSearchQueryChanged: ((String) -> Unit)? = null
 
     fun closeSearch() {
         if (!isSearchActive) return
         isSearchActive = false
         behavior.onSearchQueryChanged("")
+        onSearchQueryChanged?.invoke("")
         activity.invalidateOptionsMenu()
     }
 
@@ -73,9 +75,9 @@ class ListHabitsMenu(
         menu.setGroupVisible(R.id.actionItems, !isSearchActive)
         menu.findItem(R.id.actionSearchContainer)?.isVisible = isSearchActive
 
-        val app = activity.application as? HabitsApplication
-        val isContainersExperimental = app?.component?.session?.mode == DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL
-        menu.findItem(R.id.actionContainers)?.isVisible = isContainersExperimental && !isSearchActive
+        // In PR8, Containers is the unified hierarchical home screen in experimental mode,
+        // so no separate ContainersActivity entry is displayed.
+        menu.findItem(R.id.actionContainers)?.isVisible = false
     }
 
     fun onCreate(inflater: MenuInflater, menu: Menu) {
@@ -111,6 +113,7 @@ class ListHabitsMenu(
                 override fun onQueryTextSubmit(query: String) = false
                 override fun onQueryTextChange(newText: String): Boolean {
                     behavior.onSearchQueryChanged(newText)
+                    onSearchQueryChanged?.invoke(newText)
                     return true
                 }
             })

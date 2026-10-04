@@ -138,6 +138,8 @@ class HabitCardListView(
         cardView.unit = goal.unit
         cardView.threshold = goal.targetValue / goal.frequency.denominator
         cardView.notes = notes
+        val visualIdentity = organizationFacade?.getHabitVisualIdentity(habit.uuid ?: "")
+        cardView.iconRef = visualIdentity?.iconRef
 
         val detector = GestureDetector(context, CardViewGestureDetector(holder))
         cardView.setOnTouchListener { _, ev ->

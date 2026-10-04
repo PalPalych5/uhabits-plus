@@ -23,6 +23,9 @@ import android.animation.ObjectAnimator
 import android.annotation.SuppressLint
 import android.content.res.ColorStateList
 import android.content.res.Resources
+import org.isoron.uhabits.activities.common.icons.IconPack
+import org.isoron.uhabits.activities.common.icons.IconPickerBottomSheet
+import org.isoron.uhabits.core.containers.IconRef
 import android.graphics.Canvas
 import android.graphics.ColorFilter
 import android.graphics.PixelFormat
@@ -170,6 +173,7 @@ class EditHabitActivity : AppCompatActivity() {
     var timerEnabled = false
     var blockId: Long? = 7L
     var containerId: String? = null
+    var iconRef: IconRef = IconRef.None
     private var hasIndividualColor = false
     private var createArchived = false
 
@@ -202,6 +206,7 @@ class EditHabitActivity : AppCompatActivity() {
             if (facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
                 val placement = facade.getPlacementInfo(habit.uuid ?: "", habit.blockId)
                 containerId = placement.containerId?.value
+                iconRef = facade.getHabitVisualIdentity(habit.uuid ?: "")?.iconRef ?: IconRef.None
             }
             hasIndividualColor = true
             habit.reminder?.let {
@@ -221,6 +226,7 @@ class EditHabitActivity : AppCompatActivity() {
             if (facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
                 blockId = null
                 containerId = null
+                iconRef = IconRef.None
             }
         }
 
@@ -238,6 +244,7 @@ class EditHabitActivity : AppCompatActivity() {
             val savedBlockId = state.getLong("blockId", -1L)
             blockId = if (savedBlockId == -1L) null else savedBlockId
             containerId = state.getString("containerId")
+            iconRef = IconRef.fromString(state.getString("iconRef"))
             hasIndividualColor = state.getBoolean("hasIndividualColor", habitId >= 0)
             createArchived = state.getBoolean("createArchived", false)
         } else if (habitId < 0) {
@@ -440,6 +447,26 @@ class EditHabitActivity : AppCompatActivity() {
             }
         }
 
+        val iconArrow = configureDropdownArrow(binding.iconPicker)
+        if (facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            binding.iconOuterBox.visibility = View.VISIBLE
+            updateIconPickerLabel()
+            binding.iconPicker.setOnClickListener {
+                iconArrow.open()
+                val picker = IconPickerBottomSheet().apply {
+                    previewColor = androidColor
+                    initialIconRef = iconRef
+                    onIconSelected = { picked ->
+                        iconRef = picked
+                        updateIconPickerLabel()
+                    }
+                }
+                picker.show(supportFragmentManager, "habit_icon_picker")
+            }
+        } else {
+            binding.iconOuterBox.visibility = View.GONE
+        }
+
         binding.numericalFrequencyPicker.setOnClickListener {
             numericalFrequencyArrow.open()
             val options = listOf(
@@ -586,7 +613,8 @@ class EditHabitActivity : AppCompatActivity() {
                     modified = habit,
                     targetContainerId = targetContainer,
                     changeContainer = containerChanged,
-                    organizationFacade = facade
+                    organizationFacade = facade,
+                    visualIdentity = iconRef
                 )
             } else {
                 CreateHabitCommand(
@@ -594,7 +622,8 @@ class EditHabitActivity : AppCompatActivity() {
                     habitList = component.habitList,
                     model = habit,
                     initialContainerId = targetContainer,
-                    organizationFacade = facade
+                    organizationFacade = facade,
+                    initialVisualIdentity = iconRef
                 )
             }
         )
@@ -691,6 +720,7 @@ class EditHabitActivity : AppCompatActivity() {
             putBoolean("timerEnabled", binding.timerEnabledSwitch.isChecked)
             putLong("blockId", blockId ?: -1L)
             containerId?.let { putString("containerId", it) }
+            putString("iconRef", IconRef.toStorageString(iconRef))
             putBoolean("hasIndividualColor", hasIndividualColor)
             putBoolean("createArchived", createArchived)
             putBoolean("colorPickerOpen", colorPicker?.isAdded == true)
@@ -700,9 +730,21 @@ class EditHabitActivity : AppCompatActivity() {
         }
     }
 
+    private fun updateIconPickerLabel() {
+        val label = when (val ref = iconRef) {
+            is IconRef.Vector -> IconPack.getIcon(ref.key)?.labelRu ?: ref.key
+            is IconRef.Emoji -> ref.value
+            IconRef.None -> getString(R.string.containers_no_icon)
+        }
+        binding.iconPicker.text = label
+    }
+
     override fun onResume() {
         super.onResume()
         populateHabitBlock()
+        if ((application as HabitsApplication).component.organizationFacade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            updateIconPickerLabel()
+        }
     }
 
     private fun populateHabitBlock() {

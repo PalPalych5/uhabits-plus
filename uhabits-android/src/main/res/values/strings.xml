@@ -902,4 +902,12 @@
     <string name="containers_search_no_results">Nothing found</string>
     <string name="containers_no_subsections">No subsections</string>
     <string name="containers_no_habits">No habits in this section</string>
+    <string name="containers_icon">Icon</string>
+    <string name="containers_no_icon">No icon</string>
+    <string name="containers_choose_icon">Choose icon</string>
+    <string name="containers_edit_section">Edit section</string>
+    <string name="containers_edit_subsection">Edit subsection</string>
+    <string name="containers_location">Location</string>
+    <string name="containers_preview">Preview</string>
+    <string name="containers_save">Save</string>
 </resources>

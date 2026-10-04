@@ -19,13 +19,25 @@
 
 package org.isoron.uhabits.core.containers.facade
 
+import org.isoron.uhabits.core.containers.Container
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.ContainerQueries
 import org.isoron.uhabits.core.containers.HabitPlacementQueries
+import org.isoron.uhabits.core.containers.HabitVisualIdentity
+import org.isoron.uhabits.core.containers.HabitVisualIdentityStore
+import org.isoron.uhabits.core.containers.IconRef
+import org.isoron.uhabits.core.containers.OrganizationError
 import org.isoron.uhabits.core.containers.OrganizationResult
 import org.isoron.uhabits.core.containers.OrganizationRevision
 import org.isoron.uhabits.core.containers.OrganizationService
 import org.isoron.uhabits.core.models.PaletteColor
+
+data class ContainerOverview(
+    val container: Container,
+    val directChildrenCount: Int,
+    val directHabitCount: Int,
+    val totalHabitCount: Int,
+)
 
 data class OrganizationalItem(
     val key: String,
@@ -116,4 +128,35 @@ interface HabitOrganizationFacade {
         targetContainerId: ContainerId?,
         opUuid: String? = null
     ): OrganizationResult<Unit>
+
+    val visualIdentityStore: HabitVisualIdentityStore? get() = null
+
+    fun childrenOf(containerId: ContainerId, includeArchived: Boolean = false): List<Container> = emptyList()
+    fun rootContainerModels(): List<Container> = emptyList()
+    fun archivedRoots(): List<Container> = emptyList()
+    fun containerOverview(containerId: ContainerId): ContainerOverview? = null
+    fun containerPath(containerId: ContainerId): List<Container> = emptyList()
+    fun getHabitVisualIdentity(habitUuid: String): HabitVisualIdentity? = null
+    fun setHabitVisualIdentity(habitUuid: String, iconRef: IconRef) {}
+    fun removeHabitVisualIdentity(habitUuid: String) {}
+    fun archiveContainer(id: ContainerId): OrganizationResult<Unit> =
+        OrganizationResult.Failure(OrganizationError.StorageError("Not supported in current mode"))
+    fun unarchiveContainer(id: ContainerId): OrganizationResult<Unit> =
+        OrganizationResult.Failure(OrganizationError.StorageError("Not supported in current mode"))
+    fun moveContainer(id: ContainerId, newParentId: ContainerId?): OrganizationResult<Unit> =
+        OrganizationResult.Failure(OrganizationError.StorageError("Not supported in current mode"))
+    fun createContainer(
+        name: String,
+        parentId: ContainerId? = null,
+        color: PaletteColor? = null,
+        icon: String? = null
+    ): OrganizationResult<Container> =
+        OrganizationResult.Failure(OrganizationError.StorageError("Not supported in current mode"))
+    fun editContainer(
+        id: ContainerId,
+        name: String,
+        color: PaletteColor? = null,
+        icon: String? = null
+    ): OrganizationResult<Container> =
+        OrganizationResult.Failure(OrganizationError.StorageError("Not supported in current mode"))
 }

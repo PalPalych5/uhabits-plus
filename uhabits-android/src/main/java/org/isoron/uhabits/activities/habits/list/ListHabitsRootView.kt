@@ -23,6 +23,9 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.drawable.ColorDrawable
 import android.view.Menu
+import android.view.View
+import android.view.View.GONE
+import android.view.View.VISIBLE
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.widget.FrameLayout
 import android.widget.ProgressBar
@@ -83,13 +86,15 @@ class ListHabitsRootView(
     }
     val hintView: HintView
     val header = HeaderView(context, preferences, midnightTimer)
+    private val mainLayout: RelativeLayout
+    private var containerHomeView: View? = null
 
     init {
         val hints = resources.getStringArray(R.array.hints)
         val hintList = hintListFactory.create(hints)
         hintView = HintView(context, hintList)
 
-        val rootView = RelativeLayout(context).apply {
+        mainLayout = RelativeLayout(context).apply {
             setBackgroundColor(palette.background)
             addAtTop(konfettiView)
             addAtTop(tbar)
@@ -102,7 +107,7 @@ class ListHabitsRootView(
             }
             addAtBottom(hintView)
         }
-        rootView.setupToolbar(
+        mainLayout.setupToolbar(
             toolbar = tbar,
             title = "",
             color = PaletteColor(17),
@@ -113,8 +118,30 @@ class ListHabitsRootView(
         tbar.setTitleTextColor(palette.onSurface)
         (context as? AppCompatActivity)?.window?.statusBarColor = palette.background
         applyToolbarIconTint()
-        addView(rootView, MATCH_PARENT, MATCH_PARENT)
+        addView(mainLayout, MATCH_PARENT, MATCH_PARENT)
         listAdapter.setListView(listView)
+    }
+
+    fun setContainerHomeView(view: View) {
+        containerHomeView?.let { mainLayout.removeView(it) }
+        containerHomeView = view
+        mainLayout.addBelow(view, tbar, height = MATCH_PARENT)
+    }
+
+    fun showContainerHomeView(show: Boolean) {
+        if (show) {
+            header.visibility = GONE
+            listView.visibility = GONE
+            llEmpty.visibility = GONE
+            hintView.visibility = GONE
+            containerHomeView?.visibility = VISIBLE
+        } else {
+            header.visibility = VISIBLE
+            listView.visibility = VISIBLE
+            hintView.visibility = VISIBLE
+            containerHomeView?.visibility = GONE
+            updateEmptyView()
+        }
     }
 
     override fun onModelChange() {
@@ -159,6 +186,10 @@ class ListHabitsRootView(
     }
 
     private fun updateEmptyView() {
+        if (containerHomeView?.visibility == VISIBLE) {
+            llEmpty.hide()
+            return
+        }
         if (listAdapter.itemCount == 0) {
             if (listAdapter.isSearching()) {
                 llEmpty.showNotFound()

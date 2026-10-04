@@ -1,0 +1,14 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Copyright (c) Lucide Contributors (ISC License) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 4.000,2.000 h 16.000 a 2.000,2.000 0 0 1 2.000,2.000 v 4.000 a 2.000,2.000 0 0 1 -2.000,2.000 h -16.000 a 2.000,2.000 0 0 1 -2.000,-2.000 v -4.000 a 2.000,2.000 0 0 1 2.000,-2.000 Z M 4.000,14.000 h 16.000 a 2.000,2.000 0 0 1 2.000,2.000 v 4.000 a 2.000,2.000 0 0 1 -2.000,2.000 h -16.000 a 2.000,2.000 0 0 1 -2.000,-2.000 v -4.000 a 2.000,2.000 0 0 1 2.000,-2.000 Z M 6,6 L 6.01,6 M 6,18 L 6.01,18" />
+</vector>

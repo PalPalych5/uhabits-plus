@@ -258,6 +258,21 @@
             </FrameLayout>
 
             <FrameLayout
+                android:id="@+id/iconOuterBox"
+                style="@style/FormOuterBox"
+                android:visibility="gone">
+                <LinearLayout style="@style/FormInnerBox">
+                    <TextView
+                        style="@style/FormLabel"
+                        android:text="@string/containers_icon" />
+                    <TextView
+                        android:id="@+id/iconPicker"
+                        style="@style/FormDropdown"
+                        android:textColor="?attr/contrast100" />
+                </LinearLayout>
+            </FrameLayout>
+
+            <FrameLayout
                 android:id="@+id/timerEnabledOuterBox"
                 style="@style/FormOuterBox">
                 <LinearLayout style="@style/FormInnerBox">

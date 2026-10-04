@@ -37,6 +37,8 @@ import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacadeImpl
 import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import org.isoron.uhabits.core.containers.session.DatasetSession
 import org.isoron.uhabits.core.containers.session.DatasetSessionFactory
+import org.isoron.uhabits.core.containers.sqlite.OrganizationSchema
+import org.isoron.uhabits.core.containers.sqlite.SQLiteHabitVisualIdentityStore
 import org.isoron.uhabits.core.containers.sqlite.SQLiteOrganizationStore
 import org.isoron.uhabits.core.io.GenericImporter
 import org.isoron.uhabits.core.io.Logging
@@ -190,7 +192,9 @@ abstract class HabitsApplicationComponent(
         sqlModelFactory: SQLModelFactory
     ): HabitOrganizationFacade {
         return if (session.organizationAuthority == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            OrganizationSchema.createSchema(providedDb)
             val store = SQLiteOrganizationStore(providedDb)
+            val visualIdentityStore = SQLiteHabitVisualIdentityStore(providedDb)
             val service = OrganizationServiceImpl(
                 store = store,
                 unitOfWork = store,
@@ -205,6 +209,7 @@ abstract class HabitsApplicationComponent(
                 containerQueries = store,
                 habitPlacementQueries = store,
                 organizationService = service,
+                visualIdentityStore = visualIdentityStore,
                 habitBlockRepository = sqlModelFactory.habitBlockRepository
             )
         } else {

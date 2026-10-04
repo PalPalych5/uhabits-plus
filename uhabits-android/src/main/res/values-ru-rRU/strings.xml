@@ -912,4 +912,12 @@
     <string name="containers_search_no_results">Ничего не найдено</string>
     <string name="containers_no_subsections">Нет подразделов</string>
     <string name="containers_no_habits">В этом разделе нет привычек</string>
+    <string name="containers_icon">Значок</string>
+    <string name="containers_no_icon">Без значка</string>
+    <string name="containers_choose_icon">Выбрать значок</string>
+    <string name="containers_edit_section">Редактировать раздел</string>
+    <string name="containers_edit_subsection">Редактировать подраздел</string>
+    <string name="containers_location">Расположение</string>
+    <string name="containers_preview">Предпросмотр</string>
+    <string name="containers_save">Сохранить</string>
 </resources>

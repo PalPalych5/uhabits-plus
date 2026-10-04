@@ -189,6 +189,7 @@ object LegacyContainerMigrationValidator {
                 "ContainerHistory",
                 "HabitPlacementHistory",
                 "LegacyBlockMap",
+                "HabitVisualIdentities",
                 "BackupManifest",
                 "sqlite_sequence",
             )

@@ -19,6 +19,7 @@
 package org.isoron.uhabits.core.commands
 
 import org.isoron.uhabits.core.containers.ContainerId
+import org.isoron.uhabits.core.containers.IconRef
 import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade
 import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import org.isoron.uhabits.core.models.Habit
@@ -32,7 +33,8 @@ data class EditHabitCommand(
     val modified: Habit,
     val targetContainerId: ContainerId? = null,
     val changeContainer: Boolean = false,
-    val organizationFacade: HabitOrganizationFacade? = null
+    val organizationFacade: HabitOrganizationFacade? = null,
+    val visualIdentity: IconRef? = null
 ) : Command {
     override fun run() {
         val habit = habitList.getById(habitId) ?: throw HabitNotFoundException()
@@ -46,10 +48,17 @@ data class EditHabitCommand(
         habit.observable.notifyListeners()
         habitList.resort()
         if (organizationFacade?.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            val habitUuid = habit.uuid ?: modified.uuid
             if (changeContainer) {
-                val habitUuid = habit.uuid ?: modified.uuid
                 if (habitUuid != null) {
                     organizationFacade.placeHabit(habitUuid, targetContainerId)
+                }
+            }
+            if (habitUuid != null && visualIdentity != null) {
+                if (visualIdentity is IconRef.None) {
+                    organizationFacade.removeHabitVisualIdentity(habitUuid)
+                } else {
+                    organizationFacade.setHabitVisualIdentity(habitUuid, visualIdentity)
                 }
             }
         } else {

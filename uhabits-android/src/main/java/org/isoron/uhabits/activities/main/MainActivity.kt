@@ -187,6 +187,10 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
             this,
             object : OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
+                    val habits = supportFragmentManager.findFragmentByTag(TAG_HABITS) as? ListHabitsFragment
+                    if (habits != null && habits.isVisible && habits.handleBack()) {
+                        return
+                    }
                     if (!navigateBack()) finish()
                 }
             }

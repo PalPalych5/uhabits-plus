@@ -116,6 +116,14 @@ object OrganizationSchema {
         );
         """.trimIndent(),
 
+        """
+        CREATE TABLE IF NOT EXISTS HabitVisualIdentities (
+            habit_uuid TEXT PRIMARY KEY,
+            icon_type TEXT NOT NULL CHECK(icon_type IN ('VECTOR', 'EMOJI')),
+            icon_value TEXT NOT NULL
+        );
+        """.trimIndent(),
+
         "CREATE INDEX IF NOT EXISTS idx_containers_tree ON Containers(parent_id, deleted_at, is_archived, sibling_order, uuid);",
         "CREATE INDEX IF NOT EXISTS idx_containers_active ON Containers(deleted_at, is_archived, uuid);",
         "CREATE INDEX IF NOT EXISTS idx_habit_placements_contents ON HabitPlacements(container_id, local_order, habit_id);",

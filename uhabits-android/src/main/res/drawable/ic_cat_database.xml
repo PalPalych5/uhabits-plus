@@ -1,0 +1,14 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Copyright (c) Lucide Contributors (ISC License) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 3.000,5.000 a 9.000,3.000 0 1,0 18.000,0 a 9.000,3.000 0 1,0 -18.000,0 M3 5V19A9 3 0 0 0 21 19V5 M3 12A9 3 0 0 0 21 12" />
+</vector>

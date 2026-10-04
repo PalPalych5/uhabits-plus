@@ -19,6 +19,7 @@
 package org.isoron.uhabits.core.commands
 
 import org.isoron.uhabits.core.containers.ContainerId
+import org.isoron.uhabits.core.containers.IconRef
 import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade
 import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import org.isoron.uhabits.core.models.Habit
@@ -31,7 +32,8 @@ data class CreateHabitCommand(
     val habitList: HabitList,
     val model: Habit,
     val initialContainerId: ContainerId? = null,
-    val organizationFacade: HabitOrganizationFacade? = null
+    val organizationFacade: HabitOrganizationFacade? = null,
+    val initialVisualIdentity: IconRef? = null
 ) : Command {
     override fun run() {
         val habit = modelFactory.buildHabit()
@@ -45,6 +47,9 @@ data class CreateHabitCommand(
             val habitUuid = habit.uuid ?: model.uuid
             if (habitUuid != null) {
                 organizationFacade.placeNewHabit(habitUuid, initialContainerId)
+                if (initialVisualIdentity != null && initialVisualIdentity !is IconRef.None) {
+                    organizationFacade.setHabitVisualIdentity(habitUuid, initialVisualIdentity)
+                }
             }
         } else {
             (habitList as? SQLiteHabitList)?.syncManager?.enqueueHabitCreate(habit)

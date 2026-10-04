@@ -11,15 +11,18 @@ import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
 import org.isoron.platform.time.LocalDate
+import org.isoron.platform.time.getToday
 import org.isoron.uhabits.BaseExceptionHandler
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.containers.UnifiedContainerHomeView
 import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.activities.main.MainNavigationHost
 import org.isoron.uhabits.activities.main.SettingsAction
 import org.isoron.uhabits.activities.habits.edit.HabitTypeDialog
 import org.isoron.uhabits.activities.habits.list.views.HabitCardListAdapter
+import org.isoron.uhabits.core.containers.session.DatasetMode
 import org.isoron.uhabits.core.models.HabitMatcher
 import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 import org.isoron.uhabits.core.preferences.Preferences
@@ -46,6 +49,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
     lateinit var screen: ListHabitsScreen
     lateinit var prefs: Preferences
     private lateinit var menuController: ListHabitsMenu
+    private var unifiedContainerHomeView: UnifiedContainerHomeView? = null
     private var displayMode = ListHabitsDisplayMode.NORMAL
     private var initialized = false
     private var startupPending = false
@@ -85,6 +89,30 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
                 !selecting && displayMode == ListHabitsDisplayMode.NORMAL
             )
         }
+
+        val isContainersExperimental = appComponent.session.mode == DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL
+        if (isContainersExperimental) {
+            val containerHome = UnifiedContainerHomeView(
+                context = requireContext(),
+                fragmentManager = childFragmentManager,
+                facade = appComponent.organizationFacade,
+                habitList = appComponent.habitList,
+                listHabitsBehavior = component.listHabitsBehavior,
+                prefs = prefs,
+                onHabitClicked = { habit ->
+                    screen.showHabitScreen(habit)
+                }
+            )
+            unifiedContainerHomeView = containerHome
+            rootView.setContainerHomeView(containerHome)
+        }
+
+        menuController.onSearchQueryChanged = { query ->
+            if (appComponent.session.mode == DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL) {
+                unifiedContainerHomeView?.setSearch(query)
+            }
+        }
+
         initialized = true
         applyDisplayMode()
         if (startupPending) {
@@ -99,18 +127,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             this,
             object : androidx.activity.OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
-                    if (!this@ListHabitsFragment.isVisible) {
-                        isEnabled = false
-                        try {
-                            activity.onBackPressedDispatcher.onBackPressed()
-                        } finally {
-                            isEnabled = true
-                        }
-                    } else if (menuController.isSearchActive) {
-                        menuController.closeSearch()
-                    } else if (displayMode == ListHabitsDisplayMode.ARCHIVE) {
-                        (activity as? MainNavigationHost)?.navigateBack()
-                    } else {
+                    if (!this@ListHabitsFragment.isVisible || !handleBack()) {
                         isEnabled = false
                         try {
                             activity.onBackPressedDispatcher.onBackPressed()
@@ -121,6 +138,24 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
                 }
             }
         )
+    }
+
+    fun handleBack(): Boolean {
+        if (menuController.isSearchActive) {
+            menuController.closeSearch()
+            return true
+        }
+        if (unifiedContainerHomeView != null &&
+            appComponent.session.mode == DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL &&
+            displayMode == ListHabitsDisplayMode.NORMAL &&
+            unifiedContainerHomeView!!.handleBack()
+        ) {
+            return true
+        }
+        if (displayMode == ListHabitsDisplayMode.ARCHIVE) {
+            return (activity as? MainNavigationHost)?.navigateBack() ?: false
+        }
+        return false
     }
 
     override fun onStart() {
@@ -174,6 +209,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
         super.onResume()
         activateToolbar()
         adapter.refresh()
+        unifiedContainerHomeView?.render()
         screen.onAttached()
         rootView.postInvalidate()
         (activity as? MainNavigationHost)?.setHabitCreationAvailable(
@@ -323,6 +359,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
                 applyDisplayMode()
             } else {
                 adapter.refresh()
+                unifiedContainerHomeView?.render()
             }
             rootView.postInvalidate()
         }
@@ -330,16 +367,24 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
 
     private fun applyDisplayMode() {
         val activity = requireActivity() as AppCompatActivity
+        val isContainersExperimental = appComponent.session.mode == DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL
         if (displayMode == ListHabitsDisplayMode.ARCHIVE) {
             rootView.setScreenTitle(getString(R.string.archive_title))
+            rootView.showContainerHomeView(false)
             adapter.setFilter(
                 HabitMatcher(isArchivedAllowed = true, isArchivedRequired = true)
             )
         } else {
             rootView.setScreenTitle("")
+            if (isContainersExperimental) {
+                rootView.showContainerHomeView(true)
+            } else {
+                rootView.showContainerHomeView(false)
+            }
             menuController.behavior.onPreferencesChanged()
         }
         adapter.refresh()
+        unifiedContainerHomeView?.render()
         activateToolbar()
         activity.invalidateOptionsMenu()
         (activity as? MainNavigationHost)?.setHabitCreationAvailable(

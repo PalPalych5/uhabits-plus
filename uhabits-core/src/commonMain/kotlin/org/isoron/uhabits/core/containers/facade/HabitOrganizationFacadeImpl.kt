@@ -19,16 +19,24 @@
 
 package org.isoron.uhabits.core.containers.facade
 
+import org.isoron.uhabits.core.containers.ArchiveContainer
 import org.isoron.uhabits.core.containers.Container
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.ContainerQueries
+import org.isoron.uhabits.core.containers.CreateContainer
+import org.isoron.uhabits.core.containers.EditContainer
 import org.isoron.uhabits.core.containers.HabitPlacementQueries
 import org.isoron.uhabits.core.containers.HabitRef
+import org.isoron.uhabits.core.containers.HabitVisualIdentity
+import org.isoron.uhabits.core.containers.HabitVisualIdentityStore
+import org.isoron.uhabits.core.containers.IconRef
+import org.isoron.uhabits.core.containers.MoveContainer
 import org.isoron.uhabits.core.containers.OrganizationError
 import org.isoron.uhabits.core.containers.OrganizationResult
 import org.isoron.uhabits.core.containers.OrganizationRevision
 import org.isoron.uhabits.core.containers.OrganizationService
 import org.isoron.uhabits.core.containers.PlaceHabit
+import org.isoron.uhabits.core.containers.UnarchiveContainer
 import org.isoron.uhabits.core.database.HabitBlockRepository
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitBlock
@@ -42,6 +50,7 @@ class HabitOrganizationFacadeImpl(
     override val containerQueries: ContainerQueries? = null,
     override val habitPlacementQueries: HabitPlacementQueries? = null,
     override val organizationService: OrganizationService? = null,
+    override val visualIdentityStore: HabitVisualIdentityStore? = null,
     private val habitBlockRepository: HabitBlockRepository? = null,
     private val blocksProvider: (() -> List<HabitBlock>)? = null,
     private val allHabitsProvider: (() -> List<Habit>)? = null
@@ -233,6 +242,139 @@ class HabitOrganizationFacadeImpl(
         } else {
             return OrganizationResult.Success(Unit)
         }
+    }
+
+    override fun childrenOf(containerId: ContainerId, includeArchived: Boolean): List<Container> {
+        val cQueries = containerQueries ?: return emptyList()
+        return cQueries.children(containerId, includeArchived)
+    }
+
+    override fun rootContainerModels(): List<Container> {
+        val cQueries = containerQueries ?: return emptyList()
+        return cQueries.roots(includeArchived = false).sortedBy { it.siblingOrder }
+    }
+
+    override fun archivedRoots(): List<Container> {
+        val cQueries = containerQueries ?: return emptyList()
+        val result = mutableListOf<Container>()
+        val queue = ArrayDeque<Container>()
+        queue.addAll(cQueries.roots(includeArchived = true))
+        while (queue.isNotEmpty()) {
+            val current = queue.removeFirst()
+            if (current.isArchived) {
+                result.add(current)
+            } else {
+                queue.addAll(cQueries.children(current.id, includeArchived = true))
+            }
+        }
+        return result
+    }
+
+    override fun containerOverview(containerId: ContainerId): ContainerOverview? {
+        val cQueries = containerQueries ?: return null
+        val pQueries = habitPlacementQueries ?: return null
+        val c = cQueries.find(containerId) ?: return null
+        val children = cQueries.children(containerId, includeArchived = false)
+        val directHabits = pQueries.directHabits(containerId)
+        val subtreeHabits = pQueries.subtreeHabits(containerId)
+        return ContainerOverview(
+            container = c,
+            directChildrenCount = children.size,
+            directHabitCount = directHabits.size,
+            totalHabitCount = subtreeHabits.size
+        )
+    }
+
+    override fun containerPath(containerId: ContainerId): List<Container> {
+        val cQueries = containerQueries ?: return emptyList()
+        val pathNodes = cQueries.path(containerId).nodes
+        return pathNodes.mapNotNull { cQueries.find(it) }
+    }
+
+    override fun getHabitVisualIdentity(habitUuid: String): HabitVisualIdentity? {
+        val store = visualIdentityStore ?: return null
+        val iconRef = store.get(habitUuid) ?: return null
+        return HabitVisualIdentity(habitUuid, iconRef)
+    }
+
+    override fun setHabitVisualIdentity(habitUuid: String, iconRef: IconRef) {
+        visualIdentityStore?.set(habitUuid, iconRef)
+    }
+
+    override fun removeHabitVisualIdentity(habitUuid: String) {
+        visualIdentityStore?.remove(habitUuid)
+    }
+
+    override fun archiveContainer(id: ContainerId): OrganizationResult<Unit> {
+        val service = organizationService
+            ?: return OrganizationResult.Failure(OrganizationError.StorageError("Organization service unavailable"))
+        return service.archive(
+            ArchiveContainer(
+                id = id,
+                expectedRevision = service.currentRevision()
+            )
+        )
+    }
+
+    override fun unarchiveContainer(id: ContainerId): OrganizationResult<Unit> {
+        val service = organizationService
+            ?: return OrganizationResult.Failure(OrganizationError.StorageError("Organization service unavailable"))
+        return service.unarchive(
+            UnarchiveContainer(
+                id = id,
+                expectedRevision = service.currentRevision()
+            )
+        )
+    }
+
+    override fun moveContainer(id: ContainerId, newParentId: ContainerId?): OrganizationResult<Unit> {
+        val service = organizationService
+            ?: return OrganizationResult.Failure(OrganizationError.StorageError("Organization service unavailable"))
+        return service.move(
+            MoveContainer(
+                id = id,
+                newParentId = newParentId,
+                expectedRevision = service.currentRevision()
+            )
+        )
+    }
+
+    override fun createContainer(
+        name: String,
+        parentId: ContainerId?,
+        color: PaletteColor?,
+        icon: String?
+    ): OrganizationResult<Container> {
+        val service = organizationService
+            ?: return OrganizationResult.Failure(OrganizationError.StorageError("Organization service unavailable"))
+        return service.create(
+            CreateContainer(
+                name = name,
+                parentId = parentId,
+                color = color,
+                icon = icon,
+                expectedRevision = service.currentRevision()
+            )
+        )
+    }
+
+    override fun editContainer(
+        id: ContainerId,
+        name: String,
+        color: PaletteColor?,
+        icon: String?
+    ): OrganizationResult<Container> {
+        val service = organizationService
+            ?: return OrganizationResult.Failure(OrganizationError.StorageError("Organization service unavailable"))
+        return service.edit(
+            EditContainer(
+                id = id,
+                name = name,
+                color = color,
+                icon = icon,
+                expectedRevision = service.currentRevision()
+            )
+        )
     }
 
     private fun findLegacyBlock(blockId: Long): HabitBlock? {

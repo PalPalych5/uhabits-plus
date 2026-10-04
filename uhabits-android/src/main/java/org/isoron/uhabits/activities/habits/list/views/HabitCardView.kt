@@ -35,15 +35,19 @@ import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.appcompat.content.res.AppCompatResources
 import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.gui.toInt
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.icons.IconPack
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.common.views.RingView
+import org.isoron.uhabits.core.containers.IconRef
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.ModelObservable
 import org.isoron.uhabits.core.ui.screens.habits.list.ListHabitsBehavior
@@ -135,6 +139,15 @@ class HabitCardView(
     private var innerFrame: LinearLayout
     private var label: TextView
     private var scoreRing: RingView
+    private var iconTile: FrameLayout
+    private var iconImageView: ImageView
+    private var iconEmojiView: TextView
+
+    var iconRef: IconRef? = null
+        set(value) {
+            field = value
+            updateIconTile()
+        }
 
     private var currentToggleTaskId = 0
 
@@ -149,6 +162,26 @@ class HabitCardView(
             }
             setThickness(thickness)
         }
+
+        val tileSize = dp(24f).toInt()
+        val tileMargin = dp(6f).toInt()
+        iconTile = FrameLayout(context).apply {
+            layoutParams = LinearLayout.LayoutParams(tileSize, tileSize).apply {
+                setMargins(dp(2f).toInt(), 0, tileMargin, 0)
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            visibility = GONE
+        }
+        iconImageView = ImageView(context).apply {
+            layoutParams = FrameLayout.LayoutParams(dp(16f).toInt(), dp(16f).toInt(), Gravity.CENTER)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        iconEmojiView = TextView(context).apply {
+            layoutParams = FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.CENTER)
+            textSize = 14f
+        }
+        iconTile.addView(iconImageView)
+        iconTile.addView(iconEmojiView)
 
         label = TextView(context).apply {
             maxLines = 2
@@ -197,6 +230,7 @@ class HabitCardView(
             elevation = dp(1f)
 
             addView(scoreRing)
+            addView(iconTile)
             addView(label)
             addView(checkmarkPanel)
             addView(numberPanel)
@@ -304,6 +338,40 @@ class HabitCardView(
             }
         }
         updateBackground(isSelected)
+        updateIconTile()
+    }
+
+    private fun updateIconTile() {
+        val h = habit
+        val activeColor = h?.let { currentTheme().color(it.color).toInt() } ?: palette.accent
+        val ref = iconRef
+        if (ref == null || ref is IconRef.None) {
+            iconTile.visibility = GONE
+            return
+        }
+        iconTile.background = GradientDrawable().apply {
+            setColor(MainTabsThemeBridge.withAlpha(activeColor, 0.14f))
+            cornerRadius = dp(6f)
+        }
+        when (ref) {
+            is IconRef.Vector -> {
+                iconTile.visibility = VISIBLE
+                iconImageView.visibility = VISIBLE
+                iconEmojiView.visibility = GONE
+                val res = IconPack.getDrawableRes(ref.key, IconPack.DEFAULT_HABIT_ICON_RES)
+                iconImageView.setImageDrawable(AppCompatResources.getDrawable(context, res))
+                iconImageView.setColorFilter(activeColor)
+            }
+            is IconRef.Emoji -> {
+                iconTile.visibility = VISIBLE
+                iconImageView.visibility = GONE
+                iconEmojiView.visibility = VISIBLE
+                iconEmojiView.text = ref.value
+            }
+            IconRef.None -> {
+                iconTile.visibility = GONE
+            }
+        }
     }
 
     private fun triggerRipple(x: Float, y: Float) {

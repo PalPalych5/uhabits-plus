@@ -23,6 +23,7 @@ import android.app.AlarmManager
 import android.app.Application
 import android.app.PendingIntent
 import android.content.Context
+import android.os.Build
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import androidx.preference.PreferenceManager
@@ -112,11 +113,27 @@ class HabitsApplication : Application() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val alarmManager = getSystemService(AlarmManager::class.java)
-        alarmManager.setExact(
-            AlarmManager.RTC,
-            System.currentTimeMillis() + 200,
-            pendingIntent
-        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
+            alarmManager.set(
+                AlarmManager.RTC,
+                System.currentTimeMillis() + 200,
+                pendingIntent
+            )
+        } else {
+            try {
+                alarmManager.setExact(
+                    AlarmManager.RTC,
+                    System.currentTimeMillis() + 200,
+                    pendingIntent
+                )
+            } catch (e: SecurityException) {
+                alarmManager.set(
+                    AlarmManager.RTC,
+                    System.currentTimeMillis() + 200,
+                    pendingIntent
+                )
+            }
+        }
     }
 
     fun switchDatasetSession(newSession: DatasetSession) {
