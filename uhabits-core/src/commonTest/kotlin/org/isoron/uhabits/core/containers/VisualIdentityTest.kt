@@ -64,6 +64,50 @@ class VisualIdentityTest {
     }
 
     @Test
+    fun `Icon fallback and resilience across valid, invalid, unknown, and malformed inputs`() {
+        // 1. Valid vector key
+        val validVector = IconRef.fromString("vector:book-open")
+        assertTrue(validVector is IconRef.Vector)
+        assertEquals("book-open", validVector.key)
+        assertEquals("vector:book-open", IconRef.toStorageString(validVector))
+
+        // 2. Valid emoji
+        val validEmoji = IconRef.fromString("emoji:☕")
+        assertTrue(validEmoji is IconRef.Emoji)
+        assertEquals("☕", validEmoji.value)
+        assertEquals("emoji:☕", IconRef.toStorageString(validEmoji))
+
+        // 3. No identity / null / blank
+        assertEquals(IconRef.None, IconRef.fromString(null))
+        assertEquals(IconRef.None, IconRef.fromString(""))
+        assertEquals(IconRef.None, IconRef.fromString("    "))
+        assertNull(IconRef.toStorageString(IconRef.None))
+
+        // 4. Unknown vector key (must parse gracefully without crashing)
+        val unknownVector = IconRef.fromString("vector:totally_unknown_custom_key_404")
+        assertTrue(unknownVector is IconRef.Vector)
+        assertEquals("totally_unknown_custom_key_404", unknownVector.key)
+        assertEquals("vector:totally_unknown_custom_key_404", IconRef.toStorageString(unknownVector))
+
+        // 5. Malformed inputs (empty prefixes, whitespace padding, random punctuation)
+        assertEquals(IconRef.None, IconRef.fromString("vector:"))
+        assertEquals(IconRef.None, IconRef.fromString("vector:   "))
+        assertEquals(IconRef.None, IconRef.fromString("emoji:"))
+        assertEquals(IconRef.None, IconRef.fromString("emoji:   "))
+
+        // Malformed with unusual characters
+        val specialVector = IconRef.fromString("vector:strange--key??!!")
+        assertTrue(specialVector is IconRef.Vector)
+        assertEquals("strange--key??!!", specialVector.key)
+
+        // Empty key/value Vector/Emoji objects toStorageString
+        assertNull(IconRef.toStorageString(IconRef.Vector("")))
+        assertNull(IconRef.toStorageString(IconRef.Vector("   ")))
+        assertNull(IconRef.toStorageString(IconRef.Emoji("")))
+        assertNull(IconRef.toStorageString(IconRef.Emoji("   ")))
+    }
+
+    @Test
     fun `MemoryHabitVisualIdentityStore set get and remove`() {
         val store = MemoryHabitVisualIdentityStore()
         val habitUuid = "habit-uuid-1"

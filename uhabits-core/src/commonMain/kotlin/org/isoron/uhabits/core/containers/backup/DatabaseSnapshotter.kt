@@ -255,6 +255,7 @@ object DatabaseSnapshotter {
                 "ContainerHistory",
                 "HabitPlacements",
                 "LegacyBlockMap",
+                "HabitVisualIdentities",
                 "Containers",
                 "OrganizationChanges",
                 "OrganizationState",
@@ -289,6 +290,7 @@ object DatabaseSnapshotter {
             if (sourceTables.contains("ContainerHistory")) copyContainerHistory(sourceDb, targetDb)
             if (sourceTables.contains("HabitPlacementHistory")) copyHabitPlacementHistory(sourceDb, targetDb)
             if (sourceTables.contains("LegacyBlockMap")) copyLegacyBlockMap(sourceDb, targetDb)
+            if (sourceTables.contains("HabitVisualIdentities")) copyHabitVisualIdentities(sourceDb, targetDb)
 
             if (sourceTables.contains("BackupManifest")) copyBackupManifest(sourceDb, targetDb)
 
@@ -734,6 +736,28 @@ object DatabaseSnapshotter {
         while (select.step() == StepResult.ROW) {
             insert.bindLong(1, select.getLong(0))
             insert.bindText(2, select.getText(1))
+            insert.step()
+            insert.reset()
+        }
+        select.finalize()
+        insert.finalize()
+    }
+
+    private fun copyHabitVisualIdentities(sourceDb: Database, targetDb: Database) {
+        val select = sourceDb.prepareStatement(
+            "SELECT habit_uuid, icon_type, icon_value FROM HabitVisualIdentities"
+        )
+        val insert = targetDb.prepareStatement(
+            """
+            INSERT OR REPLACE INTO HabitVisualIdentities (
+                habit_uuid, icon_type, icon_value
+            ) VALUES (?, ?, ?)
+            """.trimIndent()
+        )
+        while (select.step() == StepResult.ROW) {
+            insert.bindText(1, select.getText(0))
+            insert.bindText(2, select.getText(1))
+            insert.bindText(3, select.getText(2))
             insert.step()
             insert.reset()
         }

@@ -315,6 +315,23 @@ object ContainerRestoreService {
             errors.add("Incomplete HabitPlacementHistory: $placementHistoryCount history rows vs $placementCount placements")
         }
 
+        // HabitVisualIdentities referential integrity check
+        val tables = DatabaseSnapshotter.listTables(db)
+        if (tables.contains("HabitVisualIdentities")) {
+            val invalidVisualIdsStmt = db.prepareStatement(
+                """
+                SELECT hvi.habit_uuid FROM HabitVisualIdentities hvi
+                LEFT JOIN Habits h ON hvi.habit_uuid = h.uuid
+                WHERE h.uuid IS NULL
+                """.trimIndent()
+            )
+            while (invalidVisualIdsStmt.step() == StepResult.ROW) {
+                val orphanUuid = invalidVisualIdsStmt.getText(0)
+                errors.add("HabitVisualIdentity references non-existent habit UUID '$orphanUuid'")
+            }
+            invalidVisualIdsStmt.finalize()
+        }
+
         return errors
     }
 }

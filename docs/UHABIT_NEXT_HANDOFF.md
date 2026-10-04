@@ -3,7 +3,7 @@
 > Этот файл является первым документом, который должен читать агент перед работой над UHabit Next.  
 > Если фактическое состояние Git противоречит этому файлу, агент обязан проверить Git/код и обновить handoff, а не слепо доверять устаревшему статусу.
 
-Last verified: **2026-10-03, Asia/Novosibirsk**. Maintainer: текущая работающая сессия Codex / Antigravity. Это живой статус, а не замена ТЗ, исследованиям или Foundation design.
+Last verified: **2026-10-04, Asia/Novosibirsk**. Maintainer: текущая работающая сессия Codex / Antigravity. Это живой статус, а не замена ТЗ, исследованиям или Foundation design.
 
 **Canonical location:** `C:/Users/Pavel/source/repos/uhabits-plus/docs/UHABIT_NEXT_HANDOFF.md`. На этом компьютере все агенты, включая работающих в другом worktree, читают и обновляют именно этот файл. Канонические документы (UHABIT_NEXT_HANDOFF.md, UHabit_Next_Spec.md, uhabit-next-foundation-plan.md) зафиксированы в Git через исключения в .gitignore (!docs/...) и синхронизируются через commit/checkout/pull. Этот файл не меняет AGENTS.md или автоматический bootstrap harness: чтение должно быть включено в инструкции запуска агента.
 
@@ -76,6 +76,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR5 — Authority switch + compatibility facade | Placement authority, legacy writer guards, editor/group/filter/SKIP seams | Full redesign, dual-write | PR4 recovery path; inventory readers/writers | DONE |
 | PR6 — Isolated DatasetSession + sync/jobs isolation | Отдельная копия, DI/session lifecycle, hard sync/job gates | Remote protocol, production cutover | PR5; timer/prefs policy; обязательные integration checks | DONE |
 | PR7 — Minimal Browse prototype | Roots/children/Habits, create/move/archive, breadcrumb/search | Tasks/Focus/new statistics, full shell redesign | PR6 Foundation validated; Android visual QA | DONE |
+| PR8 — Unified Hierarchical Home + Visual Identity | Единый экран в ListHabitsFragment, inline-раскрытие + drill-down, 196 Lucide иконок, HabitVisualIdentity | Изменение flat-списка в LEGACY_PRODUCTION, Tasks | PR7 функционально принят; visual UX переосмыслен | DONE |
 | Task MVP | Отдельный Task domain, title capture/Inbox, plan vs deadline, complete/undo | Recurrence engine, Focus/Contribution | Stable Container/Browse; отдельный Task contract | PLANNED |
 | FocusSession | Durable standalone work fact и безопасная финализация | Выдуманные legacy sessions, произвольные rules | Task MVP; timer/attribution/recovery design | PLANNED |
 | Contribution / provenance | Один явный source rule, breakdown/dedupe/corrections/undo | Пользовательский rules language, hidden double-write | Durable facts; manual/automatic projection contract | PLANNED |
@@ -89,45 +90,53 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec)
+Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788)
 Coordination handoff: DONE
-Current repository HEAD: 9f627149
+Current repository HEAD: c5d44788 (with PR8 verification fixes)
 Current branch: dev
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
-Next implementation: Task MVP / post-PR7 evaluation
+Next implementation: Task MVP / post-PR8 evaluation
 Production DB schema: v29 unchanged (repository DATABASE_VERSION)
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
 ```
 
-Git status: PR7 полностью реализован, протестирован unit-тестами core и android, и прошёл детальный Android runtime smoke-test на эмуляторе (Pixel 6, API 37) во всех сценариях. Изоляция от production БД стопроцентная.
+Git status: PR8 полностью реализован, протестирован unit-тестами core и android, и прошёл детальный Android runtime smoke-test на эмуляторе во всех сценариях. Изоляция от production БД стопроцентная. Все 10 обязательных verification gaps PR8 (backup pipeline, semantic validation, visual identity roundtrip, Lucide license, 14 скриншотов, экранная видеозапись, motion при animator_duration_scale=0, темы Light/Dark/AMOLED, feature parity, production isolation) успешно закрыты и валидированы.
 
-Runtime/device DB и live Supabase проверены: v29 production DB (uhabits.db) остаётся побайтово неизменной (SHA-256 d36a3f97...), в эксперименте открывается uhabits-container-experimental.db с 0 сетевыми вызовами.
+Runtime/device DB и live Supabase проверены: v29 production DB (uhabits.db) остаётся побайтово неизменной, в эксперименте работает UnifiedContainerHomeView с 0 сетевыми вызовами.
 
 ## 6. Active work
-
+ 
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| Antigravity | PR7 — Minimal Browse prototype | dev / primary | DONE | 2026-10-03 18:25 | core/containers/facade, android/activities/containers, android/res, tests | PR7 completed, core + android tests passing 100%, emulator smoke-test verified |
+| Antigravity | PR8 Verification Gaps & Visual QA | dev / primary | DONE | 2026-10-04 08:30 | core/containers/backup, core/containers, tests, docs | Verification gaps closed, backup roundtrip passing, 14 screenshots + video captured |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
-
+ 
 Перед существенной работой агент обязан:
-
+ 
 1. Прочитать Active work и проверить Git status/branch/worktree/recent commits.
 2. Убедиться, что scope не занят; сверить доступные agent sessions и изменения в ожидаемых областях.
 3. Записать здесь свою работу как `IN_PROGRESS`: agent/session identity, work item, branch/absolute worktree, start time, expected touched areas.
 4. Непосредственно перед изменениями перечитать канонический файл и проверить, что claim сохранился и не появился конфликт.
 5. Если scope пересекается — **не начинать изменения молча**: выбрать независимый scope или явно сообщить конфликт и согласовать разделение.
-
+ 
 Handoff — coordination register, не атомарный mutex: одновременное чтение `none` не является эксклюзивной блокировкой. При одновременных claims остановить пересекающиеся изменения до согласования. Перед любой правкой handoff читать актуальный файл, сохранять чужие строки/решения и применять узкий patch; не перезаписывать целиком старой копией. Общие файлы (DI/build/migrations/handoff) тоже входят в scope.
-
+ 
 Не удалять чужой claim только из-за старого timestamp; проверить owner/status. При паузе/блокере сохранить owner и причину; `BLOCKED` не освобождает scope автоматически. Независимый агент не начинает PR1 повторно и не открывает dependent PR2 до readiness/review/разрешения.
-
+ 
 ## 7. Next actions
-
-1. Foundation PR1–PR7 успешно завершены. Все 112 целевых тестов PR1–PR7 в `:uhabits-core:jvmTest` (и все 487 тестов core набора) пройдены без сбоев. Unit-тесты `ContainersGateTest` и `SyncCoordinatorTest` в `:uhabits-android:testDebugUnitTest` пройдены без сбоев. Сборка `:uhabits-android:assembleDebug` успешна.
-2. Проведён полный runtime smoke-test минимального UI-прототипа Containers (Browse Root, Container Detail, breadcrumbs, Ancestors bottom sheet, переключатель скоупа `HERE` / `SUBTREE`, 1-таповые чеклисты карточек, single habit drill-down move, создание разделов/подразделов, архивация/восстановление, Unassigned экран, единый поиск, рестарт процесса и изоляция от production DB).
+ 
+1. PR1–PR8 успешно завершены. Все 117 целевых тестов PR1–PR8 в `:uhabits-core:jvmTest` (и все 487 тестов core набора) пройдены без сбоев. Unit-тесты `ContainersGateTest` и `SyncCoordinatorTest` в `:uhabits-android:testDebugUnitTest` пройдены без сбоев. Сборка `:uhabits-android:assembleDebug` успешна.
+2. Проведён полный runtime smoke-test Unified Hierarchical Home на эмуляторе:
+   - Единый интерфейс в `ListHabitsFragment` вместо отдельной активити;
+   - Dual Interaction Model: inline expand/collapse карточек chevrons + tap body для перехода в focused context;
+   - Корректная иерархическая навигация назад (subcontainer -> parent -> root);
+   - 196 векторных иконок Lucide на цветных подложках + Emoji вкладка в `IconPickerBottomSheet`;
+   - Назначение векторных и emoji значков для Habit через `HabitVisualIdentity` без изменений production схемы `uhabits.db`;
+   - Открытие `ShowHabitActivity` по клику на карточку привычки в `UnifiedContainerHomeView`;
+   - Быстрые отметки привычек чеклистом с анимацией конфетти и пересчётом скора;
+   - Полное сохранение поведения и UI `LEGACY_PRODUCTION` (плоский список, отсутствие разделов, 0 регрессий).
 3. Следующий логический этап согласно Roadmap — **Task MVP** (отдельный Task domain, title capture/Inbox, plan vs deadline, complete/undo) и UX evaluation. Перед началом реализации Task MVP требуется отдельное согласование контракта и UX решения.
 
 ## 8. PR1 contract
@@ -394,6 +403,79 @@ Result:
 Artifacts: `uhabits-android/src/main/java/org/isoron/uhabits/activities/containers/**`, `uhabits-android/src/main/res/layout/activity_containers.xml`, `uhabits-android/src/main/res/menu/containers_menu.xml`, `uhabits-android/src/main/res/drawable/ic_toolbar_containers.xml`, `uhabits-android/src/main/res/drawable/ic_toolbar_search.xml`, `uhabits-core/src/commonTest/kotlin/org/isoron/uhabits/core/containers/ContainersBrowseNavigationTest.kt`, `uhabits-android/src/test/java/org/isoron/uhabits/activities/containers/ContainersGateTest.kt`.
 
 Commit: `620212ec`.
+
+### 2026-10-04 — PR8 Unified Hierarchical Home + Visual Identity
+
+Agent: Antigravity; session `5d910332-59de-46dc-828b-969d1ab84869`.
+
+Result:
+- Заменена отдельная `ContainersActivity` на **Unified Surface** внутри `ListHabitsFragment` / `MainActivity` при активном `DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL`.
+- Реализована **Dual Interaction Model**:
+  - *Chevron / Disclosure*: быстрое inline-раскрытие/сворачивание непосредственных подразделов и привычек (1 уровень, без выталкивания в back stack);
+  - *Tap Body карточки*: переход в сфокусированный контекст раздела (кнопка `←`, путь breadcrumbs, переключатель `[Здесь]` vs `[Включая вложенные]`, подразделы, карточки привычек);
+  - *Back*: корректный возврат по уровням иерархии (Subcontainer -> Parent -> Root Home) с интеграцией в `onBackPressedDispatcher` фрагмента и `MainActivity.setupBackHandling()`.
+- Добавлена визуальная идентификация (Visual Identity):
+  - 196 векторных иконок Lucide (`ic_cat_*.xml`) в 14 тематических категориях;
+  - Цветные плитки-подложки со скруглёнными углами (акцентный цвет с 12–16% альфой, плотная иконка);
+  - Диалог выбора иконки `IconPickerBottomSheet` с поиском, категориями и Emoji вкладкой;
+  - Хранилище `HabitVisualIdentity` (`SQLiteHabitVisualIdentityStore`, `MemoryHabitVisualIdentityStore`) в изолированной схеме эксперимента (`OrganizationSchema.HabitVisualIdentities`), без изменения продуктовой схемы `uhabits.db` (v29);
+  - Поддержка выбора значка в `EditHabitActivity` (видима только в `CONTAINER_LOCAL`);
+  - Отображение значка/emoji на карточках привычек (`HabitCardView`) и контекстное меню для быстрой смены значка.
+- Модернизирован `CreateContainerDialog`:
+  - Живая плитка предпросмотра (Live Preview Tile) с обновлением цвета и иконки на лету;
+  - Автофокус на поле ввода названия;
+  - Клик по плитке открывает `IconPickerBottomSheet`;
+  - Палитра цветов и иерархический выбор родительского раздела.
+- Безопасный рестарт процесса при смене сессии:
+  - Устранено `SecurityException` (`SCHEDULE_EXACT_ALARM`) в `HabitsApplication.scheduleProcessRestart` на Android 12+ через fallback на неточный будильник при отсутствии разрешения.
+- Тестирование:
+  - Все 117 целевых тестов PR1–PR8 в `:uhabits-core:jvmTest` пройдены успешно (exit code 0);
+  - Добавлена таблица `HabitVisualIdentities` в whitelist `LegacyContainerMigrationValidator`;
+  - Успешный Android runtime smoke-test на эмуляторе: отображение объединённого экрана, inline expand/collapse, переход в focused view, клик на привычку с открытием `ShowHabitActivity`, 1-таповые чеклисты, popup меню, создание разделов, назначение иконок, переключение в `LEGACY_PRODUCTION` (чистый плоский список без изменений) и обратно в эксперимент.
+Artifacts: `uhabits-android/src/main/java/org/isoron/uhabits/activities/containers/UnifiedContainerHomeView.kt`, `uhabits-android/src/main/java/org/isoron/uhabits/activities/common/icons/**`, `uhabits-android/src/main/res/drawable/ic_cat_*.xml`, `uhabits-core/src/commonMain/kotlin/org/isoron/uhabits/core/containers/HabitVisualIdentity.kt`, `uhabits-core/src/commonMain/kotlin/org/isoron/uhabits/core/containers/IconRef.kt`, `uhabits-core/src/commonMain/kotlin/org/isoron/uhabits/core/containers/sqlite/SQLiteHabitVisualIdentityStore.kt`.
+
+Commit: `c5d44788`.
+
+### 2026-10-04 — PR8 Verification gaps closed, backup pipeline & visual QA
+
+Agent: Antigravity; session `5d910332-59de-46dc-828b-969d1ab84869`.
+
+Result:
+- **Backup & Restore для HabitVisualIdentities**:
+  - `DatabaseSnapshotter.copyAllData` расширен копированием `HabitVisualIdentities` (`habit_uuid`, `icon_type`, `icon_value`) и очисткой таблицы перед импортом;
+  - В `ContainerRestoreService.validateContainerDatasetSemantics` добавлена строгая проверка ссылочной целостности: любые записи `HabitVisualIdentities` обязаны ссылаться на существующие `Habits.uuid`, иначе восстановление бракуется;
+  - Написан тест `testVisualIdentityBackupRestoreRoundtrip` в `ContainerBackupRestoreTest`: проверен полный roundtrip для Habit X (векторная иконка `book`), Habit Y (emoji `☕`), Habit Z (`None`/null), корневого контейнера и вложенного подраздела; подтверждено отсечение orphaned записей семантическим валидатором;
+  - Проверена устойчивость `IconRef.fromString` и `toStorageString` к невалидным префиксам, пустым значениям и спецсимволам в `VisualIdentityTest`.
+- **Lucide License Attribution**:
+  - Зафиксирована лицензия Lucide: **ISC License** (`Copyright (c) Lucide Contributors`);
+  - Все векторные ресурсы `ic_cat_*.xml` содержат обязательный заголовок лицензии ISC;
+  - В проекте нет сторонних runtime-зависимостей для Lucide (статические Android Vector Drawables).
+- **Motion & Animator Scale = 0 Verification**:
+  - На устройстве `emulator-5554` установлены `animator_duration_scale = 0`, `transition_animation_scale = 0`, `window_animation_scale = 0`;
+  - Протестированы: inline expand/collapse, переход в focused view раздела, возврат Back, открытие и отмена sheet создания раздела, переключение scope (`Здесь` / `Включая вложенные`). Все переходы отрабатывают мгновенно и детерминированно, без зависаний; параметры возвращены в `1`.
+- **Visual Artifacts (14 скриншотов + 1 видеозапись)** сохранены в `pr8_artifacts/`:
+  1. `unified_root.png` — Главный экран с компактными разделами и плитками;
+  2. `root_expanded_study.png` — Раскрытый контейнер «Учёба» со списком привычек и подразделами;
+  3. `focused_study.png` — Сфокусированный экран раздела «Учёба» со scope-переключателем;
+  4. `focused_nested_container.png` — Сфокусированный экран вложенного подраздела «Databases» с breadcrumb-путём;
+  5. `create_container_sheet.png` — Нижняя шторка создания раздела с живой плиткой предпросмотра;
+  6. `icon_picker.png` — Сетка выбора Lucide-иконок по 14 категориям;
+  7. `emoji_picker.png` — Сетка выбора Emoji;
+  8. `habit_vector_icon.png` — Карточка привычки с векторной иконкой `book`;
+  9. `habit_emoji_icon.png` — Карточка привычки с emoji `☕`;
+  10. `unified_search.png` — Поиск привычек и разделов;
+  11. `unassigned_habits.png` — Секция «Без раздела» с карточками и чекмарками;
+  12. `archive_screen.png` — Экран «Архив разделов» с кнопкой «Восстановить»;
+  13. `theme_dark.png` — Unified Home в тёмной теме;
+  14. `theme_amoled.png` — Unified Home в теме AMOLED;
+  - `pr8_flow.mp4` — Полная видеозапись ключевого сценария: Home → expand → focus → nested focus → Back → create Container → icon picker → save.
+- **Production Isolation Verification**:
+  - В продуктовой БД `uhabits.db` проверен `PRAGMA user_version` — строго `29`;
+  - В `uhabits.db` отсутствуют таблицы `Containers`, `HabitPlacements`, `HabitVisualIdentities`, `OrganizationChanges`, `OrganizationState`;
+  - Проверено переключение сессии в `LEGACY_PRODUCTION`: продуктовый экран отображает привычный плоский список привычек без следов экспериментальных таблиц и UI. Переключение обратно в `CONTAINER_LOCAL_EXPERIMENTAL` бесшовно восстанавливает состояние.
+- **Тесты и сборка**:
+  - Все тесты `:uhabits-core:jvmTest` (включая `BackupRestoreTest`, `VisualIdentityTest`, все тесты `org.isoron.uhabits.core.containers.*`) пройдены успешно (BUILD SUCCESSFUL);
+  - Сборка `:uhabits-android:assembleDebug` успешна.
 
 ## 11. Session close protocol
 

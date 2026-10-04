@@ -26,7 +26,9 @@ import org.isoron.platform.io.querySingle
 import org.isoron.platform.io.run
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.CreateContainer
+import org.isoron.uhabits.core.containers.EditContainer
 import org.isoron.uhabits.core.containers.HabitRef
+import org.isoron.uhabits.core.containers.IconRef
 import org.isoron.uhabits.core.containers.OrganizationServiceImpl
 import org.isoron.uhabits.core.containers.PlaceHabit
 import org.isoron.uhabits.core.containers.migration.LegacyContainerMigrationExecutor
@@ -35,10 +37,13 @@ import org.isoron.uhabits.core.containers.migration.LegacyContainerMigrationVali
 import org.isoron.uhabits.core.containers.migration.MigrationValidationResult
 import org.isoron.uhabits.core.containers.migration.RawLegacyInventoryReader
 import org.isoron.uhabits.core.containers.migration.SemanticMigrationFixtures
+import org.isoron.uhabits.core.containers.sqlite.SQLiteHabitVisualIdentityStore
 import org.isoron.uhabits.core.containers.sqlite.SQLiteOrganizationStore
+import org.isoron.uhabits.core.models.PaletteColor
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ContainerBackupRestoreTest {
@@ -154,6 +159,128 @@ class ContainerBackupRestoreTest {
         val destInventory = RawLegacyInventoryReader.read(destinationDb)
         val semanticErrors = ContainerRestoreService.validateContainerDatasetSemantics(destinationDb, destInventory)
         assertTrue(semanticErrors.isEmpty(), "Semantic errors found: $semanticErrors")
+
+        sourceDb.close()
+        backupDb.close()
+        stagingDb.close()
+        destinationDb.close()
+    }
+
+    @Test
+    fun testVisualIdentityBackupRestoreRoundtrip() = runTest {
+        // 1. Create and seed v29 database and migrate to experimental dataset
+        val sourceDb = SemanticMigrationFixtures.createAndSeedV29Database()
+        val beforeInventory = RawLegacyInventoryReader.read(sourceDb)
+        val plan = LegacyContainerMigrationPlanner.plan(beforeInventory, cutoverTimestamp = 1000000L)
+        val execResult = LegacyContainerMigrationExecutor.execute(sourceDb, plan)
+        assertTrue(execResult is org.isoron.uhabits.core.containers.migration.MigrationExecutionResult.Success)
+
+        val store = SQLiteOrganizationStore(sourceDb)
+        val visualStore = SQLiteHabitVisualIdentityStore(sourceDb)
+
+        var idCounter = 1
+        val service = OrganizationServiceImpl(
+            store = store,
+            unitOfWork = store,
+            containerQueries = store,
+            placementQueries = store,
+            clock = { 2000000L },
+            idGenerator = { "gen-id-${idCounter++}" },
+            habitIdentityLookup = { true },
+        )
+
+        // 2. Configure container visual identities: root container and nested subcontainer
+        val rootContainerId = ContainerId("b-uuid-1")
+        val editRootRes = service.edit(
+            EditContainer(
+                id = rootContainerId,
+                name = "Корневой раздел с иконкой",
+                color = PaletteColor(3),
+                icon = "vector:book",
+                expectedRevision = store.readState().currentRevision,
+            )
+        )
+        assertTrue(editRootRes.isSuccess)
+
+        val nestedContainerId = ContainerId("c-nested-sub")
+        val createSubRes = service.create(
+            CreateContainer(
+                name = "Подраздел Учёбы",
+                parentId = rootContainerId,
+                explicitId = nestedContainerId,
+                color = PaletteColor(4),
+                icon = "vector:graduation-cap",
+            )
+        )
+        assertTrue(createSubRes.isSuccess)
+
+        // 3. Configure habit visual identities:
+        // - Habit UUID X ("h-uuid-1"): vector icon
+        // - Habit UUID Y ("h-uuid-2"): emoji icon
+        // - Habit UUID Z ("h-uuid-3"): None / missing identity
+        visualStore.set("h-uuid-1", IconRef.Vector("book"))
+        visualStore.set("h-uuid-2", IconRef.Emoji("☕"))
+
+        // Verify set before backup
+        assertEquals(IconRef.Vector("book"), visualStore.get("h-uuid-1"))
+        assertEquals(IconRef.Emoji("☕"), visualStore.get("h-uuid-2"))
+        assertNull(visualStore.get("h-uuid-3"))
+
+        // 4. Create full experimental backup
+        val backupDb = TestDatabaseHelper.createEmptyDatabase()
+        val backupRes = ContainerBackupService.createBackup(
+            sourceDb = sourceDb,
+            targetDb = backupDb,
+            timestamp = 3000000L,
+            preferences = mapOf("theme" to "amoled"),
+        )
+        assertTrue(backupRes is BackupCreationResult.Success)
+
+        // 5. Restore into destinationDb via stagingDb
+        val stagingDb = TestDatabaseHelper.createEmptyDatabase()
+        val destinationDb = TestDatabaseHelper.createEmptyDatabase()
+
+        val restoreRes = ContainerRestoreService.restore(
+            backupDb = backupDb,
+            stagingDb = stagingDb,
+            destinationDb = destinationDb,
+        )
+        assertTrue(restoreRes is RestoreResult.Success)
+        assertEquals(false, restoreRes.wasMigratedFromLegacy)
+
+        // 6. Verify visual identity roundtrip in destinationDb
+        val destVisualStore = SQLiteHabitVisualIdentityStore(destinationDb)
+        assertEquals(IconRef.Vector("book"), destVisualStore.get("h-uuid-1"), "Habit X vector icon must be restored identically")
+        assertEquals(IconRef.Emoji("☕"), destVisualStore.get("h-uuid-2"), "Habit Y emoji icon must be restored identically")
+        assertNull(destVisualStore.get("h-uuid-3"), "Habit Z without identity must remain null")
+
+        // Verify container visual identities in destinationDb
+        val destStore = SQLiteOrganizationStore(destinationDb)
+        val restoredRoot = destStore.getContainer(rootContainerId)
+        assertNotNull(restoredRoot)
+        assertEquals(PaletteColor(3), restoredRoot.color)
+        assertEquals("vector:book", restoredRoot.icon)
+
+        val restoredSub = destStore.getContainer(nestedContainerId)
+        assertNotNull(restoredSub)
+        assertEquals(PaletteColor(4), restoredSub.color)
+        assertEquals("vector:graduation-cap", restoredSub.icon)
+        assertEquals(rootContainerId, restoredSub.parentId)
+
+        // 7. Verify semantic validation passes on clean restored destination
+        val destInventory = RawLegacyInventoryReader.read(destinationDb)
+        val semanticErrors = ContainerRestoreService.validateContainerDatasetSemantics(destinationDb, destInventory)
+        assertTrue(semanticErrors.isEmpty(), "Restored dataset must pass semantic validation without errors: $semanticErrors")
+
+        // 8. Verify orphan HabitVisualIdentity detection in semantic validator
+        destinationDb.run(
+            "INSERT INTO HabitVisualIdentities (habit_uuid, icon_type, icon_value) VALUES ('orphan-ghost-habit-uuid', 'VECTOR', 'alert')"
+        )
+        val orphanErrors = ContainerRestoreService.validateContainerDatasetSemantics(destinationDb, destInventory)
+        assertTrue(
+            orphanErrors.any { it.contains("HabitVisualIdentity references non-existent habit UUID 'orphan-ghost-habit-uuid'") },
+            "Semantic validator must catch orphan HabitVisualIdentities referencing non-existent habits"
+        )
 
         sourceDb.close()
         backupDb.close()

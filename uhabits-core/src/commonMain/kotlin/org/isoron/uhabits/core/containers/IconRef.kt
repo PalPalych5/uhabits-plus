@@ -35,8 +35,14 @@ sealed interface IconRef {
             if (str.isNullOrBlank()) return None
             val trimmed = str.trim()
             return when {
-                trimmed.startsWith("vector:") -> Vector(trimmed.removePrefix("vector:"))
-                trimmed.startsWith("emoji:") -> Emoji(trimmed.removePrefix("emoji:"))
+                trimmed.startsWith("vector:") -> {
+                    val k = trimmed.removePrefix("vector:").trim()
+                    if (k.isEmpty()) None else Vector(k)
+                }
+                trimmed.startsWith("emoji:") -> {
+                    val e = trimmed.removePrefix("emoji:").trim()
+                    if (e.isEmpty()) None else Emoji(e)
+                }
                 trimmed.length <= 4 && trimmed.any { it.isSurrogate() || it.code > 1000 } -> Emoji(trimmed)
                 else -> Vector(trimmed)
             }
@@ -44,8 +50,8 @@ sealed interface IconRef {
 
         fun toStorageString(ref: IconRef): String? {
             return when (ref) {
-                is Vector -> "vector:${ref.key}"
-                is Emoji -> "emoji:${ref.value}"
+                is Vector -> if (ref.key.isBlank()) null else "vector:${ref.key}"
+                is Emoji -> if (ref.value.isBlank()) null else "emoji:${ref.value}"
                 is None -> null
             }
         }
