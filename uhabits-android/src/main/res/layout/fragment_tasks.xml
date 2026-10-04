@@ -1,173 +1,135 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/tasksRootLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical">
 
-    <!-- Top App Bar / Header -->
+    <!-- Top App Bar: Compact (48dp) title + overflow -->
     <LinearLayout
         android:id="@+id/tasksHeader"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:minHeight="48dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="20dp"
-        android:paddingEnd="16dp"
-        android:paddingTop="16dp"
-        android:paddingBottom="12dp">
+        android:paddingStart="16dp"
+        android:paddingEnd="8dp">
 
-        <LinearLayout
+        <TextView
+            android:id="@+id/tvTasksTitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:orientation="vertical">
+            android:text="@string/tasks_title"
+            android:textSize="18sp"
+            android:fontFamily="sans-serif-medium"
+            android:includeFontPadding="false" />
 
-            <TextView
-                android:id="@+id/tvTasksTitle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/tasks_title"
-                android:textSize="26sp"
-                android:fontFamily="sans-serif-medium"
-                android:includeFontPadding="false" />
+        <ImageButton
+            android:id="@+id/btnTasksOverflow"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:padding="12dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_toolbar_more_vertical"
+            android:contentDescription="Действия со списком" />
+    </LinearLayout>
 
-            <TextView
-                android:id="@+id/tvTasksSubtitle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:textSize="13sp"
-                android:fontFamily="sans-serif"
-                android:text="0 задач" />
-        </LinearLayout>
+    <!-- Smart View (dropdown) + Container Filter (dropdown): Single compact 48dp line -->
+    <LinearLayout
+        android:id="@+id/viewContextRow"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="12dp">
 
-        <!-- Context Filter Button / Pill -->
+        <TextView
+            android:id="@+id/btnSmartView"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:minHeight="48dp"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:gravity="center_vertical"
+            android:text="Сегодня ▾"
+            android:textSize="20sp"
+            android:fontFamily="sans-serif-medium"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <!-- Container Filter: Clean text + chevron, NO heavy pill background -->
         <LinearLayout
             android:id="@+id/btnContainerFilter"
             android:layout_width="wrap_content"
-            android:layout_height="36dp"
+            android:layout_height="48dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:background="?android:attr/selectableItemBackground"
             android:clickable="true"
             android:focusable="true">
 
             <View
                 android:id="@+id/viewFilterColorDot"
-                android:layout_width="8dp"
-                android:layout_height="8dp"
-                android:layout_marginEnd="6dp"
+                android:layout_width="6dp"
+                android:layout_height="6dp"
+                android:layout_marginEnd="5dp"
                 android:visibility="gone" />
 
             <TextView
                 android:id="@+id/tvContainerFilterName"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:textSize="13sp"
-                android:fontFamily="sans-serif-medium"
-                android:text="Все разделы" />
+                android:textSize="12sp"
+                android:fontFamily="sans-serif"
+                android:text="Все разделы"
+                android:maxWidth="150dp"
+                android:maxLines="1"
+                android:ellipsize="end" />
 
             <ImageView
                 android:id="@+id/ivContainerFilterArrow"
-                android:layout_width="16dp"
-                android:layout_height="16dp"
-                android:layout_marginStart="4dp"
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_marginStart="3dp"
                 android:src="@drawable/ic_chevron_down" />
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Smart Views Horizontal Scroll Bar -->
-    <HorizontalScrollView
-        android:id="@+id/scrollSmartViews"
+    <!-- List Info line: Count on the left, Date on the right -->
+    <LinearLayout
+        android:id="@+id/layoutListInfo"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:scrollbars="none"
-        android:overScrollMode="never"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
         android:paddingStart="16dp"
         android:paddingEnd="16dp"
-        android:paddingBottom="8dp">
+        android:paddingTop="2dp"
+        android:paddingBottom="6dp">
 
-        <LinearLayout
-            android:id="@+id/layoutSmartViewChips"
+        <TextView
+            android:id="@+id/tvTasksSubtitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="11sp"
+            android:fontFamily="sans-serif"
+            android:text="0 задач" />
+
+        <TextView
+            android:id="@+id/tvTasksDate"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical">
-
-            <!-- Chips will be generated or styled dynamically -->
-            <TextView
-                android:id="@+id/chipToday"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:gravity="center"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:text="Сегодня"
-                android:textSize="13sp"
-                android:fontFamily="sans-serif-medium"
-                android:clickable="true"
-                android:focusable="true" />
-
-            <TextView
-                android:id="@+id/chipInbox"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginStart="8dp"
-                android:gravity="center"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:text="Входящие"
-                android:textSize="13sp"
-                android:fontFamily="sans-serif-medium"
-                android:clickable="true"
-                android:focusable="true" />
-
-            <TextView
-                android:id="@+id/chipUpcoming"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginStart="8dp"
-                android:gravity="center"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:text="Предстоящие"
-                android:textSize="13sp"
-                android:fontFamily="sans-serif-medium"
-                android:clickable="true"
-                android:focusable="true" />
-
-            <TextView
-                android:id="@+id/chipAll"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginStart="8dp"
-                android:gravity="center"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:text="Все задачи"
-                android:textSize="13sp"
-                android:fontFamily="sans-serif-medium"
-                android:clickable="true"
-                android:focusable="true" />
-
-            <TextView
-                android:id="@+id/chipCompleted"
-                android:layout_width="wrap_content"
-                android:layout_height="32dp"
-                android:layout_marginStart="8dp"
-                android:gravity="center"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:text="Завершённые"
-                android:textSize="13sp"
-                android:fontFamily="sans-serif-medium"
-                android:clickable="true"
-                android:focusable="true" />
-        </LinearLayout>
-    </HorizontalScrollView>
+            android:textSize="11sp"
+            android:fontFamily="sans-serif" />
+    </LinearLayout>
 
     <!-- Content Area: RecyclerView + Empty View -->
     <FrameLayout
@@ -180,8 +142,8 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:clipToPadding="false"
-            android:paddingTop="4dp"
-            android:paddingBottom="72dp" />
+            android:paddingTop="2dp"
+            android:paddingBottom="64dp" />
 
         <!-- Empty state view -->
         <LinearLayout
@@ -219,38 +181,150 @@
         </LinearLayout>
     </FrameLayout>
 
-    <!-- Quick Add Bar at the bottom -->
+    <!-- Quick Add Docked Bar at the bottom (Concept A: flat docked bar with top divider, no capsule) -->
     <LinearLayout
-        android:id="@+id/layoutQuickAdd"
+        android:id="@+id/layoutQuickAddContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="12dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp">
+        android:orientation="vertical">
 
-        <EditText
-            android:id="@+id/etQuickAddTitle"
-            android:layout_width="0dp"
-            android:layout_height="42dp"
-            android:layout_weight="1"
-            android:background="@null"
-            android:hint="Новая задача..."
-            android:textSize="15sp"
-            android:fontFamily="sans-serif"
-            android:imeOptions="actionDone"
-            android:inputType="textCapSentences"
-            android:singleLine="true" />
+        <!-- Top Hairline Divider -->
+        <View
+            android:id="@+id/quickAddDivider"
+            android:layout_width="match_parent"
+            android:layout_height="1dp" />
 
-        <ImageButton
-            android:id="@+id/btnQuickAddSubmit"
-            android:layout_width="38dp"
-            android:layout_height="38dp"
-            android:background="@null"
-            android:src="@drawable/ic_toolbar_add"
-            android:contentDescription="Добавить" />
+        <!-- Collapsed Persistent Row: "+ Новая задача" -->
+        <LinearLayout
+            android:id="@+id/layoutQuickAddCollapsed"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true">
+
+            <ImageView
+                android:id="@+id/ivQuickAddIcon"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:src="@drawable/ic_toolbar_add" />
+
+            <TextView
+                android:id="@+id/tvQuickAddCollapsedLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:textSize="14sp"
+                android:fontFamily="sans-serif"
+                android:text="Новая задача" />
+        </LinearLayout>
+
+        <!-- Expanded Composer View (above IME) -->
+        <LinearLayout
+            android:id="@+id/layoutQuickAddExpanded"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <!-- Input Row: field + submit button -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="16dp"
+                android:paddingEnd="8dp">
+
+                <EditText
+                    android:id="@+id/etQuickAddTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="@null"
+                    android:hint="Новая задача"
+                    android:textSize="16sp"
+                    android:fontFamily="sans-serif"
+                    android:imeOptions="actionDone"
+                    android:inputType="textCapSentences"
+                    android:singleLine="true" />
+
+                <ImageButton
+                    android:id="@+id/btnQuickAddSubmit"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_toolbar_add"
+                    android:contentDescription="Добавить" />
+            </LinearLayout>
+
+            <!-- Compact Metadata Options Row (40dp) -->
+            <LinearLayout
+                android:id="@+id/quickAddOptions"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingBottom="4dp">
+
+                <TextView
+                    android:id="@+id/quickPlan"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:gravity="center_vertical"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:textSize="12sp"
+                    android:fontFamily="sans-serif"
+                    android:text="📅 Сегодня"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+                <TextView
+                    android:id="@+id/quickContainer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:gravity="center_vertical"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:layout_marginStart="4dp"
+                    android:textSize="12sp"
+                    android:fontFamily="sans-serif"
+                    android:text="📁 Раздел"
+                    android:maxWidth="130dp"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+                <View
+                    android:layout_width="0dp"
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
+
+                <TextView
+                    android:id="@+id/quickDeadline"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:gravity="center_vertical"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:textSize="12sp"
+                    android:fontFamily="sans-serif"
+                    android:text="🕒 Дедлайн"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true" />
+            </LinearLayout>
+        </LinearLayout>
     </LinearLayout>
 
 </LinearLayout>

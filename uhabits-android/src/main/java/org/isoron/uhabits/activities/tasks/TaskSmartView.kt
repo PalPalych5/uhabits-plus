@@ -19,10 +19,30 @@
 
 package org.isoron.uhabits.activities.tasks
 
+import org.isoron.platform.time.LocalDate
+import org.isoron.uhabits.core.userTasks.UserTask
+
 enum class TaskSmartView(val displayName: String) {
     TODAY("Сегодня"),
     INBOX("Входящие"),
     UPCOMING("Предстоящие"),
     ALL("Все задачи"),
-    COMPLETED("Завершённые")
+    COMPLETED("Завершённые");
+
+    fun matches(task: UserTask, today: LocalDate, nowMillis: Long): Boolean = when (this) {
+        TODAY -> !task.isCompleted && (
+            task.plannedDate == today ||
+                task.isMissedPlan(today, nowMillis) ||
+                task.isHardOverdue(nowMillis)
+            )
+        // Dates describe planning, while Inbox describes organization.
+        INBOX -> !task.isCompleted && task.containerId == null
+        UPCOMING -> !task.isCompleted && (
+            (task.plannedDate?.let { it > today } == true) ||
+                (task.deadline?.let { it > nowMillis } == true &&
+                    (task.plannedDate?.let { it >= today } != false))
+            )
+        ALL -> !task.isCompleted
+        COMPLETED -> task.isCompleted
+    }
 }

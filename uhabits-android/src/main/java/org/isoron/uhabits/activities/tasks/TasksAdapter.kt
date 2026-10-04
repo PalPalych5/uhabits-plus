@@ -22,6 +22,9 @@ package org.isoron.uhabits.activities.tasks
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
+import android.text.Spannable
+import android.text.SpannableStringBuilder
+import android.text.style.ForegroundColorSpan
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -29,7 +32,6 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import org.isoron.platform.time.LocalDate
@@ -38,11 +40,11 @@ import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.settings.SettingsThemePalette
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.facade.OrganizationalItem
-import org.isoron.uhabits.core.models.PaletteColor
 import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.UserTask
-import java.text.DateFormat
+import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
 
 class TasksAdapter(
     private var palette: SettingsThemePalette,
@@ -56,6 +58,8 @@ class TasksAdapter(
     private var containers: Map<ContainerId, OrganizationalItem> = emptyMap()
     private var today: LocalDate = LocalDate(2000, 1, 1)
     private var nowMillis: Long = System.currentTimeMillis()
+
+    private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
     fun updateData(
         newTasks: List<UserTask>,
@@ -108,11 +112,9 @@ class TasksAdapter(
         private val viewCheckCircle: View = itemView.findViewById(R.id.viewCheckCircle)
         private val ivCheckmark: ImageView = itemView.findViewById(R.id.ivCheckmark)
         private val tvTitle: TextView = itemView.findViewById(R.id.tvTaskTitle)
-        private val pillContainer: LinearLayout = itemView.findViewById(R.id.pillContainer)
+        private val layoutTaskMeta: LinearLayout = itemView.findViewById(R.id.layoutTaskMeta)
         private val viewContainerDot: View = itemView.findViewById(R.id.viewContainerDot)
-        private val tvContainerName: TextView = itemView.findViewById(R.id.tvContainerName)
-        private val tvSubtasksBadge: TextView = itemView.findViewById(R.id.tvSubtasksBadge)
-        private val tvDateChip: TextView = itemView.findViewById(R.id.tvDateChip)
+        private val tvTaskMeta: TextView = itemView.findViewById(R.id.tvTaskMeta)
 
         fun bind(task: UserTask) {
             val isCompleted = task.isCompleted
@@ -127,13 +129,14 @@ class TasksAdapter(
                 tvTitle.paintFlags = tvTitle.paintFlags and Paint.STRIKE_THRU_TEXT_FLAG.inv()
             }
 
-            // 2. Custom Check Circle
+            // 2. Custom Check Circle (20dp circle on 48dp target)
             val circleDrawable = GradientDrawable()
             circleDrawable.shape = GradientDrawable.OVAL
 
             if (isCompleted) {
                 circleDrawable.setColor(palette.accent)
                 viewCheckCircle.background = circleDrawable
+                ivCheckmark.setImageResource(R.drawable.ic_action_check)
                 ivCheckmark.visibility = View.VISIBLE
                 ivCheckmark.setColorFilter(Color.WHITE)
             } else {
@@ -148,46 +151,8 @@ class TasksAdapter(
                 onToggleComplete(task)
             }
 
-            // 3. Container Pill
-            val containerId = task.containerId
-            val containerItem = if (containerId != null) containers[containerId] else null
-            if (containerItem != null) {
-                pillContainer.visibility = View.VISIBLE
-                val containerColor = TaskThemeUtils.resolvePaletteColor(itemView.context, containerItem.color, palette.accent)
-                val pillBg = GradientDrawable().apply {
-                    cornerRadius = TaskThemeUtils.dp(itemView.context, 10f)
-                    setColor(MainTabsThemeBridge.withAlpha(containerColor, if (palette.isDark) 0.22f else 0.12f))
-                }
-                pillContainer.background = pillBg
-                tvContainerName.text = containerItem.name
-                tvContainerName.setTextColor(if (palette.isDark) palette.onSurface else containerColor)
-
-                val dotDrawable = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(containerColor)
-                }
-                viewContainerDot.background = dotDrawable
-            } else {
-                pillContainer.visibility = View.GONE
-            }
-
-            // 4. Subtasks Badge
-            val counts = subtaskCounts[task.id]
-            if (counts != null && counts.second > 0) {
-                tvSubtasksBadge.visibility = View.VISIBLE
-                tvSubtasksBadge.text = "✓ ${counts.first}/${counts.second}"
-                val badgeBg = GradientDrawable().apply {
-                    cornerRadius = TaskThemeUtils.dp(itemView.context, 6f)
-                    setColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.12f))
-                }
-                tvSubtasksBadge.background = badgeBg
-                tvSubtasksBadge.setTextColor(palette.onSurfaceVariant)
-            } else {
-                tvSubtasksBadge.visibility = View.GONE
-            }
-
-            // 5. Date Chip
-            bindDateChip(task)
+            // 3. Metadata Line (Concept A: plain text, no capsule chips)
+            bindMetadata(task)
 
             // Click & Long Click
             itemView.setOnClickListener {
@@ -199,73 +164,97 @@ class TasksAdapter(
             }
         }
 
-        private fun bindDateChip(task: UserTask) {
-            if (task.isCompleted) {
-                tvDateChip.visibility = View.GONE
-                return
+        private fun bindMetadata(task: UserTask) {
+            val ssb = SpannableStringBuilder()
+            var hasElement = false
+
+            // Container
+            val containerId = task.containerId
+            val containerItem = if (containerId != null) containers[containerId] else null
+            if (containerItem != null) {
+                viewContainerDot.visibility = View.VISIBLE
+                val containerColor = TaskThemeUtils.resolvePaletteColor(itemView.context, containerItem.color, palette.accent)
+                val dotDrawable = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(containerColor)
+                }
+                viewContainerDot.background = dotDrawable
+
+                ssb.append(containerItem.name)
+                hasElement = true
+            } else {
+                viewContainerDot.visibility = View.GONE
             }
 
-            val isHard = task.isHardOverdue(nowMillis)
-            val isMissed = task.isMissedPlan(today, nowMillis)
+            // Date / Deadline semantics (if not completed)
+            if (!task.isCompleted) {
+                val isHard = task.isHardOverdue(nowMillis)
+                val isMissed = task.isMissedPlan(today, nowMillis)
 
-            when {
-                isHard -> {
-                    tvDateChip.visibility = View.VISIBLE
-                    tvDateChip.text = "Просрочено"
-                    val bg = GradientDrawable().apply {
-                        cornerRadius = TaskThemeUtils.dp(itemView.context, 6f)
-                        setColor(if (palette.isDark) 0x33DC2626.toInt() else 0x22EF4444.toInt())
+                when {
+                    isHard -> {
+                        if (hasElement) ssb.append(" · ")
+                        val start = ssb.length
+                        val deadlineStr = task.deadline?.let {
+                            val d = Date(it)
+                            val cal = java.util.Calendar.getInstance().apply { time = d }
+                            val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
+                            val month = cal.get(java.util.Calendar.MONTH) + 1
+                            "Дедлайн прошёл · $day.${month.toString().padStart(2, '0')}"
+                        } ?: "Просрочено"
+                        ssb.append(deadlineStr)
+                        val dangerColor = if (palette.isDark) 0xFFFF8C8C.toInt() else 0xFFDC2626.toInt()
+                        ssb.setSpan(ForegroundColorSpan(dangerColor), start, ssb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        hasElement = true
                     }
-                    tvDateChip.background = bg
-                    tvDateChip.setTextColor(0xFFEF4444.toInt())
-                }
-                isMissed -> {
-                    tvDateChip.visibility = View.VISIBLE
-                    val p = task.plannedDate
-                    val dateText = if (p != null) "${p.day}.${p.month.toString().padStart(2, '0')}" else ""
-                    tvDateChip.text = "План: $dateText"
-                    val bg = GradientDrawable().apply {
-                        cornerRadius = TaskThemeUtils.dp(itemView.context, 6f)
-                        setColor(if (palette.isDark) 0x33D97706.toInt() else 0x22F59E0B.toInt())
+                    isMissed -> {
+                        if (hasElement) ssb.append(" · ")
+                        val start = ssb.length
+                        val p = task.plannedDate
+                        val dateText = if (p != null) "${p.day}.${p.month.toString().padStart(2, '0')}" else ""
+                        ssb.append("План · $dateText")
+                        val amberColor = if (palette.isDark) 0xFFE9B454.toInt() else 0xFFD97706.toInt()
+                        ssb.setSpan(ForegroundColorSpan(amberColor), start, ssb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+                        hasElement = true
                     }
-                    tvDateChip.background = bg
-                    tvDateChip.setTextColor(0xFFF59E0B.toInt())
-                }
-                task.plannedDate != null && task.plannedDate == today -> {
-                    tvDateChip.visibility = View.VISIBLE
-                    tvDateChip.text = "Сегодня"
-                    val bg = GradientDrawable().apply {
-                        cornerRadius = TaskThemeUtils.dp(itemView.context, 6f)
-                        setColor(MainTabsThemeBridge.withAlpha(palette.accent, 0.18f))
+                    task.plannedDate != null && task.plannedDate == today -> {
+                        if (hasElement) ssb.append(" · ")
+                        ssb.append("Сегодня")
+                        hasElement = true
                     }
-                    tvDateChip.background = bg
-                    tvDateChip.setTextColor(palette.accent)
-                }
-                task.plannedDate != null -> {
-                    tvDateChip.visibility = View.VISIBLE
-                    val p = task.plannedDate!!
-                    tvDateChip.text = "${p.day}.${p.month.toString().padStart(2, '0')}"
-                    val bg = GradientDrawable().apply {
-                        cornerRadius = TaskThemeUtils.dp(itemView.context, 6f)
-                        setColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.12f))
+                    task.plannedDate != null -> {
+                        if (hasElement) ssb.append(" · ")
+                        val p = task.plannedDate!!
+                        ssb.append("План · ${p.day}.${p.month.toString().padStart(2, '0')}")
+                        hasElement = true
                     }
-                    tvDateChip.background = bg
-                    tvDateChip.setTextColor(palette.onSurfaceVariant)
-                }
-                task.deadline != null -> {
-                    tvDateChip.visibility = View.VISIBLE
-                    val dateStr = DateFormat.getDateInstance(DateFormat.SHORT).format(Date(task.deadline!!))
-                    tvDateChip.text = "До $dateStr"
-                    val bg = GradientDrawable().apply {
-                        cornerRadius = TaskThemeUtils.dp(itemView.context, 6f)
-                        setColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.12f))
+                    task.deadline != null -> {
+                        if (hasElement) ssb.append(" · ")
+                        val d = Date(task.deadline!!)
+                        val cal = java.util.Calendar.getInstance().apply { time = d }
+                        val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
+                        val month = cal.get(java.util.Calendar.MONTH) + 1
+                        val time = timeFormat.format(d)
+                        ssb.append("Дедлайн · $day.${month.toString().padStart(2, '0')}, $time")
+                        hasElement = true
                     }
-                    tvDateChip.background = bg
-                    tvDateChip.setTextColor(palette.onSurfaceVariant)
                 }
-                else -> {
-                    tvDateChip.visibility = View.GONE
-                }
+            }
+
+            // Subtasks counter
+            val counts = subtaskCounts[task.id]
+            if (counts != null && counts.second > 0) {
+                if (hasElement) ssb.append(" · ")
+                ssb.append("✓ ${counts.first}/${counts.second}")
+                hasElement = true
+            }
+
+            if (hasElement) {
+                layoutTaskMeta.visibility = View.VISIBLE
+                tvTaskMeta.text = ssb
+                tvTaskMeta.setTextColor(palette.onSurfaceVariant)
+            } else {
+                layoutTaskMeta.visibility = View.GONE
             }
         }
     }

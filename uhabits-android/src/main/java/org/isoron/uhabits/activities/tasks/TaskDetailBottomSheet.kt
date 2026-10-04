@@ -21,15 +21,16 @@ package org.isoron.uhabits.activities.tasks
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
-import android.content.Context
+import android.content.DialogInterface
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
-import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageButton
@@ -37,9 +38,13 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.widget.PopupMenu
+import androidx.core.widget.doAfterTextChanged
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.bottomsheet.BottomSheetBehavior
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.HabitsApplication
@@ -48,7 +53,6 @@ import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.settings.SettingsThemePalette
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade
-import org.isoron.uhabits.core.containers.facade.OrganizationalItem
 import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.UserTask
 import org.isoron.uhabits.core.userTasks.UserTaskService
@@ -91,9 +95,13 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     private lateinit var subtasksAdapter: SubtasksAdapter
     private lateinit var tvSubtasksCount: TextView
     private lateinit var etNewSubtask: EditText
+    private lateinit var btnAddSubtask: ImageButton
 
-    private lateinit var btnDelete: Button
-    private lateinit var btnSave: Button
+    private lateinit var btnMore: ImageButton
+    private val saveHandler = Handler(Looper.getMainLooper())
+    private val pendingSave = Runnable { saveChanges() }
+    private var viewReady = false
+    private var taskDeleted = false
 
     var onTaskUpdatedListener: (() -> Unit)? = null
 
@@ -127,7 +135,26 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         applyTheme(view)
         populateData()
         setupListeners()
+        viewReady = true
         return view
+    }
+
+    override fun onStart() {
+        super.onStart()
+        (dialog as? BottomSheetDialog)?.let { sheet ->
+            sheet.dismissWithAnimation = true
+            sheet.behavior.skipCollapsed = true
+            sheet.behavior.state = BottomSheetBehavior.STATE_EXPANDED
+            sheet.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            sheet.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)?.apply {
+                backgroundTintList = null
+                background = GradientDrawable().apply {
+                    setColor(palette.surface)
+                    cornerRadii = floatArrayOf(dp(24f), dp(24f), dp(24f), dp(24f), 0f, 0f, 0f, 0f)
+                }
+                clipToOutline = true
+            }
+        }
     }
 
     private fun bindViews(view: View) {
@@ -152,9 +179,9 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         rvSubtasks = view.findViewById(R.id.rvDetailSubtasks)
         tvSubtasksCount = view.findViewById(R.id.tvDetailSubtasksCount)
         etNewSubtask = view.findViewById(R.id.etNewSubtaskTitle)
+        btnAddSubtask = view.findViewById(R.id.ivAddSubtask)
 
-        btnDelete = view.findViewById(R.id.btnDeleteTask)
-        btnSave = view.findViewById(R.id.btnSaveTask)
+        btnMore = view.findViewById(R.id.btnDetailMore)
     }
 
     private fun dp(value: Float): Float = TaskThemeUtils.dp(requireContext(), value)
@@ -162,7 +189,12 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
     private fun applyTheme(view: View) {
         val root = view.findViewById<LinearLayout>(R.id.taskDetailRoot)
-        root.setBackgroundColor(palette.surface)
+        root.setBackgroundColor(Color.TRANSPARENT)
+        view.background = GradientDrawable().apply {
+            setColor(palette.surface)
+            cornerRadii = floatArrayOf(dp(24f), dp(24f), dp(24f), dp(24f), 0f, 0f, 0f, 0f)
+        }
+        view.clipToOutline = true
 
         val dragHandle = view.findViewById<View>(R.id.viewDragHandle)
         val handleBg = GradientDrawable().apply {
@@ -173,8 +205,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
         val dividers = listOf(
             view.findViewById<View>(R.id.divider1),
-            view.findViewById<View>(R.id.divider2),
-            view.findViewById<View>(R.id.divider3)
+            view.findViewById<View>(R.id.divider2)
         )
         for (d in dividers) {
             d.setBackgroundColor(palette.divider)
@@ -195,8 +226,12 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         btnClearPlannedDate.setColorFilter(palette.onSurfaceVariant)
         btnClearDeadline.setColorFilter(palette.onSurfaceVariant)
 
-        btnSave.setBackgroundColor(palette.accent)
-        btnSave.setTextColor(Color.WHITE)
+        listOf(R.id.ivDetailContainerIcon, R.id.ivDetailPlanIcon, R.id.ivDetailDeadlineIcon,
+            R.id.ivDetailContainerChevron, R.id.ivAddSubtask).forEach { id ->
+            view.findViewById<ImageView>(id).setColorFilter(palette.onSurfaceVariant)
+        }
+        btnMore.setColorFilter(palette.onSurfaceVariant)
+        view.findViewById<TextView>(R.id.tvDetailSubtasksLabel).setTextColor(palette.onSurface)
     }
 
     private fun populateData() {
@@ -255,7 +290,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     private fun updatePlannedDateDisplay() {
         val p = selectedPlannedDate
         if (p == null) {
-            tvPlannedDateValue.text = "Не запланировано"
+            tvPlannedDateValue.text = "Запланировать"
             btnClearPlannedDate.visibility = View.GONE
         } else {
             val today = runCatching { getToday() }.getOrDefault(LocalDate(2026, 10, 4))
@@ -273,7 +308,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     private fun updateDeadlineDisplay() {
         val d = selectedDeadline
         if (d == null) {
-            tvDeadlineValue.text = "Нет дедлайна"
+            tvDeadlineValue.text = "Добавить дедлайн"
             btnClearDeadline.visibility = View.GONE
         } else {
             val df = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
@@ -283,9 +318,6 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun setupSubtasks() {
-        val task = currentTask ?: return
-        val app = requireContext().applicationContext as HabitsApplication
-
         subtasksAdapter = SubtasksAdapter(
             palette = palette,
             onToggleComplete = { subtask ->
@@ -310,6 +342,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                 true
             } else false
         }
+        btnAddSubtask.setOnClickListener { addNewSubtask() }
     }
 
     private fun refreshSubtasks() {
@@ -338,9 +371,17 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun setupListeners() {
+        listOf(etTitle, etDescription).forEach { field ->
+            field.doAfterTextChanged {
+                saveHandler.removeCallbacks(pendingSave)
+                if (viewReady && !taskDeleted) saveHandler.postDelayed(pendingSave, 350)
+            }
+            field.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) saveChanges() }
+        }
         btnCheck.setOnClickListener {
             isCompleted = !isCompleted
             updateCheckState()
+            saveChanges()
         }
 
         rowContainer.setOnClickListener {
@@ -354,6 +395,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         btnClearPlannedDate.setOnClickListener {
             selectedPlannedDate = null
             updatePlannedDateDisplay()
+            saveChanges()
         }
 
         rowDeadline.setOnClickListener {
@@ -363,26 +405,35 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         btnClearDeadline.setOnClickListener {
             selectedDeadline = null
             updateDeadlineDisplay()
-        }
-
-        btnDelete.setOnClickListener {
-            taskId?.let { id ->
-                AlertDialog.Builder(requireContext())
-                    .setTitle("Удалить задачу?")
-                    .setMessage("Задача и все её подзадачи будут удалены.")
-                    .setPositiveButton("Удалить") { _, _ ->
-                        taskService.deleteTask(id, cascadeSubtasks = true)
-                        onTaskUpdatedListener?.invoke()
-                        dismiss()
-                    }
-                    .setNegativeButton("Отмена", null)
-                    .show()
-            }
-        }
-
-        btnSave.setOnClickListener {
             saveChanges()
-            dismiss()
+        }
+
+        btnMore.setOnClickListener {
+            PopupMenu(requireContext(), btnMore).apply {
+                menu.add("Удалить задачу")
+                setOnMenuItemClickListener {
+                    confirmDelete()
+                    true
+                }
+            }.show()
+        }
+    }
+
+    private fun confirmDelete() {
+        taskId?.let { id ->
+            AlertDialog.Builder(requireContext())
+                .setTitle("Удалить задачу?")
+                .setMessage("Задача и все её подзадачи будут удалены.")
+                .setPositiveButton("Удалить") { _, _ ->
+                    saveHandler.removeCallbacks(pendingSave)
+                    taskService.deleteTask(id, cascadeSubtasks = true)
+                    taskDeleted = true
+                    currentTask = null
+                    onTaskUpdatedListener?.invoke()
+                    dismiss()
+                }
+                .setNegativeButton("Отмена", null)
+                .show()
         }
     }
 
@@ -400,6 +451,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                     selectedContainerId = ContainerId(containers[which - 1].key)
                 }
                 updateContainerDisplay()
+                saveChanges()
             }
             .show()
     }
@@ -414,10 +466,12 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                     0 -> {
                         selectedPlannedDate = today
                         updatePlannedDateDisplay()
+                        saveChanges()
                     }
                     1 -> {
                         selectedPlannedDate = LocalDate(today.daysSince2000 + 1)
                         updatePlannedDateDisplay()
+                        saveChanges()
                     }
                     2 -> {
                         val cal = Calendar.getInstance()
@@ -426,6 +480,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                             { _, year, month, dayOfMonth ->
                                 selectedPlannedDate = LocalDate(year, month + 1, dayOfMonth)
                                 updatePlannedDateDisplay()
+                                saveChanges()
                             },
                             cal.get(Calendar.YEAR),
                             cal.get(Calendar.MONTH),
@@ -451,6 +506,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                         }
                         selectedDeadline = selected.timeInMillis
                         updateDeadlineDisplay()
+                        saveChanges()
                     },
                     18,
                     0,
@@ -464,13 +520,20 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun saveChanges() {
+        saveHandler.removeCallbacks(pendingSave)
+        if (!viewReady || taskDeleted) return
         val task = currentTask ?: return
-        val newTitle = etTitle.text?.toString()?.trim() ?: task.title
+        val newTitle = etTitle.text?.toString()?.trim()?.takeIf { it.isNotBlank() } ?: task.title
         val newDesc = etDescription.text?.toString()?.trim() ?: ""
 
-        taskService.updateTask(
+        val propertiesChanged = newTitle != task.title || newDesc != task.description ||
+            selectedContainerId != task.containerId || selectedPlannedDate != task.plannedDate ||
+            selectedDeadline != task.deadline
+        if (!propertiesChanged && isCompleted == task.isCompleted) return
+        var savedTask = task
+        if (propertiesChanged) savedTask = taskService.updateTask(
             id = task.id,
-            title = if (newTitle.isNotBlank()) newTitle else task.title,
+            title = newTitle,
             description = newDesc,
             containerId = selectedContainerId,
             clearContainer = selectedContainerId == null,
@@ -481,14 +544,27 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         )
 
         if (isCompleted != task.isCompleted) {
-            taskService.setCompleted(task.id, isCompleted)
+            savedTask = taskService.setCompleted(task.id, isCompleted)
         }
 
+        currentTask = savedTask
         onTaskUpdatedListener?.invoke()
+    }
+
+    override fun onPause() {
+        saveChanges()
+        super.onPause()
+    }
+
+    override fun onDismiss(dialog: DialogInterface) {
+        saveChanges()
+        super.onDismiss(dialog)
     }
 
     override fun onDestroyView() {
         saveChanges()
+        viewReady = false
+        saveHandler.removeCallbacks(pendingSave)
         super.onDestroyView()
     }
 

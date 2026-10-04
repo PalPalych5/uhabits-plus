@@ -19,6 +19,8 @@
 
 package org.isoron.uhabits.activities.tasks
 
+import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -27,12 +29,14 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.widget.PopupMenu
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -50,6 +54,10 @@ import org.isoron.uhabits.core.userTasks.TaskStatus
 import org.isoron.uhabits.core.userTasks.UserTask
 import org.isoron.uhabits.core.userTasks.UserTaskRepository
 import org.isoron.uhabits.core.userTasks.UserTaskService
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 class TasksFragment : Fragment() {
 
@@ -58,21 +66,24 @@ class TasksFragment : Fragment() {
     private lateinit var orgFacade: HabitOrganizationFacade
     private lateinit var palette: SettingsThemePalette
 
+    private var quickPlanned: LocalDate? = null
+    private var quickContainer: ContainerId? = null
+    private var quickDue: Long? = null
+    private var quickDraftRestored = false
+    private var quickExpanded = false
     private var activeSmartView: TaskSmartView = TaskSmartView.TODAY
     private var selectedContainerFilter: ContainerId? = null
 
     private lateinit var tvTitle: TextView
-    private lateinit var tvSubtitle: TextView
+    private lateinit var btnTasksOverflow: ImageButton
+    private lateinit var btnSmartView: TextView
     private lateinit var btnContainerFilter: LinearLayout
     private lateinit var viewFilterDot: View
     private lateinit var tvFilterName: TextView
     private lateinit var ivFilterArrow: ImageView
 
-    private lateinit var chipToday: TextView
-    private lateinit var chipInbox: TextView
-    private lateinit var chipUpcoming: TextView
-    private lateinit var chipAll: TextView
-    private lateinit var chipCompleted: TextView
+    private lateinit var tvSubtitle: TextView
+    private lateinit var tvTasksDate: TextView
 
     private lateinit var rvTasks: RecyclerView
     private lateinit var adapter: TasksAdapter
@@ -80,15 +91,35 @@ class TasksFragment : Fragment() {
     private lateinit var tvEmptyTitle: TextView
     private lateinit var tvEmptyMessage: TextView
 
-    private lateinit var layoutQuickAdd: LinearLayout
+    private lateinit var layoutQuickAddContainer: LinearLayout
+    private lateinit var quickAddDivider: View
+    private lateinit var layoutQuickAddCollapsed: LinearLayout
+    private lateinit var ivQuickAddIcon: ImageView
+    private lateinit var tvQuickAddCollapsedLabel: TextView
+    private lateinit var layoutQuickAddExpanded: LinearLayout
     private lateinit var etQuickAddTitle: EditText
     private lateinit var btnQuickAddSubmit: ImageButton
+    private lateinit var quickAddOptions: LinearLayout
+    private lateinit var quickPlan: TextView
+    private lateinit var quickContainerView: TextView
+    private lateinit var quickDeadline: TextView
+
+    private val dateFormatRu = SimpleDateFormat("EEE, d MMMM", Locale("ru"))
 
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
+        savedInstanceState?.let {
+            activeSmartView = TaskSmartView.entries[it.getInt("smartView")]
+            selectedContainerFilter = it.getString("filter")?.let(::ContainerId)
+            quickPlanned = if (it.containsKey("quickPlan")) LocalDate(it.getInt("quickPlan")) else null
+            quickContainer = it.getString("quickContainer")?.let(::ContainerId)
+            quickDue = if (it.containsKey("quickDue")) it.getLong("quickDue") else null
+            quickExpanded = it.getBoolean("quickExpanded", false)
+            quickDraftRestored = true
+        }
         val app = requireContext().applicationContext as HabitsApplication
         taskRepo = app.component.userTaskRepository
         taskService = app.component.userTaskService
@@ -101,11 +132,12 @@ class TasksFragment : Fragment() {
             val statusBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.statusBars())
             val cutout = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.displayCutout())
             val topInset = maxOf(statusBars.top, cutout.top)
-            v.setPadding(v.paddingLeft, topInset + dpInt(12f), v.paddingRight, v.paddingBottom)
+            v.setPadding(v.paddingLeft, topInset + dpInt(6f), v.paddingRight, v.paddingBottom)
             insets
         }
         bindViews(view)
-        setupSmartViewChips()
+        setupSmartViewSelector()
+        setupOverflowMenu()
         setupRecyclerView()
         setupQuickAdd()
         setupContainerFilter()
@@ -118,7 +150,19 @@ class TasksFragment : Fragment() {
         super.onResume()
         palette = MainTabsThemeBridge.resolve(requireContext())
         view?.let { applyTheme(it) }
+        adapter.updatePalette(palette)
+        (childFragmentManager.findFragmentByTag("task_detail") as? TaskDetailBottomSheet)?.onTaskUpdatedListener = { if (view != null) loadTasks() }
         loadTasks()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putInt("smartView", activeSmartView.ordinal)
+        outState.putString("filter", selectedContainerFilter?.value)
+        quickPlanned?.let { outState.putInt("quickPlan", it.daysSince2000) }
+        outState.putString("quickContainer", quickContainer?.value)
+        quickDue?.let { outState.putLong("quickDue", it) }
+        outState.putBoolean("quickExpanded", quickExpanded)
+        super.onSaveInstanceState(outState)
     }
 
     fun refresh() {
@@ -129,26 +173,33 @@ class TasksFragment : Fragment() {
 
     private fun bindViews(view: View) {
         tvTitle = view.findViewById(R.id.tvTasksTitle)
-        tvSubtitle = view.findViewById(R.id.tvTasksSubtitle)
+        btnTasksOverflow = view.findViewById(R.id.btnTasksOverflow)
+        btnSmartView = view.findViewById(R.id.btnSmartView)
         btnContainerFilter = view.findViewById(R.id.btnContainerFilter)
         viewFilterDot = view.findViewById(R.id.viewFilterColorDot)
         tvFilterName = view.findViewById(R.id.tvContainerFilterName)
         ivFilterArrow = view.findViewById(R.id.ivContainerFilterArrow)
 
-        chipToday = view.findViewById(R.id.chipToday)
-        chipInbox = view.findViewById(R.id.chipInbox)
-        chipUpcoming = view.findViewById(R.id.chipUpcoming)
-        chipAll = view.findViewById(R.id.chipAll)
-        chipCompleted = view.findViewById(R.id.chipCompleted)
+        tvSubtitle = view.findViewById(R.id.tvTasksSubtitle)
+        tvTasksDate = view.findViewById(R.id.tvTasksDate)
 
         rvTasks = view.findViewById(R.id.rvTasks)
         layoutEmpty = view.findViewById(R.id.layoutEmptyTasks)
         tvEmptyTitle = view.findViewById(R.id.tvEmptyTitle)
         tvEmptyMessage = view.findViewById(R.id.tvEmptyMessage)
 
-        layoutQuickAdd = view.findViewById(R.id.layoutQuickAdd)
+        layoutQuickAddContainer = view.findViewById(R.id.layoutQuickAddContainer)
+        quickAddDivider = view.findViewById(R.id.quickAddDivider)
+        layoutQuickAddCollapsed = view.findViewById(R.id.layoutQuickAddCollapsed)
+        ivQuickAddIcon = view.findViewById(R.id.ivQuickAddIcon)
+        tvQuickAddCollapsedLabel = view.findViewById(R.id.tvQuickAddCollapsedLabel)
+        layoutQuickAddExpanded = view.findViewById(R.id.layoutQuickAddExpanded)
         etQuickAddTitle = view.findViewById(R.id.etQuickAddTitle)
         btnQuickAddSubmit = view.findViewById(R.id.btnQuickAddSubmit)
+        quickAddOptions = view.findViewById(R.id.quickAddOptions)
+        quickPlan = view.findViewById(R.id.quickPlan)
+        quickContainerView = view.findViewById(R.id.quickContainer)
+        quickDeadline = view.findViewById(R.id.quickDeadline)
     }
 
     private fun dp(value: Float): Float = TaskThemeUtils.dp(requireContext(), value)
@@ -156,70 +207,83 @@ class TasksFragment : Fragment() {
 
     private fun applyTheme(view: View) {
         view.setBackgroundColor(palette.background)
+        androidx.core.view.WindowInsetsControllerCompat(requireActivity().window, view).apply {
+            isAppearanceLightStatusBars = !palette.isDark
+            isAppearanceLightNavigationBars = !palette.isDark
+        }
 
         tvTitle.setTextColor(palette.onSurface)
+        btnTasksOverflow.setColorFilter(palette.onSurfaceVariant)
         tvSubtitle.setTextColor(palette.onSurfaceVariant)
-        tvFilterName.setTextColor(palette.onSurface)
+        tvTasksDate.setTextColor(palette.onSurfaceVariant)
+        tvFilterName.setTextColor(palette.onSurfaceVariant)
         ivFilterArrow.setColorFilter(palette.onSurfaceVariant)
 
-        val filterBg = GradientDrawable().apply {
-            cornerRadius = dp(18f)
-            setColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.12f))
-        }
-        btnContainerFilter.background = filterBg
+        // Concept A: Container filter is clean secondary text + chevron, NO heavy pill background!
 
+        view.findViewById<ImageView>(R.id.ivEmptyIcon).setColorFilter(palette.onSurfaceVariant)
         tvEmptyTitle.setTextColor(palette.onSurface)
         tvEmptyMessage.setTextColor(palette.onSurfaceVariant)
 
-        val quickAddBg = GradientDrawable().apply {
-            cornerRadius = dp(16f)
-            setColor(palette.surface)
-            setStroke(dpInt(1f), palette.border)
-        }
-        layoutQuickAdd.background = quickAddBg
+        // Concept A: Quick Add is docked at the bottom with top hairline divider
+        layoutQuickAddContainer.setBackgroundColor(palette.surface)
+        quickAddDivider.setBackgroundColor(palette.divider)
+        ivQuickAddIcon.setColorFilter(palette.accent)
+        tvQuickAddCollapsedLabel.setTextColor(palette.onSurfaceVariant)
         etQuickAddTitle.setTextColor(palette.onSurface)
         etQuickAddTitle.setHintTextColor(palette.onSurfaceVariant)
         btnQuickAddSubmit.setColorFilter(palette.accent)
 
-        updateChipStyles()
+        quickPlan.setTextColor(palette.onSurfaceVariant)
+        quickContainerView.setTextColor(palette.onSurfaceVariant)
+        quickDeadline.setTextColor(palette.onSurfaceVariant)
+
+        updateSmartViewLabel()
     }
 
-    private fun setupSmartViewChips() {
-        chipToday.setOnClickListener { switchSmartView(TaskSmartView.TODAY) }
-        chipInbox.setOnClickListener { switchSmartView(TaskSmartView.INBOX) }
-        chipUpcoming.setOnClickListener { switchSmartView(TaskSmartView.UPCOMING) }
-        chipAll.setOnClickListener { switchSmartView(TaskSmartView.ALL) }
-        chipCompleted.setOnClickListener { switchSmartView(TaskSmartView.COMPLETED) }
-    }
-
-    private fun switchSmartView(view: TaskSmartView) {
-        activeSmartView = view
-        updateChipStyles()
-        loadTasks()
-    }
-
-    private fun updateChipStyles() {
-        val chips = mapOf(
-            TaskSmartView.TODAY to chipToday,
-            TaskSmartView.INBOX to chipInbox,
-            TaskSmartView.UPCOMING to chipUpcoming,
-            TaskSmartView.ALL to chipAll,
-            TaskSmartView.COMPLETED to chipCompleted,
-        )
-
-        for ((view, chip) in chips) {
-            val isActive = view == activeSmartView
-            val bg = GradientDrawable().apply {
-                cornerRadius = dp(16f)
-                if (isActive) {
-                    setColor(palette.accent)
-                } else {
-                    setColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.10f))
+    private fun setupOverflowMenu() {
+        btnTasksOverflow.setOnClickListener {
+            val popup = PopupMenu(requireContext(), btnTasksOverflow)
+            popup.menu.add(0, 1, 0, "Все задачи")
+            popup.menu.add(0, 2, 1, "Завершённые")
+            popup.setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    1 -> {
+                        activeSmartView = TaskSmartView.ALL
+                        updateSmartViewLabel()
+                        loadTasks()
+                        true
+                    }
+                    2 -> {
+                        activeSmartView = TaskSmartView.COMPLETED
+                        updateSmartViewLabel()
+                        loadTasks()
+                        true
+                    }
+                    else -> false
                 }
             }
-            chip.background = bg
-            chip.setTextColor(if (isActive) Color.WHITE else palette.onSurface)
+            popup.show()
         }
+    }
+
+    private fun setupSmartViewSelector() {
+        btnSmartView.setOnClickListener {
+            val modes = TaskSmartView.entries
+            AlertDialog.Builder(requireContext())
+                .setTitle("Показать задачи")
+                .setSingleChoiceItems(modes.map { it.displayName }.toTypedArray(), activeSmartView.ordinal) { dialog, which ->
+                    activeSmartView = modes[which]
+                    updateSmartViewLabel()
+                    loadTasks()
+                    dialog.dismiss()
+                }.show()
+        }
+    }
+
+    private fun updateSmartViewLabel() {
+        btnSmartView.text = "${activeSmartView.displayName} ▾"
+        btnSmartView.setTextColor(palette.onSurface)
     }
 
     private fun setupRecyclerView() {
@@ -243,29 +307,120 @@ class TasksFragment : Fragment() {
     }
 
     private fun setupQuickAdd() {
+        fun refreshOptionLabels() {
+            val planText = quickPlanned?.let {
+                if (it == getToday()) "📅 Сегодня" else "📅 ${it.day}.${it.month}"
+            } ?: "📅 План"
+            quickPlan.text = planText
+            quickPlan.setTextColor(if (quickPlanned != null) palette.accent else palette.onSurfaceVariant)
+
+            val containerItem = orgFacade.availableContainers().find { it.key == quickContainer?.value }
+            val containerText = containerItem?.let { "📁 ${it.name}" } ?: "📁 Раздел"
+            quickContainerView.text = containerText
+            quickContainerView.setTextColor(if (quickContainer != null) palette.accent else palette.onSurfaceVariant)
+
+            val deadlineText = if (quickDue == null) "🕒 Дедлайн" else "🕒 Дедлайн ✓"
+            quickDeadline.text = deadlineText
+            quickDeadline.setTextColor(if (quickDue != null) palette.accent else palette.onSurfaceVariant)
+        }
+
+        fun expandComposer() {
+            quickExpanded = true
+            layoutQuickAddCollapsed.visibility = View.GONE
+            layoutQuickAddExpanded.visibility = View.VISIBLE
+            etQuickAddTitle.requestFocus()
+            val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.showSoftInput(etQuickAddTitle, InputMethodManager.SHOW_IMPLICIT)
+
+            if (etQuickAddTitle.text.isNullOrBlank() && !quickDraftRestored) {
+                quickPlanned = if (activeSmartView == TaskSmartView.TODAY) getToday() else null
+                quickContainer = if (activeSmartView == TaskSmartView.INBOX) null else selectedContainerFilter
+                quickDue = null
+            }
+            refreshOptionLabels()
+        }
+
+        fun collapseComposer() {
+            quickExpanded = false
+            layoutQuickAddExpanded.visibility = View.GONE
+            layoutQuickAddCollapsed.visibility = View.VISIBLE
+            val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.hideSoftInputFromWindow(etQuickAddTitle.windowToken, 0)
+        }
+
+        layoutQuickAddCollapsed.setOnClickListener {
+            expandComposer()
+        }
+
+        if (quickExpanded) {
+            expandComposer()
+        } else {
+            collapseComposer()
+        }
+
+        quickPlan.setOnClickListener {
+            AlertDialog.Builder(requireContext()).setItems(arrayOf("Сегодня", "Завтра", "Выбрать дату", "Без плана")) { _, choice ->
+                when (choice) {
+                    0 -> quickPlanned = getToday()
+                    1 -> quickPlanned = LocalDate(getToday().daysSince2000 + 1)
+                    3 -> quickPlanned = null
+                    2 -> {
+                        val cal = Calendar.getInstance()
+                        DatePickerDialog(requireContext(), { _, y, m, d -> quickPlanned = LocalDate(y, m + 1, d); refreshOptionLabels() },
+                            cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
+                    }
+                }
+                refreshOptionLabels()
+            }.show()
+        }
+
+        quickContainerView.setOnClickListener {
+            val items = orgFacade.availableContainers()
+            AlertDialog.Builder(requireContext()).setItems((listOf("Без раздела") + items.map { it.name }).toTypedArray()) { _, index ->
+                quickContainer = if (index == 0) null else ContainerId(items[index - 1].key)
+                refreshOptionLabels()
+            }.show()
+        }
+
+        quickDeadline.setOnClickListener {
+            AlertDialog.Builder(requireContext()).setItems(arrayOf("Выбрать дедлайн", "Без дедлайна")) { _, choice ->
+                if (choice == 1) { quickDue = null; refreshOptionLabels() } else {
+                    val cal = Calendar.getInstance()
+                    DatePickerDialog(requireContext(), { _, y, m, d ->
+                        TimePickerDialog(requireContext(), { _, h, minute ->
+                            quickDue = Calendar.getInstance().apply { set(y, m, d, h, minute, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+                            refreshOptionLabels()
+                        }, 18, 0, true).show()
+                    }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
+                }
+            }.show()
+        }
+
         fun submitQuickAdd() {
-            val title = etQuickAddTitle.text?.toString()?.trim() ?: ""
+            val title = etQuickAddTitle.text?.toString()?.trim().orEmpty()
             if (title.isBlank()) return
-
-            val today = runCatching { getToday() }.getOrDefault(LocalDate(2026, 10, 4))
-            val planned = if (activeSmartView == TaskSmartView.TODAY) today else null
-
-            taskService.createTask(
-                title = title,
-                containerId = selectedContainerFilter,
-                plannedDate = planned,
-            )
+            val created = taskService.createTask(title = title, containerId = quickContainer, plannedDate = quickPlanned, deadline = quickDue)
             etQuickAddTitle.text?.clear()
+            quickDraftRestored = false
+            collapseComposer()
+
+            // Reveal the new task even when it no longer matches the current view/filter.
+            if (!activeSmartView.matches(created, getToday(), System.currentTimeMillis())) {
+                activeSmartView = TaskSmartView.ALL
+                updateSmartViewLabel()
+            }
+            if (quickContainer != selectedContainerFilter) {
+                selectedContainerFilter = quickContainer
+                updateContainerFilterView()
+            }
             loadTasks()
         }
 
         btnQuickAddSubmit.setOnClickListener { submitQuickAdd() }
         etQuickAddTitle.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_DONE) {
-                submitQuickAdd()
-                true
-            } else false
+            if (actionId == EditorInfo.IME_ACTION_DONE) { submitQuickAdd(); true } else false
         }
+        refreshOptionLabels()
     }
 
     private fun setupContainerFilter() {
@@ -338,26 +493,7 @@ class TasksFragment : Fragment() {
         }
 
         // 2. Smart View filter
-        val viewFiltered = when (activeSmartView) {
-            TaskSmartView.TODAY -> containerFiltered.filter { task ->
-                !task.isCompleted && (
-                    task.plannedDate == today ||
-                    task.isMissedPlan(today, nowMillis) ||
-                    task.isHardOverdue(nowMillis)
-                )
-            }
-            TaskSmartView.INBOX -> containerFiltered.filter { task ->
-                !task.isCompleted && (task.containerId == null || (task.plannedDate == null && task.deadline == null))
-            }
-            TaskSmartView.UPCOMING -> containerFiltered.filter { task ->
-                !task.isCompleted && (
-                    (task.plannedDate != null && task.plannedDate!! > today) ||
-                    (task.deadline != null && task.deadline!! > nowMillis && (task.plannedDate == null || task.plannedDate!! >= today))
-                )
-            }
-            TaskSmartView.ALL -> containerFiltered.filter { !it.isCompleted }
-            TaskSmartView.COMPLETED -> containerFiltered.filter { it.isCompleted }
-        }
+        val viewFiltered = containerFiltered.filter { activeSmartView.matches(it, today, nowMillis) }
 
         // Sort: pending by hard overdue first, then missed plan, then sortOrder, then plannedDate; completed by completedAt DESC
         val sorted = if (activeSmartView == TaskSmartView.COMPLETED) {
@@ -384,6 +520,15 @@ class TasksFragment : Fragment() {
         // Subtitle count
         tvSubtitle.text = "${sorted.size} ${pluralTasks(sorted.size)}"
 
+        // Date indicator on the right (shown in TODAY mode)
+        if (activeSmartView == TaskSmartView.TODAY) {
+            val dateStr = dateFormatRu.format(Date(nowMillis))
+            tvTasksDate.text = dateStr.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale("ru")) else it.toString() }
+            tvTasksDate.visibility = View.VISIBLE
+        } else {
+            tvTasksDate.visibility = View.GONE
+        }
+
         // Empty view visibility
         if (sorted.isEmpty()) {
             rvTasks.visibility = View.GONE
@@ -396,18 +541,23 @@ class TasksFragment : Fragment() {
     }
 
     private fun updateEmptyMessage() {
+        if (selectedContainerFilter != null) {
+            tvEmptyTitle.text = "В этом разделе нет задач"
+            tvEmptyMessage.text = "Выберите другой режим или добавьте задачу ниже"
+            return
+        }
         when (activeSmartView) {
             TaskSmartView.TODAY -> {
-                tvEmptyTitle.text = "На сегодня всё сделано"
+                tvEmptyTitle.text = "Сегодня пока нет задач"
                 tvEmptyMessage.text = "Нет запланированных или просроченных задач"
             }
             TaskSmartView.INBOX -> {
                 tvEmptyTitle.text = "Входящие пусты"
-                tvEmptyMessage.text = "Все задачи распределены по разделам и датам"
+                tvEmptyMessage.text = "Здесь появляются задачи без раздела"
             }
             TaskSmartView.UPCOMING -> {
                 tvEmptyTitle.text = "Нет предстоящих задач"
-                tvEmptyMessage.text = "Запланируйте задачи на будущее в карточке задачи"
+                tvEmptyMessage.text = "Выберите плановую дату в редакторе задачи"
             }
             TaskSmartView.ALL -> {
                 tvEmptyTitle.text = "Нет активных задач"

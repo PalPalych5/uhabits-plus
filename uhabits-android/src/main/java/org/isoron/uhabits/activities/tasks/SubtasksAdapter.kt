@@ -90,6 +90,7 @@ class SubtasksAdapter(
             if (isCompleted) {
                 circleDrawable.setColor(palette.accent)
                 viewCheckCircle.background = circleDrawable
+                ivCheckmark.setImageResource(R.drawable.ic_action_check)
                 ivCheckmark.visibility = View.VISIBLE
                 ivCheckmark.setColorFilter(Color.WHITE)
             } else {
