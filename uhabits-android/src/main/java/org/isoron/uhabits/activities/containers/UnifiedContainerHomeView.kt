@@ -38,6 +38,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.widget.NestedScrollView
 import androidx.fragment.app.FragmentManager
+import androidx.interpolator.view.animation.FastOutSlowInInterpolator
 import org.isoron.platform.gui.toInt
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.R
@@ -129,31 +130,31 @@ class UnifiedContainerHomeView(
         post { render() }
     }
 
-    fun focusOn(containerId: ContainerId?) {
+    fun focusOn(containerId: ContainerId?, forward: Boolean = true) {
         focusedContainerId = containerId
         isArchiveOpen = false
         onFocusedContainerChanged?.invoke(containerId)
-        animateTransition()
+        animateTransition(forward)
     }
 
     fun handleBack(): Boolean {
         if (searchQuery.isNotBlank()) {
             searchQuery = ""
-            render()
+            animateTransition(forward = false)
             return true
         }
         if (isArchiveOpen) {
             isArchiveOpen = false
-            render()
+            animateTransition(forward = false)
             return true
         }
         val current = focusedContainerId
         if (current != null) {
             val path = facade.containerPath(current)
             if (path.size > 1) {
-                focusOn(path[path.size - 2].id)
+                focusOn(path[path.size - 2].id, forward = false)
             } else {
-                focusOn(null)
+                focusOn(null, forward = false)
             }
             return true
         }
@@ -165,10 +166,21 @@ class UnifiedContainerHomeView(
         render()
     }
 
-    private fun animateTransition() {
-        contentLayout.alpha = 0f
+    private fun animateTransition(forward: Boolean = true) {
+        contentLayout.animate().cancel()
+        contentLayout.alpha = 0.3f
+        contentLayout.translationY = if (forward) dp(12f) else -dp(12f)
+        contentLayout.scaleX = 0.995f
+        contentLayout.scaleY = 0.995f
         render()
-        contentLayout.animate().alpha(1f).setDuration(180).start()
+        contentLayout.animate()
+            .alpha(1f)
+            .translationY(0f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(240)
+            .setInterpolator(FastOutSlowInInterpolator())
+            .start()
     }
 
     fun render() {
@@ -222,7 +234,7 @@ class UnifiedContainerHomeView(
         headerBar.addView(addSectionBtn)
         contentLayout.addView(headerBar)
 
-        // 2. Root Containers List
+        // 2. Root Containers List (Living Context, ZERO CARDS!)
         val roots = facade.rootContainerModels()
         if (roots.isEmpty()) {
             val emptyCard = buildEmptyCard(
@@ -235,14 +247,9 @@ class UnifiedContainerHomeView(
             contentLayout.addView(emptyCard)
         } else {
             for (root in roots) {
-                val card = buildRootContainerCard(root)
-                contentLayout.addView(card)
-
-                // Inline expansion: shallow 1 level (direct subcontainers + direct habits)
-                if (expandedContainerIds.contains(root.id)) {
-                    val inlineBox = buildInlineExpandedBox(root)
-                    contentLayout.addView(inlineBox)
-                }
+                val isExpanded = expandedContainerIds.contains(root.id)
+                val item = buildRootContainerItem(root, isExpanded)
+                contentLayout.addView(item)
             }
         }
 
@@ -272,7 +279,7 @@ class UnifiedContainerHomeView(
                 layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(12f).toInt())
             })
 
-            val archiveRow = buildNavRowCard(
+            val archiveRow = buildNavRowOpen(
                 title = getString(R.string.containers_archive),
                 subtitle = getString(R.string.containers_archive_count, archivedRoots.size),
                 color = null,
@@ -281,32 +288,115 @@ class UnifiedContainerHomeView(
                 isMuted = true
             ) {
                 isArchiveOpen = true
-                animateTransition()
+                animateTransition(forward = true)
             }
             contentLayout.addView(archiveRow)
         }
     }
 
-    private fun buildRootContainerCard(container: Container): View {
+    private fun buildRootContainerItem(root: Container, isExpanded: Boolean): View {
+        if (!isExpanded) {
+            return buildRootHeaderRow(root, isExpanded = false).apply {
+                (layoutParams as? LinearLayout.LayoutParams)?.setMargins(0, 0, 0, dp(4f).toInt())
+            }
+        }
+
+        // Expanded: FrameLayout wrapper with single 2dp accent rail spanning from header through expanded items
+        val activeColor = root.color?.let { currentTheme().color(it).toInt() } ?: palette.accent
+        val wrapper = FrameLayout(context).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                setMargins(0, 0, 0, dp(8f).toInt())
+            }
+        }
+
+        val rail = View(context).apply {
+            background = GradientDrawable().apply {
+                setColor(activeColor)
+                cornerRadius = dp(1f)
+            }
+            layoutParams = FrameLayout.LayoutParams(dp(2f).toInt(), MATCH_PARENT).apply {
+                topMargin = dp(4f).toInt()
+                bottomMargin = dp(4f).toInt()
+                gravity = Gravity.START
+            }
+        }
+        wrapper.addView(rail)
+
+        val contentCol = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                marginStart = dp(8f).toInt()
+            }
+        }
+
+        // Header row
+        val headerRow = buildRootHeaderRow(root, isExpanded = true)
+        contentCol.addView(headerRow)
+
+        // Expanded Body (direct subcontainers + direct habits) - NO secondary tree border line!
+        val body = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12f).toInt(), dp(2f).toInt(), 0, dp(4f).toInt())
+        }
+
+        val children = facade.childrenOf(root.id)
+        for (child in children) {
+            val subOverview = facade.containerOverview(child.id)
+            val countText = getString(R.string.containers_count_habits_inside, subOverview?.totalHabitCount ?: 0)
+            val subRow = buildNavRowOpen(
+                title = child.name,
+                subtitle = countText,
+                color = child.color,
+                iconRef = IconRef.fromString(child.icon),
+                chevron = "›",
+                isSmall = true
+            ) {
+                focusOn(child.id, forward = true)
+            }
+            body.addView(subRow)
+        }
+
+        val directHabitUuids = facade.getHabitUuidsForContainer(root.id.value, subtree = false)
+        val habits = habitList.toList().filter { directHabitUuids.contains(it.uuid) }
+        for (habit in habits) {
+            val card = buildHabitCard(habit)
+            body.addView(card)
+        }
+
+        contentCol.addView(body)
+        wrapper.addView(contentCol)
+        return wrapper
+    }
+
+    private fun buildRootHeaderRow(
+        container: Container,
+        isExpanded: Boolean
+    ): View {
         val overview = facade.containerOverview(container.id)
         val directSubCount = overview?.directChildrenCount ?: 0
         val habitCount = overview?.totalHabitCount ?: 0
-        val isExpanded = expandedContainerIds.contains(container.id)
         val hasExpandableContent = directSubCount > 0 || (overview?.directHabitCount ?: 0) > 0
+        val activeColor = container.color?.let { currentTheme().color(it).toInt() } ?: palette.accent
+        val iconRef = IconRef.fromString(container.icon)
+        val iconEntry = (iconRef as? IconRef.Vector)?.let { IconPack.getIcon(it.key) }
+        val hasIcon = when (iconRef) {
+            is IconRef.Vector -> iconEntry != null
+            is IconRef.Emoji -> iconRef.value.isNotBlank()
+            else -> false
+        }
 
-        val card = LinearLayout(context).apply {
+        val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12f).toInt(), dp(10f).toInt(), dp(12f).toInt(), dp(10f).toInt())
-            background = GradientDrawable().apply {
-                setColor(palette.surface)
-                cornerRadius = dp(12f)
-                setStroke(dp(1f).toInt(), palette.border)
-            }
+            setPadding(dp(4f).toInt(), dp(8f).toInt(), dp(8f).toInt(), dp(8f).toInt())
             isClickable = true
             isFocusable = true
+            background = GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                cornerRadius = dp(8f)
+            }
             setOnClickListener {
-                focusOn(container.id)
+                focusOn(container.id, forward = true)
             }
             setOnLongClickListener {
                 showContainerPopupMenu(this, container)
@@ -323,7 +413,7 @@ class UnifiedContainerHomeView(
                 gravity = Gravity.CENTER
                 val size = dp(28f).toInt()
                 layoutParams = LinearLayout.LayoutParams(size, size).apply {
-                    setMargins(0, 0, dp(4f).toInt(), 0)
+                    setMargins(0, 0, dp(2f).toInt(), 0)
                 }
                 setOnClickListener {
                     if (isExpanded) {
@@ -334,28 +424,43 @@ class UnifiedContainerHomeView(
                     render()
                 }
             }
-            card.addView(chevronBtn)
+            row.addView(chevronBtn)
         } else {
             val emptySpace = View(context).apply {
-                layoutParams = LinearLayout.LayoutParams(dp(8f).toInt(), 1)
+                layoutParams = LinearLayout.LayoutParams(dp(28f).toInt(), 1)
             }
-            card.addView(emptySpace)
+            row.addView(emptySpace)
         }
 
-        // Icon Tile
-        val iconTile = buildIconTile(
-            iconRef = IconRef.fromString(container.icon),
-            color = container.color,
-            sizeDp = 40f,
-            cornerDp = 10f
-        )
-        card.addView(iconTile)
+        // Icon Tile or Color Accent Dot (No forced folder fallback!)
+        if (hasIcon) {
+            val tile = buildIconTile(
+                iconRef = iconRef,
+                color = container.color,
+                sizeDp = 36f,
+                cornerDp = 9f
+            )
+            row.addView(tile)
+        } else {
+            val colorDot = View(context).apply {
+                val dotSize = dp(8f).toInt()
+                layoutParams = LinearLayout.LayoutParams(dotSize, dotSize).apply {
+                    setMargins(dp(4f).toInt(), 0, dp(8f).toInt(), 0)
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(activeColor)
+                }
+            }
+            row.addView(colorDot)
+        }
 
         // Text Column
         val textCol = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
-            setPadding(dp(10f).toInt(), 0, dp(8f).toInt(), 0)
+            setPadding(dp(8f).toInt(), 0, dp(8f).toInt(), 0)
         }
         val titleText = TextView(context).apply {
             text = container.name
@@ -376,7 +481,7 @@ class UnifiedContainerHomeView(
         }
         textCol.addView(titleText)
         textCol.addView(subText)
-        card.addView(textCol)
+        row.addView(textCol)
 
         // Right Drill-Down Chevron
         val drillChevron = TextView(context).apply {
@@ -384,48 +489,10 @@ class UnifiedContainerHomeView(
             textSize = 20f
             setTextColor(palette.onSurfaceVariant)
         }
-        card.addView(drillChevron)
+        row.addView(drillChevron)
 
-        val lp = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
-            setMargins(0, 0, 0, dp(8f).toInt())
-        }
-        return card.apply { layoutParams = lp }
-    }
-
-    private fun buildInlineExpandedBox(parent: Container): View {
-        val box = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            val padLeft = dp(24f).toInt()
-            setPadding(padLeft, 0, 0, dp(8f).toInt())
-        }
-
-        // Direct Subsections
-        val children = facade.childrenOf(parent.id)
-        for (child in children) {
-            val subOverview = facade.containerOverview(child.id)
-            val countText = getString(R.string.containers_count_habits_inside, subOverview?.totalHabitCount ?: 0)
-            val subRow = buildNavRowCard(
-                title = child.name,
-                subtitle = countText,
-                color = child.color,
-                iconRef = IconRef.fromString(child.icon),
-                chevron = "›",
-                isSmall = true
-            ) {
-                focusOn(child.id)
-            }
-            box.addView(subRow)
-        }
-
-        // Direct Habits
-        val directHabitUuids = facade.getHabitUuidsForContainer(parent.id.value, subtree = false)
-        val habits = habitList.toList().filter { directHabitUuids.contains(it.uuid) }
-        for (habit in habits) {
-            val card = buildHabitCard(habit)
-            box.addView(card)
-        }
-
-        return box
+        val lp = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+        return row.apply { layoutParams = lp }
     }
 
     // ========================================================================
@@ -435,11 +502,13 @@ class UnifiedContainerHomeView(
     private fun renderFocused(containerId: ContainerId) {
         val overview = facade.containerOverview(containerId)
         val container = overview?.container ?: run {
-            focusOn(null)
+            focusOn(null, forward = false)
             return
         }
 
-        // 1. Navigation / Context Header
+        val activeColor = container.color?.let { currentTheme().color(it).toInt() } ?: palette.accent
+
+        // 1. Navigation / Context Header (Zero Cards! Title and Scope inside App Bar)
         val navRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -463,10 +532,97 @@ class UnifiedContainerHomeView(
         }
         navRow.addView(backBtn)
 
-        val spacer = View(context).apply {
-            layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
+        val iconRef = IconRef.fromString(container.icon)
+        val iconEntry = (iconRef as? IconRef.Vector)?.let { IconPack.getIcon(it.key) }
+        val hasIcon = when (iconRef) {
+            is IconRef.Vector -> iconEntry != null
+            is IconRef.Emoji -> iconRef.value.isNotBlank()
+            else -> false
         }
-        navRow.addView(spacer)
+        if (hasIcon) {
+            val iconTile = buildIconTile(
+                iconRef = iconRef,
+                color = container.color,
+                sizeDp = 36f,
+                cornerDp = 9f
+            ).apply {
+                (layoutParams as LinearLayout.LayoutParams).setMargins(0, 0, dp(8f).toInt(), 0)
+            }
+            navRow.addView(iconTile)
+        }
+
+        val titleCol = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
+        }
+
+        val path = facade.containerPath(container.id)
+        if (path.size > 1) {
+            val pathText = path.dropLast(1).joinToString(" / ") { it.name }
+            val pathView = TextView(context).apply {
+                text = pathText
+                setTextColor(palette.onSurfaceVariant)
+                textSize = 11f
+                maxLines = 1
+                setOnClickListener {
+                    focusOn(path[path.size - 2].id, forward = false)
+                }
+            }
+            titleCol.addView(pathView)
+        }
+
+        val titleView = TextView(context).apply {
+            text = container.name
+            setTextColor(palette.onSurface)
+            textSize = 18f
+            setTypeface(typeface, Typeface.BOLD)
+            maxLines = 1
+        }
+        titleCol.addView(titleView)
+
+        // Subtitle Scope Toggle: "Здесь X · Внутри Y"
+        val scopeSubtitle = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(2f).toInt(), 0, 0)
+        }
+
+        val isHere = (scopeMode == ScopeMode.HERE)
+        val hereText = TextView(context).apply {
+            text = getString(R.string.containers_scope_here_count, overview.directHabitCount)
+            textSize = 12f
+            setTypeface(typeface, if (isHere) Typeface.BOLD else Typeface.NORMAL)
+            setTextColor(if (isHere) activeColor else palette.onSurfaceVariant)
+            setOnClickListener {
+                if (scopeMode != ScopeMode.HERE) {
+                    scopeMode = ScopeMode.HERE
+                    render()
+                }
+            }
+        }
+        val dotSep = TextView(context).apply {
+            text = " · "
+            textSize = 12f
+            setTextColor(palette.onSurfaceVariant)
+        }
+        val subtreeText = TextView(context).apply {
+            text = getString(R.string.containers_scope_inside, overview.totalHabitCount)
+            textSize = 12f
+            setTypeface(typeface, if (!isHere) Typeface.BOLD else Typeface.NORMAL)
+            setTextColor(if (!isHere) activeColor else palette.onSurfaceVariant)
+            setOnClickListener {
+                if (scopeMode != ScopeMode.SUBTREE) {
+                    scopeMode = ScopeMode.SUBTREE
+                    render()
+                }
+            }
+        }
+        scopeSubtitle.addView(hereText)
+        scopeSubtitle.addView(dotSep)
+        scopeSubtitle.addView(subtreeText)
+        titleCol.addView(scopeSubtitle)
+
+        navRow.addView(titleCol)
 
         val overflowBtn = TextView(context).apply {
             text = "⋮"
@@ -486,118 +642,49 @@ class UnifiedContainerHomeView(
         navRow.addView(overflowBtn)
         contentLayout.addView(navRow)
 
-        // 2. Focused Container Identity Card
-        val identityCard = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14f).toInt(), dp(12f).toInt(), dp(14f).toInt(), dp(12f).toInt())
-            background = GradientDrawable().apply {
-                setColor(palette.surface)
-                cornerRadius = dp(14f)
-                setStroke(dp(1f).toInt(), palette.border)
-            }
-        }
-
-        val iconTile = buildIconTile(
-            iconRef = IconRef.fromString(container.icon),
-            color = container.color,
-            sizeDp = 48f,
-            cornerDp = 12f
-        )
-        identityCard.addView(iconTile)
-
-        val identityTextCol = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
-            setPadding(dp(12f).toInt(), 0, 0, 0)
-        }
-        val titleView = TextView(context).apply {
-            text = container.name
-            setTextColor(palette.onSurface)
-            textSize = 20f
-            setTypeface(typeface, Typeface.BOLD)
-        }
-        val path = facade.containerPath(container.id)
-        val pathText = path.joinToString(" › ") { it.name }
-        val pathView = TextView(context).apply {
-            text = pathText
-            setTextColor(palette.onSurfaceVariant)
-            textSize = 12f
-            maxLines = 1
-        }
-        identityTextCol.addView(titleView)
-        identityTextCol.addView(pathView)
-        identityCard.addView(identityTextCol)
-
-        contentLayout.addView(identityCard)
-
-        // 3. Scope Selector Chips: "Здесь" vs "Включая вложенные"
-        val scopeRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(12f).toInt(), 0, dp(12f).toInt())
-        }
-
-        val hereChip = buildScopeChip(
-            title = getString(R.string.containers_scope_here),
-            isSelected = scopeMode == ScopeMode.HERE
-        ) {
-            scopeMode = ScopeMode.HERE
-            render()
-        }
-        val subtreeChip = buildScopeChip(
-            title = getString(R.string.containers_scope_subtree),
-            isSelected = scopeMode == ScopeMode.SUBTREE
-        ) {
-            scopeMode = ScopeMode.SUBTREE
-            render()
-        }
-        scopeRow.addView(hereChip)
-        scopeRow.addView(subtreeChip)
-        contentLayout.addView(scopeRow)
-
-        // 4. Subsections
+        // 2. Subsections (if any)
         val subcontainers = facade.childrenOf(container.id)
-        val subHeader = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(4f).toInt(), 0, dp(8f).toInt())
-        }
-        val subTitle = TextView(context).apply {
-            text = getString(R.string.containers_subsections) + " (${subcontainers.size})"
-            setTextColor(palette.onSurfaceVariant)
-            textSize = 13f
-            setTypeface(typeface, Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
-        }
-        subHeader.addView(subTitle)
-
-        val addSubBtn = buildPillButton(
-            text = "+ " + getString(R.string.containers_create_subsection),
-            isPrimary = false
-        ) {
-            showCreateContainerDialog(parentId = container.id)
-        }
-        subHeader.addView(addSubBtn)
-        contentLayout.addView(subHeader)
-
         if (subcontainers.isNotEmpty()) {
+            val subHeader = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, dp(10f).toInt(), 0, dp(4f).toInt())
+            }
+            val subTitle = TextView(context).apply {
+                text = getString(R.string.containers_subsections) + " (${subcontainers.size})"
+                setTextColor(palette.onSurfaceVariant)
+                textSize = 12f
+                setTypeface(typeface, Typeface.BOLD)
+                layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
+            }
+            subHeader.addView(subTitle)
+
+            val addSubBtn = buildPillButton(
+                text = "+ " + getString(R.string.containers_create_subsection),
+                isPrimary = false
+            ) {
+                showCreateContainerDialog(parentId = container.id)
+            }
+            subHeader.addView(addSubBtn)
+            contentLayout.addView(subHeader)
+
             for (sub in subcontainers) {
                 val subOverview = facade.containerOverview(sub.id)
                 val countText = getString(R.string.containers_count_habits_inside, subOverview?.totalHabitCount ?: 0)
-                val row = buildNavRowCard(
+                val row = buildNavRowOpen(
                     title = sub.name,
                     subtitle = countText,
                     color = sub.color,
                     iconRef = IconRef.fromString(sub.icon),
                     chevron = "›"
                 ) {
-                    focusOn(sub.id)
+                    focusOn(sub.id, forward = true)
                 }
                 contentLayout.addView(row)
             }
         }
 
-        // 5. Habits Section
+        // 3. Habits Section
         val habitUuids = facade.getHabitUuidsForContainer(
             containerKey = container.id.value,
             subtree = (scopeMode == ScopeMode.SUBTREE)
@@ -607,12 +694,17 @@ class UnifiedContainerHomeView(
         val habitsHeader = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(12f).toInt(), 0, dp(8f).toInt())
+            setPadding(0, dp(14f).toInt(), 0, dp(4f).toInt())
         }
         val habitsTitle = TextView(context).apply {
-            text = getString(R.string.containers_habits) + " (${habits.size})"
+            val titleStr = if (scopeMode == ScopeMode.SUBTREE) {
+                getString(R.string.containers_habits_all)
+            } else {
+                getString(R.string.containers_habits_direct)
+            }
+            text = "$titleStr (${habits.size})"
             setTextColor(palette.onSurfaceVariant)
-            textSize = 13f
+            textSize = 12f
             setTypeface(typeface, Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
         }
@@ -710,37 +802,58 @@ class UnifiedContainerHomeView(
                 layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(12f).toInt())
             })
             for (container in archivedRoots) {
-                val card = buildArchiveRowCard(container)
+                val card = buildArchiveRowOpen(container)
                 contentLayout.addView(card)
             }
         }
     }
 
-    private fun buildArchiveRowCard(container: Container): View {
+    private fun buildArchiveRowOpen(container: Container): View {
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12f).toInt(), dp(10f).toInt(), dp(12f).toInt(), dp(10f).toInt())
+            setPadding(dp(8f).toInt(), dp(8f).toInt(), dp(8f).toInt(), dp(8f).toInt())
             background = GradientDrawable().apply {
-                setColor(palette.surface)
-                cornerRadius = dp(10f)
-                setStroke(dp(1f).toInt(), palette.border)
+                setColor(Color.TRANSPARENT)
+                cornerRadius = dp(8f)
             }
         }
 
-        val iconTile = buildIconTile(
-            iconRef = IconRef.fromString(container.icon),
-            color = null,
-            sizeDp = 36f,
-            cornerDp = 8f,
-            isArchived = true
-        )
-        row.addView(iconTile)
+        val iconRef = IconRef.fromString(container.icon)
+        val iconEntry = (iconRef as? IconRef.Vector)?.let { IconPack.getIcon(it.key) }
+        val hasIcon = when (iconRef) {
+            is IconRef.Vector -> iconEntry != null
+            is IconRef.Emoji -> iconRef.value.isNotBlank()
+            else -> false
+        }
+        if (hasIcon) {
+            val iconTile = buildIconTile(
+                iconRef = iconRef,
+                color = null,
+                sizeDp = 34f,
+                cornerDp = 8f,
+                isArchived = true
+            )
+            row.addView(iconTile)
+        } else {
+            val dot = View(context).apply {
+                val s = dp(6f).toInt()
+                layoutParams = LinearLayout.LayoutParams(s, s).apply {
+                    setMargins(dp(2f).toInt(), 0, dp(6f).toInt(), 0)
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(palette.onSurfaceVariant)
+                }
+            }
+            row.addView(dot)
+        }
 
         val textCol = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
-            setPadding(dp(10f).toInt(), 0, dp(8f).toInt(), 0)
+            setPadding(dp(8f).toInt(), 0, dp(8f).toInt(), 0)
         }
         val titleText = TextView(context).apply {
             text = container.name
@@ -765,7 +878,7 @@ class UnifiedContainerHomeView(
         row.addView(restoreBtn)
 
         val lp = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
-            setMargins(0, 0, 0, dp(8f).toInt())
+            setMargins(0, 0, 0, dp(4f).toInt())
         }
         return row.apply { layoutParams = lp }
     }
@@ -795,7 +908,7 @@ class UnifiedContainerHomeView(
             contentLayout.addView(noSec)
         } else {
             for (c in allContainers) {
-                val row = buildNavRowCard(
+                val row = buildNavRowOpen(
                     title = c.name,
                     subtitle = c.path ?: c.name,
                     color = c.color,
@@ -803,7 +916,7 @@ class UnifiedContainerHomeView(
                     chevron = "›"
                 ) {
                     searchQuery = ""
-                    focusOn(ContainerId(c.key))
+                    focusOn(ContainerId(c.key), forward = true)
                 }
                 contentLayout.addView(row)
             }
@@ -855,15 +968,24 @@ class UnifiedContainerHomeView(
 
         when (iconRef) {
             is IconRef.Vector -> {
-                val iv = ImageView(context).apply {
-                    val iconInnerSize = dp(sizeDp * 0.55f).toInt()
-                    layoutParams = FrameLayout.LayoutParams(iconInnerSize, iconInnerSize, Gravity.CENTER)
-                    scaleType = ImageView.ScaleType.FIT_CENTER
-                    val res = IconPack.getDrawableRes(iconRef.key, IconPack.DEFAULT_CONTAINER_ICON_RES)
-                    setImageDrawable(AppCompatResources.getDrawable(context, res))
-                    setColorFilter(activeColor)
+                val iconEntry = IconPack.getIcon(iconRef.key)
+                if (iconEntry != null) {
+                    val d = try {
+                        AppCompatResources.getDrawable(context, iconEntry.drawableRes)
+                    } catch (e: Exception) {
+                        null
+                    }
+                    if (d != null) {
+                        val iv = ImageView(context).apply {
+                            val iconInnerSize = dp(sizeDp * 0.55f).toInt()
+                            layoutParams = FrameLayout.LayoutParams(iconInnerSize, iconInnerSize, Gravity.CENTER)
+                            scaleType = ImageView.ScaleType.FIT_CENTER
+                            setImageDrawable(d)
+                            setColorFilter(activeColor)
+                        }
+                        tile.addView(iv)
+                    }
                 }
-                tile.addView(iv)
             }
             is IconRef.Emoji -> {
                 val tv = TextView(context).apply {
@@ -874,65 +996,83 @@ class UnifiedContainerHomeView(
                 tile.addView(tv)
             }
             else -> {
-                val iv = ImageView(context).apply {
-                    val iconInnerSize = dp(sizeDp * 0.55f).toInt()
-                    layoutParams = FrameLayout.LayoutParams(iconInnerSize, iconInnerSize, Gravity.CENTER)
-                    scaleType = ImageView.ScaleType.FIT_CENTER
-                    val res = IconPack.DEFAULT_CONTAINER_ICON_RES
-                    setImageDrawable(AppCompatResources.getDrawable(context, res))
-                    setColorFilter(activeColor)
-                }
-                tile.addView(iv)
+                // No generic fallback icon!
             }
         }
 
         return tile
     }
 
-    private fun buildNavRowCard(
+    private fun buildNavRowOpen(
         title: String,
         subtitle: String?,
         color: PaletteColor?,
         iconRef: IconRef?,
-        chevron: String?,
+        chevron: String? = "›",
         isSmall: Boolean = false,
         isMuted: Boolean = false,
         onClick: () -> Unit
     ): View {
+        val activeColor = if (isMuted) {
+            palette.onSurfaceVariant
+        } else {
+            color?.let { currentTheme().color(it).toInt() } ?: palette.accent
+        }
+
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            val padY = if (isSmall) dp(8f).toInt() else dp(10f).toInt()
-            val padX = dp(12f).toInt()
+            val padY = if (isSmall) dp(6f).toInt() else dp(8f).toInt()
+            val padX = dp(6f).toInt()
             setPadding(padX, padY, padX, padY)
             background = GradientDrawable().apply {
-                setColor(palette.surface)
-                cornerRadius = dp(10f)
-                setStroke(dp(1f).toInt(), palette.border)
+                setColor(Color.TRANSPARENT)
+                cornerRadius = dp(8f)
             }
             isClickable = true
             isFocusable = true
             setOnClickListener { onClick() }
         }
 
-        val tile = buildIconTile(
-            iconRef = iconRef,
-            color = color,
-            sizeDp = if (isSmall) 32f else 36f,
-            cornerDp = if (isSmall) 8f else 10f,
-            isArchived = isMuted
-        )
-        row.addView(tile)
+        val iconEntry = (iconRef as? IconRef.Vector)?.let { IconPack.getIcon(it.key) }
+        val hasIcon = when (iconRef) {
+            is IconRef.Vector -> iconEntry != null
+            is IconRef.Emoji -> iconRef.value.isNotBlank()
+            else -> false
+        }
+        if (hasIcon) {
+            val tile = buildIconTile(
+                iconRef = iconRef,
+                color = color,
+                sizeDp = if (isSmall) 30f else 34f,
+                cornerDp = if (isSmall) 7f else 8f,
+                isArchived = isMuted
+            )
+            row.addView(tile)
+        } else {
+            val colorDot = View(context).apply {
+                val dotSize = dp(6f).toInt()
+                layoutParams = LinearLayout.LayoutParams(dotSize, dotSize).apply {
+                    setMargins(dp(2f).toInt(), 0, dp(6f).toInt(), 0)
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(activeColor)
+                }
+            }
+            row.addView(colorDot)
+        }
 
         val textCol = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
-            setPadding(dp(10f).toInt(), 0, dp(8f).toInt(), 0)
+            setPadding(dp(8f).toInt(), 0, dp(8f).toInt(), 0)
         }
         val titleText = TextView(context).apply {
             text = title
             setTextColor(if (isMuted) palette.onSurfaceVariant else palette.onSurface)
-            textSize = if (isSmall) 14f else 15f
+            textSize = if (isSmall) 13.5f else 14.5f
             setTypeface(typeface, Typeface.BOLD)
             maxLines = 1
         }
@@ -942,7 +1082,7 @@ class UnifiedContainerHomeView(
             val subText = TextView(context).apply {
                 text = subtitle
                 setTextColor(palette.onSurfaceVariant)
-                textSize = 12f
+                textSize = 11.5f
                 maxLines = 1
             }
             textCol.addView(subText)
@@ -959,7 +1099,7 @@ class UnifiedContainerHomeView(
         }
 
         val lp = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
-            setMargins(0, 0, 0, dp(6f).toInt())
+            setMargins(0, 0, 0, dp(2f).toInt())
         }
         return row.apply { layoutParams = lp }
     }
@@ -1031,32 +1171,6 @@ class UnifiedContainerHomeView(
         }
     }
 
-    private fun buildScopeChip(title: String, isSelected: Boolean, onClick: () -> Unit): View {
-        return TextView(context).apply {
-            text = title
-            textSize = 13f
-            setTypeface(typeface, if (isSelected) Typeface.BOLD else Typeface.NORMAL)
-            val padX = dp(14f).toInt()
-            val padY = dp(6f).toInt()
-            setPadding(padX, padY, padX, padY)
-            val lp = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
-                setMargins(0, 0, dp(8f).toInt(), 0)
-            }
-            layoutParams = lp
-
-            background = GradientDrawable().apply {
-                cornerRadius = dp(16f)
-                if (isSelected) {
-                    setColor(MainTabsThemeBridge.withAlpha(palette.accent, 0.18f))
-                    setStroke(dp(1.5f).toInt(), palette.accent)
-                } else {
-                    setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.06f))
-                }
-            }
-            setTextColor(if (isSelected) palette.accent else palette.onSurfaceVariant)
-            setOnClickListener { onClick() }
-        }
-    }
 
     private fun buildSectionHeader(title: String, count: Int? = null): View {
         val text = if (count != null) "$title ($count)" else title

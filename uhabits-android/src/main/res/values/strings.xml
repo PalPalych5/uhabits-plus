@@ -868,7 +868,11 @@
     <string name="containers_archive_empty">No archived sections</string>
     <string name="containers_archived_banner">Section is archived</string>
     <string name="containers_scope_here">Here</string>
+    <string name="containers_scope_here_count">Here %d</string>
     <string name="containers_scope_subtree">Including nested</string>
+    <string name="containers_scope_inside">Inside %d</string>
+    <string name="containers_habits_all">All habits in branch</string>
+    <string name="containers_habits_direct">Direct habits</string>
     <string name="containers_create_section">New section</string>
     <string name="containers_create_subsection">New subsection</string>
     <string name="containers_name">Name</string>

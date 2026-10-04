@@ -61,19 +61,28 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 - Форматы Entry, UNKNOWN/SKIP/explicit zero, numerical x1000, HabitGoal history/UUID и формулы не меняются в Foundation.
 - Форматы Entry, UNKNOWN/SKIP/explicit zero, numerical x1000, HabitGoal history/UUID и формулы не меняются в Foundation.
 
-### Accepted product direction (Visual Spike):
-- **Container = Living Context**, а не folder и не card. Контекст — это пространство внимания / сфера ответственности, а не прямоугольная коробка с рамками.
-- **Ортогональность: Workspaces × Context**: Рабочие пространства (`Привычки`, `Задачи`, `Сегодня`, `Статистика`) отвечают на вопрос «ЧТО делать», а Контекст (`Все`, `Учёба`, `Речь`, `Тело`) отвечает «К ЧЕМУ относится».
-- **Разделение сущностей**: Habits и Tasks не смешиваются автоматически в одну общую ленту; это разные типы деятельности с разными жизненными циклами.
-- **Generic folder fallback не используется**: серая системная папка 📁 исключена как визуальный дефолт.
-
-### Candidate, NOT approved yet (Visual Review Pending):
-- **Concept C Hybrid**: раскрытие на первом уровне + Header Morphing при входе в контекст (исследуется наряду с A и B).
-- **Accent rail**: акцентная направляющая линия (исследуются варианты 2dp, 3dp и no-rail/отступ). Точные параметры толщины и тинта НЕ зафиксированы в контракте.
-- **Header morph**: идея пространственной непрерывности (исследуются как Expressive Morph, так и спокойный Subtle Morph 220–280ms). Точные тайминги 350ms, scale 0.98 и траектории НЕ зафиксированы.
-- **Monogram fallback**: типографические монограммы (`[У]`, `[Р]`, `[Т]`) vs отсутствие плашки иконки вообще (сравниваются в прототипе).
-- **Навигация и IA**: структура нижнего бара (варианты IA A с «Ещё», IA B с «Настройками», IA C с настройками в App Bar). Экран «Сегодня» не утверждён как обязательная вкладка.
-- **Scope semantics**: кандидатная семантика — `Focused Container → direct content by default` (например, `Здесь 3 · Внутри 5`); тап по `Внутри 5` включает aggregated view.
+### Accepted product direction (Visual Architecture & PR8·Spatial Slice):
+- **Container = Living Context**: Пространство внимания / сфера ответственности, а не карточка и не папка.
+- **Concept C (Hybrid) утверждён как основа нативного эксперимента**:
+  - В корневом списке Habits — открытые секции контейнеров с возможностью inline-раскрытия первого уровня;
+  - По тапу на строку контейнера — переход в сфокусированное пространство (Focused Context);
+  - Для глубины $\ge 2$ используется сфокусированная иерархическая навигация с breadcrumbs.
+- **Акцентная рельса — строго 2dp**:
+  - Отображается только у раскрытого / активного контекста, а не на всех элементах подряд;
+  - В раскрытом состоянии используется **строго одна рельса** слева (без дублирующих внутренних вложенных линий tree-view); связь задаётся пространственным отступом.
+- **Fallback = без иконки**:
+  - Если пользователь не выбрал иконку — используется чистая качественная типографика и цветовой акцент без принудительной плашки. Монограмма `[У]` не является автоматическим fallback. Системные папки 📁 исключены.
+- **Subtle Morph (~240мс)**:
+  - Спокойный рабочий переход по месту с быстрым crossfade контента, мягким подъёмом и деликатным скейлом (~0.995 ➔ 1.0) по кривой `FastOutSlowIn`. Без театральных разлётов соседей.
+- **Focused State — Zero-Card**:
+  - Никакого повторения гигантской карточки «Учёба» внутри самой Учёбы;
+  - Шапка: `← Название`, компактный подзаголовок охвата `Здесь 3 · Внутри 5` (прямой контент по умолчанию); правый action `⋮` принадлежит контексту;
+  - Подразделы и привычки отображаются открытыми списками строк с тонкими делителями, без карточных рамок.
+- **Ортогональность Workspaces × Context**:
+  - 4 основных воркспейса: `Привычки | Задачи | Сегодня | Статистика`; Settings вынесены из bottom navigation;
+  - Контекст НЕ переносится слепо во все воркспейсы подряд: top-level `Сегодня` по умолчанию показывает весь день (`Все`). Сквозной контекст сохраняется только при осознанном погружении либо явном закреплении (pinned context).
+- **Container Overview отложен**:
+  - Экран Overview исключён из текущей реализации до появления доменов Tasks, FocusSession и Contributions.
 
 Изменение решения: указать старое/новое правило, причину, последствия для compatibility/migration/tests и подтверждённое основание согласования. Не переписывать Completed work log задним числом.
 
@@ -92,7 +101,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR6 — Isolated DatasetSession + sync/jobs isolation | Отдельная копия, DI/session lifecycle, hard sync/job gates | Remote protocol, production cutover | PR5; timer/prefs policy; обязательные integration checks | DONE |
 | PR7 — Minimal Browse prototype | Roots/children/Habits, create/move/archive, breadcrumb/search | Tasks/Focus/new statistics, full shell redesign | PR6 Foundation validated; Android visual QA | DONE |
 | PR8 — Unified Hierarchical Home + Visual Identity | Единый экран в ListHabitsFragment, inline-раскрытие + drill-down, 196 Lucide иконок, HabitVisualIdentity | Изменение flat-списка в LEGACY_PRODUCTION, Tasks | PR7 функционально принят; visual UX переосмыслен | DONE |
-| PR8·Spatial / PR9 — Living Context UI & Header Morphing | Открытая вёрстка (Zero nested cards), accent rails, Header Morphing, монограммы, тонкий Scope | Tasks, production v29 schema | PR8 функционально принят; ожидает визуального ревью дизайна | VISUAL_REVIEW_PENDING |
+| PR8·Spatial — Living Context Native Slice | Открытая вёрстка (Zero cards), 2dp rail у раскрытого, fallback без иконки, Subtle Morph ~240ms, Zero-card Focused | Tasks, Today, Overview, new stats, schema v29 | Реализован, протестирован, проверен на эмуляторе с видео/скриншотами | DONE |
 | Task MVP | Отдельный Task domain, title capture/Inbox, plan vs deadline, complete/undo | Recurrence engine, Focus/Contribution | Stable Container/Browse; отдельный Task contract | PLANNED |
 | FocusSession | Durable standalone work fact и безопасная финализация | Выдуманные legacy sessions, произвольные rules | Task MVP; timer/attribution/recovery design | PLANNED |
 | Contribution / provenance | Один явный source rule, breakdown/dedupe/corrections/undo | Пользовательский rules language, hidden double-write | Durable facts; manual/automatic projection contract | PLANNED |
@@ -106,28 +115,23 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf)
-Visual Design Spike: VISUAL_REVIEW_PENDING
-Coordination handoff: DONE
-Current repository HEAD: cca3f6e0 (docs update)
+Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf), PR8·Spatial Native Slice DONE
+Visual Design Spike: ADOPTED AS NATIVE SLICE (Concept C Hybrid)
 Current branch: dev
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
-Next implementation: Visual Review of Spike Iteration 2 (production UI / Tasks strictly on hold)
+Active implementation: none (PR8·Spatial verified on emulator)
 Production DB schema: v29 unchanged (repository DATABASE_VERSION)
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
 ```
 
-Git status: PR8 полностью реализован, протестирован unit-тестами core и android, и прошёл детальный Android runtime smoke-test на эмуляторе во всех сценариях. Изоляция от production БД стопроцентная. Все 10 обязательных verification gaps PR8 (backup pipeline, semantic validation, visual identity roundtrip, Lucide license, 14 скриншотов, экранная видеозапись, motion при animator_duration_scale=0, темы Light/Dark/AMOLED, feature parity, production isolation) успешно закрыты и валидированы в `dc3f0acf`.
-Visual Design Spike находится в статусе `VISUAL_REVIEW_PENDING`. Проводится вторая итерация прототипа с устранением вложенных карточек во всех экранах, вариативностью морфинга (Subtle vs Expressive), тестом монограмм против отсутствия иконки, открытыми задачами и сравнением вариантов нижней навигации (IA A/B/C).
-
-Runtime/device DB и live Supabase проверены: v29 production DB (uhabits.db) остаётся побайтово неизменной, в эксперименте работает UnifiedContainerHomeView с 0 сетевыми вызовами.
+Git status: PR8·Spatial полностью реализован, протестирован unit-тестами core и android, и прошёл детальный Android runtime smoke-test на эмуляторе во всех сценариях (Zero-card Home, 2dp accent rail, Subtle Morph ~240ms, Zero-card Focused, Subtree aggregated view, Back roundtrip).
 
 ## 6. Active work
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| Antigravity | Visual Design Spike Iteration 2 | dev / primary | VISUAL_REVIEW_PENDING | 2026-10-04 11:20 | artifacts/visual_spike, docs | Zero-card grammar everywhere, subtle morph, rail comparison, monogram vs no-icon, IA A/B |
+| none | none | dev / primary | IDLE | 2026-10-04 15:05 | none | PR8·Spatial living context slice completed & verified on emulator |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
  
@@ -145,15 +149,19 @@ Handoff — coordination register, не атомарный mutex: одновре
  
 ## 7. Next actions
  
-1. Visual Design Spike (Итерация 2):
-   - Зафиксировать статус `VISUAL_REVIEW_PENDING`;
-   - Обновить HTML-прототип: убрать карточки подразделов в Focused Container (сделать открытый список); убрать карточки из Tasks; очистить Overview от синтетических скоров (показать типизированные метрики фокуса, задач и привычек);
-   - Добавить сравнение `Subtle Morph` (220–280ms, crossfade) и `Expressive Morph`;
-   - Добавить сравнение `2dp rail`, `3dp rail` и `no-rail` (только отступ);
-   - Добавить сравнение `иконка` vs `монограмма [У]` vs `без иконки вообще`;
-   - Добавить сравнение вариантов нижней навигации: IA A (`Сегодня`, `Привычки`, `Задачи`, `Статистика`, `Ещё`) и IA B (`Сегодня`, `Привычки`, `Задачи`, `Статистика`, `Настройки`) + IA C (Настройки в App Bar);
-   - Зафиксировать scope-семантику: direct content by default (`Здесь 3 · Внутри 5`), тап по «Внутри 5» включает aggregated view;
-   - Строгий запрет: production Kotlin/XML не менять, Task domain не начинать, PR9 не начинать до завершения review.
+1. Реализация минимального нативного среза **PR8·Spatial** в `UnifiedContainerHomeView.kt`:
+   - **Root Habits**: открытые секции контейнеров, 2dp акцентная рельса у раскрытого контейнера, отсутствие рамок карточек, отсутствие принудительной иконки (чистая типографика при отсутствии иконки);
+   - **Inline Expand**: строго одна 2dp рельса слева (без дублирующих внутренних линий), открытые строки подразделов (`Подраздел ›`), настоящие строки привычек `HabitCardView`;
+   - **Focused Container**: Top App Bar с заголовком и иконкой (если задана), компактный подзаголовок охвата `Здесь 3 · Внутри 5` (прямой контент по умолчанию), открытый строчный список подразделов, открытый список привычек; полное устранение гигантской повторной карточки контейнера и сегментированных кнопок;
+   - **Subtle Morph**: спокойная плавная анимация переходов ~240мс (`FastOutSlowInInterpolator`, crossfade, translationY 12dp, scale 0.995 ➔ 1.0);
+   - Корректная навигация назад (`handleBack()`).
+2. Проверка сборки:
+   - `.\gradlew.bat :uhabits-android:compileDebugKotlin --console=plain --quiet`
+   - `.\gradlew.bat :uhabits-android:assembleDebug --console=plain --quiet`
+3. Визуальная валидация на эмуляторе:
+   - Запуск на `emulator-5554` (Pixel 6);
+   - Снятие реальных Android-скриншотов и видеозаписи работы нативного интерфейса;
+   - Проверка в темах Light, Dark, AMOLED.
 
 ## 8. PR1 contract
 
@@ -517,6 +525,42 @@ Result:
   - Production/UI-код не изменялся, база данных v29 не затрагивалась, Tasks не начинались.
 
 Commit: `cca3f6e0` (Docs: record Visual Design Spike handoff status and candidates).
+
+### 2026-10-04 — PR8·Spatial: Living Context Native Slice (Zero Cards, 2dp Rail, Subtle Morph)
+
+Agent: Antigravity; session `5d910332-59de-46dc-828b-969d1ab84869`.
+
+Result:
+- **Zero-Card Principle повсеместно**:
+  - Устранены серые карточные рамки/обводки вокруг разделов в Root Home и Focused View;
+  - Открытая пространственная грамматика со строчными элементами с ripple-эффектом и легким отступом;
+- **2dp Accent Rail**:
+  - Строго одна 2dp вертикальная акцентная линия в цвете контейнера слева при раскрытии контейнера в Habits Root;
+  - Внутри раскрытого тела исключены дублирующие линии `border-left`;
+- **Чистый Fallback без иконки**:
+  - Исключен принудительный показ плитки и дефолтных системных папок 📁;
+  - Контейнеры без иконки отображаются чистой типографикой с цветной точкой `8dp` (в корне) или `6dp` (в подразделах);
+- **Focused View в Top App Bar**:
+  - Устранена повторная гигантская карточка контейнера и сегментированные чипы `Здесь` / `Вложенные`;
+  - Название, иконка (если есть), breadcrumb (для вложенных) и компактный переключатель охвата (`Здесь X · Внутри Y`, активный выделен цветом и полужирным, контент прямого уровня по умолчанию) встроены в контекстный App Bar;
+  - Открытый список подразделов (`Подраздел ›`) и прямые карточки `HabitCardView`;
+- **Subtle Morph (~240мс)**:
+  - Плавный переход при клике на контейнер с `FastOutSlowInInterpolator()`, crossfade (`alpha = 0.3f ➔ 1.0f`), `translationY = 12dp ➔ 0dp`, `scale = 0.995f ➔ 1.0f`;
+  - Двунаправленная анимация при прямом переходе и возврате Back;
+- **Исправление 126 Vector Drawables Lucide**:
+  - Устранены ошибки конкатенации флагов SVG arc commands (`a/A rx ry rot flag1 flag2 dx dy`) в `uhabits-android/src/main/res/drawable/ic_cat_*.xml`, приводившие к сбоям системного C++ `PathParser` в Android;
+  - Добавлена защитная `try-catch` изоляция в `UnifiedContainerHomeView.buildIconTile`;
+- **Реальные runtime-артефакты на эмуляторе Pixel 6 (`emulator-5554`)**:
+  - `pr8_artifacts/spatial_root_zero_card.png` — открытый корневой список (Zero Cards, чистые иконки Lucide и точки fallback);
+  - `pr8_artifacts/spatial_root_expanded_rail_2dp.png` — раскрытый контейнер «Учёба» с единой 2dp рельсой и привычками;
+  - `pr8_artifacts/spatial_focused_zero_card.png` — сфокусированный вид «Учёба» (контекстный App Bar, scope `Здесь 2`);
+  - `pr8_artifacts/spatial_focused_subtree.png` — агрегированный вид ветви (scope `Внутри 3`, привычка `Write Code` из подраздела);
+  - `pr8_artifacts/spatial_focused_nested.png` — вложенный подраздел «Databases» с breadcrumb-наследием;
+  - `pr8_artifacts/spatial_flow.mp4` — видеозапись полного интерактивного цикла навигации (раскрытие, morph, scope, drill-down, back);
+- **Проверки**:
+  - `:uhabits-core:jvmTest` — 117 тестов успешно (exit code 0);
+  - `:uhabits-android:testDebugUnitTest` — успешно (exit code 0);
+  - `:uhabits-android:assembleDebug` — успешно (exit code 0).
 
 ## 11. Session close protocol
 

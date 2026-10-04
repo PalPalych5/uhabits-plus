@@ -1444,7 +1444,15 @@ object IconPack {
     fun getIcon(key: String?): IconEntry? {
         if (key.isNullOrBlank()) return null
         val cleanKey = key.removePrefix("vector:")
-        return KEY_MAP[cleanKey] ?: KEY_MAP[cleanKey.replace('_', '-')]
+        val legacyAlias = when (cleanKey) {
+            "record_voice_over" -> "mic"
+            "directions_run" -> "activity"
+            "face" -> "smile"
+            "wb_sunny" -> "sun"
+            "star" -> "star"
+            else -> null
+        }
+        return KEY_MAP[cleanKey] ?: KEY_MAP[cleanKey.replace('_', '-')] ?: legacyAlias?.let { KEY_MAP[it] }
     }
 
     @DrawableRes

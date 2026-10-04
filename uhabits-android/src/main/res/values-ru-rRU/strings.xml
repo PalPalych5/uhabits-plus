@@ -878,7 +878,11 @@
     <string name="containers_archive_empty">В архиве нет разделов</string>
     <string name="containers_archived_banner">Раздел находится в архиве</string>
     <string name="containers_scope_here">Здесь</string>
+    <string name="containers_scope_here_count">Здесь %d</string>
     <string name="containers_scope_subtree">Включая вложенные</string>
+    <string name="containers_scope_inside">Внутри %d</string>
+    <string name="containers_habits_all">Все привычки ветви</string>
+    <string name="containers_habits_direct">Прямые привычки</string>
     <string name="containers_create_section">Новый раздел</string>
     <string name="containers_create_subsection">Новый подраздел</string>
     <string name="containers_name">Название</string>
