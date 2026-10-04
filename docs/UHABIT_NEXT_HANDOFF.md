@@ -59,6 +59,11 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 - Preferred первый UX prototype — **Evolutionary**: Habit-first сохраняется, Browse добавляется постепенно. Today-first — вероятное следующее направление после Tasks, ещё не финальное решение shell.
 - Production schema/sync пока не менять. Foundation сначала проверяется изолированно на memory/test DB/staging copy; экспериментальный dataset не подключается к legacy sync.
 - Форматы Entry, UNKNOWN/SKIP/explicit zero, numerical x1000, HabitGoal history/UUID и формулы не меняются в Foundation.
+- **Visual Design Spike (Living Context)**: Container — это жизненный контекст / пространство (Area of Responsibility), а не карточка и не папка. Вложенные карточные рамки (card-in-card) устранены в пользу открытой пространственной вёрстки с вертикальной акцентной рельсой (3.5dp) и тонким тинтом фона (2–3%).
+- **Visual Design Spike (Concept C Hybrid & Header Morphing)**: Целевой визуальной архитектурой утверждён Concept C. В корневом списке контейнеры раскрываются аккордеоном для быстрого чекина; нажатие на заголовок контейнера плавно трансформирует его в Top App Bar сфокусированного экрана через 350ms Spatial Header Morphing.
+- **Visual Design Spike (Кураторские иконки и монограммы)**: Набор иконок ограничен 50–80 чистыми векторными Lucide-символами. Иконка папки по умолчанию исключена; при отсутствии иконки используется типографическая монограмма в цвете контейнера (`[У]`, `[Р]`, `[Т]`).
+- **Visual Design Spike (Тонкий Scope)**: Гигантские сегментированные кнопки `[Только здесь | Включая вложенные]` устранены. В подзаголовке используется ненавязчивый индикатор `Здесь (3) · Внутри (5)` с тапом для переключения.
+- **Visual Design Spike (Ортогональность: Workspaces × Context)**: Рабочие пространства (`Привычки`, `Задачи`, `Сегодня`, `Статистика`) строго разделены и не смешиваются в кашу. Контекст (`Все`, `Учёба`, `Речь`, `Тело`) является сквозным и сохраняется при смене пространства.
 
 Изменение решения: указать старое/новое правило, причину, последствия для compatibility/migration/tests и подтверждённое основание согласования. Не переписывать Completed work log задним числом.
 
@@ -77,6 +82,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR6 — Isolated DatasetSession + sync/jobs isolation | Отдельная копия, DI/session lifecycle, hard sync/job gates | Remote protocol, production cutover | PR5; timer/prefs policy; обязательные integration checks | DONE |
 | PR7 — Minimal Browse prototype | Roots/children/Habits, create/move/archive, breadcrumb/search | Tasks/Focus/new statistics, full shell redesign | PR6 Foundation validated; Android visual QA | DONE |
 | PR8 — Unified Hierarchical Home + Visual Identity | Единый экран в ListHabitsFragment, inline-раскрытие + drill-down, 196 Lucide иконок, HabitVisualIdentity | Изменение flat-списка в LEGACY_PRODUCTION, Tasks | PR7 функционально принят; visual UX переосмыслен | DONE |
+| PR8·Spatial / PR9 — Living Context UI & Header Morphing | Открытая вёрстка (Zero nested cards), 3.5dp accent rails, 350ms Header Morphing, монограммы, тонкий Scope | Tasks, production v29 schema | PR8 функционально принят, Visual Spike утверждён | READY |
 | Task MVP | Отдельный Task domain, title capture/Inbox, plan vs deadline, complete/undo | Recurrence engine, Focus/Contribution | Stable Container/Browse; отдельный Task contract | PLANNED |
 | FocusSession | Durable standalone work fact и безопасная финализация | Выдуманные legacy sessions, произвольные rules | Task MVP; timer/attribution/recovery design | PLANNED |
 | Contribution / provenance | Один явный source rule, breakdown/dedupe/corrections/undo | Пользовательский rules language, hidden double-write | Durable facts; manual/automatic projection contract | PLANNED |
@@ -90,18 +96,19 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788)
+Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf), Visual Design Spike DONE
 Coordination handoff: DONE
-Current repository HEAD: c5d44788 (with PR8 verification fixes)
+Current repository HEAD: dc3f0acf (with PR8 verification fixes)
 Current branch: dev
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
-Next implementation: Task MVP / post-PR8 evaluation
+Next implementation: PR8·Spatial / PR9 Living Context UI implementation
 Production DB schema: v29 unchanged (repository DATABASE_VERSION)
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
 ```
 
-Git status: PR8 полностью реализован, протестирован unit-тестами core и android, и прошёл детальный Android runtime smoke-test на эмуляторе во всех сценариях. Изоляция от production БД стопроцентная. Все 10 обязательных verification gaps PR8 (backup pipeline, semantic validation, visual identity roundtrip, Lucide license, 14 скриншотов, экранная видеозапись, motion при animator_duration_scale=0, темы Light/Dark/AMOLED, feature parity, production isolation) успешно закрыты и валидированы.
+Git status: PR8 полностью реализован, протестирован unit-тестами core и android, и прошёл детальный Android runtime smoke-test на эмуляторе во всех сценариях. Изоляция от production БД стопроцентная. Все 10 обязательных verification gaps PR8 (backup pipeline, semantic validation, visual identity roundtrip, Lucide license, 14 скриншотов, экранная видеозапись, motion при animator_duration_scale=0, темы Light/Dark/AMOLED, feature parity, production isolation) успешно закрыты и валидированы в `dc3f0acf`.
+Visual Design Spike полностью завершён и утверждён: разработаны 3 концепта, интерактивный прототип Pixel 6 (`visual_spike_prototype.html`), 4-кадровый Storyboard Header Morphing и архитектурный отчёт (`visual_spike_analysis.md`).
 
 Runtime/device DB и live Supabase проверены: v29 production DB (uhabits.db) остаётся побайтово неизменной, в эксперименте работает UnifiedContainerHomeView с 0 сетевыми вызовами.
 
@@ -109,7 +116,7 @@ Runtime/device DB и live Supabase проверены: v29 production DB (uhabit
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| Antigravity | PR8 Verification Gaps & Visual QA | dev / primary | DONE | 2026-10-04 08:30 | core/containers/backup, core/containers, tests, docs | Verification gaps closed, backup roundtrip passing, 14 screenshots + video captured |
+| Antigravity | Visual Design Spike: Living Context & Spatial Model | dev / primary | DONE | 2026-10-04 11:20 | artifacts/visual_spike, docs | Concept C (Hybrid) + Header Morph approved; interactive prototype & analysis delivered |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
  
@@ -127,17 +134,18 @@ Handoff — coordination register, не атомарный mutex: одновре
  
 ## 7. Next actions
  
-1. PR1–PR8 успешно завершены. Все 117 целевых тестов PR1–PR8 в `:uhabits-core:jvmTest` (и все 487 тестов core набора) пройдены без сбоев. Unit-тесты `ContainersGateTest` и `SyncCoordinatorTest` в `:uhabits-android:testDebugUnitTest` пройдены без сбоев. Сборка `:uhabits-android:assembleDebug` успешна.
-2. Проведён полный runtime smoke-test Unified Hierarchical Home на эмуляторе:
-   - Единый интерфейс в `ListHabitsFragment` вместо отдельной активити;
-   - Dual Interaction Model: inline expand/collapse карточек chevrons + tap body для перехода в focused context;
-   - Корректная иерархическая навигация назад (subcontainer -> parent -> root);
-   - 196 векторных иконок Lucide на цветных подложках + Emoji вкладка в `IconPickerBottomSheet`;
-   - Назначение векторных и emoji значков для Habit через `HabitVisualIdentity` без изменений production схемы `uhabits.db`;
-   - Открытие `ShowHabitActivity` по клику на карточку привычки в `UnifiedContainerHomeView`;
-   - Быстрые отметки привычек чеклистом с анимацией конфетти и пересчётом скора;
-   - Полное сохранение поведения и UI `LEGACY_PRODUCTION` (плоский список, отсутствие разделов, 0 регрессий).
-3. Следующий логический этап согласно Roadmap — **Task MVP** (отдельный Task domain, title capture/Inbox, plan vs deadline, complete/undo) и UX evaluation. Перед началом реализации Task MVP требуется отдельное согласование контракта и UX решения.
+1. Visual Design Spike успешно завершён и утверждён пользователем:
+   - Принята парадигма **Living Context / Space** взамен карточек и папок;
+   - Утверждён **Concept C (Hybrid)**: inline-раскрытие первого уровня для чекинов + 350ms Spatial Header Morphing при входе в контекст;
+   - Зафиксирована открытая вёрстка с акцентной рельсой (3.5dp rail) и тонким фоновым тинтом (2–3%);
+   - Утверждены кураторские Lucide-иконки + типографические монограммы (`[У]`, `[Р]`, `[Т]`) как дефолтный fallback;
+   - Утверждено строгое ортогональное разделение Workspaces (`Привычки`, `Задачи`, `Сегодня`, `Статистика`) и Shared Context (`Все`, `Учёба`, `Речь`, `Тело`);
+   - Устранены гигантские segmented pills в пользу ненавязчивого индикатора `Здесь (3) · Внутри (5)`.
+2. Следующий этап реализации: **PR8·Spatial / PR9 — Living Context UI & Header Morphing**:
+   - Адаптация `UnifiedContainerHomeView` под открытую вёрстку с `AccentRailItemDecoration`;
+   - Реализация `HeaderMorphCoordinator` для бесшовной анимации заголовка и иконки контейнера в `TopAppBar`;
+   - Замена системных fallback-иконок на типографические монограммы;
+   - Проверка визуального QA на устройстве/эмуляторе в темах Light, Dark, AMOLED.
 
 ## 8. PR1 contract
 
@@ -476,6 +484,37 @@ Result:
 - **Тесты и сборка**:
   - Все тесты `:uhabits-core:jvmTest` (включая `BackupRestoreTest`, `VisualIdentityTest`, все тесты `org.isoron.uhabits.core.containers.*`) пройдены успешно (BUILD SUCCESSFUL);
   - Сборка `:uhabits-android:assembleDebug` успешна.
+
+### 2026-10-04 — Visual Design Spike: Living Context, Hybrid Concept C, 4-Frame Header Morphing Storyboard
+
+Agent: Antigravity; session `5d910332-59de-46dc-828b-969d1ab84869`.
+
+Result:
+- **Переосмысление пространственной модели Containers**:
+  - Проанализированы ограничения PR8 (синдром «файлового менеджера» из-за вложенных рамок карточек и разрыв ментального контекста при переходах);
+  - Утверждён принцип: Container — это живой контекст / сфера ответственности (*Living Context / Space*), а не карточка и не папка;
+  - Отказ от card-in-card: пространство организуется открытой вёрсткой с вертикальной акцентной рельсой (3.5dp rail) в цвете контейнера и мягким фоновым тинтом (2–3%), сохраняя быстрый чекин в 1 тап;
+  - Системные иконки папок исключены: утверждён кураторский набор Lucide (50–80 символов) и типографические монограммы (`[У]`, `[Р]`, `[Т]`) как нейтральный fallback;
+  - Устранены гигантские сегментированные кнопки `[Только здесь | Включая вложенные]` в пользу компактного индикатора в подзаголовке шапки `Здесь (3) · Внутри (5)`.
+- **Сравнение 3 концептов**:
+  - **Concept A (Contextual Habits)**: открытые аккордеонные секции прямо в общем списке;
+  - **Concept B (Context Selector)**: классический плоский список UHabit + переключатель в App Bar с Bottom Sheet со всем деревом;
+  - **Concept C (Hybrid)** ⭐: на первом уровне аккордеонное раскрытие для быстрого чекина; нажатие на заголовок контейнера запускает координатный Spatial Header Morphing в сфокусированное пространство. Утверждён пользователем как целевая архитектура.
+- **4-кадровый Storyboard Header Morphing**:
+  - Кадр 1: Исходное состояние в списке ($y=140\text{dp}$);
+  - Кадр 2: Касание (Touch Down, сжатие 0.98, ripple, подсветка рельсы);
+  - Кадр 3: Полёт (In-Flight 180ms, перемещение в Top App Bar по кривой `FastOutSlowIn`, растворение соседей);
+  - Кадр 4: Фиксация (Settled, заголовок заблокирован в Top Bar, стрелка «Назад», привычки раскрыты в свободном пространстве).
+- **Ортогональная модель: Workspaces × Shared Context**:
+  - Рабочие пространства (`Привычки`, `Задачи`, `Сегодня`, `Статистика`) строго разделены и не смешиваются в кашу;
+  - Контекст (`Все`, `Учёба`, `Речь`, `Тело`) является сквозным фильтром и сохраняется при переключении пространств.
+- **Интерактивные артефакты**:
+  - `visual_spike_prototype.html` — интерактивный прототип Pixel 6 (Material 3, Light/Dark/AMOLED, все 7 состояний, интерактивный скраббер и воспроизведение анимации перехода);
+  - `visual_spike_analysis.md` — детальный архитектурный отчёт со сравнительной таблицей и матрицей инвариантов.
+- **Production Isolation**:
+  - В ходе Visual Spike production/UI-код не изменялся, база данных v29 не затрагивалась, Tasks не начинались.
+
+Commit: **none (Visual Design Spike / documentation only)**.
 
 ## 11. Session close protocol
 
