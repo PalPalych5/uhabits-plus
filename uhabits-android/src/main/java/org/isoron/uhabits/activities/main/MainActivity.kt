@@ -46,6 +46,7 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import android.annotation.SuppressLint
 import android.view.MotionEvent
+import org.isoron.uhabits.activities.tasks.TasksFragment
 import org.isoron.uhabits.utils.applyBottomInset
 import org.isoron.uhabits.utils.applyRootViewInsets
 import org.isoron.uhabits.utils.restartWithFade
@@ -64,6 +65,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     private var pendingArchiveBack = false
     private var tabTransitionToken = 0
     private lateinit var habitsTabAnimator: TabAnimator
+    private lateinit var tasksTabAnimator: TabAnimator
     private lateinit var reportsTabAnimator: TabAnimator
     private lateinit var settingsTabAnimator: TabAnimator
     private var bottomNavigationNaturalHeight = 0
@@ -139,11 +141,17 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     @SuppressLint("ClickableViewAccessibility")
     private fun setupBottomNavigation() {
         habitsTabAnimator = TabAnimator(binding.iconHabits, binding.labelHabits)
+        tasksTabAnimator = TabAnimator(binding.iconTasks, binding.labelTasks)
         reportsTabAnimator = TabAnimator(binding.iconReports, binding.labelReports)
         settingsTabAnimator = TabAnimator(binding.iconSettings, binding.labelSettings)
 
+        binding.btnNavTasks.visibility = if (appComponent.session.isExperimental) View.VISIBLE else View.GONE
+
         binding.btnNavHabits.setOnClickListener {
             onBottomItemClicked(MainDestination.HABITS)
+        }
+        binding.btnNavTasks.setOnClickListener {
+            onBottomItemClicked(MainDestination.TASKS)
         }
         binding.btnNavReports.setOnClickListener {
             onBottomItemClicked(MainDestination.STATISTICS)
@@ -153,6 +161,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         }
 
         setupScaleOnPress(binding.btnNavHabits)
+        setupScaleOnPress(binding.btnNavTasks)
         setupScaleOnPress(binding.btnNavReports)
         setupScaleOnPress(binding.btnNavSettings)
     }
@@ -211,6 +220,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         supportFragmentManager.findFragmentByTag(tag)?.let { return it }
         val fragment = when (destination) {
             MainDestination.HABITS, MainDestination.ARCHIVE -> ListHabitsFragment()
+            MainDestination.TASKS -> TasksFragment()
             MainDestination.STATISTICS -> StatisticsFragment()
             MainDestination.SETTINGS -> SettingsSectionFragment.mainTab()
         }
@@ -381,25 +391,22 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         animate: Boolean = false,
         previous: MainDestination? = null
     ) {
-        val itemId = when (destination.bottomItemDestination) {
-            MainDestination.HABITS -> R.id.navigationHabits
-            MainDestination.STATISTICS -> R.id.navigationReports
-            MainDestination.SETTINGS -> R.id.navigationSettings
-            MainDestination.ARCHIVE -> R.id.navigationHabits
-        }
-
         val activeColor = AccentColorManager.getAccentColor(this, prefs)
         val inactiveColor = ContextCompat.getColor(
             this,
             if (AndroidThemeSwitcher(this, prefs).isNightMode) R.color.grey_500 else R.color.grey_600
         )
 
-        val habitsActive = itemId == R.id.navigationHabits
-        val reportsActive = itemId == R.id.navigationReports
-        val settingsActive = itemId == R.id.navigationSettings
+        val habitsActive = destination.bottomItemDestination == MainDestination.HABITS
+        val tasksActive = destination.bottomItemDestination == MainDestination.TASKS
+        val reportsActive = destination.bottomItemDestination == MainDestination.STATISTICS
+        val settingsActive = destination.bottomItemDestination == MainDestination.SETTINGS
 
         // Update colors
         habitsTabAnimator.updateColors(activeColor, inactiveColor)
+        if (appComponent.session.isExperimental) {
+            tasksTabAnimator.updateColors(activeColor, inactiveColor)
+        }
         reportsTabAnimator.updateColors(activeColor, inactiveColor)
         settingsTabAnimator.updateColors(activeColor, inactiveColor)
 
@@ -407,10 +414,16 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         val shouldAnimate = animate && areSystemAnimationsEnabled()
         if (shouldAnimate) {
             habitsTabAnimator.animateTo(habitsActive)
+            if (appComponent.session.isExperimental) {
+                tasksTabAnimator.animateTo(tasksActive)
+            }
             reportsTabAnimator.animateTo(reportsActive)
             settingsTabAnimator.animateTo(settingsActive)
         } else {
             habitsTabAnimator.snapTo(habitsActive)
+            if (appComponent.session.isExperimental) {
+                tasksTabAnimator.snapTo(tasksActive)
+            }
             reportsTabAnimator.snapTo(reportsActive)
             settingsTabAnimator.snapTo(settingsActive)
         }
@@ -703,6 +716,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                 (supportFragmentManager.findFragmentByTag(TAG_HABITS) as? ListHabitsFragment)?.refresh(
                     reloadFromDatabase = true
                 )
+                (supportFragmentManager.findFragmentByTag(TAG_TASKS) as? TasksFragment)?.refresh()
                 (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.refresh()
 
                 prefs.syncLastUiRefreshReason = reason
@@ -761,6 +775,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
     private fun tagFor(destination: MainDestination) = when (destination) {
         MainDestination.HABITS, MainDestination.ARCHIVE -> TAG_HABITS
+        MainDestination.TASKS -> TAG_TASKS
         MainDestination.STATISTICS -> TAG_REPORTS
         MainDestination.SETTINGS -> TAG_SETTINGS
     }
@@ -786,6 +801,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
     private fun isMainTab(destination: MainDestination): Boolean {
         return destination == MainDestination.HABITS ||
+            destination == MainDestination.TASKS ||
             destination == MainDestination.STATISTICS ||
             destination == MainDestination.SETTINGS
     }
@@ -793,8 +809,9 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     private fun tabOrder(destination: MainDestination): Int {
         return when (destination.bottomItemDestination) {
             MainDestination.HABITS -> 0
-            MainDestination.STATISTICS -> 1
-            MainDestination.SETTINGS -> 2
+            MainDestination.TASKS -> 1
+            MainDestination.STATISTICS -> 2
+            MainDestination.SETTINGS -> 3
             MainDestination.ARCHIVE -> 0
         }
     }
@@ -839,6 +856,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         private const val STATE_CURRENT = "main.current"
         private const val STATE_HISTORY = "main.history"
         private const val TAG_HABITS = "main.habits"
+        private const val TAG_TASKS = "main.tasks"
         private const val TAG_REPORTS = "main.reports"
         private const val TAG_SETTINGS = "main.settings"
 

@@ -63,6 +63,37 @@
                         android:text="@string/habits_title" />
                 </LinearLayout>
 
+                <!-- Tasks Item (visible in experimental mode) -->
+                <LinearLayout
+                    android:id="@+id/btnNavTasks"
+                    android:layout_width="0dp"
+                    android:layout_height="50dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:visibility="gone"
+                    android:background="@android:color/transparent">
+
+                    <ImageView
+                        android:id="@+id/iconTasks"
+                        android:layout_width="24dp"
+                        android:layout_height="24dp"
+                        android:src="@drawable/ic_nav_tasks"
+                        android:contentDescription="@string/tasks_title" />
+
+                    <TextView
+                        android:id="@+id/labelTasks"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="1dp"
+                        android:textSize="11sp"
+                        android:singleLine="true"
+                        android:ellipsize="end"
+                        android:text="@string/tasks_title" />
+                </LinearLayout>
+
                 <!-- Reports/Statistics Item -->
                 <LinearLayout
                     android:id="@+id/btnNavReports"

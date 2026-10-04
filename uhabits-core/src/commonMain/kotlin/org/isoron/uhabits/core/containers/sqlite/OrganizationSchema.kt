@@ -136,6 +136,7 @@ object OrganizationSchema {
         for (stmt in DDL_STATEMENTS) {
             db.run(stmt)
         }
+        org.isoron.uhabits.core.userTasks.sqlite.UserTaskSchema.createSchema(db)
     }
 
     fun enableForeignKeys(db: Database) {

@@ -21,6 +21,7 @@
     <string name="app_name">Loop+</string>
     <string name="main_activity_title">Loop+</string>
     <string name="habits_title">Привычки</string>
+    <string name="tasks_title">Задачи</string>
     <string name="archive_title">Архив</string>
     <string name="organization">Организация</string>
     <string name="configure_spheres">Настроить сферы</string>

@@ -40,6 +40,11 @@ import org.isoron.uhabits.core.containers.session.DatasetSessionFactory
 import org.isoron.uhabits.core.containers.sqlite.OrganizationSchema
 import org.isoron.uhabits.core.containers.sqlite.SQLiteHabitVisualIdentityStore
 import org.isoron.uhabits.core.containers.sqlite.SQLiteOrganizationStore
+import org.isoron.uhabits.core.userTasks.UserTaskRepository
+import org.isoron.uhabits.core.userTasks.UserTaskService
+import org.isoron.uhabits.core.userTasks.UserTaskServiceImpl
+import org.isoron.uhabits.core.userTasks.sqlite.SQLiteUserTaskRepository
+import org.isoron.uhabits.core.userTasks.sqlite.UserTaskSchema
 import org.isoron.uhabits.core.io.GenericImporter
 import org.isoron.uhabits.core.io.Logging
 import org.isoron.uhabits.core.models.HabitList
@@ -113,6 +118,8 @@ abstract class HabitsApplicationComponent(
     abstract val timerSessionManager: TimerSessionManager
     abstract val widgetPreferences: WidgetPreferences
     abstract val widgetUpdater: WidgetUpdater
+    abstract val userTaskRepository: UserTaskRepository
+    abstract val userTaskService: UserTaskService
 
     val db: AndroidDatabase
         get() = providedDb
@@ -225,6 +232,23 @@ abstract class HabitsApplicationComponent(
     open fun habitList(list: SQLiteHabitList, facade: HabitOrganizationFacade): HabitList {
         list.organizationFacade = facade
         return list
+    }
+
+    @AppScope
+    @Provides
+    open fun userTaskRepository(): UserTaskRepository {
+        UserTaskSchema.createSchema(providedDb)
+        return SQLiteUserTaskRepository(providedDb)
+    }
+
+    @AppScope
+    @Provides
+    open fun userTaskService(repository: UserTaskRepository): UserTaskService {
+        return UserTaskServiceImpl(
+            repository = repository,
+            clock = { System.currentTimeMillis() },
+            idGenerator = { Uuid.random().toHexString() }
+        )
     }
 
     @AppScope

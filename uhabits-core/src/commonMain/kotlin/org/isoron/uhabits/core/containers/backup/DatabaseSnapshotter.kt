@@ -47,6 +47,8 @@ object DatabaseSnapshotter {
         // 1. Create Organization Schema if present in source
         if (sourceTables.contains("OrganizationState")) {
             OrganizationSchema.createSchema(targetDb)
+        } else if (sourceTables.contains("UserTasks")) {
+            org.isoron.uhabits.core.userTasks.sqlite.UserTaskSchema.createSchema(targetDb)
         }
 
         // 2. Create Legacy tables if not already created
@@ -251,6 +253,7 @@ object DatabaseSnapshotter {
             val targetTables = listTables(targetDb)
             val tablesToClear = listOf(
                 "BackupManifest",
+                "UserTasks",
                 "HabitPlacementHistory",
                 "ContainerHistory",
                 "HabitPlacements",
@@ -291,6 +294,7 @@ object DatabaseSnapshotter {
             if (sourceTables.contains("HabitPlacementHistory")) copyHabitPlacementHistory(sourceDb, targetDb)
             if (sourceTables.contains("LegacyBlockMap")) copyLegacyBlockMap(sourceDb, targetDb)
             if (sourceTables.contains("HabitVisualIdentities")) copyHabitVisualIdentities(sourceDb, targetDb)
+            if (sourceTables.contains("UserTasks")) copyUserTasks(sourceDb, targetDb)
 
             if (sourceTables.contains("BackupManifest")) copyBackupManifest(sourceDb, targetDb)
 
@@ -758,6 +762,42 @@ object DatabaseSnapshotter {
             insert.bindText(1, select.getText(0))
             insert.bindText(2, select.getText(1))
             insert.bindText(3, select.getText(2))
+            insert.step()
+            insert.reset()
+        }
+        select.finalize()
+        insert.finalize()
+    }
+
+    private fun copyUserTasks(sourceDb: Database, targetDb: Database) {
+        val select = sourceDb.prepareStatement(
+            """
+            SELECT id, title, description, container_id, status, planned_date,
+                   deadline, completed_at, parent_task_id, sort_order, created_at, updated_at
+            FROM UserTasks
+            """.trimIndent()
+        )
+        val insert = targetDb.prepareStatement(
+            """
+            INSERT OR REPLACE INTO UserTasks (
+                id, title, description, container_id, status, planned_date,
+                deadline, completed_at, parent_task_id, sort_order, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent()
+        )
+        while (select.step() == StepResult.ROW) {
+            insert.bindText(1, select.getText(0))
+            insert.bindText(2, select.getText(1))
+            insert.bindText(3, select.getText(2))
+            val cid = select.getTextOrNull(3); if (cid != null) insert.bindText(4, cid) else insert.bindNull(4)
+            insert.bindText(5, select.getText(4))
+            val pdate = select.getTextOrNull(5); if (pdate != null) insert.bindText(6, pdate) else insert.bindNull(6)
+            val dline = select.getLongOrNull(6); if (dline != null) insert.bindLong(7, dline) else insert.bindNull(7)
+            val compAt = select.getLongOrNull(7); if (compAt != null) insert.bindLong(8, compAt) else insert.bindNull(8)
+            val pid = select.getTextOrNull(8); if (pid != null) insert.bindText(9, pid) else insert.bindNull(9)
+            insert.bindInt(10, select.getInt(9))
+            insert.bindLong(11, select.getLong(10))
+            insert.bindLong(12, select.getLong(11))
             insert.step()
             insert.reset()
         }

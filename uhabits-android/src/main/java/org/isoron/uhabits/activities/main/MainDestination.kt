@@ -2,6 +2,7 @@ package org.isoron.uhabits.activities.main
 
 enum class MainDestination {
     HABITS,
+    TASKS,
     ARCHIVE,
     STATISTICS,
     SETTINGS;

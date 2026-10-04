@@ -61,28 +61,36 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 - Форматы Entry, UNKNOWN/SKIP/explicit zero, numerical x1000, HabitGoal history/UUID и формулы не меняются в Foundation.
 - Форматы Entry, UNKNOWN/SKIP/explicit zero, numerical x1000, HabitGoal history/UUID и формулы не меняются в Foundation.
 
-### Accepted product direction (Visual Architecture & PR8·Spatial Slice):
-- **Container = Living Context**: Пространство внимания / сфера ответственности, а не карточка и не папка.
-- **Concept C (Hybrid) утверждён как основа нативного эксперимента**:
-  - В корневом списке Habits — открытые секции контейнеров с возможностью inline-раскрытия первого уровня;
-  - По тапу на строку контейнера — переход в сфокусированное пространство (Focused Context);
-  - Для глубины $\ge 2$ используется сфокусированная иерархическая навигация с breadcrumbs.
-- **Акцентная рельса — строго 2dp**:
-  - Отображается только у раскрытого / активного контекста, а не на всех элементах подряд;
-  - В раскрытом состоянии используется **строго одна рельса** слева (без дублирующих внутренних вложенных линий tree-view); связь задаётся пространственным отступом.
-- **Fallback = без иконки**:
-  - Если пользователь не выбрал иконку — используется чистая качественная типографика и цветовой акцент без принудительной плашки. Монограмма `[У]` не является автоматическим fallback. Системные папки 📁 исключены.
-- **Subtle Morph (~240мс)**:
-  - Спокойный рабочий переход по месту с быстрым crossfade контента, мягким подъёмом и деликатным скейлом (~0.995 ➔ 1.0) по кривой `FastOutSlowIn`. Без театральных разлётов соседей.
-- **Focused State — Zero-Card**:
-  - Никакого повторения гигантской карточки «Учёба» внутри самой Учёбы;
-  - Шапка: `← Название`, компактный подзаголовок охвата `Здесь 3 · Внутри 5` (прямой контент по умолчанию); правый action `⋮` принадлежит контексту;
-  - Подразделы и привычки отображаются открытыми списками строк с тонкими делителями, без карточных рамок.
-- **Ортогональность Workspaces × Context**:
-  - 4 основных воркспейса: `Привычки | Задачи | Сегодня | Статистика`; Settings вынесены из bottom navigation;
-  - Контекст НЕ переносится слепо во все воркспейсы подряд: top-level `Сегодня` по умолчанию показывает весь день (`Все`). Сквозной контекст сохраняется только при осознанном погружении либо явном закреплении (pinned context).
-- **Container Overview отложен**:
-  - Экран Overview исключён из текущей реализации до появления доменов Tasks, FocusSession и Contributions.
+### Accepted product direction (Product Pivot & Workspaces):
+- **Разделение рабочих пространств (Workspaces)**:
+  - `Workspace 1: Habits` (Привычки)
+  - `Workspace 2: Tasks` (Задачи)
+  - `Workspace 3: Statistics` (Статистика)
+  - `Workspace 4: Settings` (Настройки)
+- **Habits сохраняют существующий UHabit visual/interaction model**:
+  - `HabitCardListView`, `HabitCardView`, календарь, отметки/числовой ввод, фильтры, сортировка и детальные экраны остаются привычными и чистыми;
+  - Основной экран Habit — не дерево; никаких принудительных Containers между привычками.
+- **Tasks получают отдельный task-manager UX**:
+  - Чистый, быстрый мобильный таск-менеджер (уровня TickTick / Todoist);
+  - Smart Views: `Сегодня`, `Входящие`, `Предстоящие`, `Все задачи`, `Завершённые`;
+  - Задачи группируются по датам и контекстам без тяжелых рамочных карточек.
+- **Роль Containers**:
+  - Containers используются прежде всего для организации Tasks и будущих сквозных отчётов;
+  - Habit также может иметь Container placement на уровне модели, но основной Habit screen не обязан показывать иерархию;
+  - Смешанный вид Habits + Tasks не является главным экраном;
+  - Общий Container Overview / cross-domain аналитика возможна позже как отдельная поверхность.
+- **Критический семантический инвариант**:
+  - **`Planned date != Deadline`**:
+    - `plannedDate`: когда планируется заняться задачей (прошедшая дата при невыполнении = пропущенный план / требует перепланирования, но НЕ hard overdue);
+    - `deadline`: момент объективной просрочки (просроченный дедлайн = hard overdue);
+  - **`Task completion != work time`**: завершение задачи ставит `completedAt`, но НЕ создаёт FocusSession и НЕ изменяет Habit автоматически.
+
+### Rejected as primary UX:
+- `UnifiedContainerHomeView` как основной Habit screen;
+- Корневой экран «Разделы» вместо привычного списка привычек;
+- Containers inline между Habit rows;
+- Обязательная навигация через Living Context для ежедневного чекина привычек.
+*(Код `UnifiedContainerHomeView` и наработки PR8 переносятся во внутренние developer/experimental настройки и не удаляются).*
 
 Изменение решения: указать старое/новое правило, причину, последствия для compatibility/migration/tests и подтверждённое основание согласования. Не переписывать Completed work log задним числом.
 
@@ -101,8 +109,8 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR6 — Isolated DatasetSession + sync/jobs isolation | Отдельная копия, DI/session lifecycle, hard sync/job gates | Remote protocol, production cutover | PR5; timer/prefs policy; обязательные integration checks | DONE |
 | PR7 — Minimal Browse prototype | Roots/children/Habits, create/move/archive, breadcrumb/search | Tasks/Focus/new statistics, full shell redesign | PR6 Foundation validated; Android visual QA | DONE |
 | PR8 — Unified Hierarchical Home + Visual Identity | Единый экран в ListHabitsFragment, inline-раскрытие + drill-down, 196 Lucide иконок, HabitVisualIdentity | Изменение flat-списка в LEGACY_PRODUCTION, Tasks | PR7 функционально принят; visual UX переосмыслен | DONE |
-| PR8·Spatial — Living Context Native Slice | Открытая вёрстка (Zero cards), 2dp rail у раскрытого, fallback без иконки, Subtle Morph ~240ms, Zero-card Focused | Tasks, Today, Overview, new stats, schema v29 | Реализован, протестирован, проверен на эмуляторе с видео/скриншотами | DONE |
-| Task MVP | Отдельный Task domain, title capture/Inbox, plan vs deadline, complete/undo | Recurrence engine, Focus/Contribution | Stable Container/Browse; отдельный Task contract | PLANNED |
+| PR8·Spatial — Living Context Native Slice | Открытая вёрстка (Zero cards), 2dp rail у раскрытого, fallback без иконки, Subtle Morph ~240ms, Zero-card Focused | Tasks, Today, Overview, new stats, schema v29 | Завершён как эксперимент; основной UX отклонён в пользу воркспейсов | DONE |
+| PR9 — Task MVP & Workspace Separation | Отдельный Task domain (`core.userTasks`), Tasks workspace, Smart Views (Today/Inbox/Upcoming/Completed), Container context, subtasks, возврат Habit к существующему UI | Recurrence, FocusSession, Contribution, Task sync | PR8 завершён; продуктовый pivot утверждён | DONE |
 | FocusSession | Durable standalone work fact и безопасная финализация | Выдуманные legacy sessions, произвольные rules | Task MVP; timer/attribution/recovery design | PLANNED |
 | Contribution / provenance | Один явный source rule, breakdown/dedupe/corrections/undo | Пользовательский rules language, hidden double-write | Durable facts; manual/automatic projection contract | PLANNED |
 | Container statistics | Отдельные time/outcomes/Habit metrics; historical/current mode | Universal productivity score | Проверенные facts/provenance/placement | PLANNED |
@@ -115,23 +123,23 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf), PR8·Spatial Native Slice DONE (commit d847b434f)
-Visual Design Spike: ADOPTED AS NATIVE SLICE (Concept C Hybrid)
+Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf), PR8·Spatial Native Slice DONE (commit d847b434f), PR9 DONE (commit b68350906)
+Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated
 Current branch: dev
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
-Active implementation: none (PR8·Spatial verified on emulator)
+Active implementation: none (PR9 completed, ready for review)
 Production DB schema: v29 unchanged (repository DATABASE_VERSION)
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
 ```
 
-Git status: PR8·Spatial полностью реализован, протестирован unit-тестами core и android, и прошёл детальный Android runtime smoke-test на эмуляторе во всех сценариях (Zero-card Home, 2dp accent rail, Subtle Morph ~240ms, Zero-card Focused, Subtree aggregated view, Back roundtrip).
+Git status: PR9 завершён. Продуктовый pivot реализован: Habits возвращён к классическому UHabit UI без контейнеров, Tasks реализован как отдельный полноценный таск-менеджер workspace с навигацией `Привычки | Задачи | Статистика | Настройки`.
 
 ## 6. Active work
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| none | none | dev / primary | IDLE | 2026-10-04 15:05 | none | PR8·Spatial living context slice completed & verified on emulator |
+| none | none | dev / primary | IDLE | 2026-10-04 | none | PR9 Task MVP & Workspace Separation completed and verified |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
  
@@ -563,6 +571,56 @@ Result:
   - `:uhabits-android:assembleDebug` — успешно (exit code 0).
 
 Commit: `d847b434f`.
+
+### 2026-10-04 — PR9 Task MVP & Workspace Separation
+
+Agent: Antigravity; session `5d910332-59de-46dc-828b-969d1ab84869`.
+
+Result:
+- Реализован утверждённый продуктовый pivot: архитектура четырёх независимых воркспейсов в bottom navigation: `Привычки | Задачи | Статистика | Настройки`.
+- **Восстановление Habits Workspace**:
+  - `ListHabitsFragment` в режиме `CONTAINER_LOCAL_EXPERIMENTAL` полностью очищен от inline-контейнеров, рельс и вложенных деревьев; возвращён классический чистый интерфейс `HabitCardListView` (привычные карточки, чекбоксы/числовой ввод, скоринг, календарная сетка, фильтры, сортировка);
+  - Наработки по Living Context / `UnifiedContainerHomeView` сохранены и доступны через Developer-настройки: `Настройки` -> `Разработчик` -> `Эксперименты с интерфейсом контейнеров` (`ContainersActivity`).
+- **User Tasks Domain (`org.isoron.uhabits.core.userTasks`)**:
+  - Модели `TaskId`, `TaskStatus` (`PENDING`, `COMPLETED`), `UserTask` с точными семантическими инвариантами;
+  - `UserTaskRepository` и `UserTaskService` / `UserTaskServiceImpl`: создание, обновление, переключение статуса выполнения, реордеринг подзадач, каскадное удаление поддерева, строгая валидация на отсутствие циклов (`validateNoCycle`);
+  - Реализован in-memory репозиторий `MemoryUserTaskRepository` и полный набор domain unit tests (`UserTaskDomainTest`).
+- **Соблюдение критических семантических инвариантов**:
+  - **`plannedDate != deadline`**:
+    - `plannedDate`: желаемая дата выполнения задачи; при ненаступлении дедлайна прошедшая дата плана является исключительно `isMissedPlan` (требует перепланирования), но **НЕ** считается жесткой просрочкой;
+    - `deadline`: момент объективного дедлайна; только невыполненная задача с истекшим `deadline < nowMillis` классифицируется как `isHardOverdue` (жесткая просрочка);
+  - **`Task completion != work time`**: завершение задачи (`status = COMPLETED`, `completedAt = now`) не создает фиктивных сессий и не мутирует привычки.
+- **Хранение в SQLite и PR4 Backup/Restore Pipeline**:
+  - Разработана схема `UserTaskSchema` (`UserTasks` таблица и индексы) в составе `OrganizationSchema`;
+  - Реализован `SQLiteUserTaskRepository` и unit-тест `SQLiteUserTaskRepositoryTest`;
+  - `DatabaseSnapshotter`: полная поддержка создания DDL, очистки и копирования таблицы `UserTasks` при создании снимков;
+  - `ContainerRestoreService`: семантическая валидация `UserTasks` при восстановлении (проверка ссылочной целостности `parentTaskId` и отсутствие циклов);
+  - `ContainerBackupRestoreTest`: добавлен интеграционный тест полного roundtrip (`testFullBackupRestoreRoundtrip_userTasks`), подтверждающий сохранение задач, дат, дедлайнов и подзадач.
+  - **Изоляция production DB**: схема `DATABASE_VERSION = 29` не изменена; таблица `UserTasks` существует строго в изолированной экспериментальной БД `uhabits-container-experimental.db`.
+- **Tasks Workspace UI**:
+  - Bottom navigation bar: добавлена вкладка `btnNavTasks` ("Задачи") с Lucide-иконкой `ic_nav_tasks` (квадрат с галочкой), плавной scale/alpha анимацией и переключением фрагментов через `MainActivity`;
+  - `TasksFragment`: стильный заголовок с количеством задач, фильтр по разделу с цветной индикацией (`● Учёба`), горизонтальный скролл Smart Views (`Сегодня`, `Входящие`, `Предстоящие`, `Все задачи`, `Завершённые`), список `RecyclerView` с карточками задач, пустые состояния для каждого вида и плавающая строка быстрого добавления;
+  - `item_user_task`: кастомный круглый чекбокс, перечёркивание при завершении, бейдж подзадач (`✓ 1/2`), пилюля контейнера с точкой акцентного цвета, цветовая семантика дат (красный чип `Просрочено`, янтарный чип `План: 3.10`, акцентный чип `Сегодня`, нейтральные чипы для будущих дат);
+  - `sheet_task_detail`: всплывающий Bottom Sheet для редактирования задачи, заметок, привязки к разделу, выбора даты плана и дедлайна, встроенного списка подзадач с чекбоксами и быстрого добавления подзадачи;
+  - Полная поддержка Light, Dark и AMOLED тем оформления без хардкода ресурсов.
+- **Верификация и артефакты**:
+  - Core unit tests (`:uhabits-core:jvmTest`): 100% passed (все тесты `userTasks.*` и `ContainerBackupRestoreTest`);
+  - Android Kotlin compilation (`:uhabits-android:compileDebugKotlin`): 100% passed (0 errors);
+  - Android assemble (`:uhabits-android:assembleDebug`): 100% passed;
+  - Эмулятор Pixel 6 (`emulator-5554`, Android 15, API 35):
+    - `pr9_artifacts/01_habits_workspace.png` — восстановленный классический Habit UI (карточки, скоринг, чекбоксы, сетка, без контейнеров);
+    - `pr9_artifacts/02_tasks_workspace_today.png` — чистый экран Tasks workspace, вид «Сегодня», навигация 4 вкладок;
+    - `pr9_artifacts/03_task_detail_sheet.png` — детальный Bottom Sheet задачи с подзадачами;
+    - `pr9_artifacts/03_subtask_completed.png` — выполнение подзадачи внутри Bottom Sheet с динамическим пересчётом счетчика;
+    - `pr9_artifacts/04_task_with_subtasks.png` — задача в списке с бейджем `✓ 1/2`;
+    - `pr9_artifacts/05_task_semantic_chips.png` — визуальное подтверждение семантического разделения: «Просрочено» (красный), «План: 3.10» (янтарный), «Сегодня» (синий);
+    - `pr9_artifacts/06_tasks_container_filtered.png` — фильтрация задач по контейнеру («● Учёба»);
+    - `pr9_artifacts/07_tasks_smart_views.png` — вид «Все задачи» со всеми активными задачами;
+    - `pr9_artifacts/07_tasks_completed_view.png` — вид «Завершённые»;
+    - `pr9_artifacts/08_developer_container_experiments.png` — вход в `ContainersActivity` через Developer-настройки;
+    - `pr9_artifacts/pr9_flow.mp4` — видеозапись полного сквозного цикла работы с воркспейсами и задачами.
+
+Commit: `b68350906`.
 
 ## 11. Session close protocol
 

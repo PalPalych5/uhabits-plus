@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/subtaskItemRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
+
+    <!-- Subtask Check -->
+    <FrameLayout
+        android:id="@+id/btnSubtaskCheck"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:layout_marginEnd="10dp"
+        android:clickable="true"
+        android:focusable="true">
+
+        <View
+            android:id="@+id/viewSubtaskCheckCircle"
+            android:layout_width="18dp"
+            android:layout_height="18dp"
+            android:layout_gravity="center" />
+
+        <ImageView
+            android:id="@+id/ivSubtaskCheckmark"
+            android:layout_width="12dp"
+            android:layout_height="12dp"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_toolbar_check"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/tvSubtaskTitle"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textSize="14sp"
+        android:fontFamily="sans-serif" />
+
+    <ImageButton
+        android:id="@+id/btnDeleteSubtask"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:background="@null"
+        android:src="@drawable/ic_cat_trash_2"
+        android:contentDescription="Удалить подзадачу" />
+
+</LinearLayout>

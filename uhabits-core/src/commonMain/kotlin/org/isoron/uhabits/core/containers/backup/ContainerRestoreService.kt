@@ -332,6 +332,51 @@ object ContainerRestoreService {
             invalidVisualIdsStmt.finalize()
         }
 
+        // UserTasks referential integrity and cycle check
+        if (tables.contains("UserTasks")) {
+            val orphanParentStmt = db.prepareStatement(
+                """
+                SELECT ut.id, ut.parent_task_id FROM UserTasks ut
+                LEFT JOIN UserTasks parent ON ut.parent_task_id = parent.id
+                WHERE ut.parent_task_id IS NOT NULL AND parent.id IS NULL
+                """.trimIndent()
+            )
+            while (orphanParentStmt.step() == StepResult.ROW) {
+                val taskId = orphanParentStmt.getText(0)
+                val parentId = orphanParentStmt.getText(1)
+                errors.add("UserTask '$taskId' references non-existent parentTask '$parentId'")
+            }
+            orphanParentStmt.finalize()
+
+            // Subtask cycle detection
+            val parentMap = mutableMapOf<String, String>()
+            val allTasksStmt = db.prepareStatement("SELECT id, parent_task_id FROM UserTasks WHERE parent_task_id IS NOT NULL")
+            while (allTasksStmt.step() == StepResult.ROW) {
+                parentMap[allTasksStmt.getText(0)] = allTasksStmt.getText(1)
+            }
+            allTasksStmt.finalize()
+
+            val visited = mutableSetOf<String>()
+            val stack = mutableSetOf<String>()
+            fun hasTaskCycle(id: String): Boolean {
+                visited.add(id)
+                stack.add(id)
+                val parent = parentMap[id]
+                if (parent != null) {
+                    if (stack.contains(parent)) return true
+                    if (!visited.contains(parent) && hasTaskCycle(parent)) return true
+                }
+                stack.remove(id)
+                return false
+            }
+            for (id in parentMap.keys) {
+                if (!visited.contains(id) && hasTaskCycle(id)) {
+                    errors.add("Cycle detected in UserTasks subtask hierarchy involving task '$id'")
+                    break
+                }
+            }
+        }
+
         return errors
     }
 }

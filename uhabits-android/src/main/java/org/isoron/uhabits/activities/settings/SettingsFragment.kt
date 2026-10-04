@@ -618,12 +618,9 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         )
     )
 
-    private fun buildDeveloperSection() = SettingsSectionModel.fromItems(
-        SettingsSectionId.DEVELOPER,
-        R.drawable.ic_settings_terminal,
-        getString(R.string.pref_developer_section_title),
-        getString(R.string.settings_summary_developer),
-        listOf(
+    private fun buildDeveloperSection(): SettingsSectionModel {
+        val isExp = (requireContext().applicationContext as HabitsApplication).component.session.isExperimental
+        val items = mutableListOf<SettingItem>(
             settingSwitch("pref_developer", R.drawable.ic_settings_terminal, getString(R.string.developer_mode_title), null, prefs.isDeveloper) { prefs.isDeveloper = it },
             subsection("developer_connection", getString(R.string.settings_subsection_connection)),
             navigation("pref_sync_base_url", R.drawable.ic_settings_link, getString(R.string.supabase_url_title), getString(R.string.supabase_url_summary)) { showDeveloperEditTextDialog("pref_sync_base_url", getString(R.string.supabase_url_title)) },
@@ -637,14 +634,35 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 "pref_container_experiment",
                 R.drawable.ic_settings_terminal,
                 "Эксперимент: UHabit Next (Разделы)",
-                if ((requireContext().applicationContext as HabitsApplication).component.session.isExperimental)
+                if (isExp)
                     "Активен изолированный эксперимент. Нажмите для возврата в продуктовый режим."
                 else
                     "Создать изолированную копию данных и протестировать режим разделов.",
                 showIcon = true
             ) { showContainerExperimentDialog() }
         )
-    )
+        if (isExp) {
+            items.add(
+                navigation(
+                    "pref_container_ui_experiments",
+                    R.drawable.ic_settings_terminal,
+                    "Эксперименты с интерфейсом контейнеров",
+                    "Открыть ContainersActivity / Living Context для отладки",
+                    showIcon = true
+                ) {
+                    val intent = Intent(requireContext(), org.isoron.uhabits.activities.containers.ContainersActivity::class.java)
+                    requireContext().startActivity(intent)
+                }
+            )
+        }
+        return SettingsSectionModel.fromItems(
+            SettingsSectionId.DEVELOPER,
+            R.drawable.ic_settings_terminal,
+            getString(R.string.pref_developer_section_title),
+            getString(R.string.settings_summary_developer),
+            items
+        )
+    }
 
     private fun childPresentation(showIcon: Boolean = true, enabled: Boolean = true) =
         SettingPresentation(showIcon = showIcon, enabled = enabled)

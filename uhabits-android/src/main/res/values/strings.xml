@@ -25,6 +25,7 @@
     <string name="app_name" >Loop+</string>
     <string name="main_activity_title">Loop+</string>
     <string name="habits_title">Habits</string>
+    <string name="tasks_title">Tasks</string>
     <string name="archive_title">Archive</string>
     <string name="organization">Organization</string>
     <string name="configure_spheres">Configure spheres</string>

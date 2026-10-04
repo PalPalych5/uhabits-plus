@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/taskItemRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="12dp"
+    android:paddingBottom="12dp"
+    android:background="?android:attr/selectableItemBackground">
+
+    <!-- Custom Check Button -->
+    <FrameLayout
+        android:id="@+id/btnTaskCheck"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginEnd="12dp"
+        android:clickable="true"
+        android:focusable="true">
+
+        <View
+            android:id="@+id/viewCheckCircle"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:layout_gravity="center" />
+
+        <ImageView
+            android:id="@+id/ivCheckmark"
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:layout_gravity="center"
+            android:src="@drawable/ic_toolbar_check"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <!-- Task Content Area -->
+    <LinearLayout
+        android:id="@+id/layoutTaskContent"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvTaskTitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="15sp"
+            android:fontFamily="sans-serif"
+            android:ellipsize="end"
+            android:maxLines="2" />
+
+        <!-- Metadata row: Container pill, Subtasks counter, Date chip -->
+        <LinearLayout
+            android:id="@+id/layoutTaskMeta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <!-- Container Pill -->
+            <LinearLayout
+                android:id="@+id/pillContainer"
+                android:layout_width="wrap_content"
+                android:layout_height="20dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:layout_marginEnd="6dp"
+                android:visibility="gone">
+
+                <View
+                    android:id="@+id/viewContainerDot"
+                    android:layout_width="6dp"
+                    android:layout_height="6dp"
+                    android:layout_marginEnd="4dp" />
+
+                <TextView
+                    android:id="@+id/tvContainerName"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="11sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:singleLine="true" />
+            </LinearLayout>
+
+            <!-- Subtasks Badge -->
+            <TextView
+                android:id="@+id/tvSubtasksBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="20dp"
+                android:gravity="center"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:layout_marginEnd="6dp"
+                android:textSize="11sp"
+                android:fontFamily="sans-serif-medium"
+                android:visibility="gone" />
+
+            <!-- Date Chip -->
+            <TextView
+                android:id="@+id/tvDateChip"
+                android:layout_width="wrap_content"
+                android:layout_height="20dp"
+                android:gravity="center"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:textSize="11sp"
+                android:fontFamily="sans-serif-medium"
+                android:visibility="gone" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Subtasks chevron / expand button -->
+    <ImageView
+        android:id="@+id/ivSubtasksChevron"
+        android:layout_width="20dp"
+        android:layout_height="20dp"
+        android:layout_marginStart="8dp"
+        android:src="@drawable/ic_chevron_down"
+        android:visibility="gone" />
+
+</LinearLayout>

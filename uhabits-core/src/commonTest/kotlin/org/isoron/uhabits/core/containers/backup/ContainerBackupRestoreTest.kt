@@ -34,6 +34,7 @@ import org.isoron.uhabits.core.containers.PlaceHabit
 import org.isoron.uhabits.core.containers.migration.LegacyContainerMigrationExecutor
 import org.isoron.uhabits.core.containers.migration.LegacyContainerMigrationPlanner
 import org.isoron.uhabits.core.containers.migration.LegacyContainerMigrationValidator
+import org.isoron.uhabits.core.containers.migration.MigrationExecutionResult
 import org.isoron.uhabits.core.containers.migration.MigrationValidationResult
 import org.isoron.uhabits.core.containers.migration.RawLegacyInventoryReader
 import org.isoron.uhabits.core.containers.migration.SemanticMigrationFixtures
@@ -280,6 +281,128 @@ class ContainerBackupRestoreTest {
         assertTrue(
             orphanErrors.any { it.contains("HabitVisualIdentity references non-existent habit UUID 'orphan-ghost-habit-uuid'") },
             "Semantic validator must catch orphan HabitVisualIdentities referencing non-existent habits"
+        )
+
+        sourceDb.close()
+        backupDb.close()
+        stagingDb.close()
+        destinationDb.close()
+    }
+
+    @Test
+    fun testFullBackupRestoreRoundtrip_userTasks() = runTest {
+        val sourceDb = SemanticMigrationFixtures.createAndSeedV29Database()
+        val beforeInventory = RawLegacyInventoryReader.read(sourceDb)
+        val plan = LegacyContainerMigrationPlanner.plan(beforeInventory, cutoverTimestamp = 1000000L)
+        val execResult = LegacyContainerMigrationExecutor.execute(sourceDb, plan)
+        assertTrue(execResult is MigrationExecutionResult.Success)
+
+        val taskRepo = org.isoron.uhabits.core.userTasks.sqlite.SQLiteUserTaskRepository(sourceDb)
+        val rootTask = org.isoron.uhabits.core.userTasks.UserTask(
+            id = org.isoron.uhabits.core.userTasks.TaskId("ut-root-1"),
+            title = "Finalize Architecture Spec",
+            description = "Sections 1 through 5",
+            containerId = ContainerId("b-uuid-1"),
+            status = org.isoron.uhabits.core.userTasks.TaskStatus.PENDING,
+            plannedDate = org.isoron.platform.time.LocalDate(2026, 10, 4),
+            deadline = 1791108000000L,
+            completedAt = null,
+            parentTaskId = null,
+            sortOrder = 0,
+            createdAt = 1000L,
+            updatedAt = 1000L,
+        )
+        val subTask = org.isoron.uhabits.core.userTasks.UserTask(
+            id = org.isoron.uhabits.core.userTasks.TaskId("ut-sub-1"),
+            title = "Draft diagram",
+            description = "Mermaid chart",
+            containerId = ContainerId("b-uuid-1"),
+            status = org.isoron.uhabits.core.userTasks.TaskStatus.COMPLETED,
+            plannedDate = org.isoron.platform.time.LocalDate(2026, 10, 3),
+            deadline = null,
+            completedAt = 2000L,
+            parentTaskId = rootTask.id,
+            sortOrder = 0,
+            createdAt = 1100L,
+            updatedAt = 2000L,
+        )
+        val standaloneTask = org.isoron.uhabits.core.userTasks.UserTask(
+            id = org.isoron.uhabits.core.userTasks.TaskId("ut-inbox-1"),
+            title = "Buy fresh coffee beans",
+            description = "",
+            containerId = null,
+            status = org.isoron.uhabits.core.userTasks.TaskStatus.PENDING,
+            plannedDate = null,
+            deadline = null,
+            completedAt = null,
+            parentTaskId = null,
+            sortOrder = 1,
+            createdAt = 1200L,
+            updatedAt = 1200L,
+        )
+        taskRepo.save(rootTask)
+        taskRepo.save(subTask)
+        taskRepo.save(standaloneTask)
+
+        // Create full experimental backup
+        val backupDb = TestDatabaseHelper.createEmptyDatabase()
+        val backupRes = ContainerBackupService.createBackup(
+            sourceDb = sourceDb,
+            targetDb = backupDb,
+            timestamp = 3000000L,
+            preferences = mapOf("theme" to "dark"),
+        )
+        assertTrue(backupRes is BackupCreationResult.Success)
+
+        val stagingDb = TestDatabaseHelper.createEmptyDatabase()
+        val destinationDb = TestDatabaseHelper.createEmptyDatabase()
+
+        val restoreRes = ContainerRestoreService.restore(
+            backupDb = backupDb,
+            stagingDb = stagingDb,
+            destinationDb = destinationDb,
+        )
+        assertTrue(restoreRes is RestoreResult.Success)
+
+        // Verify tasks in destinationDb
+        val destTaskRepo = org.isoron.uhabits.core.userTasks.sqlite.SQLiteUserTaskRepository(destinationDb)
+        val restoredRoot = destTaskRepo.getById(rootTask.id)
+        assertNotNull(restoredRoot)
+        assertEquals("Finalize Architecture Spec", restoredRoot.title)
+        assertEquals("Sections 1 through 5", restoredRoot.description)
+        assertEquals(ContainerId("b-uuid-1"), restoredRoot.containerId)
+        assertEquals(org.isoron.uhabits.core.userTasks.TaskStatus.PENDING, restoredRoot.status)
+        assertEquals(org.isoron.platform.time.LocalDate(2026, 10, 4), restoredRoot.plannedDate)
+        assertEquals(1791108000000L, restoredRoot.deadline)
+        assertNull(restoredRoot.completedAt)
+        assertNull(restoredRoot.parentTaskId)
+
+        val restoredSub = destTaskRepo.getById(subTask.id)
+        assertNotNull(restoredSub)
+        assertEquals("Draft diagram", restoredSub.title)
+        assertEquals(org.isoron.uhabits.core.userTasks.TaskStatus.COMPLETED, restoredSub.status)
+        assertEquals(2000L, restoredSub.completedAt)
+        assertEquals(rootTask.id, restoredSub.parentTaskId)
+
+        val restoredInbox = destTaskRepo.getById(standaloneTask.id)
+        assertNotNull(restoredInbox)
+        assertEquals("Buy fresh coffee beans", restoredInbox.title)
+        assertNull(restoredInbox.containerId)
+        assertNull(restoredInbox.parentTaskId)
+
+        val destInventory = RawLegacyInventoryReader.read(destinationDb)
+        val errors = ContainerRestoreService.validateContainerDatasetSemantics(destinationDb, destInventory)
+        assertTrue(errors.isEmpty(), "Restored UserTasks dataset must pass semantic validation without errors: $errors")
+
+        // Verify invalid parent detection
+        destinationDb.run(
+            "INSERT INTO UserTasks (id, title, description, status, sort_order, created_at, updated_at, parent_task_id) " +
+                "VALUES ('orphan-child', 'Orphan', '', 'PENDING', 0, 1000, 1000, 'non-existent-parent')"
+        )
+        val orphanErrors = ContainerRestoreService.validateContainerDatasetSemantics(destinationDb, destInventory)
+        assertTrue(
+            orphanErrors.any { it.contains("references non-existent parentTask 'non-existent-parent'") },
+            "Semantic validator must catch orphan parentTask reference"
         )
 
         sourceDb.close()
