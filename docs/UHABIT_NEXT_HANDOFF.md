@@ -59,17 +59,27 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 - Preferred первый UX prototype — **Evolutionary**: Habit-first сохраняется, Browse добавляется постепенно. Today-first — вероятное следующее направление после Tasks, ещё не финальное решение shell.
 - Production schema/sync пока не менять. Foundation сначала проверяется изолированно на memory/test DB/staging copy; экспериментальный dataset не подключается к legacy sync.
 - Форматы Entry, UNKNOWN/SKIP/explicit zero, numerical x1000, HabitGoal history/UUID и формулы не меняются в Foundation.
-- **Visual Design Spike (Living Context)**: Container — это жизненный контекст / пространство (Area of Responsibility), а не карточка и не папка. Вложенные карточные рамки (card-in-card) устранены в пользу открытой пространственной вёрстки с вертикальной акцентной рельсой (3.5dp) и тонким тинтом фона (2–3%).
-- **Visual Design Spike (Concept C Hybrid & Header Morphing)**: Целевой визуальной архитектурой утверждён Concept C. В корневом списке контейнеры раскрываются аккордеоном для быстрого чекина; нажатие на заголовок контейнера плавно трансформирует его в Top App Bar сфокусированного экрана через 350ms Spatial Header Morphing.
-- **Visual Design Spike (Кураторские иконки и монограммы)**: Набор иконок ограничен 50–80 чистыми векторными Lucide-символами. Иконка папки по умолчанию исключена; при отсутствии иконки используется типографическая монограмма в цвете контейнера (`[У]`, `[Р]`, `[Т]`).
-- **Visual Design Spike (Тонкий Scope)**: Гигантские сегментированные кнопки `[Только здесь | Включая вложенные]` устранены. В подзаголовке используется ненавязчивый индикатор `Здесь (3) · Внутри (5)` с тапом для переключения.
-- **Visual Design Spike (Ортогональность: Workspaces × Context)**: Рабочие пространства (`Привычки`, `Задачи`, `Сегодня`, `Статистика`) строго разделены и не смешиваются в кашу. Контекст (`Все`, `Учёба`, `Речь`, `Тело`) является сквозным и сохраняется при смене пространства.
+- Форматы Entry, UNKNOWN/SKIP/explicit zero, numerical x1000, HabitGoal history/UUID и формулы не меняются в Foundation.
+
+### Accepted product direction (Visual Spike):
+- **Container = Living Context**, а не folder и не card. Контекст — это пространство внимания / сфера ответственности, а не прямоугольная коробка с рамками.
+- **Ортогональность: Workspaces × Context**: Рабочие пространства (`Привычки`, `Задачи`, `Сегодня`, `Статистика`) отвечают на вопрос «ЧТО делать», а Контекст (`Все`, `Учёба`, `Речь`, `Тело`) отвечает «К ЧЕМУ относится».
+- **Разделение сущностей**: Habits и Tasks не смешиваются автоматически в одну общую ленту; это разные типы деятельности с разными жизненными циклами.
+- **Generic folder fallback не используется**: серая системная папка 📁 исключена как визуальный дефолт.
+
+### Candidate, NOT approved yet (Visual Review Pending):
+- **Concept C Hybrid**: раскрытие на первом уровне + Header Morphing при входе в контекст (исследуется наряду с A и B).
+- **Accent rail**: акцентная направляющая линия (исследуются варианты 2dp, 3dp и no-rail/отступ). Точные параметры толщины и тинта НЕ зафиксированы в контракте.
+- **Header morph**: идея пространственной непрерывности (исследуются как Expressive Morph, так и спокойный Subtle Morph 220–280ms). Точные тайминги 350ms, scale 0.98 и траектории НЕ зафиксированы.
+- **Monogram fallback**: типографические монограммы (`[У]`, `[Р]`, `[Т]`) vs отсутствие плашки иконки вообще (сравниваются в прототипе).
+- **Навигация и IA**: структура нижнего бара (варианты IA A с «Ещё», IA B с «Настройками», IA C с настройками в App Bar). Экран «Сегодня» не утверждён как обязательная вкладка.
+- **Scope semantics**: кандидатная семантика — `Focused Container → direct content by default` (например, `Здесь 3 · Внутри 5`); тап по `Внутри 5` включает aggregated view.
 
 Изменение решения: указать старое/новое правило, причину, последствия для compatibility/migration/tests и подтверждённое основание согласования. Не переписывать Completed work log задним числом.
 
 ## 4. Roadmap
 
-Статусы: `PLANNED`, `READY`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `SUPERSEDED`. `READY` не означает, что агент уже получил разрешение начать; запуск должен соответствовать текущему запросу и Active work. Следующий implementation scope — PR3.
+Статусы: `PLANNED`, `READY`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `SUPERSEDED`, `VISUAL_REVIEW_PENDING`. `READY` не означает, что агент уже получил разрешение начать; запуск должен соответствовать текущему запросу и Active work. Следующий implementation scope — PR3.
 
 | Этап | Цель / входит | Специально не входит | Prerequisites | Status |
 |---|---|---|---|---|
@@ -82,7 +92,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR6 — Isolated DatasetSession + sync/jobs isolation | Отдельная копия, DI/session lifecycle, hard sync/job gates | Remote protocol, production cutover | PR5; timer/prefs policy; обязательные integration checks | DONE |
 | PR7 — Minimal Browse prototype | Roots/children/Habits, create/move/archive, breadcrumb/search | Tasks/Focus/new statistics, full shell redesign | PR6 Foundation validated; Android visual QA | DONE |
 | PR8 — Unified Hierarchical Home + Visual Identity | Единый экран в ListHabitsFragment, inline-раскрытие + drill-down, 196 Lucide иконок, HabitVisualIdentity | Изменение flat-списка в LEGACY_PRODUCTION, Tasks | PR7 функционально принят; visual UX переосмыслен | DONE |
-| PR8·Spatial / PR9 — Living Context UI & Header Morphing | Открытая вёрстка (Zero nested cards), 3.5dp accent rails, 350ms Header Morphing, монограммы, тонкий Scope | Tasks, production v29 schema | PR8 функционально принят, Visual Spike утверждён | READY |
+| PR8·Spatial / PR9 — Living Context UI & Header Morphing | Открытая вёрстка (Zero nested cards), accent rails, Header Morphing, монограммы, тонкий Scope | Tasks, production v29 schema | PR8 функционально принят; ожидает визуального ревью дизайна | VISUAL_REVIEW_PENDING |
 | Task MVP | Отдельный Task domain, title capture/Inbox, plan vs deadline, complete/undo | Recurrence engine, Focus/Contribution | Stable Container/Browse; отдельный Task contract | PLANNED |
 | FocusSession | Durable standalone work fact и безопасная финализация | Выдуманные legacy sessions, произвольные rules | Task MVP; timer/attribution/recovery design | PLANNED |
 | Contribution / provenance | Один явный source rule, breakdown/dedupe/corrections/undo | Пользовательский rules language, hidden double-write | Durable facts; manual/automatic projection contract | PLANNED |
@@ -96,19 +106,20 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf), Visual Design Spike DONE
+Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf)
+Visual Design Spike: VISUAL_REVIEW_PENDING
 Coordination handoff: DONE
-Current repository HEAD: dc3f0acf (with PR8 verification fixes)
+Current repository HEAD: cca3f6e0 (docs update)
 Current branch: dev
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
-Next implementation: PR8·Spatial / PR9 Living Context UI implementation
+Next implementation: Visual Review of Spike Iteration 2 (production UI / Tasks strictly on hold)
 Production DB schema: v29 unchanged (repository DATABASE_VERSION)
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
 ```
 
 Git status: PR8 полностью реализован, протестирован unit-тестами core и android, и прошёл детальный Android runtime smoke-test на эмуляторе во всех сценариях. Изоляция от production БД стопроцентная. Все 10 обязательных verification gaps PR8 (backup pipeline, semantic validation, visual identity roundtrip, Lucide license, 14 скриншотов, экранная видеозапись, motion при animator_duration_scale=0, темы Light/Dark/AMOLED, feature parity, production isolation) успешно закрыты и валидированы в `dc3f0acf`.
-Visual Design Spike полностью завершён и утверждён: разработаны 3 концепта, интерактивный прототип Pixel 6 (`visual_spike_prototype.html`), 4-кадровый Storyboard Header Morphing и архитектурный отчёт (`visual_spike_analysis.md`).
+Visual Design Spike находится в статусе `VISUAL_REVIEW_PENDING`. Проводится вторая итерация прототипа с устранением вложенных карточек во всех экранах, вариативностью морфинга (Subtle vs Expressive), тестом монограмм против отсутствия иконки, открытыми задачами и сравнением вариантов нижней навигации (IA A/B/C).
 
 Runtime/device DB и live Supabase проверены: v29 production DB (uhabits.db) остаётся побайтово неизменной, в эксперименте работает UnifiedContainerHomeView с 0 сетевыми вызовами.
 
@@ -116,7 +127,7 @@ Runtime/device DB и live Supabase проверены: v29 production DB (uhabit
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| Antigravity | Visual Design Spike: Living Context & Spatial Model | dev / primary | DONE | 2026-10-04 11:20 | artifacts/visual_spike, docs | Concept C (Hybrid) + Header Morph approved; interactive prototype & analysis delivered |
+| Antigravity | Visual Design Spike Iteration 2 | dev / primary | VISUAL_REVIEW_PENDING | 2026-10-04 11:20 | artifacts/visual_spike, docs | Zero-card grammar everywhere, subtle morph, rail comparison, monogram vs no-icon, IA A/B |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
  
@@ -134,18 +145,15 @@ Handoff — coordination register, не атомарный mutex: одновре
  
 ## 7. Next actions
  
-1. Visual Design Spike успешно завершён и утверждён пользователем:
-   - Принята парадигма **Living Context / Space** взамен карточек и папок;
-   - Утверждён **Concept C (Hybrid)**: inline-раскрытие первого уровня для чекинов + 350ms Spatial Header Morphing при входе в контекст;
-   - Зафиксирована открытая вёрстка с акцентной рельсой (3.5dp rail) и тонким фоновым тинтом (2–3%);
-   - Утверждены кураторские Lucide-иконки + типографические монограммы (`[У]`, `[Р]`, `[Т]`) как дефолтный fallback;
-   - Утверждено строгое ортогональное разделение Workspaces (`Привычки`, `Задачи`, `Сегодня`, `Статистика`) и Shared Context (`Все`, `Учёба`, `Речь`, `Тело`);
-   - Устранены гигантские segmented pills в пользу ненавязчивого индикатора `Здесь (3) · Внутри (5)`.
-2. Следующий этап реализации: **PR8·Spatial / PR9 — Living Context UI & Header Morphing**:
-   - Адаптация `UnifiedContainerHomeView` под открытую вёрстку с `AccentRailItemDecoration`;
-   - Реализация `HeaderMorphCoordinator` для бесшовной анимации заголовка и иконки контейнера в `TopAppBar`;
-   - Замена системных fallback-иконок на типографические монограммы;
-   - Проверка визуального QA на устройстве/эмуляторе в темах Light, Dark, AMOLED.
+1. Visual Design Spike (Итерация 2):
+   - Зафиксировать статус `VISUAL_REVIEW_PENDING`;
+   - Обновить HTML-прототип: убрать карточки подразделов в Focused Container (сделать открытый список); убрать карточки из Tasks; очистить Overview от синтетических скоров (показать типизированные метрики фокуса, задач и привычек);
+   - Добавить сравнение `Subtle Morph` (220–280ms, crossfade) и `Expressive Morph`;
+   - Добавить сравнение `2dp rail`, `3dp rail` и `no-rail` (только отступ);
+   - Добавить сравнение `иконка` vs `монограмма [У]` vs `без иконки вообще`;
+   - Добавить сравнение вариантов нижней навигации: IA A (`Сегодня`, `Привычки`, `Задачи`, `Статистика`, `Ещё`) и IA B (`Сегодня`, `Привычки`, `Задачи`, `Статистика`, `Настройки`) + IA C (Настройки в App Bar);
+   - Зафиксировать scope-семантику: direct content by default (`Здесь 3 · Внутри 5`), тап по «Внутри 5» включает aggregated view;
+   - Строгий запрет: production Kotlin/XML не менять, Task domain не начинать, PR9 не начинать до завершения review.
 
 ## 8. PR1 contract
 
@@ -485,36 +493,30 @@ Result:
   - Все тесты `:uhabits-core:jvmTest` (включая `BackupRestoreTest`, `VisualIdentityTest`, все тесты `org.isoron.uhabits.core.containers.*`) пройдены успешно (BUILD SUCCESSFUL);
   - Сборка `:uhabits-android:assembleDebug` успешна.
 
-### 2026-10-04 — Visual Design Spike: Living Context, Hybrid Concept C, 4-Frame Header Morphing Storyboard
+### 2026-10-04 — Visual Design Spike: Living Context, Spatial Models & Iteration 2 (VISUAL_REVIEW_PENDING)
 
 Agent: Antigravity; session `5d910332-59de-46dc-828b-969d1ab84869`.
 
 Result:
 - **Переосмысление пространственной модели Containers**:
-  - Проанализированы ограничения PR8 (синдром «файлового менеджера» из-за вложенных рамок карточек и разрыв ментального контекста при переходах);
-  - Утверждён принцип: Container — это живой контекст / сфера ответственности (*Living Context / Space*), а не карточка и не папка;
-  - Отказ от card-in-card: пространство организуется открытой вёрсткой с вертикальной акцентной рельсой (3.5dp rail) в цвете контейнера и мягким фоновым тинтом (2–3%), сохраняя быстрый чекин в 1 тап;
-  - Системные иконки папок исключены: утверждён кураторский набор Lucide (50–80 символов) и типографические монограммы (`[У]`, `[Р]`, `[Т]`) как нейтральный fallback;
-  - Устранены гигантские сегментированные кнопки `[Только здесь | Включая вложенные]` в пользу компактного индикатора в подзаголовке шапки `Здесь (3) · Внутри (5)`.
-- **Сравнение 3 концептов**:
-  - **Concept A (Contextual Habits)**: открытые аккордеонные секции прямо в общем списке;
-  - **Concept B (Context Selector)**: классический плоский список UHabit + переключатель в App Bar с Bottom Sheet со всем деревом;
-  - **Concept C (Hybrid)** ⭐: на первом уровне аккордеонное раскрытие для быстрого чекина; нажатие на заголовок контейнера запускает координатный Spatial Header Morphing в сфокусированное пространство. Утверждён пользователем как целевая архитектура.
-- **4-кадровый Storyboard Header Morphing**:
-  - Кадр 1: Исходное состояние в списке ($y=140\text{dp}$);
-  - Кадр 2: Касание (Touch Down, сжатие 0.98, ripple, подсветка рельсы);
-  - Кадр 3: Полёт (In-Flight 180ms, перемещение в Top App Bar по кривой `FastOutSlowIn`, растворение соседей);
-  - Кадр 4: Фиксация (Settled, заголовок заблокирован в Top Bar, стрелка «Назад», привычки раскрыты в свободном пространстве).
-- **Ортогональная модель: Workspaces × Shared Context**:
-  - Рабочие пространства (`Привычки`, `Задачи`, `Сегодня`, `Статистика`) строго разделены и не смешиваются в кашу;
-  - Контекст (`Все`, `Учёба`, `Речь`, `Тело`) является сквозным фильтром и сохраняется при переключении пространств.
+  - Принято продуктовое направление: Container = Living Context (пространство внимания / сфера ответственности), а не папка или карточка;
+  - Принята ортогональность Workspaces (`Привычки`, `Задачи`, `Сегодня`, `Статистика`) и Context (`Все`, `Учёба`, `Речь`, `Тело`); Habits и Tasks не смешиваются в общую ленту;
+  - Системные иконки папок 📁 исключены как дефолтный fallback;
+- **Кандидаты на рассмотрении (VISUAL_REVIEW_PENDING)**:
+  - Concept C Hybrid (раскрытие первого уровня + Header Morphing) исследуется как кандидатный UX;
+  - Accent rail: исследуются варианты 2dp, 3dp и no-rail (только отступ/тинт); точные 3.5dp и 2–3% убраны из контракта;
+  - Header Morphing: исследуются варианты Expressive Morph и спокойный Subtle Morph (220–280ms, crossfade);
+  - Иконки: сравниваются векторная иконка Lucide, монограмма (`[У]`, `[Р]`, `[Т]`) и полное отсутствие плашки иконки;
+  - Навигация: сравниваются IA A (`Сегодня`, `Привычки`, `Задачи`, `Статистика`, `Ещё`), IA B (с `Настройками`) и IA C (настройки в App Bar);
+  - Scope: семантика direct content by default (`Здесь 3 · Внутри 5`), тап по «Внутри 5» включает aggregated view;
+  - Overview: очищен от универсального % completion и синтетических скоров, показаны типизированные метрики (фокус, задачи, привычки);
 - **Интерактивные артефакты**:
-  - `visual_spike_prototype.html` — интерактивный прототип Pixel 6 (Material 3, Light/Dark/AMOLED, все 7 состояний, интерактивный скраббер и воспроизведение анимации перехода);
-  - `visual_spike_analysis.md` — детальный архитектурный отчёт со сравнительной таблицей и матрицей инвариантов.
+  - `visual_spike_prototype.html` — интерактивный прототип Pixel 6;
+  - `visual_spike_analysis.md` — архитектурный отчёт;
 - **Production Isolation**:
-  - В ходе Visual Spike production/UI-код не изменялся, база данных v29 не затрагивалась, Tasks не начинались.
+  - Production/UI-код не изменялся, база данных v29 не затрагивалась, Tasks не начинались.
 
-Commit: **none (Visual Design Spike / documentation only)**.
+Commit: `cca3f6e0` (Docs: record Visual Design Spike handoff status and candidates).
 
 ## 11. Session close protocol
 
