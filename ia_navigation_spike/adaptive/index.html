@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>UHabit · Adaptive App Shell</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<div class="studio">
+ <header class="studio-header"><div><div class="eyebrow">UHabit / visual system spike</div><h1>Одна система. Разные экраны.</h1></div><p>Рабочий макет · 5 октября 2026<br>Данные только в этом окне</p></header>
+ <div class="studio-controls" aria-label="Настройки прототипа">
+  <div class="segments" aria-label="Размер экрана"><button data-size="phone">Телефон</button><button data-size="compact">Landscape / foldable</button><button data-size="tablet">Планшет</button></div>
+  <div class="segments" aria-label="Тема"><button data-theme="light">Светлая</button><button data-theme="dark">Тёмная</button><button data-theme="amoled">AMOLED</button></div>
+  <button class="reset" data-reset>Сбросить демо</button>
+ </div>
+ <div class="preview-host" id="previewHost"><div class="preview-stage" id="previewStage"><main class="app-frame" id="app" aria-label="UHabit — интерактивный макет"></main></div></div>
+ <div class="studio-foot"><span id="sizeNote"></span><span>Привычки и Статистика — только переходы, без нового дизайна.</span></div>
+ <details class="about"><summary>Что можно проверить в макете</summary><p>Сегодня → меню Задач → Учёба → Задачи универа → Базы данных → Список / Календарь → задача БД → редактирование плана и дедлайна → быстрое добавление. Смена размера сохраняет место и представление. Иерархия глубже трёх видимых уровней показывает локальное дерево с переходом к родителю.</p><p>Названия учебных задач взяты из переданного анализа TickTick. Даты, дополнительные задачи и заметки — демонстрационные. Календарь фиксирован на октябре 2026. План и дедлайн независимы. Макет не подключён к Android, хранилищу или синхронизации.</p></details>
+</div>
+<script src="app.js"></script>
+</body></html>

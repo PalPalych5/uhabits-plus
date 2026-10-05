@@ -3,7 +3,7 @@
 > Этот файл является первым документом, который должен читать агент перед работой над UHabit Next.  
 > Если фактическое состояние Git противоречит этому файлу, агент обязан проверить Git/код и обновить handoff, а не слепо доверять устаревшему статусу.
 
-Last verified: **2026-10-04, Asia/Novosibirsk**. Maintainer: текущая работающая сессия Codex / Antigravity. Это живой статус, а не замена ТЗ, исследованиям или Foundation design.
+Last verified: **2026-10-05, Asia/Novosibirsk**. Maintainer: текущая работающая сессия Codex / Antigravity. Это живой статус, а не замена ТЗ, исследованиям или Foundation design.
 
 **Canonical location:** `C:/Users/Pavel/source/repos/uhabits-plus/docs/UHABIT_NEXT_HANDOFF.md`. На этом компьютере все агенты, включая работающих в другом worktree, читают и обновляют именно этот файл. Канонические документы (UHABIT_NEXT_HANDOFF.md, UHabit_Next_Spec.md, uhabit-next-foundation-plan.md) зафиксированы в Git через исключения в .gitignore (!docs/...) и синхронизируются через commit/checkout/pull. Этот файл не меняет AGENTS.md или автоматический bootstrap harness: чтение должно быть включено в инструкции запуска агента.
 
@@ -30,6 +30,7 @@ UHabit Next развивается из habit tracker в личную систе
 | Документ | Роль |
 |---|---|
 | [UHabit_Next_Spec.md](UHabit_Next_Spec.md) | Продуктовая и архитектурная спецификация |
+| [UHABIT_TASKS_IA.md](UHABIT_TASKS_IA.md) | Принятая Tasks IA: domains, adaptive shell, tree, representations, dates and scope; canonical for Codex/Antigravity |
 | [container-redesign-research-2026-10-03.md](container-redesign-research-2026-10-03.md) | Основное исследование идеи, конкурентов и ограничений |
 | [container-code-audit-2026-10-03.md](container-code-audit-2026-10-03.md) | Аудит legacy кода и migration/sync risks на зафиксированном срезе |
 | [container-commercial-analogues-2026-10-03.md](container-commercial-analogues-2026-10-03.md) | Коммерческие аналоги и границы доказательств |
@@ -108,7 +109,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 
 ## 4. Roadmap
 
-Статусы: `PLANNED`, `READY`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `SUPERSEDED`, `VISUAL_REVIEW_PENDING`. `READY` не означает, что агент уже получил разрешение начать; запуск должен соответствовать текущему запросу и Active work. Текущий согласованный scope — PR9.1; дальнейший этап требует отдельного запроса.
+Статусы: `PLANNED`, `READY`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `SUPERSEDED`, `VISUAL_REVIEW_PENDING`. Текущий согласованный и разрешённый пользователем scope — PR10 Native Adaptive Tasks Shell; дальнейший этап требует отдельного запроса.
 
 | Этап | Цель / входит | Специально не входит | Prerequisites | Status |
 |---|---|---|---|---|
@@ -123,6 +124,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR8 — Unified Hierarchical Home + Visual Identity | Единый экран в ListHabitsFragment, inline-раскрытие + drill-down, 196 Lucide иконок, HabitVisualIdentity | Изменение flat-списка в LEGACY_PRODUCTION, Tasks | PR7 функционально принят; visual UX переосмыслен | DONE |
 | PR8·Spatial — Living Context Native Slice | Открытая вёрстка (Zero cards), 2dp rail у раскрытого, fallback без иконки, Subtle Morph ~240ms, Zero-card Focused | Tasks, Today, Overview, new stats, schema v29 | Завершён как эксперимент; основной UX отклонён в пользу воркспейсов | DONE |
 | PR9.1 — Tasks UX polish & visual reset | Strict Inbox, dropdown views, autosave editor, zero-card 60dp rows, plain metadata text, docked Quick Add, live Task Detail sheet, empty states | Recurrence, FocusSession, Container redesign, production migration/sync | PR9 + user feedback | DONE |
+| PR10 — Native Adaptive Tasks Shell | Phone 3 workspaces + Tasks drawer; wide sidebar; bounded tree; List/Calendar shared context; existing detail/Quick Add; native QA | New domain/backend/schema/sync, Habit/Statistics redesign, PR11 | IA approved; user authorizes native implementation | IN_PROGRESS |
 | FocusSession | Durable standalone work fact и безопасная финализация | Выдуманные legacy sessions, произвольные rules | Task MVP; timer/attribution/recovery design | PLANNED |
 | Contribution / provenance | Один явный source rule, breakdown/dedupe/corrections/undo | Пользовательский rules language, hidden double-write | Durable facts; manual/automatic projection contract | PLANNED |
 | Container statistics | Отдельные time/outcomes/Habit metrics; historical/current mode | Universal productivity score | Проверенные facts/provenance/placement | PLANNED |
@@ -137,9 +139,13 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 Architecture preparation: DONE
 Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf), PR8·Spatial Native Slice DONE (commit d847b434f), PR9 DONE (commit 68538527e), PR9.2 Tasks Visual Reset DONE
 Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated
-Current branch: dev; verified HEAD 9f48fc98 (PR9.2 Tasks Visual Reset)
+Current branch: dev; verified HEAD 5c2cb234e (PR9.2 Tasks Visual Reset)
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
-Active implementation: none (PR9.2 Tasks visual reset completed, verified with unit tests and emulator QA)
+Tasks IA: APPROVED
+Adaptive App Shell: APPROVED
+Visual language: ITERATING
+Native Android implementation: READY / PR10 IN_PROGRESS
+Active implementation: PR10 Native Adaptive Tasks Shell
 Production DB schema: v29 unchanged (repository DATABASE_VERSION)
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
@@ -151,6 +157,7 @@ Git status: PR9 завершён. Продуктовый pivot реализов�
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
+| Codex team (interchangeable with Antigravity) | PR10 native implementation and QA | dev / C:/Users/Pavel/source/repos/uhabits-plus | IN_PROGRESS | 2026-10-05 | main shell/layout; Tasks fragment/nav/calendar; task detail; canonical docs; QA artifacts | Approved scope; shell/tasks/detail have disjoint owners; root integration/build/runtime |
 | none | none | dev / primary | IDLE | 2026-10-04 | none | PR9.2 Tasks visual reset completed: flat 60dp row, 0 cards/capsules, clean secondary metadata text, compact top bar, docked Quick Add, live Task Detail sheet. 6/6 tests PASS, emulator validated across Light/Dark/AMOLED. |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
@@ -169,9 +176,9 @@ Handoff — coordination register, не атомарный mutex: одновре
  
 ## 7. Next actions
 
-1. Следующий roadmap-этап: FocusSession (standalone durable work fact, безопасная финализация сессий таймера) либо Task planning v2 / recurrence.
-2. Не возвращать Container experiments в основной Habit screen (сохранять раздельные воркспейсы).
-3. При необходимости расширения функциональности Tasks опираться на созданный визуальный язык Concept A (плотный инструментальный список без капсул и карточек).
+1. Продолжить PR10 — Native Adaptive Tasks Shell по docs/UHABIT_TASKS_IA.md; больше не делать visual spike перед PR10.
+2. Не пересматривать принятую IA без нового явного решения пользователя. Habits UI и production isolation сохранить.
+3. После native QA/screenshots/video обновить этот handoff и STOP для native visual review. PR11 автоматически не начинать.
 
 ## 8. PR1 contract
 
@@ -204,7 +211,7 @@ Handoff — coordination register, не атомарный mutex: одновре
 ### Not blocking current work
 
 - Финальное пользовательское название Container (prototype default: «Раздел»).
-- Окончательный A/B/C shell и permanent Browse tab; первый prototype выбран Evolutionary.
+- A/B/C shell superseded: адаптивная IA принята в UHABIT_TASKS_IA.md; phone bottom workspaces + Tasks drawer, wide persistent sidebar.
 - Future tags/secondary links, Task recurrence model.
 - Focus fact context snapshots, attribution/day boundaries, historical label display.
 - Distributed tree conflict algorithm и новый sync protocol/server gate.
@@ -689,3 +696,24 @@ Before doing any work on UHabit Next:
 ```
 
 On this computer, resolve the shared canonical handoff in the primary checkout before step 1 when working from another worktree. The bootstrap does not authorize work beyond the human's current request.
+
+### 2026-10-05 — Hybrid / Drawer-first navigation HTML spike
+
+- User approved comparison prototype; delivered ia_navigation_spike/index.html (standalone, no dependencies), README.md and two screenshots.
+- Both architectures share demo task state and recursive context filtering; modal phone drawer / persistent tablet sidebar, List / Calendar, distinct plan and deadline markers, Habits and Statistics destinations, three themes.
+- Browser checks verified context preservation, educational routes, completion / subtask counts, Quick Add, habit checks, themes and sidebar. JavaScript syntax checked. This does not verify native Android behavior or exact native Habit / Statistics visuals.
+- Task names sourced from supplied TickTick analysis; dates and statistics explicitly illustrative. No Android / schema / sync edits. Architecture selection remains open; no commit or publication requested. Scope closed.
+
+### 2026-10-05 — Adaptive App Shell + Tasks visual system source draft
+
+- User accepted one adaptive direction: phone global bottom workspaces Habits / Tasks / Statistics plus Tasks drawer; wide screens persistent global sidebar. Settings is secondary navigation. List / Calendar are Task representations; Habits and Tasks remain separate domains with shared Containers organization. This supersedes the previous open A/B architecture decision for the design direction, not native implementation.
+- Delivered ia_navigation_spike/adaptive/index.html, styles.css, app.js and local README; prior A/B spike preserved. Three presets: 412x824, 844x480, 1120x780. Width-based shell, unified SVG system icons, bounded local tree, list/calendar, task detail and Quick Add. Habits/Statistics remain destination placeholders.
+- Node syntax and source-level context/count/date/draft checks passed; independent source review defects corrected. No backend, Android, schema, sync, new product features, commit or publication changes.
+- Visual QA remains required: browser open at localhost:8766 rejected because approval review model was at capacity. No bypass attempted. No new rendered screenshot or live interaction/overflow/theme verification exists. Source draft is not a visually verified completion; see local README for exact outstanding checks. Owner retained while awaiting browser QA guidance.
+
+### 2026-10-05 — Adaptive spike live browser QA completed for review
+
+- User authorized browser retry and scoped HTML/CSS/JS fixes; browser opened. Verified unscaled 412x824, 844x480, 1120x780 List/Calendar across Light/Dark/AMOLED. Live container/deep-tree navigation, retained context, independent plan/deadline edits, subtasks, Quick Add drafts, completed/empty states, three detail layouts and Tab/Escape checked.
+- Fixed clipped selected Container captions, undersized controls, excessive phone calendar height, detail textarea whitespace/grip, dangling metadata separators, popover focus, tablet sidebar truncation, tablet detail Escape, count grammar and deadline contrast. Relevant browser checks repeated; Node syntax passed and console error log empty.
+- Evidence: ia_navigation_spike/adaptive/qa/index.html gallery, REPORT.md and evidence.json. Browser QA complete for review; runtime reduced-motion preference could not be toggled with available capabilities. Native Android, IME/insets, gestures, TalkBack and device behavior remain unverified.
+- Scope closed and Active work claim removed. STOP until user visual review; no new architecture/functions or Android/backend/DB edits. Existing dev HEAD remains 9f48fc98. Commit: none; no publication.

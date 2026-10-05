@@ -20,6 +20,9 @@ crowdin.yml
 kotlin-js-store
 *.md
 !docs/UHABIT_NEXT_HANDOFF.md
+!docs/UHABIT_TASKS_IA.md
+!ia_navigation_spike/adaptive/README.md
+!ia_navigation_spike/adaptive/qa/REPORT.md
 !docs/UHabit_Next_Spec.md
 !docs/uhabit-next-foundation-plan.md
 .kotlin
