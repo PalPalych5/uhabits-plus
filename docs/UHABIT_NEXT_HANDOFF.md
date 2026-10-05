@@ -38,7 +38,7 @@ UHabit Next развивается из habit tracker в личную систе
 | [uhabit-next-foundation-plan.md](uhabit-next-foundation-plan.md) | Конкретные domain/storage contracts, migration design, три IA и PR1–PR7. Канонический документ перенесён в `docs/` и версионируется в Git |
 | [codex-project-context.md](codex-project-context.md), [architecture-uhabits.md](architecture-uhabits.md), [AGENTS.md](../AGENTS.md) | Контекст существующего приложения, карта кода и правила работы |
 
-Приоритет при противоречиях: **(1) фактический Git/код → (2) явно принятые решения этого handoff → (3) UHabit_Next_Spec → (4) Foundation plan → (5) исследования**. Код определяет, что реализовано; accepted decisions определяют согласованную цель. Наличие старой реализации не отменяет будущий дизайн автоматически. Требования пользователя текущей задачи и применимые инструкции имеют приоритет. Исследования — контекст, не обязательный контракт; изменение согласованного решения фиксировать здесь с причиной.
+Приоритет при противоречиях: **(1) фактический Git/код → (2) явно принятые решения этого handoff и UHABIT_TASKS_IA → (3) UHabit_Next_Spec → (4) Foundation plan → (5) исследования**. Код определяет, что реализовано; accepted decisions определяют согласованную цель. Наличие старой реализации не отменяет будущий дизайн автоматически. Требования пользователя текущей задачи и применимые инструкции имеют приоритет. Исследования — контекст, не обязательный контракт; изменение согласованного решения фиксировать здесь с причиной.
 
 Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и добавлен в Git для равного доступа всех агентов и worktrees.
 
@@ -63,6 +63,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 - Форматы Entry, UNKNOWN/SKIP/explicit zero, numerical x1000, HabitGoal history/UUID и формулы не меняются в Foundation.
 
 ### Accepted product direction (Product Pivot & Workspaces):
+Эти исторические shell решения уточнены PR10 ниже: Settings остаётся secondary entry, а не четвёртой постоянной bottom destination.
 - **Разделение рабочих пространств (Workspaces)**:
   - `Workspace 1: Habits` (Привычки)
   - `Workspace 2: Tasks` (Задачи)
@@ -94,6 +95,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 - Quick Add раскрывает план/раздел/дедлайн. Recurrence, FocusSession и новый Container redesign вне PR9.1.
 
 ### Tasks visual reset requested (2026-10-04)
+Исторический design-only scope завершён и заменён разрешением native PR10 от 2026-10-05; запрет Android изменений из этого этапа больше не действует.
 - PR9/PR9.1 domain/storage and mechanics remain; current Tasks presentation is a temporary prototype, not an approved final design.
 - Next scope is design only: five-app mobile benchmark, real UHabit token audit, three high-fidelity concepts, comparison/recommendation, then STOP for user visual review.
 - No further production Kotlin/XML changes, Task features, recurrence, FocusSession, dashboard or incremental polish in this scope.
@@ -108,6 +110,15 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 Изменение решения: указать старое/новое правило, причину, последствия для compatibility/migration/tests и подтверждённое основание согласования. Не переписывать Completed work log задним числом.
 
 ## 4. Roadmap
+
+### PR10 accepted IA and native authorization (2026-10-05)
+
+- `IA_APPROVED / VISUAL_LANGUAGE_NOT_FINAL / NATIVE_IMPLEMENTATION_ALLOWED`. Полный контракт: [UHABIT_TASKS_IA.md](UHABIT_TASKS_IA.md).
+- Phone: Habits / Tasks / Statistics bottom workspaces; Settings secondary; Tasks modal drawer со smart views и Containers.
+- Wide: persistent sidebar; тот же navigation state. Habits screen сохраняется; Containers не возвращаются в Habit list.
+- Drawer ограничивает visual depth тремя уровнями, затем local tree context с возвратом к parent.
+- List и Calendar — representations выбранного smart view / Container. Inbox = incomplete root Task с `containerId == null`; plan и deadline независимы.
+- Эти решения заменяют старые dropdown/Browse shell варианты. Новые HTML concepts не нужны; визуал уточняется на Android после review. PR11 не разрешён автоматически.
 
 Статусы: `PLANNED`, `READY`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `SUPERSEDED`, `VISUAL_REVIEW_PENDING`. Текущий согласованный и разрешённый пользователем scope — PR10 Native Adaptive Tasks Shell; дальнейший этап требует отдельного запроса.
 
@@ -124,7 +135,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR8 — Unified Hierarchical Home + Visual Identity | Единый экран в ListHabitsFragment, inline-раскрытие + drill-down, 196 Lucide иконок, HabitVisualIdentity | Изменение flat-списка в LEGACY_PRODUCTION, Tasks | PR7 функционально принят; visual UX переосмыслен | DONE |
 | PR8·Spatial — Living Context Native Slice | Открытая вёрстка (Zero cards), 2dp rail у раскрытого, fallback без иконки, Subtle Morph ~240ms, Zero-card Focused | Tasks, Today, Overview, new stats, schema v29 | Завершён как эксперимент; основной UX отклонён в пользу воркспейсов | DONE |
 | PR9.1 — Tasks UX polish & visual reset | Strict Inbox, dropdown views, autosave editor, zero-card 60dp rows, plain metadata text, docked Quick Add, live Task Detail sheet, empty states | Recurrence, FocusSession, Container redesign, production migration/sync | PR9 + user feedback | DONE |
-| PR10 — Native Adaptive Tasks Shell | Phone 3 workspaces + Tasks drawer; wide sidebar; bounded tree; List/Calendar shared context; existing detail/Quick Add; native QA | New domain/backend/schema/sync, Habit/Statistics redesign, PR11 | IA approved; user authorizes native implementation | IN_PROGRESS |
+| PR10 — Native Adaptive Tasks Shell | Phone 3 workspaces + Tasks drawer; wide sidebar; bounded tree; List/Calendar shared context; existing detail/Quick Add; native QA | New domain/backend/schema/sync, Habit/Statistics redesign, PR11 | IA approved; native implementation and QA complete; user visual review required | VISUAL_REVIEW_PENDING |
 | FocusSession | Durable standalone work fact и безопасная финализация | Выдуманные legacy sessions, произвольные rules | Task MVP; timer/attribution/recovery design | PLANNED |
 | Contribution / provenance | Один явный source rule, breakdown/dedupe/corrections/undo | Пользовательский rules language, hidden double-write | Durable facts; manual/automatic projection contract | PLANNED |
 | Container statistics | Отдельные time/outcomes/Habit metrics; historical/current mode | Universal productivity score | Проверенные facts/provenance/placement | PLANNED |
@@ -139,26 +150,28 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 Architecture preparation: DONE
 Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf), PR8·Spatial Native Slice DONE (commit d847b434f), PR9 DONE (commit 68538527e), PR9.2 Tasks Visual Reset DONE
 Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated
-Current branch: dev; verified HEAD 5c2cb234e (PR9.2 Tasks Visual Reset)
+Current branch: dev; verified code/evidence HEAD 629b3be13 (PR10); documentation-only closure may follow
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
 Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
 Visual language: ITERATING
-Native Android implementation: READY / PR10 IN_PROGRESS
-Active implementation: PR10 Native Adaptive Tasks Shell
+Native Android implementation: COMPLETE_FOR_REVIEW / PR10 VISUAL_REVIEW_PENDING
+Active implementation: none; STOP for user native visual review
+Documentation/IA commit: 5c89f0a2e
+PR10 implementation/evidence commit: 629b3be13
+Checks: APK build + 21 focused tests + emulator three widths/themes + process/recreation + isolation/restoration PASS
 Production DB schema: v29 unchanged (repository DATABASE_VERSION)
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
 ```
 
-Git status: PR9 завершён. Продуктовый pivot реализован: Habits возвращён к классическому UHabit UI без контейнеров, Tasks реализован как отдельный полноценный таск-менеджер workspace с навигацией `Привычки | Задачи | Статистика | Настройки`. Визуальный сброс Tasks (PR9.2 Concept A) реализован и протестирован.
+PR10 реализован и зафиксирован локально. Experimental phone: `Привычки | Задачи | Статистика`, Settings secondary; Tasks drawer; от 600dp persistent sidebar. List/Calendar используют один navigation context. Habits сохраняет классический UI. [Native QA report](../pr10_artifacts/REPORT.md), [gallery/video](../pr10_artifacts/index.html), [evidence](../pr10_artifacts/evidence.json). Calendar MVP и wide detail sheet требуют visual review; окончательный visual language не утверждён. No push / GitHub PR publication. Pre-existing root A/B spike, pr91/pr92 files and local QA backups preserved; backups/preferences excluded from Git.
 
 ## 6. Active work
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| Codex team (interchangeable with Antigravity) | PR10 native implementation and QA | dev / C:/Users/Pavel/source/repos/uhabits-plus | IN_PROGRESS | 2026-10-05 | main shell/layout; Tasks fragment/nav/calendar; task detail; canonical docs; QA artifacts | Approved scope; shell/tasks/detail have disjoint owners; root integration/build/runtime |
-| none | none | dev / primary | IDLE | 2026-10-04 | none | PR9.2 Tasks visual reset completed: flat 60dp row, 0 cards/capsules, clean secondary metadata text, compact top bar, docked Quick Add, live Task Detail sheet. 6/6 tests PASS, emulator validated across Light/Dark/AMOLED. |
+| none | none | dev / primary | IDLE | 2026-10-05 | none | PR10 code/evidence committed 629b3be13; native QA passed; STOP for user visual review. |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
  
@@ -176,9 +189,9 @@ Handoff — coordination register, не атомарный mutex: одновре
  
 ## 7. Next actions
 
-1. Продолжить PR10 — Native Adaptive Tasks Shell по docs/UHABIT_TASKS_IA.md; больше не делать visual spike перед PR10.
-2. Не пересматривать принятую IA без нового явного решения пользователя. Habits UI и production isolation сохранить.
-3. После native QA/screenshots/video обновить этот handoff и STOP для native visual review. PR11 автоматически не начинать.
+1. STOP: пользователь просматривает реальные Android [screenshots/video](../pr10_artifacts/index.html) и [QA report](../pr10_artifacts/REPORT.md). Не начинать PR11 и не делать новый HTML concept.
+2. Следующий агент читает этот handoff и docs/UHABIT_TASKS_IA.md; работает только по конкретному результату user native review. IA не пересматривается без нового явного решения пользователя.
+3. После нового согласования можно уточнять native visual language. Calendar month-cell titles, richer phone agenda и wide detail pane остаются visual/future scope, не утверждённой новой задачей.
 
 ## 8. PR1 contract
 
@@ -717,3 +730,16 @@ On this computer, resolve the shared canonical handoff in the primary checkout b
 - Fixed clipped selected Container captions, undersized controls, excessive phone calendar height, detail textarea whitespace/grip, dangling metadata separators, popover focus, tablet sidebar truncation, tablet detail Escape, count grammar and deadline contrast. Relevant browser checks repeated; Node syntax passed and console error log empty.
 - Evidence: ia_navigation_spike/adaptive/qa/index.html gallery, REPORT.md and evidence.json. Browser QA complete for review; runtime reduced-motion preference could not be toggled with available capabilities. Native Android, IME/insets, gestures, TalkBack and device behavior remain unverified.
 - Scope closed and Active work claim removed. STOP until user visual review; no new architecture/functions or Android/backend/DB edits. Existing dev HEAD remains 9f48fc98. Commit: none; no publication.
+
+### 2026-10-05 — PR10 Native Adaptive Tasks Shell completed for native review
+
+- User superseded the prior design-only STOP: IA_APPROVED / VISUAL_LANGUAGE_NOT_FINAL / NATIVE_IMPLEMENTATION_ALLOWED. Canonical UHABIT_TASKS_IA.md and adaptive browser evidence committed first, then native implementation continued. Codex and Antigravity share the same repository source of truth.
+- Delivered experimental phone Habits / Tasks / Statistics with secondary Settings; native Tasks drawer and persistent wide sidebar; smart views/counts, active recursive Containers, three-level local drill-down; context title; List / Calendar shared context and independent Plan / Deadline agenda.
+- Preserved existing task domain/autosave, backup and Habit UI. Native detail property rows/pickers, subtasks with 48dp targets, Quick Add properties/draft restore, both dates in list metadata. No schema/backend/sync/new domain changes. Calendar is MVP; wide detail remains sheet, not three-pane.
+- Fixed selected-container exclusion, drawer insets/IME, Light system icons, date metadata, old Activity animation/startup callbacks, detached Settings chrome callback, and replay of initial destination intents after recreation. Independent review findings incorporated; actual native crash routes repeated successfully and final crash log empty.
+- Validation: final assembleDebug PASS; Android SmartView/CalendarEvents/ContainerScope 13 tests + core UserTaskDomain/SQLiteUserTaskRepository/ContainerBackupRestore 8 tests PASS. Native phone (~411x914dp), landscape (~914x411dp), tablet (1200x800dp), Light/Dark/AMOLED checked; tree, completed/empty, detail, dates, Quick Add, rotation, secondary Settings and incoming intents exercised. Confirmed process death changed PID and preserved Container/Calendar/draft.
+- Legacy TASKS intent rejected. All production tables/rows/schema equal pre-QA inventory (v29; no Task tables); temporary emulator fixture used only experimental copy. Original experimental DB, session/prefs restored byte-identically; size/density, rotation, offline state restored.
+- Evidence committed: pr10_artifacts/REPORT.md, index.html, evidence.json, 36 native PNGs, diagnostic/recheck logs and 61-second pr10-native-flow.mp4. APK remains local at uhabits-android/build/outputs/apk/debug/uhabits-android-debug.apk. Physical device, RTL, large font scale, TalkBack and measured frame timing remain unverified; emulator coverage is not final visual approval.
+- Scope closed; roadmap VISUAL_REVIEW_PENDING. STOP for user native visual review. PR11 not started. Existing unrelated untracked files preserved; private QA backups/preferences not committed.
+
+Commits: canonical IA/evidence `5c89f0a2e`; PR10 native code/evidence `629b3be13ceb7163087f6420a61c858d99ae5e40`. No push or GitHub PR publication. This closure is a documentation-only follow-up; use Git for its own current HEAD.
