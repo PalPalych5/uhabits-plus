@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.MenuItem
+import android.view.Menu
 import android.view.View
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.DecelerateInterpolator
@@ -70,6 +71,9 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     private lateinit var settingsTabAnimator: TabAnimator
     private var bottomNavigationNaturalHeight = 0
     private var bottomNavigationAnimationToken = 0
+    private lateinit var workspaceSidebar: MainWorkspaceSidebar
+    private val experimentalWide: Boolean
+        get() = appComponent.session.isExperimental && resources.configuration.screenWidthDp >= 600
 
     private val permissionLauncher = registerForActivityResult(RequestPermission()) { granted ->
         if (granted) scheduleReminders()
@@ -117,6 +121,9 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
             parseDestination(it)
         } ?: destinationFromIntent(intent)
 
+        // The initial destination has been applied; recreation must use saved navigation state.
+        intent.removeExtra(EXTRA_DESTINATION)
+
         val restoredHistory = (savedInstanceState?.getStringArrayList(STATE_HISTORY)
             ?.map { parseDestination(it) }
             ?.filterNotNull() ?: emptyList())
@@ -127,12 +134,15 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         )
 
         setupBottomNavigation()
+        setupAdaptiveNavigation()
         applyAccentColor()
 
         setupBackHandling()
         ensureCoreFragments()
         showDestination(navigationState.current)
         binding.root.post {
+            // Width changes can destroy this host before its startup callback runs.
+            if (isFinishing || isDestroyed || supportFragmentManager.isDestroyed) return@post
             if (savedInstanceState == null) habitsFragment().onHostStartup()
             handleIncomingIntent(intent)
         }
@@ -146,6 +156,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         settingsTabAnimator = TabAnimator(binding.iconSettings, binding.labelSettings)
 
         binding.btnNavTasks.visibility = if (appComponent.session.isExperimental) View.VISIBLE else View.GONE
+        binding.btnNavSettings.visibility = if (appComponent.session.isExperimental) View.GONE else View.VISIBLE
 
         binding.btnNavHabits.setOnClickListener {
             onBottomItemClicked(MainDestination.HABITS)
@@ -200,6 +211,8 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                     if (habits != null && habits.isVisible && habits.handleBack()) {
                         return
                     }
+                    val tasks = supportFragmentManager.findFragmentByTag(TAG_TASKS) as? TasksFragment
+                    if (tasks != null && tasks.isVisible && tasks.onBackPressed()) return
                     if (!navigateBack()) finish()
                 }
             }
@@ -216,14 +229,21 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     private fun fragmentFor(destination: MainDestination): Fragment {
+        if (destination == MainDestination.TASKS && !appComponent.session.isExperimental) {
+            return fragmentFor(MainDestination.HABITS)
+        }
         val tag = tagFor(destination)
-        supportFragmentManager.findFragmentByTag(tag)?.let { return it }
+        supportFragmentManager.findFragmentByTag(tag)?.let {
+            configureWorkspaceFragment(it)
+            return it
+        }
         val fragment = when (destination) {
             MainDestination.HABITS, MainDestination.ARCHIVE -> ListHabitsFragment()
             MainDestination.TASKS -> TasksFragment()
             MainDestination.STATISTICS -> StatisticsFragment()
             MainDestination.SETTINGS -> SettingsSectionFragment.mainTab()
         }
+        configureWorkspaceFragment(fragment)
         supportFragmentManager.beginTransaction()
             .add(R.id.mainContent, fragment, tag)
             .hide(fragment)
@@ -232,6 +252,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     private fun showDestination(destination: MainDestination, animateFrom: MainDestination? = null) {
+        updateAdaptiveNavigation(destination)
         when (destination) {
             MainDestination.ARCHIVE -> setBottomNavigationVisible(false, false)
             MainDestination.SETTINGS -> Unit
@@ -329,7 +350,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
                 override fun onAnimationEnd(animation: Animator) {
                     targetView.animate().setListener(null)
-                    if (cancelled || tabTransitionToken != token) return
+                    if (cancelled || tabTransitionToken != token || isDestroyed || supportFragmentManager.isDestroyed) return
 
                     // Animation complete, now we hide the source fragment and any other non-target fragments
                     val hideTransaction = supportFragmentManager.beginTransaction()
@@ -355,6 +376,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         destination: MainDestination,
         updateBottomNavigation: Boolean = true
     ) {
+        updateAdaptiveNavigation(destination)
         val target = fragmentFor(destination)
         val transaction = supportFragmentManager.beginTransaction()
         supportFragmentManager.fragments.forEach { fragment ->
@@ -436,6 +458,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     override fun navigate(destination: MainDestination) {
+        if (destination == MainDestination.TASKS && !appComponent.session.isExperimental) return
         if (isBottomTabTransitionRunning) return
         val previous = navigationState.current
         if (!navigationState.navigate(destination)) return
@@ -525,7 +548,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
             .setListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
                     targetView.animate().setListener(null)
-                    if (tabTransitionToken != token) return
+                    if (tabTransitionToken != token || isDestroyed || supportFragmentManager.isDestroyed) return
                     val transaction = supportFragmentManager.beginTransaction()
                     supportFragmentManager.fragments.forEach { fragment ->
                         if (fragment == target) {
@@ -573,6 +596,10 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == MENU_WORKSPACE_SETTINGS && appComponent.session.isExperimental) {
+            navigate(MainDestination.SETTINGS)
+            return true
+        }
         if (item.itemId == android.R.id.home && navigationState.current == MainDestination.ARCHIVE) {
             return navigateBack()
         }
@@ -594,7 +621,14 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
     private fun handleIncomingIntent(intent: Intent) {
         val destination = intent.getStringExtra(EXTRA_DESTINATION)?.let(::parseDestination)
-        if (destination != null && destination != navigationState.current) navigate(destination)
+        intent.removeExtra(EXTRA_DESTINATION)
+        if (destination != null && destination != navigationState.current) {
+            if (isBottomTabTransitionRunning) {
+                tabTransitionToken++
+                cancelTabTransitionAnimations()
+            }
+            navigate(destination)
+        }
         if (intent.action != null) habitsFragment().handleIntent(intent)
         intent.action = null
     }
@@ -656,11 +690,17 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     override fun onDestroy() {
+        tabTransitionToken++
+        cancelTabTransitionAnimations()
         prefs.removeListener(this)
         super.onDestroy()
     }
 
     override fun setBottomNavigationVisible(visible: Boolean, animate: Boolean) {
+        if (experimentalWide) {
+            binding.bottomNavigationContainer.visibility = View.GONE
+            return
+        }
         val container = binding.bottomNavigationContainer
         if (container.height > 0) bottomNavigationNaturalHeight = container.height
         val naturalHeight = bottomNavigationNaturalHeight.takeIf { it > 0 }
@@ -746,6 +786,83 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
     private fun applyAccentColor() {
         updateBottomSelection(navigationState.current)
+        if (::workspaceSidebar.isInitialized) updateAdaptiveNavigation(navigationState.current)
+    }
+
+    private fun setupAdaptiveNavigation() {
+        workspaceSidebar = MainWorkspaceSidebar(this).apply {
+            onDestination = { navigate(it) }
+        }
+        binding.workspaceSidebarHost.addView(workspaceSidebar)
+        val palette = MainTabsThemeBridge.resolve(this)
+        binding.workspaceSecondaryToolbar.apply {
+            androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(this) { toolbar, insets ->
+                val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.statusBars())
+                val cutout = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.displayCutout())
+                val top = maxOf(bars.top, cutout.top)
+                toolbar.setPadding(toolbar.paddingLeft, top, toolbar.paddingRight, 0)
+                val totalHeight = (48 * resources.displayMetrics.density).toInt() + top
+                if (toolbar.layoutParams.height != totalHeight) {
+                    toolbar.layoutParams = toolbar.layoutParams.apply { height = totalHeight }
+                }
+                insets
+            }
+            setBackgroundColor(palette.background)
+            setTitleTextColor(palette.onSurface)
+            menu.add(0, MENU_WORKSPACE_SETTINGS, 0, R.string.settings).apply {
+                setIcon(R.drawable.ic_nav_settings)
+                icon?.setTint(palette.onSurfaceVariant)
+                setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+            }
+            setOnMenuItemClickListener {
+                navigate(MainDestination.SETTINGS)
+                true
+            }
+        }
+    }
+
+    private fun configureWorkspaceFragment(fragment: Fragment) {
+        if (fragment is TasksFragment) {
+            fragment.workspaceNavigator = { workspace ->
+                val destination = MainDestination.entries.firstOrNull {
+                    it.name.equals(workspace, ignoreCase = true)
+                }
+                if (destination != null) navigate(destination)
+            }
+        }
+    }
+
+    private fun updateAdaptiveNavigation(destination: MainDestination) {
+        if (!::workspaceSidebar.isInitialized) return
+        if (appComponent.session.isExperimental) {
+            val palette = MainTabsThemeBridge.resolve(this)
+            androidx.core.view.WindowInsetsControllerCompat(window, binding.root).apply {
+                isAppearanceLightStatusBars = !palette.isDark
+                isAppearanceLightNavigationBars = !palette.isDark
+            }
+        }
+        binding.workspaceSidebarHost.visibility = if (
+            experimentalWide && destination != MainDestination.TASKS
+        ) View.VISIBLE else View.GONE
+        workspaceSidebar.showSelection(destination)
+        binding.workspaceSecondaryToolbar.visibility = if (
+            appComponent.session.isExperimental && !experimentalWide && destination == MainDestination.STATISTICS
+        ) View.VISIBLE else View.GONE
+        androidx.core.view.ViewCompat.requestApplyInsets(binding.workspaceSecondaryToolbar)
+        androidx.core.view.ViewCompat.requestApplyInsets(workspaceSidebar)
+        invalidateOptionsMenu()
+    }
+
+    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
+        val showSettings = appComponent.session.isExperimental &&
+            navigationState.current == MainDestination.HABITS
+        val settings = menu.findItem(MENU_WORKSPACE_SETTINGS) ?: if (showSettings) {
+            menu.add(0, MENU_WORKSPACE_SETTINGS, 100, R.string.settings).apply {
+                setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER)
+            }
+        } else null
+        settings?.isVisible = showSettings
+        return super.onPrepareOptionsMenu(menu)
     }
 
     private fun requestNotificationPermissionAndSchedule() {
@@ -787,7 +904,8 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
     private fun parseDestination(destName: String?): MainDestination? {
         if (destName == "TODAY") return MainDestination.HABITS
-        return destName?.let { runCatching { MainDestination.valueOf(it) }.getOrNull() }
+        val destination = destName?.let { runCatching { MainDestination.valueOf(it) }.getOrNull() }
+        return destination?.takeUnless { it == MainDestination.TASKS && !appComponent.session.isExperimental }
     }
 
     private fun canAnimateMainTabTransition(
@@ -855,6 +973,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         private const val EXTRA_RECREATE_DESTINATION = "main.recreate_destination"
         private const val STATE_CURRENT = "main.current"
         private const val STATE_HISTORY = "main.history"
+        private const val MENU_WORKSPACE_SETTINGS = 0x7110
         private const val TAG_HABITS = "main.habits"
         private const val TAG_TASKS = "main.tasks"
         private const val TAG_REPORTS = "main.reports"

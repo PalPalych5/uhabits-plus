@@ -22,7 +22,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="@string/tasks_title"
-            android:textSize="18sp"
+            android:textSize="24sp"
             android:fontFamily="sans-serif-medium"
             android:includeFontPadding="false" />
 
@@ -34,72 +34,6 @@
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:src="@drawable/ic_toolbar_more_vertical"
             android:contentDescription="Действия со списком" />
-    </LinearLayout>
-
-    <!-- Smart View (dropdown) + Container Filter (dropdown): Single compact 48dp line -->
-    <LinearLayout
-        android:id="@+id/viewContextRow"
-        android:layout_width="match_parent"
-        android:layout_height="48dp"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingStart="16dp"
-        android:paddingEnd="12dp">
-
-        <TextView
-            android:id="@+id/btnSmartView"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:minHeight="48dp"
-            android:maxLines="1"
-            android:ellipsize="end"
-            android:gravity="center_vertical"
-            android:text="Сегодня ▾"
-            android:textSize="20sp"
-            android:fontFamily="sans-serif-medium"
-            android:background="?android:attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true" />
-
-        <!-- Container Filter: Clean text + chevron, NO heavy pill background -->
-        <LinearLayout
-            android:id="@+id/btnContainerFilter"
-            android:layout_width="wrap_content"
-            android:layout_height="48dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:background="?android:attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true">
-
-            <View
-                android:id="@+id/viewFilterColorDot"
-                android:layout_width="6dp"
-                android:layout_height="6dp"
-                android:layout_marginEnd="5dp"
-                android:visibility="gone" />
-
-            <TextView
-                android:id="@+id/tvContainerFilterName"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:textSize="12sp"
-                android:fontFamily="sans-serif"
-                android:text="Все разделы"
-                android:maxWidth="150dp"
-                android:maxLines="1"
-                android:ellipsize="end" />
-
-            <ImageView
-                android:id="@+id/ivContainerFilterArrow"
-                android:layout_width="14dp"
-                android:layout_height="14dp"
-                android:layout_marginStart="3dp"
-                android:src="@drawable/ic_chevron_down" />
-        </LinearLayout>
     </LinearLayout>
 
     <!-- List Info line: Count on the left, Date on the right -->
@@ -198,7 +132,7 @@
         <LinearLayout
             android:id="@+id/layoutQuickAddCollapsed"
             android:layout_width="match_parent"
-            android:layout_height="46dp"
+            android:layout_height="48dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:paddingStart="16dp"
@@ -234,7 +168,7 @@
             <!-- Input Row: field + submit button -->
             <LinearLayout
                 android:layout_width="match_parent"
-                android:layout_height="46dp"
+                android:layout_height="48dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingStart="16dp"
@@ -255,8 +189,8 @@
 
                 <ImageButton
                     android:id="@+id/btnQuickAddSubmit"
-                    android:layout_width="44dp"
-                    android:layout_height="44dp"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
                     android:background="?android:attr/selectableItemBackgroundBorderless"
                     android:src="@drawable/ic_toolbar_add"
                     android:contentDescription="Добавить" />
@@ -266,7 +200,7 @@
             <LinearLayout
                 android:id="@+id/quickAddOptions"
                 android:layout_width="match_parent"
-                android:layout_height="40dp"
+                android:layout_height="48dp"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
                 android:paddingStart="12dp"
@@ -276,7 +210,7 @@
                 <TextView
                     android:id="@+id/quickPlan"
                     android:layout_width="wrap_content"
-                    android:layout_height="36dp"
+                    android:layout_height="48dp"
                     android:gravity="center_vertical"
                     android:paddingStart="8dp"
                     android:paddingEnd="8dp"
@@ -290,7 +224,7 @@
                 <TextView
                     android:id="@+id/quickContainer"
                     android:layout_width="wrap_content"
-                    android:layout_height="36dp"
+                    android:layout_height="48dp"
                     android:gravity="center_vertical"
                     android:paddingStart="8dp"
                     android:paddingEnd="8dp"
@@ -313,7 +247,7 @@
                 <TextView
                     android:id="@+id/quickDeadline"
                     android:layout_width="wrap_content"
-                    android:layout_height="36dp"
+                    android:layout_height="48dp"
                     android:gravity="center_vertical"
                     android:paddingStart="8dp"
                     android:paddingEnd="8dp"

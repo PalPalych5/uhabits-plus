@@ -134,6 +134,11 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         bindViews(view)
         applyTheme(view)
         populateData()
+        savedInstanceState?.let { restored ->
+            etTitle.setText(restored.getString("detailTitle", etTitle.text.toString()))
+            etDescription.setText(restored.getString("detailNotes", etDescription.text.toString()))
+            etNewSubtask.setText(restored.getString("detailSubtask", ""))
+        }
         setupListeners()
         viewReady = true
         return view
@@ -222,6 +227,9 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         tvPlannedDateValue.setTextColor(palette.onSurface)
         tvDeadlineValue.setTextColor(palette.onSurface)
         tvSubtasksCount.setTextColor(palette.onSurfaceVariant)
+        listOf(R.id.tvDetailContainerLabel, R.id.tvDetailPlanLabel, R.id.tvDetailDeadlineLabel).forEach { id ->
+            view.findViewById<TextView>(id).setTextColor(palette.onSurfaceVariant)
+        }
 
         btnClearPlannedDate.setColorFilter(palette.onSurfaceVariant)
         btnClearDeadline.setColorFilter(palette.onSurfaceVariant)
@@ -262,6 +270,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             viewCheckCircle.background = circleDrawable
             ivCheckmark.visibility = View.GONE
         }
+        btnCheck.contentDescription = if (isCompleted) "Возобновить задачу" else "Завершить задачу"
     }
 
     private fun updateContainerDisplay() {
@@ -474,7 +483,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                         saveChanges()
                     }
                     2 -> {
-                        val cal = Calendar.getInstance()
+                        val initial = selectedPlannedDate ?: today
                         DatePickerDialog(
                             requireContext(),
                             { _, year, month, dayOfMonth ->
@@ -482,9 +491,9 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                                 updatePlannedDateDisplay()
                                 saveChanges()
                             },
-                            cal.get(Calendar.YEAR),
-                            cal.get(Calendar.MONTH),
-                            cal.get(Calendar.DAY_OF_MONTH)
+                            initial.year,
+                            initial.month - 1,
+                            initial.day
                         ).show()
                     }
                 }
@@ -493,7 +502,9 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun showDeadlinePicker() {
-        val cal = Calendar.getInstance()
+        val cal = Calendar.getInstance().apply {
+            selectedDeadline?.let { timeInMillis = it }
+        }
         DatePickerDialog(
             requireContext(),
             { _, year, month, dayOfMonth ->
@@ -508,8 +519,8 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                         updateDeadlineDisplay()
                         saveChanges()
                     },
-                    18,
-                    0,
+                    if (selectedDeadline == null) 18 else cal.get(Calendar.HOUR_OF_DAY),
+                    if (selectedDeadline == null) 0 else cal.get(Calendar.MINUTE),
                     true
                 ).show()
             },
@@ -554,6 +565,16 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     override fun onPause() {
         saveChanges()
         super.onPause()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        if (viewReady) {
+            saveChanges()
+            outState.putString("detailTitle", etTitle.text.toString())
+            outState.putString("detailNotes", etDescription.text.toString())
+            outState.putString("detailSubtask", etNewSubtask.text.toString())
+        }
+        super.onSaveInstanceState(outState)
     }
 
     override fun onDismiss(dialog: DialogInterface) {

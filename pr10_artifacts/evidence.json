@@ -1,0 +1,116 @@
+{
+  "date": "2026-10-05",
+  "status": "NATIVE_VISUAL_REVIEW_PENDING",
+  "apk_sha256": "4ec182cc71b0ec632534042dc90b7cedfdc6d6e2ee892fe2d60f2b613ba67f86",
+  "focused_tests": [
+    {
+      "name": "org.isoron.uhabits.activities.tasks.TaskCalendarEventsTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0"
+    },
+    {
+      "name": "org.isoron.uhabits.activities.tasks.TaskContainerScopeTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0"
+    },
+    {
+      "name": "org.isoron.uhabits.activities.tasks.TaskSmartViewTest",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0"
+    },
+    {
+      "name": "org.isoron.uhabits.core.containers.backup.ContainerBackupRestoreTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0"
+    },
+    {
+      "name": "org.isoron.uhabits.core.userTasks.sqlite.SQLiteUserTaskRepositoryTest",
+      "tests": "1",
+      "failures": "0",
+      "errors": "0"
+    },
+    {
+      "name": "org.isoron.uhabits.core.userTasks.UserTaskDomainTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0"
+    }
+  ],
+  "test_total": 21,
+  "production": {
+    "schema_version": 29,
+    "all_tables_and_rows_unchanged": true,
+    "task_tables_absent": true,
+    "database_sha256": "d36a3f9777c892c4572ee1f1cbbdb24faff4e207c8f9f828ea4b9c68959d9ee2"
+  },
+  "restoration": {
+    "experimental_db_byte_identical": true,
+    "experimental_prefs_byte_identical": true,
+    "session_prefs_byte_identical": true,
+    "experimental_db_sha256": "2d0d3ec746861d47bfba2d58dcd126228e2ca3cfb54269b7d80485889dd859ec",
+    "wm_overrides_reset": true,
+    "rotation_restored": "accelerometer=1; user_rotation=0",
+    "airplane_original": "0"
+  },
+  "legacy_tasks_intent_rejected": true,
+  "quick_add_persistence": {
+    "container": "pr10-qa-container-1",
+    "plan": "2026-10-05",
+    "deadline": 1791396000000
+  },
+  "process_death": {
+    "before_pid": 9764,
+    "after_kill": null,
+    "after_reopen_pid": 10007,
+    "container_calendar_draft_restored": true
+  },
+  "video": {
+    "file": "pr10-native-flow.mp4",
+    "seconds": 61.1819,
+    "bytes": 1443449,
+    "moov_finalized": true
+  },
+  "final_crash_log_empty": true,
+  "screenshots": [
+    "00-phone-habits.png",
+    "01-phone-today.png",
+    "02-phone-drawer.png",
+    "03-phone-container.png",
+    "04-phone-calendar.png",
+    "05-phone-task-detail.png",
+    "06-phone-quick-add.png",
+    "07-phone-dark.png",
+    "08-phone-amoled.png",
+    "09-landscape.png",
+    "10-tablet-sidebar-list.png",
+    "11-tablet-calendar.png",
+    "12-legacy-isolation.png",
+    "14-phone-dark-calendar.png",
+    "15-landscape-dark-calendar.png",
+    "16-landscape-dark-list.png",
+    "17-tablet-dark-list.png",
+    "18-tablet-dark-calendar.png",
+    "19-phone-amoled-calendar.png",
+    "20-landscape-amoled-calendar.png",
+    "21-landscape-amoled-list.png",
+    "22-tablet-amoled-list.png",
+    "23-tablet-amoled-calendar.png",
+    "24-phone-deep-tree.png",
+    "25-phone-questions.png",
+    "26-phone-completed.png",
+    "27-phone-empty.png",
+    "28-landscape-detail.png",
+    "29-tablet-detail.png",
+    "30-tablet-calendar-scroll.png",
+    "31-drawer-after-composer.png",
+    "32-landscape-light-calendar.png",
+    "33-landscape-calendar-agenda.png",
+    "34-secondary-settings.png",
+    "35-phone-statistics.png",
+    "36-tablet-statistics.png"
+  ]
+}

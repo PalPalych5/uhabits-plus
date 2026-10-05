@@ -116,7 +116,9 @@ class SettingsSectionFragment : Fragment(), SettingsNavigationController {
         registerBackCallback()
         childFragmentManager.addOnBackStackChangedListener(backStackChangedListener)
         updateNavigationChrome(animateBottomBar = false)
-        view.post { updateNavigationChrome(animateBottomBar = false) }
+        view.post {
+            if (isAdded && this.view === view) updateNavigationChrome(animateBottomBar = false)
+        }
     }
 
     override fun openSettingsSection(sectionId: SettingsSectionId) {

@@ -30,6 +30,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.widget.FrameLayout
+import android.widget.ScrollView
+import android.view.Gravity
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -44,6 +47,7 @@ import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.main.MainNavigationHost
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.settings.SettingsThemePalette
 import org.isoron.uhabits.core.containers.ContainerId
@@ -66,6 +70,21 @@ class TasksFragment : Fragment() {
     private lateinit var orgFacade: HabitOrganizationFacade
     private lateinit var palette: SettingsThemePalette
 
+    var workspaceNavigator: ((String) -> Unit)? = null
+    private lateinit var shellRoot: FrameLayout
+    private lateinit var navigationColumn: LinearLayout
+    private lateinit var representationButton: ImageButton
+    private lateinit var calendarPanel: LinearLayout
+    private var drawerScrim: View? = null
+    private var drawerScroll: ScrollView? = null
+    private var localTreeRoot: ContainerId? = null
+    private val collapsedContainers = mutableSetOf<String>()
+    private var calendarMode = false
+    private var selectedDay = getToday()
+    private var calendarMonth = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1) }
+    private var restoredTitle: String? = null
+    private var wide = false
+
     private var quickPlanned: LocalDate? = null
     private var quickContainer: ContainerId? = null
     private var quickDue: Long? = null
@@ -76,11 +95,6 @@ class TasksFragment : Fragment() {
 
     private lateinit var tvTitle: TextView
     private lateinit var btnTasksOverflow: ImageButton
-    private lateinit var btnSmartView: TextView
-    private lateinit var btnContainerFilter: LinearLayout
-    private lateinit var viewFilterDot: View
-    private lateinit var tvFilterName: TextView
-    private lateinit var ivFilterArrow: ImageView
 
     private lateinit var tvSubtitle: TextView
     private lateinit var tvTasksDate: TextView
@@ -112,13 +126,19 @@ class TasksFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View {
         savedInstanceState?.let {
-            activeSmartView = TaskSmartView.entries[it.getInt("smartView")]
+            activeSmartView = TaskSmartView.entries.getOrElse(it.getInt("smartView")) { TaskSmartView.TODAY }
             selectedContainerFilter = it.getString("filter")?.let(::ContainerId)
             quickPlanned = if (it.containsKey("quickPlan")) LocalDate(it.getInt("quickPlan")) else null
             quickContainer = it.getString("quickContainer")?.let(::ContainerId)
             quickDue = if (it.containsKey("quickDue")) it.getLong("quickDue") else null
             quickExpanded = it.getBoolean("quickExpanded", false)
             quickDraftRestored = true
+            restoredTitle = it.getString("quickTitle")
+            calendarMode = it.getBoolean("calendarMode")
+            selectedDay = LocalDate(it.getInt("selectedDay", getToday().daysSince2000))
+            calendarMonth.timeInMillis = it.getLong("calendarMonth", calendarMonth.timeInMillis)
+            localTreeRoot = it.getString("localTreeRoot")?.let(::ContainerId)
+            collapsedContainers.addAll(it.getStringArrayList("collapsedContainers").orEmpty())
         }
         val app = requireContext().applicationContext as HabitsApplication
         taskRepo = app.component.userTaskRepository
@@ -136,14 +156,13 @@ class TasksFragment : Fragment() {
             insets
         }
         bindViews(view)
-        setupSmartViewSelector()
         setupOverflowMenu()
         setupRecyclerView()
         setupQuickAdd()
-        setupContainerFilter()
+        setupAdaptiveNavigation(view)
         applyTheme(view)
         loadTasks()
-        return view
+        return shellRoot
     }
 
     override fun onResume() {
@@ -162,6 +181,12 @@ class TasksFragment : Fragment() {
         outState.putString("quickContainer", quickContainer?.value)
         quickDue?.let { outState.putLong("quickDue", it) }
         outState.putBoolean("quickExpanded", quickExpanded)
+        outState.putString("quickTitle", if (::etQuickAddTitle.isInitialized) etQuickAddTitle.text?.toString() else restoredTitle)
+        outState.putBoolean("calendarMode", calendarMode)
+        outState.putInt("selectedDay", selectedDay.daysSince2000)
+        outState.putLong("calendarMonth", calendarMonth.timeInMillis)
+        outState.putString("localTreeRoot", localTreeRoot?.value)
+        outState.putStringArrayList("collapsedContainers", ArrayList(collapsedContainers))
         super.onSaveInstanceState(outState)
     }
 
@@ -174,11 +199,6 @@ class TasksFragment : Fragment() {
     private fun bindViews(view: View) {
         tvTitle = view.findViewById(R.id.tvTasksTitle)
         btnTasksOverflow = view.findViewById(R.id.btnTasksOverflow)
-        btnSmartView = view.findViewById(R.id.btnSmartView)
-        btnContainerFilter = view.findViewById(R.id.btnContainerFilter)
-        viewFilterDot = view.findViewById(R.id.viewFilterColorDot)
-        tvFilterName = view.findViewById(R.id.tvContainerFilterName)
-        ivFilterArrow = view.findViewById(R.id.ivContainerFilterArrow)
 
         tvSubtitle = view.findViewById(R.id.tvTasksSubtitle)
         tvTasksDate = view.findViewById(R.id.tvTasksDate)
@@ -216,16 +236,13 @@ class TasksFragment : Fragment() {
         btnTasksOverflow.setColorFilter(palette.onSurfaceVariant)
         tvSubtitle.setTextColor(palette.onSurfaceVariant)
         tvTasksDate.setTextColor(palette.onSurfaceVariant)
-        tvFilterName.setTextColor(palette.onSurfaceVariant)
-        ivFilterArrow.setColorFilter(palette.onSurfaceVariant)
 
-        // Concept A: Container filter is clean secondary text + chevron, NO heavy pill background!
 
         view.findViewById<ImageView>(R.id.ivEmptyIcon).setColorFilter(palette.onSurfaceVariant)
         tvEmptyTitle.setTextColor(palette.onSurface)
         tvEmptyMessage.setTextColor(palette.onSurfaceVariant)
 
-        // Concept A: Quick Add is docked at the bottom with top hairline divider
+        // Keep quick capture docked to the current workspace.
         layoutQuickAddContainer.setBackgroundColor(palette.surface)
         quickAddDivider.setBackgroundColor(palette.divider)
         ivQuickAddIcon.setColorFilter(palette.accent)
@@ -239,6 +256,7 @@ class TasksFragment : Fragment() {
         quickDeadline.setTextColor(palette.onSurfaceVariant)
 
         updateSmartViewLabel()
+        if (::navigationColumn.isInitialized) renderNavigation()
     }
 
     private fun setupOverflowMenu() {
@@ -246,20 +264,24 @@ class TasksFragment : Fragment() {
             val popup = PopupMenu(requireContext(), btnTasksOverflow)
             popup.menu.add(0, 1, 0, "Все задачи")
             popup.menu.add(0, 2, 1, "Завершённые")
+            popup.menu.add(0, 3, 2, "Настройки")
             popup.setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     1 -> {
+                        selectedContainerFilter = null
                         activeSmartView = TaskSmartView.ALL
                         updateSmartViewLabel()
                         loadTasks()
                         true
                     }
                     2 -> {
+                        selectedContainerFilter = null
                         activeSmartView = TaskSmartView.COMPLETED
                         updateSmartViewLabel()
                         loadTasks()
                         true
                     }
+                    3 -> { workspaceNavigator?.invoke("Settings"); true }
                     else -> false
                 }
             }
@@ -267,23 +289,8 @@ class TasksFragment : Fragment() {
         }
     }
 
-    private fun setupSmartViewSelector() {
-        btnSmartView.setOnClickListener {
-            val modes = TaskSmartView.entries
-            AlertDialog.Builder(requireContext())
-                .setTitle("Показать задачи")
-                .setSingleChoiceItems(modes.map { it.displayName }.toTypedArray(), activeSmartView.ordinal) { dialog, which ->
-                    activeSmartView = modes[which]
-                    updateSmartViewLabel()
-                    loadTasks()
-                    dialog.dismiss()
-                }.show()
-        }
-    }
-
     private fun updateSmartViewLabel() {
-        btnSmartView.text = "${activeSmartView.displayName} ▾"
-        btnSmartView.setTextColor(palette.onSurface)
+        tvTitle.text = selectedContainerFilter?.let { orgFacade.availableContainers().find { item -> item.key == it.value }?.name } ?: activeSmartView.displayName
     }
 
     private fun setupRecyclerView() {
@@ -309,17 +316,17 @@ class TasksFragment : Fragment() {
     private fun setupQuickAdd() {
         fun refreshOptionLabels() {
             val planText = quickPlanned?.let {
-                if (it == getToday()) "📅 Сегодня" else "📅 ${it.day}.${it.month}"
-            } ?: "📅 План"
+                if (it == getToday()) "○ Сегодня" else "○ ${it.day}.${it.month}"
+            } ?: "○ План"
             quickPlan.text = planText
             quickPlan.setTextColor(if (quickPlanned != null) palette.accent else palette.onSurfaceVariant)
 
             val containerItem = orgFacade.availableContainers().find { it.key == quickContainer?.value }
-            val containerText = containerItem?.let { "📁 ${it.name}" } ?: "📁 Раздел"
+            val containerText = containerItem?.let { "▣ ${it.name}" } ?: "▣ Раздел"
             quickContainerView.text = containerText
             quickContainerView.setTextColor(if (quickContainer != null) palette.accent else palette.onSurfaceVariant)
 
-            val deadlineText = if (quickDue == null) "🕒 Дедлайн" else "🕒 Дедлайн ✓"
+            val deadlineText = if (quickDue == null) "◆ Дедлайн" else "◆ Дедлайн ✓"
             quickDeadline.text = deadlineText
             quickDeadline.setTextColor(if (quickDue != null) palette.accent else palette.onSurfaceVariant)
         }
@@ -411,64 +418,31 @@ class TasksFragment : Fragment() {
             }
             if (quickContainer != selectedContainerFilter) {
                 selectedContainerFilter = quickContainer
-                updateContainerFilterView()
+                updateSmartViewLabel()
             }
             loadTasks()
         }
 
         btnQuickAddSubmit.setOnClickListener { submitQuickAdd() }
+        restoredTitle?.let { etQuickAddTitle.setText(it); restoredTitle = null }
         etQuickAddTitle.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) { submitQuickAdd(); true } else false
         }
         refreshOptionLabels()
     }
 
-    private fun setupContainerFilter() {
-        btnContainerFilter.setOnClickListener {
-            val containers = orgFacade.availableContainers()
-            val names = mutableListOf("Все разделы")
-            names.addAll(containers.map { it.name })
-
-            AlertDialog.Builder(requireContext())
-                .setTitle("Фильтр по разделу")
-                .setItems(names.toTypedArray()) { _, which ->
-                    if (which == 0) {
-                        selectedContainerFilter = null
-                    } else {
-                        selectedContainerFilter = ContainerId(containers[which - 1].key)
-                    }
-                    updateContainerFilterView()
-                    loadTasks()
-                }
-                .show()
-        }
-        updateContainerFilterView()
-    }
-
-    private fun updateContainerFilterView() {
-        val cid = selectedContainerFilter
-        if (cid == null) {
-            viewFilterDot.visibility = View.GONE
-            tvFilterName.text = "Все разделы"
-        } else {
-            val containers = orgFacade.availableContainers()
-            val item = containers.find { it.key == cid.value }
-            if (item != null) {
-                viewFilterDot.visibility = View.VISIBLE
-                val dotColor = TaskThemeUtils.resolvePaletteColor(requireContext(), item.color, palette.accent)
-                viewFilterDot.background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(dotColor)
-                }
-                tvFilterName.text = item.name
-            } else {
-                viewFilterDot.visibility = View.GONE
-                tvFilterName.text = "Раздел"
-            }
-        }
-    }
-
     fun loadTasks() {
+        // A restored context may have been archived/deleted while this workspace was hidden.
+        // availableContainers excludes deleted and effectively archived branches.
+        val availableContainers = orgFacade.availableContainers()
+        val visibleContainerIds = availableContainers.mapTo(mutableSetOf()) { it.key }
+        if (selectedContainerFilter?.value?.let { it !in visibleContainerIds } == true) {
+            selectedContainerFilter = null
+            activeSmartView = TaskSmartView.ALL
+        }
+        if (localTreeRoot?.value?.let { it !in visibleContainerIds } == true) {
+            localTreeRoot = null
+        }
         val allTasks = taskRepo.getAll()
         val allRoots = allTasks.filter { it.parentTaskId == null }
 
@@ -487,13 +461,21 @@ class TasksFragment : Fragment() {
 
         // 1. Container filter
         val containerFiltered = if (selectedContainerFilter != null) {
-            allRoots.filter { it.containerId == selectedContainerFilter }
+            val ids = TaskContainerScope.ids(
+                selectedContainerFilter!!,
+                orgFacade.containerQueries?.subtreeIds(selectedContainerFilter!!).orEmpty(),
+                orgFacade.availableContainers().map { ContainerId(it.key) }.toSet(),
+            )
+            allRoots.filter { it.containerId in ids }
         } else {
             allRoots
         }
 
         // 2. Smart View filter
         val viewFiltered = containerFiltered.filter { activeSmartView.matches(it, today, nowMillis) }
+        updateSmartViewLabel()
+        renderNavigation()
+        renderCalendar(viewFiltered)
 
         // Sort: pending by hard overdue first, then missed plan, then sortOrder, then plannedDate; completed by completedAt DESC
         val sorted = if (activeSmartView == TaskSmartView.COMPLETED) {
@@ -507,7 +489,7 @@ class TasksFragment : Fragment() {
             )
         }
 
-        val containerItemMap = orgFacade.availableContainers().associateBy { ContainerId(it.key) }
+        val containerItemMap = availableContainers.associateBy { ContainerId(it.key) }
 
         adapter.updateData(
             newTasks = sorted,
@@ -530,7 +512,10 @@ class TasksFragment : Fragment() {
         }
 
         // Empty view visibility
-        if (sorted.isEmpty()) {
+        if (calendarMode) {
+            rvTasks.visibility = View.GONE
+            layoutEmpty.visibility = View.GONE
+        } else if (sorted.isEmpty()) {
             rvTasks.visibility = View.GONE
             layoutEmpty.visibility = View.VISIBLE
             updateEmptyMessage()
@@ -578,6 +563,261 @@ class TasksFragment : Fragment() {
             rem10 == 1 -> "задача"
             rem10 in 2..4 -> "задачи"
             else -> "задач"
+        }
+    }
+
+
+    private fun navText(label: String, selected: Boolean = false, action: (() -> Unit)? = null): TextView = TextView(requireContext()).apply {
+        text = label
+        textSize = 15f
+        minHeight = dpInt(48f)
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(dpInt(16f), dpInt(8f), dpInt(12f), dpInt(8f))
+        setTextColor(if (selected) palette.accent else palette.onSurface)
+        if (selected) setBackgroundColor(palette.surface)
+        action?.let { callback ->
+            val value = android.util.TypedValue()
+            requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, value, true)
+            if (!selected) setBackgroundResource(value.resourceId)
+            isFocusable = true
+            setOnClickListener { callback() }
+        }
+    }
+
+    private fun setupAdaptiveNavigation(content: View) {
+        wide = resources.configuration.screenWidthDp >= 600
+        if (wide) {
+            // Phone capture is inset by the host's bottom navigation. Wide mode removes
+            // that host, so its content must own navigation-bar and keyboard clearance.
+            val initialBottom = content.paddingBottom
+            androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(content) { v, insets ->
+                val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
+                v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, initialBottom + maxOf(bars.bottom, ime.bottom))
+                insets
+            }
+        }
+        shellRoot = FrameLayout(requireContext())
+        val body = LinearLayout(requireContext()).apply { orientation = LinearLayout.HORIZONTAL }
+        shellRoot.addView(body, FrameLayout.LayoutParams(-1, -1))
+        navigationColumn = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
+        val navigationScroll = ScrollView(requireContext()).apply {
+            setBackgroundColor(palette.background)
+            addView(navigationColumn)
+            androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(this) { v, insets ->
+                val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                v.setPadding(0, bars.top, 0, bars.bottom)
+                insets
+            }
+        }
+        if (wide) body.addView(navigationScroll, LinearLayout.LayoutParams(dpInt(280f), -1))
+        body.addView(content, LinearLayout.LayoutParams(0, -1, 1f))
+        val header = content.findViewById<LinearLayout>(R.id.tasksHeader)
+        val hamburger = ImageButton(requireContext()).apply {
+            setImageResource(R.drawable.ic_tasks_menu)
+            setColorFilter(palette.onSurfaceVariant)
+            setPadding(dpInt(12f), dpInt(12f), dpInt(12f), dpInt(12f))
+            setBackgroundResource(run {
+                        val value = android.util.TypedValue()
+                        requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, value, true)
+                        value.resourceId
+                    })
+            setOnClickListener { openNavigation() }
+            contentDescription = "Открыть навигацию задач"
+            visibility = if (wide) View.GONE else View.VISIBLE
+        }
+        header.addView(hamburger, 0, LinearLayout.LayoutParams(dpInt(48f), dpInt(48f)))
+        representationButton = ImageButton(requireContext()).apply {
+            setPadding(dpInt(12f), dpInt(12f), dpInt(12f), dpInt(12f))
+            setBackgroundResource(run {
+                        val value = android.util.TypedValue()
+                        requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, value, true)
+                        value.resourceId
+                    })
+            setColorFilter(palette.onSurfaceVariant)
+            setOnClickListener { calendarMode = !calendarMode; loadTasks() }
+        }
+        header.addView(representationButton, header.childCount - 1, LinearLayout.LayoutParams(dpInt(48f), dpInt(48f)))
+        tvTitle.setOnLongClickListener {
+            selectedContainerFilter?.let { id ->
+                val path = orgFacade.availableContainers().find { it.key == id.value }?.path
+                AlertDialog.Builder(requireContext()).setMessage(path ?: tvTitle.text).setPositiveButton("OK", null).show()
+            }
+            true
+        }
+        calendarPanel = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
+        (rvTasks.parent as ViewGroup).addView(calendarPanel, ViewGroup.LayoutParams(-1, -1))
+        if (!wide) drawerScroll = navigationScroll
+        renderNavigation()
+    }
+
+    private fun openNavigation() {
+        if (wide || drawerScrim != null) return
+        etQuickAddTitle.clearFocus()
+        (requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
+            ?.hideSoftInputFromWindow(etQuickAddTitle.windowToken, 0)
+        (activity as? MainNavigationHost)?.setBottomNavigationVisible(false, false)
+        (shellRoot.getChildAt(0) as ViewGroup).descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        shellRoot.getChildAt(0).importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        drawerScrim = View(requireContext()).apply {
+            setBackgroundColor(Color.argb(120, 0, 0, 0))
+            contentDescription = "Закрыть навигацию задач"
+            isFocusable = true
+            setOnClickListener { closeNavigation() }
+        }
+        shellRoot.addView(drawerScrim, FrameLayout.LayoutParams(-1, -1))
+        shellRoot.addView(drawerScroll, FrameLayout.LayoutParams(dpInt(300f), -1, Gravity.START))
+        drawerScroll?.let { androidx.core.view.ViewCompat.requestApplyInsets(it) }
+        navigationColumn.getChildAt(0)?.requestFocus()
+    }
+
+    private fun closeNavigation() {
+        if (drawerScrim != null) (activity as? MainNavigationHost)?.setBottomNavigationVisible(true, false)
+        drawerScrim?.let { shellRoot.removeView(it) }
+        drawerScrim = null
+        (shellRoot.getChildAt(0) as ViewGroup).descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        shellRoot.getChildAt(0).importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+        if (!wide) drawerScroll?.let { shellRoot.removeView(it) }
+    }
+
+    fun onBackPressed(): Boolean {
+        if (drawerScrim != null) {
+            if (localTreeRoot != null) {
+                localTreeRoot = orgFacade.containerQueries?.find(localTreeRoot!!)?.parentId
+                renderNavigation()
+            } else closeNavigation()
+            return true
+        }
+        if (quickExpanded) {
+            quickExpanded = false
+            layoutQuickAddExpanded.visibility = View.GONE
+            layoutQuickAddCollapsed.visibility = View.VISIBLE
+            (requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)?.hideSoftInputFromWindow(etQuickAddTitle.windowToken, 0)
+            return true
+        }
+        return false
+    }
+
+    private fun renderNavigation() {
+        navigationColumn.removeAllViews()
+        navigationColumn.setBackgroundColor(palette.background)
+        if (wide) {
+            listOf("Habits" to "Привычки", "Tasks" to "Задачи", "Statistics" to "Статистика").forEach { (key, name) ->
+                navigationColumn.addView(navText(name, key == "Tasks") { workspaceNavigator?.invoke(key) })
+            }
+        } else navigationColumn.addView(navText("Навигация задач") { closeNavigation() })
+        val roots = taskRepo.getAll().filter { it.parentTaskId == null }
+        TaskSmartView.entries.forEach { smart ->
+            val count = roots.count { smart.matches(it, getToday(), System.currentTimeMillis()) }
+            navigationColumn.addView(navText(smart.displayName + "    " + count, selectedContainerFilter == null && activeSmartView == smart) {
+                selectedContainerFilter = null
+                activeSmartView = smart
+                closeNavigation()
+                loadTasks()
+            })
+        }
+        navigationColumn.addView(navText("РАЗДЕЛЫ").apply { textSize = 12f; setTextColor(palette.onSurfaceVariant) })
+        val queries = orgFacade.containerQueries
+        val activeContainerIds = orgFacade.availableContainers().map { ContainerId(it.key) }.toSet()
+        localTreeRoot?.let { id ->
+            queries?.find(id)?.name?.let { name -> navigationColumn.addView(navText(name).apply { setTextColor(palette.accent) }) }
+        }
+        if (queries != null) {
+            localTreeRoot?.let { id ->
+                navigationColumn.addView(navText("‹ " + (queries.find(id)?.parentId?.let { queries.find(it)?.name } ?: "Все разделы")) {
+                    localTreeRoot = queries.find(id)?.parentId
+                    renderNavigation()
+                })
+            }
+            fun addContainer(item: org.isoron.uhabits.core.containers.Container, depth: Int) {
+                val children = queries.children(item.id)
+                val subtree = TaskContainerScope.ids(item.id, queries.subtreeIds(item.id), activeContainerIds)
+                val count = roots.count { !it.isCompleted && it.containerId in subtree }
+                val row = LinearLayout(requireContext()).apply { orientation = LinearLayout.HORIZONTAL }
+                row.addView(navText(item.name + "  " + count, selectedContainerFilter == item.id) {
+                    selectedContainerFilter = item.id
+                    activeSmartView = TaskSmartView.ALL
+                    closeNavigation()
+                    loadTasks()
+                }.apply { setPadding(dpInt(16f + depth * 16f), dpInt(8f), dpInt(4f), dpInt(8f)) }, LinearLayout.LayoutParams(0, -2, 1f))
+                if (children.isNotEmpty()) row.addView(ImageButton(requireContext()).apply {
+                    setImageResource(if (depth >= 2 || item.id.value in collapsedContainers) R.drawable.ic_chevron_right else R.drawable.ic_chevron_down)
+                    setColorFilter(palette.onSurfaceVariant)
+                    setBackgroundResource(run {
+                        val value = android.util.TypedValue()
+                        requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, value, true)
+                        value.resourceId
+                    })
+                    setPadding(dpInt(12f), dpInt(12f), dpInt(12f), dpInt(12f))
+                    contentDescription = "Раскрыть раздел " + item.name
+                    setOnClickListener {
+                        if (depth >= 2) localTreeRoot = item.id
+                        else if (!collapsedContainers.add(item.id.value)) collapsedContainers.remove(item.id.value)
+                        renderNavigation()
+                    }
+                }, LinearLayout.LayoutParams(dpInt(48f), dpInt(48f)))
+                navigationColumn.addView(row)
+                if (depth < 2 && item.id.value !in collapsedContainers) children.forEach { addContainer(it, depth + 1) }
+            }
+            val local = localTreeRoot?.let { queries.find(it) }
+            if (local != null) addContainer(local, 0) else queries.roots().forEach { addContainer(it, 0) }
+        }
+        navigationColumn.addView(navText("Настройки") { closeNavigation(); workspaceNavigator?.invoke("Settings") })
+    }
+
+    private fun renderCalendar(tasks: List<UserTask>) {
+        representationButton.setImageResource(if (calendarMode) R.drawable.ic_cat_list_todo else R.drawable.ic_cat_calendar)
+        representationButton.contentDescription = if (calendarMode) "Показать список" else "Показать календарь"
+        calendarPanel.visibility = if (calendarMode) View.VISIBLE else View.GONE
+        if (!calendarMode) return
+        calendarPanel.removeAllViews()
+        val scroll = ScrollView(requireContext())
+        val content = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
+        scroll.addView(content)
+        calendarPanel.addView(scroll, LinearLayout.LayoutParams(-1, -1))
+        val monthRow = LinearLayout(requireContext())
+        fun changeMonth(delta: Int) { calendarMonth.add(Calendar.MONTH, delta); renderCalendar(tasks) }
+        monthRow.addView(navText("‹", action = { changeMonth(-1) }), LinearLayout.LayoutParams(dpInt(48f), -2))
+        monthRow.addView(navText(SimpleDateFormat("LLLL yyyy", Locale("ru")).format(calendarMonth.time)) {
+            calendarMonth = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1) }; selectedDay = getToday(); renderCalendar(tasks)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        monthRow.addView(navText("›", action = { changeMonth(1) }), LinearLayout.LayoutParams(dpInt(48f), -2))
+        content.addView(monthRow)
+        val events = TaskCalendarEvents.from(tasks)
+        val labels = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
+        val weekdays = LinearLayout(requireContext())
+        labels.forEach { weekdays.addView(navText(it).apply { textSize = 12f; gravity = Gravity.CENTER; setPadding(0,0,0,0); minHeight = dpInt(24f) }, LinearLayout.LayoutParams(0, -2, 1f)) }
+        content.addView(weekdays)
+        val month = calendarMonth.get(Calendar.MONTH) + 1
+        val year = calendarMonth.get(Calendar.YEAR)
+        val offset = (calendarMonth.get(Calendar.DAY_OF_WEEK) + 5) % 7
+        val days = calendarMonth.getActualMaximum(Calendar.DAY_OF_MONTH)
+        for (week in 0 until (offset + days + 6) / 7) {
+            val row = LinearLayout(requireContext())
+            for (column in 0..6) {
+                val number = week * 7 + column - offset + 1
+                val day = if (number in 1..days) LocalDate(year, month, number) else null
+                val dayEvents = events.filter { it.day == day }
+                val markers = (if (dayEvents.any { it.kind == TaskCalendarEventKind.PLAN }) "○" else "") + (if (dayEvents.any { it.kind == TaskCalendarEventKind.DEADLINE }) "◆" else "")
+                row.addView(navText(if (day == null) "" else number.toString() + (if (markers.isEmpty()) "" else "\n" + markers), day == selectedDay,
+                    if (day == null) null else ({ selectedDay = day; renderCalendar(tasks) })).apply {
+                    gravity = Gravity.CENTER; textSize = 14f; setPadding(0, dpInt(4f), 0, dpInt(4f))
+                    contentDescription = if (day == null) "" else "${number}.${month}.${year}, ${dayEvents.size} событий"
+                }, LinearLayout.LayoutParams(0, dpInt(48f), 1f))
+            }
+            content.addView(row)
+        }
+        content.addView(navText("○ План     ◆ Дедлайн").apply { textSize = 12f; setTextColor(palette.onSurfaceVariant); minHeight = dpInt(32f) })
+        content.addView(navText("${selectedDay.day}.${selectedDay.month} · Повестка дня").apply { setTextColor(palette.accent) })
+        val agenda = events.filter { it.day == selectedDay }
+        if (agenda.isEmpty()) content.addView(navText("Нет задач на выбранный день").apply { setTextColor(palette.onSurfaceVariant) })
+        agenda.forEach { event ->
+            val kind = if (event.kind == TaskCalendarEventKind.PLAN) "○ План" else "◆ Дедлайн " + SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(event.task.deadline!!))
+            content.addView(navText(event.task.title + "\n" + kind) {
+                val sheet = TaskDetailBottomSheet.newInstance(event.task.id)
+                sheet.onTaskUpdatedListener = { loadTasks() }
+                sheet.show(childFragmentManager, "task_detail")
+            }.apply { minHeight = dpInt(64f) })
         }
     }
 

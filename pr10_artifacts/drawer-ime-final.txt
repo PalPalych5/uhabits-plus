@@ -1,0 +1,3 @@
+      mImeWindowVis=0
+      mInputShown=false
+  mIsInputViewShown=true mStatusIcon=0

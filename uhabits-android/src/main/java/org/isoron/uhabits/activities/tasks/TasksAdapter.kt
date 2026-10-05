@@ -80,7 +80,9 @@ class TasksAdapter(
                 val oldT = tasks[oldItemPosition]
                 val newT = newTasks[newItemPosition]
                 return oldT == newT &&
-                    subtaskCounts[oldT.id] == newSubtaskCounts[newT.id]
+                    subtaskCounts[oldT.id] == newSubtaskCounts[newT.id] &&
+                    today == currentToday &&
+                    oldT.isHardOverdue(nowMillis) == newT.isHardOverdue(currentTimeMillis)
             }
         })
         tasks = newTasks
@@ -186,61 +188,42 @@ class TasksAdapter(
                 viewContainerDot.visibility = View.GONE
             }
 
-            // Date / Deadline semantics (if not completed)
+            // Plan and deadline are independent; neither date suppresses the other.
             if (!task.isCompleted) {
-                val isHard = task.isHardOverdue(nowMillis)
-                val isMissed = task.isMissedPlan(today, nowMillis)
-
-                when {
-                    isHard -> {
-                        if (hasElement) ssb.append(" · ")
-                        val start = ssb.length
-                        val deadlineStr = task.deadline?.let {
-                            val d = Date(it)
-                            val cal = java.util.Calendar.getInstance().apply { time = d }
-                            val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
-                            val month = cal.get(java.util.Calendar.MONTH) + 1
-                            "Дедлайн прошёл · $day.${month.toString().padStart(2, '0')}"
-                        } ?: "Просрочено"
-                        ssb.append(deadlineStr)
-                        val dangerColor = if (palette.isDark) 0xFFFF8C8C.toInt() else 0xFFDC2626.toInt()
-                        ssb.setSpan(ForegroundColorSpan(dangerColor), start, ssb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                        hasElement = true
-                    }
-                    isMissed -> {
-                        if (hasElement) ssb.append(" · ")
-                        val start = ssb.length
-                        val p = task.plannedDate
-                        val dateText = if (p != null) "${p.day}.${p.month.toString().padStart(2, '0')}" else ""
-                        ssb.append("План · $dateText")
+                task.plannedDate?.let { planned ->
+                    if (hasElement) ssb.append(" · ")
+                    val start = ssb.length
+                    val dateText = "${planned.day}.${planned.month.toString().padStart(2, '0')}"
+                    val missed = task.isMissedPlan(today, nowMillis)
+                    ssb.append(when {
+                        missed -> "План прошёл · $dateText"
+                        planned == today -> "План · Сегодня"
+                        else -> "План · $dateText"
+                    })
+                    if (missed) {
                         val amberColor = if (palette.isDark) 0xFFE9B454.toInt() else 0xFFD97706.toInt()
                         ssb.setSpan(ForegroundColorSpan(amberColor), start, ssb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                        hasElement = true
                     }
-                    task.plannedDate != null && task.plannedDate == today -> {
-                        if (hasElement) ssb.append(" · ")
-                        ssb.append("Сегодня")
-                        hasElement = true
+                    hasElement = true
+                }
+                task.deadline?.let { deadline ->
+                    if (hasElement) ssb.append("\n")
+                    val start = ssb.length
+                    val date = Date(deadline)
+                    val cal = java.util.Calendar.getInstance().apply { time = date }
+                    val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
+                    val month = cal.get(java.util.Calendar.MONTH) + 1
+                    val time = timeFormat.format(date)
+                    val overdue = task.isHardOverdue(nowMillis)
+                    val prefix = if (overdue) "Дедлайн прошёл" else "Дедлайн"
+                    ssb.append("$prefix · $day.${month.toString().padStart(2, '0')}, $time")
+                    if (overdue) {
+                        val dangerColor = if (palette.isDark) 0xFFFF8C8C.toInt() else 0xFFDC2626.toInt()
+                        ssb.setSpan(ForegroundColorSpan(dangerColor), start, ssb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
                     }
-                    task.plannedDate != null -> {
-                        if (hasElement) ssb.append(" · ")
-                        val p = task.plannedDate!!
-                        ssb.append("План · ${p.day}.${p.month.toString().padStart(2, '0')}")
-                        hasElement = true
-                    }
-                    task.deadline != null -> {
-                        if (hasElement) ssb.append(" · ")
-                        val d = Date(task.deadline!!)
-                        val cal = java.util.Calendar.getInstance().apply { time = d }
-                        val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
-                        val month = cal.get(java.util.Calendar.MONTH) + 1
-                        val time = timeFormat.format(d)
-                        ssb.append("Дедлайн · $day.${month.toString().padStart(2, '0')}, $time")
-                        hasElement = true
-                    }
+                    hasElement = true
                 }
             }
-
             // Subtasks counter
             val counts = subtaskCounts[task.id]
             if (counts != null && counts.second > 0) {
@@ -251,6 +234,8 @@ class TasksAdapter(
 
             if (hasElement) {
                 layoutTaskMeta.visibility = View.VISIBLE
+                tvTaskMeta.setSingleLine(false)
+                tvTaskMeta.maxLines = 3
                 tvTaskMeta.text = ssb
                 tvTaskMeta.setTextColor(palette.onSurfaceVariant)
             } else {
