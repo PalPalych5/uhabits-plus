@@ -69,7 +69,8 @@ data class ReconcileReport(
  * - Temporal bounds: sessions ending before a rule's [SourceRule.effectiveFrom] are not attributed by that rule.
  * - Rule deduplication & conflict detection: overlapping rules targeting the same habit are deduplicated
  *   if harmonious or rejected if conflicting.
- * - Reversibility / Reconciliation: disabling or removing rules revokes derived contributions via tombstoning.
+ * - Historical attributions survive rule disablement/removal and explicit corrections survive retries.
+ * - Reversal requires an explicit historical correction operation.
  */
 class SourceRuleAttributionService(
     private val ruleRepository: SourceRuleRepository,
@@ -97,6 +98,17 @@ class SourceRuleAttributionService(
         val outcomes = mutableListOf<AttributionOutcome>()
 
         for ((targetHabit, rulesForTarget) in rulesByTarget) {
+            // Existing attribution is historical, including an explicit correction tombstone.
+            // Do not select a new winning rule or reinterpret the value from today's configuration.
+            val historical = contributionRepository.getBySource(
+                ContributionSourceType.FOCUS_SESSION, session.id.value, includeRemoved = true,
+            ).firstOrNull { it.targetHabit == targetHabit }
+            if (historical != null) {
+                if (historical.isActive) {
+                    outcomes.add(AttributionOutcome.Attributed(historical, wasInserted = false))
+                }
+                continue
+            }
             // Check temporal eligibility
             val eligibleRules = rulesForTarget.filter { session.endedAt >= it.effectiveFrom }
             if (eligibleRules.isEmpty()) {
@@ -182,7 +194,9 @@ class SourceRuleAttributionService(
     }
 
     /**
-     * Revokes all active contributions derived from [ruleId] by tombstoning them.
+     * Explicit historical correction: revokes ALL active contributions derived from [ruleId].
+     * Never call as a side effect of disabling/removing a rule. For one session/target,
+     * use [ContributionService.revokeFocusSessionContribution] instead.
      */
     fun revokeContributionsForRule(ruleId: SourceRuleId, now: Long): Int {
         val activeContributions = contributionRepository.getByRule(ruleId, includeRemoved = false)
@@ -197,29 +211,15 @@ class SourceRuleAttributionService(
     }
 
     /**
-     * Reconciles all sessions against active rules and revokes orphan contributions
-     * whose source rule has been removed or disabled.
+     * Adds missing attributions against currently active rules. Preserves historical
+     * contributions (including correction tombstones), regardless of current rule state.
      */
     fun reconcileAll(sessions: List<FocusSession>, now: Long): ReconcileReport {
         var created = 0
         var alreadyPresent = 0
-        var revoked = 0
         var incompatible = 0
 
-        // 1. Revoke contributions whose rules are no longer active
-        val allContributions = contributionRepository.getAll(includeRemoved = false)
-        val activeRuleIds = ruleRepository.getActiveRules().map { it.id }.toSet()
-        for (c in allContributions) {
-            val ruleId = c.sourceRuleId
-            if (ruleId != null && ruleId !in activeRuleIds) {
-                val res = contributionRepository.removeById(c.id, now)
-                if (res == ContributionRemovalResult.REMOVED) {
-                    revoked++
-                }
-            }
-        }
-
-        // 2. Attribute all sessions
+        // Rule state controls new attribution; it never invalidates existing ledger facts.
         for (session in sessions) {
             val outcomes = attributeSession(session, now)
             for (outcome in outcomes) {
@@ -236,7 +236,7 @@ class SourceRuleAttributionService(
         return ReconcileReport(
             contributionsCreated = created,
             contributionsAlreadyPresent = alreadyPresent,
-            contributionsRevoked = revoked,
+            contributionsRevoked = 0,
             skippedIncompatible = incompatible,
         )
     }

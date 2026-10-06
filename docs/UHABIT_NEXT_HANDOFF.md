@@ -3,7 +3,7 @@
 > Этот файл является первым документом, который должен читать агент перед работой над UHabit Next.  
 > Если фактическое состояние Git противоречит этому файлу, агент обязан проверить Git/код и обновить handoff, а не слепо доверять устаревшему статусу.
 
-Last verified: **2026-10-05, Asia/Novosibirsk**. Maintainer: текущая работающая сессия Codex / Antigravity. Это живой статус, а не замена ТЗ, исследованиям или Foundation design.
+Last verified: **2026-10-06, Asia/Novosibirsk**. Maintainer: текущая работающая сессия Codex / Antigravity. Это живой статус, а не замена ТЗ, исследованиям или Foundation design.
 
 **Canonical location:** `C:/Users/Pavel/source/repos/uhabits-plus/docs/UHABIT_NEXT_HANDOFF.md`. На этом компьютере все агенты, включая работающих в другом worktree, читают и обновляют именно этот файл. Канонические документы (UHABIT_NEXT_HANDOFF.md, UHabit_Next_Spec.md, uhabit-next-foundation-plan.md) зафиксированы в Git через исключения в .gitignore (!docs/...) и синхронизируются через commit/checkout/pull. Этот файл не меняет AGENTS.md или автоматический bootstrap harness: чтение должно быть включено в инструкции запуска агента.
 
@@ -140,7 +140,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR11 — FocusSession core/local persistence | Immutable finalized work facts; memory/SQLite repository; idempotent recording and durable queries | Timer UI/integration, Contribution, runtime activation, production migration/sync | User selected slice; 23 scoped tests PASS including file reopen/concurrency | DONE |
 | PR12 — Runtime capture bridge + full experimental backup | Existing stopwatch/Pomodoro -> durable FocusSession; one primary target; frozen context; journal recovery; full backup v2 | Contribution/Habit projection, new timer/stats UI, recurrence, production activation | 90 core tests; real Android manager/backup test; native stopwatch process recovery and Pomodoro/break QA | DONE |
 | PR13 — Contribution ledger foundation | Core model, Memory/SQLite repository, idempotency, tombstone reversal, format v3 backup | Automatic attribution, SourceRule DSL, Habit Entry mutation, Task completion | Scoped 43 tests PASS; durability/concurrency PASS; backup roundtrip PASS | DONE |
-| PR14 — SourceRule / attribution rules | Single explicit attribution rule, Container subtree attribution, dedupe protection | Generic workflow DSL, universal productivity score | Tested Contribution ledger and verified FocusSession provenance | DONE |
+| PR14 — SourceRule / attribution rules | Single explicit attribution rule, Container subtree attribution, dedupe protection | Generic workflow DSL, universal productivity score | PR14.1 corrects historical preservation; 173 scoped tests and Android compilation PASS | DONE |
 | Container statistics | Отдельные time/outcomes/Habit metrics; historical/current mode | Universal productivity score | Проверенные facts/provenance/placement | PLANNED |
 | Today-first UX evaluation | Сравнить A/B/C на реальных task/day сценариях | Автоматическая замена home без оценки | Task MVP и достаточно содержимого Today | PLANNED |
 | Production migration / new sync protocol | Отдельный release design, compatibility gate, conflict/recovery checks | Скрытая активация внутри Foundation | Validated local stages; protocol/dataset/server gate; отдельное согласование | PLANNED |
@@ -174,7 +174,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| — | No active implementation scope | dev / C:/Users/Pavel/source/repos/uhabits-plus | — | — | — | PR14 closed (commit 500f332ab); no automatic PR15 |
+| — | No active implementation scope | dev / C:/Users/Pavel/source/repos/uhabits-plus | — | — | — | PR14.1 audit/fix complete; no automatic PR15 |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
  
@@ -821,7 +821,7 @@ Implementation/evidence commit: `4ad7fda773c926da47e47f0ddfd5a1b1161ee581`. This
 - Domain logic:
   - `HabitTimeValueConverter`: integer arithmetic formula `(durationMs * 1000L + 30_000L) / 60_000L` with nearest-minute rounding for numeric habits; explicit validation of minute units (`min`, `m`, `minute`, `minutes`, `мин`, `минута`, `минуты`, `минут`); typed rejection for boolean and incompatible units (`IncompatibleTargetHabitException`).
   - `HistoricalContainerMatcher`: matches frozen historical `FocusSession.organizationContext` and `containerId` against rule subtree constraints, ensuring attribution invariance against subsequent live container tree moves/reorganization.
-  - `SourceRuleAttributionService`: deterministic Contribution IDs (`contrib:focus:${sessionId}:${habitUuid}`), deduplication of overlapping container/subtree rules (direct rule precedence or exact single habit match), detection of ambiguous conflicts (`AmbiguousAttributionException`), enforcement of temporal validity (`effectiveFrom`), tombstone revocation of previously attributed contributions upon rule disablement/tombstoning, and fully idempotent `reconcileAll`.
+  - `SourceRuleAttributionService`: deterministic Contribution IDs (`contrib:focus:${sessionId}:${habitUuid}`), deduplication of overlapping container/subtree rules (direct rule precedence or exact single habit match), detection of ambiguous conflicts (`AmbiguousAttributionException`), enforcement of temporal validity (`effectiveFrom`). Original PR14 implicitly revoked historical Contributions on disable/removal; this behavior violates the accepted invariant and is corrected by PR14.1 below.
 - Contribution ledger enhancements:
   - Added optional `sourceRuleId: SourceRuleId?` to `Contribution`.
   - Added `source_rule_id` column, `CHECK` constraint, and index `idx_contributions_rule` to `ContributionSchema`.
@@ -839,4 +839,14 @@ Implementation/evidence commit: `4ad7fda773c926da47e47f0ddfd5a1b1161ee581`. This
   - Database integrity: `DATABASE_VERSION = 29` unchanged in production.
 - Implementation commit: 500f332ab5c694e13ecc95860280e325bac5501f.
 - Scope closed. No automatic PR15.
+
+### 2026-10-06 — PR14.1 historical attribution audit/fix completed
+
+- Audited actual PR14 commit `500f332ab5c694e13ecc95860280e325bac5501f`: `reconcileAll()` implicitly tombstoned Contributions whose rule was disabled/removed. This was a real implementation defect, not merely report wording. Accepted invariant: finalized FocusSession and its valid attribution are historical facts; rule state changes must not silently rewrite them.
+- Removed implicit revocation from reconciliation. Existing source/session/target attribution (including explicit correction tombstones) is preserved before evaluating today's eligibility, target units or overlap winner. Disabled/tombstoned rules do not match new sessions. Rule identity and retained tombstoned definition remain resolvable for historical `sourceRuleId` provenance.
+- Historical reversal remains explicit: `ContributionService.revokeFocusSessionContribution` targets one session/Habit; `revokeContributionsForRule` intentionally corrects the whole rule's derived Contributions. Neither is invoked by disable/removal. Reconciliation cannot resurrect corrected records.
+- Alias audit: bare `m` was already rejected by the shared helper, but `m.` was accepted. Attribution now uses a conservative explicit minute whitelist (`min`, `mins`, `minute`, `minutes`, `min.`, Russian minute labels including `мин.`), rejecting both `m` and `m.`. Legacy timer helper/model untouched.
+- Validation PASS: 173 tests across core.rules, core.contribution, containers.backup, focus, userTasks and models.sqlite; zero failures/errors. `:uhabits-android:compileDebugKotlin` PASS. Additional final `SourceRuleDurabilityTest` rerun PASS (4 tests) after adding correction isolation assertions. File-backed close/reopen proves historical Contributions, resolvable rule provenance, immutable FocusSession and actual manual Repetitions survive disable/removal; targeted correction leaves manual Habit data and sibling attribution intact. Production `DATABASE_VERSION == 29`, backup v4 unchanged.
+- Scope boundary: existing SourceRule record contract is immutable; no disable/re-enable mutation API or enable-interval history is added here. Tests exercise disabled state via repository decorator and persisted SQLite fixture update. This patch preserves existing attributions, not reconstruction of missed historical matches or enable-period history. No auto Android attribution, UI, production data edits, migration or retroactive repair of already-tombstoned data. Core runtime proof uses disposable databases; device UI verification is inapplicable to this core-only change.
+- Canonical claim closed; local architecture/project-context notes updated under existing Markdown ignore policy. Local commit only; no publication and no PR15.
 

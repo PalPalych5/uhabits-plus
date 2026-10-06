@@ -19,10 +19,25 @@
 
 package org.isoron.uhabits.core.rules.sqlite
 
+import kotlinx.coroutines.test.runTest
 import org.isoron.platform.io.JavaDatabaseOpener
+import org.isoron.platform.io.TestDatabaseHelper
+import org.isoron.platform.io.migrateTo
+import org.isoron.platform.io.queryLong
 import org.isoron.platform.io.run
+import org.isoron.platform.io.setVersion
+import org.isoron.uhabits.core.DATABASE_VERSION
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.HabitRef
+import org.isoron.uhabits.core.contribution.ContributionRemovalResult
+import org.isoron.uhabits.core.contribution.ContributionService
+import org.isoron.uhabits.core.contribution.sqlite.ContributionSchema
+import org.isoron.uhabits.core.contribution.sqlite.SQLiteContributionRepository
+import org.isoron.uhabits.core.focus.FocusSession
+import org.isoron.uhabits.core.focus.FocusSessionId
+import org.isoron.uhabits.core.focus.FocusSessionSource
+import org.isoron.uhabits.core.focus.sqlite.FocusSessionSchema
+import org.isoron.uhabits.core.focus.sqlite.SQLiteFocusSessionRepository
 import org.isoron.uhabits.core.rules.*
 import java.nio.file.Files
 import java.util.concurrent.Callable
@@ -46,6 +61,122 @@ class SourceRuleDurabilityTest {
         updatedAt = 1000L,
         removedAt = null,
     )
+
+    @Test
+    fun historicalAttributionsSurvivePersistedDisableAndRemovalAcrossReopen() = runTest {
+        val path = Files.createTempFile("sourcerule-history-", ".db")
+        val siblingRule = sampleRule.copy(
+            id = SourceRuleId("durable-rule-sibling"),
+            targetHabit = HabitRef("habit-uuid-sibling"),
+        )
+        val oldSession = FocusSession(
+            id = FocusSessionId("historical-session"),
+            startedAt = 1000L,
+            endedAt = 121000L,
+            durationMs = 120000L,
+            containerId = sampleRule.sourceContainerId,
+            source = FocusSessionSource.TIMER,
+            createdAt = 1000L,
+            updatedAt = 121000L,
+        )
+        val newSession = oldSession.copy(
+            id = FocusSessionId("session-after-disable"),
+            startedAt = 300000L,
+            endedAt = 420000L,
+            createdAt = 300000L,
+            updatedAt = 420000L,
+        )
+        val contributionId = SourceRuleAttributionService.deterministicContributionId(
+            oldSession.id.value, sampleRule.targetHabit.uuid,
+        )
+        val siblingId = SourceRuleAttributionService.deterministicContributionId(
+            oldSession.id.value, siblingRule.targetHabit.uuid,
+        )
+        try {
+            val first = JavaDatabaseOpener().open(path.toString())
+            try {
+                first.setVersion(8)
+                first.migrateTo(DATABASE_VERSION) { TestDatabaseHelper.loadMigrationSQL(it) }
+                first.run("""INSERT INTO Habits(name, description, question, freq_num, freq_den, color, position,
+                    reminder_days, highlight, archived, type, target_value, target_type, unit, uuid)
+                    VALUES ('Study', '', '', 1, 1, 0, 0, 0, 0, 0, 1, 120.0, 0, 'min', 'habit-uuid-omega')""")
+                first.run("""INSERT INTO Repetitions(habit, timestamp, value, notes, uuid)
+                    VALUES (1, 86400000, 45000, 'manual', 'manual-study-entry')""")
+                SourceRuleSchema.createSchema(first)
+                ContributionSchema.createSchema(first)
+                FocusSessionSchema.createSchema(first)
+                val rules = SQLiteSourceRuleRepository(first)
+                val contributions = SQLiteContributionRepository(first)
+                val sessions = SQLiteFocusSessionRepository(first)
+                val service = SourceRuleAttributionService(rules, contributions)
+                rules.record(sampleRule)
+                rules.record(siblingRule)
+                sessions.record(oldSession)
+                assertEquals(2, service.reconcileAll(sessions.getAll(), 121000L).contributionsCreated)
+                val historical = assertNotNull(contributions.getById(contributionId))
+                val sibling = assertNotNull(contributions.getById(siblingId))
+
+                // Persist the state transition; immutable record() is intentionally not an update API.
+                first.run("UPDATE SourceRules SET is_enabled = 0, updated_at = 200000 WHERE id = 'durable-rule-1'")
+                assertEquals(SourceRuleRemovalResult.REMOVED, rules.remove(siblingRule.id, 200000L))
+                sessions.record(newSession)
+                val report = service.reconcileAll(sessions.getAll(), 420000L)
+                assertEquals(0, report.contributionsCreated)
+                assertEquals(0, report.contributionsRevoked)
+                assertEquals(historical, contributions.getById(contributionId))
+                assertEquals(sibling, contributions.getById(siblingId))
+                assertEquals(45000L, first.queryLong("SELECT value FROM Repetitions WHERE uuid = 'manual-study-entry'"))
+            } finally {
+                first.close()
+            }
+
+            val reopened = JavaDatabaseOpener().open(path.toString())
+            try {
+                val rules = SQLiteSourceRuleRepository(reopened)
+                val contributions = SQLiteContributionRepository(reopened)
+                val sessions = SQLiteFocusSessionRepository(reopened)
+                assertFalse(assertNotNull(rules.getById(sampleRule.id)).isEnabled)
+                assertEquals(200000L, assertNotNull(rules.getById(siblingRule.id)).removedAt)
+                for ((id, rule) in listOf(contributionId to sampleRule, siblingId to siblingRule)) {
+                    val stored = assertNotNull(contributions.getById(id))
+                    assertTrue(stored.isActive)
+                    assertEquals(rule.id, stored.sourceRuleId)
+                    assertEquals(2000L, stored.contributedValue)
+                    assertNotNull(rules.getById(assertNotNull(stored.sourceRuleId)))
+                }
+                assertEquals(listOf(oldSession, newSession), sessions.getAll())
+                assertEquals(45000L, reopened.queryLong("SELECT value FROM Repetitions WHERE uuid = 'manual-study-entry' AND notes = 'manual' AND habit = 1"))
+                assertEquals(1L, reopened.queryLong("SELECT COUNT(*) FROM Repetitions"))
+                val report = SourceRuleAttributionService(rules, contributions)
+                    .reconcileAll(sessions.getAll(), 500000L)
+                assertEquals(0, report.contributionsCreated)
+                assertEquals(0, report.contributionsRevoked)
+                assertNull(contributions.getById(SourceRuleAttributionService.deterministicContributionId(
+                    newSession.id.value, sampleRule.targetHabit.uuid,
+                )))
+                assertNull(contributions.getById(SourceRuleAttributionService.deterministicContributionId(
+                    newSession.id.value, siblingRule.targetHabit.uuid,
+                )))
+                assertTrue(assertNotNull(contributions.getById(contributionId)).isActive)
+                assertTrue(assertNotNull(contributions.getById(siblingId)).isActive)
+                val sibling = contributions.getById(siblingId)
+                assertEquals(ContributionRemovalResult.REMOVED,
+                    ContributionService(contributions).revokeFocusSessionContribution(
+                        oldSession.id, sampleRule.targetHabit, 600000L,
+                    ))
+                SourceRuleAttributionService(rules, contributions).reconcileAll(sessions.getAll(), 700000L)
+                assertEquals(600000L, assertNotNull(contributions.getById(contributionId)).removedAt)
+                assertEquals(sibling, contributions.getById(siblingId))
+                assertEquals(listOf(oldSession, newSession), sessions.getAll())
+                assertEquals(45000L, reopened.queryLong("SELECT value FROM Repetitions WHERE uuid = 'manual-study-entry' AND notes = 'manual' AND habit = 1"))
+                assertEquals(1L, reopened.queryLong("SELECT COUNT(*) FROM Repetitions"))
+            } finally {
+                reopened.close()
+            }
+        } finally {
+            Files.deleteIfExists(path)
+        }
+    }
 
     @Test
     fun ruleSurvivesActualDatabaseCloseAndReopen() {

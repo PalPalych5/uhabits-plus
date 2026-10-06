@@ -57,7 +57,7 @@ class HabitTimeValueConverterTest {
 
     @Test
     fun testValidateTargetHabitAcceptsMinuteUnits() {
-        val validUnits = listOf("min", "mins", "minute", "minutes", "MIN", "мин", "минуты", "минут")
+        val validUnits = listOf("min", "mins", "minute", "minutes", "MIN", " min. ", "мин.", "мин", "минута", "минуты", "минут")
         for (unit in validUnits) {
             // Should not throw
             HabitTimeValueConverter.validateTargetHabit(
@@ -85,7 +85,7 @@ class HabitTimeValueConverterTest {
 
     @Test
     fun testValidateTargetHabitRejectsIncompatibleUnits() {
-        val invalidUnits = listOf("km", "pages", "steps", "hours", "sec", "", "kg")
+        val invalidUnits = listOf("m", "M", " m ", "m.", " M. ", "метр", "km", "pages", "steps", "hours", "sec", "", "kg")
         for (unit in invalidUnits) {
             val ex = assertFailsWith<IncompatibleTargetHabitException> {
                 HabitTimeValueConverter.validateTargetHabit(

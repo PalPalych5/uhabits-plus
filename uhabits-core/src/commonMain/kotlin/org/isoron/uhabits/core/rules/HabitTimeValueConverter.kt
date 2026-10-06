@@ -20,7 +20,6 @@
 package org.isoron.uhabits.core.rules
 
 import org.isoron.uhabits.core.models.Habit
-import org.isoron.uhabits.core.models.isMinuteUnit
 
 class IncompatibleTargetHabitException(
     message: String,
@@ -28,6 +27,9 @@ class IncompatibleTargetHabitException(
 ) : IllegalArgumentException(message)
 
 object HabitTimeValueConverter {
+
+    // Explicit time labels only. Bare "m" may mean metres in a user-defined unit.
+    private val minuteUnits = setOf("min", "mins", "minute", "minutes", "min.", "мин", "минута", "минуты", "минут", "мин.")
 
     /**
      * Converts a duration in milliseconds to Habit-native numerical value (x1000 scale) for minute-based habits.
@@ -70,7 +72,7 @@ object HabitTimeValueConverter {
                 uuid,
             )
         }
-        if (!unit.isMinuteUnit()) {
+        if (unit.trim().lowercase() !in minuteUnits) {
             val label = name ?: uuid ?: "unknown"
             throw IncompatibleTargetHabitException(
                 "Target habit '$label' has unit '$unit' which is not a minute-based time unit",

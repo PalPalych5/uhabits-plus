@@ -21,6 +21,9 @@ package org.isoron.uhabits.core.rules
 
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.HabitRef
+import org.isoron.uhabits.core.contribution.ContributionId
+import org.isoron.uhabits.core.contribution.ContributionRemovalResult
+import org.isoron.uhabits.core.contribution.ContributionService
 import org.isoron.uhabits.core.contribution.memory.MemoryContributionRepository
 import org.isoron.uhabits.core.focus.FocusSession
 import org.isoron.uhabits.core.focus.FocusSessionId
@@ -40,8 +43,8 @@ class SourceRuleAttributionServiceTest {
         "h-steps" to TargetHabitInfo(isNumerical = true, unit = "steps", name = "Steps Habit"),
     )
 
-    private fun createService() = SourceRuleAttributionService(
-        ruleRepository = ruleRepo,
+    private fun createService(repository: SourceRuleRepository = ruleRepo) = SourceRuleAttributionService(
+        ruleRepository = repository,
         contributionRepository = contribRepo,
         habitResolver = { habits[it.uuid] },
     )
@@ -214,10 +217,14 @@ class SourceRuleAttributionServiceTest {
         val all = contribRepo.getAll(includeRemoved = true)
         assertEquals(2, all.size)
         assertTrue(all.all { it.removedAt == 500_000L && !it.isActive })
+        val report = service.reconcileAll(listOf(s1, s2), now = 600_000L)
+        assertEquals(0, report.contributionsCreated)
+        assertEquals(0, report.contributionsRevoked)
+        assertEquals(all, contribRepo.getAll(includeRemoved = true))
     }
 
     @Test
-    fun testReconcileAllAttributesAndRevokesOrphans() {
+    fun testReconcileAllPreservesAttributionsAfterRuleRemoval() {
         val service = createService()
         val rule1 = makeRule("r1", "c-work", "h-deep-work")
         val rule2 = makeRule("r2", "c-study", "h-study")
@@ -232,19 +239,109 @@ class SourceRuleAttributionServiceTest {
         assertEquals(2, report1.contributionsCreated)
         assertEquals(0, report1.contributionsAlreadyPresent)
         assertEquals(0, report1.contributionsRevoked)
+        val historical = contribRepo.getAll()
 
         // 2. Remove rule2
         ruleRepo.remove(rule2.id, removedAt = 400_000L)
 
-        // 3. Reconcile again: s1 is already present, s2 contribution from rule2 is revoked
-        val report2 = service.reconcileAll(listOf(s1, s2), now = 500_000L)
+        // Rule removal stops new attribution without changing historical ledger facts.
+        val future = makeSession("s3", "c-study", durationMs = 60_000L, startedAt = 450_000L)
+        val report2 = service.reconcileAll(listOf(s1, s2, future), now = 600_000L)
         assertEquals(0, report2.contributionsCreated)
-        assertEquals(1, report2.contributionsAlreadyPresent)
-        assertEquals(1, report2.contributionsRevoked)
+        assertEquals(0, report2.contributionsRevoked)
 
-        // Active contributions contains only s1
-        val active = contribRepo.getAll(includeRemoved = false)
-        assertEquals(1, active.size)
-        assertEquals("contrib:focus:s1:h-deep-work", active.first().id.value)
+        assertEquals(historical, contribRepo.getAll())
+        assertEquals(2, contribRepo.getAll(includeRemoved = false).size)
+        assertTrue(service.attributeSession(future).isEmpty())
+        assertEquals(rule2.copy(removedAt = 400_000L, updatedAt = 400_000L), ruleRepo.getById(rule2.id))
+        assertEquals(rule2.id, contribRepo.getById(ContributionId("contrib:focus:s2:h-study"))!!.sourceRuleId)
+    }
+
+    @Test
+    fun testLaterDisablePreservesOldContributionAndRejectsFutureSession() {
+        val rule = makeRule("r-work", "c-work", "h-deep-work")
+        ruleRepo.record(rule)
+        var enabled = true
+        // PR14 has no rule update API. This decorator supplies the repository state
+        // that a later disable would expose to the attribution service.
+        val repository = object : SourceRuleRepository by ruleRepo {
+            override fun getActiveRules(): List<SourceRule> =
+                if (enabled) ruleRepo.getActiveRules() else emptyList()
+            override fun getById(id: SourceRuleId): SourceRule? =
+                ruleRepo.getById(id)?.copy(isEnabled = enabled)
+        }
+        val service = createService(repository)
+        val past = makeSession("past", "c-work", durationMs = 7_200_000L)
+        service.attributeSession(past)
+        val historical = contribRepo.getAll().single()
+        assertEquals(120_000L, historical.contributedValue)
+
+        enabled = false
+        val future = makeSession("future", "c-work", durationMs = 60_000L, startedAt = 10_000_000L)
+        val report = service.reconcileAll(listOf(past, future), now = 11_000_000L)
+        assertEquals(0, report.contributionsCreated)
+        assertEquals(0, report.contributionsRevoked)
+        assertTrue(service.attributeSession(future).isEmpty())
+        assertEquals(listOf(historical), contribRepo.getAll())
+        assertTrue(historical.isActive)
+        assertEquals(rule.id, historical.sourceRuleId)
+        assertFalse(repository.getById(rule.id)!!.isEnabled)
+    }
+
+    @Test
+    fun testRemovedOverlapWinnerDoesNotRewriteHistoricalProvenance() {
+        ruleRepo.record(makeRule("parent", "c-parent", "h-deep-work"))
+        ruleRepo.record(makeRule("child", "c-child", "h-deep-work"))
+        val service = createService()
+        val past = makeSession(
+            "past", "c-child", durationMs = 60_000L,
+            orgContext = """{"path":[{"id":"c-parent"},{"id":"c-child"}]}""",
+        )
+        service.attributeSession(past)
+        val historical = contribRepo.getAll().single()
+        assertEquals(SourceRuleId("child"), historical.sourceRuleId)
+        ruleRepo.remove(SourceRuleId("child"), removedAt = 100_000L)
+
+        val future = past.copy(id = FocusSessionId("future"), startedAt = 200_000L,
+            endedAt = 260_000L, createdAt = 200_000L, updatedAt = 260_000L)
+        val report = service.reconcileAll(listOf(past, future), now = 300_000L)
+        assertEquals(1, report.contributionsCreated)
+        assertEquals(1, report.contributionsAlreadyPresent)
+        assertEquals(0, report.contributionsRevoked)
+        assertEquals(historical, contribRepo.getById(historical.id))
+        assertEquals(SourceRuleId("parent"), contribRepo.getAll().single { it.sourceId == "future" }.sourceRuleId)
+    }
+
+    @Test
+    fun testExplicitCorrectionOnlyRevokesIntendedAttributionAndSurvivesReconcile() {
+        ruleRepo.record(makeRule("work", "c-work", "h-deep-work"))
+        ruleRepo.record(makeRule("study", "c-work", "h-study"))
+        val service = createService()
+        val past = makeSession("past", "c-work", durationMs = 60_000L)
+        val siblingSession = makeSession("sibling", "c-work", durationMs = 120_000L)
+        service.reconcileAll(listOf(past, siblingSession), now = 200_000L)
+        val explicit = ContributionService(contribRepo)
+        // Explicit caller-supplied PR13 attribution has no SourceRule provenance.
+        explicit.contributeFromFocusSession(past, HabitRef("h-manual"), ContributionId("manual"), 17L)
+        val original = contribRepo.getAll().associateBy { it.id }
+        val correctedId = ContributionId("contrib:focus:past:h-deep-work")
+
+        assertEquals(ContributionRemovalResult.REMOVED, explicit.revokeFocusSessionContribution(
+            past.id, HabitRef("h-deep-work"), removedAt = 300_000L,
+        ))
+        val corrected = contribRepo.getById(correctedId)!!
+        assertEquals(300_000L, corrected.removedAt)
+        assertEquals(SourceRuleId("work"), corrected.sourceRuleId)
+        val report = service.reconcileAll(listOf(past, siblingSession), now = 400_000L)
+        assertEquals(0, report.contributionsCreated)
+        assertEquals(0, report.contributionsRevoked)
+        assertEquals(corrected, contribRepo.getById(correctedId))
+        for ((id, contribution) in original) {
+            if (id != correctedId) assertEquals(contribution, contribRepo.getById(id))
+        }
+        assertEquals(5, contribRepo.getAll(includeRemoved = true).size)
+        assertEquals(4, contribRepo.getAll().size)
+        assertEquals(60_000L, past.durationMs)
+        assertEquals(61_000L, past.endedAt)
     }
 }
