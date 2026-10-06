@@ -190,6 +190,7 @@ object LegacyContainerMigrationValidator {
                 "HabitPlacementHistory",
                 "LegacyBlockMap",
                 "HabitVisualIdentities",
+                "UserTasks", // OrganizationSchema installs the additive Tasks workspace schema.
                 "BackupManifest",
                 "sqlite_sequence",
             )

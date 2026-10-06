@@ -1,9 +1,13 @@
 package org.isoron.uhabits.tasks
 
+import android.os.Process
+import kotlin.system.exitProcess
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.backup.BackupEntry
 import org.isoron.uhabits.backup.BackupManager
 import org.isoron.uhabits.core.tasks.Task
+import org.isoron.uhabits.activities.main.MainDestination
+import org.isoron.uhabits.utils.ExperimentalRestoreRestartRequiredException
 
 class RestoreDatabaseTask(
     private val application: HabitsApplication,
@@ -16,7 +20,7 @@ class RestoreDatabaseTask(
     override suspend fun doInBackground() {
         result = runCatching {
             backupManager.restoreFromBackup(entry).also {
-                application.component.syncCoordinator.markRestoreNeedsReview(
+                if (!application.component.session.isExperimental) application.component.syncCoordinator.markRestoreNeedsReview(
                     "Локальная база восстановлена из резервной копии. Перед следующей синхронизацией требуется подтверждение."
                 )
                 application.shutdownForDatabaseRestoreRestart()
@@ -28,7 +32,15 @@ class RestoreDatabaseTask(
         val current = result ?: Result.failure(IllegalStateException("Restore did not run"))
         current.fold(
             onSuccess = { listener.onRestoreFinished(null) },
-            onFailure = { listener.onRestoreFinished(it.message ?: "Restore failed") }
+            onFailure = {
+                listener.onRestoreFinished(it.message ?: "Restore failed")
+                if (it is ExperimentalRestoreRestartRequiredException) {
+                    application.scheduleProcessRestart(MainDestination.HABITS, showRestoreSuccess = false)
+                    // Closed repositories cannot be reused by merely relaunching an Activity.
+                    Process.killProcess(Process.myPid())
+                    exitProcess(0)
+                }
+            }
         )
     }
 

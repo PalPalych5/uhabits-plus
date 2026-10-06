@@ -126,6 +126,9 @@ object ContainerRestoreService {
         if (manifest.foundationVersion > ContainerBackupManifest.CURRENT_FOUNDATION_VERSION) {
             return RestoreResult.Failure("Unsupported foundation version: ${manifest.foundationVersion}")
         }
+        if (manifest.formatVersion == 1 && "FocusSessions" in DatabaseSnapshotter.listTables(backupDb)) {
+            return RestoreResult.Failure("Format 1 cannot inventory FocusSessions; refusing silent fact loss")
+        }
 
         // 3. Staging DB integrity and foreign keys
         val integrity = stagingDb.querySingle("PRAGMA integrity_check") { it.getText(0) }
@@ -146,6 +149,15 @@ object ContainerRestoreService {
 
         // 4. Verify checksum against manifest
         val currentInventory = RawLegacyInventoryReader.read(stagingDb)
+        if (manifest.formatVersion >= 2) {
+            val focusChecksum = FocusBackupInventory.checksum(stagingDb)
+            if (manifest.focusSessionsSha256 != focusChecksum) return RestoreResult.Failure("FocusSessions checksum mismatch")
+            val canonical = ContainerBackupManifest.computeCanonicalChecksum(
+                manifest.datasetUuid, manifest.sourceSnapshotSha256, manifest.createdAt,
+                manifest.formatVersion, manifest.foundationVersion, manifest.focusSessionsSha256,
+            )
+            if (canonical != manifest.canonicalChecksum) return RestoreResult.Failure("Manifest canonical checksum mismatch")
+        }
         if (manifest.sourceSnapshotSha256.isNotBlank() && manifest.sourceSnapshotSha256 != currentInventory.snapshotSha256) {
             return RestoreResult.Failure(
                 "Source snapshot checksum mismatch: manifest expected '${manifest.sourceSnapshotSha256}', but database has '${currentInventory.snapshotSha256}'"
@@ -164,7 +176,7 @@ object ContainerRestoreService {
         DatabaseSnapshotter.writeManifest(destinationDb, manifest)
 
         return RestoreResult.Success(
-            manifest = manifest,
+            manifest = manifest.copy(nonSecretPreferences = ContainerBackupManifest.sanitizePreferences(manifest.nonSecretPreferences)),
             kind = containerKind,
             wasMigratedFromLegacy = false,
         )
@@ -232,6 +244,7 @@ object ContainerRestoreService {
             canonicalChecksum = canonicalChecksum,
             appSettings = appSettingsMap,
             nonSecretPreferences = emptyMap(),
+            focusSessionsSha256 = FocusBackupInventory.emptyChecksum,
         )
 
         // 7. Write manifest to staging DB

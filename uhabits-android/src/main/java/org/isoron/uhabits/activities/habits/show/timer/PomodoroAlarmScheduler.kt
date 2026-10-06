@@ -6,11 +6,11 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 
-class PomodoroAlarmScheduler(private val context: Context) {
+class PomodoroAlarmScheduler(private val context: Context, private val datasetId: String = "production") {
     private val alarmManager = context.getSystemService(AlarmManager::class.java)
 
     fun schedule(triggerAtMillis: Long, revision: Long) {
-        val intent = PomodoroAlarmReceiver.alarmPendingIntent(context, revision)
+        val intent = PomodoroAlarmReceiver.alarmPendingIntent(context, revision, datasetId)
         if (canScheduleExactAlarms()) {
             alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, intent)
         } else {
@@ -28,7 +28,8 @@ class PomodoroAlarmScheduler(private val context: Context) {
     private fun existingPendingIntent(): PendingIntent = PendingIntent.getBroadcast(
         context,
         PomodoroAlarmReceiver.ALARM_REQUEST_CODE,
-        Intent(context, PomodoroAlarmReceiver::class.java).setAction(PomodoroAlarmReceiver.ACTION_PHASE_COMPLETE),
+        PomodoroAlarmReceiver.scopeIntent(Intent(context, PomodoroAlarmReceiver::class.java)
+            .setAction(PomodoroAlarmReceiver.ACTION_PHASE_COMPLETE), datasetId),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
 }

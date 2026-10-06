@@ -1,0 +1,37 @@
+{
+  "files": [
+    {
+      "baseline": "production-before.db",
+      "restored": "production-restored.db",
+      "sha256": "d36a3f9777c892c4572ee1f1cbbdb24faff4e207c8f9f828ea4b9c68959d9ee2",
+      "identical": true
+    },
+    {
+      "baseline": "experimental-before.db",
+      "restored": "experimental-restored.db",
+      "sha256": "2d0d3ec746861d47bfba2d58dcd126228e2ca3cfb54269b7d80485889dd859ec",
+      "identical": true
+    },
+    {
+      "baseline": "session-before.xml",
+      "restored": "session-restored.xml",
+      "sha256": "ba34016a414e31d9dd43f48f5950e3a97fd4d32935a587f3a6c54e0dc0127b1c",
+      "identical": true
+    },
+    {
+      "baseline": "experimental-prefs-before.xml",
+      "restored": "experimental-prefs-restored.xml",
+      "sha256": "c0948034c93d81cee74640cdb17617b5e7859dad1549f5c235f564523aa5c140",
+      "identical": true
+    },
+    {
+      "baseline": "production-prefs-before.xml",
+      "restored": "production-prefs-restored.xml",
+      "sha256": "1366868d8ecc1555489c4ad958824fea080d18d1d5b24e13758cfcf5bf8a89ea",
+      "identical": true
+    }
+  ],
+  "integrity": "ok",
+  "schemaVersion": 29,
+  "originalFocusTablesAbsent": true
+}

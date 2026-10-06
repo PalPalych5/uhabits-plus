@@ -92,4 +92,17 @@ class BackupManagerTest : BaseAndroidTest() {
         assertFalse(DatabaseUtils.validateDatabaseBackup(temp).isValid)
         temp.delete()
     }
+
+    @Test
+    fun testPartialFocusSchemaIsRejectedByActualAndroidValidation() {
+        val temp = kotlin.io.path.createTempFile(suffix = ".db").toFile()
+        try {
+            DatabaseUtils.createDatabaseSnapshot(targetContext, temp)
+            SQLiteDatabase.openDatabase(temp.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use {
+                it.execSQL("DROP TABLE IF EXISTS FocusSessions")
+                it.execSQL("CREATE TABLE FocusSessions (id TEXT)")
+            }
+            assertFalse(DatabaseUtils.validateDatabaseBackup(temp).isValid)
+        } finally { temp.delete() }
+    }
 }

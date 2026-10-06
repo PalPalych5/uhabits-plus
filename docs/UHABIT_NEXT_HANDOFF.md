@@ -138,6 +138,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR10 — Native Adaptive Tasks Shell | Phone 3 workspaces + Tasks drawer; wide sidebar; bounded tree; List/Calendar shared context; existing detail/Quick Add; native QA | New domain/backend/schema/sync, Habit/Statistics redesign, PR11 | IA and native V1 accepted by user 2026-10-06 | DONE |
 | PR10.1 — Native Tasks Visual Refinement | Compact Today/rows, Drawer, Calendar/agenda, Detail/Quick Add; native screenshots and QA | IA/domain changes, new features, PR11 | Human selected Compact; technical QA complete; V1 accepted 2026-10-06 | VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH |
 | PR11 — FocusSession core/local persistence | Immutable finalized work facts; memory/SQLite repository; idempotent recording and durable queries | Timer UI/integration, Contribution, runtime activation, production migration/sync | User selected slice; 23 scoped tests PASS including file reopen/concurrency | DONE |
+| PR12 — Runtime capture bridge + full experimental backup | Existing stopwatch/Pomodoro -> durable FocusSession; one primary target; frozen context; journal recovery; full backup v2 | Contribution/Habit projection, new timer/stats UI, recurrence, production activation | 90 core tests; real Android manager/backup test; native stopwatch process recovery and Pomodoro/break QA | DONE |
 | Contribution / provenance | Один явный source rule, breakdown/dedupe/corrections/undo | Пользовательский rules language, hidden double-write | Durable facts; manual/automatic projection contract | PLANNED |
 | Container statistics | Отдельные time/outcomes/Habit metrics; historical/current mode | Universal productivity score | Проверенные facts/provenance/placement | PLANNED |
 | Today-first UX evaluation | Сравнить A/B/C на реальных task/day сценариях | Автоматическая замена home без оценки | Task MVP и достаточно содержимого Today | PLANNED |
@@ -151,16 +152,16 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 Architecture preparation: DONE
 Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf), PR8·Spatial Native Slice DONE (commit d847b434f), PR9 DONE (commit 68538527e), PR9.2 Tasks Visual Reset DONE
 Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated
-Current branch: dev; verified PR11 implementation HEAD f207274b8b5fc0a17db5c2a9fb9e6bdde84d1e01; documentation-only closure follows; use Git for current HEAD
+Current branch: dev; PR12 verified implementation prepared; local implementation commit follows; use Git for current HEAD
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
 Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
 Visual language: VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH
 Native Android implementation: PR10 / PR10.1 ACCEPTED
-Active implementation: none; PR11 core/local persistence DONE; next runtime/backup integration scope requires a separate decision
+Active implementation: none; PR12 DONE; PR13 Contribution requires its own approved contract
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
-Checks: PR11 18 FocusSession + 5 Task regression tests PASS, including file close/reopen, concurrent retry and caller rollback; PR10.1 native visual V1 QA unchanged/reused
+Checks: PR12 90 scoped core tests PASS; debug/test APK build PASS; isolated Android manager/full backup test PASS; native stopwatch force-stop/reopen and Pomodoro/break PASS; original DB/prefs restored byte-for-byte; PR10.1 visual V1 reused
 Production DB schema: v29 unchanged (repository DATABASE_VERSION)
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
@@ -172,7 +173,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| none | none | dev / primary | IDLE | 2026-10-06 | none | PR11 core/local persistence complete; 23 focused tests PASS |
+| — | No active implementation scope | dev / C:/Users/Pavel/source/repos/uhabits-plus | — | — | — | PR12 closed; no automatic PR13 |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
  
@@ -191,7 +192,7 @@ Handoff — coordination register, не атомарный mutex: одновре
 ## 7. Next actions
 
 1. PR10.1 принят: `VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH`. Compact — утверждённая V1; повторный большой visual pass или PR10.2 не нужен. [Gallery/video](../pr101_artifacts/index.html), [report](../pr101_artifacts/REPORT.md), [evidence](../pr101_artifacts/evidence.json) остаются историческими QA-артефактами; их статус на момент проверки не переписывать.
-2. PR11 core-модель и локальное хранение DONE. Следующая интеграция требует отдельного scope: backup compatibility/preservation и runtime recording gate до активации реального capture; timer lifecycle/recovery — отдельное решение. Не подключать старый таймер или Contribution автоматически. IA и Task semantics frozen; новых HTML concepts не делать.
+2. PR11 и PR12 DONE. Existing timer captures only in the experimental dataset; full backup v2 includes finalized facts and discards active runtime on restore. Existing Habit UI works; Task/Container runtime APIs are provided without new launch UI. [PR12 QA](../pr12_artifacts/REPORT.md). Следующий предложенный этап — PR13 Contribution/attribution, но его правила projection/dedupe/undo требуют отдельного решения пользователя. Production activation не разрешена. IA и Task semantics frozen; новых HTML concepts не делать.
 3. Четыре отложенных долга (не условие продолжения разработки): **metadata compaction** — в Today скрывать обычный «План сегодня», сохраняя нетипичный/пропущенный план и сочетание с deadline; **phone calendar labels** — краткое название хотя бы одной задачи + `+N` вместо одних маркеров; **tablet detail pane** — list + detail вместо modal sheet; **IME composer chrome** — скрывать глобальную нижнюю навигацию при активном composer + IME и возвращать после закрытия клавиатуры.
 4. Drawer и Detail приняты как V1; дальнейший icon/color Container polish отложен. Physical device/TalkBack/comprehensive large-font/RTL and measured frame pacing remain unverified; принятие визуальной V1 не расширяет техническое QA evidence.
 
@@ -779,3 +780,22 @@ Implementation/evidence commit: `4ad7fda773c926da47e47f0ddfd5a1b1161ee581`. This
 - Command: gradlew :uhabits-core:jvmTest --tests '*FocusSessionDomainTest' --tests '*SQLiteFocusSessionRepositoryTest' --tests '*FocusSessionDurabilityTest' --tests '*UserTaskDomainTest' --tests '*SQLiteUserTaskRepositoryTest' --console=plain --quiet -Pkotlin.compiler.execution.strategy=in-process --max-workers=1. Exit 0. No new Android build/screenshots: this slice has no UI/runtime wiring; PR10.1 APK remains the visual V1 artifact.
 - Independent bounded review found no blocking repository/transaction/production-isolation defect. Model validation remains authoritative for Unicode blank references; SQL CHECK constraints also protect interval/source/revision basics. Database connections and memory repositories follow existing caller confinement; no shared-connection multi-thread promise.
 - Acceptance/contract commit e6645b6b; implementation commit f207274b8b5fc0a17db5c2a9fb9e6bdde84d1e01; this documentation-only closure records actual SHA. Canonical source-of-truth updated. Local architecture/project-context docs updated under existing ignore rules, not force-added. Unrelated/private untracked files preserved. No publication or automatic PR12; scope closed.
+### PR12 runtime capture contract — 2026-10-06
+
+- User explicitly selects existing Pomodoro/stopwatch -> FocusSession lifecycle, no Contribution/recurrence/new statistics UI. One primary target Task/Habit/Container per session; captured organization context is frozen at start. Task completion never drives capture.
+- Capture active work only; pause and break excluded, cancel creates no finished fact, retries/duplicate callbacks retain stable identities. Reuse existing engine; persist runtime journal and finalized facts atomically. Journal restores authoritative state after process death; never fabricate sessions from legacy preferences. Clock rollback uses conservative discard rather than invented interval.
+- Activate capture in isolated experimental dataset only after full backup extension. Production v29 and existing production timer behavior remain intact; no hidden FocusSession -> Habit Entry projection. Existing production direct numerical accrual is preserved; experimental capture creates work facts without Contribution credit.
+- Dataset-scoped timer preferences and stale callback guards are required before experimental timer capability is enabled. Generic target runtime APIs reuse engine; no new statistics screen. Finalized facts included in versioned full backup/restore; restored backup deliberately discards active timer journal/state to avoid counting offline time.
+- Ownership: focus_domain owns core/focus model/schema/runtime/repositories/tests; focus_backup owns containers/backup and its tests; root owns Android timer integration/dataset gating/DI, native QA and docs. No overlap or external publication.
+
+### 2026-10-06 — PR12 runtime bridge and full experimental backup completed
+
+- Existing TimerSessionEngine decorated by FocusCapturingTimer; finalized facts and runtime journal committed atomically. One primary Task/Habit/Container, frozen organization path/revision, no Contribution/Habit credit in experimental mode. Existing production numerical accrual and v29 untouched.
+- Pause/break excluded, cancel discards active segment, duplicate completion/retry idempotent. Journal restores running wall time/paused elapsed after process death; backwards clock cancels unsafe segment. Experimental preferences/callbacks dataset scoped; stale production callbacks rejected.
+- Existing Habit timer UI connected. Task/Container start APIs reuse manager/service and are Android-tested, but no new launcher UI added. Deleted Habit remains finishable via captured identity. AutoSwitch preference applied before recovery completion; existing overtime preserved. No Task completion coupling.
+- Full experimental backup format v2 includes finalized facts/checksum, omits active journal and clears timer state on restore. Actual Android DatabaseUtils uses the contract. Fact-free v1/raw compatibility retained; partial/future/unmanifested/tampered Focus backup rejected. Same-dataset restore identity required; production rejects experimental backup. No delayed persistence debt remains for captured facts.
+- Checks: 90 scoped JVM tests PASS; debug and Android-test APK build PASS; isolated real manager/backup Android test PASS (1 test, 20.308 s). Native stopwatch pause -> force-stop -> reopen -> finish preserves 16,368 ms/stable ID, exactly 1 fact despite 50,092 ms wall interval. Native 60,000 ms Pomodoro focus then running/paused/finished break adds no break fact.
+- Independent review found and closed deleted-target controls, stale recovery AutoSwitch and closed-component restart defects. Native dataset switch found async selection lost on process exit; critical selection writes now commit synchronously. UI-confirmed exit persists LEGACY_PRODUCTION and explicit reopen shows legacy shell/new PID. Automatic alarm relaunch timing is not claimed.
+- Original emulator production/experimental DBs and 3 preference files restored byte-for-byte (SHA256), integrity ok, v29, original Focus tables absent. Private DBs/prefs remain untracked; disposable device fixtures/test APK removed; app force-stopped. Existing test Application clears its selected DB: instrumentation requires disposable selection/external fixture and protected backups. Avoid running it on unsaved user data.
+- Evidence: [report](../pr12_artifacts/REPORT.md), [core results](../pr12_artifacts/core-results.json), [Android test](../pr12_artifacts/android-integration.txt), [process recovery](../pr12_artifacts/process-recovery.json), [Pomodoro/break](../pr12_artifacts/pomodoro-runtime.json), [restoration](../pr12_artifacts/restoration.json), native screenshots 01/02/03/05. Device Doze/exact-alarm latency, device clock rollback and injected swap failure remain unverified; corresponding core policies tested/code reviewed. Existing visual V1 and four polish debts unchanged.
+- Canonical claim closed. Local architecture/project-context docs updated under ignore policy. Unrelated/private artifacts preserved. No push/GitHub PR publication and no automatic PR13.

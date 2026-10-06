@@ -53,6 +53,10 @@ object DatabaseSnapshotter {
 
         // 2. Create Legacy tables if not already created
         createLegacyTablesIfNeeded(targetDb, sourceTables)
+        if (sourceTables.contains("FocusSessions")) {
+            require(FocusBackupInventory.schemaError(sourceDb) == null) { "Unsupported FocusSessions schema" }
+            org.isoron.uhabits.core.focus.sqlite.FocusSessionSchema.createSchema(targetDb)
+        }
 
         // 3. Create BackupManifest table
         targetDb.run(
@@ -253,6 +257,8 @@ object DatabaseSnapshotter {
             val targetTables = listTables(targetDb)
             val tablesToClear = listOf(
                 "BackupManifest",
+                "FocusCaptureJournal",
+                "FocusSessions",
                 "UserTasks",
                 "HabitPlacementHistory",
                 "ContainerHistory",
@@ -295,6 +301,10 @@ object DatabaseSnapshotter {
             if (sourceTables.contains("LegacyBlockMap")) copyLegacyBlockMap(sourceDb, targetDb)
             if (sourceTables.contains("HabitVisualIdentities")) copyHabitVisualIdentities(sourceDb, targetDb)
             if (sourceTables.contains("UserTasks")) copyUserTasks(sourceDb, targetDb)
+            if (sourceTables.contains("FocusSessions")) {
+                val repository = org.isoron.uhabits.core.focus.sqlite.SQLiteFocusSessionRepository(targetDb)
+                FocusBackupInventory.read(sourceDb).forEach(repository::record)
+            }
 
             if (sourceTables.contains("BackupManifest")) copyBackupManifest(sourceDb, targetDb)
 

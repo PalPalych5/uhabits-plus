@@ -1704,6 +1704,10 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         val currentSession = habitsApp.component.session
 
         if (currentSession.isExperimental) {
+            if (habitsApp.component.timerSessionManager.snapshot().hasActiveSession) {
+                Toast.makeText(requireContext(), "Завершите или отмените сессию таймера перед сменой режима.", Toast.LENGTH_LONG).show()
+                return
+            }
             CustomDialogs.showConfirmDialog(
                 context = requireContext(),
                 title = "Вернуться в продуктовый режим?",
@@ -1711,8 +1715,7 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 isDestructive = false
             ) {
                 sessionManager.clearExperimentalSelection()
-                habitsApp.shutdownForDatabaseRestoreRestart()
-                habitsApp.scheduleProcessRestart(MainDestination.HABITS)
+                restartForDatasetSession(habitsApp)
             }
         } else {
             val canActivate = sessionManager.canActivateExperiment()
@@ -1739,8 +1742,7 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                     val result = sessionManager.activateExistingExperiment()
                     when (result) {
                         is DatasetActivationResult.Success -> {
-                            habitsApp.shutdownForDatabaseRestoreRestart()
-                            habitsApp.scheduleProcessRestart(MainDestination.HABITS)
+                            restartForDatasetSession(habitsApp)
                         }
                         is DatasetActivationResult.Blocked -> {
                             Toast.makeText(requireContext(), result.reason, Toast.LENGTH_LONG).show()
@@ -1759,7 +1761,7 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                     title = "Эксперимент UHabit Next (Разделы)",
                     message = "ВНИМАНИЕ: Это независимая экспериментальная копия данных.\n\n" +
                         "• Облачная синхронизация отключена (0 сетевых вызовов).\n" +
-                        "• Таймер и виджеты в эксперименте отключены.\n" +
+                        "• Таймер сохраняет факты работы без начисления в привычки; виджеты отключены.\n" +
                         "• Изменения НЕ объединяются обратно с продуктовой базой.\n" +
                         "• Исходная продуктовая база данных остаётся в полной безопасности.\n\n" +
                         "Создать изолированную копию и перейти в эксперимент?",
@@ -1771,8 +1773,7 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                         withContext(Dispatchers.Main) {
                             when (result) {
                                 is DatasetActivationResult.Success -> {
-                                    habitsApp.shutdownForDatabaseRestoreRestart()
-                                    habitsApp.scheduleProcessRestart(MainDestination.HABITS)
+                                    restartForDatasetSession(habitsApp)
                                 }
                                 is DatasetActivationResult.Blocked -> {
                                     Toast.makeText(requireContext(), result.reason, Toast.LENGTH_LONG).show()
@@ -1789,6 +1790,14 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 }
             }
         }
+    }
+
+    private fun restartForDatasetSession(app: HabitsApplication) {
+        app.shutdownForDatabaseRestoreRestart()
+        app.scheduleProcessRestart(MainDestination.HABITS, showRestoreSuccess = false)
+        activity?.finishAffinity()
+        Process.killProcess(Process.myPid())
+        exitProcess(0)
     }
 
 }

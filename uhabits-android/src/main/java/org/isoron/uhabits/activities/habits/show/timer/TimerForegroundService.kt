@@ -39,7 +39,9 @@ class TimerForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        intent?.getStringExtra(EXTRA_COMMAND)?.let { commandName ->
+        intent?.getStringExtra(EXTRA_COMMAND)?.takeIf {
+            manager.acceptsDatasetCallback(intent.getStringExtra(PomodoroAlarmReceiver.EXTRA_DATASET_ID))
+        }?.let { commandName ->
             val command = runCatching { TimerNotificationAction.valueOf(commandName) }.getOrNull()
             if (command != null) handleCommand(command, intent.getLongExtra(EXTRA_HABIT_ID, -1L))
         }
@@ -56,22 +58,20 @@ class TimerForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun handleCommand(command: TimerNotificationAction, habitId: Long) {
-        val habit = (applicationContext as HabitsApplication).component.habitList
-            .getById(habitId) ?: return
         val state = manager.snapshot()
         if (state.habitId != habitId) return
         when (command) {
             TimerNotificationAction.PAUSE,
-            TimerNotificationAction.RESUME -> manager.startOrPause(habit)
+            TimerNotificationAction.RESUME -> manager.pauseOrResumeCurrent()
             TimerNotificationAction.START_BREAK -> {
                 if (state.isOvertime && state.phase == PomodoroPhase.FOCUS) {
-                    manager.takeBreakManually(habit)
+                    manager.takeBreakCurrent()
                 } else {
-                    manager.startOrPause(habit)
+                    manager.pauseOrResumeCurrent()
                 }
             }
-            TimerNotificationAction.FINISH -> manager.finish(habit)
-            TimerNotificationAction.RESET -> manager.reset(habit)
+            TimerNotificationAction.FINISH -> manager.finishCurrent()
+            TimerNotificationAction.RESET -> manager.resetCurrent()
         }
     }
 
@@ -200,6 +200,7 @@ class TimerForegroundService : Service() {
             putExtra(EXTRA_COMMAND, action.name)
             putExtra(EXTRA_HABIT_ID, habitId)
         }
+        PomodoroAlarmReceiver.scopeIntent(intent, manager.session.datasetId)
         val requestCode = ((habitId % 10_000) * 10 + action.ordinal).toInt()
         return PendingIntent.getService(
             this,

@@ -79,8 +79,15 @@ object ContainerBackupRouter {
 
         // 4. Resolve manifest if embedded in DB and not supplied externally
         val manifest = externalManifest ?: readEmbeddedManifest(db, tables)
+        val focusSchemaError = FocusBackupInventory.schemaError(db)
+        if (focusSchemaError != null) return BackupInspectionResult(
+            kind = DatasetKind.Malformed(focusSchemaError), tableNames = tables, databaseVersion = dbVersion, manifest = manifest,
+        )
 
         if (manifest != null) {
+            if (manifest.formatVersion < 1) return BackupInspectionResult(
+                kind = DatasetKind.Malformed("Invalid backup format version"), tableNames = tables, databaseVersion = dbVersion, manifest = manifest,
+            )
             if (manifest.formatVersion > ContainerBackupManifest.CURRENT_FORMAT_VERSION) {
                 return BackupInspectionResult(
                     kind = DatasetKind.UnsupportedNewer("Backup format version ${manifest.formatVersion} is higher than supported ${ContainerBackupManifest.CURRENT_FORMAT_VERSION}"),
@@ -104,6 +111,10 @@ object ContainerBackupRouter {
         val missingOrgTables = REQUIRED_ORGANIZATION_TABLES.filter { !tables.contains(it) }
 
         if (presentOrgTables.isEmpty()) {
+            if ("FocusSessions" in tables) return BackupInspectionResult(
+                kind = DatasetKind.Malformed("FocusSessions requires an experimental organization dataset"),
+                tableNames = tables, databaseVersion = dbVersion, manifest = manifest,
+            )
             // Pure legacy backup
             return BackupInspectionResult(
                 kind = DatasetKind.LegacyProduction(schemaVersion = dbVersion),

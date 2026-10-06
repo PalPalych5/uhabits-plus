@@ -38,6 +38,8 @@ enum class FocusSessionSource {
     TIMER,
 }
 
+enum class FocusPrimaryTargetType { TASK, HABIT, CONTAINER }
+
 /**
  * An immutable finalized work fact. References capture context at recording time;
  * they neither require live entities nor imply task completion or habit credit.
@@ -56,6 +58,13 @@ data class FocusSession(
     val createdAt: Long,
     val updatedAt: Long,
     val revision: Long = 1,
+    val primaryTargetType: FocusPrimaryTargetType? = when {
+        taskId != null -> FocusPrimaryTargetType.TASK
+        habit != null -> FocusPrimaryTargetType.HABIT
+        containerId != null -> FocusPrimaryTargetType.CONTAINER
+        else -> null
+    },
+    val organizationContext: String? = null,
 ) {
     init {
         require(startedAt >= 0) { "startedAt must be nonnegative" }
@@ -70,5 +79,8 @@ data class FocusSession(
         require(habit == null || habit.uuid.isNotBlank()) { "habit reference must not be blank" }
         require(containerId == null || containerId.value.isNotBlank()) { "containerId must not be blank" }
         require(deviceId == null || deviceId.isNotBlank()) { "deviceId must not be blank" }
+        require(primaryTargetType != FocusPrimaryTargetType.TASK || taskId != null)
+        require(primaryTargetType != FocusPrimaryTargetType.HABIT || habit != null)
+        require(primaryTargetType != FocusPrimaryTargetType.CONTAINER || containerId != null)
     }
 }

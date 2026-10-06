@@ -51,7 +51,7 @@ class SQLiteFocusSessionRepositoryTest {
             val repo = SQLiteFocusSessionRepository(db)
             val linked = fact()
             val standalone = fact("standalone").copy(taskId = null, habit = null, containerId = null,
-                source = FocusSessionSource.MANUAL, deviceId = null)
+                source = FocusSessionSource.MANUAL, deviceId = null, primaryTargetType = null)
             assertEquals(FocusSessionRecordResult.INSERTED, repo.record(linked))
             repo.record(standalone)
             assertEquals(linked, repo.getById(linked.id))
@@ -84,7 +84,7 @@ class SQLiteFocusSessionRepositoryTest {
             val first = fact("a")
             val second = fact("b")
             val earlier = fact("z").copy(startedAt = first.startedAt - 100)
-            val unassigned = fact("null").copy(taskId = null)
+            val unassigned = fact("null").copy(taskId = null, primaryTargetType = FocusPrimaryTargetType.HABIT)
             listOf(second, unassigned, earlier, first).forEach { repo.record(it) }
             assertEquals(listOf(earlier, first, second), repo.getByTask(TaskId("task-1")))
             assertEquals(listOf(earlier, first, second, unassigned), repo.getAll())

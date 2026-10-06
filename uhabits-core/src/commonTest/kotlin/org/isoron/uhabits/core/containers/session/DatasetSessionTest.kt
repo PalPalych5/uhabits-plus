@@ -97,7 +97,7 @@ class DatasetSessionTest : BaseUnitTest() {
         // Strict isolation: everything that can mutate wrong dataset is blocked
         assertFalse(session.capabilities.syncEnabled)
         assertFalse(session.capabilities.remoteCallsAllowed)
-        assertFalse(session.capabilities.timerEnabled)
+        assertTrue(session.capabilities.timerEnabled) // Dataset-scoped capture; production state stays isolated.
         assertFalse(session.capabilities.widgetsEnabled)
         assertFalse(session.capabilities.remindersEnabled)
         assertFalse(session.capabilities.backgroundJobsEnabled)

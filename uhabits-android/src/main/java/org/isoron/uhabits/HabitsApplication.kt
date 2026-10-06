@@ -102,8 +102,8 @@ class HabitsApplication : Application() {
         DatabaseUtils.closeDatabase()
     }
 
-    fun scheduleProcessRestart(destination: MainDestination) {
-        val intent = MainActivity.intent(this, destination, showRestoreSuccess = true).apply {
+    fun scheduleProcessRestart(destination: MainDestination, showRestoreSuccess: Boolean = true) {
+        val intent = MainActivity.intent(this, destination, showRestoreSuccess = showRestoreSuccess).apply {
             addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
         }
         val pendingIntent = PendingIntent.getActivity(

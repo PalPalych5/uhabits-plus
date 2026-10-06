@@ -32,6 +32,7 @@ data class ContainerBackupManifest(
     val canonicalChecksum: String,
     val appSettings: Map<String, Long> = emptyMap(),
     val nonSecretPreferences: Map<String, String> = emptyMap(),
+    val focusSessionsSha256: String = "",
 ) {
     fun toJson(): String {
         val sb = StringBuilder()
@@ -44,6 +45,7 @@ data class ContainerBackupManifest(
         sb.append("  \"created_at\": ").append(createdAt).append(",\n")
         sb.append("  \"source_snapshot_sha256\": \"").append(escapeJson(sourceSnapshotSha256)).append("\",\n")
         sb.append("  \"canonical_checksum\": \"").append(escapeJson(canonicalChecksum)).append("\",\n")
+        sb.append("  \"focus_sessions_sha256\": \"").append(escapeJson(focusSessionsSha256)).append("\",\n")
 
         sb.append("  \"app_settings\": {")
         val settingsEntries = appSettings.entries.toList()
@@ -67,7 +69,7 @@ data class ContainerBackupManifest(
     }
 
     companion object {
-        const val CURRENT_FORMAT_VERSION = 1
+        const val CURRENT_FORMAT_VERSION = 2
         const val CURRENT_FOUNDATION_VERSION = 1
 
         private val SENSITIVE_KEY_PATTERNS = listOf(
@@ -77,7 +79,7 @@ data class ContainerBackupManifest(
         fun sanitizePreferences(prefs: Map<String, String>): Map<String, String> {
             return prefs.filterKeys { key ->
                 val lower = key.lowercase()
-                SENSITIVE_KEY_PATTERNS.none { lower.contains(it) }
+                SENSITIVE_KEY_PATTERNS.none { lower.contains(it) } && !lower.startsWith("pref_timer_")
             }
         }
 
@@ -85,13 +87,17 @@ data class ContainerBackupManifest(
             datasetUuid: String,
             sourceSnapshotSha256: String,
             createdAt: Long,
+            formatVersion: Int = CURRENT_FORMAT_VERSION,
+            foundationVersion: Int = CURRENT_FOUNDATION_VERSION,
+            focusSessionsSha256: String = FocusBackupInventory.emptyChecksum,
         ): String {
-            val payload = "MANIFEST:v$CURRENT_FORMAT_VERSION:$CURRENT_FOUNDATION_VERSION:$datasetUuid:$sourceSnapshotSha256:$createdAt"
+            val base = "MANIFEST:v$formatVersion:$foundationVersion:$datasetUuid:$sourceSnapshotSha256:$createdAt"
+            val payload = if (formatVersion >= 2) "$base:$focusSessionsSha256" else base
             return Sha256.hexDigest(Sha256.digest(payload.encodeToByteArray()))
         }
 
         fun fromJson(json: String): ContainerBackupManifest {
-            val formatVersion = extractInt(json, "format_version") ?: CURRENT_FORMAT_VERSION
+            val formatVersion = extractInt(json, "format_version") ?: 1
             val sourceSchemaVersion = extractInt(json, "source_schema_version") ?: 29
             val foundationVersion = extractInt(json, "foundation_version") ?: CURRENT_FOUNDATION_VERSION
             val datasetMode = extractString(json, "dataset_mode") ?: "CONTAINER_LOCAL"
@@ -114,6 +120,7 @@ data class ContainerBackupManifest(
                 canonicalChecksum = canonicalChecksum,
                 appSettings = appSettings,
                 nonSecretPreferences = nonSecretPreferences,
+                focusSessionsSha256 = extractString(json, "focus_sessions_sha256") ?: "",
             )
         }
 

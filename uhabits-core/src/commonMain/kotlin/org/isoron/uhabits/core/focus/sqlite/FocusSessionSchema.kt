@@ -21,29 +21,49 @@ package org.isoron.uhabits.core.focus.sqlite
 
 import org.isoron.platform.io.Database
 import org.isoron.platform.io.run
+import org.isoron.platform.io.StepResult
 
-/** Opt-in schema only: not part of production migrations or Android capture wiring. */
+/** Opt-in schema: used by experimental capture, never by production migrations. */
 object FocusSessionSchema {
     fun createSchema(db: Database) {
-        db.run(
-            """
-            CREATE TABLE IF NOT EXISTS FocusSessions (
-                id TEXT PRIMARY KEY NOT NULL CHECK(trim(id) <> ''),
-                started_at INTEGER NOT NULL CHECK(started_at >= 0),
-                ended_at INTEGER NOT NULL CHECK(ended_at > started_at),
-                duration_ms INTEGER NOT NULL CHECK(duration_ms > 0 AND duration_ms <= ended_at - started_at),
-                task_id TEXT CHECK(task_id IS NULL OR trim(task_id) <> ''),
-                habit_uuid TEXT CHECK(habit_uuid IS NULL OR trim(habit_uuid) <> ''),
-                container_id TEXT CHECK(container_id IS NULL OR trim(container_id) <> ''),
-                source TEXT NOT NULL CHECK(source IN ('MANUAL', 'TIMER')),
-                device_id TEXT CHECK(device_id IS NULL OR trim(device_id) <> ''),
-                created_at INTEGER NOT NULL CHECK(created_at >= 0),
-                updated_at INTEGER NOT NULL CHECK(updated_at >= created_at),
-                revision INTEGER NOT NULL CHECK(revision = 1)
+        db.run("SAVEPOINT migrate_focus_schema")
+        try {
+            db.run(
+                """
+                CREATE TABLE IF NOT EXISTS FocusSessions (
+                    id TEXT PRIMARY KEY NOT NULL CHECK(trim(id) <> ''),
+                    started_at INTEGER NOT NULL CHECK(started_at >= 0),
+                    ended_at INTEGER NOT NULL CHECK(ended_at > started_at),
+                    duration_ms INTEGER NOT NULL CHECK(duration_ms > 0 AND duration_ms <= ended_at - started_at),
+                    task_id TEXT CHECK(task_id IS NULL OR trim(task_id) <> ''),
+                    habit_uuid TEXT CHECK(habit_uuid IS NULL OR trim(habit_uuid) <> ''),
+                    container_id TEXT CHECK(container_id IS NULL OR trim(container_id) <> ''),
+                    source TEXT NOT NULL CHECK(source IN ('MANUAL', 'TIMER')),
+                    device_id TEXT CHECK(device_id IS NULL OR trim(device_id) <> ''),
+                    created_at INTEGER NOT NULL CHECK(created_at >= 0),
+                    updated_at INTEGER NOT NULL CHECK(updated_at >= created_at),
+                    revision INTEGER NOT NULL CHECK(revision = 1),
+                    primary_target_type TEXT CHECK(primary_target_type IS NULL OR primary_target_type IN ('TASK', 'HABIT', 'CONTAINER')),
+                    organization_context TEXT
+                )
+                """.trimIndent()
             )
-            """.trimIndent()
-        )
-        db.run("CREATE INDEX IF NOT EXISTS idx_focus_sessions_task ON FocusSessions(task_id, started_at, id)")
-        db.run("CREATE INDEX IF NOT EXISTS idx_focus_sessions_started ON FocusSessions(started_at, id)")
+            val columns = mutableSetOf<String>()
+            val stmt = db.prepareStatement("PRAGMA table_info(FocusSessions)")
+            try { while (stmt.step() == StepResult.ROW) columns.add(stmt.getText(1)) }
+            finally { stmt.finalize() }
+            if ("primary_target_type" !in columns) {
+                db.run("ALTER TABLE FocusSessions ADD COLUMN primary_target_type TEXT CHECK(primary_target_type IS NULL OR primary_target_type IN ('TASK', 'HABIT', 'CONTAINER'))")
+                db.run("UPDATE FocusSessions SET primary_target_type = CASE WHEN task_id IS NOT NULL THEN 'TASK' WHEN habit_uuid IS NOT NULL THEN 'HABIT' WHEN container_id IS NOT NULL THEN 'CONTAINER' END")
+            }
+            if ("organization_context" !in columns) db.run("ALTER TABLE FocusSessions ADD COLUMN organization_context TEXT")
+            db.run("CREATE INDEX IF NOT EXISTS idx_focus_sessions_task ON FocusSessions(task_id, started_at, id)")
+            db.run("CREATE INDEX IF NOT EXISTS idx_focus_sessions_started ON FocusSessions(started_at, id)")
+            db.run("RELEASE SAVEPOINT migrate_focus_schema")
+        } catch (error: Throwable) {
+            try { db.run("ROLLBACK TO SAVEPOINT migrate_focus_schema") }
+            finally { db.run("RELEASE SAVEPOINT migrate_focus_schema") }
+            throw error
+        }
     }
 }

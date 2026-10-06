@@ -1,0 +1,6 @@
+
+org.isoron.uhabits.activities.habits.show.timer.FocusRuntimeBridgeAndroidTest:.
+
+Time: 20,308
+
+OK (1 test)

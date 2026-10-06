@@ -51,7 +51,7 @@ data class DatasetSession(
 enum class DatasetMode {
     /** Original production database with full sync, reminders, widgets, timer. */
     LEGACY_PRODUCTION,
-    /** Isolated experimental copy: no sync, no timer, restricted jobs. */
+    /** Isolated experimental copy: dataset-aware timer capture, no sync, restricted jobs. */
     CONTAINER_LOCAL_EXPERIMENTAL,
 }
 
@@ -77,7 +77,7 @@ data class DatasetCapabilities(
         val EXPERIMENTAL = DatasetCapabilities(
             syncEnabled = false,
             remoteCallsAllowed = false,
-            timerEnabled = false,
+            timerEnabled = true, // PR12 uses dataset-scoped state and durable Focus capture.
             widgetsEnabled = false,
             remindersEnabled = false,
             backgroundJobsEnabled = false,

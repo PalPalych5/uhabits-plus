@@ -29,6 +29,13 @@ import org.isoron.uhabits.core.AppScope
 import org.isoron.uhabits.activities.habits.show.timer.PomodoroAlarmScheduler
 import org.isoron.uhabits.activities.habits.show.timer.PomodoroCompletionNotifier
 import org.isoron.uhabits.activities.habits.show.timer.TimerSessionManager
+import org.isoron.uhabits.core.focus.sqlite.FocusSessionSchema
+import org.isoron.uhabits.core.focus.sqlite.SQLiteFocusCaptureStore
+import org.isoron.uhabits.core.focus.runtime.FocusCaptureTarget
+import org.isoron.uhabits.core.focus.FocusPrimaryTargetType
+import org.isoron.uhabits.core.containers.ContainerId
+import org.json.JSONObject
+import org.json.JSONArray
 import org.isoron.uhabits.backup.BackupManager
 import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.containers.OrganizationServiceImpl
@@ -255,7 +262,7 @@ abstract class HabitsApplicationComponent(
     @Provides
     open fun pomodoroAlarmScheduler(
         @AppContext context: Context
-    ): PomodoroAlarmScheduler = PomodoroAlarmScheduler(context)
+    ): PomodoroAlarmScheduler = PomodoroAlarmScheduler(context, session.datasetId)
 
     @AppScope
     @Provides
@@ -263,7 +270,7 @@ abstract class HabitsApplicationComponent(
         @AppContext context: Context,
         habitList: HabitList,
         alarmScheduler: PomodoroAlarmScheduler
-    ): PomodoroCompletionNotifier = PomodoroCompletionNotifier(context, habitList, alarmScheduler)
+    ): PomodoroCompletionNotifier = PomodoroCompletionNotifier(context, habitList, alarmScheduler, session.datasetId)
 
     @AppScope
     @Provides
@@ -273,16 +280,52 @@ abstract class HabitsApplicationComponent(
         commandRunner: CommandRunner,
         preferences: Preferences,
         alarmScheduler: PomodoroAlarmScheduler,
-        completionNotifier: PomodoroCompletionNotifier
-    ): TimerSessionManager = TimerSessionManager(
+        completionNotifier: PomodoroCompletionNotifier,
+        facade: HabitOrganizationFacade,
+        deviceIdentityManager: DeviceIdentityManager
+    ): TimerSessionManager {
+        val capture = if (session.isExperimental) {
+            FocusSessionSchema.createSchema(providedDb)
+            SQLiteFocusCaptureStore(providedDb)
+        } else null
+        fun target(kind: FocusPrimaryTargetType, id: String, container: ContainerId?): FocusCaptureTarget {
+            val path = container?.let { facade.containerQueries?.path(it) }
+            val json = JSONObject().put("schema", 1).put("datasetId", session.datasetId)
+                .put("organizationRevision", path?.revision?.value ?: SQLiteOrganizationStore(providedDb).readState().currentRevision.value)
+                .put("path", JSONArray().apply {
+                    path?.nodes?.forEach { node -> put(JSONObject().put("id", node.value)
+                        .put("name", facade.containerQueries?.find(node, includeDeleted = true)?.name ?: JSONObject.NULL)) }
+                })
+            return FocusCaptureTarget(kind, id, container, json.toString())
+        }
+        return TimerSessionManager(
         context = context,
         habitList = habitList,
         commandRunner = commandRunner,
         appPreferences = preferences,
         alarmScheduler = alarmScheduler,
         completionNotifier = completionNotifier,
-        session = session
-    )
+        session = session,
+        captureStore = capture,
+        deviceId = if (session.isExperimental) deviceIdentityManager.deviceId else null,
+        focusTargetProvider = { habitId ->
+            if (!session.isExperimental) null else habitList.getById(habitId)?.let { habit ->
+                val uuid = requireNotNull(habit.uuid)
+                target(FocusPrimaryTargetType.HABIT, uuid, facade.getPlacementInfo(uuid).containerId)
+            }
+        },
+        captureTargetResolver = { kind, id ->
+            if (!session.isExperimental) null else when (kind) {
+                FocusPrimaryTargetType.TASK -> SQLiteUserTaskRepository(providedDb).getById(org.isoron.uhabits.core.userTasks.TaskId(id))
+                    ?.let { it.title to target(kind, id, it.containerId) }
+                FocusPrimaryTargetType.CONTAINER -> facade.containerQueries?.find(ContainerId(id))
+                    ?.takeUnless { facade.containerQueries?.isEffectivelyArchived(it.id) == true }
+                    ?.let { it.name to target(kind, id, it.id) }
+                FocusPrimaryTargetType.HABIT -> null // Existing Habit UI is the primary entry.
+            }
+        }
+        )
+    }
 
     @AppScope
     @Provides

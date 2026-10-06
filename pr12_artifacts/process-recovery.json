@@ -1,0 +1,9 @@
+{
+  "pausedMs": 16368,
+  "factCount": 1,
+  "sameStableId": true,
+  "durationPreservedAfterProcessRestart": true,
+  "wallIntervalMs": 50092,
+  "primaryTarget": "HABIT",
+  "source": "TIMER"
+}

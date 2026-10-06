@@ -32,6 +32,7 @@ import org.isoron.uhabits.core.focus.FocusSessionId
 import org.isoron.uhabits.core.focus.FocusSessionRecordResult
 import org.isoron.uhabits.core.focus.FocusSessionRepository
 import org.isoron.uhabits.core.focus.FocusSessionSource
+import org.isoron.uhabits.core.focus.FocusPrimaryTargetType
 import org.isoron.uhabits.core.userTasks.TaskId
 
 /**
@@ -54,7 +55,7 @@ class SQLiteFocusSessionRepository(private val db: Database) : FocusSessionRepos
         try {
             // INSERT OR IGNORE works on supported older SQLite versions. A failed CHECK must
             // still be surfaced below; it must never be mistaken for an idempotent retry.
-            val stmt = db.prepareStatement("INSERT OR IGNORE INTO FocusSessions ($COLUMNS) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            val stmt = db.prepareStatement("INSERT OR IGNORE INTO FocusSessions ($COLUMNS) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
             try {
                 stmt.bindText(1, session.id.value)
                 stmt.bindLong(2, session.startedAt)
@@ -68,6 +69,8 @@ class SQLiteFocusSessionRepository(private val db: Database) : FocusSessionRepos
                 stmt.bindLong(10, session.createdAt)
                 stmt.bindLong(11, session.updatedAt)
                 stmt.bindLong(12, session.revision)
+                stmt.bindNullableText(13, session.primaryTargetType?.name)
+                stmt.bindNullableText(14, session.organizationContext)
                 stmt.step()
             } finally {
                 stmt.finalize()
@@ -100,7 +103,9 @@ class SQLiteFocusSessionRepository(private val db: Database) : FocusSessionRepos
                         habit = stmt.getTextOrNull(5)?.let(::HabitRef),
                         containerId = stmt.getTextOrNull(6)?.let(::ContainerId),
                         source = FocusSessionSource.valueOf(stmt.getText(7)), deviceId = stmt.getTextOrNull(8),
-                        createdAt = stmt.getLong(9), updatedAt = stmt.getLong(10), revision = stmt.getLong(11)
+                        createdAt = stmt.getLong(9), updatedAt = stmt.getLong(10), revision = stmt.getLong(11),
+                        primaryTargetType = stmt.getTextOrNull(12)?.let(FocusPrimaryTargetType::valueOf),
+                        organizationContext = stmt.getTextOrNull(13)
                     ))
                 }
             }
@@ -114,6 +119,6 @@ class SQLiteFocusSessionRepository(private val db: Database) : FocusSessionRepos
     }
 
     companion object {
-        private const val COLUMNS = "id, started_at, ended_at, duration_ms, task_id, habit_uuid, container_id, source, device_id, created_at, updated_at, revision"
+        private const val COLUMNS = "id, started_at, ended_at, duration_ms, task_id, habit_uuid, container_id, source, device_id, created_at, updated_at, revision, primary_target_type, organization_context"
     }
 }

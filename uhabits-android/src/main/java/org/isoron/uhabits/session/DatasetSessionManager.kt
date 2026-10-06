@@ -135,6 +135,7 @@ class DatasetSessionManager(
     }
 
     override fun persistExperimentalSelection(metadata: ExperimentalDatasetMetadata) {
+        // Selection must reach disk before the settings flow terminates this process.
         sessionPrefs.edit()
             .putString(KEY_SELECTED_MODE, DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL.name)
             .putString(KEY_DATASET_ID, metadata.datasetId)
@@ -143,13 +144,13 @@ class DatasetSessionManager(
             .putString(KEY_SOURCE_SNAPSHOT_SHA, metadata.sourceSnapshotSha256)
             .putLong(KEY_CREATED_AT_MILLIS, metadata.createdAtMillis)
             .putInt(KEY_SCHEMA_VERSION, metadata.organizationSchemaVersion)
-            .apply()
+            .commit()
     }
 
     override fun clearExperimentalSelection() {
         sessionPrefs.edit()
             .putString(KEY_SELECTED_MODE, DatasetMode.LEGACY_PRODUCTION.name)
-            .apply()
+            .commit()
     }
 
     /**
@@ -157,7 +158,9 @@ class DatasetSessionManager(
      */
     fun isTimerActive(): Boolean {
         val defaultPrefs = PreferenceManager.getDefaultSharedPreferences(context)
-        return defaultPrefs.getBoolean("pref_timer_is_running", false)
+        return defaultPrefs.getBoolean("pref_timer_is_running", false) ||
+            defaultPrefs.getLong("pref_timer_accumulated_elapsed_millis", 0L) > 0L ||
+            defaultPrefs.getString("pref_timer_phase", "FOCUS") == "BREAK"
     }
 
     /**
@@ -198,7 +201,7 @@ class DatasetSessionManager(
             is DatasetValidationResult.Valid -> {
                 sessionPrefs.edit()
                     .putString(KEY_SELECTED_MODE, DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL.name)
-                    .apply()
+                    .commit()
                 DatasetActivationResult.Success(DatasetSessionFactory.experimental(metadata))
             }
             is DatasetValidationResult.Invalid -> {

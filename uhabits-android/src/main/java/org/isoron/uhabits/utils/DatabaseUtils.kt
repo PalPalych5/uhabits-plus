@@ -29,11 +29,17 @@ import org.isoron.uhabits.HabitsDatabaseOpener
 import org.isoron.uhabits.core.DATABASE_FILENAME
 import org.isoron.uhabits.core.DATABASE_VERSION
 import org.isoron.uhabits.database.AndroidDatabase
+import org.isoron.uhabits.HabitsApplication
+import org.isoron.uhabits.core.containers.backup.*
+import org.isoron.uhabits.core.containers.migration.RawLegacyInventoryReader
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+
+/** The old component has been shut down; restart even if the restored file was rolled back. */
+class ExperimentalRestoreRestartRequiredException(cause: Throwable) : IOException("Restore failed; the previous dataset was recovered and the app must restart", cause)
 
 object DatabaseUtils {
     private var opener: HabitsDatabaseOpener? = null
@@ -73,6 +79,21 @@ object DatabaseUtils {
         val db = openDatabase()
         tempFile.parentFile?.mkdirs()
         if (tempFile.exists()) tempFile.delete()
+
+        val app = context.applicationContext as? HabitsApplication
+        val session = app?.component?.session
+        if (session?.isExperimental == true) {
+            val target = SQLiteDatabase.openOrCreateDatabase(tempFile, null)
+            try {
+                val preferences = context.getSharedPreferences("uhabits_prefs_${session.preferencesNamespace}", Context.MODE_PRIVATE)
+                    .all.mapValues { it.value.toString() }
+                val result = ContainerBackupService.createBackup(AndroidDatabase(db), AndroidDatabase(target), System.currentTimeMillis(), preferences)
+                if (result is BackupCreationResult.Failure) throw IOException(result.error, result.cause)
+            } finally { target.close() }
+            val validation = validateDatabaseBackup(tempFile)
+            if (!validation.isValid) { tempFile.delete(); throw IOException(validation.errorMessage) }
+            return SnapshotInfo(tempFile.length(), requireNotNull(validation.databaseVersion))
+        }
 
         checkpointDatabase(db)
 
@@ -187,6 +208,18 @@ object DatabaseUtils {
                     errorMessage = "Backup is missing required tables"
                 )
             } else {
+                if (ContainerBackupRouter.REQUIRED_ORGANIZATION_TABLES.any(presentTables::contains) || presentTables.contains("FocusSessions")) {
+                    val stage = SQLiteDatabase.create(null)
+                    val target = SQLiteDatabase.create(null)
+                    try {
+                        val wrapped = AndroidDatabase(db)
+                        val result = ContainerRestoreService.restore(wrapped, AndroidDatabase(stage), AndroidDatabase(target),
+                            externalManifest = compatibleOldExperimentalManifest(wrapped))
+                        if (result is org.isoron.uhabits.core.containers.backup.RestoreResult.Failure) {
+                            return org.isoron.uhabits.backup.BackupValidationResult(false, errorMessage = result.reason)
+                        }
+                    } finally { stage.close(); target.close() }
+                }
                 org.isoron.uhabits.backup.BackupValidationResult(
                     isValid = true,
                     databaseVersion = version
@@ -202,6 +235,15 @@ object DatabaseUtils {
         require(validation.isValid) { validation.errorMessage ?: "Invalid backup" }
 
         val dbFile = getDatabaseFile(context)
+        val activeFilename = dbFile.name
+        val app = context.applicationContext as? HabitsApplication
+        val session = app?.component?.session
+        val backup = SQLiteDatabase.openDatabase(stagedBackupFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+        val hasOrganization = try {
+            val tables = DatabaseSnapshotter.listTables(AndroidDatabase(backup))
+            ContainerBackupRouter.REQUIRED_ORGANIZATION_TABLES.any(tables::contains) || "FocusSessions" in tables
+        } finally { backup.close() }
+        require(session?.isExperimental == true || !hasOrganization) { "Experimental backup cannot replace a production dataset" }
         val parent = requireNotNull(dbFile.parentFile)
         val restoreTemp = File(parent, "${dbFile.name}.restore.tmp")
         val rollbackFile = File(parent, "${dbFile.name}.rollback")
@@ -214,7 +256,23 @@ object DatabaseUtils {
             Files.move(rollbackFile.toPath(), dbFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
         }
 
-        stagedBackupFile.copyTo(restoreTemp, overwrite = true)
+        if (session?.isExperimental == true) {
+            val source = SQLiteDatabase.openDatabase(stagedBackupFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+            val stage = SQLiteDatabase.create(null)
+            val target = SQLiteDatabase.openOrCreateDatabase(restoreTemp, null)
+            try {
+                val wrapped = AndroidDatabase(source)
+                val result = ContainerRestoreService.restore(wrapped, AndroidDatabase(stage), AndroidDatabase(target),
+                    externalManifest = compatibleOldExperimentalManifest(wrapped))
+                require(result is org.isoron.uhabits.core.containers.backup.RestoreResult.Success) {
+                    (result as? org.isoron.uhabits.core.containers.backup.RestoreResult.Failure)?.reason ?: "Invalid experimental backup"
+                }
+                require((result.kind as? DatasetKind.ExperimentalContainer)?.datasetUuid == session.datasetId) {
+                    "Restore requires the same experimental dataset identity"
+                }
+            } catch (error: Throwable) { restoreTemp.delete(); throw error }
+            finally { source.close(); stage.close(); target.close() }
+        } else stagedBackupFile.copyTo(restoreTemp, overwrite = true)
 
         if ((validation.databaseVersion ?: DATABASE_VERSION) < DATABASE_VERSION) {
             val migrated = SQLiteDatabase.openDatabase(
@@ -240,6 +298,7 @@ object DatabaseUtils {
             migratedValidation.errorMessage ?: "Migrated backup is invalid"
         }
 
+        if (session?.isExperimental == true) requireNotNull(app).shutdownForDatabaseRestoreRestart()
         closeDatabase()
         cleanupSidecars(dbFile)
 
@@ -258,8 +317,11 @@ object DatabaseUtils {
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE
             )
-            initializeDatabase(context)
+            initializeDatabase(context, activeFilename)
             openDatabase().close()
+            if (session?.isExperimental == true) {
+                context.getSharedPreferences(session.preferencesNamespace + "_timer", Context.MODE_PRIVATE).edit().clear().commit()
+            }
             rollbackFile.delete()
         } catch (e: Exception) {
             closeDatabase()
@@ -272,7 +334,8 @@ object DatabaseUtils {
                     StandardCopyOption.ATOMIC_MOVE
                 )
             }
-            initializeDatabase(context)
+            initializeDatabase(context, activeFilename)
+            if (session?.isExperimental == true) throw ExperimentalRestoreRestartRequiredException(e)
             throw e
         } finally {
             cleanupSidecars(restoreTemp)
@@ -283,6 +346,18 @@ object DatabaseUtils {
     fun openDatabase(): SQLiteDatabase {
         checkNotNull(opener)
         return opener!!.writableDatabase
+    }
+
+    /** Pre-Focus Android snapshots were raw files without a manifest; only fact-free ones can be adapted. */
+    private fun compatibleOldExperimentalManifest(db: AndroidDatabase): ContainerBackupManifest? {
+        val tables = DatabaseSnapshotter.listTables(db)
+        if ("OrganizationState" !in tables || "BackupManifest" in tables || "FocusSessions" in tables) return null
+        val inspection = ContainerBackupRouter.inspect(db)
+        val kind = inspection.kind as? DatasetKind.ExperimentalContainer ?: return null
+        val hash = RawLegacyInventoryReader.read(db).snapshotSha256
+        return ContainerBackupManifest(formatVersion = 1, datasetUuid = kind.datasetUuid, createdAt = 0,
+            foundationVersion = kind.foundationVersion, datasetMode = kind.mode, sourceSnapshotSha256 = hash,
+            canonicalChecksum = ContainerBackupManifest.computeCanonicalChecksum(kind.datasetUuid, hash, 0, 1, kind.foundationVersion))
     }
 
     private fun checkpointDatabase(db: SQLiteDatabase) {

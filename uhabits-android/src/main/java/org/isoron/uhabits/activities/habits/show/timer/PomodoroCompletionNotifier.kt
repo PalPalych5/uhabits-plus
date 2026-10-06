@@ -43,7 +43,8 @@ enum class PomodoroAlertIssue {
 class PomodoroCompletionNotifier(
     private val context: Context,
     private val habitList: HabitList,
-    private val alarmScheduler: PomodoroAlarmScheduler
+    private val alarmScheduler: PomodoroAlarmScheduler,
+    private val datasetId: String = "production"
 ) {
     private val notificationManager = context.getSystemService(NotificationManager::class.java)
     @Volatile private var channelEnsured = false
@@ -120,12 +121,12 @@ class PomodoroCompletionNotifier(
                     if (isFocus) R.string.pomodoro_notification_start_break
                     else R.string.pomodoro_notification_start_focus
                 ),
-                PomodoroAlarmReceiver.startNextPendingIntent(context, event)
+                PomodoroAlarmReceiver.startNextPendingIntent(context, event, datasetId)
             )
             .addAction(
                 R.drawable.ic_notification,
                 context.getString(R.string.pomodoro_notification_dismiss),
-                PomodoroAlarmReceiver.dismissPendingIntent(context, event.eventId)
+                PomodoroAlarmReceiver.dismissPendingIntent(context, event.eventId, datasetId)
             )
         event.overtimeStartedAtMillis?.let { overtimeStartedAtMillis ->
             builder
