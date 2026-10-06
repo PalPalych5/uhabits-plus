@@ -151,7 +151,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 Architecture preparation: DONE
 Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf), PR8·Spatial Native Slice DONE (commit d847b434f), PR9 DONE (commit 68538527e), PR9.2 Tasks Visual Reset DONE
 Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated
-Current branch: dev; verified PR10.1 code/evidence HEAD 4ad7fda773c926da47e47f0ddfd5a1b1161ee581; documentation-only closure follows; use Git for current HEAD
+Current branch: dev; verified PR11 implementation HEAD f207274b8b5fc0a17db5c2a9fb9e6bdde84d1e01; documentation-only closure follows; use Git for current HEAD
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
 Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
@@ -160,7 +160,7 @@ Native Android implementation: PR10 / PR10.1 ACCEPTED
 Active implementation: none; PR11 core/local persistence DONE; next runtime/backup integration scope requires a separate decision
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
-Checks: PR10.1 APK build + 13 focused Android tests + native widths/themes + RTL/font150 calendar + confirmed process/draft + byte-identical restoration PASS; unchanged PR10 core checks reused
+Checks: PR11 18 FocusSession + 5 Task regression tests PASS, including file close/reopen, concurrent retry and caller rollback; PR10.1 native visual V1 QA unchanged/reused
 Production DB schema: v29 unchanged (repository DATABASE_VERSION)
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
@@ -778,4 +778,4 @@ Implementation/evidence commit: `4ad7fda773c926da47e47f0ddfd5a1b1161ee581`. This
 - Validation PASS: FocusSessionDomainTest 10, SQLiteFocusSessionRepositoryTest 6, FocusSessionDurabilityTest 2, UserTaskDomainTest 4, SQLiteUserTaskRepositoryTest 1 (23 total, zero failures/errors). Real temporary file close/reopen and simultaneous separate-connection identical retry proved durability and dedupe. Temporary test files removed by tests; no emulator or app dataset touched.
 - Command: gradlew :uhabits-core:jvmTest --tests '*FocusSessionDomainTest' --tests '*SQLiteFocusSessionRepositoryTest' --tests '*FocusSessionDurabilityTest' --tests '*UserTaskDomainTest' --tests '*SQLiteUserTaskRepositoryTest' --console=plain --quiet -Pkotlin.compiler.execution.strategy=in-process --max-workers=1. Exit 0. No new Android build/screenshots: this slice has no UI/runtime wiring; PR10.1 APK remains the visual V1 artifact.
 - Independent bounded review found no blocking repository/transaction/production-isolation defect. Model validation remains authoritative for Unicode blank references; SQL CHECK constraints also protect interval/source/revision basics. Database connections and memory repositories follow existing caller confinement; no shared-connection multi-thread promise.
-- Acceptance/contract commit e6645b6b; implementation SHA recorded by closure after commit. Canonical source-of-truth updated. Local architecture/project-context docs updated under existing ignore rules, not force-added. Unrelated/private untracked files preserved. No publication or automatic PR12; scope closed.
+- Acceptance/contract commit e6645b6b; implementation commit f207274b8b5fc0a17db5c2a9fb9e6bdde84d1e01; this documentation-only closure records actual SHA. Canonical source-of-truth updated. Local architecture/project-context docs updated under existing ignore rules, not force-added. Unrelated/private untracked files preserved. No publication or automatic PR12; scope closed.
