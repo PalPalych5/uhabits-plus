@@ -152,7 +152,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 Architecture preparation: DONE
 Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf), PR8·Spatial Native Slice DONE (commit d847b434f), PR9 DONE (commit 68538527e), PR9.2 Tasks Visual Reset DONE
 Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated
-Current branch: dev; PR12 verified implementation prepared; local implementation commit follows; use Git for current HEAD
+Current branch: dev; verified PR12 implementation commit 90cfcb09ea041e79070ef835303df7091cce3ace; documentation-only closure follows; use Git for current HEAD
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
 Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
@@ -799,3 +799,5 @@ Implementation/evidence commit: `4ad7fda773c926da47e47f0ddfd5a1b1161ee581`. This
 - Original emulator production/experimental DBs and 3 preference files restored byte-for-byte (SHA256), integrity ok, v29, original Focus tables absent. Private DBs/prefs remain untracked; disposable device fixtures/test APK removed; app force-stopped. Existing test Application clears its selected DB: instrumentation requires disposable selection/external fixture and protected backups. Avoid running it on unsaved user data.
 - Evidence: [report](../pr12_artifacts/REPORT.md), [core results](../pr12_artifacts/core-results.json), [Android test](../pr12_artifacts/android-integration.txt), [process recovery](../pr12_artifacts/process-recovery.json), [Pomodoro/break](../pr12_artifacts/pomodoro-runtime.json), [restoration](../pr12_artifacts/restoration.json), native screenshots 01/02/03/05. Device Doze/exact-alarm latency, device clock rollback and injected swap failure remain unverified; corresponding core policies tested/code reviewed. Existing visual V1 and four polish debts unchanged.
 - Canonical claim closed. Local architecture/project-context docs updated under ignore policy. Unrelated/private artifacts preserved. No push/GitHub PR publication and no automatic PR13.
+
+- PR12 implementation/evidence commit: 90cfcb09ea041e79070ef835303df7091cce3ace. This documentation-only closure records the verified SHA; no additional runtime/code change. Tracked implementation clean after commit, private/unrelated untracked artifacts retained. No publication; PR13 not started.
