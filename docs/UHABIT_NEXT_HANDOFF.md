@@ -120,7 +120,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 - List и Calendar — representations выбранного smart view / Container. Inbox = incomplete root Task с `containerId == null`; plan и deadline независимы.
 - Эти решения заменяют старые dropdown/Browse shell варианты. Новые HTML concepts не нужны; визуал уточняется на Android после review. PR11 не разрешён автоматически.
 
-Статусы: `PLANNED`, `READY`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `SUPERSEDED`, `VISUAL_REVIEW_PENDING`. Текущий согласованный scope — PR10.1 Native Tasks Visual Refinement (2026-10-06). IA и функциональная семантика frozen; PR11 не разрешён.
+Статусы: `PLANNED`, `READY`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `SUPERSEDED`, `VISUAL_REVIEW_PENDING`, `VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH`. Пользователь принял PR10.1 как визуальную V1 (2026-10-06) и разрешил переход к PR11. IA и функциональная семантика frozen; PR11 согласован как FocusSession core-модель и локальное хранение без timer UI и Contribution.
 
 | Этап | Цель / входит | Специально не входит | Prerequisites | Status |
 |---|---|---|---|---|
@@ -135,9 +135,9 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR8 — Unified Hierarchical Home + Visual Identity | Единый экран в ListHabitsFragment, inline-раскрытие + drill-down, 196 Lucide иконок, HabitVisualIdentity | Изменение flat-списка в LEGACY_PRODUCTION, Tasks | PR7 функционально принят; visual UX переосмыслен | DONE |
 | PR8·Spatial — Living Context Native Slice | Открытая вёрстка (Zero cards), 2dp rail у раскрытого, fallback без иконки, Subtle Morph ~240ms, Zero-card Focused | Tasks, Today, Overview, new stats, schema v29 | Завершён как эксперимент; основной UX отклонён в пользу воркспейсов | DONE |
 | PR9.1 — Tasks UX polish & visual reset | Strict Inbox, dropdown views, autosave editor, zero-card 60dp rows, plain metadata text, docked Quick Add, live Task Detail sheet, empty states | Recurrence, FocusSession, Container redesign, production migration/sync | PR9 + user feedback | DONE |
-| PR10 — Native Adaptive Tasks Shell | Phone 3 workspaces + Tasks drawer; wide sidebar; bounded tree; List/Calendar shared context; existing detail/Quick Add; native QA | New domain/backend/schema/sync, Habit/Statistics redesign, PR11 | IA approved; native implementation and QA complete; user visual review required | VISUAL_REVIEW_PENDING |
-| PR10.1 — Native Tasks Visual Refinement | Compact Today/rows, Drawer, Calendar/agenda, Detail/Quick Add; native screenshots and QA | IA/domain changes, new features, PR11 | Human selected Compact; technical QA complete; final visual review required | VISUAL_REVIEW_PENDING |
-| FocusSession | Durable standalone work fact и безопасная финализация | Выдуманные legacy sessions, произвольные rules | Task MVP; timer/attribution/recovery design | PLANNED |
+| PR10 — Native Adaptive Tasks Shell | Phone 3 workspaces + Tasks drawer; wide sidebar; bounded tree; List/Calendar shared context; existing detail/Quick Add; native QA | New domain/backend/schema/sync, Habit/Statistics redesign, PR11 | IA and native V1 accepted by user 2026-10-06 | DONE |
+| PR10.1 — Native Tasks Visual Refinement | Compact Today/rows, Drawer, Calendar/agenda, Detail/Quick Add; native screenshots and QA | IA/domain changes, new features, PR11 | Human selected Compact; technical QA complete; V1 accepted 2026-10-06 | VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH |
+| PR11 — FocusSession core/local persistence | Immutable finalized work facts; memory/SQLite repository; idempotent recording and durable queries | Timer UI/integration, Contribution, runtime activation, production migration/sync | User explicitly selected this slice 2026-10-06 | IN_PROGRESS |
 | Contribution / provenance | Один явный source rule, breakdown/dedupe/corrections/undo | Пользовательский rules language, hidden double-write | Durable facts; manual/automatic projection contract | PLANNED |
 | Container statistics | Отдельные time/outcomes/Habit metrics; historical/current mode | Universal productivity score | Проверенные facts/provenance/placement | PLANNED |
 | Today-first UX evaluation | Сравнить A/B/C на реальных task/day сценариях | Автоматическая замена home без оценки | Task MVP и достаточно содержимого Today | PLANNED |
@@ -155,9 +155,9 @@ Current branch: dev; verified PR10.1 code/evidence HEAD 4ad7fda773c926da47e47f0d
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
 Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
-Visual language: ITERATING
-Native Android implementation: PR10.1 COMPLETE_FOR_REVIEW / VISUAL_REVIEW_PENDING
-Active implementation: none; STOP for PR10.1 native visual review; no PR11
+Visual language: VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH
+Native Android implementation: PR10 / PR10.1 ACCEPTED
+Active implementation: PR11 FocusSession core/local persistence IN_PROGRESS
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
 Checks: PR10.1 APK build + 13 focused Android tests + native widths/themes + RTL/font150 calendar + confirmed process/draft + byte-identical restoration PASS; unchanged PR10 core checks reused
@@ -166,13 +166,13 @@ Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
 ```
 
-PR10 реализован и зафиксирован локально. Experimental phone: `Привычки | Задачи | Статистика`, Settings secondary; Tasks drawer; от 600dp persistent sidebar. List/Calendar используют один navigation context. Habits сохраняет классический UI. [Native QA report](../pr10_artifacts/REPORT.md), [gallery/video](../pr10_artifacts/index.html), [evidence](../pr10_artifacts/evidence.json). Calendar MVP и wide detail sheet требуют visual review; окончательный visual language не утверждён. No push / GitHub PR publication. Pre-existing root A/B spike, pr91/pr92 files and local QA backups preserved; backups/preferences excluded from Git.
+PR10 реализован и зафиксирован локально. Experimental phone: `Привычки | Задачи | Статистика`, Settings secondary; Tasks drawer; от 600dp persistent sidebar. List/Calendar используют один navigation context. Habits сохраняет классический UI. [Native QA report](../pr10_artifacts/REPORT.md), [gallery/video](../pr10_artifacts/index.html), [evidence](../pr10_artifacts/evidence.json). PR10.1 Compact принят как visual V1; phone calendar labels и tablet detail pane отложены и не блокируют следующую функциональную разработку. No push / GitHub PR publication. Pre-existing root A/B spike, pr91/pr92 files and local QA backups preserved; backups/preferences excluded from Git.
 
 ## 6. Active work
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| none | none | dev / primary | IDLE | 2026-10-06 | none | PR10.1 native visual refinement and scoped QA complete; STOP for user review |
+| Codex / root + focus_domain | PR11 FocusSession core/local persistence | dev / C:/Users/Pavel/source/repos/uhabits-plus | IN_PROGRESS | 2026-10-06 | core/focus model/repositories/tests; canonical docs | User explicitly selects core model + local storage, no timer UI/Contribution |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
  
@@ -190,9 +190,10 @@ Handoff — coordination register, не атомарный mutex: одновре
  
 ## 7. Next actions
 
-1. STOP для пользовательского review [PR10.1 gallery/video](../pr101_artifacts/index.html), [report/critique](../pr101_artifacts/REPORT.md) и [evidence](../pr101_artifacts/evidence.json). Compact выбран пользователем; полный visual language ещё не утверждён.
-2. IA и функциональная семантика frozen. Следующий агент читает этот handoff и UHABIT_TASKS_IA.md, продолжает только по следующему конкретному user review. Не начинать PR11 или новый HTML concept.
-3. Оставшиеся review вопросы: phone month markers vs richer agenda, sparse empty wide cells, separate organization/date lines in rich rows; wide detail remains sheet. Physical device/TalkBack/comprehensive large-font/RTL and measured frame pacing not claimed.
+1. PR10.1 принят: `VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH`. Compact — утверждённая V1; повторный большой visual pass или PR10.2 не нужен. [Gallery/video](../pr101_artifacts/index.html), [report](../pr101_artifacts/REPORT.md), [evidence](../pr101_artifacts/evidence.json) остаются историческими QA-артефактами; их статус на момент проверки не переписывать.
+2. Реализовать согласованный PR11 — FocusSession core-модель и локальное хранение, без timer UI и Contribution. Контракт ниже. IA и Task semantics frozen; bottom workspaces + Tasks drawer закреплены; новых HTML concepts не делать.
+3. Четыре отложенных долга (не условие продолжения разработки): **metadata compaction** — в Today скрывать обычный «План сегодня», сохраняя нетипичный/пропущенный план и сочетание с deadline; **phone calendar labels** — краткое название хотя бы одной задачи + `+N` вместо одних маркеров; **tablet detail pane** — list + detail вместо modal sheet; **IME composer chrome** — скрывать глобальную нижнюю навигацию при активном composer + IME и возвращать после закрытия клавиатуры.
+4. Drawer и Detail приняты как V1; дальнейший icon/color Container polish отложен. Physical device/TalkBack/comprehensive large-font/RTL and measured frame pacing remain unverified; принятие визуальной V1 не расширяет техническое QA evidence.
 
 ## 8. PR1 contract
 
@@ -754,3 +755,18 @@ Commits: canonical IA/evidence `5c89f0a2e`; PR10 native code/evidence `629b3be13
 - Existing unrelated untracked artifacts preserved. No domain/schema/sync/backend/backup-format changes, no Habit/Statistics redesign, no publication. Scope closed; VISUAL_REVIEW_PENDING, STOP for user review; PR11 not started.
 
 Implementation/evidence commit: `4ad7fda773c926da47e47f0ddfd5a1b1161ee581`. This closure records the actual SHA; use Git for its own current HEAD. No push or GitHub PR publication.
+
+### 2026-10-06 — User accepts PR10.1 visual V1 and authorizes PR11 transition
+
+- Explicit human decision: VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH. Compact is accepted as the Tasks visual V1; global workspaces plus internal Tasks drawer stay fixed. Supersedes the preceding visual-review STOP and pending status; historical QA reports remain unchanged.
+- Record only four deferred debts: Today metadata compaction, phone calendar task labels with overflow, tablet list/detail pane, and composer IME global chrome. No PR10.2 or new large visual pass; Drawer and Detail accepted.
+- PR11 transition authorized. Repository audit found no numbered PR11 contract: FocusSession is the next general roadmap item, with timer/attribution/recovery decisions still outstanding. Asked the user to select the functional scope; no arbitrary recurrence, timer, Contribution, schema or UI feature introduced before that answer.
+- Documentation-only change; checked scoped diff and status, no Android rebuild needed. Existing dirty/untracked artifacts preserved. No publication. Acceptance scope closed; no implementation owner while awaiting PR11 clarification.
+### PR11 bounded implementation contract — accepted scope 2026-10-06
+
+- User selects FocusSession core model + local storage, no timer UI or Contribution. New core/focus package uses existing Database API and typed TaskId/ContainerId/HabitRef, memory and SQLite implementations.
+- First slice records immutable finalized work intervals: stable caller-supplied ID, epoch start/end, positive effective durationMs <= wall interval (pauses allowed), optional captured Task/Habit/Container identities, source/device metadata, createdAt/updatedAt and initial revision 1. No active-session lifecycle or inferred legacy records.
+- Identical retry is idempotent; same ID with different facts is rejected, never silently replaced. Multiple sessions per Task permitted; nullable/stale context preserved without cascading loss or any Task/Habit completion write.
+- SQLite schema installation is explicit and opt-in. Do not wire into Android DI, OrganizationSchema or production v29, nor activate capture before a separate backup/runtime integration stage. No runtime facts exist from this slice, so current backup format stays unchanged. Validate on temporary databases including actual file close/reopen, constraint and concurrent duplicate behavior.
+- Scoped tests cover model validation, memory/SQLite parity, exact millisecond/null metadata roundtrip, repeated record/conflict, ordering/Task queries and existing tables/data/version isolation. No UI changes; runtime proof is file-backed repository persistence rather than screenshots.
+- Ownership: focus_domain owns only model/API/memory/domain tests; root owns SQLite/persistence tests and docs. No overlapping edits. No publication or automatically starting the next stage.

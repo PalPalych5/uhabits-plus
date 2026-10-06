@@ -4,7 +4,7 @@ Accepted by the user on 2026-10-05. Applies equally to Codex and Antigravity; th
 
 ```text
 IA_APPROVED
-VISUAL_LANGUAGE_NOT_FINAL
+VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH
 NATIVE_IMPLEMENTATION_ALLOWED
 ```
 
@@ -40,7 +40,7 @@ Navigation means **where** the user looks. Representation means **how** those ta
 
 ## Native presentation and scope
 
-Use UHabit palettes, theme/insets/navigation conventions for Light/Dark/AMOLED. Visual language is **ITERATIVE**: exact spacing, typography, radius, colors, calendar cell styling and animation duration are not IA contracts. Refine these on actual Android after native visual review.
+Use UHabit palettes, theme/insets/navigation conventions for Light/Dark/AMOLED. On 2026-10-06 the user accepted PR10.1 Compact as **VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH**. Exact spacing, typography, radius, colors, calendar cell styling and animation duration are not IA contracts. Visual V1 is sufficient to continue feature development; no further large visual pass is required. Deferred debts are phone calendar labels, tablet detail pane, Today metadata compaction, and IME composer chrome; see the canonical handoff for scope. Global phone workspaces and internal Tasks drawer remain fixed.
 
 List remains a calm, compact worklist without giant pills, card-per-task or rainbow metadata chips. Detail retains existing autosave and text flush, editable title/notes, Container, plan, deadline and subtasks; property rows open native pickers, deletion stays in overflow. Quick Add stays nearly invisible collapsed and offers compact Container/plan/deadline controls when expanded. Preserve drafts and context across recreation.
 
@@ -57,4 +57,4 @@ PR10 excludes recurrence, Matrix, Kanban, FocusSession, Contribution, combined d
 
 **Spike is a design/evidence artifact, not production implementation.** Browser QA does not prove native behavior.
 
-PR10 must build an APK, pass relevant tests and native runtime checks, verify portrait/landscape/expanded widths, themes, drawer/list/calendar/context/state/back, independent date cases, detail/quick capture, completed states, Habits isolation and persistence. Provide actual Android screenshots and a short navigation video. Record exact gaps rather than treating a build as visual proof. Update handoff and STOP for user native visual review; do not start PR11 automatically.
+PR10 must build an APK, pass relevant tests and native runtime checks, verify portrait/landscape/expanded widths, themes, drawer/list/calendar/context/state/back, independent date cases, detail/quick capture, completed states, Habits isolation and persistence. Provide actual Android screenshots and a short navigation video. Record exact gaps rather than treating a build as visual proof. The required native visual review was accepted on 2026-10-06 after PR10.1. The user explicitly authorized transition to PR11; its functional scope must be recorded in the handoff before implementation. Historical reports preserve their original pending status.
