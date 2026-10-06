@@ -241,6 +241,25 @@ class SQLiteContributionRepository(private val db: Database) : ContributionRepos
         }
     }
 
+    override fun getByHabitsInRange(
+        targetHabits: Set<HabitRef>,
+        fromTimestamp: Long,
+        toTimestamp: Long,
+        includeRemoved: Boolean,
+    ): List<Contribution> {
+        if (targetHabits.isEmpty() || fromTimestamp > toTimestamp) return emptyList()
+        val results = targetHabits.toList().chunked(400).flatMap { chunk ->
+            val placeholders = chunk.joinToString(",") { "?" }
+            val activeCondition = if (includeRemoved) "" else " AND removed_at IS NULL"
+            query("WHERE target_habit_uuid IN ($placeholders) AND effective_timestamp BETWEEN ? AND ?$activeCondition") {
+                chunk.forEachIndexed { index, habit -> bindText(index + 1, habit.uuid) }
+                bindLong(chunk.size + 1, fromTimestamp)
+                bindLong(chunk.size + 2, toTimestamp)
+            }
+        }
+        return results.sortedWith(compareBy<Contribution> { it.effectiveTimestamp }.thenBy { it.id.value })
+    }
+
     override fun getAll(includeRemoved: Boolean): List<Contribution> {
         val condition = if (includeRemoved) "" else "WHERE removed_at IS NULL"
         return query(condition)

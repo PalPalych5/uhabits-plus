@@ -131,6 +131,20 @@ class MemoryContributionRepository : ContributionRepository {
         }
         .sortedWith(order)
 
+    override fun getByHabitsInRange(
+        targetHabits: Set<HabitRef>,
+        fromTimestamp: Long,
+        toTimestamp: Long,
+        includeRemoved: Boolean,
+    ): List<Contribution> {
+        if (targetHabits.isEmpty() || fromTimestamp > toTimestamp) return emptyList()
+        return contributionsById.values.filter {
+            it.targetHabit in targetHabits &&
+                it.effectiveTimestamp in fromTimestamp..toTimestamp &&
+                (includeRemoved || it.isActive)
+        }.sortedWith(order)
+    }
+
     override fun getAll(includeRemoved: Boolean): List<Contribution> = contributionsById.values
         .filter { includeRemoved || it.isActive }
         .sortedWith(order)

@@ -240,6 +240,21 @@ expect fun getFirstWeekdayNumberAccordingToLocale(): Int
 
 expect fun computeToday(hourOffset: Int = 0, minuteOffset: Int = 0): LocalDate
 
+/** Habit date of an instant in the current local time zone, with the configured day boundary. */
+expect fun localDateAt(epochMillis: Long, hourOffset: Int = 0, minuteOffset: Int = 0): LocalDate
+
+/**
+ * Instant at the configured local day boundary (the clock jump when inside a DST gap).
+ * During a repeated DST hour the first occurrence is used. The canonical wall-clock
+ * date mapping can briefly revert if a configured boundary lies inside that repeated hour.
+ */
+expect fun startOfLocalDay(date: LocalDate, hourOffset: Int = 0, minuteOffset: Int = 0): Long
+
+internal fun validateDayOffset(hourOffset: Int, minuteOffset: Int) {
+    require(hourOffset in 0..23) { "hourOffset must be in 0..23" }
+    require(minuteOffset in 0..59) { "minuteOffset must be in 0..59" }
+}
+
 fun countWeekdayOccurrencesInMonth(startOfMonth: LocalDate): Array<Int> {
     val weekday = (startOfMonth.dayOfWeek.daysSinceSunday + 1) % 7
     val freq = Array(7) { 0 }

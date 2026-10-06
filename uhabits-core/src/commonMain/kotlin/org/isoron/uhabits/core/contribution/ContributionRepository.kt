@@ -102,6 +102,18 @@ interface ContributionRepository {
         includeRemoved: Boolean = false,
     ): List<Contribution>
 
+    /**
+     * Retrieves contributions for a set of habits within the inclusive effective timestamp range.
+     * Empty habit sets and reversed ranges return an empty list. Results are ordered by
+     * effective timestamp, then contribution ID, across all requested habits.
+     */
+    fun getByHabitsInRange(
+        targetHabits: Set<HabitRef>,
+        fromTimestamp: Long,
+        toTimestamp: Long,
+        includeRemoved: Boolean = false,
+    ): List<Contribution>
+
     /** Retrieves all contributions in the repository. */
     fun getAll(includeRemoved: Boolean = false): List<Contribution>
 
