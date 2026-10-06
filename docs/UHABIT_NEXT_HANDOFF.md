@@ -140,7 +140,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR11 — FocusSession core/local persistence | Immutable finalized work facts; memory/SQLite repository; idempotent recording and durable queries | Timer UI/integration, Contribution, runtime activation, production migration/sync | User selected slice; 23 scoped tests PASS including file reopen/concurrency | DONE |
 | PR12 — Runtime capture bridge + full experimental backup | Existing stopwatch/Pomodoro -> durable FocusSession; one primary target; frozen context; journal recovery; full backup v2 | Contribution/Habit projection, new timer/stats UI, recurrence, production activation | 90 core tests; real Android manager/backup test; native stopwatch process recovery and Pomodoro/break QA | DONE |
 | PR13 — Contribution ledger foundation | Core model, Memory/SQLite repository, idempotency, tombstone reversal, format v3 backup | Automatic attribution, SourceRule DSL, Habit Entry mutation, Task completion | Scoped 43 tests PASS; durability/concurrency PASS; backup roundtrip PASS | DONE |
-| PR14 — SourceRule / attribution rules | Single explicit attribution rule, Container subtree attribution, dedupe protection | Generic workflow DSL, universal productivity score | Tested Contribution ledger and verified FocusSession provenance | READY |
+| PR14 — SourceRule / attribution rules | Single explicit attribution rule, Container subtree attribution, dedupe protection | Generic workflow DSL, universal productivity score | Tested Contribution ledger and verified FocusSession provenance | DONE |
 | Container statistics | Отдельные time/outcomes/Habit metrics; historical/current mode | Universal productivity score | Проверенные facts/provenance/placement | PLANNED |
 | Today-first UX evaluation | Сравнить A/B/C на реальных task/day сценариях | Автоматическая замена home без оценки | Task MVP и достаточно содержимого Today | PLANNED |
 | Production migration / new sync protocol | Отдельный release design, compatibility gate, conflict/recovery checks | Скрытая активация внутри Foundation | Validated local stages; protocol/dataset/server gate; отдельное согласование | PLANNED |
@@ -151,18 +151,18 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf), PR8·Spatial Native Slice DONE (commit d847b434f), PR9 DONE (commit 68538527e), PR9.2 Tasks Visual Reset DONE, PR10 DONE, PR11 DONE, PR12 DONE, PR13 DONE (commit 37f2b3cb1f0659adc896f6724e323c0ba4a80202)
+Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf), PR8·Spatial Native Slice DONE (commit d847b434f), PR9 DONE (commit 68538527e), PR9.2 Tasks Visual Reset DONE, PR10 DONE, PR11 DONE, PR12 DONE, PR13 DONE (commit 37f2b3cb1f0659adc896f6724e323c0ba4a80202), PR14 DONE (commit 500f332ab5c694e13ecc95860280e325bac5501f)
 Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated
-Current branch: dev; verified PR13 implementation commit 37f2b3cb1f0659adc896f6724e323c0ba4a80202; documentation-only closure follows; use Git for current HEAD
+Current branch: dev; verified PR14 implementation commit 500f332ab5c694e13ecc95860280e325bac5501f; documentation-only closure follows; use Git for current HEAD
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
 Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
 Visual language: VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH
 Native Android implementation: PR10 / PR10.1 ACCEPTED
-Active implementation: none; PR13 DONE; PR14 SourceRule requires approved plan
+Active implementation: none; PR14 DONE; PR15 requires approved plan
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
-Checks: PR13 43 scoped contribution tests PASS (contract, domain, durability, backup); 15 focus/task regressions PASS; models.sqlite.* PASS; :uhabits-android:compileDebugKotlin PASS; format v3 backup roundtrip PASS; production v29 unchanged
+Checks: PR14 108 scoped rules, contribution, backup tests PASS (converter, matcher, contract, attribution, durability, backup format v4 roundtrip); focus/task/models.sqlite.* regressions PASS; :uhabits-android:compileDebugKotlin PASS; format v4 backup roundtrip PASS; production v29 unchanged
 Production DB schema: v29 unchanged (repository DATABASE_VERSION)
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
@@ -174,7 +174,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| — | No active implementation scope | dev / C:/Users/Pavel/source/repos/uhabits-plus | — | — | — | PR13 closed (commit 37f2b3cb); no automatic PR14 |
+| — | No active implementation scope | dev / C:/Users/Pavel/source/repos/uhabits-plus | — | — | — | PR14 closed (commit 500f332ab); no automatic PR15 |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
  
@@ -193,7 +193,7 @@ Handoff — coordination register, не атомарный mutex: одновре
 ## 7. Next actions
 
 1. PR10.1 принят: `VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH`. Compact — утверждённая V1; повторный большой visual pass или PR10.2 не нужен. [Gallery/video](../pr101_artifacts/index.html), [report](../pr101_artifacts/REPORT.md), [evidence](../pr101_artifacts/evidence.json) остаются историческими QA-артефактами; их статус на момент проверки не переписывать.
-2. PR11, PR12 и PR13 DONE. PR13 реализовал durable Contribution ledger foundation: core model, Memory/SQLite repositories с идемпотентностью и проверкой конфликтов, tombstone-реверсирование, explicit ContributionService без авто-проекций, и format v3 full experimental backup. Следующий этап — PR14 SourceRule / attribution rules (автоматическая атрибуция из FocusSession в Habit по правилам поддеревьев), но он требует отдельного согласования плана перед началом. Production activation не разрешена. IA и Task semantics frozen.
+2. PR11, PR12, PR13 и PR14 DONE. PR14 реализовал SourceRule v1 и детерминированную атрибуцию из FocusSession в Habit по правилам контейнеров и поддеревьев (с конвертацией времени, дедупликацией, отзывом через tombstone и форматом бэкапа v4). Следующий этап требует отдельного согласования плана перед началом. Production activation не разрешена. IA и Task semantics frozen.
 3. Четыре отложенных долга (не условие продолжения разработки): **metadata compaction** — в Today скрывать обычный «План сегодня», сохраняя нетипичный/пропущенный план и сочетание с deadline; **phone calendar labels** — краткое название хотя бы одной задачи + `+N` вместо одних маркеров; **tablet detail pane** — list + detail вместо modal sheet; **IME composer chrome** — скрывать глобальную нижнюю навигацию при активном composer + IME и возвращать после закрытия клавиатуры.
 4. Drawer и Detail приняты как V1; дальнейший icon/color Container polish отложен. Physical device/TalkBack/comprehensive large-font/RTL and measured frame pacing remain unverified; принятие визуальной V1 не расширяет техническое QA evidence.
 
@@ -814,4 +814,29 @@ Implementation/evidence commit: `4ad7fda773c926da47e47f0ddfd5a1b1161ee581`. This
 - Verification PASS: 43 scoped Contribution tests PASS (domain, contract, durability file-reopen/concurrency, backup roundtrip/corruption); 15 focus/task regressions PASS; models.sqlite.* PASS; `:uhabits-android:compileDebugKotlin` PASS. Production schema and isolation verified.
 - Implementation commit: 37f2b3cb1f0659adc896f6724e323c0ba4a80202.
 - Scope closed. No automatic PR14.
+
+### 2026-10-06 — PR14 SourceRule v1 and deterministic Focus attribution completed
+
+- Implemented SourceRule core domain model and repository contracts (`SourceRule`, `SourceRuleRepository`, `MemorySourceRuleRepository`, `SQLiteSourceRuleRepository`) with unique constraint on `(source_kind, source_container_id, target_habit_uuid)`, deterministic validation, idempotency, typed `SourceRuleConflictException`, and tombstone removal.
+- Domain logic:
+  - `HabitTimeValueConverter`: integer arithmetic formula `(durationMs * 1000L + 30_000L) / 60_000L` with nearest-minute rounding for numeric habits; explicit validation of minute units (`min`, `m`, `minute`, `minutes`, `мин`, `минута`, `минуты`, `минут`); typed rejection for boolean and incompatible units (`IncompatibleTargetHabitException`).
+  - `HistoricalContainerMatcher`: matches frozen historical `FocusSession.organizationContext` and `containerId` against rule subtree constraints, ensuring attribution invariance against subsequent live container tree moves/reorganization.
+  - `SourceRuleAttributionService`: deterministic Contribution IDs (`contrib:focus:${sessionId}:${habitUuid}`), deduplication of overlapping container/subtree rules (direct rule precedence or exact single habit match), detection of ambiguous conflicts (`AmbiguousAttributionException`), enforcement of temporal validity (`effectiveFrom`), tombstone revocation of previously attributed contributions upon rule disablement/tombstoning, and fully idempotent `reconcileAll`.
+- Contribution ledger enhancements:
+  - Added optional `sourceRuleId: SourceRuleId?` to `Contribution`.
+  - Added `source_rule_id` column, `CHECK` constraint, and index `idx_contributions_rule` to `ContributionSchema`.
+  - Added `getByRule(ruleId)` query method to `ContributionRepository`, `MemoryContributionRepository`, and `SQLiteContributionRepository`.
+- Backup format v4 integration:
+  - Bumped `ContainerBackupManifest.CURRENT_FORMAT_VERSION` to 4.
+  - Added `sourceRulesSha256` checksum to manifest with backward-compatible canonical payload formula.
+  - Updated `ContributionBackupInventory` to support `includeRuleId` while preserving byte-for-byte checksum compatibility for format 3 backups.
+  - Created `SourceRuleBackupInventory` with deterministic JSON serialization and SHA-256 checksums.
+  - Updated `DatabaseSnapshotter`, `ContainerBackupService`, and `ContainerRestoreService` with format v4 roundtrip, referential integrity verification (rejecting orphan target habits and orphan source containers), and prevention of silent fact loss (rejecting format < 4 when SourceRules are present).
+- Verification PASS:
+  - 108 scoped JVM tests PASS: 41 new PR14 tests (converter, matcher, repository contract, attribution service, backup format v4 roundtrip, SQLite durability) + existing contribution and backup suites. Zero failures.
+  - Regression tests PASS: `org.isoron.uhabits.core.focus.*`, `org.isoron.uhabits.core.userTasks.*`, `org.isoron.uhabits.core.models.sqlite.*`.
+  - Android build check PASS: `:uhabits-android:compileDebugKotlin`.
+  - Database integrity: `DATABASE_VERSION = 29` unchanged in production.
+- Implementation commit: 500f332ab5c694e13ecc95860280e325bac5501f.
+- Scope closed. No automatic PR15.
 
