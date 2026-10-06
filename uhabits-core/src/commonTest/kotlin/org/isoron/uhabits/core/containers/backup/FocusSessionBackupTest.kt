@@ -56,7 +56,7 @@ class FocusSessionBackupTest {
         SQLiteFocusSessionRepository(source).record(fact())
         val backup = backup(source); val destination = TestDatabaseHelper.createEmptyDatabase()
         try {
-            assertEquals(2, DatabaseSnapshotter.readManifest(backup)?.formatVersion)
+            assertEquals(ContainerBackupManifest.CURRENT_FORMAT_VERSION, DatabaseSnapshotter.readManifest(backup)?.formatVersion)
             assertTrue(restore(backup, destination) is RestoreResult.Success)
             assertEquals(listOf(fact()), SQLiteFocusSessionRepository(destination).getAll())
         } finally { source.close(); backup.close(); destination.close() }
@@ -121,7 +121,7 @@ class FocusSessionBackupTest {
         val beforeTables = DatabaseSnapshotter.listTables(target)
         val beforeHash = RawLegacyInventoryReader.read(target).snapshotSha256
         try {
-            DatabaseSnapshotter.writeManifest(backup, DatabaseSnapshotter.readManifest(backup)!!.copy(formatVersion = 3))
+            DatabaseSnapshotter.writeManifest(backup, DatabaseSnapshotter.readManifest(backup)!!.copy(formatVersion = ContainerBackupManifest.CURRENT_FORMAT_VERSION + 1))
             assertTrue(restore(backup, target) is RestoreResult.Failure)
             assertEquals(beforeTables, DatabaseSnapshotter.listTables(target))
             assertEquals(beforeHash, RawLegacyInventoryReader.read(target).snapshotSha256)

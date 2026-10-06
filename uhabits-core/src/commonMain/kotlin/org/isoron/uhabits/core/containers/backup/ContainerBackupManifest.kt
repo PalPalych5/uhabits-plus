@@ -33,6 +33,7 @@ data class ContainerBackupManifest(
     val appSettings: Map<String, Long> = emptyMap(),
     val nonSecretPreferences: Map<String, String> = emptyMap(),
     val focusSessionsSha256: String = "",
+    val contributionsSha256: String = "",
 ) {
     fun toJson(): String {
         val sb = StringBuilder()
@@ -46,6 +47,7 @@ data class ContainerBackupManifest(
         sb.append("  \"source_snapshot_sha256\": \"").append(escapeJson(sourceSnapshotSha256)).append("\",\n")
         sb.append("  \"canonical_checksum\": \"").append(escapeJson(canonicalChecksum)).append("\",\n")
         sb.append("  \"focus_sessions_sha256\": \"").append(escapeJson(focusSessionsSha256)).append("\",\n")
+        sb.append("  \"contributions_sha256\": \"").append(escapeJson(contributionsSha256)).append("\",\n")
 
         sb.append("  \"app_settings\": {")
         val settingsEntries = appSettings.entries.toList()
@@ -69,7 +71,7 @@ data class ContainerBackupManifest(
     }
 
     companion object {
-        const val CURRENT_FORMAT_VERSION = 2
+        const val CURRENT_FORMAT_VERSION = 3
         const val CURRENT_FOUNDATION_VERSION = 1
 
         private val SENSITIVE_KEY_PATTERNS = listOf(
@@ -90,9 +92,14 @@ data class ContainerBackupManifest(
             formatVersion: Int = CURRENT_FORMAT_VERSION,
             foundationVersion: Int = CURRENT_FOUNDATION_VERSION,
             focusSessionsSha256: String = FocusBackupInventory.emptyChecksum,
+            contributionsSha256: String = ContributionBackupInventory.emptyChecksum,
         ): String {
             val base = "MANIFEST:v$formatVersion:$foundationVersion:$datasetUuid:$sourceSnapshotSha256:$createdAt"
-            val payload = if (formatVersion >= 2) "$base:$focusSessionsSha256" else base
+            val payload = when {
+                formatVersion >= 3 -> "$base:$focusSessionsSha256:$contributionsSha256"
+                formatVersion >= 2 -> "$base:$focusSessionsSha256"
+                else -> base
+            }
             return Sha256.hexDigest(Sha256.digest(payload.encodeToByteArray()))
         }
 
@@ -121,6 +128,7 @@ data class ContainerBackupManifest(
                 appSettings = appSettings,
                 nonSecretPreferences = nonSecretPreferences,
                 focusSessionsSha256 = extractString(json, "focus_sessions_sha256") ?: "",
+                contributionsSha256 = extractString(json, "contributions_sha256") ?: "",
             )
         }
 

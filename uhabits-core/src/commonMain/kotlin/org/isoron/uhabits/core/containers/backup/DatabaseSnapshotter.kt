@@ -57,6 +57,10 @@ object DatabaseSnapshotter {
             require(FocusBackupInventory.schemaError(sourceDb) == null) { "Unsupported FocusSessions schema" }
             org.isoron.uhabits.core.focus.sqlite.FocusSessionSchema.createSchema(targetDb)
         }
+        if (sourceTables.contains("Contributions")) {
+            require(ContributionBackupInventory.schemaError(sourceDb) == null) { "Unsupported Contributions schema" }
+            org.isoron.uhabits.core.contribution.sqlite.ContributionSchema.createSchema(targetDb)
+        }
 
         // 3. Create BackupManifest table
         targetDb.run(
@@ -258,6 +262,7 @@ object DatabaseSnapshotter {
             val tablesToClear = listOf(
                 "BackupManifest",
                 "FocusCaptureJournal",
+                "Contributions",
                 "FocusSessions",
                 "UserTasks",
                 "HabitPlacementHistory",
@@ -304,6 +309,10 @@ object DatabaseSnapshotter {
             if (sourceTables.contains("FocusSessions")) {
                 val repository = org.isoron.uhabits.core.focus.sqlite.SQLiteFocusSessionRepository(targetDb)
                 FocusBackupInventory.read(sourceDb).forEach(repository::record)
+            }
+            if (sourceTables.contains("Contributions")) {
+                val repository = org.isoron.uhabits.core.contribution.sqlite.SQLiteContributionRepository(targetDb)
+                ContributionBackupInventory.read(sourceDb).forEach(repository::record)
             }
 
             if (sourceTables.contains("BackupManifest")) copyBackupManifest(sourceDb, targetDb)

@@ -129,6 +129,9 @@ object ContainerRestoreService {
         if (manifest.formatVersion == 1 && "FocusSessions" in DatabaseSnapshotter.listTables(backupDb)) {
             return RestoreResult.Failure("Format 1 cannot inventory FocusSessions; refusing silent fact loss")
         }
+        if (manifest.formatVersion < 3 && "Contributions" in DatabaseSnapshotter.listTables(backupDb)) {
+            return RestoreResult.Failure("Format ${manifest.formatVersion} cannot inventory Contributions; refusing silent fact loss")
+        }
 
         // 3. Staging DB integrity and foreign keys
         val integrity = stagingDb.querySingle("PRAGMA integrity_check") { it.getText(0) }
@@ -152,9 +155,17 @@ object ContainerRestoreService {
         if (manifest.formatVersion >= 2) {
             val focusChecksum = FocusBackupInventory.checksum(stagingDb)
             if (manifest.focusSessionsSha256 != focusChecksum) return RestoreResult.Failure("FocusSessions checksum mismatch")
+            val contributionChecksum = if (manifest.formatVersion >= 3) {
+                val sum = ContributionBackupInventory.checksum(stagingDb)
+                if (manifest.contributionsSha256 != sum) return RestoreResult.Failure("Contributions checksum mismatch")
+                sum
+            } else {
+                ContributionBackupInventory.emptyChecksum
+            }
             val canonical = ContainerBackupManifest.computeCanonicalChecksum(
                 manifest.datasetUuid, manifest.sourceSnapshotSha256, manifest.createdAt,
                 manifest.formatVersion, manifest.foundationVersion, manifest.focusSessionsSha256,
+                if (manifest.formatVersion >= 3) manifest.contributionsSha256 else contributionChecksum,
             )
             if (canonical != manifest.canonicalChecksum) return RestoreResult.Failure("Manifest canonical checksum mismatch")
         }
@@ -232,6 +243,10 @@ object ContainerRestoreService {
             datasetUuid = plan.organizationState.datasetUuid,
             sourceSnapshotSha256 = inventory.snapshotSha256,
             createdAt = cutoverTimestamp,
+            formatVersion = ContainerBackupManifest.CURRENT_FORMAT_VERSION,
+            foundationVersion = ContainerBackupManifest.CURRENT_FOUNDATION_VERSION,
+            focusSessionsSha256 = FocusBackupInventory.emptyChecksum,
+            contributionsSha256 = ContributionBackupInventory.emptyChecksum,
         )
         val manifest = ContainerBackupManifest(
             formatVersion = ContainerBackupManifest.CURRENT_FORMAT_VERSION,
@@ -245,6 +260,7 @@ object ContainerRestoreService {
             appSettings = appSettingsMap,
             nonSecretPreferences = emptyMap(),
             focusSessionsSha256 = FocusBackupInventory.emptyChecksum,
+            contributionsSha256 = ContributionBackupInventory.emptyChecksum,
         )
 
         // 7. Write manifest to staging DB
@@ -388,6 +404,22 @@ object ContainerRestoreService {
                     break
                 }
             }
+        }
+
+        if (tables.contains("Contributions")) {
+            val orphanContributionStmt = db.prepareStatement(
+                """
+                SELECT c.id, c.target_habit_uuid FROM Contributions c
+                LEFT JOIN Habits h ON c.target_habit_uuid = h.uuid
+                WHERE h.uuid IS NULL
+                """.trimIndent()
+            )
+            while (orphanContributionStmt.step() == StepResult.ROW) {
+                val contribId = orphanContributionStmt.getText(0)
+                val habitUuid = orphanContributionStmt.getText(1)
+                errors.add("Contribution '$contribId' references non-existent habit UUID '$habitUuid'")
+            }
+            orphanContributionStmt.finalize()
         }
 
         return errors
