@@ -23,6 +23,7 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.content.DialogInterface
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
@@ -218,7 +219,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
         etTitle.setTextColor(palette.onSurface)
         etTitle.setHintTextColor(palette.onSurfaceVariant)
-        etDescription.setTextColor(palette.onSurface)
+        etDescription.setTextColor(palette.onSurfaceVariant)
         etDescription.setHintTextColor(palette.onSurfaceVariant)
         etNewSubtask.setTextColor(palette.onSurface)
         etNewSubtask.setHintTextColor(palette.onSurfaceVariant)
@@ -266,38 +267,37 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             ivCheckmark.setColorFilter(Color.WHITE)
         } else {
             circleDrawable.setColor(Color.TRANSPARENT)
-            circleDrawable.setStroke(dpInt(1.5f), MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.45f))
+            circleDrawable.setStroke(dpInt(1.5f), MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.72f))
             viewCheckCircle.background = circleDrawable
             ivCheckmark.visibility = View.GONE
         }
         btnCheck.contentDescription = if (isCompleted) "Возобновить задачу" else "Завершить задачу"
+        etTitle.paintFlags = if (isCompleted) etTitle.paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
+        else etTitle.paintFlags and Paint.STRIKE_THRU_TEXT_FLAG.inv()
     }
 
     private fun updateContainerDisplay() {
         val cid = selectedContainerId
+        // The folder/value pair supplies context without adding a metadata chip or color dot.
+        viewContainerDot.visibility = View.GONE
         if (cid == null) {
-            viewContainerDot.visibility = View.GONE
             tvContainerValue.text = "Без раздела"
         } else {
             val containers = organizationFacade.availableContainers()
             val item = containers.find { it.key == cid.value }
             if (item != null) {
-                viewContainerDot.visibility = View.VISIBLE
-                val dotColor = TaskThemeUtils.resolvePaletteColor(requireContext(), item.color, palette.accent)
-                viewContainerDot.background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(dotColor)
-                }
                 tvContainerValue.text = item.name
             } else {
                 viewContainerDot.visibility = View.GONE
-                tvContainerValue.text = "Раздел $cid"
+                tvContainerValue.text = "Недоступный раздел"
             }
         }
+        rowContainer.contentDescription = "Раздел: ${tvContainerValue.text}. Изменить раздел"
     }
 
     private fun updatePlannedDateDisplay() {
         val p = selectedPlannedDate
+        tvPlannedDateValue.setTextColor(if (p == null) palette.onSurfaceVariant else palette.onSurface)
         if (p == null) {
             tvPlannedDateValue.text = "Запланировать"
             btnClearPlannedDate.visibility = View.GONE
@@ -312,10 +312,12 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             tvPlannedDateValue.text = text
             btnClearPlannedDate.visibility = View.VISIBLE
         }
+        rowPlannedDate.contentDescription = "План: ${tvPlannedDateValue.text}. Изменить плановую дату"
     }
 
     private fun updateDeadlineDisplay() {
         val d = selectedDeadline
+        tvDeadlineValue.setTextColor(if (d == null) palette.onSurfaceVariant else palette.onSurface)
         if (d == null) {
             tvDeadlineValue.text = "Добавить дедлайн"
             btnClearDeadline.visibility = View.GONE
@@ -324,6 +326,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             tvDeadlineValue.text = df.format(Date(d))
             btnClearDeadline.visibility = View.VISIBLE
         }
+        rowDeadline.contentDescription = "Дедлайн: ${tvDeadlineValue.text}. Изменить дедлайн"
     }
 
     private fun setupSubtasks() {

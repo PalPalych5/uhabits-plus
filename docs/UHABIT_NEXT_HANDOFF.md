@@ -120,7 +120,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 - List и Calendar — representations выбранного smart view / Container. Inbox = incomplete root Task с `containerId == null`; plan и deadline независимы.
 - Эти решения заменяют старые dropdown/Browse shell варианты. Новые HTML concepts не нужны; визуал уточняется на Android после review. PR11 не разрешён автоматически.
 
-Статусы: `PLANNED`, `READY`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `SUPERSEDED`, `VISUAL_REVIEW_PENDING`. Текущий согласованный и разрешённый пользователем scope — PR10 Native Adaptive Tasks Shell; дальнейший этап требует отдельного запроса.
+Статусы: `PLANNED`, `READY`, `IN_PROGRESS`, `BLOCKED`, `DONE`, `SUPERSEDED`, `VISUAL_REVIEW_PENDING`. Текущий согласованный scope — PR10.1 Native Tasks Visual Refinement (2026-10-06). IA и функциональная семантика frozen; PR11 не разрешён.
 
 | Этап | Цель / входит | Специально не входит | Prerequisites | Status |
 |---|---|---|---|---|
@@ -136,6 +136,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR8·Spatial — Living Context Native Slice | Открытая вёрстка (Zero cards), 2dp rail у раскрытого, fallback без иконки, Subtle Morph ~240ms, Zero-card Focused | Tasks, Today, Overview, new stats, schema v29 | Завершён как эксперимент; основной UX отклонён в пользу воркспейсов | DONE |
 | PR9.1 — Tasks UX polish & visual reset | Strict Inbox, dropdown views, autosave editor, zero-card 60dp rows, plain metadata text, docked Quick Add, live Task Detail sheet, empty states | Recurrence, FocusSession, Container redesign, production migration/sync | PR9 + user feedback | DONE |
 | PR10 — Native Adaptive Tasks Shell | Phone 3 workspaces + Tasks drawer; wide sidebar; bounded tree; List/Calendar shared context; existing detail/Quick Add; native QA | New domain/backend/schema/sync, Habit/Statistics redesign, PR11 | IA approved; native implementation and QA complete; user visual review required | VISUAL_REVIEW_PENDING |
+| PR10.1 — Native Tasks Visual Refinement | Compact Today/rows, Drawer, Calendar/agenda, Detail/Quick Add; native screenshots and QA | IA/domain changes, new features, PR11 | Human selected Compact; technical QA complete; final visual review required | VISUAL_REVIEW_PENDING |
 | FocusSession | Durable standalone work fact и безопасная финализация | Выдуманные legacy sessions, произвольные rules | Task MVP; timer/attribution/recovery design | PLANNED |
 | Contribution / provenance | Один явный source rule, breakdown/dedupe/corrections/undo | Пользовательский rules language, hidden double-write | Durable facts; manual/automatic projection contract | PLANNED |
 | Container statistics | Отдельные time/outcomes/Habit metrics; historical/current mode | Universal productivity score | Проверенные facts/provenance/placement | PLANNED |
@@ -150,16 +151,16 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 Architecture preparation: DONE
 Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf), PR8·Spatial Native Slice DONE (commit d847b434f), PR9 DONE (commit 68538527e), PR9.2 Tasks Visual Reset DONE
 Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated
-Current branch: dev; verified code/evidence HEAD 629b3be13 (PR10); documentation-only closure may follow
+Current branch: dev; baseline HEAD 9d90a6060; PR10.1 implementation/evidence commit recorded in closure log / Git
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
 Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
 Visual language: ITERATING
-Native Android implementation: COMPLETE_FOR_REVIEW / PR10 VISUAL_REVIEW_PENDING
-Active implementation: none; STOP for user native visual review
+Native Android implementation: PR10.1 COMPLETE_FOR_REVIEW / VISUAL_REVIEW_PENDING
+Active implementation: none; STOP for PR10.1 native visual review; no PR11
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
-Checks: APK build + 21 focused tests + emulator three widths/themes + process/recreation + isolation/restoration PASS
+Checks: PR10.1 APK build + 13 focused Android tests + native widths/themes + RTL/font150 calendar + confirmed process/draft + byte-identical restoration PASS; unchanged PR10 core checks reused
 Production DB schema: v29 unchanged (repository DATABASE_VERSION)
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
@@ -171,7 +172,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| none | none | dev / primary | IDLE | 2026-10-05 | none | PR10 code/evidence committed 629b3be13; native QA passed; STOP for user visual review. |
+| none | none | dev / primary | IDLE | 2026-10-06 | none | PR10.1 native visual refinement and scoped QA complete; STOP for user review |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
  
@@ -189,9 +190,9 @@ Handoff — coordination register, не атомарный mutex: одновре
  
 ## 7. Next actions
 
-1. STOP: пользователь просматривает реальные Android [screenshots/video](../pr10_artifacts/index.html) и [QA report](../pr10_artifacts/REPORT.md). Не начинать PR11 и не делать новый HTML concept.
-2. Следующий агент читает этот handoff и docs/UHABIT_TASKS_IA.md; работает только по конкретному результату user native review. IA не пересматривается без нового явного решения пользователя.
-3. После нового согласования можно уточнять native visual language. Calendar month-cell titles, richer phone agenda и wide detail pane остаются visual/future scope, не утверждённой новой задачей.
+1. STOP для пользовательского review [PR10.1 gallery/video](../pr101_artifacts/index.html), [report/critique](../pr101_artifacts/REPORT.md) и [evidence](../pr101_artifacts/evidence.json). Compact выбран пользователем; полный visual language ещё не утверждён.
+2. IA и функциональная семантика frozen. Следующий агент читает этот handoff и UHABIT_TASKS_IA.md, продолжает только по следующему конкретному user review. Не начинать PR11 или новый HTML concept.
+3. Оставшиеся review вопросы: phone month markers vs richer agenda, sparse empty wide cells, separate organization/date lines in rich rows; wide detail remains sheet. Physical device/TalkBack/comprehensive large-font/RTL and measured frame pacing not claimed.
 
 ## 8. PR1 contract
 
@@ -743,3 +744,13 @@ On this computer, resolve the shared canonical handoff in the primary checkout b
 - Scope closed; roadmap VISUAL_REVIEW_PENDING. STOP for user native visual review. PR11 not started. Existing unrelated untracked files preserved; private QA backups/preferences not committed.
 
 Commits: canonical IA/evidence `5c89f0a2e`; PR10 native code/evidence `629b3be13ceb7163087f6420a61c858d99ae5e40`. No push or GitHub PR publication. This closure is a documentation-only follow-up; use Git for its own current HEAD.
+### 2026-10-06 — PR10.1 Native Tasks Visual Refinement completed for review
+
+- User froze IA/semantics and authorized native visual pass; three actual Today variants compared. Human selected Compact via asynchronous review. Temporary internal profile selector and alternatives removed; no HTML UI concept created.
+- Refined compact rows/vector secondary metadata and independent dates, restrained urgency, aligned Drawer counts/selection/local tree, wide calendar task titles/overflow and readable agenda, compact native detail/checklist, Quick Add attachments. Working surface capped on wide screens; relative padding/parent arrow supports RTL.
+- Corrected malformed imported completed icons with a scoped vector; quieter subtask deletion; inaccessible Container caption no longer exposes UUID; completed unassigned task is not labelled Inbox. Experimental bottom navigation secondary labels use existing palette at full opacity; legacy colors/alpha unchanged.
+- Final APK assembleDebug PASS; 13 focused Android SmartView/CalendarEvents/ContainerScope tests PASS (unchanged core tests from PR10 reused, not re-run falsely). Native phone Light/Dark/AMOLED, landscape Light and tablet Light/Dark/AMOLED; detail all widths, Calendar RTL/font150 overflow, local deep tree/parent, Completed/List/empty List, independent date clears and subtasks checked. Confirmed PID 21256 → none → 21500 with ProcessDraft retained. Final crash log empty.
+- Evidence: pr101_artifacts/index.html, REPORT.md, evidence.json; 32 gallery images including variants and QA; 81-second native flow video. Gallery is an evidence viewer, not a new spike. APK local in build/outputs/apk/debug. Original production DB unchanged byte-identically; original experimental DB, session/preferences restored byte-identically; density/size/rotation/font/locale restored. Private DB/prefs snapshots excluded from Git.
+- Existing unrelated untracked artifacts preserved. No domain/schema/sync/backend/backup-format changes, no Habit/Statistics redesign, no publication. Scope closed; VISUAL_REVIEW_PENDING, STOP for user review; PR11 not started.
+
+Commit: pending local implementation/evidence commit; closure records its actual SHA. No push or GitHub PR publication.

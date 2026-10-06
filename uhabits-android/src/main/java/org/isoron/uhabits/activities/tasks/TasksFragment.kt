@@ -80,6 +80,7 @@ class TasksFragment : Fragment() {
     private var localTreeRoot: ContainerId? = null
     private val collapsedContainers = mutableSetOf<String>()
     private var calendarMode = false
+    private var renderedCalendarMonth: String? = null
     private var selectedDay = getToday()
     private var calendarMonth = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1) }
     private var restoredTitle: String? = null
@@ -315,18 +316,31 @@ class TasksFragment : Fragment() {
 
     private fun setupQuickAdd() {
         fun refreshOptionLabels() {
+            listOf(quickPlan to R.drawable.ic_cat_calendar, quickContainerView to R.drawable.ic_cat_folder,
+                quickDeadline to R.drawable.ic_cat_flag).forEach { (label, icon) ->
+                val drawable = androidx.core.content.ContextCompat.getDrawable(requireContext(), icon)?.mutate()
+                drawable?.setTint(palette.onSurfaceVariant)
+                drawable?.setBounds(0, 0, dpInt(16f), dpInt(16f))
+                label.setCompoundDrawablesRelative(drawable, null, null, null)
+                label.compoundDrawablePadding = dpInt(6f)
+                val attachment = android.graphics.drawable.InsetDrawable(GradientDrawable().apply {
+                    cornerRadius = dp(8f); setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, .045f))
+                }, 0, dpInt(8f), 0, dpInt(8f))
+                label.background = android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(MainTabsThemeBridge.withAlpha(palette.accent, .16f)), attachment, null)
+            }
             val planText = quickPlanned?.let {
-                if (it == getToday()) "○ Сегодня" else "○ ${it.day}.${it.month}"
-            } ?: "○ План"
+                if (it == getToday()) "Сегодня" else "${it.day}.${it.month}"
+            } ?: "План"
             quickPlan.text = planText
             quickPlan.setTextColor(if (quickPlanned != null) palette.accent else palette.onSurfaceVariant)
 
             val containerItem = orgFacade.availableContainers().find { it.key == quickContainer?.value }
-            val containerText = containerItem?.let { "▣ ${it.name}" } ?: "▣ Раздел"
+            val containerText = containerItem?.let { it.name } ?: "Раздел"
             quickContainerView.text = containerText
             quickContainerView.setTextColor(if (quickContainer != null) palette.accent else palette.onSurfaceVariant)
 
-            val deadlineText = if (quickDue == null) "◆ Дедлайн" else "◆ Дедлайн ✓"
+            val deadlineText = if (quickDue == null) "Дедлайн" else SimpleDateFormat("d MMM", Locale("ru")).format(Date(quickDue!!))
             quickDeadline.text = deadlineText
             quickDeadline.setTextColor(if (quickDue != null) palette.accent else palette.onSurfaceVariant)
         }
@@ -572,7 +586,7 @@ class TasksFragment : Fragment() {
         textSize = 15f
         minHeight = dpInt(48f)
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(dpInt(16f), dpInt(8f), dpInt(12f), dpInt(8f))
+        setPaddingRelative(dpInt(16f), dpInt(8f), dpInt(12f), dpInt(8f))
         setTextColor(if (selected) palette.accent else palette.onSurface)
         if (selected) setBackgroundColor(palette.surface)
         action?.let { callback ->
@@ -611,7 +625,17 @@ class TasksFragment : Fragment() {
             }
         }
         if (wide) body.addView(navigationScroll, LinearLayout.LayoutParams(dpInt(280f), -1))
-        body.addView(content, LinearLayout.LayoutParams(0, -1, 1f))
+        // Bound the working surface on expanded windows instead of stretching rows across a desktop.
+        val contentFrame = FrameLayout(requireContext()).apply { setBackgroundColor(palette.background) }
+        body.addView(contentFrame, LinearLayout.LayoutParams(0, -1, 1f))
+        contentFrame.addView(content, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER_HORIZONTAL))
+        contentFrame.addOnLayoutChangeListener { _, left, _, right, _, _, _, _, _ ->
+            val available = right - left
+            val width = minOf(available, dpInt(840f))
+            if (content.layoutParams.width != width) {
+                content.layoutParams = FrameLayout.LayoutParams(width, -1, Gravity.CENTER_HORIZONTAL)
+            }
+        }
         val header = content.findViewById<LinearLayout>(R.id.tasksHeader)
         val hamburger = ImageButton(requireContext()).apply {
             setImageResource(R.drawable.ic_tasks_menu)
@@ -698,57 +722,92 @@ class TasksFragment : Fragment() {
         return false
     }
 
+    private fun navigationRow(label: String, icon: Int, count: Int? = null, selected: Boolean = false,
+                              depth: Int = 0, action: () -> Unit): LinearLayout = LinearLayout(requireContext()).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = dpInt(48f)
+        setPaddingRelative(dpInt(16f + depth * 12f), 0, dpInt(12f), 0)
+        val ripple = android.util.TypedValue()
+        requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
+        setBackgroundResource(ripple.resourceId)
+        if (selected) background = android.graphics.drawable.RippleDrawable(
+            android.content.res.ColorStateList.valueOf(MainTabsThemeBridge.withAlpha(palette.accent, .16f)),
+            GradientDrawable().apply { cornerRadius = dp(8f); setColor(MainTabsThemeBridge.withAlpha(palette.accent, .09f)) }, null)
+        isFocusable = true
+        isSelected = selected
+        setOnClickListener { action() }
+        addView(ImageView(requireContext()).apply {
+            setImageResource(icon); setColorFilter(if (selected) palette.accent else palette.onSurfaceVariant)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, LinearLayout.LayoutParams(dpInt(20f), dpInt(20f)).apply { marginEnd = dpInt(12f) })
+        addView(TextView(requireContext()).apply {
+            text = label; textSize = 14f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(if (selected) palette.accent else palette.onSurface)
+            if (selected) typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        count?.takeIf { it > 0 }?.let { number ->
+            addView(TextView(requireContext()).apply {
+                text = number.toString(); textSize = 12f; setTextColor(palette.onSurfaceVariant)
+                setPaddingRelative(dpInt(8f), 0, 0, 0); fontFeatureSettings = "tnum"
+            }, LinearLayout.LayoutParams(-2, -2))
+        }
+        contentDescription = label + (count?.let { ", $it ${pluralTasks(it)}" } ?: "")
+    }
+
     private fun renderNavigation() {
         navigationColumn.removeAllViews()
         navigationColumn.setBackgroundColor(palette.background)
+        navigationColumn.setPaddingRelative(dpInt(8f), dpInt(8f), dpInt(8f), dpInt(16f))
+        fun divider() { navigationColumn.addView(View(requireContext()).apply { setBackgroundColor(palette.divider) },
+            LinearLayout.LayoutParams(-1, dpInt(1f)).apply { topMargin = dpInt(12f); bottomMargin = dpInt(12f) }) }
         if (wide) {
-            listOf("Habits" to "Привычки", "Tasks" to "Задачи", "Statistics" to "Статистика").forEach { (key, name) ->
-                navigationColumn.addView(navText(name, key == "Tasks") { workspaceNavigator?.invoke(key) })
+            listOf(Triple("Habits", "Привычки", R.drawable.ic_tasks_completed),
+                Triple("Tasks", "Задачи", R.drawable.ic_cat_list_todo),
+                Triple("Statistics", "Статистика", R.drawable.ic_settings_statistics)).forEach { (key, name, icon) ->
+                navigationColumn.addView(navigationRow(name, icon, selected = key == "Tasks") { workspaceNavigator?.invoke(key) })
             }
-        } else navigationColumn.addView(navText("Навигация задач") { closeNavigation() })
+            divider()
+        } else navigationColumn.addView(navText("Задачи").apply {
+            textSize = 22f; typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
+            setPaddingRelative(dpInt(16f), dpInt(8f), dpInt(16f), dpInt(12f))
+        })
         val roots = taskRepo.getAll().filter { it.parentTaskId == null }
-        TaskSmartView.entries.forEach { smart ->
+        val smartIcons = listOf(R.drawable.ic_cat_calendar, R.drawable.ic_cat_folder_open,
+            R.drawable.ic_cat_calendar_clock, R.drawable.ic_cat_list_todo, R.drawable.ic_tasks_completed)
+        TaskSmartView.entries.forEachIndexed { index, smart ->
             val count = roots.count { smart.matches(it, getToday(), System.currentTimeMillis()) }
-            navigationColumn.addView(navText(smart.displayName + "    " + count, selectedContainerFilter == null && activeSmartView == smart) {
-                selectedContainerFilter = null
-                activeSmartView = smart
-                closeNavigation()
-                loadTasks()
+            navigationColumn.addView(navigationRow(smart.displayName, smartIcons[index], count,
+                selectedContainerFilter == null && activeSmartView == smart) {
+                selectedContainerFilter = null; activeSmartView = smart; closeNavigation(); loadTasks()
             })
         }
-        navigationColumn.addView(navText("РАЗДЕЛЫ").apply { textSize = 12f; setTextColor(palette.onSurfaceVariant) })
+        divider()
+        navigationColumn.addView(navText("Разделы").apply { textSize = 12f; minHeight = dpInt(32f); setTextColor(palette.onSurfaceVariant) })
         val queries = orgFacade.containerQueries
         val activeContainerIds = orgFacade.availableContainers().map { ContainerId(it.key) }.toSet()
-        localTreeRoot?.let { id ->
-            queries?.find(id)?.name?.let { name -> navigationColumn.addView(navText(name).apply { setTextColor(palette.accent) }) }
-        }
         if (queries != null) {
             localTreeRoot?.let { id ->
-                navigationColumn.addView(navText("‹ " + (queries.find(id)?.parentId?.let { queries.find(it)?.name } ?: "Все разделы")) {
-                    localTreeRoot = queries.find(id)?.parentId
-                    renderNavigation()
-                })
+                navigationColumn.addView(navigationRow(queries.find(id)?.parentId?.let { queries.find(it)?.name } ?: "Все разделы",
+                    R.drawable.ic_tasks_parent) { localTreeRoot = queries.find(id)?.parentId; renderNavigation() })
             }
             fun addContainer(item: org.isoron.uhabits.core.containers.Container, depth: Int) {
-                val children = queries.children(item.id)
+                if (item.id !in activeContainerIds) return
+                val children = queries.children(item.id).filter { it.id in activeContainerIds }
                 val subtree = TaskContainerScope.ids(item.id, queries.subtreeIds(item.id), activeContainerIds)
                 val count = roots.count { !it.isCompleted && it.containerId in subtree }
                 val row = LinearLayout(requireContext()).apply { orientation = LinearLayout.HORIZONTAL }
-                row.addView(navText(item.name + "  " + count, selectedContainerFilter == item.id) {
-                    selectedContainerFilter = item.id
-                    activeSmartView = TaskSmartView.ALL
-                    closeNavigation()
-                    loadTasks()
-                }.apply { setPadding(dpInt(16f + depth * 16f), dpInt(8f), dpInt(4f), dpInt(8f)) }, LinearLayout.LayoutParams(0, -2, 1f))
+                row.addView(navigationRow(item.name, if (depth == 0) R.drawable.ic_cat_folder else R.drawable.ic_cat_list_todo,
+                    count, selectedContainerFilter == item.id, depth) {
+                    selectedContainerFilter = item.id; activeSmartView = TaskSmartView.ALL; closeNavigation(); loadTasks()
+                }, LinearLayout.LayoutParams(0, -2, 1f))
                 if (children.isNotEmpty()) row.addView(ImageButton(requireContext()).apply {
                     setImageResource(if (depth >= 2 || item.id.value in collapsedContainers) R.drawable.ic_chevron_right else R.drawable.ic_chevron_down)
                     setColorFilter(palette.onSurfaceVariant)
-                    setBackgroundResource(run {
-                        val value = android.util.TypedValue()
-                        requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, value, true)
-                        value.resourceId
-                    })
-                    setPadding(dpInt(12f), dpInt(12f), dpInt(12f), dpInt(12f))
+                    val ripple = android.util.TypedValue()
+                    requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)
+                    setBackgroundResource(ripple.resourceId)
+                    setPadding(dpInt(14f), dpInt(14f), dpInt(14f), dpInt(14f))
                     contentDescription = "Раскрыть раздел " + item.name
                     setOnClickListener {
                         if (depth >= 2) localTreeRoot = item.id
@@ -762,7 +821,8 @@ class TasksFragment : Fragment() {
             val local = localTreeRoot?.let { queries.find(it) }
             if (local != null) addContainer(local, 0) else queries.roots().forEach { addContainer(it, 0) }
         }
-        navigationColumn.addView(navText("Настройки") { closeNavigation(); workspaceNavigator?.invoke("Settings") })
+        divider()
+        navigationColumn.addView(navigationRow("Настройки", R.drawable.ic_nav_settings) { closeNavigation(); workspaceNavigator?.invoke("Settings") })
     }
 
     private fun renderCalendar(tasks: List<UserTask>) {
@@ -770,6 +830,9 @@ class TasksFragment : Fragment() {
         representationButton.contentDescription = if (calendarMode) "Показать список" else "Показать календарь"
         calendarPanel.visibility = if (calendarMode) View.VISIBLE else View.GONE
         if (!calendarMode) return
+        val monthKey = "${calendarMonth.get(Calendar.YEAR)}-${calendarMonth.get(Calendar.MONTH)}"
+        val scrollY = if (renderedCalendarMonth == monthKey) (calendarPanel.getChildAt(0) as? ScrollView)?.scrollY ?: 0 else 0
+        renderedCalendarMonth = monthKey
         calendarPanel.removeAllViews()
         val scroll = ScrollView(requireContext())
         val content = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
@@ -777,16 +840,17 @@ class TasksFragment : Fragment() {
         calendarPanel.addView(scroll, LinearLayout.LayoutParams(-1, -1))
         val monthRow = LinearLayout(requireContext())
         fun changeMonth(delta: Int) { calendarMonth.add(Calendar.MONTH, delta); renderCalendar(tasks) }
-        monthRow.addView(navText("‹", action = { changeMonth(-1) }), LinearLayout.LayoutParams(dpInt(48f), -2))
+        monthRow.addView(navText("‹", action = { changeMonth(-1) }).apply { contentDescription = "Предыдущий месяц" }, LinearLayout.LayoutParams(dpInt(48f), -2))
         monthRow.addView(navText(SimpleDateFormat("LLLL yyyy", Locale("ru")).format(calendarMonth.time)) {
             calendarMonth = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1) }; selectedDay = getToday(); renderCalendar(tasks)
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        monthRow.addView(navText("›", action = { changeMonth(1) }), LinearLayout.LayoutParams(dpInt(48f), -2))
+        }.apply { typeface = android.graphics.Typeface.create("sans-serif-medium", 0) }, LinearLayout.LayoutParams(0, -2, 1f))
+        monthRow.addView(navText("›", action = { changeMonth(1) }).apply { contentDescription = "Следующий месяц" }, LinearLayout.LayoutParams(dpInt(48f), -2))
         content.addView(monthRow)
         val events = TaskCalendarEvents.from(tasks)
-        val labels = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
         val weekdays = LinearLayout(requireContext())
-        labels.forEach { weekdays.addView(navText(it).apply { textSize = 12f; gravity = Gravity.CENTER; setPadding(0,0,0,0); minHeight = dpInt(24f) }, LinearLayout.LayoutParams(0, -2, 1f)) }
+        listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс").forEach { weekdays.addView(navText(it).apply {
+            textSize = 11f; gravity = Gravity.CENTER; setPadding(0,0,0,0); minHeight = dpInt(24f); setTextColor(palette.onSurfaceVariant)
+        }, LinearLayout.LayoutParams(0, -2, 1f)) }
         content.addView(weekdays)
         val month = calendarMonth.get(Calendar.MONTH) + 1
         val year = calendarMonth.get(Calendar.YEAR)
@@ -798,27 +862,87 @@ class TasksFragment : Fragment() {
                 val number = week * 7 + column - offset + 1
                 val day = if (number in 1..days) LocalDate(year, month, number) else null
                 val dayEvents = events.filter { it.day == day }
-                val markers = (if (dayEvents.any { it.kind == TaskCalendarEventKind.PLAN }) "○" else "") + (if (dayEvents.any { it.kind == TaskCalendarEventKind.DEADLINE }) "◆" else "")
-                row.addView(navText(if (day == null) "" else number.toString() + (if (markers.isEmpty()) "" else "\n" + markers), day == selectedDay,
-                    if (day == null) null else ({ selectedDay = day; renderCalendar(tasks) })).apply {
-                    gravity = Gravity.CENTER; textSize = 14f; setPadding(0, dpInt(4f), 0, dpInt(4f))
-                    contentDescription = if (day == null) "" else "${number}.${month}.${year}, ${dayEvents.size} событий"
-                }, LinearLayout.LayoutParams(0, dpInt(48f), 1f))
+                val cell = LinearLayout(requireContext()).apply {
+                    orientation = LinearLayout.VERTICAL
+                    minimumHeight = dpInt(if (wide) 100f else 52f)
+                    gravity = if (wide) Gravity.TOP else Gravity.CENTER_HORIZONTAL
+                    setPaddingRelative(dpInt(4f), dpInt(4f), dpInt(4f), dpInt(4f))
+                    if (day != null) {
+                        isFocusable = true
+                        val ripple = android.util.TypedValue()
+                        requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
+                        setBackgroundResource(ripple.resourceId)
+                        setOnClickListener { selectedDay = day; renderCalendar(tasks) }
+                        contentDescription = "${number}.${month}.${year}, ${dayEvents.size} событий"
+                    }
+                }
+                cell.addView(TextView(requireContext()).apply {
+                    text = if (day == null) "" else number.toString(); textSize = 13f
+                    gravity = Gravity.CENTER; minimumHeight = dpInt(24f)
+                    setTextColor(if (day == selectedDay) Color.WHITE else if (day == getToday()) palette.accent else palette.onSurface)
+                    if (day == selectedDay) background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(palette.accent) }
+                }, LinearLayout.LayoutParams(dpInt(maxOf(28f, 22f * resources.configuration.fontScale)), dpInt(maxOf(28f, 22f * resources.configuration.fontScale))).apply { gravity = if (wide) Gravity.START else Gravity.CENTER_HORIZONTAL })
+                if (wide) {
+                    dayEvents.take(2).forEach { event ->
+                        cell.addView(TextView(requireContext()).apply {
+                            text = event.task.title; textSize = 11f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+                            setPaddingRelative(dpInt(4f), dpInt(3f), dpInt(2f), dpInt(3f))
+                            setTextColor(palette.onSurface)
+                            val drawable = androidx.core.content.ContextCompat.getDrawable(requireContext(),
+                                if (event.kind == TaskCalendarEventKind.PLAN) R.drawable.ic_cat_calendar else R.drawable.ic_cat_flag)?.mutate()
+                            drawable?.setTint(if (event.kind == TaskCalendarEventKind.PLAN) palette.accent else palette.onSurfaceVariant)
+                            drawable?.setBounds(0,0,dpInt(12f),dpInt(12f))
+                            setCompoundDrawablesRelative(drawable,null,null,null); compoundDrawablePadding = dpInt(3f)
+                        }, LinearLayout.LayoutParams(-1,-2))
+                    }
+                    if (dayEvents.size > 2) cell.addView(TextView(requireContext()).apply {
+                        text = "+${dayEvents.size - 2} ещё"; textSize = 10f; setTextColor(palette.onSurfaceVariant)
+                    })
+                } else if (dayEvents.isNotEmpty()) {
+                    val indicators = LinearLayout(requireContext()).apply { gravity = Gravity.CENTER }
+                    TaskCalendarEventKind.entries.filter { kind -> dayEvents.any { it.kind == kind } }.forEach { kind ->
+                        indicators.addView(ImageView(requireContext()).apply {
+                            setImageResource(if (kind == TaskCalendarEventKind.PLAN) R.drawable.ic_cat_calendar else R.drawable.ic_cat_flag)
+                            setColorFilter(if (kind == TaskCalendarEventKind.PLAN) palette.accent else palette.onSurfaceVariant)
+                        }, LinearLayout.LayoutParams(dpInt(12f),dpInt(12f)).apply { marginStart = dpInt(2f); marginEnd = dpInt(2f) })
+                    }
+                    cell.addView(indicators)
+                }
+                row.addView(cell, LinearLayout.LayoutParams(0, -2, 1f))
             }
             content.addView(row)
+            if (wide) content.addView(View(requireContext()).apply { setBackgroundColor(palette.divider) }, LinearLayout.LayoutParams(-1,dpInt(1f)))
         }
-        content.addView(navText("○ План     ◆ Дедлайн").apply { textSize = 12f; setTextColor(palette.onSurfaceVariant); minHeight = dpInt(32f) })
-        content.addView(navText("${selectedDay.day}.${selectedDay.month} · Повестка дня").apply { setTextColor(palette.accent) })
+        content.addView(navText(SimpleDateFormat("EEEE, d MMMM",Locale("ru")).format(Calendar.getInstance().apply {
+            set(selectedDay.year, selectedDay.month - 1, selectedDay.day)
+        }.time)).apply { textSize = 15f; typeface = android.graphics.Typeface.create("sans-serif-medium",0); minHeight = dpInt(48f) })
         val agenda = events.filter { it.day == selectedDay }
         if (agenda.isEmpty()) content.addView(navText("Нет задач на выбранный день").apply { setTextColor(palette.onSurfaceVariant) })
         agenda.forEach { event ->
-            val kind = if (event.kind == TaskCalendarEventKind.PLAN) "○ План" else "◆ Дедлайн " + SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(event.task.deadline!!))
-            content.addView(navText(event.task.title + "\n" + kind) {
-                val sheet = TaskDetailBottomSheet.newInstance(event.task.id)
-                sheet.onTaskUpdatedListener = { loadTasks() }
-                sheet.show(childFragmentManager, "task_detail")
-            }.apply { minHeight = dpInt(64f) })
+            val row = LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                minimumHeight = dpInt(64f); setPaddingRelative(dpInt(16f),dpInt(8f),dpInt(16f),dpInt(8f))
+                val ripple = android.util.TypedValue(); requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground,ripple,true)
+                setBackgroundResource(ripple.resourceId); isFocusable = true
+                setOnClickListener {
+                    val sheet = TaskDetailBottomSheet.newInstance(event.task.id)
+                    sheet.onTaskUpdatedListener = { loadTasks() }; sheet.show(childFragmentManager,"task_detail")
+                }
+            }
+            row.addView(ImageView(requireContext()).apply {
+                setImageResource(if (event.kind == TaskCalendarEventKind.PLAN) R.drawable.ic_cat_calendar else R.drawable.ic_cat_flag)
+                setColorFilter(if (event.kind == TaskCalendarEventKind.PLAN) palette.accent else palette.onSurfaceVariant)
+            },LinearLayout.LayoutParams(dpInt(20f),dpInt(20f)).apply { marginEnd = dpInt(16f) })
+            val labels = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
+            labels.addView(TextView(requireContext()).apply { text = event.task.title; textSize = 15f; maxLines = 2;
+                ellipsize = android.text.TextUtils.TruncateAt.END; setTextColor(palette.onSurface) })
+            labels.addView(TextView(requireContext()).apply {
+                text = if (event.kind == TaskCalendarEventKind.PLAN) "Запланировано" else "Дедлайн · " + SimpleDateFormat("HH:mm",Locale.getDefault()).format(Date(event.task.deadline!!))
+                textSize = 12f; setTextColor(palette.onSurfaceVariant)
+            },LinearLayout.LayoutParams(-1,-2).apply { topMargin = dpInt(4f) })
+            row.addView(labels,LinearLayout.LayoutParams(0,-2,1f)); content.addView(row)
         }
+        scroll.post { if (scroll.parent != null) scroll.scrollTo(0, scrollY) }
     }
 
     private fun showTaskQuickMenu(task: UserTask) {

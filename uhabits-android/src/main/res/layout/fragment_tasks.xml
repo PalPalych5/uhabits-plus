@@ -13,7 +13,7 @@
         android:minHeight="48dp"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="16dp"
+        android:paddingStart="4dp"
         android:paddingEnd="8dp">
 
         <TextView
@@ -22,7 +22,9 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="@string/tasks_title"
-            android:textSize="24sp"
+            android:textSize="22sp"
+            android:maxLines="1"
+            android:ellipsize="end"
             android:fontFamily="sans-serif-medium"
             android:includeFontPadding="false" />
 
@@ -43,17 +45,17 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:paddingStart="16dp"
+        android:paddingStart="56dp"
         android:paddingEnd="16dp"
         android:paddingTop="2dp"
-        android:paddingBottom="6dp">
+        android:paddingBottom="12dp">
 
         <TextView
             android:id="@+id/tvTasksSubtitle"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:textSize="11sp"
+            android:textSize="12sp"
             android:fontFamily="sans-serif"
             android:text="0 задач" />
 
@@ -61,7 +63,7 @@
             android:id="@+id/tvTasksDate"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="11sp"
+            android:textSize="12sp"
             android:fontFamily="sans-serif" />
     </LinearLayout>
 
@@ -154,7 +156,7 @@
                 android:layout_marginStart="12dp"
                 android:textSize="14sp"
                 android:fontFamily="sans-serif"
-                android:text="Новая задача" />
+                android:text="Добавить задачу…" />
         </LinearLayout>
 
         <!-- Expanded Composer View (above IME) -->
@@ -180,7 +182,7 @@
                     android:layout_height="match_parent"
                     android:layout_weight="1"
                     android:background="@null"
-                    android:hint="Новая задача"
+                    android:hint="Добавить задачу…"
                     android:textSize="16sp"
                     android:fontFamily="sans-serif"
                     android:imeOptions="actionDone"
@@ -209,21 +211,25 @@
 
                 <TextView
                     android:id="@+id/quickPlan"
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
                     android:layout_height="48dp"
                     android:gravity="center_vertical"
                     android:paddingStart="8dp"
                     android:paddingEnd="8dp"
                     android:textSize="12sp"
                     android:fontFamily="sans-serif"
-                    android:text="📅 Сегодня"
+                    android:text="Сегодня"
                     android:background="?android:attr/selectableItemBackground"
                     android:clickable="true"
-                    android:focusable="true" />
+                    android:focusable="true"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
 
                 <TextView
                     android:id="@+id/quickContainer"
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
                     android:layout_height="48dp"
                     android:gravity="center_vertical"
                     android:paddingStart="8dp"
@@ -231,32 +237,31 @@
                     android:layout_marginStart="4dp"
                     android:textSize="12sp"
                     android:fontFamily="sans-serif"
-                    android:text="📁 Раздел"
-                    android:maxWidth="130dp"
+                    android:text="Раздел"
+
                     android:maxLines="1"
                     android:ellipsize="end"
                     android:background="?android:attr/selectableItemBackground"
                     android:clickable="true"
                     android:focusable="true" />
 
-                <View
-                    android:layout_width="0dp"
-                    android:layout_height="0dp"
-                    android:layout_weight="1" />
-
                 <TextView
                     android:id="@+id/quickDeadline"
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
                     android:layout_height="48dp"
+                    android:layout_marginStart="4dp"
                     android:gravity="center_vertical"
                     android:paddingStart="8dp"
                     android:paddingEnd="8dp"
                     android:textSize="12sp"
                     android:fontFamily="sans-serif"
-                    android:text="🕒 Дедлайн"
+                    android:text="Дедлайн"
                     android:background="?android:attr/selectableItemBackground"
                     android:clickable="true"
-                    android:focusable="true" />
+                    android:focusable="true"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>

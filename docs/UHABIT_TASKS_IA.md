@@ -51,6 +51,9 @@ PR10 excludes recurrence, Matrix, Kanban, FocusSession, Contribution, combined d
 - [Adaptive spike](../ia_navigation_spike/adaptive/index.html)
 - [Live browser QA report](../ia_navigation_spike/adaptive/qa/REPORT.md)
 - [Screenshots/evidence directory](../ia_navigation_spike/adaptive/qa/)
+- [Native PR10 shell QA](../pr10_artifacts/REPORT.md)
+- [Native PR10.1 visual refinement / selected Compact](../pr101_artifacts/REPORT.md)
+- [Native PR10.1 screenshots/video](../pr101_artifacts/index.html)
 
 **Spike is a design/evidence artifact, not production implementation.** Browser QA does not prove native behavior.
 

@@ -414,7 +414,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         previous: MainDestination? = null
     ) {
         val activeColor = AccentColorManager.getAccentColor(this, prefs)
-        val inactiveColor = ContextCompat.getColor(
+        val inactiveColor = if (appComponent.session.isExperimental) MainTabsThemeBridge.resolve(this).onSurfaceVariant else ContextCompat.getColor(
             this,
             if (AndroidThemeSwitcher(this, prefs).isNightMode) R.color.grey_500 else R.color.grey_600
         )
@@ -425,12 +425,12 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         val settingsActive = destination.bottomItemDestination == MainDestination.SETTINGS
 
         // Update colors
-        habitsTabAnimator.updateColors(activeColor, inactiveColor)
+        habitsTabAnimator.updateColors(activeColor, inactiveColor, if (appComponent.session.isExperimental) 1f else 0.54f)
         if (appComponent.session.isExperimental) {
-            tasksTabAnimator.updateColors(activeColor, inactiveColor)
+            tasksTabAnimator.updateColors(activeColor, inactiveColor, if (appComponent.session.isExperimental) 1f else 0.54f)
         }
-        reportsTabAnimator.updateColors(activeColor, inactiveColor)
-        settingsTabAnimator.updateColors(activeColor, inactiveColor)
+        reportsTabAnimator.updateColors(activeColor, inactiveColor, if (appComponent.session.isExperimental) 1f else 0.54f)
+        settingsTabAnimator.updateColors(activeColor, inactiveColor, if (appComponent.session.isExperimental) 1f else 0.54f)
 
         // Animate or snap selection state
         val shouldAnimate = animate && areSystemAnimationsEnabled()
@@ -1006,6 +1006,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         private var animator: android.animation.ValueAnimator? = null
         private var activeColor: Int = 0
         private var inactiveColor: Int = 0
+        private var minimumAlpha: Float = 0.54f
 
         var progress: Float = 0f
             set(value) {
@@ -1017,7 +1018,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                 iconView.scaleY = scale
 
                 // Alpha
-                val alpha = 0.54f + (0.46f * value) // 0.54 to 1.0
+                val alpha = minimumAlpha + ((1f - minimumAlpha) * value)
                 iconView.alpha = alpha
                 labelView.alpha = alpha
 
@@ -1027,7 +1028,8 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                 labelView.setTextColor(color)
             }
 
-        fun updateColors(active: Int, inactive: Int) {
+        fun updateColors(active: Int, inactive: Int, minimumAlpha: Float = 0.54f) {
+            this.minimumAlpha = minimumAlpha
             this.activeColor = active
             this.inactiveColor = inactive
             progress = progress // Force color re-evaluation

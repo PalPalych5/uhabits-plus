@@ -5,24 +5,25 @@
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:paddingStart="16dp"
-    android:paddingEnd="16dp"
-    android:paddingTop="8dp"
-    android:paddingBottom="8dp">
+    android:minHeight="48dp"
+    android:paddingStart="0dp"
+    android:paddingEnd="0dp"
+    android:paddingTop="2dp"
+    android:paddingBottom="2dp">
 
     <!-- Subtask Check -->
     <FrameLayout
         android:id="@+id/btnSubtaskCheck"
         android:layout_width="48dp"
         android:layout_height="48dp"
-        android:layout_marginEnd="10dp"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
         android:clickable="true"
         android:focusable="true">
 
         <View
             android:id="@+id/viewSubtaskCheckCircle"
-            android:layout_width="18dp"
-            android:layout_height="18dp"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
             android:layout_gravity="center" />
 
         <ImageView
@@ -39,16 +40,20 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:textSize="14sp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:includeFontPadding="false"
+        android:lineSpacingExtra="2dp"
+        android:textSize="15sp"
         android:fontFamily="sans-serif" />
 
     <ImageButton
         android:id="@+id/btnDeleteSubtask"
         android:layout_width="48dp"
         android:layout_height="48dp"
-        android:padding="14dp"
+        android:padding="16dp"
         android:background="?android:attr/selectableItemBackgroundBorderless"
         android:src="@drawable/ic_cat_trash_2"
-        android:contentDescription="Удалить подзадачу" />
+        android:contentDescription="Удалить подзадачу"  android:alpha="0.55" />
 
 </LinearLayout>

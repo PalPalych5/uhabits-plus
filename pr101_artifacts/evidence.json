@@ -1,0 +1,136 @@
+{
+  "status": "NATIVE_VISUAL_REVIEW_PENDING",
+  "selected_profile": "Compact (human selected)",
+  "apk_sha256": "45bcdc2e6e43a32e252b415bb21870ab20c3393f017a1da54d7b0967088ff5f4",
+  "tests": [
+    {
+      "name": "org.isoron.uhabits.activities.tasks.TaskCalendarEventsTest",
+      "tests": "3",
+      "failures": "0",
+      "errors": "0"
+    },
+    {
+      "name": "org.isoron.uhabits.activities.tasks.TaskContainerScopeTest",
+      "tests": "4",
+      "failures": "0",
+      "errors": "0"
+    },
+    {
+      "name": "org.isoron.uhabits.activities.tasks.TaskSmartViewTest",
+      "tests": "6",
+      "failures": "0",
+      "errors": "0"
+    }
+  ],
+  "independent_date_edits": {
+    "date-edit-plan-cleared.db": {
+      "plan": null,
+      "deadline": 1791387900000
+    },
+    "date-edit-deadline-cleared.db": {
+      "plan": "2026-10-05",
+      "deadline": null
+    }
+  },
+  "restoration": {
+    "experimental_db": {
+      "identical": true,
+      "sha256_before": "2d0d3ec746861d47bfba2d58dcd126228e2ca3cfb54269b7d80485889dd859ec",
+      "sha256_after": "2d0d3ec746861d47bfba2d58dcd126228e2ca3cfb54269b7d80485889dd859ec"
+    },
+    "experimental_preferences": {
+      "identical": true,
+      "sha256_before": "c0948034c93d81cee74640cdb17617b5e7859dad1549f5c235f564523aa5c140",
+      "sha256_after": "c0948034c93d81cee74640cdb17617b5e7859dad1549f5c235f564523aa5c140"
+    },
+    "session_preferences": {
+      "identical": true,
+      "sha256_before": "ba34016a414e31d9dd43f48f5950e3a97fd4d32935a587f3a6c54e0dc0127b1c",
+      "sha256_after": "ba34016a414e31d9dd43f48f5950e3a97fd4d32935a587f3a6c54e0dc0127b1c"
+    },
+    "production_db": {
+      "identical": true,
+      "sha256_before": "d36a3f9777c892c4572ee1f1cbbdb24faff4e207c8f9f828ea4b9c68959d9ee2",
+      "sha256_after": "d36a3f9777c892c4572ee1f1cbbdb24faff4e207c8f9f828ea4b9c68959d9ee2"
+    }
+  },
+  "process_death": {
+    "before": "21256",
+    "killed": null,
+    "after": "21500",
+    "draftBefore": "ProcessDraft",
+    "draftAfter": "ProcessDraft",
+    "retained": true
+  },
+  "video_duration_seconds": 81.3932,
+  "crash_log_empty": true,
+  "build": "assembleDebug PASS",
+  "recording_pid_at_completed_flow": 21773,
+  "runtime_coverage": {
+    "phone": [
+      "Light",
+      "Dark",
+      "AMOLED"
+    ],
+    "landscape": [
+      "Light"
+    ],
+    "tablet": [
+      "Light",
+      "Dark",
+      "AMOLED"
+    ],
+    "extra": [
+      "tablet Calendar RTL",
+      "tablet Calendar font 150%",
+      "deep local tree and parent Back",
+      "Completed/List and empty List",
+      "date clear independence",
+      "subtask toggle",
+      "draft rotation/recreation and confirmed process death",
+      "landscape Detail top + scrolled subtask add reachable"
+    ]
+  },
+  "device_restoration": {
+    "size": "1080x2400 (reset)",
+    "density": "420 (reset)",
+    "font_scale": "1.0",
+    "accelerometer_rotation": "1",
+    "user_rotation": "0",
+    "app_locales": "ru-RU"
+  },
+  "gallery_files": [
+    "01-phone-today.png",
+    "02-phone-drawer.png",
+    "03-phone-container.png",
+    "04-phone-calendar.png",
+    "05-phone-detail.png",
+    "06-phone-quick-add.png",
+    "07-phone-dark.png",
+    "08-phone-amoled.png",
+    "09-landscape-draft.png",
+    "10-tablet-sidebar-list.png",
+    "11-tablet-calendar.png",
+    "12-tablet-agenda.png",
+    "13-tablet-detail.png",
+    "qa-phone-completed.png",
+    "qa-phone-empty.png",
+    "qa-phone-inbox.png",
+    "qa-phone-upcoming.png",
+    "qa-phone-deep-container.png",
+    "qa-phone-deep-parent.png",
+    "qa-tablet-calendar-font150.png",
+    "qa-tablet-calendar-rtl.png",
+    "qa-process-draft-final.png",
+    "qa-habits.png",
+    "qa-tablet-dark-list.png",
+    "qa-tablet-dark-calendar.png",
+    "qa-tablet-amoled-list.png",
+    "qa-tablet-amoled-calendar.png",
+    "variant-compact.png",
+    "variant-balanced.png",
+    "variant-editorial.png",
+    "qa-landscape-detail.png",
+    "qa-landscape-detail-scrolled.png"
+  ]
+}

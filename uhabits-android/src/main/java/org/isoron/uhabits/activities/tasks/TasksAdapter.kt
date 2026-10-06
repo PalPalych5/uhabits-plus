@@ -21,10 +21,13 @@ package org.isoron.uhabits.activities.tasks
 
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.style.ForegroundColorSpan
+import android.text.style.ImageSpan
+import androidx.appcompat.content.res.AppCompatResources
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -82,6 +85,7 @@ class TasksAdapter(
                 return oldT == newT &&
                     subtaskCounts[oldT.id] == newSubtaskCounts[newT.id] &&
                     today == currentToday &&
+                    oldT.containerId?.let { containers[it] } == newT.containerId?.let { newContainers[it] } &&
                     oldT.isHardOverdue(nowMillis) == newT.isHardOverdue(currentTimeMillis)
             }
         })
@@ -115,11 +119,13 @@ class TasksAdapter(
         private val ivCheckmark: ImageView = itemView.findViewById(R.id.ivCheckmark)
         private val tvTitle: TextView = itemView.findViewById(R.id.tvTaskTitle)
         private val layoutTaskMeta: LinearLayout = itemView.findViewById(R.id.layoutTaskMeta)
-        private val viewContainerDot: View = itemView.findViewById(R.id.viewContainerDot)
+        private val tvTaskContext: TextView = itemView.findViewById(R.id.tvTaskContext)
         private val tvTaskMeta: TextView = itemView.findViewById(R.id.tvTaskMeta)
 
         fun bind(task: UserTask) {
             val isCompleted = task.isCompleted
+            applyRowProfile()
+            btnCheck.contentDescription = (if (isCompleted) "Возобновить: " else "Завершить: ") + task.title
 
             // 1. Title & Strikethrough
             tvTitle.text = task.title
@@ -131,7 +137,7 @@ class TasksAdapter(
                 tvTitle.paintFlags = tvTitle.paintFlags and Paint.STRIKE_THRU_TEXT_FLAG.inv()
             }
 
-            // 2. Custom Check Circle (20dp circle on 48dp target)
+            // Completion affordance stays inside a 48dp target.
             val circleDrawable = GradientDrawable()
             circleDrawable.shape = GradientDrawable.OVAL
 
@@ -144,7 +150,7 @@ class TasksAdapter(
             } else {
                 circleDrawable.setColor(Color.TRANSPARENT)
                 val strokeWidth = TaskThemeUtils.dpInt(itemView.context, 1.5f)
-                circleDrawable.setStroke(strokeWidth, MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.45f))
+                circleDrawable.setStroke(strokeWidth, MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.7f))
                 viewCheckCircle.background = circleDrawable
                 ivCheckmark.visibility = View.GONE
             }
@@ -153,7 +159,7 @@ class TasksAdapter(
                 onToggleComplete(task)
             }
 
-            // 3. Metadata Line (Concept A: plain text, no capsule chips)
+            // Secondary property lines; dates remain independent and may wrap.
             bindMetadata(task)
 
             // Click & Long Click
@@ -166,81 +172,86 @@ class TasksAdapter(
             }
         }
 
+        private fun applyRowProfile() {
+
+            itemView.setPaddingRelative(dp(8f), dp(8f), dp(20f), dp(8f))
+            tvTitle.textSize = 15.5f
+            tvTitle.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+            tvTaskContext.textSize = 12f
+            tvTaskMeta.textSize = 12f
+            (layoutTaskMeta.layoutParams as LinearLayout.LayoutParams).apply { topMargin = dp(4f) }
+            (tvTaskMeta.layoutParams as LinearLayout.LayoutParams).apply { topMargin = dp(4f) }
+            viewCheckCircle.layoutParams = (viewCheckCircle.layoutParams as FrameLayout.LayoutParams).apply {
+                width = dp(20f)
+                height = dp(20f)
+            }
+            ivCheckmark.layoutParams = (ivCheckmark.layoutParams as FrameLayout.LayoutParams).apply {
+                topMargin = dp((20f - 12f) / 2f)
+            }
+        }
+
+        private fun dp(value: Float) = TaskThemeUtils.dpInt(itemView.context, value)
+
+        private fun SpannableStringBuilder.appendProperty(icon: Int, label: String, color: Int) {
+            if (isNotEmpty()) append("   ")
+            val start = length
+            val drawable = AppCompatResources.getDrawable(itemView.context, icon)!!.mutate().apply {
+                setTint(color)
+                val size = dp(12f)
+                setBounds(0, 0, size, size)
+            }
+            append("\uFFFC ")
+            setSpan(ImageSpan(drawable, ImageSpan.ALIGN_BOTTOM), start, start + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            append(label)
+            setSpan(ForegroundColorSpan(color), start, length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+
         private fun bindMetadata(task: UserTask) {
-            val ssb = SpannableStringBuilder()
-            var hasElement = false
-
-            // Container
-            val containerId = task.containerId
-            val containerItem = if (containerId != null) containers[containerId] else null
-            if (containerItem != null) {
-                viewContainerDot.visibility = View.VISIBLE
-                val containerColor = TaskThemeUtils.resolvePaletteColor(itemView.context, containerItem.color, palette.accent)
-                val dotDrawable = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(containerColor)
-                }
-                viewContainerDot.background = dotDrawable
-
-                ssb.append(containerItem.name)
-                hasElement = true
-            } else {
-                viewContainerDot.visibility = View.GONE
-            }
-
-            // Plan and deadline are independent; neither date suppresses the other.
-            if (!task.isCompleted) {
-                task.plannedDate?.let { planned ->
-                    if (hasElement) ssb.append(" · ")
-                    val start = ssb.length
-                    val dateText = "${planned.day}.${planned.month.toString().padStart(2, '0')}"
-                    val missed = task.isMissedPlan(today, nowMillis)
-                    ssb.append(when {
-                        missed -> "План прошёл · $dateText"
-                        planned == today -> "План · Сегодня"
-                        else -> "План · $dateText"
-                    })
-                    if (missed) {
-                        val amberColor = if (palette.isDark) 0xFFE9B454.toInt() else 0xFFD97706.toInt()
-                        ssb.setSpan(ForegroundColorSpan(amberColor), start, ssb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    }
-                    hasElement = true
-                }
-                task.deadline?.let { deadline ->
-                    if (hasElement) ssb.append("\n")
-                    val start = ssb.length
-                    val date = Date(deadline)
-                    val cal = java.util.Calendar.getInstance().apply { time = date }
-                    val day = cal.get(java.util.Calendar.DAY_OF_MONTH)
-                    val month = cal.get(java.util.Calendar.MONTH) + 1
-                    val time = timeFormat.format(date)
-                    val overdue = task.isHardOverdue(nowMillis)
-                    val prefix = if (overdue) "Дедлайн прошёл" else "Дедлайн"
-                    ssb.append("$prefix · $day.${month.toString().padStart(2, '0')}, $time")
-                    if (overdue) {
-                        val dangerColor = if (palette.isDark) 0xFFFF8C8C.toInt() else 0xFFDC2626.toInt()
-                        ssb.setSpan(ForegroundColorSpan(dangerColor), start, ssb.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    }
-                    hasElement = true
-                }
-            }
-            // Subtasks counter
+            val context = SpannableStringBuilder()
+            val containerName = task.containerId?.let { containers[it]?.name ?: "Раздел" } ?: if (task.isCompleted) "Без раздела" else "Входящие"
+            context.appendProperty(R.drawable.ic_cat_folder, containerName, palette.onSurfaceVariant)
             val counts = subtaskCounts[task.id]
             if (counts != null && counts.second > 0) {
-                if (hasElement) ssb.append(" · ")
-                ssb.append("✓ ${counts.first}/${counts.second}")
-                hasElement = true
+                context.appendProperty(R.drawable.ic_cat_list_todo, "${counts.first}/${counts.second}", palette.onSurfaceVariant)
             }
+            tvTaskContext.text = context
+            tvTaskContext.setTextColor(palette.onSurfaceVariant)
+            tvTaskContext.contentDescription = "Раздел: " + containerName +
+                (if (counts != null && counts.second > 0) "; подзадачи: ${counts.first} из ${counts.second}" else "")
 
-            if (hasElement) {
-                layoutTaskMeta.visibility = View.VISIBLE
-                tvTaskMeta.setSingleLine(false)
-                tvTaskMeta.maxLines = 3
-                tvTaskMeta.text = ssb
-                tvTaskMeta.setTextColor(palette.onSurfaceVariant)
-            } else {
-                layoutTaskMeta.visibility = View.GONE
+            val dates = SpannableStringBuilder()
+            val spokenDates = mutableListOf<String>()
+            if (!task.isCompleted) {
+                task.plannedDate?.let { planned ->
+                    val missed = task.isMissedPlan(today, nowMillis)
+                    val label = when {
+                        missed -> "План прошёл: ${planned.day}.${planned.month.toString().padStart(2, '0')}"
+                        planned == today -> "План сегодня"
+                        else -> "План ${planned.day}.${planned.month.toString().padStart(2, '0')}"
+                    }
+                    val color = if (missed) {
+                        if (palette.isDark) 0xFFF0C170.toInt() else 0xFF926018.toInt()
+                    } else palette.onSurfaceVariant
+                    dates.appendProperty(R.drawable.ic_cat_calendar, label, color)
+                    spokenDates.add(label)
+                }
+                task.deadline?.let { deadline ->
+                    val cal = java.util.Calendar.getInstance().apply { timeInMillis = deadline }
+                    val overdue = task.isHardOverdue(nowMillis)
+                    val prefix = if (overdue) "Дедлайн прошёл:" else "Дедлайн"
+                    val label = "$prefix ${cal.get(java.util.Calendar.DAY_OF_MONTH)}.${(cal.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')}, ${timeFormat.format(Date(deadline))}"
+                    val color = if (overdue) {
+                        if (palette.isDark) 0xFFFFAAA3.toInt() else 0xFFAB3D36.toInt()
+                    } else palette.onSurfaceVariant
+                    dates.appendProperty(R.drawable.ic_cat_flag, label, color)
+                    spokenDates.add(label)
+                }
             }
+            tvTaskMeta.text = dates
+            tvTaskMeta.contentDescription = spokenDates.joinToString("; ")
+            tvTaskMeta.setTextColor(palette.onSurfaceVariant)
+            tvTaskMeta.visibility = if (dates.isEmpty()) View.GONE else View.VISIBLE
+            layoutTaskMeta.visibility = View.VISIBLE
         }
     }
 }
