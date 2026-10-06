@@ -139,7 +139,8 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR10.1 — Native Tasks Visual Refinement | Compact Today/rows, Drawer, Calendar/agenda, Detail/Quick Add; native screenshots and QA | IA/domain changes, new features, PR11 | Human selected Compact; technical QA complete; V1 accepted 2026-10-06 | VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH |
 | PR11 — FocusSession core/local persistence | Immutable finalized work facts; memory/SQLite repository; idempotent recording and durable queries | Timer UI/integration, Contribution, runtime activation, production migration/sync | User selected slice; 23 scoped tests PASS including file reopen/concurrency | DONE |
 | PR12 — Runtime capture bridge + full experimental backup | Existing stopwatch/Pomodoro -> durable FocusSession; one primary target; frozen context; journal recovery; full backup v2 | Contribution/Habit projection, new timer/stats UI, recurrence, production activation | 90 core tests; real Android manager/backup test; native stopwatch process recovery and Pomodoro/break QA | DONE |
-| Contribution / provenance | Один явный source rule, breakdown/dedupe/corrections/undo | Пользовательский rules language, hidden double-write | Durable facts; manual/automatic projection contract | PLANNED |
+| PR13 — Contribution ledger foundation | Core model, Memory/SQLite repository, idempotency, tombstone reversal, format v3 backup | Automatic attribution, SourceRule DSL, Habit Entry mutation, Task completion | Scoped 43 tests PASS; durability/concurrency PASS; backup roundtrip PASS | DONE |
+| PR14 — SourceRule / attribution rules | Single explicit attribution rule, Container subtree attribution, dedupe protection | Generic workflow DSL, universal productivity score | Tested Contribution ledger and verified FocusSession provenance | READY |
 | Container statistics | Отдельные time/outcomes/Habit metrics; historical/current mode | Universal productivity score | Проверенные facts/provenance/placement | PLANNED |
 | Today-first UX evaluation | Сравнить A/B/C на реальных task/day сценариях | Автоматическая замена home без оценки | Task MVP и достаточно содержимого Today | PLANNED |
 | Production migration / new sync protocol | Отдельный release design, compatibility gate, conflict/recovery checks | Скрытая активация внутри Foundation | Validated local stages; protocol/dataset/server gate; отдельное согласование | PLANNED |
@@ -150,18 +151,18 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf), PR8·Spatial Native Slice DONE (commit d847b434f), PR9 DONE (commit 68538527e), PR9.2 Tasks Visual Reset DONE
+Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf), PR8·Spatial Native Slice DONE (commit d847b434f), PR9 DONE (commit 68538527e), PR9.2 Tasks Visual Reset DONE, PR10 DONE, PR11 DONE, PR12 DONE, PR13 DONE (commit 37f2b3cb1f0659adc896f6724e323c0ba4a80202)
 Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated
-Current branch: dev; verified PR12 implementation commit 90cfcb09ea041e79070ef835303df7091cce3ace; documentation-only closure follows; use Git for current HEAD
+Current branch: dev; verified PR13 implementation commit 37f2b3cb1f0659adc896f6724e323c0ba4a80202; documentation-only closure follows; use Git for current HEAD
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
 Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
 Visual language: VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH
 Native Android implementation: PR10 / PR10.1 ACCEPTED
-Active implementation: none; PR12 DONE; PR13 Contribution requires its own approved contract
+Active implementation: none; PR13 DONE; PR14 SourceRule requires approved plan
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
-Checks: PR12 90 scoped core tests PASS; debug/test APK build PASS; isolated Android manager/full backup test PASS; native stopwatch force-stop/reopen and Pomodoro/break PASS; original DB/prefs restored byte-for-byte; PR10.1 visual V1 reused
+Checks: PR13 43 scoped contribution tests PASS (contract, domain, durability, backup); 15 focus/task regressions PASS; models.sqlite.* PASS; :uhabits-android:compileDebugKotlin PASS; format v3 backup roundtrip PASS; production v29 unchanged
 Production DB schema: v29 unchanged (repository DATABASE_VERSION)
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
@@ -173,7 +174,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| — | No active implementation scope | dev / C:/Users/Pavel/source/repos/uhabits-plus | — | — | — | PR12 closed; no automatic PR13 |
+| — | No active implementation scope | dev / C:/Users/Pavel/source/repos/uhabits-plus | — | — | — | PR13 closed (commit 37f2b3cb); no automatic PR14 |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
  
@@ -192,7 +193,7 @@ Handoff — coordination register, не атомарный mutex: одновре
 ## 7. Next actions
 
 1. PR10.1 принят: `VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH`. Compact — утверждённая V1; повторный большой visual pass или PR10.2 не нужен. [Gallery/video](../pr101_artifacts/index.html), [report](../pr101_artifacts/REPORT.md), [evidence](../pr101_artifacts/evidence.json) остаются историческими QA-артефактами; их статус на момент проверки не переписывать.
-2. PR11 и PR12 DONE. Existing timer captures only in the experimental dataset; full backup v2 includes finalized facts and discards active runtime on restore. Existing Habit UI works; Task/Container runtime APIs are provided without new launch UI. [PR12 QA](../pr12_artifacts/REPORT.md). Следующий предложенный этап — PR13 Contribution/attribution, но его правила projection/dedupe/undo требуют отдельного решения пользователя. Production activation не разрешена. IA и Task semantics frozen; новых HTML concepts не делать.
+2. PR11, PR12 и PR13 DONE. PR13 реализовал durable Contribution ledger foundation: core model, Memory/SQLite repositories с идемпотентностью и проверкой конфликтов, tombstone-реверсирование, explicit ContributionService без авто-проекций, и format v3 full experimental backup. Следующий этап — PR14 SourceRule / attribution rules (автоматическая атрибуция из FocusSession в Habit по правилам поддеревьев), но он требует отдельного согласования плана перед началом. Production activation не разрешена. IA и Task semantics frozen.
 3. Четыре отложенных долга (не условие продолжения разработки): **metadata compaction** — в Today скрывать обычный «План сегодня», сохраняя нетипичный/пропущенный план и сочетание с deadline; **phone calendar labels** — краткое название хотя бы одной задачи + `+N` вместо одних маркеров; **tablet detail pane** — list + detail вместо modal sheet; **IME composer chrome** — скрывать глобальную нижнюю навигацию при активном composer + IME и возвращать после закрытия клавиатуры.
 4. Drawer и Detail приняты как V1; дальнейший icon/color Container polish отложен. Physical device/TalkBack/comprehensive large-font/RTL and measured frame pacing remain unverified; принятие визуальной V1 не расширяет техническое QA evidence.
 
@@ -801,3 +802,16 @@ Implementation/evidence commit: `4ad7fda773c926da47e47f0ddfd5a1b1161ee581`. This
 - Canonical claim closed. Local architecture/project-context docs updated under ignore policy. Unrelated/private artifacts preserved. No push/GitHub PR publication and no automatic PR13.
 
 - PR12 implementation/evidence commit: 90cfcb09ea041e79070ef835303df7091cce3ace. This documentation-only closure records the verified SHA; no additional runtime/code change. Tracked implementation clean after commit, private/unrelated untracked artifacts retained. No publication; PR13 not started.
+
+### 2026-10-06 — PR13 Contribution ledger foundation completed
+
+- Implemented core Contribution provenance model with stable UUID (`ContributionId`), target Habit identity (`HabitRef`), source fact provenance (`ContributionSourceType.FOCUS_SESSION`, `sourceId`), nonnegative numerical value semantics (supporting explicit zero), effective timestamp, and audit tombstone tracking (`removedAt: Long?`).
+- Decision: Tombstone deletion was selected over physical deletion to preserve auditability, provenance history, and sync safety (consistent with Habit, Repetitions, EntryOps, and Containers conventions). Tombstones survive backup roundtrips.
+- Repository contracts: `ContributionRepository` interface with `MemoryContributionRepository` and `SQLiteContributionRepository` implementations. Enforces strict idempotency (same payload returns `ALREADY_RECORDED`), typed conflict rejection on same ID with different payload or colliding `(source_type, source_id, target_habit_uuid)` with conflicting payload (`ContributionConflictException`).
+- SQLite storage: opt-in `ContributionSchema` (never activated in legacy production; `DATABASE_VERSION = 29` unchanged) with `SAVEPOINT` transactions, `CHECK` constraints, and index-backed unique provenance constraint `UNIQUE (source_type, source_id, target_habit_uuid)`.
+- Explicit boundary service: `ContributionService` provides `contributeFromFocusSession` and `revokeFocusSessionContribution` without automatic projection side-effects, Habit Entry/Repetitions mutations, or Task completion coupling.
+- Full backup extension: Format version 3 introduces deterministic `contributions_sha256` checksums via `ContributionBackupInventory`. Preserves active and tombstoned facts; verifies referential integrity (rejects orphan target habits); prevents silent fact loss (rejects format < 3 containing Contributions); maintains backward compatibility with format 1 and format 2 backups.
+- Verification PASS: 43 scoped Contribution tests PASS (domain, contract, durability file-reopen/concurrency, backup roundtrip/corruption); 15 focus/task regressions PASS; models.sqlite.* PASS; `:uhabits-android:compileDebugKotlin` PASS. Production schema and isolation verified.
+- Implementation commit: 37f2b3cb1f0659adc896f6724e323c0ba4a80202.
+- Scope closed. No automatic PR14.
+
