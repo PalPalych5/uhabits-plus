@@ -58,6 +58,7 @@ object ContainerBackupService {
             val inventory = RawLegacyInventoryReader.read(sourceDb)
             val focusChecksum = FocusBackupInventory.checksum(sourceDb)
             val contributionChecksum = ContributionBackupInventory.checksum(sourceDb)
+            val sourceRulesChecksum = SourceRuleBackupInventory.checksum(sourceDb)
             val canonicalChecksum = ContainerBackupManifest.computeCanonicalChecksum(
                 datasetUuid = containerKind.datasetUuid,
                 sourceSnapshotSha256 = inventory.snapshotSha256,
@@ -65,6 +66,7 @@ object ContainerBackupService {
                 foundationVersion = containerKind.foundationVersion,
                 focusSessionsSha256 = focusChecksum,
                 contributionsSha256 = contributionChecksum,
+                sourceRulesSha256 = sourceRulesChecksum,
             )
 
             val appSettingsMap = inventory.settings.associate { it.key to (it.longValue ?: 0L) }
@@ -84,6 +86,7 @@ object ContainerBackupService {
                 nonSecretPreferences = sanitizedPrefs,
                 focusSessionsSha256 = focusChecksum,
                 contributionsSha256 = contributionChecksum,
+                sourceRulesSha256 = sourceRulesChecksum,
             )
 
             // 4. Initialize schema on target
@@ -93,6 +96,7 @@ object ContainerBackupService {
             DatabaseSnapshotter.copyAllData(sourceDb, targetDb)
             check(FocusBackupInventory.checksum(targetDb) == focusChecksum) { "FocusSession snapshot changed while creating backup" }
             check(ContributionBackupInventory.checksum(targetDb) == contributionChecksum) { "Contribution snapshot changed while creating backup" }
+            check(SourceRuleBackupInventory.checksum(targetDb) == sourceRulesChecksum) { "SourceRule snapshot changed while creating backup" }
 
             // 6. Write manifest into target database
             DatabaseSnapshotter.writeManifest(targetDb, manifest)

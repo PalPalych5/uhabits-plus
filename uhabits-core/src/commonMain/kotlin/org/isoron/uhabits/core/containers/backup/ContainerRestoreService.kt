@@ -132,6 +132,9 @@ object ContainerRestoreService {
         if (manifest.formatVersion < 3 && "Contributions" in DatabaseSnapshotter.listTables(backupDb)) {
             return RestoreResult.Failure("Format ${manifest.formatVersion} cannot inventory Contributions; refusing silent fact loss")
         }
+        if (manifest.formatVersion < 4 && "SourceRules" in DatabaseSnapshotter.listTables(backupDb)) {
+            return RestoreResult.Failure("Format ${manifest.formatVersion} cannot inventory SourceRules; refusing silent fact loss")
+        }
 
         // 3. Staging DB integrity and foreign keys
         val integrity = stagingDb.querySingle("PRAGMA integrity_check") { it.getText(0) }
@@ -156,16 +159,24 @@ object ContainerRestoreService {
             val focusChecksum = FocusBackupInventory.checksum(stagingDb)
             if (manifest.focusSessionsSha256 != focusChecksum) return RestoreResult.Failure("FocusSessions checksum mismatch")
             val contributionChecksum = if (manifest.formatVersion >= 3) {
-                val sum = ContributionBackupInventory.checksum(stagingDb)
+                val sum = ContributionBackupInventory.checksum(stagingDb, includeRuleId = manifest.formatVersion >= 4)
                 if (manifest.contributionsSha256 != sum) return RestoreResult.Failure("Contributions checksum mismatch")
                 sum
             } else {
                 ContributionBackupInventory.emptyChecksum
             }
+            val sourceRulesChecksum = if (manifest.formatVersion >= 4) {
+                val sum = SourceRuleBackupInventory.checksum(stagingDb)
+                if (manifest.sourceRulesSha256 != sum) return RestoreResult.Failure("SourceRules checksum mismatch")
+                sum
+            } else {
+                SourceRuleBackupInventory.emptyChecksum
+            }
             val canonical = ContainerBackupManifest.computeCanonicalChecksum(
                 manifest.datasetUuid, manifest.sourceSnapshotSha256, manifest.createdAt,
                 manifest.formatVersion, manifest.foundationVersion, manifest.focusSessionsSha256,
                 if (manifest.formatVersion >= 3) manifest.contributionsSha256 else contributionChecksum,
+                if (manifest.formatVersion >= 4) manifest.sourceRulesSha256 else sourceRulesChecksum,
             )
             if (canonical != manifest.canonicalChecksum) return RestoreResult.Failure("Manifest canonical checksum mismatch")
         }
@@ -247,6 +258,7 @@ object ContainerRestoreService {
             foundationVersion = ContainerBackupManifest.CURRENT_FOUNDATION_VERSION,
             focusSessionsSha256 = FocusBackupInventory.emptyChecksum,
             contributionsSha256 = ContributionBackupInventory.emptyChecksum,
+            sourceRulesSha256 = SourceRuleBackupInventory.emptyChecksum,
         )
         val manifest = ContainerBackupManifest(
             formatVersion = ContainerBackupManifest.CURRENT_FORMAT_VERSION,
@@ -261,6 +273,7 @@ object ContainerRestoreService {
             nonSecretPreferences = emptyMap(),
             focusSessionsSha256 = FocusBackupInventory.emptyChecksum,
             contributionsSha256 = ContributionBackupInventory.emptyChecksum,
+            sourceRulesSha256 = SourceRuleBackupInventory.emptyChecksum,
         )
 
         // 7. Write manifest to staging DB
@@ -420,6 +433,36 @@ object ContainerRestoreService {
                 errors.add("Contribution '$contribId' references non-existent habit UUID '$habitUuid'")
             }
             orphanContributionStmt.finalize()
+        }
+
+        if (tables.contains("SourceRules")) {
+            val orphanRuleHabitStmt = db.prepareStatement(
+                """
+                SELECT r.id, r.target_habit_uuid FROM SourceRules r
+                LEFT JOIN Habits h ON r.target_habit_uuid = h.uuid
+                WHERE h.uuid IS NULL
+                """.trimIndent()
+            )
+            while (orphanRuleHabitStmt.step() == StepResult.ROW) {
+                val ruleId = orphanRuleHabitStmt.getText(0)
+                val habitUuid = orphanRuleHabitStmt.getText(1)
+                errors.add("SourceRule '$ruleId' references non-existent habit UUID '$habitUuid'")
+            }
+            orphanRuleHabitStmt.finalize()
+
+            val orphanRuleContainerStmt = db.prepareStatement(
+                """
+                SELECT r.id, r.source_container_id FROM SourceRules r
+                LEFT JOIN Containers c ON r.source_container_id = c.uuid
+                WHERE c.uuid IS NULL
+                """.trimIndent()
+            )
+            while (orphanRuleContainerStmt.step() == StepResult.ROW) {
+                val ruleId = orphanRuleContainerStmt.getText(0)
+                val containerId = orphanRuleContainerStmt.getText(1)
+                errors.add("SourceRule '$ruleId' references non-existent container ID '$containerId'")
+            }
+            orphanRuleContainerStmt.finalize()
         }
 
         return errors

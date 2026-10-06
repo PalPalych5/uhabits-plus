@@ -117,4 +117,10 @@ interface ContributionRepository {
         fromTimestamp: Long,
         toTimestamp: Long,
     ): Long
+
+    /** Retrieves all contributions originating from the specified SourceRule. */
+    fun getByRule(
+        ruleId: org.isoron.uhabits.core.rules.SourceRuleId,
+        includeRemoved: Boolean = false,
+    ): List<Contribution>
 }

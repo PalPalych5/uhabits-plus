@@ -61,6 +61,10 @@ object DatabaseSnapshotter {
             require(ContributionBackupInventory.schemaError(sourceDb) == null) { "Unsupported Contributions schema" }
             org.isoron.uhabits.core.contribution.sqlite.ContributionSchema.createSchema(targetDb)
         }
+        if (sourceTables.contains("SourceRules")) {
+            require(SourceRuleBackupInventory.schemaError(sourceDb) == null) { "Unsupported SourceRules schema" }
+            org.isoron.uhabits.core.rules.sqlite.SourceRuleSchema.createSchema(targetDb)
+        }
 
         // 3. Create BackupManifest table
         targetDb.run(
@@ -262,6 +266,7 @@ object DatabaseSnapshotter {
             val tablesToClear = listOf(
                 "BackupManifest",
                 "FocusCaptureJournal",
+                "SourceRules",
                 "Contributions",
                 "FocusSessions",
                 "UserTasks",
@@ -313,6 +318,10 @@ object DatabaseSnapshotter {
             if (sourceTables.contains("Contributions")) {
                 val repository = org.isoron.uhabits.core.contribution.sqlite.SQLiteContributionRepository(targetDb)
                 ContributionBackupInventory.read(sourceDb).forEach(repository::record)
+            }
+            if (sourceTables.contains("SourceRules")) {
+                val repository = org.isoron.uhabits.core.rules.sqlite.SQLiteSourceRuleRepository(targetDb)
+                SourceRuleBackupInventory.read(sourceDb).forEach(repository::record)
             }
 
             if (sourceTables.contains("BackupManifest")) copyBackupManifest(sourceDb, targetDb)

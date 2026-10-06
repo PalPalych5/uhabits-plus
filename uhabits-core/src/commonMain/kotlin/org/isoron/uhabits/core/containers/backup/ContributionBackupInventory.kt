@@ -26,13 +26,14 @@ import org.isoron.uhabits.core.containers.migration.Sha256
 import org.isoron.uhabits.core.contribution.Contribution
 import org.isoron.uhabits.core.contribution.ContributionId
 import org.isoron.uhabits.core.contribution.ContributionSourceType
+import org.isoron.uhabits.core.rules.SourceRuleId
 
 /**
  * Backup inventory and deterministic checksum calculation for the Contribution ledger.
  * Preserves active and tombstoned contribution facts during backup/restore roundtrips.
  */
 internal object ContributionBackupInventory {
-    private val expectedColumns = listOf(
+    private val legacyColumns = listOf(
         "id",
         "target_habit_uuid",
         "source_type",
@@ -43,6 +44,7 @@ internal object ContributionBackupInventory {
         "updated_at",
         "removed_at",
     )
+    private val ruleColumns = listOf("source_rule_id")
 
     val emptyChecksum: String get() = hash("CONTRIBUTION:v1\n")
 
@@ -55,7 +57,7 @@ internal object ContributionBackupInventory {
         } finally {
             stmt.finalize()
         }
-        return if (columns == expectedColumns.toSet()) null
+        return if (columns == legacyColumns.toSet() || columns == (legacyColumns + ruleColumns).toSet()) null
         else "Unsupported or incomplete Contributions schema: $columns"
     }
 
@@ -63,8 +65,16 @@ internal object ContributionBackupInventory {
         require(schemaError(db) == null) { schemaError(db) ?: "Invalid Contributions" }
         if ("Contributions" !in DatabaseSnapshotter.listTables(db)) return emptyList()
 
+        val columns = mutableSetOf<String>()
+        val info = db.prepareStatement("PRAGMA table_info(Contributions)")
+        try {
+            while (info.step() == StepResult.ROW) columns.add(info.getText(1))
+        } finally {
+            info.finalize()
+        }
+        val ruleCol = if ("source_rule_id" in columns) "source_rule_id" else "NULL"
         val stmt = db.prepareStatement(
-            "SELECT ${expectedColumns.joinToString()} FROM Contributions ORDER BY id"
+            "SELECT ${legacyColumns.joinToString()}, $ruleCol FROM Contributions ORDER BY id"
         )
         return try {
             buildList {
@@ -80,6 +90,7 @@ internal object ContributionBackupInventory {
                             createdAt = stmt.getLong(6),
                             updatedAt = stmt.getLong(7),
                             removedAt = stmt.getLongOrNull(8),
+                            sourceRuleId = stmt.getTextOrNull(9)?.let(::SourceRuleId),
                         )
                     )
                 }
@@ -89,21 +100,24 @@ internal object ContributionBackupInventory {
         }
     }
 
-    fun checksum(db: Database): String {
+    fun checksum(db: Database, includeRuleId: Boolean = true): String {
         val text = buildString {
             append("CONTRIBUTION:v1\n")
             for (c in read(db)) {
-                val values = listOf(
-                    c.id.value,
-                    c.targetHabit.uuid,
-                    c.sourceType.name,
-                    c.sourceId,
-                    c.contributedValue.toString(),
-                    c.effectiveTimestamp.toString(),
-                    c.createdAt.toString(),
-                    c.updatedAt.toString(),
-                    c.removedAt?.toString(),
-                )
+                val values = buildList {
+                    add(c.id.value)
+                    add(c.targetHabit.uuid)
+                    add(c.sourceType.name)
+                    add(c.sourceId)
+                    add(c.contributedValue.toString())
+                    add(c.effectiveTimestamp.toString())
+                    add(c.createdAt.toString())
+                    add(c.updatedAt.toString())
+                    add(c.removedAt?.toString())
+                    if (includeRuleId) {
+                        add(c.sourceRuleId?.value)
+                    }
+                }
                 for (v in values) {
                     if (v == null) append("-1:") else append(v.length).append(':').append(v)
                 }

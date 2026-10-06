@@ -32,6 +32,7 @@ import org.isoron.uhabits.core.contribution.ContributionRecordResult
 import org.isoron.uhabits.core.contribution.ContributionRemovalResult
 import org.isoron.uhabits.core.contribution.ContributionRepository
 import org.isoron.uhabits.core.contribution.ContributionSourceType
+import org.isoron.uhabits.core.rules.SourceRuleId
 
 class SQLiteContributionRepository(private val db: Database) : ContributionRepository {
 
@@ -39,7 +40,7 @@ class SQLiteContributionRepository(private val db: Database) : ContributionRepos
         db.run("SAVEPOINT record_contribution")
         try {
             val stmt = db.prepareStatement(
-                "INSERT OR IGNORE INTO Contributions ($COLUMNS) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                "INSERT OR IGNORE INTO Contributions ($COLUMNS) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             )
             try {
                 stmt.bindText(1, contribution.id.value)
@@ -54,6 +55,11 @@ class SQLiteContributionRepository(private val db: Database) : ContributionRepos
                     stmt.bindLong(9, contribution.removedAt)
                 } else {
                     stmt.bindNull(9)
+                }
+                if (contribution.sourceRuleId != null) {
+                    stmt.bindText(10, contribution.sourceRuleId.value)
+                } else {
+                    stmt.bindNull(10)
                 }
                 stmt.step()
             } finally {
@@ -273,6 +279,20 @@ class SQLiteContributionRepository(private val db: Database) : ContributionRepos
         }
     }
 
+    override fun getByRule(
+        ruleId: SourceRuleId,
+        includeRemoved: Boolean,
+    ): List<Contribution> {
+        val condition = if (includeRemoved) {
+            "WHERE source_rule_id = ?"
+        } else {
+            "WHERE source_rule_id = ? AND removed_at IS NULL"
+        }
+        return query(condition) {
+            bindText(1, ruleId.value)
+        }
+    }
+
     private fun query(where: String, bind: PreparedStatement.() -> Unit = {}): List<Contribution> {
         val stmt = db.prepareStatement(
             "SELECT $COLUMNS FROM Contributions $where ORDER BY effective_timestamp, id"
@@ -292,6 +312,7 @@ class SQLiteContributionRepository(private val db: Database) : ContributionRepos
                             createdAt = stmt.getLong(6),
                             updatedAt = stmt.getLong(7),
                             removedAt = stmt.getLongOrNull(8),
+                            sourceRuleId = stmt.getTextOrNull(9)?.let(::SourceRuleId),
                         )
                     )
                 }
@@ -303,6 +324,6 @@ class SQLiteContributionRepository(private val db: Database) : ContributionRepos
 
     companion object {
         private const val COLUMNS =
-            "id, target_habit_uuid, source_type, source_id, contributed_value, effective_timestamp, created_at, updated_at, removed_at"
+            "id, target_habit_uuid, source_type, source_id, contributed_value, effective_timestamp, created_at, updated_at, removed_at, source_rule_id"
     }
 }

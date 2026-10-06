@@ -144,4 +144,11 @@ class MemoryContributionRepository : ContributionRepository {
         toTimestamp: Long,
     ): Long = getByHabitInRange(targetHabit, fromTimestamp, toTimestamp, includeRemoved = false)
         .sumOf { it.contributedValue }
+
+    override fun getByRule(
+        ruleId: org.isoron.uhabits.core.rules.SourceRuleId,
+        includeRemoved: Boolean,
+    ): List<Contribution> = contributionsById.values
+        .filter { it.sourceRuleId == ruleId && (includeRemoved || it.isActive) }
+        .sortedWith(order)
 }

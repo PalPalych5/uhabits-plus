@@ -108,7 +108,7 @@ class ContributionBackupTest {
         try {
             val manifest = DatabaseSnapshotter.readManifest(bkp)
             assertNotNull(manifest)
-            assertEquals(3, manifest.formatVersion)
+            assertEquals(ContainerBackupManifest.CURRENT_FORMAT_VERSION, manifest.formatVersion)
             assertNotEquals(ContributionBackupInventory.emptyChecksum, manifest.contributionsSha256)
 
             val restoreResult = restore(bkp, dest)

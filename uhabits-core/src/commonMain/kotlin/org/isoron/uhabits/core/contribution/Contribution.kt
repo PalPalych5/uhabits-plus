@@ -20,6 +20,7 @@
 package org.isoron.uhabits.core.contribution
 
 import org.isoron.uhabits.core.containers.HabitRef
+import org.isoron.uhabits.core.rules.SourceRuleId
 import kotlin.jvm.JvmInline
 
 @JvmInline
@@ -93,6 +94,7 @@ data class Contribution(
     val createdAt: Long,
     val updatedAt: Long,
     val removedAt: Long? = null,
+    val sourceRuleId: SourceRuleId? = null,
 ) {
     init {
         require(sourceId.isNotBlank()) { "sourceId must not be blank" }

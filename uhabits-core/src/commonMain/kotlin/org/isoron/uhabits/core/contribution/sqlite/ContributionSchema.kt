@@ -20,6 +20,7 @@
 package org.isoron.uhabits.core.contribution.sqlite
 
 import org.isoron.platform.io.Database
+import org.isoron.platform.io.StepResult
 import org.isoron.platform.io.run
 
 /** Opt-in schema for Contribution ledger; used in experimental dataset only, never by production migrations. */
@@ -40,12 +41,26 @@ object ContributionSchema {
                     created_at INTEGER NOT NULL CHECK(created_at >= 0),
                     updated_at INTEGER NOT NULL CHECK(updated_at >= created_at),
                     removed_at INTEGER CHECK(removed_at IS NULL OR removed_at >= created_at),
+                    source_rule_id TEXT CHECK(source_rule_id IS NULL OR trim(source_rule_id) <> ''),
                     UNIQUE (source_type, source_id, target_habit_uuid)
                 )
                 """.trimIndent()
             )
+
+            val columns = mutableSetOf<String>()
+            val stmt = db.prepareStatement("PRAGMA table_info(Contributions)")
+            try {
+                while (stmt.step() == StepResult.ROW) columns.add(stmt.getText(1))
+            } finally {
+                stmt.finalize()
+            }
+            if ("source_rule_id" !in columns) {
+                db.run("ALTER TABLE Contributions ADD COLUMN source_rule_id TEXT CHECK(source_rule_id IS NULL OR trim(source_rule_id) <> '')")
+            }
+
             db.run("CREATE INDEX IF NOT EXISTS idx_contributions_habit ON Contributions(target_habit_uuid, effective_timestamp, id)")
             db.run("CREATE INDEX IF NOT EXISTS idx_contributions_source ON Contributions(source_type, source_id, id)")
+            db.run("CREATE INDEX IF NOT EXISTS idx_contributions_rule ON Contributions(source_rule_id)")
             db.run("RELEASE SAVEPOINT migrate_contribution_schema")
         } catch (error: Throwable) {
             try { db.run("ROLLBACK TO SAVEPOINT migrate_contribution_schema") }

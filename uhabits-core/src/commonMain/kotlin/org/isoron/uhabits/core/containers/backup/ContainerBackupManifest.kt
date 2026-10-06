@@ -34,6 +34,7 @@ data class ContainerBackupManifest(
     val nonSecretPreferences: Map<String, String> = emptyMap(),
     val focusSessionsSha256: String = "",
     val contributionsSha256: String = "",
+    val sourceRulesSha256: String = "",
 ) {
     fun toJson(): String {
         val sb = StringBuilder()
@@ -48,6 +49,7 @@ data class ContainerBackupManifest(
         sb.append("  \"canonical_checksum\": \"").append(escapeJson(canonicalChecksum)).append("\",\n")
         sb.append("  \"focus_sessions_sha256\": \"").append(escapeJson(focusSessionsSha256)).append("\",\n")
         sb.append("  \"contributions_sha256\": \"").append(escapeJson(contributionsSha256)).append("\",\n")
+        sb.append("  \"source_rules_sha256\": \"").append(escapeJson(sourceRulesSha256)).append("\",\n")
 
         sb.append("  \"app_settings\": {")
         val settingsEntries = appSettings.entries.toList()
@@ -71,7 +73,7 @@ data class ContainerBackupManifest(
     }
 
     companion object {
-        const val CURRENT_FORMAT_VERSION = 3
+        const val CURRENT_FORMAT_VERSION = 4
         const val CURRENT_FOUNDATION_VERSION = 1
 
         private val SENSITIVE_KEY_PATTERNS = listOf(
@@ -93,9 +95,11 @@ data class ContainerBackupManifest(
             foundationVersion: Int = CURRENT_FOUNDATION_VERSION,
             focusSessionsSha256: String = FocusBackupInventory.emptyChecksum,
             contributionsSha256: String = ContributionBackupInventory.emptyChecksum,
+            sourceRulesSha256: String = SourceRuleBackupInventory.emptyChecksum,
         ): String {
             val base = "MANIFEST:v$formatVersion:$foundationVersion:$datasetUuid:$sourceSnapshotSha256:$createdAt"
             val payload = when {
+                formatVersion >= 4 -> "$base:$focusSessionsSha256:$contributionsSha256:$sourceRulesSha256"
                 formatVersion >= 3 -> "$base:$focusSessionsSha256:$contributionsSha256"
                 formatVersion >= 2 -> "$base:$focusSessionsSha256"
                 else -> base
@@ -129,6 +133,7 @@ data class ContainerBackupManifest(
                 nonSecretPreferences = nonSecretPreferences,
                 focusSessionsSha256 = extractString(json, "focus_sessions_sha256") ?: "",
                 contributionsSha256 = extractString(json, "contributions_sha256") ?: "",
+                sourceRulesSha256 = extractString(json, "source_rules_sha256") ?: "",
             )
         }
 
