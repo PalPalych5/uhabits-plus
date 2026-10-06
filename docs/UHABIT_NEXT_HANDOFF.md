@@ -151,7 +151,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 Architecture preparation: DONE
 Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf), PR8·Spatial Native Slice DONE (commit d847b434f), PR9 DONE (commit 68538527e), PR9.2 Tasks Visual Reset DONE
 Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated
-Current branch: dev; baseline HEAD 9d90a6060; PR10.1 implementation/evidence commit recorded in closure log / Git
+Current branch: dev; verified PR10.1 code/evidence HEAD 4ad7fda773c926da47e47f0ddfd5a1b1161ee581; documentation-only closure follows; use Git for current HEAD
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
 Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
@@ -753,4 +753,4 @@ Commits: canonical IA/evidence `5c89f0a2e`; PR10 native code/evidence `629b3be13
 - Evidence: pr101_artifacts/index.html, REPORT.md, evidence.json; 32 gallery images including variants and QA; 81-second native flow video. Gallery is an evidence viewer, not a new spike. APK local in build/outputs/apk/debug. Original production DB unchanged byte-identically; original experimental DB, session/preferences restored byte-identically; density/size/rotation/font/locale restored. Private DB/prefs snapshots excluded from Git.
 - Existing unrelated untracked artifacts preserved. No domain/schema/sync/backend/backup-format changes, no Habit/Statistics redesign, no publication. Scope closed; VISUAL_REVIEW_PENDING, STOP for user review; PR11 not started.
 
-Commit: pending local implementation/evidence commit; closure records its actual SHA. No push or GitHub PR publication.
+Implementation/evidence commit: `4ad7fda773c926da47e47f0ddfd5a1b1161ee581`. This closure records the actual SHA; use Git for its own current HEAD. No push or GitHub PR publication.
