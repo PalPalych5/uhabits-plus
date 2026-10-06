@@ -137,7 +137,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR9.1 — Tasks UX polish & visual reset | Strict Inbox, dropdown views, autosave editor, zero-card 60dp rows, plain metadata text, docked Quick Add, live Task Detail sheet, empty states | Recurrence, FocusSession, Container redesign, production migration/sync | PR9 + user feedback | DONE |
 | PR10 — Native Adaptive Tasks Shell | Phone 3 workspaces + Tasks drawer; wide sidebar; bounded tree; List/Calendar shared context; existing detail/Quick Add; native QA | New domain/backend/schema/sync, Habit/Statistics redesign, PR11 | IA and native V1 accepted by user 2026-10-06 | DONE |
 | PR10.1 — Native Tasks Visual Refinement | Compact Today/rows, Drawer, Calendar/agenda, Detail/Quick Add; native screenshots and QA | IA/domain changes, new features, PR11 | Human selected Compact; technical QA complete; V1 accepted 2026-10-06 | VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH |
-| PR11 — FocusSession core/local persistence | Immutable finalized work facts; memory/SQLite repository; idempotent recording and durable queries | Timer UI/integration, Contribution, runtime activation, production migration/sync | User explicitly selected this slice 2026-10-06 | IN_PROGRESS |
+| PR11 — FocusSession core/local persistence | Immutable finalized work facts; memory/SQLite repository; idempotent recording and durable queries | Timer UI/integration, Contribution, runtime activation, production migration/sync | User selected slice; 23 scoped tests PASS including file reopen/concurrency | DONE |
 | Contribution / provenance | Один явный source rule, breakdown/dedupe/corrections/undo | Пользовательский rules language, hidden double-write | Durable facts; manual/automatic projection contract | PLANNED |
 | Container statistics | Отдельные time/outcomes/Habit metrics; historical/current mode | Universal productivity score | Проверенные facts/provenance/placement | PLANNED |
 | Today-first UX evaluation | Сравнить A/B/C на реальных task/day сценариях | Автоматическая замена home без оценки | Task MVP и достаточно содержимого Today | PLANNED |
@@ -157,7 +157,7 @@ Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
 Visual language: VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH
 Native Android implementation: PR10 / PR10.1 ACCEPTED
-Active implementation: PR11 FocusSession core/local persistence IN_PROGRESS
+Active implementation: none; PR11 core/local persistence DONE; next runtime/backup integration scope requires a separate decision
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
 Checks: PR10.1 APK build + 13 focused Android tests + native widths/themes + RTL/font150 calendar + confirmed process/draft + byte-identical restoration PASS; unchanged PR10 core checks reused
@@ -172,7 +172,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| Codex / root + focus_domain | PR11 FocusSession core/local persistence | dev / C:/Users/Pavel/source/repos/uhabits-plus | IN_PROGRESS | 2026-10-06 | core/focus model/repositories/tests; canonical docs | User explicitly selects core model + local storage, no timer UI/Contribution |
+| none | none | dev / primary | IDLE | 2026-10-06 | none | PR11 core/local persistence complete; 23 focused tests PASS |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
  
@@ -191,7 +191,7 @@ Handoff — coordination register, не атомарный mutex: одновре
 ## 7. Next actions
 
 1. PR10.1 принят: `VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH`. Compact — утверждённая V1; повторный большой visual pass или PR10.2 не нужен. [Gallery/video](../pr101_artifacts/index.html), [report](../pr101_artifacts/REPORT.md), [evidence](../pr101_artifacts/evidence.json) остаются историческими QA-артефактами; их статус на момент проверки не переписывать.
-2. Реализовать согласованный PR11 — FocusSession core-модель и локальное хранение, без timer UI и Contribution. Контракт ниже. IA и Task semantics frozen; bottom workspaces + Tasks drawer закреплены; новых HTML concepts не делать.
+2. PR11 core-модель и локальное хранение DONE. Следующая интеграция требует отдельного scope: backup compatibility/preservation и runtime recording gate до активации реального capture; timer lifecycle/recovery — отдельное решение. Не подключать старый таймер или Contribution автоматически. IA и Task semantics frozen; новых HTML concepts не делать.
 3. Четыре отложенных долга (не условие продолжения разработки): **metadata compaction** — в Today скрывать обычный «План сегодня», сохраняя нетипичный/пропущенный план и сочетание с deadline; **phone calendar labels** — краткое название хотя бы одной задачи + `+N` вместо одних маркеров; **tablet detail pane** — list + detail вместо modal sheet; **IME composer chrome** — скрывать глобальную нижнюю навигацию при активном composer + IME и возвращать после закрытия клавиатуры.
 4. Drawer и Detail приняты как V1; дальнейший icon/color Container polish отложен. Physical device/TalkBack/comprehensive large-font/RTL and measured frame pacing remain unverified; принятие визуальной V1 не расширяет техническое QA evidence.
 
@@ -770,3 +770,12 @@ Implementation/evidence commit: `4ad7fda773c926da47e47f0ddfd5a1b1161ee581`. This
 - SQLite schema installation is explicit and opt-in. Do not wire into Android DI, OrganizationSchema or production v29, nor activate capture before a separate backup/runtime integration stage. No runtime facts exist from this slice, so current backup format stays unchanged. Validate on temporary databases including actual file close/reopen, constraint and concurrent duplicate behavior.
 - Scoped tests cover model validation, memory/SQLite parity, exact millisecond/null metadata roundtrip, repeated record/conflict, ordering/Task queries and existing tables/data/version isolation. No UI changes; runtime proof is file-backed repository persistence rather than screenshots.
 - Ownership: focus_domain owns only model/API/memory/domain tests; root owns SQLite/persistence tests and docs. No overlapping edits. No publication or automatically starting the next stage.
+### 2026-10-06 — PR11 FocusSession core and opt-in local persistence completed
+
+- User explicitly chose core model/local storage without timer UI or Contribution. Implemented core/focus immutable finalized facts with positive active duration <= elapsed interval, optional typed context/source/device metadata and initial revision 1.
+- Memory and SQLite repositories provide stable queries and append-only recording: exact retry returns ALREADY_RECORDED; conflicting same-ID facts reject and preserve original. SQLite savepoint supports caller rollback; references survive missing/deleted Task contexts. No automatic Task/Habit progress writes.
+- Explicit opt-in schema only. No Android DI, OrganizationSchema, production migration, legacy timer, sync or backup format activation. Production v29 remains unchanged; caller must preserve the fact ID and finalization metadata across retries. Backup/runtime integration precedes future capture. No active-session lifecycle/edit/correction API in this slice.
+- Validation PASS: FocusSessionDomainTest 10, SQLiteFocusSessionRepositoryTest 6, FocusSessionDurabilityTest 2, UserTaskDomainTest 4, SQLiteUserTaskRepositoryTest 1 (23 total, zero failures/errors). Real temporary file close/reopen and simultaneous separate-connection identical retry proved durability and dedupe. Temporary test files removed by tests; no emulator or app dataset touched.
+- Command: gradlew :uhabits-core:jvmTest --tests '*FocusSessionDomainTest' --tests '*SQLiteFocusSessionRepositoryTest' --tests '*FocusSessionDurabilityTest' --tests '*UserTaskDomainTest' --tests '*SQLiteUserTaskRepositoryTest' --console=plain --quiet -Pkotlin.compiler.execution.strategy=in-process --max-workers=1. Exit 0. No new Android build/screenshots: this slice has no UI/runtime wiring; PR10.1 APK remains the visual V1 artifact.
+- Independent bounded review found no blocking repository/transaction/production-isolation defect. Model validation remains authoritative for Unicode blank references; SQL CHECK constraints also protect interval/source/revision basics. Database connections and memory repositories follow existing caller confinement; no shared-connection multi-thread promise.
+- Acceptance/contract commit e6645b6b; implementation SHA recorded by closure after commit. Canonical source-of-truth updated. Local architecture/project-context docs updated under existing ignore rules, not force-added. Unrelated/private untracked files preserved. No publication or automatic PR12; scope closed.
