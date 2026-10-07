@@ -226,6 +226,10 @@ Schema GO requires verified pre/post backups, actual version ownership, coherent
 
 An audit document/build/test aggregate cannot substitute for migration, device, cloud or promotion evidence. Each implementation stage records exact executed tasks and independently inspected results. STOP after PR20.
 
+### PR21 implementation follow-up (2026-10-07)
+
+Human acceptance of PR20 separately authorized PR21 only. The read-only physical/raw preflight, cold pre-DI writer exclusion, legacy Task provider gate and verified local recovery preparation are implemented in [UHABIT_PRODUCTION_PREFLIGHT_RECOVERY.md](UHABIT_PRODUCTION_PREFLIGHT_RECOVERY.md). This does not satisfy PR22 schema conversion or any production runtime/cloud/promotion GO criterion. The next bounded stage remains PR22 protected staging schema conversion, requiring fresh source/bundle revalidation immediately before conversion; no version has been allocated or migration installed in PR21. STOP after PR21 pending separate authorization.
+
 ## 15. Evidence inspected and tests actually run
 
 Inspected canonical handoff/spec/foundation/Tasks IA plus project/architecture context; actual versioned migrations/opener, all DDL listed in section 2, raw planner/executor/validator, DatasetSession factory/manager/capabilities, DI providers, timer/capture/controller/alarm/service paths, Habit/cache/widget/notification/export/global Statistics readers, snapshot/manifest/router/restore/import adapters, backend/coordinator and repository Supabase SQL. Baseline source findings were independently integrated from bounded schema, runtime/readers and backup/sync audits; no subtask changed implementation.

@@ -295,6 +295,8 @@ abstract class HabitsApplicationComponent(
     @AppScope
     @Provides
     open fun userTaskRepository(): UserTaskRepository {
+        // Resolving a lazy Task dependency must never install an unversioned schema in v29.
+        check(session.isExperimental) { "UserTasks are unavailable in legacy production" }
         UserTaskSchema.createSchema(providedDb)
         return SQLiteUserTaskRepository(providedDb)
     }

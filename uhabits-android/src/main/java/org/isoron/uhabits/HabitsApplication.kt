@@ -58,6 +58,10 @@ class HabitsApplication : Application() {
         super.onCreate()
         context = this
 
+        // PR21 explicit preparation/recovery must inspect legacy state before normal session
+        // resolution, DB opening, sync, or timer constructors can write. No migration follows it.
+        org.isoron.uhabits.production.ProductionPreparationStartup.runBeforeDependencyInjection(this)
+
         val sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this)
         if (!sharedPrefs.contains("pref_app_language")) {
             sharedPrefs.edit().putString("pref_app_language", "ru-RU").apply()
@@ -138,6 +142,15 @@ class HabitsApplication : Application() {
 
     fun switchDatasetSession(newSession: DatasetSession) {
         rebuildComponent(newSession)
+    }
+
+    /** Internal preparation entry. It restarts; it never snapshots a live writer graph. */
+    fun requestProductionRecoveryPreparation(): Boolean {
+        if (component.session.mode != org.isoron.uhabits.core.containers.session.DatasetMode.LEGACY_PRODUCTION) return false
+        if (!org.isoron.uhabits.production.ProductionPreparationStartup.requestAtNextColdStart(this)) return false
+        scheduleProcessRestart(MainDestination.HABITS, showRestoreSuccess = false)
+        android.os.Process.killProcess(android.os.Process.myPid())
+        return true
     }
 
     fun rebuildComponent(session: DatasetSession = sessionManager.resolvedSession()) {
