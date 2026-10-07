@@ -103,17 +103,21 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     private val pendingSave = Runnable { saveChanges() }
     private var viewReady = false
     private var taskDeleted = false
+    private lateinit var launchComponent: org.isoron.uhabits.inject.HabitsApplicationComponent
 
     var onTaskUpdatedListener: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = requireContext().applicationContext as HabitsApplication
+        launchComponent = app.component
         taskService = app.component.userTaskService
         organizationFacade = app.component.organizationFacade
         palette = MainTabsThemeBridge.resolve(requireContext())
 
-        val idStr = arguments?.getString(ARG_TASK_ID)
+        val idStr = arguments?.getString(ARG_TASK_ID)?.takeIf {
+            arguments?.getString("focusDatasetId") == app.component.session.datasetId
+        }
         if (idStr != null) {
             taskId = TaskId(idStr)
             currentTask = app.component.userTaskRepository.getById(taskId!!)
@@ -142,6 +146,27 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         }
         setupListeners()
         viewReady = true
+        view.findViewById<View>(R.id.rowDetailFocus).apply {
+            visibility = if (launchComponent.session.isExperimental && currentTask != null) View.VISIBLE else View.GONE
+            setOnClickListener {
+                val app = requireContext().applicationContext as HabitsApplication
+                if (app.component !== launchComponent || taskDeleted) return@setOnClickListener
+                saveHandler.removeCallbacks(pendingSave)
+                saveChanges()
+                val id = taskId ?: return@setOnClickListener
+                val manager = launchComponent.timerSessionManager
+                val active = manager.snapshot()
+                if (active.hasActiveSession && !manager.isCurrentTask(id)) {
+                    AlertDialog.Builder(requireContext())
+                        .setMessage(getString(R.string.task_focus_conflict, active.habitName))
+                        .setPositiveButton(android.R.string.ok, null).show()
+                    return@setOnClickListener
+                }
+                if (parentFragmentManager.findFragmentByTag(TaskFocusBottomSheet.TAG) == null) {
+                    TaskFocusBottomSheet.newInstance(id, etTitle.text.toString()).show(parentFragmentManager, TaskFocusBottomSheet.TAG)
+                }
+            }
+        }
         return view
     }
 
@@ -218,6 +243,8 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         }
 
         etTitle.setTextColor(palette.onSurface)
+        view.findViewById<TextView>(R.id.tvDetailFocus).setTextColor(palette.accent)
+        view.findViewById<ImageView>(R.id.ivDetailFocusIcon).setColorFilter(palette.accent)
         etTitle.setHintTextColor(palette.onSurfaceVariant)
         etDescription.setTextColor(palette.onSurfaceVariant)
         etDescription.setHintTextColor(palette.onSurfaceVariant)
@@ -599,6 +626,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             return TaskDetailBottomSheet().apply {
                 arguments = Bundle().apply {
                     putString(ARG_TASK_ID, taskId.value)
+                    putString("focusDatasetId", HabitsApplication.component.session.datasetId)
                 }
             }
         }

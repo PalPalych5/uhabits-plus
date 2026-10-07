@@ -620,6 +620,20 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     private fun handleIncomingIntent(intent: Intent) {
+        val timerDataset = intent.getStringExtra("task.focus.dataset")
+        val openTaskTimer = intent.getBooleanExtra("task.focus.open", false)
+        intent.removeExtra("task.focus.open")
+        intent.removeExtra("task.focus.dataset")
+        if (openTaskTimer && appComponent.session.isExperimental && appComponent.session.datasetId == timerDataset) {
+            val manager = appComponent.timerSessionManager
+            val target = manager.currentTarget
+            if (target?.kind == org.isoron.uhabits.core.focus.FocusPrimaryTargetType.TASK && manager.snapshot().hasActiveSession &&
+                supportFragmentManager.findFragmentByTag(org.isoron.uhabits.activities.tasks.TaskFocusBottomSheet.TAG) == null) {
+                org.isoron.uhabits.activities.tasks.TaskFocusBottomSheet.newInstance(
+                    org.isoron.uhabits.core.userTasks.TaskId(target.id), manager.snapshot().habitName, false
+                ).show(supportFragmentManager, org.isoron.uhabits.activities.tasks.TaskFocusBottomSheet.TAG)
+            }
+        }
         val destination = intent.getStringExtra(EXTRA_DESTINATION)?.let(::parseDestination)
         intent.removeExtra(EXTRA_DESTINATION)
         if (destination != null && destination != navigationState.current) {

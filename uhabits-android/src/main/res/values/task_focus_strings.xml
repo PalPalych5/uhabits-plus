@@ -1,0 +1,4 @@
+<resources>
+    <string name="task_start_focus">Start focus</string>
+    <string name="task_focus_conflict">A timer is already active for %1$s. Finish or reset it before starting another task.</string>
+</resources>

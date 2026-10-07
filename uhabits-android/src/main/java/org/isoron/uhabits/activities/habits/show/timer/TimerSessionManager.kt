@@ -48,6 +48,57 @@ class TimerSessionManager(
     deviceId: String? = null,
     private val captureTargetResolver: (FocusPrimaryTargetType, String) -> Pair<String, FocusCaptureTarget>? = { _, _ -> null }
 ) {
+    private var disposed = false
+    val currentTarget: FocusCaptureTarget? get() = if (disposed) null else runtime.currentTarget
+
+    fun isCurrentTask(id: TaskId): Boolean = !disposed && runtime.currentTarget?.let {
+        it.kind == FocusPrimaryTargetType.TASK && it.id == id.value
+    } == true
+
+    fun isTaskTarget(id: TaskId): Boolean = isCurrentTask(id)
+
+    fun taskDurations(id: TaskId): PomodoroDurations = PomodoroDurations(
+        statePreferences.getInt("pomodoro_task_${id.value}_focus", appPreferences.pomodoroDefaultFocusMinutes),
+        statePreferences.getInt("pomodoro_task_${id.value}_break", appPreferences.pomodoroDefaultBreakMinutes)
+    )
+
+    fun prepareTask(id: TaskId, title: String): Boolean {
+        if (disposed || !session.isExperimental || captureStore == null) return false
+        if (runtime.snapshot().hasActiveSession) return isCurrentTask(id)
+        val durations = taskDurations(id)
+        val changed = runtime.configurePomodoro(GENERIC_TARGET_ID, title,
+            durations.focusMinutes.minutesToMillis(), durations.breakMinutes.minutesToMillis())
+        if (changed) { clearCompletionDisplay(); refreshRuntimePresentation() }
+        return changed
+    }
+
+    fun updateTaskDurations(id: TaskId, title: String, focusMinutes: Int, breakMinutes: Int): Boolean {
+        if (disposed || !session.isExperimental || captureStore == null) return false
+        if (focusMinutes !in MIN_FOCUS_MINUTES..MAX_FOCUS_MINUTES || breakMinutes !in MIN_BREAK_MINUTES..MAX_BREAK_MINUTES) return false
+        if (runtime.snapshot().hasActiveSession && !isCurrentTask(id)) return false
+        if (!runtime.configurePomodoro(GENERIC_TARGET_ID, title, focusMinutes.minutesToMillis(), breakMinutes.minutesToMillis())) return false
+        statePreferences.edit().putInt("pomodoro_task_${id.value}_focus", focusMinutes)
+            .putInt("pomodoro_task_${id.value}_break", breakMinutes).apply()
+        refreshRuntimePresentation()
+        return true
+    }
+
+    fun switchTaskMode(id: TaskId, title: String, mode: TimerMode): Boolean {
+        if (disposed || !session.isExperimental || captureStore == null) return false
+        if (runtime.snapshot().hasActiveSession && !isCurrentTask(id)) return false
+        if (mode == TimerMode.POMODORO && !prepareTask(id, title)) return false
+        val changed = runtime.switchMode(GENERIC_TARGET_ID, title, mode)
+        if (changed) { clearCompletionDisplay(); refreshRuntimePresentation() }
+        return changed
+    }
+
+    fun toggleTask(id: TaskId, title: String): Boolean {
+        if (disposed || !session.isExperimental || captureStore == null) return false
+        val state = runtime.snapshot()
+        if (state.hasActiveSession) return if (isCurrentTask(id)) pauseOrResumeCurrent() else false
+        return startTask(id, state.mode)
+    }
+
     fun interface Listener {
         fun onTimerChanged()
     }
@@ -66,7 +117,7 @@ class TimerSessionManager(
             completionNotifier.isCompletionVisible()
     private val ticker = object : Runnable {
         override fun run() {
-            if (!session.capabilities.timerEnabled) return
+            if (disposed || !session.capabilities.timerEnabled) return
             runtime.isAutoSwitch = appPreferences.isPomodoroAutoSwitch
             if (!completeIfDue()) notifyListeners()
             if (runtime.snapshot().isRunning) handler.postDelayed(this, TICK_INTERVAL_MILLIS)
@@ -129,15 +180,16 @@ class TimerSessionManager(
     }
 
     fun acceptsDatasetCallback(datasetId: String?): Boolean =
-        datasetId == session.datasetId || (!session.isExperimental && datasetId == null)
+        !disposed && (datasetId == session.datasetId || (!session.isExperimental && datasetId == null))
 
     fun snapshot(): TimerSessionSnapshot {
+        if (disposed) return TimerSessionSnapshot()
         runtime.isAutoSwitch = appPreferences.isPomodoroAutoSwitch
         return runtime.snapshot()
     }
 
     fun prepare(habit: Habit) {
-        if (!session.capabilities.timerEnabled) return
+        if (disposed || !session.capabilities.timerEnabled) return
         applyStoredDurations(habit)
     }
 
@@ -152,7 +204,7 @@ class TimerSessionManager(
     }
 
     fun updateDurations(habit: Habit, focusMinutes: Int, breakMinutes: Int): Boolean {
-        if (!session.capabilities.timerEnabled) return false
+        if (disposed || !session.capabilities.timerEnabled) return false
         if (focusMinutes !in MIN_FOCUS_MINUTES..MAX_FOCUS_MINUTES) return false
         if (breakMinutes !in MIN_BREAK_MINUTES..MAX_BREAK_MINUTES) return false
         val changed = runtime.configurePomodoro(
@@ -173,6 +225,7 @@ class TimerSessionManager(
     }
 
     fun addListener(listener: Listener) {
+        if (disposed) return
         listeners.add(listener)
         listener.onTimerChanged()
     }
@@ -182,7 +235,7 @@ class TimerSessionManager(
     }
 
     fun switchMode(habit: Habit, mode: TimerMode): Boolean {
-        if (!session.capabilities.timerEnabled) return false
+        if (disposed || !session.capabilities.timerEnabled) return false
         if (mode == TimerMode.POMODORO) applyStoredDurations(habit)
         val changed = runtime.switchMode(habit.id!!, habit.name, mode)
         if (changed) clearCompletionDisplay()
@@ -193,7 +246,7 @@ class TimerSessionManager(
     }
 
     fun startOrPause(habit: Habit): Boolean {
-        if (!session.capabilities.timerEnabled) return false
+        if (disposed || !session.capabilities.timerEnabled) return false
         val id = habit.id!!
         val state = runtime.snapshot()
         val changed = if (state.habitId == id && state.isRunning) {
@@ -212,16 +265,17 @@ class TimerSessionManager(
 
     /** Reuses the existing engine/service; Task and Container launch UI can use this entry point. */
     fun startTask(id: TaskId, mode: TimerMode = TimerMode.STOPWATCH): Boolean =
-        captureTargetResolver(FocusPrimaryTargetType.TASK, id.value)?.let { startTarget(it.second, it.first, mode) } ?: false
+        if (disposed) false else captureTargetResolver(FocusPrimaryTargetType.TASK, id.value)?.let { startTarget(it.second, it.first, mode) } ?: false
 
     fun startContainer(id: ContainerId, mode: TimerMode = TimerMode.STOPWATCH): Boolean =
-        captureTargetResolver(FocusPrimaryTargetType.CONTAINER, id.value)?.let { startTarget(it.second, it.first, mode) } ?: false
+        if (disposed) false else captureTargetResolver(FocusPrimaryTargetType.CONTAINER, id.value)?.let { startTarget(it.second, it.first, mode) } ?: false
 
     fun startTarget(target: FocusCaptureTarget, title: String, mode: TimerMode = TimerMode.STOPWATCH): Boolean {
-        if (!session.isExperimental || captureStore == null || !session.capabilities.timerEnabled) return false
+        if (disposed || !session.isExperimental || captureStore == null || !session.capabilities.timerEnabled) return false
         val before = runtime.snapshot()
         if (before.hasActiveSession && runtime.currentTarget?.let { it.kind != target.kind || it.id != target.id } != false) return false
         if (!before.hasActiveSession) {
+            if (target.kind == FocusPrimaryTargetType.TASK && !prepareTask(TaskId(target.id), title)) return false
             if (!runtime.switchMode(GENERIC_TARGET_ID, title, mode)) return false
         } else if (before.mode != mode) return false
         if (!runtime.start(GENERIC_TARGET_ID, title, target)) return false
@@ -231,6 +285,7 @@ class TimerSessionManager(
     }
 
     fun pauseOrResumeCurrent(): Boolean {
+        if (disposed) return false
         val state = runtime.snapshot()
         val id = state.habitId ?: return false
         if (id != GENERIC_TARGET_ID) habitList.getById(id)?.let { return startOrPause(it) }
@@ -244,6 +299,7 @@ class TimerSessionManager(
     }
 
     fun finishCurrent() {
+        if (disposed) return
         val state = runtime.snapshot()
         val id = state.habitId ?: return
         if (id != GENERIC_TARGET_ID) habitList.getById(id)?.let { finish(it); return }
@@ -255,6 +311,7 @@ class TimerSessionManager(
     }
 
     fun resetCurrent() {
+        if (disposed) return
         val id = runtime.snapshot().habitId ?: return
         if (id != GENERIC_TARGET_ID) habitList.getById(id)?.let { reset(it); return }
         if (!session.isExperimental || captureStore == null) return
@@ -265,6 +322,7 @@ class TimerSessionManager(
     }
 
     fun takeBreakCurrent() {
+        if (disposed) return
         val state = runtime.snapshot()
         val id = state.habitId ?: return
         if (id != GENERIC_TARGET_ID) habitList.getById(id)?.let { takeBreakManually(it); return }
@@ -283,7 +341,7 @@ class TimerSessionManager(
     }
 
     fun takeBreakManually(habit: Habit) {
-        if (!session.capabilities.timerEnabled) return
+        if (disposed || !session.capabilities.timerEnabled) return
         val id = habit.id!!
         val state = runtime.snapshot()
         if (state.habitId != id || state.mode != TimerMode.POMODORO || state.phase != PomodoroPhase.FOCUS) return
@@ -304,7 +362,7 @@ class TimerSessionManager(
     }
 
     fun finish(habit: Habit) {
-        if (!session.capabilities.timerEnabled) return
+        if (disposed || !session.capabilities.timerEnabled) return
         val state = runtime.snapshot()
         if (state.habitId != habit.id) return
         val elapsed = runtime.finish(habit.id!!)
@@ -323,7 +381,7 @@ class TimerSessionManager(
     }
 
     fun reset(habit: Habit) {
-        if (!session.capabilities.timerEnabled) return
+        if (disposed || !session.capabilities.timerEnabled) return
         if (runtime.reset(habit.id!!)) {
             handler.removeCallbacks(ticker)
             clearCompletionDisplay()
@@ -335,6 +393,8 @@ class TimerSessionManager(
     }
 
     fun dispose() {
+        if (disposed) return
+        disposed = true
         handler.removeCallbacks(ticker)
         listeners.clear()
         alarmScheduler.cancel()
@@ -348,13 +408,13 @@ class TimerSessionManager(
     }
 
     fun onAlarm(revision: Long) {
-        if (!session.capabilities.timerEnabled) return
+        if (disposed || !session.capabilities.timerEnabled) return
         if (revision != alarmRevision) return
         if (!completeIfDue(revision)) refreshAlarm()
     }
 
     fun rescheduleAlarmFromSystem() {
-        if (!session.capabilities.timerEnabled) return
+        if (disposed || !session.capabilities.timerEnabled) return
         if (!completeIfDue()) {
             restartTickerIfNeeded()
             persistState()
@@ -366,6 +426,7 @@ class TimerSessionManager(
 
     @Synchronized
     fun dismissCompletionNotification(eventId: Long): Boolean {
+        if (disposed) return false
         if (eventId != lastCompletionEventId) return false
         clearCompletionDisplay()
         persistState()
@@ -380,7 +441,7 @@ class TimerSessionManager(
         eventId: Long,
         completion: PomodoroCompletion
     ): Boolean {
-        if (!session.capabilities.timerEnabled) return false
+        if (disposed || !session.capabilities.timerEnabled) return false
         if (eventId != lastCompletionEventId) return false
         val habit = habitList.getById(habitId)
         if (habit == null && habitId != GENERIC_TARGET_ID && (!session.isExperimental || captureStore == null)) return false
@@ -426,7 +487,7 @@ class TimerSessionManager(
 
     @Synchronized
     private fun completeIfDue(expectedRevision: Long? = null): Boolean {
-        if (!session.capabilities.timerEnabled) return false
+        if (disposed || !session.capabilities.timerEnabled) return false
         if (expectedRevision != null && expectedRevision != alarmRevision) return false
         val before = runtime.snapshot()
         val completion = runtime.tick() ?: return false
@@ -496,7 +557,7 @@ class TimerSessionManager(
     private fun notifyListeners() = listeners.toList().forEach { it.onTimerChanged() }
 
     fun shouldShowProgressNotification(): Boolean =
-        if (!session.capabilities.timerEnabled) false else runtime.snapshot().shouldShowProgressNotification(completionDisplayActive)
+        if (disposed || !session.capabilities.timerEnabled) false else runtime.snapshot().shouldShowProgressNotification(completionDisplayActive)
 
     private fun syncForegroundService() {
         if (shouldShowProgressNotification()) {
@@ -514,7 +575,7 @@ class TimerSessionManager(
 
     private fun refreshAlarm() {
         alarmScheduler.cancel()
-        if (!session.capabilities.timerEnabled) return
+        if (disposed || !session.capabilities.timerEnabled) return
         alarmRevision++
         statePreferences.edit().putLong(KEY_ALARM_REVISION, alarmRevision).commit()
         val state = runtime.snapshot()
@@ -524,7 +585,7 @@ class TimerSessionManager(
     }
 
     private fun persistState(commit: Boolean = false) {
-        if (!session.capabilities.timerEnabled) return
+        if (disposed || !session.capabilities.timerEnabled) return
         val state = runtime.snapshot()
         val editor = statePreferences.edit()
             .putLong(KEY_ALARM_REVISION, alarmRevision)

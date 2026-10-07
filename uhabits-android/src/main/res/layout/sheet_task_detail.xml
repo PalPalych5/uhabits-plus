@@ -46,6 +46,17 @@
             android:includeFontPadding="false" android:lineSpacingExtra="4dp"
             android:hint="Добавить заметку…" android:textSize="15sp" android:fontFamily="sans-serif"
             android:inputType="textCapSentences|textMultiLine" android:maxLines="12" />
+        <LinearLayout android:id="@+id/rowDetailFocus"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+            android:orientation="horizontal" android:gravity="center_vertical" android:visibility="gone"
+            android:background="?android:attr/selectableItemBackground" android:clickable="true" android:focusable="true">
+            <ImageView android:id="@+id/ivDetailFocusIcon"
+                android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="12dp"
+                android:layout_marginEnd="16dp" android:src="@drawable/ic_timer_play" />
+            <TextView android:id="@+id/tvDetailFocus"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:text="@string/task_start_focus" android:textSize="15sp" android:fontFamily="sans-serif" />
+        </LinearLayout>
         <View android:id="@+id/divider1"
             android:layout_width="match_parent" android:layout_height="1dp" android:layout_marginBottom="8dp" android:visibility="gone" />
         <LinearLayout android:id="@+id/rowDetailContainer"

@@ -33,6 +33,9 @@ import org.isoron.uhabits.activities.habits.show.timer.PomodoroAlertHealth
 import org.isoron.uhabits.activities.habits.show.timer.PomodoroAlertIssue
 import org.isoron.uhabits.activities.habits.show.timer.TimerSessionManager
 import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.focus.FocusPrimaryTargetType
+import org.isoron.uhabits.core.userTasks.TaskId
+import org.isoron.uhabits.activities.habits.show.timer.PomodoroDurations
 import org.isoron.uhabits.core.timer.PomodoroPhase
 import org.isoron.uhabits.core.timer.TimerMode
 import org.isoron.uhabits.core.timer.TimerSessionSnapshot
@@ -46,6 +49,8 @@ class TimerCardView : LinearLayout {
     private var isPrimaryIconTransitioning: Boolean = false
     private var isCollapsingRow: Boolean = false
     private var habit: Habit? = null
+    private var taskId: TaskId? = null
+    private var taskTitle: String = ""
     private var manager: TimerSessionManager? = null
     private val listener = TimerSessionManager.Listener { updateUIState() }
 
@@ -192,7 +197,7 @@ class TimerCardView : LinearLayout {
         val baseRipple = (resources.getColor(R.attr.contrast100) and 0x00FFFFFF) or 0x18000000
 
         resetBtn = timerIconButton(R.drawable.ic_timer_reset) {
-            habit?.let { manager?.reset(it) }
+            if (matchesCurrentTarget()) manager?.resetCurrent()
         }.apply {
             background = createCircularRipple(secondarySurface, baseRipple, secondaryStroke, strokeWidth)
             contentDescription = context.getString(R.string.timer_reset)
@@ -208,7 +213,7 @@ class TimerCardView : LinearLayout {
             translationZ = dp(2f)
         }
         takeBreakBtn = timerIconButton(R.drawable.ic_settings_pomodoro_break) {
-            habit?.let { manager?.takeBreakManually(it) }
+            if (matchesCurrentTarget()) manager?.takeBreakCurrent()
         }.apply {
             background = createCircularRipple(secondarySurface, baseRipple, secondaryStroke, strokeWidth)
             contentDescription = context.getString(R.string.pomodoro_start_break)
@@ -220,7 +225,7 @@ class TimerCardView : LinearLayout {
             translationX = 0f
         }
         finishBtn = timerIconButton(R.drawable.ic_timer_finish) {
-            habit?.let { manager?.finish(it) }
+            if (matchesCurrentTarget()) manager?.finishCurrent()
         }.apply {
             background = createCircularRipple(secondarySurface, baseRipple, secondaryStroke, strokeWidth)
             contentDescription = context.getString(R.string.timer_finish)
@@ -251,10 +256,37 @@ class TimerCardView : LinearLayout {
     fun setHabit(habit: Habit, manager: TimerSessionManager) {
         if (isAttachedToWindow) this.manager?.removeListener(listener)
         this.habit = habit
+        this.taskId = null
         this.manager = manager
         manager.prepare(habit)
         if (isAttachedToWindow) manager.addListener(listener)
         updateUIState()
+    }
+
+    fun setTask(id: TaskId, title: String, manager: TimerSessionManager) {
+        if (isAttachedToWindow) this.manager?.removeListener(listener)
+        this.habit = null
+        this.taskId = id
+        this.taskTitle = title
+        this.manager = manager
+        manager.prepareTask(id, title)
+        if (isAttachedToWindow) manager.addListener(listener)
+        updateUIState()
+    }
+
+    private fun matchesCurrentTarget(): Boolean {
+        val currentManager = manager ?: return false
+        taskId?.let { return currentManager.isCurrentTask(it) }
+        val currentHabit = habit ?: return false
+        val target = currentManager.currentTarget
+        return if (target != null) target.kind == FocusPrimaryTargetType.HABIT && target.id == currentHabit.uuid
+        else currentManager.snapshot().habitId == currentHabit.id
+    }
+
+    private fun durations(): PomodoroDurations? {
+        val currentManager = manager ?: return null
+        taskId?.let { return currentManager.taskDurations(it) }
+        return habit?.let { currentManager.durations(it) }
     }
 
     fun setNotificationPermissionRequester(requester: (onReady: () -> Unit) -> Unit) {
@@ -290,14 +322,19 @@ class TimerCardView : LinearLayout {
     }
 
     private fun switchMode(mode: TimerMode) {
+        taskId?.let { manager?.switchTaskMode(it, taskTitle, mode); return }
         habit?.let { manager?.switchMode(it, mode) }
     }
 
     private fun toggleTimer() {
-        val currentHabit = habit ?: return
         val currentManager = manager ?: return
+        val currentTask = taskId
+        val currentHabit = habit
+        if (currentTask == null && currentHabit == null) return
         val action: () -> Unit = {
-            currentManager.startOrPause(currentHabit)
+            if (currentTask != null) currentManager.toggleTask(currentTask, taskTitle)
+            else currentHabit?.let { currentManager.startOrPause(it) }
+            Unit
         }
         val requester = requestNotificationPermission
         if (requester != null && !currentManager.snapshot().hasActiveSession) {
@@ -309,10 +346,11 @@ class TimerCardView : LinearLayout {
 
     private fun updateUIState() {
         if (!::timeDisplay.isInitialized) return
-        val currentHabit = habit ?: return
+        if (habit == null && taskId == null) return
         val sharedState = manager?.snapshot() ?: TimerSessionSnapshot()
-        val conflict = sharedState.hasActiveSession && sharedState.habitId != currentHabit.id
-        val state = if (sharedState.habitId == currentHabit.id || conflict) sharedState else TimerSessionSnapshot()
+        val matchesTarget = matchesCurrentTarget()
+        val conflict = sharedState.hasActiveSession && !matchesTarget
+        val state = if (matchesTarget || conflict || taskId != null && !sharedState.hasActiveSession) sharedState else TimerSessionSnapshot()
 
         updateTimeDisplay(state.displayMillis, state.isOvertime)
         stopwatchTab.text = context.getString(R.string.timer_mode_stopwatch).uppercase()
@@ -334,7 +372,7 @@ class TimerCardView : LinearLayout {
 
         val hasElapsed = state.elapsedMillis > 0L
         val isSessionActive = state.hasActiveSession || hasElapsed
-        val isCurrentHabitSession = state.habitId == currentHabit.id
+        val isCurrentTargetSession = matchesTarget
 
         startPauseBtn.isEnabled = !conflict
         val primaryIconRes = if (state.isRunning) R.drawable.ic_timer_pause else R.drawable.ic_timer_play
@@ -349,7 +387,7 @@ class TimerCardView : LinearLayout {
         startPauseBtn.contentDescription = primaryAction
         startPauseBtn.tooltipText = primaryAction
 
-        val canReset = !conflict && isCurrentHabitSession && (isSessionActive || state.phase == PomodoroPhase.BREAK)
+        val canReset = !conflict && isCurrentTargetSession && (isSessionActive || state.phase == PomodoroPhase.BREAK)
         resetBtn.isEnabled = canReset
 
         takeBreakBtn.isEnabled = isOvertimeFocus
@@ -414,9 +452,11 @@ class TimerCardView : LinearLayout {
 
     private fun enterDurationEditor() {
         if (transitionInProgress) return
-        val currentHabit = habit ?: return
         val state = manager?.snapshot() ?: return
-        if (state.habitId != currentHabit.id || state.mode != TimerMode.POMODORO ||
+        // An idle Task has configured durations but no captured primary target until Start.
+        // Only an active session requires the frozen target identity to match.
+        val canEditTarget = matchesCurrentTarget() || taskId != null && !state.hasActiveSession
+        if (!canEditTarget || state.mode != TimerMode.POMODORO ||
             state.isRunning || state.elapsedMillis > 0L || state.phase != PomodoroPhase.FOCUS
         ) return
         isEditingDuration = true
@@ -434,10 +474,8 @@ class TimerCardView : LinearLayout {
 
     private fun showEditorPhase(editBreak: Boolean) {
         if (transitionInProgress) return
-        val currentHabit = habit ?: return
-        val currentManager = manager ?: return
         isEditingBreak = editBreak
-        val durations = currentManager.durations(currentHabit)
+        val durations = durations() ?: return
         if (editBreak) {
             minuteWheel.setRange(1, 60, durations.breakMinutes)
         } else {
@@ -447,14 +485,12 @@ class TimerCardView : LinearLayout {
     }
 
     private fun saveEditedMinute(minute: Int) {
-        val currentHabit = habit ?: return
         val currentManager = manager ?: return
-        val durations = currentManager.durations(currentHabit)
-        if (isEditingBreak) {
-            currentManager.updateDurations(currentHabit, durations.focusMinutes, minute)
-        } else {
-            currentManager.updateDurations(currentHabit, minute, durations.breakMinutes)
-        }
+        val durations = durations() ?: return
+        val focus = if (isEditingBreak) durations.focusMinutes else minute
+        val rest = if (isEditingBreak) minute else durations.breakMinutes
+        taskId?.let { currentManager.updateTaskDurations(it, taskTitle, focus, rest); return }
+        habit?.let { currentManager.updateDurations(it, focus, rest) }
     }
 
     private fun animateEditorVisibility(showEditor: Boolean) {

@@ -121,7 +121,14 @@ class TimerForegroundService : Service() {
     ): Notification {
         val habit = (applicationContext as HabitsApplication).component.habitList
             .getById(state.habitId)
-        val contentIntent = habit?.let {
+        val contentIntent = if (manager.currentTarget?.kind == org.isoron.uhabits.core.focus.FocusPrimaryTargetType.TASK) {
+            PendingIntent.getActivity(this, 17017,
+                Intent(this, org.isoron.uhabits.activities.main.MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    putExtra("task.focus.open", true)
+                    putExtra("task.focus.dataset", manager.session.datasetId)
+                }, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        } else habit?.let {
             PendingIntent.getActivity(
                 this,
                 (state.habitId % Int.MAX_VALUE).toInt(),
