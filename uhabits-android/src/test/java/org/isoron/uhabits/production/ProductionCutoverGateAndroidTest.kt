@@ -66,8 +66,38 @@ class ProductionCutoverGateAndroidTest {
     }
 
     @Test
+    fun checkCutoverAuthorizedThrowsForCanonicalWhenUnauthorized() {
+        assertFalse(ProductionCutoverGate.isCutoverAuthorized("uhabits.db"))
+        assertThrows(CutoverNotAuthorizedException::class.java) {
+            ProductionCutoverGate.checkCutoverAuthorized("uhabits.db")
+        }
+        assertThrows(CutoverNotAuthorizedException::class.java) {
+            ProductionCutoverGate.checkCutoverAuthorized("/data/data/org.isoron.uhabits/databases/uhabits.db")
+        }
+    }
+
+    @Test
+    fun checkCutoverAuthorizedPassesForNonCanonicalStagingFiles() {
+        // Staging and disposable files are permitted without global authorization
+        assertTrue(ProductionCutoverGate.isCutoverAuthorized("staging_migration_123.db"))
+        assertTrue(ProductionCutoverGate.isCutoverAuthorized("test.db"))
+        ProductionCutoverGate.checkCutoverAuthorized("staging_migration_123.db")
+        ProductionCutoverGate.checkCutoverAuthorized("test.db")
+    }
+
+    @Test
+    fun checkCutoverAuthorizedPassesForCanonicalWhenExplicitlyAuthorized() {
+        ProductionCutoverGate.withCutoverAuthorization {
+            assertTrue(ProductionCutoverGate.isCutoverAuthorized("uhabits.db"))
+            ProductionCutoverGate.checkCutoverAuthorized("uhabits.db")
+            ProductionCutoverGate.checkCutoverAuthorized("/data/data/org.isoron.uhabits/databases/uhabits.db")
+        }
+    }
+
+    @Test
     fun canonicalDatabaseVersionIs29ByDefault() {
         assertEquals(29, LEGACY_DATABASE_VERSION)
         assertEquals(30, DATABASE_VERSION)
     }
 }
+

@@ -56,6 +56,15 @@ object ProductionCutoverGate {
     }
 
     /**
+     * Asserts that cutover is authorized for the given database filename, throwing [CutoverNotAuthorizedException] otherwise.
+     */
+    fun checkCutoverAuthorized(databaseFilename: String) {
+        if (!isCutoverAuthorized(databaseFilename)) {
+            throw CutoverNotAuthorizedException(databaseFilename)
+        }
+    }
+
+    /**
      * Authorize cutover for the current process session (used in targeted tests).
      */
     fun setExplicitCutoverAuthorizedForTesting(authorized: Boolean) {

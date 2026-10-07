@@ -149,7 +149,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR19 — Today workspace evaluation | Native evaluation DONE; human accepts secondary Day Overview direction; global fourth workspace rejected | Permanent Today tab, recurrence, sync rewrite | 1cda48931; fresh PR20 rerun: 6 Today core + 3 Android presentation PASS | DONE |
 | PR20 — Production Readiness & Cutover Audit | Code-backed inventory, migration/recovery/runtime/readers/sync/promotion plan | Production migration/activation, new sync implementation, recurrence, polish | [Canonical cutover plan](UHABIT_PRODUCTION_CUTOVER_PLAN.md); NO-GO gates recorded | DONE |
 | PR21 — Preflight & Recovery Gate | Raw inventory/anomaly diagnostics, coherent v29 recovery bundle, pre-DI timer checks, startup recovery | Version bump, conversion/activation, sync protocol, promotion | PR20 review; verified commit 28ce65a67 | DONE |
-| PR22 — Versioned Next Schema Conversion on Protected Staging | 30.sql additive Next schema, outer transaction migrator, full semantic validator, staging copy isolation, ProductionCutoverGate, v29 immutability | Runtime authority activation (remains LEGACY), live production DB upgrade, sync rewrite, PR23 readers | PR21 preflight/recovery gate | DONE |
+| PR22 / PR22.1 — Versioned Next Schema Conversion on Protected Staging & Parity Audit | 30.sql additive Next schema, outer transaction migrator, 8-table legacy parity validator, staging copy isolation, ProductionCutoverGate, v29 immutability, schema parity tests | Runtime authority activation (remains LEGACY), live production DB upgrade, sync rewrite, PR23 readers | PR21 preflight/recovery gate | DONE |
 | Production migration / new sync protocol | Отдельный release design, compatibility gate, conflict/recovery checks | Скрытая активация внутри Foundation | Validated local stages; protocol/dataset/server gate; отдельное согласование | PLANNED |
 
 Последующие этапы — предложения, не разрешение реализовать roadmap автоматически. PR22 завершает текущий запрос; следующий ограниченный scope — PR23 по отдельному запросу. Recurrence отложена до разрешения production-readiness границ.
@@ -158,7 +158,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1–PR19 DONE; PR20 AUDIT DONE; PR21 PREFLIGHT/RECOVERY DONE; PR22 SCHEMA CONVERSION DONE
+Implementation: PR1–PR19 DONE; PR20 AUDIT DONE; PR21 PREFLIGHT/RECOVERY DONE; PR22 SCHEMA CONVERSION & PR22.1 AUDIT DONE
 Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated, Container Statistics MVP completed, Today Workspace evaluated natively
 Current branch: dev; PR22 implementation baseline; use Git for current HEAD
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
@@ -169,7 +169,7 @@ Native Android implementation: PR10 / PR10.1 ACCEPTED; PR19 evaluation ACCEPTED 
 Active implementation: none / IDLE; PR22 completed; STOP before PR23
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
-Checks: PR22 full suite: 758 core JVM tests PASS (100%), ProductionCutoverGateAndroidTest PASS (100%), compileDebugKotlin PASS, assembleDebug & assembleDebugAndroidTest PASS, 12 Android instrumentation tests on Pixel_6(AVD) PASS (100%).
+Checks: PR22/PR22.1 full suite: 760 core JVM tests PASS (100%), ProductionCutoverGateAndroidTest (6 tests) PASS (100%), compileDebugKotlin PASS, assembleDebug & assembleDebugAndroidTest PASS, 12 Android instrumentation tests on Pixel_6(AVD) PASS (100%).
 Production DB schema: v29 default on canonical uhabits.db (ProductionCutoverGate enforced); v30 installed on protected staging copies
 Production runtime authority: LEGACY_PRODUCTION / LEGACY (metadata runtime_authority = 'LEGACY')
 Production UI: unchanged (mode default is LEGACY)
@@ -182,7 +182,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| Antigravity (89cb3dfc) | PR22: Versioned Next Schema Conversion on Protected Staging | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE | 2026-10-07 13:20 Novosibirsk | uhabits-core/containers/migration, production, database, HabitsDatabaseOpener, docs | PR22 verified; 758 core + 1 Android unit + 12 instrumentation PASS; build exit 0 |
+| Antigravity (89cb3dfc) | PR22.1: Final Schema Conversion Parity Audit | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE | 2026-10-07 14:55 Novosibirsk | uhabits-core/production, uhabits-android/production, docs | PR22.1 parity verified; 760 core + 6 Android unit + 12 instrumentation PASS |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
  
