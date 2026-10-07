@@ -187,12 +187,10 @@ class SourceRuleAttributionServiceTest {
         val outcomeSport = service.attributeSession(sessionSport).first()
         assertTrue(outcomeSport is AttributionOutcome.IncompatibleTarget)
 
-        // Nonexistent target habit throws
+        // Deleted/unavailable targets are safely excluded from automatic runtime attribution.
         ruleRepo.record(makeRule("r-unknown", "c-unknown", "h-nonexistent"))
         val sessionUnknown = makeSession("s-u", "c-unknown", durationMs = 60_000L)
-        assertFailsWith<TargetHabitNotFoundException> {
-            service.attributeSession(sessionUnknown)
-        }
+        assertTrue(service.attributeSession(sessionUnknown).single() is AttributionOutcome.IncompatibleTarget)
     }
 
     @Test
@@ -248,11 +246,15 @@ class SourceRuleAttributionServiceTest {
         val future = makeSession("s3", "c-study", durationMs = 60_000L, startedAt = 450_000L)
         val report2 = service.reconcileAll(listOf(s1, s2, future), now = 600_000L)
         assertEquals(0, report2.contributionsCreated)
+        assertEquals(2, report2.contributionsAlreadyPresent)
         assertEquals(0, report2.contributionsRevoked)
 
         assertEquals(historical, contribRepo.getAll())
         assertEquals(2, contribRepo.getAll(includeRemoved = false).size)
-        assertTrue(service.attributeSession(future).isEmpty())
+        // Ended rules remain visible to recovery, but work beyond their interval is ineligible.
+        val futureOutcomes = service.attributeSession(future)
+        assertTrue(futureOutcomes.none { it is AttributionOutcome.Attributed })
+        assertTrue(futureOutcomes.all { it is AttributionOutcome.Ineligible })
         assertEquals(rule2.copy(removedAt = 400_000L, updatedAt = 400_000L), ruleRepo.getById(rule2.id))
         assertEquals(rule2.id, contribRepo.getById(ContributionId("contrib:focus:s2:h-study"))!!.sourceRuleId)
     }
@@ -265,6 +267,8 @@ class SourceRuleAttributionServiceTest {
         // PR14 has no rule update API. This decorator supplies the repository state
         // that a later disable would expose to the attribution service.
         val repository = object : SourceRuleRepository by ruleRepo {
+            override fun getAll(includeRemoved: Boolean): List<SourceRule> =
+                ruleRepo.getAll(includeRemoved).map { it.copy(isEnabled = enabled) }
             override fun getActiveRules(): List<SourceRule> =
                 if (enabled) ruleRepo.getActiveRules() else emptyList()
             override fun getById(id: SourceRuleId): SourceRule? =

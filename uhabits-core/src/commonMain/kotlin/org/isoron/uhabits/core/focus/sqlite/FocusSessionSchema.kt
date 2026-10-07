@@ -59,6 +59,7 @@ object FocusSessionSchema {
             if ("organization_context" !in columns) db.run("ALTER TABLE FocusSessions ADD COLUMN organization_context TEXT")
             db.run("CREATE INDEX IF NOT EXISTS idx_focus_sessions_task ON FocusSessions(task_id, started_at, id)")
             db.run("CREATE INDEX IF NOT EXISTS idx_focus_sessions_started ON FocusSessions(started_at, id)")
+            db.run("CREATE INDEX IF NOT EXISTS idx_focus_sessions_ended ON FocusSessions(ended_at, id)")
             db.run("RELEASE SAVEPOINT migrate_focus_schema")
         } catch (error: Throwable) {
             try { db.run("ROLLBACK TO SAVEPOINT migrate_focus_schema") }

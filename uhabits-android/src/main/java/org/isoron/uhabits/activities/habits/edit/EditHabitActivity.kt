@@ -67,6 +67,8 @@ import org.isoron.uhabits.core.commands.EditHabitGoalCommand
 import org.isoron.uhabits.core.commands.EditHabitCommand
 import org.isoron.uhabits.core.commands.GoalApplyScope
 import org.isoron.uhabits.core.containers.ContainerId
+import org.isoron.uhabits.core.containers.HabitRef
+import org.isoron.uhabits.core.rules.HabitTimeValueConverter
 import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.DayTier
@@ -173,6 +175,8 @@ class EditHabitActivity : AppCompatActivity() {
     var timerEnabled = false
     var blockId: Long? = 7L
     var containerId: String? = null
+    var focusSourceContainerId: String? = null
+    var focusIncludeDescendants = true
     var iconRef: IconRef = IconRef.None
     private var hasIndividualColor = false
     private var createArchived = false
@@ -209,6 +213,10 @@ class EditHabitActivity : AppCompatActivity() {
                 iconRef = facade.getHabitVisualIdentity(habit.uuid ?: "")?.iconRef ?: IconRef.None
             }
             hasIndividualColor = true
+            component.focusCreditController?.configuration?.current(HabitRef(habit.uuid!!))?.let {
+                focusSourceContainerId = it.sourceContainerId.value
+                focusIncludeDescendants = it.includeDescendants
+            }
             habit.reminder?.let {
                 reminderHour = it.hour
                 reminderMin = it.minute
@@ -244,6 +252,8 @@ class EditHabitActivity : AppCompatActivity() {
             val savedBlockId = state.getLong("blockId", -1L)
             blockId = if (savedBlockId == -1L) null else savedBlockId
             containerId = state.getString("containerId")
+            focusSourceContainerId = state.getString("focusSourceContainerId")
+            focusIncludeDescendants = state.getBoolean("focusIncludeDescendants", true)
             iconRef = IconRef.fromString(state.getString("iconRef"))
             hasIndividualColor = state.getBoolean("hasIndividualColor", habitId >= 0)
             createArchived = state.getBoolean("createArchived", false)
@@ -277,12 +287,31 @@ class EditHabitActivity : AppCompatActivity() {
                     override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
                     override fun afterTextChanged(s: android.text.Editable?) {
                         updateTimerVisibility()
+                        updateFocusConfigurationVisibility()
                     }
                 })
                 updateTimerVisibility()
             }
         }
 
+        binding.focusDescendantsSwitch.isChecked = focusIncludeDescendants
+        binding.focusDescendantsSwitch.setOnCheckedChangeListener { _, checked -> focusIncludeDescendants = checked }
+        val focusArrow = configureDropdownArrow(binding.focusSourcePicker)
+        binding.focusSourcePicker.setOnClickListener {
+            val containers = facade.availableContainers()
+            focusArrow.open()
+            val dialog = CustomDialogs.showSingleChoiceDialog(
+                context = this, title = getString(R.string.focus_credit_source),
+                options = listOf(getString(R.string.focus_credit_off)) + containers.map { it.path ?: it.name },
+                selectedIndex = containers.indexOfFirst { it.key == focusSourceContainerId } + 1
+            ) { which ->
+                focusSourceContainerId = if (which == 0) null else containers[which - 1].key
+                populateFocusConfiguration()
+            }
+            dialog.setOnDismissListener { focusArrow.close() }
+        }
+        updateFocusConfigurationVisibility()
+        populateFocusConfiguration()
         setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
         supportActionBar?.setDisplayShowHomeEnabled(true)
@@ -720,6 +749,8 @@ class EditHabitActivity : AppCompatActivity() {
             putBoolean("timerEnabled", binding.timerEnabledSwitch.isChecked)
             putLong("blockId", blockId ?: -1L)
             containerId?.let { putString("containerId", it) }
+            putString("focusSourceContainerId", focusSourceContainerId)
+            putBoolean("focusIncludeDescendants", focusIncludeDescendants)
             putString("iconRef", IconRef.toStorageString(iconRef))
             putBoolean("hasIndividualColor", hasIndividualColor)
             putBoolean("createArchived", createArchived)
@@ -742,6 +773,7 @@ class EditHabitActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         populateHabitBlock()
+        populateFocusConfiguration()
         if ((application as HabitsApplication).component.organizationFacade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
             updateIconPickerLabel()
         }
@@ -852,8 +884,72 @@ class EditHabitActivity : AppCompatActivity() {
     }
 
     private fun runSaveCommand(command: org.isoron.uhabits.core.commands.Command) {
-        (application as HabitsApplication).component.commandRunner.run(command)
-        finish()
+        val component = (application as HabitsApplication).component
+        val controller = component.focusCreditController
+        if (controller == null) {
+            component.commandRunner.run(command)
+            finish()
+            return
+        }
+        // Configuration needs the persisted Habit, including newly assigned database identity.
+        val selectedSource = if (isFocusCompatible()) focusSourceContainerId?.let(::ContainerId) else null
+        val selectedDescendants = focusIncludeDescendants
+        binding.buttonSave.isEnabled = false
+        component.commandRunner.addListener(object : CommandRunner.Listener {
+            override fun onCommandFinished(completed: org.isoron.uhabits.core.commands.Command) {
+                if (completed !== command) return
+                component.commandRunner.removeListener(this)
+                if ((application as HabitsApplication).component !== component) {
+                    finish()
+                    return
+                }
+                val habit = when (command) {
+                    is CreateHabitCommand -> component.habitList.getByUUID(command.model.uuid)
+                    else -> component.habitList.getById(habitId)
+                }
+                // Creation has already committed. Retrying failed focus settings must edit
+                // that same Habit, rather than create a second Habit with another UUID.
+                if (habit != null && command is CreateHabitCommand) {
+                    habitId = requireNotNull(habit.id)
+                    binding.toolbar.title = getString(R.string.edit_habit)
+                }
+                try {
+                    if (habit != null) {
+                        controller.configure(habit,
+                            selectedSource, selectedDescendants)
+                    }
+                    finish()
+                } catch (error: Exception) {
+                    if (isFinishing || isDestroyed) return
+                    binding.buttonSave.isEnabled = true
+                    AlertDialog.Builder(this@EditHabitActivity)
+                        .setMessage(R.string.focus_credit_save_failed)
+                        .setPositiveButton(android.R.string.ok, null).show()
+                }
+            }
+        })
+        component.commandRunner.run(command)
+    }
+
+    private fun isFocusCompatible(): Boolean = runCatching {
+        HabitTimeValueConverter.validateTargetHabit(
+            habitType == HabitType.NUMERICAL, binding.unitInput.text.toString())
+    }.isSuccess
+
+    private fun updateFocusConfigurationVisibility() {
+        val experimental = (application as HabitsApplication).component.focusCreditController != null
+        binding.focusCreditOuterBox.visibility = if (experimental && isFocusCompatible()) View.VISIBLE else View.GONE
+    }
+
+    private fun populateFocusConfiguration() {
+        val source = (application as HabitsApplication).component.organizationFacade.availableContainers()
+            .firstOrNull { it.key == focusSourceContainerId }
+        binding.focusSourcePicker.text = when {
+            focusSourceContainerId == null -> getString(R.string.focus_credit_off)
+            source != null -> source.path ?: source.name
+            else -> getString(R.string.focus_credit_source_missing)
+        }
+        binding.focusDescendantsSwitch.isEnabled = focusSourceContainerId != null
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {

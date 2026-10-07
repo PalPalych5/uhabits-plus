@@ -1,0 +1,13 @@
+<resources>
+    <string name="focus_credit_progress">Current goal progress</string>
+    <string name="focus_credit_breakdown">Progress details</string>
+    <string name="focus_credit_manual">Manual</string>
+    <string name="focus_credit_focus">Focus</string>
+    <string name="focus_credit_unknown">No known value</string>
+    <string name="focus_credit_day_excluded">Day excluded</string>
+    <string name="focus_credit_incomplete">Some days have no entry. The total is a known minimum.</string>
+    <string name="focus_credit_skipped">This day is excluded from the goal. Its focus time is not counted.</string>
+    <string name="focus_credit_excluded">Focus on excluded days</string>
+    <string name="focus_credit_unavailable">Focus progress is unavailable</string>
+    <string name="focus_credit_goal">Goal: %1$s</string>
+</resources>

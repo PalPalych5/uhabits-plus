@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="focus_credit_settings">Время фокуса</string>
+    <string name="focus_credit_source">Автоматически учитывать фокус из</string>
+    <string name="focus_credit_off">Выключено — выбрать раздел</string>
+    <string name="focus_credit_descendants">Включать вложенные разделы</string>
+    <string name="focus_credit_history">Учитывается новая работа после сохранения. При выключении ранее учтённое время сохраняется.</string>
+    <string name="focus_credit_source_missing">Раздел недоступен — выбрать другой</string>
+    <string name="focus_credit_save_failed">Привычка сохранена, но настройку фокуса сохранить не удалось. Выберите доступный раздел и повторите.</string>
+</resources>

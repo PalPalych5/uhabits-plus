@@ -48,6 +48,66 @@ import kotlin.test.*
 
 class SourceRuleDurabilityTest {
 
+    @Test fun concurrentReconciliationWithDifferentObservationTimesCreditsExactlyOnce() {
+        val path = Files.createTempFile("focus-credit-concurrent-", ".db")
+        val executor = Executors.newFixedThreadPool(2)
+        val session = FocusSession(FocusSessionId("concurrent-session"), 1000L, 61000L, 60000L,
+            containerId = ContainerId("container-uuid-alpha"), source = FocusSessionSource.TIMER,
+            createdAt = 1000L, updatedAt = 61000L)
+        try {
+            val setup = JavaDatabaseOpener().open(path.toString())
+            try {
+                SourceRuleSchema.createSchema(setup); ContributionSchema.createSchema(setup)
+                SQLiteSourceRuleRepository(setup).record(sampleRule)
+            } finally { setup.close() }
+            val start = CountDownLatch(1)
+            val futures = (1..2).map { worker -> executor.submit(Callable {
+                val db = JavaDatabaseOpener().open(path.toString())
+                try {
+                    db.run("PRAGMA busy_timeout = 5000")
+                    check(start.await(5, TimeUnit.SECONDS))
+                    SourceRuleAttributionService(SQLiteSourceRuleRepository(db), SQLiteContributionRepository(db))
+                        .attributeSession(session, 100_000L + worker).filterIsInstance<AttributionOutcome.Attributed>().single()
+                } finally { db.close() }
+            }) }
+            start.countDown()
+            assertEquals(1, futures.map { it.get(10, TimeUnit.SECONDS) }.count { it.wasInserted })
+            val verify = JavaDatabaseOpener().open(path.toString())
+            try {
+                assertEquals(1, SQLiteContributionRepository(verify).getAll().size)
+                assertEquals(1000L, SQLiteContributionRepository(verify).getAll().single().contributedValue)
+            } finally { verify.close() }
+        } finally {
+            executor.shutdownNow(); check(executor.awaitTermination(10, TimeUnit.SECONDS))
+            Files.deleteIfExists(path)
+        }
+    }
+
+    @Test fun pr14ScopeIndexUpgradePreservesHistoricalRowsAndAllowsReplacement() {
+        val path = Files.createTempFile("source-rule-upgrade-", ".db")
+        try {
+            val db = JavaDatabaseOpener().open(path.toString())
+            try {
+                db.run("""CREATE TABLE SourceRules (
+                    id TEXT PRIMARY KEY NOT NULL, source_kind TEXT NOT NULL, source_container_id TEXT NOT NULL,
+                    include_descendants INTEGER NOT NULL, target_habit_uuid TEXT NOT NULL, value_mapping TEXT NOT NULL,
+                    is_enabled INTEGER NOT NULL, effective_from INTEGER NOT NULL, created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL, removed_at INTEGER,
+                    UNIQUE (source_kind, source_container_id, target_habit_uuid))""")
+                val repo = SQLiteSourceRuleRepository(db)
+                repo.record(sampleRule)
+                SourceRuleSchema.createSchema(db)
+                assertEquals(sampleRule, repo.getById(sampleRule.id))
+                val replacement = sampleRule.copy(id = SourceRuleId("new-interval"), effectiveFrom = 5000L, createdAt = 5000L, updatedAt = 5000L)
+                repo.replaceForTarget(sampleRule.targetHabit, replacement, 5000L)
+                SourceRuleSchema.createSchema(db)
+                assertEquals(2, repo.getAll(true).size)
+                assertEquals(listOf(replacement), repo.getActiveRules())
+                assertEquals(5000L, repo.getById(sampleRule.id)?.removedAt)
+            } finally { db.close() }
+        } finally { Files.deleteIfExists(path) }
+    }
+
     private val sampleRule = SourceRule(
         id = SourceRuleId("durable-rule-1"),
         sourceKind = SourceRuleSourceKind.FOCUS_SESSION,

@@ -144,6 +144,7 @@ class HabitsApplication : Application() {
         stopServices()
 
         if (isComponentInitialized) {
+            runCatching { component.focusCreditController?.dispose() }
             runCatching { component.syncCoordinator.dispose() }
             runCatching { component.timerSessionManager.dispose() }
             runCatching { component.db.close() }
@@ -166,6 +167,7 @@ class HabitsApplication : Application() {
 
         val habitList = component.habitList
         for (h in habitList) h.recompute()
+        component.focusCreditController?.startRecovery()
 
         if (session.capabilities.widgetsEnabled) {
             widgetUpdater = component.widgetUpdater.apply {
@@ -207,6 +209,7 @@ class HabitsApplication : Application() {
         notificationTray?.stopListening()
         notificationTray = null
         if (isComponentInitialized) {
+            runCatching { component.focusCreditController?.dispose() }
             runCatching { component.syncCoordinator.dispose() }
             runCatching { component.timerSessionManager.dispose() }
         }

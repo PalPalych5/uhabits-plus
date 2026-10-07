@@ -24,6 +24,42 @@
         style="@style/CardHeader"
         android:text="@string/target"/>
 
+    <LinearLayout
+        android:id="@+id/focusProgress"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+        <TextView
+            android:id="@+id/focusValue"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="28sp"
+            android:textColor="?attr/contrast100" />
+        <TextView
+            android:id="@+id/focusGoal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="@dimen/regularTextSize"
+            android:textColor="?attr/contrast60" />
+        <TextView
+            android:id="@+id/focusCoverage"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="8dp"
+            android:textColor="?attr/contrast60" />
+        <TextView
+            android:id="@+id/focusBreakdown"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:gravity="center_vertical"
+            android:text="@string/focus_credit_breakdown"
+            android:textColor="?attr/contrast100"
+            android:background="?attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
     <org.isoron.uhabits.activities.common.views.TargetChart
         android:id="@+id/targetChart"
         android:layout_width="match_parent"

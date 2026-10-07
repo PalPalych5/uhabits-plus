@@ -47,9 +47,9 @@ class MemorySourceRuleRepository : SourceRuleRepository {
 
         val key = scopeKey(rule)
         val existingId = scopeMap[key]
-        if (existingId != null) {
+        if (rule.isActive && existingId != null) {
             val existing = rulesById[existingId]
-            if (existing != null) {
+            if (existing != null && existing.isActive) {
                 if (existing.id == rule.id && existing == rule) {
                     return SourceRuleRecordResult.ALREADY_RECORDED
                 }
@@ -61,7 +61,7 @@ class MemorySourceRuleRepository : SourceRuleRepository {
         }
 
         rulesById[rule.id] = rule
-        scopeMap[key] = rule.id
+        if (rule.isActive) scopeMap[key] = rule.id
         return SourceRuleRecordResult.INSERTED
     }
 
@@ -79,6 +79,20 @@ class MemorySourceRuleRepository : SourceRuleRepository {
     }
 
     override fun getById(id: SourceRuleId): SourceRule? = rulesById[id]
+
+    override fun replaceForTarget(targetHabit: HabitRef, replacement: SourceRule?, endedAt: Long) {
+        require(replacement == null || replacement.targetHabit == targetHabit)
+        val oldRules = rulesById.toMap()
+        val oldScopes = scopeMap.toMap()
+        try {
+            getByTargetHabit(targetHabit).forEach { remove(it.id, endedAt) }
+            if (replacement != null) record(replacement)
+        } catch (error: Throwable) {
+            rulesById.clear(); rulesById.putAll(oldRules)
+            scopeMap.clear(); scopeMap.putAll(oldScopes)
+            throw error
+        }
+    }
 
     override fun getByTargetHabit(targetHabit: HabitRef, includeRemoved: Boolean): List<SourceRule> =
         rulesById.values

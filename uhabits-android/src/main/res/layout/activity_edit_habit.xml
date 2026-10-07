@@ -292,6 +292,41 @@
             </FrameLayout>
 
 
+            <FrameLayout
+                android:id="@+id/focusCreditOuterBox"
+                style="@style/FormOuterBox"
+                android:visibility="gone">
+                <LinearLayout style="@style/FormInnerBox">
+                    <TextView style="@style/FormLabel" android:text="@string/focus_credit_settings" />
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingHorizontal="16dp"
+                        android:textSize="14sp"
+                        android:textColor="?attr/contrast60"
+                        android:text="@string/focus_credit_source" />
+                    <TextView
+                        android:id="@+id/focusSourcePicker"
+                        style="@style/FormDropdown"
+                        android:minHeight="48dp"
+                        android:textColor="?attr/contrast100" />
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/focusDescendantsSwitch"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:paddingHorizontal="16dp"
+                        android:text="@string/focus_credit_descendants" />
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:padding="16dp"
+                        android:textSize="12sp"
+                        android:textColor="?attr/contrast60"
+                        android:text="@string/focus_credit_history" />
+                </LinearLayout>
+            </FrameLayout>
+
             <!-- Reminder -->
             <FrameLayout style="@style/FormOuterBox">
                 <LinearLayout style="@style/FormInnerBox">

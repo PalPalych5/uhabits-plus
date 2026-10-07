@@ -97,4 +97,7 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
     }
 
     fun refreshTimerAlertHealth() = binding.timerCard.refreshAlertHealth()
+
+    fun setFocusProgress(progress: FocusProgressPresentation?, unavailable: Boolean = false) =
+        binding.targetCard.setFocusProgress(progress, unavailable)
 }

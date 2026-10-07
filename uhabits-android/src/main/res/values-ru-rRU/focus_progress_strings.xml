@@ -1,0 +1,13 @@
+<resources>
+    <string name="focus_credit_progress">Прогресс текущей цели</string>
+    <string name="focus_credit_breakdown">Из чего складывается прогресс</string>
+    <string name="focus_credit_manual">Вручную</string>
+    <string name="focus_credit_focus">Фокус</string>
+    <string name="focus_credit_unknown">Нет известного значения</string>
+    <string name="focus_credit_day_excluded">День исключён</string>
+    <string name="focus_credit_incomplete">За некоторые дни нет записи. Показано известное минимальное значение.</string>
+    <string name="focus_credit_skipped">Этот день исключён из цели. Время фокуса за него не учитывается.</string>
+    <string name="focus_credit_excluded">Фокус за исключённые дни</string>
+    <string name="focus_credit_unavailable">Прогресс фокуса недоступен</string>
+    <string name="focus_credit_goal">Цель: %1$s</string>
+</resources>

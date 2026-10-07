@@ -24,6 +24,7 @@ import org.isoron.uhabits.core.focus.FocusSessionConflictException
 import org.isoron.uhabits.core.focus.FocusSessionId
 import org.isoron.uhabits.core.focus.FocusSessionRecordResult
 import org.isoron.uhabits.core.focus.FocusSessionRepository
+import org.isoron.uhabits.core.focus.FocusSessionCursor
 import org.isoron.uhabits.core.userTasks.TaskId
 
 class MemoryFocusSessionRepository : FocusSessionRepository {
@@ -41,6 +42,14 @@ class MemoryFocusSessionRepository : FocusSessionRepository {
     }
 
     override fun getById(id: FocusSessionId): FocusSession? = sessions[id]
+
+    override fun getFinalizedPage(after: FocusSessionCursor?, limit: Int): List<FocusSession> {
+        require(limit in 1..1000)
+        return sessions.values.asSequence().filter {
+            after == null || it.endedAt > after.endedAt ||
+                (it.endedAt == after.endedAt && it.id.value > after.id)
+        }.sortedWith(compareBy<FocusSession> { it.endedAt }.thenBy { it.id.value }).take(limit).toList()
+    }
 
     override fun getAll(): List<FocusSession> = sessions.values.sortedWith(order)
 

@@ -30,6 +30,8 @@ class FocusSessionConflictException(val sessionId: FocusSessionId) :
     IllegalStateException("A different FocusSession is already recorded for id $sessionId")
 
 /** Append-only facts; queries are ordered by startedAt, then id. */
+data class FocusSessionCursor(val endedAt: Long, val id: String)
+
 interface FocusSessionRepository {
     /**
      * An exact retry returns ALREADY_RECORDED. Reusing an id with changed content
@@ -39,4 +41,6 @@ interface FocusSessionRepository {
     fun getById(id: FocusSessionId): FocusSession?
     fun getAll(): List<FocusSession>
     fun getByTask(taskId: TaskId): List<FocusSession>
+    /** Keyset page, ordered by endedAt/id. Includes late/imported facts on a new startup sweep. */
+    fun getFinalizedPage(after: FocusSessionCursor?, limit: Int): List<FocusSession>
 }

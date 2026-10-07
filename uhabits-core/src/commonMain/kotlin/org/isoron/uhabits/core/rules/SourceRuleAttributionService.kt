@@ -71,10 +71,14 @@ data class ReconcileReport(
  *   if harmonious or rejected if conflicting.
  * - Historical attributions survive rule disablement/removal and explicit corrections survive retries.
  * - Reversal requires an explicit historical correction operation.
+ * - Optional source eligibility gates missing derivations only; existing attribution facts
+ *   survive archive/delete. Callers may use a precise deletion cutoff, but must not infer
+ *   an archive interval from generic updatedAt metadata.
  */
 class SourceRuleAttributionService(
     private val ruleRepository: SourceRuleRepository,
     private val contributionRepository: ContributionRepository,
+    private val sourceEligibility: ((SourceRule, FocusSession) -> Boolean)? = null,
     private val habitResolver: ((HabitRef) -> TargetHabitInfo?)? = null,
 ) {
 
@@ -84,7 +88,9 @@ class SourceRuleAttributionService(
      * @return list of [AttributionOutcome] for each rule evaluation.
      */
     fun attributeSession(session: FocusSession, now: Long = session.endedAt): List<AttributionOutcome> {
-        val activeRules = ruleRepository.getActiveRules()
+        // Ended rules remain recoverable for work committed during their immutable interval.
+        // A legacy disabled rule without an end timestamp has no invented interval history.
+        val activeRules = ruleRepository.getAll(includeRemoved = true).filter { it.isEnabled }
         if (activeRules.isEmpty()) return emptyList()
 
         // 1. Filter rules whose historical scope matches the session
@@ -110,13 +116,16 @@ class SourceRuleAttributionService(
                 continue
             }
             // Check temporal eligibility
-            val eligibleRules = rulesForTarget.filter { session.endedAt >= it.effectiveFrom }
+            val eligibleRules = rulesForTarget.filter {
+                session.endedAt >= it.effectiveFrom && (it.removedAt == null || session.endedAt < it.removedAt) &&
+                    (sourceEligibility?.invoke(it, session) != false)
+            }
             if (eligibleRules.isEmpty()) {
                 for (r in rulesForTarget) {
                     outcomes.add(
                         AttributionOutcome.Ineligible(
                             r.id,
-                            "Session ended at ${session.endedAt} before rule effectiveFrom ${r.effectiveFrom}"
+                            "Session is outside the rule interval or its source is unavailable"
                         )
                     )
                 }
@@ -137,7 +146,8 @@ class SourceRuleAttributionService(
             if (habitResolver != null) {
                 val habitInfo = habitResolver.invoke(targetHabit)
                 if (habitInfo == null) {
-                    throw TargetHabitNotFoundException("Target habit ${targetHabit.uuid} not found", targetHabit)
+                    outcomes.add(AttributionOutcome.IncompatibleTarget(targetHabit, "Target habit unavailable"))
+                    continue
                 }
                 try {
                     HabitTimeValueConverter.validateTargetHabit(
@@ -184,7 +194,18 @@ class SourceRuleAttributionService(
                 sourceRuleId = winningRule.id,
             )
 
-            val recordResult = contributionRepository.record(contribution)
+            val recordResult = try {
+                contributionRepository.record(contribution)
+            } catch (error: ContributionConflictException) {
+                // Another reconciler may have inserted the same deterministic derivation with
+                // a different observation time. Only accept the same canonical fact payload.
+                val winner = contributionRepository.getById(contributionId) ?: throw error
+                if (winner.targetHabit != contribution.targetHabit || winner.sourceType != contribution.sourceType ||
+                    winner.sourceId != contribution.sourceId || winner.contributedValue != contribution.contributedValue ||
+                    winner.effectiveTimestamp != contribution.effectiveTimestamp || winner.sourceRuleId != contribution.sourceRuleId) throw error
+                if (winner.isActive) outcomes.add(AttributionOutcome.Attributed(winner, wasInserted = false))
+                continue
+            }
             val inserted = recordResult == ContributionRecordResult.INSERTED
             val finalContribution = if (inserted) contribution else (contributionRepository.getById(contributionId) ?: contribution)
             outcomes.add(AttributionOutcome.Attributed(finalContribution, wasInserted = inserted))

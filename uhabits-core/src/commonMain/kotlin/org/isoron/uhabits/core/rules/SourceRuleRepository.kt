@@ -27,12 +27,15 @@ import org.isoron.uhabits.core.containers.HabitRef
  *
  * Invariant rules enforced at repository boundary:
  * - Idempotency: exact retries (same id and same payload) return [SourceRuleRecordResult.ALREADY_RECORDED].
- * - Conflict rejection: attempting to record an existing ID or existing (sourceKind, sourceContainerId, targetHabit)
+ * - Conflict rejection: attempting to record an existing ID or an active (sourceKind, sourceContainerId, targetHabit)
  *   with different payload throws [SourceRuleConflictException].
  * - Removal is tombstone-based: marks the rule with [SourceRule.removedAt] timestamp.
  *   Repeated removal is idempotent and returns [SourceRuleRemovalResult.ALREADY_REMOVED].
  */
 interface SourceRuleRepository {
+
+    /** Atomically ends active target configurations and installs an optional replacement. */
+    fun replaceForTarget(targetHabit: HabitRef, replacement: SourceRule?, endedAt: Long)
 
     /**
      * Records a SourceRule.
@@ -40,7 +43,7 @@ interface SourceRuleRepository {
      * @return [SourceRuleRecordResult.INSERTED] if newly inserted,
      *         [SourceRuleRecordResult.ALREADY_RECORDED] if an exact identical record already exists.
      * @throws SourceRuleConflictException if the ID or (sourceKind, sourceContainerId, targetHabit)
-     *         already exists with different payload.
+     *         already has an active rule with different payload. Historical intervals may reuse the scope.
      */
     fun record(rule: SourceRule): SourceRuleRecordResult
 

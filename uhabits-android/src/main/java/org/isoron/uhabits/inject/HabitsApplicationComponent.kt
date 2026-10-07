@@ -128,6 +128,12 @@ abstract class HabitsApplicationComponent(
     abstract val userTaskRepository: UserTaskRepository
     abstract val userTaskService: UserTaskService
 
+    val focusCreditController: org.isoron.uhabits.focus.FocusCreditController? by lazy {
+        if (session.isExperimental) org.isoron.uhabits.focus.FocusCreditController(
+            providedDb, habitList, organizationFacade, preferences
+        ) else null
+    }
+
     val db: AndroidDatabase
         get() = providedDb
 
@@ -286,7 +292,7 @@ abstract class HabitsApplicationComponent(
     ): TimerSessionManager {
         val capture = if (session.isExperimental) {
             FocusSessionSchema.createSchema(providedDb)
-            SQLiteFocusCaptureStore(providedDb)
+            requireNotNull(focusCreditController).captureStore(SQLiteFocusCaptureStore(providedDb))
         } else null
         fun target(kind: FocusPrimaryTargetType, id: String, container: ContainerId?): FocusCaptureTarget {
             val path = container?.let { facade.containerQueries?.path(it) }

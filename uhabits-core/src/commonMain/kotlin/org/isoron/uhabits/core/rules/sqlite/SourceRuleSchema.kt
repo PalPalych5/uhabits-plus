@@ -21,6 +21,7 @@ package org.isoron.uhabits.core.rules.sqlite
 
 import org.isoron.platform.io.Database
 import org.isoron.platform.io.run
+import org.isoron.platform.io.querySingle
 
 /** Opt-in schema for SourceRules; used in experimental dataset only, never by production migrations. */
 object SourceRuleSchema {
@@ -28,6 +29,11 @@ object SourceRuleSchema {
     fun createSchema(db: Database) {
         db.run("SAVEPOINT migrate_source_rules_schema")
         try {
+            // PR14's unconditional scope uniqueness prevented ending/replacing a rule.
+            // Rebuild only the opt-in table, preserving every column and historical row.
+            val oldSql = db.querySingle("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'SourceRules'") { it.getText(0) }
+            val rebuild = oldSql?.contains(Regex("UNIQUE\\s*\\(source_kind", RegexOption.IGNORE_CASE)) == true
+            if (rebuild) db.run("ALTER TABLE SourceRules RENAME TO SourceRules_PR14")
             db.run(
                 """
                 CREATE TABLE IF NOT EXISTS SourceRules (
@@ -41,11 +47,16 @@ object SourceRuleSchema {
                     effective_from INTEGER NOT NULL CHECK(effective_from >= 0),
                     created_at INTEGER NOT NULL CHECK(created_at >= 0),
                     updated_at INTEGER NOT NULL CHECK(updated_at >= created_at),
-                    removed_at INTEGER CHECK(removed_at IS NULL OR removed_at >= created_at),
-                    UNIQUE (source_kind, source_container_id, target_habit_uuid)
+                    removed_at INTEGER CHECK(removed_at IS NULL OR removed_at >= created_at)
                 )
                 """.trimIndent()
             )
+            if (rebuild) {
+                db.run("INSERT INTO SourceRules SELECT * FROM SourceRules_PR14")
+                db.run("DROP TABLE SourceRules_PR14")
+            }
+
+            db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_source_rules_active_scope ON SourceRules(source_kind, source_container_id, target_habit_uuid) WHERE is_enabled = 1 AND removed_at IS NULL")
 
             db.run("CREATE INDEX IF NOT EXISTS idx_source_rules_target ON SourceRules(target_habit_uuid, id)")
             db.run("CREATE INDEX IF NOT EXISTS idx_source_rules_container ON SourceRules(source_container_id, id)")

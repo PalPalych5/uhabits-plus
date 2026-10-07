@@ -66,6 +66,9 @@ class SourceRuleConflictException(
  * Temporal semantics:
  * - [effectiveFrom]: The rule applies to sessions whose effective timestamp (endedAt) >= effectiveFrom.
  * - [isActive]: The rule is enabled and not tombstoned.
+ * - An enabled rule ended with [removedAt] remains recoverable for sessions ending in
+ *   the half-open interval [effectiveFrom, removedAt). UI edits start a replacement rule.
+ * - Disabled records without an end timestamp have no recoverable interval history.
  */
 data class SourceRule(
     val id: SourceRuleId,

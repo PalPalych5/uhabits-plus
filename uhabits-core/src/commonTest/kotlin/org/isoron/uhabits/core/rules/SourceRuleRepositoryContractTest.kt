@@ -34,6 +34,23 @@ abstract class SourceRuleRepositoryContractTest {
     protected abstract suspend fun createRepository(): SourceRuleRepository
     protected open suspend fun cleanup() {}
 
+    @Test fun replacementCanReuseScopeAndRollsBackOnConflictingIdentity() = runTest {
+        val repo = createRepository()
+        try {
+            val original = sampleRule()
+            repo.record(original)
+            val replacement = original.copy(id = SourceRuleId("replacement"), effectiveFrom = 2000L, createdAt = 2000L, updatedAt = 2000L)
+            repo.replaceForTarget(original.targetHabit, replacement, 2000L)
+            assertEquals(listOf(replacement), repo.getByTargetHabit(original.targetHabit))
+            assertEquals(2000L, repo.getById(original.id)?.removedAt)
+            assertFailsWith<SourceRuleConflictException> {
+                repo.replaceForTarget(original.targetHabit, original.copy(includeDescendants = false), 3000L)
+            }
+            assertEquals(listOf(replacement), repo.getByTargetHabit(original.targetHabit))
+            assertNull(repo.getById(replacement.id)?.removedAt)
+        } finally { cleanup() }
+    }
+
     private fun sampleRule(
         id: String = "rule-1",
         containerId: String = "c-1",

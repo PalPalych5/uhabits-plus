@@ -37,6 +37,19 @@ import org.isoron.uhabits.core.userTasks.sqlite.UserTaskSchema
 import kotlin.test.*
 
 class SQLiteFocusSessionRepositoryTest {
+    @Test fun finalizedKeysetPagesAreBoundedAndStableForEqualEndTimes() = runTest {
+        val db = TestDatabaseHelper.createEmptyDatabase()
+        try {
+            FocusSessionSchema.createSchema(db)
+            val repo = SQLiteFocusSessionRepository(db)
+            listOf("c", "a", "b").forEach { repo.record(fact(it)) }
+            val first = repo.getFinalizedPage(null, 2)
+            assertEquals(listOf("a", "b"), first.map { it.id.value })
+            val cursor = FocusSessionCursor(first.last().endedAt, first.last().id.value)
+            assertEquals(listOf("c"), repo.getFinalizedPage(cursor, 2).map { it.id.value })
+            assertFailsWith<IllegalArgumentException> { repo.getFinalizedPage(null, 0) }
+        } finally { db.close() }
+    }
     private fun fact(id: String = "focus-1") = FocusSession(
         id = FocusSessionId(id), startedAt = 1_791_101_000_123L, endedAt = 1_791_103_000_789L,
         durationMs = 1_200_456L, taskId = TaskId("task-1"), habit = HabitRef("habit-uuid"),

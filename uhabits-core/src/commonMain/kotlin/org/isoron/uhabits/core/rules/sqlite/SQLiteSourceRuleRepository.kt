@@ -30,6 +30,22 @@ import org.isoron.uhabits.core.rules.*
 
 class SQLiteSourceRuleRepository(private val db: Database) : SourceRuleRepository {
 
+    override fun replaceForTarget(targetHabit: HabitRef, replacement: SourceRule?, endedAt: Long) {
+        require(replacement == null || replacement.targetHabit == targetHabit)
+        db.run("SAVEPOINT replace_source_rule")
+        try {
+            // Acquire the write lock before reading the current configuration.
+            db.run("UPDATE SourceRules SET updated_at = updated_at WHERE target_habit_uuid = ?") { bindText(1, targetHabit.uuid) }
+            getByTargetHabit(targetHabit).forEach { remove(it.id, endedAt) }
+            if (replacement != null) record(replacement)
+            db.run("RELEASE SAVEPOINT replace_source_rule")
+        } catch (error: Throwable) {
+            try { db.run("ROLLBACK TO SAVEPOINT replace_source_rule") }
+            finally { db.run("RELEASE SAVEPOINT replace_source_rule") }
+            throw error
+        }
+    }
+
     override fun record(rule: SourceRule): SourceRuleRecordResult {
         db.run("SAVEPOINT record_source_rule")
         try {
@@ -76,7 +92,7 @@ class SQLiteSourceRuleRepository(private val db: Database) : SourceRuleRepositor
                 return SourceRuleRecordResult.ALREADY_RECORDED
             }
 
-            val existing = query("WHERE source_kind = ? AND source_container_id = ? AND target_habit_uuid = ?") {
+            val existing = query("WHERE source_kind = ? AND source_container_id = ? AND target_habit_uuid = ? AND is_enabled = 1 AND removed_at IS NULL") {
                 bindText(1, rule.sourceKind.name)
                 bindText(2, rule.sourceContainerId.value)
                 bindText(3, rule.targetHabit.uuid)

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="focus_credit_settings">Focus time</string>
+    <string name="focus_credit_source">Automatically count focus from</string>
+    <string name="focus_credit_off">Off — choose a section</string>
+    <string name="focus_credit_descendants">Include nested sections</string>
+    <string name="focus_credit_history">Counts new focus work after saving. Turning this off preserves previously counted time.</string>
+    <string name="focus_credit_source_missing">Section unavailable — choose another</string>
+    <string name="focus_credit_save_failed">Habit saved, but focus settings could not be saved. Choose an available section and try again.</string>
+</resources>

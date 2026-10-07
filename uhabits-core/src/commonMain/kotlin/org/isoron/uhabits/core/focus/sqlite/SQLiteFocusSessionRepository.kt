@@ -31,6 +31,7 @@ import org.isoron.uhabits.core.focus.FocusSessionConflictException
 import org.isoron.uhabits.core.focus.FocusSessionId
 import org.isoron.uhabits.core.focus.FocusSessionRecordResult
 import org.isoron.uhabits.core.focus.FocusSessionRepository
+import org.isoron.uhabits.core.focus.FocusSessionCursor
 import org.isoron.uhabits.core.focus.FocusSessionSource
 import org.isoron.uhabits.core.focus.FocusPrimaryTargetType
 import org.isoron.uhabits.core.userTasks.TaskId
@@ -42,6 +43,15 @@ import org.isoron.uhabits.core.userTasks.TaskId
  * these references describe recorded work and must survive later Task/Container deletion.
  */
 class SQLiteFocusSessionRepository(private val db: Database) : FocusSessionRepository {
+    override fun getFinalizedPage(after: FocusSessionCursor?, limit: Int): List<FocusSession> {
+        require(limit in 1..1000)
+        val where = if (after == null) "" else "WHERE ended_at > ? OR (ended_at = ? AND id > ?)"
+        return query(where, "ended_at, id LIMIT $limit") {
+            if (after != null) {
+                bindLong(1, after.endedAt); bindLong(2, after.endedAt); bindText(3, after.id)
+            }
+        }
+    }
     override fun getById(id: FocusSessionId): FocusSession? =
         query("WHERE id = ?") { bindText(1, id.value) }.firstOrNull()
 
@@ -90,8 +100,8 @@ class SQLiteFocusSessionRepository(private val db: Database) : FocusSessionRepos
         }
     }
 
-    private fun query(where: String, bind: PreparedStatement.() -> Unit = {}): List<FocusSession> {
-        val stmt = db.prepareStatement("SELECT $COLUMNS FROM FocusSessions $where ORDER BY started_at, id")
+    private fun query(where: String, orderBy: String = "started_at, id", bind: PreparedStatement.() -> Unit = {}): List<FocusSession> {
+        val stmt = db.prepareStatement("SELECT $COLUMNS FROM FocusSessions $where ORDER BY $orderBy")
         return try {
             stmt.bind()
             buildList {

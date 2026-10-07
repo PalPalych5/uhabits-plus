@@ -85,6 +85,8 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
     private lateinit var preferences: Preferences
     private lateinit var themeSwitcher: AndroidThemeSwitcher
     private lateinit var widgetUpdater: WidgetUpdater
+    private var focusCredit: org.isoron.uhabits.focus.FocusCreditController? = null
+    private val focusObserver: () -> Unit = { screen.refresh() }
 
     private val scope = CoroutineScope(Dispatchers.Main)
     private lateinit var presenter: ShowHabitPresenter
@@ -112,6 +114,7 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
         preferences = appComponent.preferences
         commandRunner = appComponent.commandRunner
         widgetUpdater = appComponent.widgetUpdater
+        focusCredit = appComponent.focusCreditController
 
         themeSwitcher = AndroidThemeSwitcher(this, preferences)
         themeSwitcher.apply()
@@ -170,6 +173,7 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
         commandRunner.addListener(this)
         habit.observable.addListener(this)
         habitList.observable.addListener(this)
+        focusCredit?.addObserver(focusObserver)
         supportFragmentManager.findFragmentByTag("historyEditor")?.let {
             (it as HistoryEditorDialog).setOnDateClickedListener(presenter.historyCardPresenter)
         }
@@ -182,6 +186,7 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
         commandRunner.removeListener(this)
         habit.observable.removeListener(this)
         habitList.observable.removeListener(this)
+        focusCredit?.removeObserver(focusObserver)
         super.onPause()
     }
 
@@ -249,6 +254,14 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
                         theme = themeSwitcher.currentTheme
                     )
                 )
+                val controller = focusCredit
+                val eligible = controller != null && runCatching {
+                    org.isoron.uhabits.core.rules.HabitTimeValueConverter.validateTargetHabit(habit)
+                }.isSuccess
+                if (eligible) {
+                    val progress = runCatching { FocusProgressPresentation.from(controller!!.goalProgress(habit)) }
+                    view.setFocusProgress(progress.getOrNull(), progress.isFailure)
+                } else view.setFocusProgress(null)
             }
         }
 
