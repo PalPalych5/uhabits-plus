@@ -1,6 +1,6 @@
 package org.isoron.platform.io
 
-import org.isoron.uhabits.core.DATABASE_VERSION
+import org.isoron.uhabits.core.LEGACY_DATABASE_VERSION
 import org.isoron.uhabits.core.database.SQLParser
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -18,7 +18,7 @@ actual object TestDatabaseHelper {
                     { err: dynamic -> cont.resumeWithException(RuntimeException("$err")) }
                 )
             }
-            for (v in 9..DATABASE_VERSION) {
+            for (v in 9..LEGACY_DATABASE_VERSION) {
                 migrationCache[v] = fetchMigrationSQL(v)
             }
         }
@@ -28,7 +28,7 @@ actual object TestDatabaseHelper {
         ensureInitialized()
         val db = JsDatabaseOpener(sqlJs).open(":memory:")
         db.setVersion(8)
-        for (v in 9..DATABASE_VERSION) {
+        for (v in 9..LEGACY_DATABASE_VERSION) {
             val commands = SQLParser.parse(migrationCache[v]!!)
             for (cmd in commands) db.run(cmd)
             db.setVersion(v)

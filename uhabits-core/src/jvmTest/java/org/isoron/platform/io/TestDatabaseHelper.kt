@@ -1,6 +1,6 @@
 package org.isoron.platform.io
 
-import org.isoron.uhabits.core.DATABASE_VERSION
+import org.isoron.uhabits.core.LEGACY_DATABASE_VERSION
 
 actual object TestDatabaseHelper {
     private val fileOpener = JavaFileOpener()
@@ -8,7 +8,7 @@ actual object TestDatabaseHelper {
     actual suspend fun createEmptyDatabase(): Database {
         val db = JavaDatabaseOpener().open(":memory:")
         db.setVersion(8)
-        db.migrateTo(DATABASE_VERSION) { v -> loadMigrationSQL(v) }
+        db.migrateTo(LEGACY_DATABASE_VERSION) { v -> loadMigrationSQL(v) }
         return db
     }
 

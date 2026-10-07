@@ -26,6 +26,7 @@ import org.isoron.platform.io.getVersion
 import org.isoron.platform.io.queryLong
 import org.isoron.platform.io.rollback
 import org.isoron.uhabits.core.DATABASE_VERSION
+import org.isoron.uhabits.core.LEGACY_DATABASE_VERSION
 import org.isoron.uhabits.core.containers.HabitRef
 import org.isoron.uhabits.core.contribution.*
 import kotlin.test.*
@@ -52,7 +53,8 @@ class SQLiteContributionRepositoryTest {
 
     @Test
     fun testProductionDatabaseVersionUnchanged() = runTest {
-        assertEquals(29, DATABASE_VERSION)
+        assertEquals(29, LEGACY_DATABASE_VERSION)
+        assertEquals(30, DATABASE_VERSION)
     }
 
     @Test

@@ -10,7 +10,7 @@ import org.isoron.platform.io.setVersion
 import org.isoron.platform.time.getToday
 import org.isoron.platform.time.startOfLocalDay
 import org.isoron.uhabits.core.BaseUnitTest
-import org.isoron.uhabits.core.DATABASE_VERSION
+import org.isoron.uhabits.core.LEGACY_DATABASE_VERSION
 import org.isoron.uhabits.core.containers.HabitRef
 import org.isoron.uhabits.core.contribution.Contribution
 import org.isoron.uhabits.core.contribution.ContributionId
@@ -37,7 +37,7 @@ class EffectiveHabitValueDurabilityTest : BaseUnitTest() {
             val first = JavaDatabaseOpener().open(path.toString())
             try {
                 first.setVersion(8)
-                first.migrateTo(DATABASE_VERSION) { TestDatabaseHelper.loadMigrationSQL(it) }
+                first.migrateTo(LEGACY_DATABASE_VERSION) { TestDatabaseHelper.loadMigrationSQL(it) }
                 ContributionSchema.createSchema(first)
                 val factory = SQLModelFactory(first)
                 val habit = factory.buildHabit().apply { type = HabitType.NUMERICAL; unit = "min"; targetValue = 45.0 }

@@ -62,10 +62,15 @@ object DatabaseUtils {
     fun initializeDatabase(context: Context?, filename: String? = null) {
         val resolvedName = filename ?: defaultDatabaseFilename
         currentDatabaseFilename = resolvedName
+        val targetVersion = if (org.isoron.uhabits.core.production.cutover.ProductionCutoverGate.isCutoverAuthorized(resolvedName)) {
+            DATABASE_VERSION
+        } else {
+            org.isoron.uhabits.core.LEGACY_DATABASE_VERSION
+        }
         opener = HabitsDatabaseOpener(
             context!!,
             resolvedName,
-            DATABASE_VERSION
+            targetVersion
         )
     }
 

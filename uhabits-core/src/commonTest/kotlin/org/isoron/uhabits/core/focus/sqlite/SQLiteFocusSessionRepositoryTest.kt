@@ -27,6 +27,7 @@ import org.isoron.platform.io.queryLong
 import org.isoron.platform.io.rollback
 import org.isoron.platform.io.run
 import org.isoron.uhabits.core.DATABASE_VERSION
+import org.isoron.uhabits.core.LEGACY_DATABASE_VERSION
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.HabitRef
 import org.isoron.uhabits.core.focus.*
@@ -115,7 +116,7 @@ class SQLiteFocusSessionRepositoryTest {
             FocusSessionSchema.createSchema(db)
             FocusSessionSchema.createSchema(db)
             assertEquals(beforeTables + 1, db.queryLong("SELECT count(*) FROM sqlite_master WHERE type = 'table'"))
-            assertEquals(DATABASE_VERSION, db.getVersion())
+            assertEquals(LEGACY_DATABASE_VERSION, db.getVersion())
             UserTaskSchema.createSchema(db)
             val taskRepo = SQLiteUserTaskRepository(db)
             val task = UserTask(TaskId("task-1"), "Still pending", createdAt = 100, updatedAt = 100)

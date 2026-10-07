@@ -25,7 +25,7 @@ import org.isoron.platform.io.migrateTo
 import org.isoron.platform.io.queryLong
 import org.isoron.platform.io.querySingle
 import org.isoron.platform.io.run
-import org.isoron.uhabits.core.DATABASE_VERSION
+import org.isoron.uhabits.core.LEGACY_DATABASE_VERSION
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.HabitRef
 import org.isoron.uhabits.core.containers.migration.LegacyContainerMigrationExecutor
@@ -78,7 +78,7 @@ class ContainerMergeImportTest {
 
         // Source DB: pure legacy DB with a single new unique habit
         val sourceDb = TestDatabaseHelper.createEmptyDatabase()
-        sourceDb.migrateTo(DATABASE_VERSION) { TestDatabaseHelper.loadMigrationSQL(it) }
+        sourceDb.migrateTo(LEGACY_DATABASE_VERSION) { TestDatabaseHelper.loadMigrationSQL(it) }
         sourceDb.run("INSERT INTO Habits (id, uuid, name, description, freq_num, freq_den, color, position) VALUES (10, 'h-new-unique', 'Медитация', 'Утренняя', 1, 1, 4, 10);")
         sourceDb.run("INSERT INTO HabitExtensions (habit_id, day_tier, timer_enabled) VALUES (10, 'NORMAL', 0);")
         sourceDb.run("INSERT INTO Repetitions (habit, timestamp, value, notes, uuid, updated_at) VALUES (10, 50000, 2, 'Хорошая сессия', 'rep-med-1', 50000);")
@@ -120,7 +120,7 @@ class ContainerMergeImportTest {
 
         // Source DB
         val sourceDb = TestDatabaseHelper.createEmptyDatabase()
-        sourceDb.migrateTo(DATABASE_VERSION) { TestDatabaseHelper.loadMigrationSQL(it) }
+        sourceDb.migrateTo(LEGACY_DATABASE_VERSION) { TestDatabaseHelper.loadMigrationSQL(it) }
         sourceDb.run(
             """
             INSERT INTO Habits (id, uuid, name, description, freq_num, freq_den, color, position)
@@ -154,7 +154,7 @@ class ContainerMergeImportTest {
 
         // Source DB also has habit with uuid 'h-uuid-1'
         val sourceDb = TestDatabaseHelper.createEmptyDatabase()
-        sourceDb.migrateTo(DATABASE_VERSION) { TestDatabaseHelper.loadMigrationSQL(it) }
+        sourceDb.migrateTo(LEGACY_DATABASE_VERSION) { TestDatabaseHelper.loadMigrationSQL(it) }
         sourceDb.run(
             """
             INSERT INTO Habits (id, uuid, name, description, freq_num, freq_den, color, position)
@@ -195,7 +195,7 @@ class ContainerMergeImportTest {
 
         // Source DB also has habit with uuid 'h-uuid-1'
         val sourceDb = TestDatabaseHelper.createEmptyDatabase()
-        sourceDb.migrateTo(DATABASE_VERSION) { TestDatabaseHelper.loadMigrationSQL(it) }
+        sourceDb.migrateTo(LEGACY_DATABASE_VERSION) { TestDatabaseHelper.loadMigrationSQL(it) }
         sourceDb.run(
             """
             INSERT INTO Habits (id, uuid, name, description, freq_num, freq_den, color, position)

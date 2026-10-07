@@ -595,19 +595,40 @@ object DatabaseSnapshotter {
     }
 
     private fun copyOrganizationState(sourceDb: Database, targetDb: Database) {
-        val select = sourceDb.prepareStatement(
+        val cols = mutableSetOf<String>()
+        val colStmt = sourceDb.prepareStatement("PRAGMA table_info(OrganizationState)")
+        try { while (colStmt.step() == StepResult.ROW) cols.add(colStmt.getText(1)) }
+        finally { colStmt.finalize() }
+        val hasExtended = "runtime_authority" in cols
+
+        val selectSql = if (hasExtended) {
+            """
+            SELECT id, dataset_uuid, foundation_version, mode, cutover_revision, current_revision, cutover_at, source_schema_version, source_snapshot_sha256,
+                   source_file_sha256, source_schema_sha256, runtime_authority, authority_epoch, conversion_op_uuid
+            FROM OrganizationState
+            """.trimIndent()
+        } else {
             """
             SELECT id, dataset_uuid, foundation_version, mode, cutover_revision, current_revision, cutover_at, source_schema_version, source_snapshot_sha256
             FROM OrganizationState
             """.trimIndent()
-        )
-        val insert = targetDb.prepareStatement(
+        }
+        val insertSql = if (hasExtended) {
+            """
+            INSERT OR REPLACE INTO OrganizationState (
+                id, dataset_uuid, foundation_version, mode, cutover_revision, current_revision, cutover_at, source_schema_version, source_snapshot_sha256,
+                source_file_sha256, source_schema_sha256, runtime_authority, authority_epoch, conversion_op_uuid
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """.trimIndent()
+        } else {
             """
             INSERT OR REPLACE INTO OrganizationState (
                 id, dataset_uuid, foundation_version, mode, cutover_revision, current_revision, cutover_at, source_schema_version, source_snapshot_sha256
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent()
-        )
+        }
+        val select = sourceDb.prepareStatement(selectSql)
+        val insert = targetDb.prepareStatement(insertSql)
         while (select.step() == StepResult.ROW) {
             insert.bindLong(1, select.getLong(0))
             insert.bindText(2, select.getText(1))
@@ -618,6 +639,13 @@ object DatabaseSnapshotter {
             insert.bindLong(7, select.getLong(6))
             insert.bindLong(8, select.getLong(7))
             insert.bindText(9, select.getText(8))
+            if (hasExtended) {
+                if (select.getTextOrNull(9) != null) insert.bindText(10, select.getText(9)) else insert.bindNull(10)
+                if (select.getTextOrNull(10) != null) insert.bindText(11, select.getText(10)) else insert.bindNull(11)
+                insert.bindText(12, select.getText(11))
+                insert.bindLong(13, select.getLong(12))
+                if (select.getTextOrNull(13) != null) insert.bindText(14, select.getText(13)) else insert.bindNull(14)
+            }
             insert.step()
             insert.reset()
         }

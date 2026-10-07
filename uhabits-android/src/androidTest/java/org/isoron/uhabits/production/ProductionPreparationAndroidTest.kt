@@ -4,7 +4,7 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.isoron.uhabits.HabitsDatabaseOpener
-import org.isoron.uhabits.core.DATABASE_VERSION
+import org.isoron.uhabits.core.LEGACY_DATABASE_VERSION
 import org.isoron.uhabits.core.containers.session.DatasetSessionFactory
 import org.isoron.uhabits.core.production.preflight.PreflightIssueCategory
 import org.isoron.uhabits.core.production.preflight.ProductionPreflightService
@@ -33,7 +33,7 @@ class ProductionPreparationAndroidTest {
         val preferences = ProductionPreparationStartup.capturePreferences(emptyMap<String, Any>())
 
         init {
-            HabitsDatabaseOpener(context, source.absolutePath, DATABASE_VERSION).use { opener ->
+            HabitsDatabaseOpener(context, source.absolutePath, LEGACY_DATABASE_VERSION).use { opener ->
                 assertEquals(29, opener.writableDatabase.version)
             }
         }
@@ -52,7 +52,7 @@ class ProductionPreparationAndroidTest {
     @Test fun realLegacyPreflightAndVerifiedSnapshotAreByteIdentical() = Fixture().use { fixture ->
         val original = fixture.source.readBytes()
         val before = fixture.inspect()
-        assertEquals(29, DATABASE_VERSION)
+        assertEquals(29, LEGACY_DATABASE_VERSION)
         assertTrue(before.blockingIssues.toString(), before.sourceEligible)
         assertFalse(before.migrationEligible)
         assertTrue(before.blockingIssues.any { it.category == PreflightIssueCategory.RecoveryBundleUnavailable })

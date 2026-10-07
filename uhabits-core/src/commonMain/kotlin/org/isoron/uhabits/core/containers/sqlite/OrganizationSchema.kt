@@ -20,24 +20,28 @@
 package org.isoron.uhabits.core.containers.sqlite
 
 import org.isoron.platform.io.Database
+import org.isoron.platform.io.StepResult
 import org.isoron.platform.io.run
 
 object OrganizationSchema {
 
     private val DDL_STATEMENTS = listOf(
-        "PRAGMA foreign_keys = ON;",
-
         """
         CREATE TABLE IF NOT EXISTS OrganizationState (
             id INTEGER PRIMARY KEY CHECK(id = 1),
             dataset_uuid TEXT NOT NULL UNIQUE,
             foundation_version INTEGER NOT NULL,
-            mode TEXT NOT NULL CHECK(mode IN ('STAGED', 'CONTAINER_LOCAL')),
+            mode TEXT NOT NULL CHECK(mode IN ('STAGED', 'CONTAINER_LOCAL', 'PRODUCTION_NEXT')),
             cutover_revision INTEGER NOT NULL DEFAULT 1,
             current_revision INTEGER NOT NULL DEFAULT 1,
             cutover_at INTEGER NOT NULL,
             source_schema_version INTEGER NOT NULL,
-            source_snapshot_sha256 TEXT NOT NULL
+            source_snapshot_sha256 TEXT NOT NULL,
+            source_file_sha256 TEXT,
+            source_schema_sha256 TEXT,
+            runtime_authority TEXT NOT NULL DEFAULT 'LEGACY' CHECK(runtime_authority IN ('LEGACY', 'NEXT')),
+            authority_epoch INTEGER NOT NULL DEFAULT 0,
+            conversion_op_uuid TEXT
         );
         """.trimIndent(),
 
@@ -136,6 +140,19 @@ object OrganizationSchema {
         for (stmt in DDL_STATEMENTS) {
             db.run(stmt)
         }
+        val columns = mutableSetOf<String>()
+        val stmt = db.prepareStatement("PRAGMA table_info(OrganizationState)")
+        try {
+            while (stmt.step() == StepResult.ROW) columns.add(stmt.getText(1))
+        } finally {
+            stmt.finalize()
+        }
+        if ("source_file_sha256" !in columns) db.run("ALTER TABLE OrganizationState ADD COLUMN source_file_sha256 TEXT")
+        if ("source_schema_sha256" !in columns) db.run("ALTER TABLE OrganizationState ADD COLUMN source_schema_sha256 TEXT")
+        if ("runtime_authority" !in columns) db.run("ALTER TABLE OrganizationState ADD COLUMN runtime_authority TEXT NOT NULL DEFAULT 'LEGACY' CHECK(runtime_authority IN ('LEGACY', 'NEXT'))")
+        if ("authority_epoch" !in columns) db.run("ALTER TABLE OrganizationState ADD COLUMN authority_epoch INTEGER NOT NULL DEFAULT 0")
+        if ("conversion_op_uuid" !in columns) db.run("ALTER TABLE OrganizationState ADD COLUMN conversion_op_uuid TEXT")
+
         org.isoron.uhabits.core.userTasks.sqlite.UserTaskSchema.createSchema(db)
     }
 

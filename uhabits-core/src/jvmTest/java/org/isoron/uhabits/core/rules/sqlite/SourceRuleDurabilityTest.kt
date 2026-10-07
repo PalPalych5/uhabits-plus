@@ -26,7 +26,7 @@ import org.isoron.platform.io.migrateTo
 import org.isoron.platform.io.queryLong
 import org.isoron.platform.io.run
 import org.isoron.platform.io.setVersion
-import org.isoron.uhabits.core.DATABASE_VERSION
+import org.isoron.uhabits.core.LEGACY_DATABASE_VERSION
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.HabitRef
 import org.isoron.uhabits.core.contribution.ContributionRemovalResult
@@ -156,7 +156,7 @@ class SourceRuleDurabilityTest {
             val first = JavaDatabaseOpener().open(path.toString())
             try {
                 first.setVersion(8)
-                first.migrateTo(DATABASE_VERSION) { TestDatabaseHelper.loadMigrationSQL(it) }
+                first.migrateTo(LEGACY_DATABASE_VERSION) { TestDatabaseHelper.loadMigrationSQL(it) }
                 first.run("""INSERT INTO Habits(name, description, question, freq_num, freq_den, color, position,
                     reminder_days, highlight, archived, type, target_value, target_type, unit, uuid)
                     VALUES ('Study', '', '', 1, 1, 0, 0, 0, 0, 0, 1, 120.0, 0, 'min', 'habit-uuid-omega')""")

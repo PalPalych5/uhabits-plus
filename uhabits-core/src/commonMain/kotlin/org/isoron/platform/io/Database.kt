@@ -61,6 +61,14 @@ fun Database.queryLong(sql: String): Long {
     return value
 }
 
+fun Database.queryString(sql: String): String {
+    val stmt = prepareStatement(sql)
+    stmt.step()
+    val value = stmt.getText(0)
+    stmt.finalize()
+    return value
+}
+
 fun Database.getVersion(): Int {
     return queryInt("PRAGMA user_version")
 }

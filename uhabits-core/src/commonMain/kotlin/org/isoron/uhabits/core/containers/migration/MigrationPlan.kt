@@ -40,6 +40,11 @@ data class OrganizationStateRecord(
     val cutoverAt: Long,
     val sourceSchemaVersion: Int,
     val sourceSnapshotSha256: String,
+    val sourceFileSha256: String? = null,
+    val sourceSchemaSha256: String? = null,
+    val runtimeAuthority: String = "LEGACY",
+    val authorityEpoch: Long = 0L,
+    val conversionOpUuid: String? = null,
 )
 
 data class MigrationPlan(

@@ -34,7 +34,11 @@ sealed interface MigrationExecutionResult {
 
 object LegacyContainerMigrationExecutor {
 
-    fun execute(db: Database, plan: MigrationPlan): MigrationExecutionResult {
+    fun execute(
+        db: Database,
+        plan: MigrationPlan,
+        ownsTransaction: Boolean = true,
+    ): MigrationExecutionResult {
         if (!plan.canMigrate) {
             return MigrationExecutionResult.Failure(plan.issues)
         }
@@ -53,11 +57,13 @@ object LegacyContainerMigrationExecutor {
         }
 
         try {
-            db.run("BEGIN IMMEDIATE")
+            if (ownsTransaction) {
+                OrganizationSchema.enableForeignKeys(db)
+                db.run("BEGIN IMMEDIATE")
+            }
 
-            // 1. Create Organization Schema & enable foreign keys
+            // 1. Create Organization Schema
             OrganizationSchema.createSchema(db)
-            OrganizationSchema.enableForeignKeys(db)
 
             // 2. Insert OrganizationChanges baseline record
             val changeStmt = db.prepareStatement(
@@ -213,8 +219,9 @@ object LegacyContainerMigrationExecutor {
                 """
                 INSERT OR REPLACE INTO OrganizationState (
                     id, dataset_uuid, foundation_version, mode, cutover_revision,
-                    current_revision, cutover_at, source_schema_version, source_snapshot_sha256
-                ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+                    current_revision, cutover_at, source_schema_version, source_snapshot_sha256,
+                    source_file_sha256, source_schema_sha256, runtime_authority, authority_epoch, conversion_op_uuid
+                ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """.trimIndent()
             )
             stateStmt.bindText(1, state.datasetUuid)
@@ -225,15 +232,24 @@ object LegacyContainerMigrationExecutor {
             stateStmt.bindLong(6, state.cutoverAt)
             stateStmt.bindInt(7, state.sourceSchemaVersion)
             stateStmt.bindText(8, state.sourceSnapshotSha256)
+            if (state.sourceFileSha256 != null) stateStmt.bindText(9, state.sourceFileSha256) else stateStmt.bindNull(9)
+            if (state.sourceSchemaSha256 != null) stateStmt.bindText(10, state.sourceSchemaSha256) else stateStmt.bindNull(10)
+            stateStmt.bindText(11, state.runtimeAuthority)
+            stateStmt.bindLong(12, state.authorityEpoch)
+            if (state.conversionOpUuid != null) stateStmt.bindText(13, state.conversionOpUuid) else stateStmt.bindNull(13)
             stateStmt.step()
             stateStmt.finalize()
 
-            db.run("COMMIT")
+            if (ownsTransaction) {
+                db.run("COMMIT")
+            }
             return MigrationExecutionResult.Success(plan)
         } catch (t: Throwable) {
-            try {
-                db.run("ROLLBACK")
-            } catch (_: Throwable) {}
+            if (ownsTransaction) {
+                try {
+                    db.run("ROLLBACK")
+                } catch (_: Throwable) {}
+            }
             return MigrationExecutionResult.Failure(
                 issues = listOf(MigrationIssue.ImpossibleBaseline("Transaction failed: ${t.message}")),
                 cause = t,

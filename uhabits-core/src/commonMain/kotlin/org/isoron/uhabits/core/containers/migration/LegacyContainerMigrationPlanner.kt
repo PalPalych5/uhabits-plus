@@ -35,6 +35,12 @@ object LegacyContainerMigrationPlanner {
         cutoverTimestamp: Long,
         datasetUuid: String = "dataset-" + Sha256.hexDigest(inventory.snapshotSha256).take(16),
         mode: String = "CONTAINER_LOCAL",
+        sourceFileSha256: String? = null,
+        sourceSchemaSha256: String? = null,
+        runtimeAuthority: String = "LEGACY",
+        authorityEpoch: Long = 0L,
+        conversionOpUuid: String? = null,
+        baselineOpUuid: String = "baseline-cutover",
     ): MigrationPlan {
         val issues = mutableListOf<MigrationIssue>()
 
@@ -199,7 +205,7 @@ object LegacyContainerMigrationPlanner {
         // 6. OrganizationChanges baseline record
         val baselineRecord = OrganizationChangeRecord(
             revision = OrganizationRevision(1L),
-            opUuid = "baseline-cutover",
+            opUuid = baselineOpUuid,
             recordedAt = cutoverTimestamp,
             operationType = "BASELINE",
             origin = "MIGRATION",
@@ -216,6 +222,11 @@ object LegacyContainerMigrationPlanner {
             cutoverAt = cutoverTimestamp,
             sourceSchemaVersion = 29,
             sourceSnapshotSha256 = inventory.snapshotSha256,
+            sourceFileSha256 = sourceFileSha256,
+            sourceSchemaSha256 = sourceSchemaSha256,
+            runtimeAuthority = runtimeAuthority,
+            authorityEpoch = authorityEpoch,
+            conversionOpUuid = conversionOpUuid,
         )
 
         return MigrationPlan(

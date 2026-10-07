@@ -23,6 +23,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import kotlinx.coroutines.runBlocking
+import org.isoron.platform.io.getVersion
 import org.isoron.platform.io.migrateTo
 import org.isoron.platform.io.setVersion
 import org.isoron.uhabits.core.database.UnsupportedDatabaseVersionException
@@ -33,6 +34,11 @@ class HabitsDatabaseOpener(
     private val databaseFilename: String,
     private val version: Int
 ) : SQLiteOpenHelper(context, databaseFilename, null, version) {
+
+    override fun onConfigure(db: SQLiteDatabase) {
+        super.onConfigure(db)
+        db.setForeignKeyConstraintsEnabled(true)
+    }
 
     override fun onCreate(db: SQLiteDatabase) {
         db.disableWriteAheadLogging()
@@ -52,12 +58,28 @@ class HabitsDatabaseOpener(
     ) {
         db.disableWriteAheadLogging()
         if (db.version < 8) throw UnsupportedDatabaseVersionException()
+        if (newVersion >= 30 && !org.isoron.uhabits.core.production.cutover.ProductionCutoverGate.isCutoverAuthorized(databaseFilename)) {
+            throw org.isoron.uhabits.core.production.cutover.CutoverNotAuthorizedException(databaseFilename)
+        }
         val wrappedDb = AndroidDatabase(db)
         wrappedDb.setVersion(db.version)
-        runBlocking {
-            wrappedDb.migrateTo(newVersion) { version ->
-                val filename = "%02d.sql".format(version)
-                context.assets.open("migrations/$filename").bufferedReader().readText()
+        val intermediateTarget = if (newVersion >= 30 && oldVersion < 29) 29 else if (newVersion < 30) newVersion else 29
+        if (wrappedDb.getVersion() < intermediateTarget) {
+            runBlocking {
+                wrappedDb.migrateTo(intermediateTarget) { version ->
+                    val filename = "%02d.sql".format(version)
+                    context.assets.open("migrations/$filename").bufferedReader().readText()
+                }
+            }
+        }
+        if (newVersion >= 30 && wrappedDb.getVersion() == 29) {
+            val result = org.isoron.uhabits.core.production.migration.ProductionNextSchemaMigrator.migrate(
+                db = wrappedDb,
+                cutoverTimestamp = System.currentTimeMillis(),
+                ownsTransaction = false
+            )
+            if (result is org.isoron.uhabits.core.production.migration.ProductionNextMigrationResult.Failure) {
+                throw IllegalStateException("Version 30 schema migration failed: ${result.reason}", result.cause)
             }
         }
     }
