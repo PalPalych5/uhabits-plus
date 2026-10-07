@@ -154,9 +154,9 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1–PR14 DONE, PR15 DONE (commit 019ee5becfe97eba37c5877cccac763a91dea932), PR16 DONE (commit 12e156c87bf2ffab9d8c58d36e95c666c8be520c), PR17 DONE (commit 7e5e41b4254af1d6328dc527ce8b3c2304b333f4), PR18 DONE (commit pending)
+Implementation: PR1–PR14 DONE, PR15 DONE (commit 019ee5becfe97eba37c5877cccac763a91dea932), PR16 DONE (commit 12e156c87bf2ffab9d8c58d36e95c666c8be520c), PR17 DONE (commit 7e5e41b4254af1d6328dc527ce8b3c2304b333f4), PR18 DONE (commit 91264df61b03941eb76ac5c21173ec619eac2ebc)
 Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated, Container Statistics MVP completed
-Current branch: dev; PR18 implementation commit pending; use Git for current HEAD
+Current branch: dev; PR18 implementation commit 91264df61b03941eb76ac5c21173ec619eac2ebc; use Git for current HEAD
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
 Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
