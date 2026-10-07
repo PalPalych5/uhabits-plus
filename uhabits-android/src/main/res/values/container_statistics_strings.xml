@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
+  ~
+  ~ This file is part of Loop Habit Tracker.
+  ~
+  ~ Loop Habit Tracker is free software: you can redistribute it and/or modify
+  ~ it under the terms of the GNU General Public License as published by the
+  ~ Free Software Foundation, either version 3 of the License, or (at your
+  ~ option) any later version.
+  -->
+<resources>
+    <string name="container_statistics_title">Container statistics</string>
+    <string name="container_statistics_subtitle">Activity report</string>
+    <string name="container_statistics_range_day">Day</string>
+    <string name="container_statistics_range_week">Week</string>
+    <string name="container_statistics_range_month">Month</string>
+    <string name="container_statistics_scope_here">This container</string>
+    <string name="container_statistics_scope_subtree">Subtree</string>
+    <string name="container_statistics_focus_title">Focus work</string>
+    <string name="container_statistics_focus_sessions_format">%1$d sessions</string>
+    <string name="container_statistics_focus_one_session">1 session</string>
+    <string name="container_statistics_focus_no_sessions">0 sessions</string>
+    <string name="container_statistics_focus_direct_breakdown">Direct: %1$s</string>
+    <string name="container_statistics_focus_descendant_breakdown">Subcontainers: %1$s</string>
+    <string name="container_statistics_focus_daily_trend">Daily trend</string>
+    <string name="container_statistics_focus_subcontainers_breakdown">Focus by subcontainer</string>
+    <string name="container_statistics_focus_historical_note">Attributed by historical placement at session completion</string>
+    <string name="container_statistics_focus_empty">No focus sessions recorded in this period</string>
+    <string name="container_statistics_tasks_title">Tasks</string>
+    <string name="container_statistics_tasks_completed">Completed</string>
+    <string name="container_statistics_tasks_pending">In progress</string>
+    <string name="container_statistics_tasks_overdue">Overdue</string>
+    <string name="container_statistics_tasks_placement_note">Evaluated by current task location</string>
+    <string name="container_statistics_tasks_empty">No tasks in this container</string>
+    <string name="container_statistics_habits_title">Habits &amp; norms</string>
+    <string name="container_statistics_habits_active_count">%1$d active</string>
+    <string name="container_statistics_habits_reached">Reached</string>
+    <string name="container_statistics_habits_incomplete">Incomplete</string>
+    <string name="container_statistics_habits_unknown">No entry</string>
+    <string name="container_statistics_habits_focus_contribution">Focus: %1$s</string>
+    <string name="container_statistics_habits_empty">No active habits in this container</string>
+</resources>

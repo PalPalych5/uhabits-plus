@@ -221,6 +221,7 @@ class ContainersActivity : AppCompatActivity(), ModelObservable.Listener {
         menu.findItem(R.id.actionRename)?.isVisible = isDetail && !isArchived && !isSearchActive
         menu.findItem(R.id.actionChangeColor)?.isVisible = isDetail && !isArchived && !isSearchActive
         menu.findItem(R.id.actionMove)?.isVisible = isDetail && !isArchived && !isSearchActive
+        menu.findItem(R.id.actionStatistics)?.isVisible = isDetail && !isSearchActive
         menu.findItem(R.id.actionArchive)?.isVisible = isDetail && !isArchived && !isSearchActive
         menu.findItem(R.id.actionRestore)?.isVisible = isDetail && isArchived && !isSearchActive
 
@@ -235,6 +236,10 @@ class ContainersActivity : AppCompatActivity(), ModelObservable.Listener {
         when (item.itemId) {
             android.R.id.home -> {
                 handleBackNavigation()
+                return true
+            }
+            R.id.actionStatistics -> {
+                containerId?.let { org.isoron.uhabits.activities.containers.statistics.ContainerStatisticsActivity.start(this, it) }
                 return true
             }
             R.id.actionRename -> {
@@ -885,6 +890,7 @@ class ContainersActivity : AppCompatActivity(), ModelObservable.Listener {
         val entries = listOf(
             CompactPopupMenu.Entry.Item(1, getString(R.string.containers_rename)),
             CompactPopupMenu.Entry.Item(2, getString(R.string.containers_move)),
+            CompactPopupMenu.Entry.Item(4, getString(R.string.container_statistics_title)),
             CompactPopupMenu.Entry.Item(3, getString(R.string.containers_to_archive), destructive = true)
         )
         CompactPopupMenu.show(anchor, entries) { id ->
@@ -892,6 +898,7 @@ class ContainersActivity : AppCompatActivity(), ModelObservable.Listener {
                 1 -> showRenameDialog(container)
                 2 -> showMoveContainerDialog(container)
                 3 -> showArchiveConfirmDialog(container)
+                4 -> org.isoron.uhabits.activities.containers.statistics.ContainerStatisticsActivity.start(this, container.id)
             }
         }
     }

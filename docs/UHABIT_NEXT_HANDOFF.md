@@ -144,7 +144,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR15 — Contribution-aware Habit projection | Opt-in numerical day/range/goal reads, provenance, coverage and batch queries | Repetitions materialization, UI/automatic capture attribution, score rewrite, production migration/sync, PR16 | 019ee5be; timer audit, 277 regression + 44 final projection + 43 legacy checks PASS; Android/JS compile PASS | DONE |
 | PR16 — End-to-end Focus credit MVP | Experimental Habit editor rules, timer attribution/recovery, current-period progress and breakdown | Generic automation, statistics redesign, Task timer navigation, production activation, PR17 | 12e156c8; 219 core + 12 Android JVM + 3 instrumentation PASS; debug APK and three-theme native QA PASS | DONE |
 | PR17 — Task Focus Launcher | Experimental Task Detail launch into shared Stopwatch/Pomodoro, captured Task context and recovery | New Focus architecture/dashboard, statistics, recurrence, sync, production migration, PR18 | 7e5e41b4; 219 core + 12 JVM + 9 instrumentation PASS; APK/native recovery and three-theme QA PASS | DONE |
-| Container statistics | Отдельные time/outcomes/Habit metrics; historical/current mode | Universal productivity score | Проверенные facts/provenance/placement | PLANNED |
+| PR18 — Container statistics MVP | Отдельные time/outcomes/Habit metrics; historical/current mode; native Container statistics surface | Universal productivity score, global stats redesign | 227 core tests (incl. 8 ContainerStatisticsServiceTest) PASS; compileDebugKotlin / assembleDebug PASS; Pixel 6 emulator native QA PASS (Day/Week/Month, HERE/SUBTREE, historical move invariance, Light/Dark/AMOLED) | DONE |
 | Today-first UX evaluation | Сравнить A/B/C на реальных task/day сценариях | Автоматическая замена home без оценки | Task MVP и достаточно содержимого Today | PLANNED |
 | Production migration / new sync protocol | Отдельный release design, compatibility gate, conflict/recovery checks | Скрытая активация внутри Foundation | Validated local stages; protocol/dataset/server gate; отдельное согласование | PLANNED |
 
@@ -154,18 +154,18 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1 DONE (commit 19087fd6), PR2 DONE (commit 4cbd6942fa21adab95d7f3138033da9c5ca06139), PR3 DONE (commit 58fac669414d232be804e412e0971b0399c146f6), PR4 DONE (commit f924d958d26bf3e297935a059383181b00d5eb97), PR5 DONE (commit 51dd5bac1f2c9fa08766206b6e5ec9e73518c636), PR6 DONE (commit f4073570776b25aa17dfa17bc671b569bf8d40a2), PR7 DONE (commit 620212ec), PR8 DONE (commit c5d44788), PR8 Verification DONE (commit dc3f0acf), PR8·Spatial Native Slice DONE (commit d847b434f), PR9 DONE (commit 68538527e), PR9.2 Tasks Visual Reset DONE, PR10 DONE, PR11 DONE, PR12 DONE, PR13 DONE (commit 37f2b3cb1f0659adc896f6724e323c0ba4a80202), PR14 DONE (commit 500f332ab5c694e13ecc95860280e325bac5501f)
-Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated
-Current branch: dev; PR16 implementation commit 12e156c87bf2ffab9d8c58d36e95c666c8be520c; documentation closure follows; use Git for current HEAD
+Implementation: PR1–PR14 DONE, PR15 DONE (commit 019ee5becfe97eba37c5877cccac763a91dea932), PR16 DONE (commit 12e156c87bf2ffab9d8c58d36e95c666c8be520c), PR17 DONE (commit 7e5e41b4254af1d6328dc527ce8b3c2304b333f4), PR18 DONE (commit pending)
+Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated, Container Statistics MVP completed
+Current branch: dev; PR18 implementation commit pending; use Git for current HEAD
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
 Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
 Visual language: VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH
 Native Android implementation: PR10 / PR10.1 ACCEPTED
-Active implementation: none; PR11–PR17 DONE; no automatic PR18
+Active implementation: none / IDLE; PR18 Container Statistics MVP completed
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
-Checks: PR16 219 scoped core tests, 12 Android JVM tests, 3 native integration tests PASS; debug/test APK builds PASS; native Light/Dark/AMOLED walkthrough PASS; backup v4 and production v29 unchanged
+Checks: PR18 227 scoped core tests PASS; assembleDebug / compileDebugKotlin PASS; Pixel 6 emulator native QA PASS (Focus duration invariance, Task outcomes, Habit progress/attribution, Day/Week/Month, HERE/SUBTREE, Light/Dark/AMOLED); backup v4 and production v29 unchanged
 Production DB schema: v29 unchanged (repository DATABASE_VERSION)
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
@@ -177,7 +177,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| Codex / root | PR17 Task Focus Launcher | dev / C:/Users/Pavel/source/repos/uhabits-plus | IDLE | 2026-10-07 | Completed; implementation 7e5e41b4, verification and native QA below | Experimental only; STOP before PR18 |
+| none | none / IDLE | dev / C:/Users/Pavel/source/repos/uhabits-plus | IDLE | 2026-10-07 | none | PR18 Container Statistics MVP DONE |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
  
@@ -899,3 +899,18 @@ Implementation/evidence commit: `4ad7fda773c926da47e47f0ddfd5a1b1161ee581`. This
 - Changed-surface screenshots inspected for Light/Dark/AMOLED Task Detail and shared Task timer, Habit breakdown, recovered timer, landscape and expanded-width emulator. Final APK landscape Pomodoro duration picker inspected with visible Focus/Rest wheel and Done control (`pr17_artifacts/task-duration-landscape-final.png`). Expanded width uses emulator density, not a physical tablet; no tablet detail pane added. Physical device, TalkBack, large-font/RTL and exhaustive Doze/permission-rotation matrix remain unverified.
 - QA safety: original emulator databases/preferences backed up before all work. After instrumentation/native checks, QA directories moved aside reversibly; all ten original database/preference files restored with identical SHA-256 and inventory; app left stopped. Original display density/rotation restored. Private fixtures/databases/preferences/tars/screenshots and preexisting untracked work remain outside Git. Local ignored architecture/project context updated without forcing Markdown into Git.
 - Remaining limitations: one active timer; existing cold-start navigation and Pomodoro segmentation; no Focus history/statistics, recurrence, tablet pane, new target picker or production migration. PR16 historical rule/projection limitations unchanged. Active work IDLE. STOP after PR17; do not start PR18 automatically.
+
+### 2026-10-07 — PR18 Container Activity Statistics MVP completed
+
+- Verified accepted PR17 implementation `7e5e41b42` and handoff `a751af3a4`. Stale Current state references reconciled before implementation. Branch/worktree: `dev`, `C:/Users/Pavel/source/repos/uhabits-plus`. Local commits only; no publication.
+- Core read model (`ContainerStatisticsModels.kt`, `ContainerStatisticsService.kt`): answers Focus work, Task outcomes, and Habit activity separately without computing any synthetic universal productivity score.
+- Focus time invariant: derived strictly from finalized `FocusSession.durationMs`. Historical frozen container hierarchy path (`HistoricalPathParser`) governs focus attribution across moves and renames so past work is never retroactively erased or shifted. Breakdown includes total duration, session count, daily trend buckets, direct vs descendant duration, and top child container durations.
+- Task outcomes: completed/pending/overdue task counts in range. Completed tasks in range use `completedAt`. Evaluated according to current placement (`TaskPlacementMode.CURRENT`), explicitly marked in domain model and UI notes.
+- Habit activity: active habits in scope, reached / incomplete / unknown goals, and numerical progress / Focus contribution breakdown reusing canonical `EffectiveHabitValueService`. Preserves `UNKNOWN`, `SKIP`, explicit zero, `AT_LEAST`, `AT_MOST`, and calendar goal semantics.
+- Scope modes: `HERE` (direct facts in selected container) and `SUBTREE` (container + descendants). Explicitly distinguished in service and UI.
+- Range models: Day, Week, Month with previous/next stepper navigation and explicit date labels.
+- Native UI (`ContainerStatisticsActivity.kt`, `activity_container_statistics.xml`): clean report cards with daily trend visualization, child container rankings, task outcome badges, habit progress lists, and Light/Dark/AMOLED theme styling via `MainTabsThemeBridge`. Accessible from `ContainersActivity` (options and popup menus) and `TasksFragment` (overflow menu when container filtered).
+- Automated verification PASS: 227 core tests / 32 suites (including 8 new `ContainerStatisticsServiceTest` suite tests covering direct/subtree, frozen path invariance, task outcomes, habit projection/contributions, and empty containers); zero failures. `:uhabits-android:compileDebugKotlin` and `:uhabits-android:assembleDebug` PASS.
+- Native Pixel_6 emulator walkthrough PASS: Study week/subtree report (75 min focus across Databases 45m and Thesis 30m, 1 task completed, 2 pending, 1 overdue, 1 habit 75/300 min), Study HERE report (0 min focus, 0 tasks), Day/Month range transitions, and historical move test (moving Databases to Work left Study historical focus at 75m while task counts reflected updated current placement). Clean database/preferences restoration verified with identical SHA-256 after QA.
+- Active work IDLE. STOP after PR18; do not start PR19 automatically.
+

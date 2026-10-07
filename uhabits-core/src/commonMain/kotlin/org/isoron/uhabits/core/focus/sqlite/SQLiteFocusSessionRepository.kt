@@ -60,6 +60,12 @@ class SQLiteFocusSessionRepository(private val db: Database) : FocusSessionRepos
     override fun getByTask(taskId: TaskId): List<FocusSession> =
         query("WHERE task_id = ?") { bindText(1, taskId.value) }
 
+    override fun getByTimeRange(startMillis: Long, endMillis: Long): List<FocusSession> =
+        query("WHERE ended_at >= ? AND ended_at < ?", "ended_at, id") {
+            bindLong(1, startMillis)
+            bindLong(2, endMillis)
+        }
+
     override fun record(session: FocusSession): FocusSessionRecordResult {
         db.run("SAVEPOINT record_focus_session")
         try {

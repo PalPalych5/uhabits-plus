@@ -266,6 +266,9 @@ class TasksFragment : Fragment() {
             popup.menu.add(0, 1, 0, "Все задачи")
             popup.menu.add(0, 2, 1, "Завершённые")
             popup.menu.add(0, 3, 2, "Настройки")
+            if (selectedContainerFilter != null) {
+                popup.menu.add(0, 4, 3, getString(R.string.container_statistics_title))
+            }
             popup.setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     1 -> {
@@ -283,6 +286,15 @@ class TasksFragment : Fragment() {
                         true
                     }
                     3 -> { workspaceNavigator?.invoke("Settings"); true }
+                    4 -> {
+                        selectedContainerFilter?.let { filter ->
+                            org.isoron.uhabits.activities.containers.statistics.ContainerStatisticsActivity.start(
+                                requireContext(),
+                                org.isoron.uhabits.core.containers.ContainerId(filter.value)
+                            )
+                        }
+                        true
+                    }
                     else -> false
                 }
             }

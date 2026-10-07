@@ -115,6 +115,11 @@
             android:exported="false" />
 
         <activity
+            android:name=".activities.containers.statistics.ContainerStatisticsActivity"
+            android:label="@string/container_statistics_title"
+            android:exported="false" />
+
+        <activity
             android:name=".activities.statistics.StatisticsActivity"
             android:label="@string/reports_title">
             <meta-data

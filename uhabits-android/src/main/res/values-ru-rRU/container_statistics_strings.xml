@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
+  ~
+  ~ This file is part of Loop Habit Tracker.
+  ~
+  ~ Loop Habit Tracker is free software: you can redistribute it and/or modify
+  ~ it under the terms of the GNU General Public License as published by the
+  ~ Free Software Foundation, either version 3 of the License, or (at your
+  ~ option) any later version.
+  -->
+<resources>
+    <string name="container_statistics_title">Статистика раздела</string>
+    <string name="container_statistics_subtitle">Отчёт об активности</string>
+    <string name="container_statistics_range_day">День</string>
+    <string name="container_statistics_range_week">Неделя</string>
+    <string name="container_statistics_range_month">Месяц</string>
+    <string name="container_statistics_scope_here">Только этот раздел</string>
+    <string name="container_statistics_scope_subtree">С подразделами</string>
+    <string name="container_statistics_focus_title">Фокус и работа</string>
+    <string name="container_statistics_focus_sessions_format">%1$d сессий</string>
+    <string name="container_statistics_focus_one_session">1 сессия</string>
+    <string name="container_statistics_focus_no_sessions">0 сессий</string>
+    <string name="container_statistics_focus_direct_breakdown">В этом разделе: %1$s</string>
+    <string name="container_statistics_focus_descendant_breakdown">В подразделах: %1$s</string>
+    <string name="container_statistics_focus_daily_trend">Динамика по дням</string>
+    <string name="container_statistics_focus_subcontainers_breakdown">Фокус по подразделам</string>
+    <string name="container_statistics_focus_historical_note">Учитывает историческое расположение на момент завершения сессии</string>
+    <string name="container_statistics_focus_empty">Нет сессий фокуса за выбранный период</string>
+    <string name="container_statistics_tasks_title">Задачи</string>
+    <string name="container_statistics_tasks_completed">Завершено</string>
+    <string name="container_statistics_tasks_pending">В работе</string>
+    <string name="container_statistics_tasks_overdue">Просрочено</string>
+    <string name="container_statistics_tasks_placement_note">По текущему расположению задач</string>
+    <string name="container_statistics_tasks_empty">Нет задач в этом разделе</string>
+    <string name="container_statistics_habits_title">Привычки и нормы</string>
+    <string name="container_statistics_habits_active_count">%1$d активных</string>
+    <string name="container_statistics_habits_reached">Выполнено</string>
+    <string name="container_statistics_habits_incomplete">Не завершено</string>
+    <string name="container_statistics_habits_unknown">Нет данных</string>
+    <string name="container_statistics_habits_focus_contribution">Вклад фокуса: %1$s</string>
+    <string name="container_statistics_habits_empty">Нет активных привычек в этом разделе</string>
+</resources>

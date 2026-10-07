@@ -43,4 +43,6 @@ interface FocusSessionRepository {
     fun getByTask(taskId: TaskId): List<FocusSession>
     /** Keyset page, ordered by endedAt/id. Includes late/imported facts on a new startup sweep. */
     fun getFinalizedPage(after: FocusSessionCursor?, limit: Int): List<FocusSession>
+    /** Returns finalized sessions with endedAt in [startMillis, endMillis), ordered by endedAt. */
+    fun getByTimeRange(startMillis: Long, endMillis: Long): List<FocusSession>
 }

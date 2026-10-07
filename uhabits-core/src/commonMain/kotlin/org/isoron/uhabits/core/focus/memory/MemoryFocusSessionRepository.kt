@@ -56,4 +56,8 @@ class MemoryFocusSessionRepository : FocusSessionRepository {
     override fun getByTask(taskId: TaskId): List<FocusSession> = sessions.values
         .filter { it.taskId == taskId }
         .sortedWith(order)
+
+    override fun getByTimeRange(startMillis: Long, endMillis: Long): List<FocusSession> = sessions.values
+        .filter { it.endedAt in startMillis until endMillis }
+        .sortedWith(compareBy<FocusSession> { it.endedAt }.thenBy { it.id.value })
 }

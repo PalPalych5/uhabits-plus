@@ -39,6 +39,12 @@
         app:showAsAction="never" />
 
     <item
+        android:id="@+id/actionStatistics"
+        android:title="@string/container_statistics_title"
+        android:visible="false"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/actionRestore"
         android:title="@string/containers_restore"
         android:visible="false"
