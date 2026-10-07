@@ -57,7 +57,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 - Section-specific Container/Habit order; global Habit.position сохраняется. Один общий cross-type rank пока не нужен.
 - Planned date != deadline. FocusSession в будущем — самостоятельный факт; Contribution требует provenance и дедупликации.
 - Graph/multiple parents и universal productivity score не нужны сейчас.
-- Preferred первый UX prototype — **Evolutionary**: Habit-first сохраняется, Browse добавляется постепенно. Today-first — вероятное следующее направление после Tasks, ещё не финальное решение shell.
+- Preferred первый UX prototype — **Evolutionary**. После PR19 Today-first evaluation завершён: глобальная навигация Habits | Tasks | Statistics frozen; cross-domain Today принят только как secondary Day Overview / «Обзор дня», без четвёртой вкладки. Tasks → «Сегодня» остаётся task-only.
 - Production schema/sync пока не менять. Foundation сначала проверяется изолированно на memory/test DB/staging copy; экспериментальный dataset не подключается к legacy sync.
 - Форматы Entry, UNKNOWN/SKIP/explicit zero, numerical x1000, HabitGoal history/UUID и формулы не меняются в Foundation.
 - Форматы Entry, UNKNOWN/SKIP/explicit zero, numerical x1000, HabitGoal history/UUID и формулы не меняются в Foundation.
@@ -144,27 +144,29 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR15 — Contribution-aware Habit projection | Opt-in numerical day/range/goal reads, provenance, coverage and batch queries | Repetitions materialization, UI/automatic capture attribution, score rewrite, production migration/sync, PR16 | 019ee5be; timer audit, 277 regression + 44 final projection + 43 legacy checks PASS; Android/JS compile PASS | DONE |
 | PR16 — End-to-end Focus credit MVP | Experimental Habit editor rules, timer attribution/recovery, current-period progress and breakdown | Generic automation, statistics redesign, Task timer navigation, production activation, PR17 | 12e156c8; 219 core + 12 Android JVM + 3 instrumentation PASS; debug APK and three-theme native QA PASS | DONE |
 | PR17 — Task Focus Launcher | Experimental Task Detail launch into shared Stopwatch/Pomodoro, captured Task context and recovery | New Focus architecture/dashboard, statistics, recurrence, sync, production migration, PR18 | 7e5e41b4; 219 core + 12 JVM + 9 instrumentation PASS; APK/native recovery and three-theme QA PASS | DONE |
-| PR19 — Today-first UX evaluation | Реальный нативный Today view на канонических данных (Tasks/Habits/Focus), без объединения в кашу | Автоматическая замена home без оценки, recurrent tasks, sync rewrite | PR18 Container statistics DONE | NATIVE_TODAY_REVIEW_PENDING |
+| PR19 — Today workspace evaluation | Native evaluation DONE; human accepts secondary Day Overview direction; global fourth workspace rejected | Permanent Today tab, recurrence, sync rewrite | 1cda48931; fresh PR20 rerun: 6 Today core + 3 Android presentation PASS | DONE |
+| PR20 — Production Readiness & Cutover Audit | Code-backed inventory, migration/recovery/runtime/readers/sync/promotion plan | Production migration/activation, new sync implementation, recurrence, polish | [Canonical cutover plan](UHABIT_PRODUCTION_CUTOVER_PLAN.md); NO-GO gates recorded | DONE |
+| PR21 — Preflight & Recovery Gate (proposed) | Raw inventory/anomaly diagnostics, coherent v29 recovery bundle, pre-DI timer checks, startup recovery | Version bump, conversion/activation, sync protocol, promotion | PR20 review + separate implementation authorization | PLANNED |
 | Production migration / new sync protocol | Отдельный release design, compatibility gate, conflict/recovery checks | Скрытая активация внутри Foundation | Validated local stages; protocol/dataset/server gate; отдельное согласование | PLANNED |
 
-Последние этапы отражают направление, а не разрешение реализовать весь roadmap одним запросом. Today-first evaluation может быть отдельно согласована раньше Container statistics после Task MVP.
+Последующие этапы — предложения, не разрешение реализовать roadmap автоматически. PR20 завершает текущий запрос; следующий ограниченный scope — PR21 по отдельному запросу. Recurrence отложена до разрешения production-readiness границ.
 
 ## 5. Current state
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1–PR14 DONE, PR15 DONE (commit 019ee5becfe97eba37c5877cccac763a91dea932), PR16 DONE (commit 12e156c87bf2ffab9d8c58d36e95c666c8be520c), PR17 DONE (commit 7e5e41b4254af1d6328dc527ce8b3c2304b333f4), PR18 DONE (commit 91264df61b03941eb76ac5c21173ec619eac2ebc), PR19 EVALUATED (NATIVE_TODAY_REVIEW_PENDING)
+Implementation: PR1–PR19 DONE; PR20 AUDIT DONE; production cutover NO-GO
 Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated, Container Statistics MVP completed, Today Workspace evaluated natively
-Current branch: dev; PR18 implementation commit 91264df61b03941eb76ac5c21173ec619eac2ebc; use Git for current HEAD
+Current branch: dev; PR19 implementation baseline 1cda48931; PR20 documentation commit follows; use Git for current HEAD
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
 Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
 Visual language: VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH
-Native Android implementation: PR10 / PR10.1 ACCEPTED; PR19 Today evaluation complete (review pending)
-Active implementation: none / IDLE; PR19 Native Today Workspace Evaluation completed (STOPPED for human review)
+Native Android implementation: PR10 / PR10.1 ACCEPTED; PR19 evaluation ACCEPTED as secondary Day Overview direction; visual polish not independently reviewed in PR20
+Active implementation: none / IDLE; PR20 audit completed; STOP before PR21
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
-Checks: PR19 232 scoped core tests + 3 Android JVM Today tests (794 total test suite tests PASS, 0 failures); assembleDebug / compileDebugKotlin PASS; Pixel 6 emulator native QA PASS across 9 scenarios (Sectioned vs Unified variants, Overdue/Missed plan/Planned today/Subtasks/Future exclusion, Task completion, Task Focus launch, live Focus ticker & actions, Habit progress/attribution update, Habit checkmark, Light/Dark/AMOLED/Landscape); production DATABASE_VERSION = 29 unchanged
+Checks: PR20 fresh selected rerun 6 TodayEvaluationServiceTest + 3 TodayPresentationTest PASS, zero failed/errors/skipped, Gradle exit 0. PR19 794 aggregate withdrawn; 232/33 regression report not a verified fresh count. PR19 build/emulator claims remain historical reports; no PR20 device/visual/live-sync/migration validation. Production DATABASE_VERSION = 29 unchanged
 Production DB schema: v29 unchanged (repository DATABASE_VERSION)
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
@@ -176,7 +178,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| none | none | dev / C:/Users/Pavel/source/repos/uhabits-plus | IDLE | 2026-10-07 | none | PR19 Native Today Workspace Evaluation DONE (NATIVE_TODAY_REVIEW_PENDING) |
+| none | none | dev / C:/Users/Pavel/source/repos/uhabits-plus | IDLE | 2026-10-07 | none | PR20 audit DONE; cutover NO-GO; STOP before PR21 |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
  
@@ -195,7 +197,7 @@ Handoff — coordination register, не атомарный mutex: одновре
 ## 7. Next actions
 
 1. PR10.1 принят: `VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH`. Compact — утверждённая V1; повторный большой visual pass или PR10.2 не нужен. [Gallery/video](../pr101_artifacts/index.html), [report](../pr101_artifacts/REPORT.md), [evidence](../pr101_artifacts/evidence.json) остаются историческими QA-артефактами; их статус на момент проверки не переписывать.
-2. PR11–PR16 DONE; PR14.1 принят. Experimental Habit editor configures Container Focus credit; finalized facts are attributed automatically and recovered on reopen; Habit detail shows canonical current-period progress and manual/Focus breakdown. Production remains unchanged. PR17 Task launcher is DONE. STOP before PR18; statistics/Today-first require a separate user request. IA and Task semantics frozen.
+2. PR11–PR19 DONE; PR20 audit DONE. Read [UHABIT_PRODUCTION_CUTOVER_PLAN.md](UHABIT_PRODUCTION_CUTOVER_PLAN.md) before release work. Next proposed implementation: PR21 Preflight & Recovery Gate, retaining v29 and legacy authority. Production conversion/runtime/current-sync/promotion are NO-GO today. STOP until separate implementation request; recurrence deferred.
 3. Четыре отложенных долга (не условие продолжения разработки): **metadata compaction** — в Today скрывать обычный «План сегодня», сохраняя нетипичный/пропущенный план и сочетание с deadline; **phone calendar labels** — краткое название хотя бы одной задачи + `+N` вместо одних маркеров; **tablet detail pane** — list + detail вместо modal sheet; **IME composer chrome** — скрывать глобальную нижнюю навигацию при активном composer + IME и возвращать после закрытия клавиатуры.
 4. Drawer и Detail приняты как V1; дальнейший icon/color Container polish отложен. Physical device/TalkBack/comprehensive large-font/RTL and measured frame pacing remain unverified; принятие визуальной V1 не расширяет техническое QA evidence.
 
@@ -922,7 +924,7 @@ Implementation/evidence commit: `4ad7fda773c926da47e47f0ddfd5a1b1161ee581`. This
   - **Focus**: compact card if timer is running with live ticker, target task name, elapsed time, and Pause/Resume/Finish/Open controls. Absent when idle.
 - Experimental reversible entry points: Developer settings ("Экспериментальный экран Сегодня"), Tasks overflow popup menu ("Сегодня (оценка UX)"), and Habits options menu ("Сегодня (оценка UX)"). Global bottom navigation (`Habits | Tasks | Statistics`) remains untouched.
 - Lightweight presentation variant toggle: "По группам срочности" (Sectioned) vs "Единый список задач" (Unified list with urgency badges).
-- Automated verification PASS: 232 core tests / 33 suites (including 5 new `TodayEvaluationServiceTest` tests covering all urgency tiers, subtask counts, focus credit preservation, and empty states) + 3 Android JVM `TodayPresentationTest` tests; total test suite 794 tests PASS, 0 failures. `:uhabits-android:compileDebugKotlin` and `:uhabits-android:assembleDebug` PASS.
+- Verification correction (PR20): historical 232 core / 33 suites and PR19 build reports are not freshly revalidated totals. Aggregate 794 withdrawn: recursive XML inventory did not prove fresh execution. Source contains 6 Today core methods, not 5; fresh selected rerun on 2026-10-07 confirms 6 `TodayEvaluationServiceTest` + 3 `TodayPresentationTest`, zero failures/errors/skipped. No other regression suite executed in PR20. PR19 `compileDebugKotlin` / `assembleDebug` and emulator observations below remain historical reports.
 - Native Pixel_6 emulator walkthrough PASS:
   1. Sectioned Light view: verified distinct HARD_OVERDUE ("Сдать МУСы"), MISSED_PLAN ("Оформить отчёт"), and PLANNED_TODAY ("Сделать запросы БД" with subtask count 1/2). Future task ("Подготовка к экзамену") is excluded.
   2. Unified List toggle: displays single chronological task list with colored urgency badges.
@@ -933,6 +935,19 @@ Implementation/evidence commit: `4ad7fda773c926da47e47f0ddfd5a1b1161ee581`. This
   7. Visual styling: Light, Dark, AMOLED, and Landscape responsiveness verified.
 - Evidence screenshots in `pr19_artifacts/`: `01-today-main-light-sectioned.png`, `01b-today-habits-light.png`, `02-today-main-light-unified.png`, `03-today-task-focus-sheet.png`, `04-today-active-focus.png`, `05-today-task-completed.png`, `06-today-after-focus-finished.png`, `07-today-dark.png`, `07b-today-dark-habits.png`, `08-today-amoled.png`, `09-today-landscape.png`.
 - **Recommendation: (B) Keep Today secondary / optional action for now** (or quick-switch drawer/header view). Habits and Tasks have fundamentally different workflows (high-speed multi-day grid scanning vs list triage); collapsing them into a primary tab dilutes habit scanning speed. Today works best as a secondary daily overview.
-- Status: `NATIVE_TODAY_REVIEW_PENDING`. Active work IDLE. STOP for human review. Do not start PR20.
+- Historical review STOP superseded by explicit human acceptance/PR20 authorization below. Status: `ACCEPTED_SECONDARY_DAY_OVERVIEW`; implementation DONE. No permanent global Today workspace adopted.
 
 
+
+### 2026-10-07 — Human PR19 acceptance / PR20 claim
+
+PR19 implementation DONE; product evaluation ACCEPTED; permanent global Today workspace REJECTED; secondary Day Overview ACCEPTED DIRECTION; Habits | Tasks | Statistics FROZEN. Tasks Today remains task-only; future cross-domain label: Day Overview / Обзор дня. Visual polish not independently reviewed in PR20. PR20 audit authorized; no migration, runtime activation, sync implementation or recurrence.
+
+### 2026-10-07 — PR20 Production Readiness & Cutover Audit completed
+
+- Created canonical [UHABIT_PRODUCTION_CUTOVER_PLAN.md](UHABIT_PRODUCTION_CUTOVER_PLAN.md), 14 required design sections plus scoped verification. Actual production opener/DDL, PR3 planner/executor, dataset/session/DI, v4 snapshot/restore/manifest, timer credit/capture, Habit/global Statistics readers and legacy backend/Supabase SQL inspected; no live server verification.
+- NO-GO today for production schema conversion, runtime activation, enabled legacy sync with Next authority, or experimental promotion. Full merge unsupported. Safest initial source is production v29; preserve existing experiment/export. A gated local-only release can defer cloud protocol, not legacy isolation/recovery/readers.
+- Blocking findings include nested transaction composition/FK setup, incomplete recovery/semantic/hash coverage, unversioned Task provider gate, legacy timer double-credit risk and stale callback epoch, contribution-blind Habit/Statistics/widget readers, Container statistics calendar preference discrepancy, unknown sync event acknowledgment/no epoch, and missing physical/accessibility/recovery evidence. Existing defects documented, not opportunistically fixed.
+- Exact fresh command: `gradlew.bat :uhabits-core:jvmTest --tests '*TodayEvaluationServiceTest' :uhabits-android:testDebugUnitTest --tests '*TodayPresentationTest' --rerun-tasks --console=plain --quiet`. Exit 0. Current task XML: core tests=6, Android tests=3, failed/errors/skipped=0; UTC suite timestamps 05:00:18 and 05:01:36 (12:00:18 / 12:01:36 Novosibirsk). Initial sandbox attempt failed on Gradle cache lock permissions; approved rerun completed. No giant regression/instrumentation/device/migration run.
+- Next proposed scope PR21: preflight/recovery gate preserving v29; later bounded schema staging, reader integration, runtime/local isolation, production backup/release hardening and optional versioned cloud/promotion stages are specified with prerequisites/rollback/checks. No stage executed. Recurrence remains deferred.
+- Only canonical audit/handoff documents changed; source code/schema/server/UI untouched. Existing untracked/QA data preserved. Active work IDLE. Local documentation commit only; no publication. STOP after PR20; do not start PR21 or migration automatically. Commit identity: this closure is included in the PR20 audit commit; resolve via `git log -- docs/UHABIT_PRODUCTION_CUTOVER_PLAN.md`.
