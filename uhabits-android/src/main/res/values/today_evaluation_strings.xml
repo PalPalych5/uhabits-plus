@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
+  ~
+  ~ This file is part of Loop Habit Tracker.
+  ~
+  ~ Loop Habit Tracker is free software: you can redistribute it and/or modify
+  ~ it under the terms of the GNU General Public License as published by the
+  ~ Free Software Foundation, either version 3 of the License, or (at your
+  ~ option) any later version.
+  -->
+<resources>
+    <string name="today_eval_title">Today</string>
+    <string name="today_eval_subtitle">Daily overview</string>
+    <string name="today_eval_section_focus">FOCUS</string>
+    <string name="today_eval_section_tasks">TASKS</string>
+    <string name="today_eval_section_habits">HABITS &amp; NORMS</string>
+    <string name="today_eval_tasks_overdue">Hard overdue</string>
+    <string name="today_eval_tasks_missed_plan">Missed plan</string>
+    <string name="today_eval_tasks_planned_today">Planned today</string>
+    <string name="today_eval_tasks_completed_today">Completed today</string>
+    <string name="today_eval_tasks_empty">No tasks planned for today</string>
+    <string name="today_eval_habits_empty">No active habits for today</string>
+    <string name="today_eval_focus_pause">Pause</string>
+    <string name="today_eval_focus_resume">Resume</string>
+    <string name="today_eval_focus_finish">Finish</string>
+    <string name="today_eval_focus_open">Open timer</string>
+    <string name="today_eval_focus_working_on">Working on:</string>
+    <string name="today_eval_variant_sectioned">Grouped by urgency</string>
+    <string name="today_eval_variant_unified">Unified task list</string>
+    <string name="today_eval_missed_plan_note">Planned for %1$s · Needs replanning</string>
+    <string name="today_eval_overdue_deadline_note">Deadline: %1$s</string>
+    <string name="today_eval_focus_credit_badge">+%1$s focus</string>
+    <string name="today_eval_menu_item">Today overview (Evaluation)</string>
+    <string name="today_eval_experiment_pref_title">Experiment: Today workspace</string>
+    <string name="today_eval_experiment_pref_summary">Open experimental Today evaluation screen</string>
+</resources>

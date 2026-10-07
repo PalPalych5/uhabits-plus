@@ -109,6 +109,12 @@
                     android:id="@+id/actionSearch"
                     android:enabled="true"
                     android:title="@string/search"/>
+
+                <item
+                    android:id="@+id/actionTodayEvaluation"
+                    android:enabled="true"
+                    android:visible="false"
+                    android:title="@string/today_eval_menu_item"/>
             </menu>
         </item>
     </group>

@@ -269,6 +269,7 @@ class TasksFragment : Fragment() {
             if (selectedContainerFilter != null) {
                 popup.menu.add(0, 4, 3, getString(R.string.container_statistics_title))
             }
+            popup.menu.add(0, 5, 4, getString(R.string.today_eval_menu_item))
             popup.setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     1 -> {
@@ -293,6 +294,10 @@ class TasksFragment : Fragment() {
                                 org.isoron.uhabits.core.containers.ContainerId(filter.value)
                             )
                         }
+                        true
+                    }
+                    5 -> {
+                        startActivity(org.isoron.uhabits.activities.today.TodayActivity.createIntent(requireContext()))
                         true
                     }
                     else -> false

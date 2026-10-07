@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
+  ~
+  ~ This file is part of Loop Habit Tracker.
+  ~
+  ~ Loop Habit Tracker is free software: you can redistribute it and/or modify
+  ~ it under the terms of the GNU General Public License as published by the
+  ~ Free Software Foundation, either version 3 of the License, or (at your
+  ~ option) any later version.
+  -->
+<resources>
+    <string name="today_eval_title">Обзор дня</string>
+    <string name="today_eval_subtitle">Фокус на сегодня</string>
+    <string name="today_eval_section_focus">ФОКУС</string>
+    <string name="today_eval_section_tasks">ЗАДАЧИ</string>
+    <string name="today_eval_section_habits">ПРИВЫЧКИ И НОРМЫ</string>
+    <string name="today_eval_tasks_overdue">Просрочено</string>
+    <string name="today_eval_tasks_missed_plan">Пропущен план</string>
+    <string name="today_eval_tasks_planned_today">На сегодня</string>
+    <string name="today_eval_tasks_completed_today">Завершено сегодня</string>
+    <string name="today_eval_tasks_empty">Нет задач на сегодня</string>
+    <string name="today_eval_habits_empty">Нет активных привычек на сегодня</string>
+    <string name="today_eval_focus_pause">Пауза</string>
+    <string name="today_eval_focus_resume">Продолжить</string>
+    <string name="today_eval_focus_finish">Завершить</string>
+    <string name="today_eval_focus_open">Открыть таймер</string>
+    <string name="today_eval_focus_working_on">В фокусе:</string>
+    <string name="today_eval_variant_sectioned">По группам срочности</string>
+    <string name="today_eval_variant_unified">Единый список задач</string>
+    <string name="today_eval_missed_plan_note">План был: %1$s · Требует перепланирования</string>
+    <string name="today_eval_overdue_deadline_note">Дедлайн: %1$s</string>
+    <string name="today_eval_focus_credit_badge">+%1$s фокуса</string>
+    <string name="today_eval_menu_item">Обзор дня (Today)</string>
+    <string name="today_eval_experiment_pref_title">Эксперимент: Обзор дня (Today)</string>
+    <string name="today_eval_experiment_pref_summary">Открыть нативный экспериментальный экран Today</string>
+</resources>

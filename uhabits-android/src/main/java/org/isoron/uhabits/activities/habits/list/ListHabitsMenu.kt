@@ -78,6 +78,8 @@ class ListHabitsMenu(
         // In PR8, Containers is the unified hierarchical home screen in experimental mode,
         // so no separate ContainersActivity entry is displayed.
         menu.findItem(R.id.actionContainers)?.isVisible = false
+        menu.findItem(R.id.actionTodayEvaluation)?.isVisible =
+            (activity.applicationContext as HabitsApplication).component.session.isExperimental
     }
 
     fun onCreate(inflater: MenuInflater, menu: Menu) {
@@ -234,6 +236,11 @@ class ListHabitsMenu(
 
             R.id.actionContainers -> {
                 activity.startActivity(ContainersActivity.intent(activity))
+                return true
+            }
+
+            R.id.actionTodayEvaluation -> {
+                activity.startActivity(org.isoron.uhabits.activities.today.TodayActivity.createIntent(activity))
                 return true
             }
 

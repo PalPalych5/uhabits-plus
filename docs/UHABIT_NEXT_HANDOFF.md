@@ -144,8 +144,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR15 — Contribution-aware Habit projection | Opt-in numerical day/range/goal reads, provenance, coverage and batch queries | Repetitions materialization, UI/automatic capture attribution, score rewrite, production migration/sync, PR16 | 019ee5be; timer audit, 277 regression + 44 final projection + 43 legacy checks PASS; Android/JS compile PASS | DONE |
 | PR16 — End-to-end Focus credit MVP | Experimental Habit editor rules, timer attribution/recovery, current-period progress and breakdown | Generic automation, statistics redesign, Task timer navigation, production activation, PR17 | 12e156c8; 219 core + 12 Android JVM + 3 instrumentation PASS; debug APK and three-theme native QA PASS | DONE |
 | PR17 — Task Focus Launcher | Experimental Task Detail launch into shared Stopwatch/Pomodoro, captured Task context and recovery | New Focus architecture/dashboard, statistics, recurrence, sync, production migration, PR18 | 7e5e41b4; 219 core + 12 JVM + 9 instrumentation PASS; APK/native recovery and three-theme QA PASS | DONE |
-| PR18 — Container statistics MVP | Отдельные time/outcomes/Habit metrics; historical/current mode; native Container statistics surface | Universal productivity score, global stats redesign | 227 core tests (incl. 8 ContainerStatisticsServiceTest) PASS; compileDebugKotlin / assembleDebug PASS; Pixel 6 emulator native QA PASS (Day/Week/Month, HERE/SUBTREE, historical move invariance, Light/Dark/AMOLED) | DONE |
-| Today-first UX evaluation | Сравнить A/B/C на реальных task/day сценариях | Автоматическая замена home без оценки | Task MVP и достаточно содержимого Today | PLANNED |
+| PR19 — Today-first UX evaluation | Реальный нативный Today view на канонических данных (Tasks/Habits/Focus), без объединения в кашу | Автоматическая замена home без оценки, recurrent tasks, sync rewrite | PR18 Container statistics DONE | NATIVE_TODAY_REVIEW_PENDING |
 | Production migration / new sync protocol | Отдельный release design, compatibility gate, conflict/recovery checks | Скрытая активация внутри Foundation | Validated local stages; protocol/dataset/server gate; отдельное согласование | PLANNED |
 
 Последние этапы отражают направление, а не разрешение реализовать весь roadmap одним запросом. Today-first evaluation может быть отдельно согласована раньше Container statistics после Task MVP.
@@ -154,18 +153,18 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1–PR14 DONE, PR15 DONE (commit 019ee5becfe97eba37c5877cccac763a91dea932), PR16 DONE (commit 12e156c87bf2ffab9d8c58d36e95c666c8be520c), PR17 DONE (commit 7e5e41b4254af1d6328dc527ce8b3c2304b333f4), PR18 DONE (commit 91264df61b03941eb76ac5c21173ec619eac2ebc)
-Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated, Container Statistics MVP completed
+Implementation: PR1–PR14 DONE, PR15 DONE (commit 019ee5becfe97eba37c5877cccac763a91dea932), PR16 DONE (commit 12e156c87bf2ffab9d8c58d36e95c666c8be520c), PR17 DONE (commit 7e5e41b4254af1d6328dc527ce8b3c2304b333f4), PR18 DONE (commit 91264df61b03941eb76ac5c21173ec619eac2ebc), PR19 EVALUATED (NATIVE_TODAY_REVIEW_PENDING)
+Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated, Container Statistics MVP completed, Today Workspace evaluated natively
 Current branch: dev; PR18 implementation commit 91264df61b03941eb76ac5c21173ec619eac2ebc; use Git for current HEAD
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
 Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
 Visual language: VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH
-Native Android implementation: PR10 / PR10.1 ACCEPTED
-Active implementation: none / IDLE; PR18 Container Statistics MVP completed
+Native Android implementation: PR10 / PR10.1 ACCEPTED; PR19 Today evaluation complete (review pending)
+Active implementation: none / IDLE; PR19 Native Today Workspace Evaluation completed (STOPPED for human review)
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
-Checks: PR18 227 scoped core tests PASS; assembleDebug / compileDebugKotlin PASS; Pixel 6 emulator native QA PASS (Focus duration invariance, Task outcomes, Habit progress/attribution, Day/Week/Month, HERE/SUBTREE, Light/Dark/AMOLED); backup v4 and production v29 unchanged
+Checks: PR19 232 scoped core tests + 3 Android JVM Today tests (794 total test suite tests PASS, 0 failures); assembleDebug / compileDebugKotlin PASS; Pixel 6 emulator native QA PASS across 9 scenarios (Sectioned vs Unified variants, Overdue/Missed plan/Planned today/Subtasks/Future exclusion, Task completion, Task Focus launch, live Focus ticker & actions, Habit progress/attribution update, Habit checkmark, Light/Dark/AMOLED/Landscape); production DATABASE_VERSION = 29 unchanged
 Production DB schema: v29 unchanged (repository DATABASE_VERSION)
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
@@ -177,7 +176,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| none | none / IDLE | dev / C:/Users/Pavel/source/repos/uhabits-plus | IDLE | 2026-10-07 | none | PR18 Container Statistics MVP DONE |
+| none | none | dev / C:/Users/Pavel/source/repos/uhabits-plus | IDLE | 2026-10-07 | none | PR19 Native Today Workspace Evaluation DONE (NATIVE_TODAY_REVIEW_PENDING) |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
  
@@ -913,4 +912,27 @@ Implementation/evidence commit: `4ad7fda773c926da47e47f0ddfd5a1b1161ee581`. This
 - Automated verification PASS: 227 core tests / 32 suites (including 8 new `ContainerStatisticsServiceTest` suite tests covering direct/subtree, frozen path invariance, task outcomes, habit projection/contributions, and empty containers); zero failures. `:uhabits-android:compileDebugKotlin` and `:uhabits-android:assembleDebug` PASS.
 - Native Pixel_6 emulator walkthrough PASS: Study week/subtree report (75 min focus across Databases 45m and Thesis 30m, 1 task completed, 2 pending, 1 overdue, 1 habit 75/300 min), Study HERE report (0 min focus, 0 tasks), Day/Month range transitions, and historical move test (moving Databases to Work left Study historical focus at 75m while task counts reflected updated current placement). Clean database/preferences restoration verified with identical SHA-256 after QA.
 - Active work IDLE. STOP after PR18; do not start PR19 automatically.
+
+### 2026-10-07 — PR19 Native Today Workspace Evaluation completed
+
+- Evaluated whether UHabit should have a first-class Today workspace using a real native Android implementation backed by canonical Tasks, Habits, and Focus data (`TodayModels.kt`, `TodayEvaluationService.kt`, `TodayActivity.kt`).
+- Core content model:
+  - **Tasks**: strictly separates urgency tiers: hard overdue (`deadline < today`), missed plan (`plannedDate < today` with deadline in future or absent — preserving the invariant `plannedDate != deadline`), planned today (`plannedDate == today`), completed today (`completedAt` today), and undated inbox tasks (`plannedDate == null && deadline == null && containerId == null`). Future tasks (`plannedDate > today && deadline > today`) are strictly excluded.
+  - **Habits**: displays today's actionable relevance: boolean habits show today's canonical check state; numerical habits compute period progress and preserve Focus contribution credit via `EffectiveHabitValueService`; weekly/monthly habits show period progress without pretending the whole target is due today. Preserves `UNKNOWN`, `SKIP`, explicit zero, `AT_LEAST`, and `AT_MOST`.
+  - **Focus**: compact card if timer is running with live ticker, target task name, elapsed time, and Pause/Resume/Finish/Open controls. Absent when idle.
+- Experimental reversible entry points: Developer settings ("Экспериментальный экран Сегодня"), Tasks overflow popup menu ("Сегодня (оценка UX)"), and Habits options menu ("Сегодня (оценка UX)"). Global bottom navigation (`Habits | Tasks | Statistics`) remains untouched.
+- Lightweight presentation variant toggle: "По группам срочности" (Sectioned) vs "Единый список задач" (Unified list with urgency badges).
+- Automated verification PASS: 232 core tests / 33 suites (including 5 new `TodayEvaluationServiceTest` tests covering all urgency tiers, subtask counts, focus credit preservation, and empty states) + 3 Android JVM `TodayPresentationTest` tests; total test suite 794 tests PASS, 0 failures. `:uhabits-android:compileDebugKotlin` and `:uhabits-android:assembleDebug` PASS.
+- Native Pixel_6 emulator walkthrough PASS:
+  1. Sectioned Light view: verified distinct HARD_OVERDUE ("Сдать МУСы"), MISSED_PLAN ("Оформить отчёт"), and PLANNED_TODAY ("Сделать запросы БД" with subtask count 1/2). Future task ("Подготовка к экзамену") is excluded.
+  2. Unified List toggle: displays single chronological task list with colored urgency badges.
+  3. Task completion: checking "Сделать запросы БД" strikethroughs title, moves item to "Завершено сегодня", and does not trigger side-effects in Habit or Focus domains.
+  4. Task Focus launcher: tapping focus icon on "Оформить отчёт" opens `TaskFocusBottomSheet`. Starting timer shows live running Focus card on Today screen with running ticker.
+  5. Active Focus finish: finishing focus records FocusSession and immediately updates "Учёба" habit effective progress (3h 40m -> 4h 40m).
+  6. Habit checkmark: tapping canonical checkmark toggles habit repetition state directly.
+  7. Visual styling: Light, Dark, AMOLED, and Landscape responsiveness verified.
+- Evidence screenshots in `pr19_artifacts/`: `01-today-main-light-sectioned.png`, `01b-today-habits-light.png`, `02-today-main-light-unified.png`, `03-today-task-focus-sheet.png`, `04-today-active-focus.png`, `05-today-task-completed.png`, `06-today-after-focus-finished.png`, `07-today-dark.png`, `07b-today-dark-habits.png`, `08-today-amoled.png`, `09-today-landscape.png`.
+- **Recommendation: (B) Keep Today secondary / optional action for now** (or quick-switch drawer/header view). Habits and Tasks have fundamentally different workflows (high-speed multi-day grid scanning vs list triage); collapsing them into a primary tab dilutes habit scanning speed. Today works best as a secondary daily overview.
+- Status: `NATIVE_TODAY_REVIEW_PENDING`. Active work IDLE. STOP for human review. Do not start PR20.
+
 

@@ -644,6 +644,18 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         if (isExp) {
             items.add(
                 navigation(
+                    "pref_today_evaluation",
+                    R.drawable.ic_settings_terminal,
+                    getString(R.string.today_eval_experiment_pref_title),
+                    getString(R.string.today_eval_experiment_pref_summary),
+                    showIcon = true
+                ) {
+                    val intent = org.isoron.uhabits.activities.today.TodayActivity.createIntent(requireContext())
+                    requireContext().startActivity(intent)
+                }
+            )
+            items.add(
+                navigation(
                     "pref_container_ui_experiments",
                     R.drawable.ic_settings_terminal,
                     "Эксперименты с интерфейсом контейнеров",
