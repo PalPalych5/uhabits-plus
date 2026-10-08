@@ -11,6 +11,9 @@ import org.isoron.platform.time.JavaLocalDateFormatter
 import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshot
+import org.isoron.uhabits.core.models.projection.HabitGoalStatus
+import org.isoron.uhabits.core.models.projection.HabitProjectionIntegrityException
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -23,6 +26,7 @@ class CompareCalendarView @JvmOverloads constructor(
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
     private val formatter = JavaLocalDateFormatter(Locale.getDefault())
     private var habit: Habit? = null
+    private var snapshot: EffectiveHabitReadSnapshot? = null
     private var from = LocalDate(2000, 1, 1)
     private var to = from
     private var today = from
@@ -45,9 +49,11 @@ class CompareCalendarView @JvmOverloads constructor(
         monthLayout: Boolean,
         color: Int,
         emptyColor: Int,
-        textColor: Int
+        textColor: Int,
+        snapshot: EffectiveHabitReadSnapshot? = null
     ) {
         this.habit = habit
+        this.snapshot = snapshot
         this.from = from
         this.to = to
         this.today = today
@@ -68,6 +74,16 @@ class CompareCalendarView @JvmOverloads constructor(
         val width = leftInset + columns * (cell + gap) + dp(8f)
         val height = topInset + rows * (cell + gap) + dp(6f)
         setMeasuredDimension(width.roundToInt(), height.roundToInt())
+    }
+
+    internal fun goalStatusOn(date: LocalDate): HabitGoalStatus? {
+        val effective = snapshot?.takeIf { it.hasContributions } ?: return null
+        val day = effective.dayOrNull(date) ?: return HabitGoalStatus.UNKNOWN
+        if (day.isSkipped) return HabitGoalStatus.SKIPPED
+        if (!day.includedInStatistics) return HabitGoalStatus.EXCLUDED
+        return try {
+            effective.goalAchievementOn(date).status
+        } catch (_: HabitProjectionIntegrityException) { HabitGoalStatus.UNKNOWN }
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -96,13 +112,26 @@ class CompareCalendarView @JvmOverloads constructor(
                 paint.color = if (statsStart != null && date < statsStart) {
                     ColorUtils.setAlphaComponent(emptyColor, 45)
                 } else {
-                    val value = currentHabit.computedEntries.get(date).value
-                    when {
-                        value == Entry.UNKNOWN -> emptyColor
-                        value == Entry.SKIP -> ColorUtils.setAlphaComponent(emptyColor, 160)
-                        value == Entry.YES_MANUAL || value == Entry.YES_AUTO ||
-                            (currentHabit.isNumerical && value > 0) -> color
-                        else -> ColorUtils.setAlphaComponent(color, 60)
+                    val effective = snapshot?.takeIf { it.hasContributions }
+                    if (effective != null) {
+                        val day = effective.dayOrNull(date)
+                        val status = goalStatusOn(date)
+                        when {
+                            day?.isSkipped == true -> ColorUtils.setAlphaComponent(emptyColor, 160)
+                            day?.includedInStatistics != true -> ColorUtils.setAlphaComponent(emptyColor, 45)
+                            status == HabitGoalStatus.SATISFIED -> color
+                            status == HabitGoalStatus.NOT_SATISFIED -> ColorUtils.setAlphaComponent(color, 60)
+                            else -> emptyColor
+                        }
+                    } else {
+                        val value = currentHabit.computedEntries.get(date).value
+                        when {
+                            value == Entry.UNKNOWN -> emptyColor
+                            value == Entry.SKIP -> ColorUtils.setAlphaComponent(emptyColor, 160)
+                            value == Entry.YES_MANUAL || value == Entry.YES_AUTO ||
+                                (currentHabit.isNumerical && value > 0) -> color
+                            else -> ColorUtils.setAlphaComponent(color, 60)
+                        }
                     }
                 }
                 val x = leftInset + column * (cell + gap)

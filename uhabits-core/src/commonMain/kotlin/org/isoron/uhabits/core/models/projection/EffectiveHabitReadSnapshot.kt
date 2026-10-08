@@ -88,6 +88,7 @@ class EffectiveHabitReadSnapshot internal constructor(
         }
     }
     fun day(date: LocalDate): EffectiveHabitDay = requireNotNull(byDate[date]) { "Date outside snapshot" }
+    fun dayOrNull(date: LocalDate): EffectiveHabitDay? = byDate[date]
 
     /** PR15 calendar achievement, intentionally distinct from legacy rolling score and completion. */
     fun goalAchievementOn(date: LocalDate): GoalPeriodAchievement =

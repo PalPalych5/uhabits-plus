@@ -168,7 +168,7 @@ Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
 Visual language: VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH
 Native Android implementation: PR10 / PR10.1 ACCEPTED; PR19 evaluation ACCEPTED as secondary Day Overview direction; visual polish not independently reviewed in PR20
-Active implementation: Antigravity (af122ed2) PR23B IN_PROGRESS; PR24/PR25 BLOCKED
+Active implementation: IDLE after verified Compare takeover checkpoint; PR23B IN_PROGRESS; PR24/PR25 BLOCKED
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
 Checks: PR22/PR22.1 full suite: 760 core JVM tests PASS (100%), ProductionCutoverGateAndroidTest (6 tests) PASS (100%), compileDebugKotlin PASS, assembleDebug & assembleDebugAndroidTest PASS, 12 Android instrumentation tests on Pixel_6(AVD) PASS (100%).
@@ -184,6 +184,8 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
+| Codex recovery 2026-10-08 | PR23B emulator recovery forensics | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; user keeps empty state | 2026-10-08 | pr23b_recovery_20261008 and pr23b_forensics_20261008 preserved | User explicitly declines restoration of synthetic archives. Existing emulator frozen; future QA uses a separate disposable AVD. |
+| Codex Compare takeover 2026-10-08 | PR23B safe local QA and Compare checkpoint only | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after Compare | 2026-10-08 | Compare presenter/activity/calendar/charts; Statistics follow-up; repository concurrency regressions; isolated instrumentation; QA generator audit; docs | User-authorized takeover of interrupted Compare scope. No Widgets/Notifications/CSV/PR24/PR25, cloud, production activation or push. Existing dirty work preserved and audited before changes. |
 | Antigravity (af122ed2) | PR23B: Complete Effective Read Authority Across Statistics, Widgets and Exports | dev / C:/Users/Pavel/source/repos/uhabits-plus | IN_PROGRESS | 2026-10-08 09:55 Novosibirsk | Statistics, Compare, widgets, reminders/notifications, CSV export, calendar context, cross-surface proof, tests, native QA | PR23B IN_PROGRESS (Global Statistics checkpoint completed & verified; Compare, Widgets, Notifications, CSV remaining) |
 | Antigravity (d3081731) | PR23A: shared snapshot, typed compatibility adapters, list/detail, manual safety, revision and QA | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE | 2026-10-08 08:35 Novosibirsk | core projection/list/detail/manual commands, Android DI/list/detail/focus/manual paths, focused tests, QA, docs | PR23A DONE; 109 core + 84 Android unit PASS; 9-point native QA verified; emulator restored |
 | Antigravity (89cb3dfc) | PR22.1: Final Schema Conversion Parity Audit | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE | 2026-10-07 14:55 Novosibirsk | uhabits-core/production, uhabits-android/production, docs | PR22.1 parity verified; 760 core + 6 Android unit + 12 instrumentation PASS |
@@ -1028,6 +1030,18 @@ Human accepts PR20 and authorizes PR21 preflight and recovery implementation onl
 - **Boundaries and stopping rule:**
   - PR23B remains **IN_PROGRESS**; PR23 overall remains NOT DONE.
   - Unfinished partial changes in `CompareHabitsActivity.kt` preserved safely and left UNSTAGED for next checkpoint.
-  - Remaining PR23B scope: Compare, Widgets, Notifications/tray, CSV export.
+  - Remaining PR23B scope at this historical Statistics checkpoint: Compare, Widgets, Notifications/tray, CSV export. Compare completed in the subsequent checkpoint below.
+
+### 2026-10-08 — PR23B checkpoint: protected Compare completed
+
+- User selected the existing empty legacy emulator state and declined restoring synthetic QA archives. Existing emulator/phone/cloud untouched. All 125 forensic inventory files still SHA-256 match; no restoration or cleanup of evidence.
+- Dedicated offline disposable AVD UHabit_PR23B_Compare/emulator-5556 created. Native fixtures use supported experimental DB filenames/preferences and real repository APIs with sync disabled; guarded runner refuses other AVDs. Built-in debug generator audited: legacy demo Habits/entries/blocks, Random(42) with relative dates, no Contributions/FocusSessions/Tasks/Containers; temporary sync pause is not cloud isolation.
+- Compare Activity/presenter/calendar use shared effective batch snapshots, include Contribution-only dates, distinguish calendar goals from rolling scores, and preserve uncertainty/SKIP/AT_MOST/Boolean/manual parity/historical goals/units/overflow. Open-screen repository tombstone updates rendered values 330 to 240 through revision without recreating the Activity; calendar changes refresh the same Activity.
+- HabitRepository/EntryRepository reusable-statement races fixed with operation locks and focused regressions. Legacy nullable text normalized; schema, visibility, ordering and deletion unchanged. Manifest matches baseline, Compare exported=false; no ADB/singleTop QA shortcut retained. Statistics Insights no longer uses obsolete manual-only numerical values when snapshots supplied.
+- Native QA exposed transient snapshot invalidation and dataset teardown/read races. Typed invalidation discards unstable generations; dedicated cache shutdown drains SQL readers before closing the DB while normal cancellation remains nonblocking. Snapshot-controller lifetime serialized. Active SQL errors remain failures.
+- Fresh results: core 132/13 suites PASS; Android JVM 92/19 suites PASS; native 9 PASS (3 effective Statistics/Compare +6 AndroidDatabase). compileDebugKotlin/assembleDebug/assembleDebugAndroidTest PASS. 17 Compare presenter tests; cache concurrency2 and repository concurrency2 PASS. Effective SQL batching4SELECTs/500Habits,2/50, no extra Contribution SQL from Compare/Statistics presentation.
+- Evidence: pr23b_compare_qa/REPORT.md, fresh-jvm-results.json, guarded native runner, APK hashes and native before/after screenshots. Earlier failed attempts preserved. Local checkpoint commit follows staged diff review; no push.
+- Visual limitation: unrelated Android37 system ANR overlays obstruct full-screen screenshots; numeric/model/calendar/revision assertions pass. No claim of unobstructed whole-screen visual review.
+- Compare checkpoint DONE; PR23B overall IN_PROGRESS. Widgets, Notifications/tray and CSV PENDING; PR24/PR25 BLOCKED; runtime authority LEGACY, pre-cutover production schema v29. STOP after Compare.
   - Production database remains legacy schema v29; cutover gate active; PR24/PR25 BLOCKED.
 

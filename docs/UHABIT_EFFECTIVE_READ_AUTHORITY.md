@@ -2,7 +2,21 @@
 
 Date: 2026-10-08, Asia/Novosibirsk. Inspected baseline: `dev`, PR22.1 `e24dc13eb04970559d7a177eabab7787bfb3be5e`; PR22 `c1dba8521bc3ac446ddd70248563e16d9c03ce2b`. No tracked source changes at audit start. Existing untracked scripts, screenshots and private QA databases were preserved.
 
-**Status: PR23A DONE; PR23B IN_PROGRESS (Global Statistics checkpoint completed and verified; Compare, Widgets, Notifications, CSV remaining). PR23 overall NOT DONE.** Production activation remains BLOCKED. PR24/PR25 BLOCKED.
+**Status: PR23A DONE; PR23B IN_PROGRESS (Global Statistics & Compare Habits checkpoints completed and verified; Widgets, Notifications, CSV remaining). PR23 overall NOT DONE.** Production activation remains BLOCKED. PR24/PR25 BLOCKED.
+
+## PR23B Compare checkpoint — 2026-10-08
+
+CompareHabitsActivity batches selected Habits through EffectiveHabitReadController, then supplies the same immutable snapshots to CompareHabitsPresenter and CompareCalendarView. Contribution-only dates participate in range discovery. Calendar cells consume typed calendar-goal achievement; rolling stability scores remain distinct. Incomplete quantities are lower bounds; unavailable exact scores, below-goal percentages, streaks and frequency are not invented. Historical goals, incompatible units, SKIP, AT_MOST, Boolean/manual parity and overflow are covered by presenter/snapshot tests.
+
+EffectiveReadRevision refreshes the same open Compare Activity. Listener ownership follows its captured dataset revision; live calendar preferences refresh on resume. Native SQLite repository removeById proves 60+180+90=330 (calendar SATISFIED), then 60+180=240 (UNKNOWN due to other unlogged dates, therefore no longer reached). Actual rendered snapshot, text and calendar view status are asserted; Statistics agrees for the same calendar period.
+
+Snapshot retry exhaustion now raises a typed transient invalidation: cache and reports discard that read instead of publishing mixed revisions or crashing. Component teardown drains full and targeted cache SQL tasks outside the cache monitor before closing the DB; ordinary cancellation stays nonblocking. Controller disposal cannot close its provider during snapshot SQL. SQL/closed-connection failures still propagate for active consumers. Repository reusable-statement locks and nullable legacy text normalization preserve existing schema/order/visibility/deletion.
+
+QA runs only on a dedicated offline disposable UHabit_PR23B_Compare AVD with separate experimental DB/preferences and sync disabled. The user declined restoring synthetic historical archives; the old emulator and all 125 forensic inventory inputs remain untouched and hash-matched. Built-in debug DemoDataGenerator is audited but not used: deterministic Random(42), relative dates, legacy Habits/entries/blocks; no Contributions or other Next fixture support and no cloud-isolation guarantee. Guarded local native runner refuses other AVDs and validates runner test counts. UTP uninstallation is an expected disposable lifecycle event.
+
+Visual evidence limitation: the disposable Android37 system displays unrelated Launcher/System UI/system-process ANR overlays. Screenshots retain visible330/240 values but do not establish unobstructed whole-screen visual review; native model/text/calendar/revision assertions all pass independently of screenshots.
+
+Fresh verification: 132 core tests/13 suites, 92 Android JVM tests/19 suites, and 9 native tests pass; compileDebugKotlin, assembleDebug and assembleDebugAndroidTest pass. Bounded SQL test proves 4 indexed chunked Contribution SELECTs for 500 Habits and 2 for 50; Compare and Statistics presentation reuse snapshots without extra Contribution SELECTs. This does not count unrelated legacy queries. Detailed local evidence: pr23b_compare_qa/REPORT.md, fresh-jvm-results.json, final/native-results.txt and final/apk-hashes.json. Remaining Widgets, Notifications and CSV stay PENDING; production authority LEGACY/v29 and PR24/PR25 BLOCKED.
 
 ## Evidence and inventory conventions
 

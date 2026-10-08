@@ -10,6 +10,27 @@ import kotlin.test.assertTrue
 
 class HabitRepositoryTest {
     @Test
+    fun testLegacyNullableTextLoadsWithoutChangingIdentityOrVisibility() = runTest {
+        val db = TestDatabaseHelper.createEmptyDatabase()
+        try {
+            val repo = HabitRepository(db)
+            val id = repo.insert(HabitData(name = "Legacy", uuid = "legacy-null-text", position = 2, unit = "minutes"))
+            repo.execSQL("UPDATE Habits SET name=NULL, description=NULL, question=NULL WHERE id=$id")
+            val loaded = assertNotNull(repo.findByUuid("legacy-null-text"))
+            assertEquals(id, loaded.id)
+            assertEquals("", loaded.name)
+            assertEquals("", loaded.description)
+            assertEquals("", loaded.question)
+            assertEquals("minutes", loaded.unit)
+            assertEquals(2, loaded.position)
+            assertNull(loaded.deletedAt)
+            assertEquals(listOf(id), repo.findAll().map { it.id })
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
     fun testInsertAndFindAll() = runTest {
         val db = TestDatabaseHelper.createEmptyDatabase()
         val repo = HabitRepository(db)

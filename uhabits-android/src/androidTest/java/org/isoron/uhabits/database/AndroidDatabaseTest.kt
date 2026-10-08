@@ -29,6 +29,7 @@ import org.isoron.platform.io.run
 import org.isoron.uhabits.BaseAndroidTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class AndroidDatabaseTest : BaseAndroidTest() {
@@ -38,6 +39,24 @@ class AndroidDatabaseTest : BaseAndroidTest() {
         super.setUp()
         db = AndroidDatabase(SQLiteDatabase.create(null))
         db.run("create table test(color int, name string)")
+    }
+
+    @Test
+    fun testClosedDatabaseReadFailsInsteadOfReportingEmptyResult() {
+        val stmt = db.prepareStatement("select color from test")
+        db.close()
+        assertThrows(IllegalStateException::class.java) { stmt.step() }
+        stmt.finalize()
+    }
+
+    @Test
+    fun testInvalidQueryFailsInsteadOfReportingEmptyResult() {
+        val stmt = db.prepareStatement("select nonexistent from test")
+        try {
+            assertThrows(android.database.sqlite.SQLiteException::class.java) { stmt.step() }
+        } finally {
+            stmt.finalize()
+        }
     }
 
     @Test

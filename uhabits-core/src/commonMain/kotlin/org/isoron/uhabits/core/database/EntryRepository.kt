@@ -1,5 +1,6 @@
 package org.isoron.uhabits.core.database
 
+import org.isoron.platform.Synchronized
 import org.isoron.platform.io.Database
 import org.isoron.platform.io.StepResult
 import org.isoron.platform.io.queryLong
@@ -17,6 +18,7 @@ data class EntryData(
 )
 
 class EntryRepository(private val db: Database) {
+    // Keep each shared statement's reset/bind/step/read sequence under this monitor.
     private val findAllByHabitStmt by lazy {
         db.prepareStatement(
             """SELECT id, habit, uuid, timestamp, value, notes, updated_at, deleted_at
@@ -58,6 +60,7 @@ class EntryRepository(private val db: Database) {
         )
     }
 
+    @Synchronized
     fun findAllByHabitId(habitId: Long): List<EntryData> {
         findAllByHabitStmt.reset()
         findAllByHabitStmt.bindLong(1, habitId)
@@ -79,6 +82,7 @@ class EntryRepository(private val db: Database) {
         return results
     }
 
+    @Synchronized
     fun upsert(data: EntryData): Long {
         if (data.uuid.isBlank()) data.uuid = "${data.habitId}:${data.timestamp}"
         upsertStmt.reset()
@@ -93,8 +97,10 @@ class EntryRepository(private val db: Database) {
         return db.queryLong("SELECT last_insert_rowid()")
     }
 
+    @Synchronized
     fun insert(data: EntryData): Long = upsert(data)
 
+    @Synchronized
     fun findByUuid(uuid: String): EntryData? {
         findByUuidStmt.reset()
         findByUuidStmt.bindText(1, uuid)
@@ -111,6 +117,7 @@ class EntryRepository(private val db: Database) {
         )
     }
 
+    @Synchronized
     fun softDeleteByHabitIdAndTimestamp(habitId: Long, timestamp: Long, deletedAt: Long) {
         softDeleteByHabitAndTimestampStmt.reset()
         softDeleteByHabitAndTimestampStmt.bindLong(1, deletedAt)
@@ -120,9 +127,11 @@ class EntryRepository(private val db: Database) {
         softDeleteByHabitAndTimestampStmt.step()
     }
 
+    @Synchronized
     fun deleteByHabitIdAndTimestamp(habitId: Long, timestamp: Long) =
         softDeleteByHabitIdAndTimestamp(habitId, timestamp, deletedAt = 0)
 
+    @Synchronized
     fun softDeleteByHabitId(habitId: Long, deletedAt: Long) {
         softDeleteByHabitStmt.reset()
         softDeleteByHabitStmt.bindLong(1, deletedAt)
@@ -131,7 +140,9 @@ class EntryRepository(private val db: Database) {
         softDeleteByHabitStmt.step()
     }
 
+    @Synchronized
     fun deleteByHabitId(habitId: Long) = softDeleteByHabitId(habitId, deletedAt = 0)
 
+    @Synchronized
     fun execSQL(sql: String) = db.run(sql)
 }

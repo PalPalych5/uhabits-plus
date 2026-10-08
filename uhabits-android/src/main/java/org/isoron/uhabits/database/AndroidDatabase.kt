@@ -37,6 +37,7 @@ class AndroidPreparedStatement(
     private val bindings = mutableMapOf<Int, Any?>()
     private var cursor: android.database.Cursor? = null
 
+    @Synchronized
     override fun step(): StepResult {
         if (isQuery) {
             if (cursor == null) {
@@ -50,23 +51,32 @@ class AndroidPreparedStatement(
         }
     }
 
+    @Synchronized
     override fun getInt(index: Int) = cursor!!.getInt(index)
+    @Synchronized
     override fun getLong(index: Int) = cursor!!.getLong(index)
+    @Synchronized
     override fun getReal(index: Int) = cursor!!.getDouble(index)
+    @Synchronized
     override fun getText(index: Int) = cursor!!.getString(index)
 
+    @Synchronized
     override fun getIntOrNull(index: Int): Int? =
         if (cursor!!.isNull(index)) null else cursor!!.getInt(index)
 
+    @Synchronized
     override fun getLongOrNull(index: Int): Long? =
         if (cursor!!.isNull(index)) null else cursor!!.getLong(index)
 
+    @Synchronized
     override fun getRealOrNull(index: Int): Double? =
         if (cursor!!.isNull(index)) null else cursor!!.getDouble(index)
 
+    @Synchronized
     override fun getTextOrNull(index: Int): String? =
         if (cursor!!.isNull(index)) null else cursor!!.getString(index)
 
+    @Synchronized
     override fun bindInt(index: Int, value: Int) {
         if (isQuery) {
             bindings[index] = value.toString()
@@ -75,6 +85,7 @@ class AndroidPreparedStatement(
         }
     }
 
+    @Synchronized
     override fun bindLong(index: Int, value: Long) {
         if (isQuery) {
             bindings[index] = value.toString()
@@ -83,6 +94,7 @@ class AndroidPreparedStatement(
         }
     }
 
+    @Synchronized
     override fun bindReal(index: Int, value: Double) {
         if (isQuery) {
             bindings[index] = value.toString()
@@ -91,6 +103,7 @@ class AndroidPreparedStatement(
         }
     }
 
+    @Synchronized
     override fun bindText(index: Int, value: String) {
         if (isQuery) {
             bindings[index] = value
@@ -99,6 +112,7 @@ class AndroidPreparedStatement(
         }
     }
 
+    @Synchronized
     override fun bindNull(index: Int) {
         if (isQuery) {
             bindings[index] = null
@@ -107,6 +121,7 @@ class AndroidPreparedStatement(
         }
     }
 
+    @Synchronized
     override fun reset() {
         cursor?.close()
         cursor = null
@@ -114,8 +129,10 @@ class AndroidPreparedStatement(
         compiledStmt?.clearBindings()
     }
 
+    @Synchronized
     override fun finalize() {
         cursor?.close()
+        cursor = null
         compiledStmt?.close()
     }
 

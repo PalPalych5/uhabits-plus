@@ -68,6 +68,9 @@ class HabitCardListCache(
 
     private var checkmarkCount = 0
     private var currentFetchTask: Task? = null
+    private val pendingRefreshTasks = mutableSetOf<RefreshTask>()
+    @Volatile
+    private var shutDown = false
     private var refreshGeneration = 0L
     private var listener: Listener
     private val data: CacheData
@@ -77,6 +80,27 @@ class HabitCardListCache(
     @Synchronized
     fun cancelTasks() {
         currentFetchTask?.cancel()
+    }
+
+    /** Drain SQL readers before their dataset connection is closed. Never hold the cache lock while waiting. */
+    fun shutdown() {
+        beginShutdown().forEach { it.awaitBackgroundCompletion() }
+    }
+
+    @Synchronized
+    private fun beginShutdown(): List<RefreshTask> {
+        shutDown = true
+        refreshGeneration++
+        val tasks = pendingRefreshTasks.toList()
+        tasks.forEach { it.cancel() }
+        pendingRefreshTasks.clear()
+        currentFetchTask = null
+        return tasks
+    }
+
+    @Synchronized
+    private fun finished(task: RefreshTask) {
+        pendingRefreshTasks.remove(task)
     }
 
     @Synchronized
@@ -163,15 +187,20 @@ class HabitCardListCache(
 
     @Synchronized
     fun refreshAllHabits() {
+        if (shutDown) return
         if (currentFetchTask != null) currentFetchTask!!.cancel()
         val task = RefreshTask(++refreshGeneration)
+        pendingRefreshTasks.add(task)
         currentFetchTask = task
         taskRunner.execute(task)
     }
 
     @Synchronized
     fun refreshHabit(id: Long) {
-        taskRunner.execute(RefreshTask(id, ++refreshGeneration))
+        if (shutDown) return
+        val task = RefreshTask(id, ++refreshGeneration)
+        pendingRefreshTasks.add(task)
+        taskRunner.execute(task)
     }
 
     @Synchronized
@@ -364,12 +393,23 @@ class HabitCardListCache(
             isCancelled = true
         }
 
-        private fun isCurrent(): Boolean = !isCancelled && generation == refreshGeneration
+        private fun isCurrent(): Boolean = !shutDown && !isCancelled && generation == refreshGeneration
+
+        @Synchronized
+        fun awaitBackgroundCompletion() {
+            // Acquiring this monitor waits for doInBackground; queued tasks observe shutDown.
+        }
 
         @Synchronized
         override suspend fun doInBackground() {
             if (!isCurrent()) return
-            newData.fetchHabits()
+            try {
+                newData.fetchHabits()
+            } catch (_: org.isoron.uhabits.core.models.projection.EffectiveReadInvalidatedException) {
+                // Keep the last published generation. A concurrent revision requests a new one.
+                isCancelled = true
+                return
+            }
             newData.copyScoresFrom(data)
             newData.copyCheckmarksFrom(data)
             newData.copyNoteIndicatorsFrom(data)
@@ -401,6 +441,7 @@ class HabitCardListCache(
 
         @Synchronized
         override fun onPostExecute() {
+            finished(this)
             if (!isCurrent()) return
             currentFetchTask = null
             listener.onRefreshFinished()

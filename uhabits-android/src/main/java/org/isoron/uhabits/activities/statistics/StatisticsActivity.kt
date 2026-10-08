@@ -201,6 +201,12 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         return binding.root
     }
 
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        component.habitList.observable.addListener(this)
+        component.effectiveReadRevision.addListener(effectiveRevisionListener)
+    }
+
     private val effectiveRevisionListener: () -> Unit = {
         activity?.runOnUiThread {
             if (viewBinding != null && isAdded) {
@@ -211,8 +217,6 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
 
     override fun onResume() {
         super.onResume()
-        component.habitList.observable.addListener(this)
-        component.effectiveReadRevision.addListener(effectiveRevisionListener)
         viewBinding?.let {
             currentFilters = currentFilters.copy(
                 dayTiersEnabled = component.preferences.isDayTiersEnabled,
@@ -237,8 +241,6 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     }
 
     override fun onPause() {
-        component.effectiveReadRevision.removeListener(effectiveRevisionListener)
-        component.habitList.observable.removeListener(this)
         cancelPendingReportUpdate()
         super.onPause()
     }
@@ -267,6 +269,8 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     }
 
     override fun onDestroyView() {
+        component.effectiveReadRevision.removeListener(effectiveRevisionListener)
+        component.habitList.observable.removeListener(this)
         activeReportGeneration++
         cancelPendingReportUpdate()
         cancelRefreshingIndicator()
@@ -657,45 +661,51 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
             private var previousData: StatisticsReportState? = null
 
             override suspend fun doInBackground() {
-                val snapshots = component.effectiveHabitReads?.snapshots(habits, start, end)
-                calculatedData = StatisticsReportStateBuilder.build(
-                    habits = habits,
-                    period = reportKey.tab.toStatisticsPeriod(),
-                    start = start,
-                    end = end,
-                    today = getToday(),
-                    firstWeekday = firstWeekday,
-                    filters = reportKey.filters,
-                    snapshots = snapshots,
-                    shouldCancel = { taskGeneration != activeReportGeneration }
-                )
-                if (reportKey.tab == ReportTab.WEEK || reportKey.tab == ReportTab.MONTH) {
-                    val previousPeriodEnd = start.minus(1)
-                    val previousStart = if (reportKey.tab == ReportTab.WEEK) start.minus(7)
-                        else LocalDate(previousPeriodEnd.year, previousPeriodEnd.month, 1)
-                    val comparableEnd = if (end.isNewerThan(getToday())) getToday() else end
-                    val comparableDays = start.daysUntil(comparableEnd) + 1
-                    val previousEnd = previousStart.plus(
-                        (comparableDays - 1).coerceAtLeast(0).coerceAtMost(previousStart.daysUntil(previousPeriodEnd))
-                    )
-                    val prevSnapshots = component.effectiveHabitReads?.snapshots(habits, previousStart, previousEnd)
-                    previousData = StatisticsReportStateBuilder.build(
+                try {
+                    val snapshots = component.effectiveHabitReads?.snapshots(habits, start, end)
+                    calculatedData = StatisticsReportStateBuilder.build(
                         habits = habits,
                         period = reportKey.tab.toStatisticsPeriod(),
-                        start = previousStart,
-                        end = previousEnd,
+                        start = start,
+                        end = end,
                         today = getToday(),
                         firstWeekday = firstWeekday,
                         filters = reportKey.filters,
-                        snapshots = prevSnapshots,
+                        snapshots = snapshots,
                         shouldCancel = { taskGeneration != activeReportGeneration }
                     )
+                    if (reportKey.tab == ReportTab.WEEK || reportKey.tab == ReportTab.MONTH) {
+                        val previousPeriodEnd = start.minus(1)
+                        val previousStart = if (reportKey.tab == ReportTab.WEEK) start.minus(7)
+                            else LocalDate(previousPeriodEnd.year, previousPeriodEnd.month, 1)
+                        val comparableEnd = if (end.isNewerThan(getToday())) getToday() else end
+                        val comparableDays = start.daysUntil(comparableEnd) + 1
+                        val previousEnd = previousStart.plus(
+                            (comparableDays - 1).coerceAtLeast(0).coerceAtMost(previousStart.daysUntil(previousPeriodEnd))
+                        )
+                        val prevSnapshots = component.effectiveHabitReads?.snapshots(habits, previousStart, previousEnd)
+                        previousData = StatisticsReportStateBuilder.build(
+                            habits = habits,
+                            period = reportKey.tab.toStatisticsPeriod(),
+                            start = previousStart,
+                            end = previousEnd,
+                            today = getToday(),
+                            firstWeekday = firstWeekday,
+                            filters = reportKey.filters,
+                            snapshots = prevSnapshots,
+                            shouldCancel = { taskGeneration != activeReportGeneration }
+                        )
+                    }
+                } catch (_: org.isoron.uhabits.core.models.projection.EffectiveReadInvalidatedException) {
+                    calculatedData = null
+                    previousData = null
                 }
             }
 
             override fun onPostExecute() {
+                val currentKey = buildReportKey()
                 if (viewBinding == null || !isAdded || taskGeneration != activeReportGeneration) return
-                if (reportKey != buildReportKey()) return
+                if (reportKey != currentKey) return
                 val result = calculatedData ?: return
                 updateReportHeader(result.start, result.end)
 

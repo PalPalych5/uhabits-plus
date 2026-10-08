@@ -105,6 +105,17 @@ class EffectiveReadBatchSQLiteTest : BaseUnitTest() {
                 snapshots = snapshots
             )
 
+            habits.forEach { habit ->
+                val snapshot = snapshots.getValue(HabitRef(habit.uuid!!))
+                org.isoron.uhabits.core.ui.screens.statistics.CompareHabitsPresenter.buildOverviewMetrics(
+                    habit, end.minus(30), end,
+                    org.isoron.uhabits.core.ui.screens.statistics.ComparePeriod.MONTH, snapshot
+                )
+                org.isoron.uhabits.core.ui.screens.statistics.CompareHabitsPresenter.buildExecutionSeries(
+                    habit, end.minus(30), end, snapshot
+                )
+                org.isoron.uhabits.core.ui.screens.statistics.CompareHabitsPresenter.buildFrequency(habit, snapshot)
+            }
             assertEquals(initialSelects, selects)
             assertEquals(50, report.habits.size)
             assertNotNull(report.overallProgress)

@@ -157,6 +157,7 @@ class HabitsApplication : Application() {
         stopServices()
 
         if (isComponentInitialized) {
+            component.habitCardListCache.shutdown()
             runCatching { component.effectiveHabitReads?.dispose() }
             runCatching { component.focusCreditController?.dispose() }
             runCatching { component.syncCoordinator.dispose() }

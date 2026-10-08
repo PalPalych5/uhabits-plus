@@ -73,19 +73,20 @@ class EffectiveHabitReadController(
 
     val currentCalendar: EffectiveReadCalendarContext get() = captureCalendar()
 
+    @Synchronized
     fun snapshots(
         habits: List<Habit>,
         from: org.isoron.platform.time.LocalDate,
         to: org.isoron.platform.time.LocalDate
     ): Map<HabitRef, EffectiveHabitReadSnapshot> {
-        check(!disposed)
+        if (disposed) throw EffectiveReadInvalidatedException()
         repeat(3) {
             val captured = captureCalendar()
             val capturedRevision = revision.value
             val result = provider.prepare(habits, from, to, revision.datasetId, capturedRevision, captured)
             if (!disposed && captured == captureCalendar() && capturedRevision == revision.value) return result
         }
-        error("Dataset/calendar changed repeatedly during snapshot creation; refresh required")
+        throw EffectiveReadInvalidatedException()
     }
 
     fun snapshots(habits: List<Habit>): Map<HabitRef, EffectiveHabitReadSnapshot> {
@@ -106,6 +107,7 @@ class EffectiveHabitReadController(
     override fun onCheckmarkSequenceChanged() = calendarChanged()
     override fun onHabitListAppearanceChanged() = calendarChanged()
     override fun onSyncFinished() = calendarChanged()
+    @Synchronized
     fun dispose() {
         if (disposed) return
         disposed = true

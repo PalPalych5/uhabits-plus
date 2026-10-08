@@ -29,6 +29,8 @@ import org.isoron.uhabits.core.commands.DeleteHabitsCommand
 import org.isoron.uhabits.core.commands.EditHabitCommand
 import org.isoron.uhabits.core.models.HabitType
 import org.isoron.uhabits.core.models.Entry
+import org.isoron.uhabits.core.tasks.Task
+import org.isoron.uhabits.core.tasks.TaskRunner
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -160,6 +162,60 @@ class HabitCardListCacheTest : BaseUnitTest() {
         commandRunner.run(EditHabitCommand(habitList, h.id!!, modified))
 
         verify { listener.onRefreshFinished() }
+    }
+
+    @Test
+    fun testOverlappingRefreshAndCancellationPreventsStaleGenerationPublication() {
+        val capturedTasks = mutableListOf<org.isoron.uhabits.core.tasks.Task>()
+        val manualRunner = object : TaskRunner {
+            override val activeTaskCount: Int get() = capturedTasks.size
+            override fun execute(task: Task) {
+                capturedTasks.add(task)
+                task.onAttached(this)
+            }
+            override fun publishProgress(task: Task, progress: Int) {
+                task.onProgressUpdate(progress)
+            }
+            override fun addListener(listener: TaskRunner.Listener) {}
+            override fun removeListener(listener: TaskRunner.Listener) {}
+            override suspend fun await() {}
+        }
+
+        val testCache = HabitCardListCache(habitList, commandRunner, manualRunner, mock())
+        val mockListener = mock<HabitCardListCache.Listener>()
+        testCache.setListener(mockListener)
+
+        // Trigger first refresh -> generation 1
+        testCache.refreshAllHabits()
+        assertEquals(1, capturedTasks.size)
+        val task1 = capturedTasks[0]
+
+        // Trigger overlapping second refresh -> cancels task1, increments to generation 2
+        testCache.refreshAllHabits()
+        assertEquals(2, capturedTasks.size)
+        val task2 = capturedTasks[1]
+
+        // Execute stale task1 in background and onProgress / onPostExecute
+        kotlinx.coroutines.runBlocking {
+            task1.doInBackground()
+        }
+        task1.onProgressUpdate(-1)
+        task1.onProgressUpdate(0)
+        task1.onPostExecute()
+
+        // Stale task1 MUST NOT notify listener or publish to cache
+        verifyNoMoreCalls(mockListener)
+
+        // Execute valid current task2
+        kotlinx.coroutines.runBlocking {
+            task2.doInBackground()
+        }
+        task2.onProgressUpdate(-1)
+        task2.onProgressUpdate(0)
+        task2.onPostExecute()
+
+        // Current task2 MUST publish results
+        verify { mockListener.onRefreshFinished() }
     }
 
     private fun removeHabitAt(position: Int) {

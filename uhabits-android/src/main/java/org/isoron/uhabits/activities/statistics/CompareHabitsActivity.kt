@@ -27,14 +27,17 @@ import org.isoron.uhabits.activities.AndroidThemeSwitcher
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.common.views.FrequencyChart
 import org.isoron.uhabits.activities.common.views.StreakChart
-import org.isoron.uhabits.activities.statistics.views.CompareHabitsMultiLineChartView
 import org.isoron.uhabits.activities.statistics.views.CompareCalendarView
-import org.isoron.uhabits.core.models.Entry
+import org.isoron.uhabits.activities.statistics.views.CompareHabitsMultiLineChartView
+import org.isoron.uhabits.core.containers.HabitRef
 import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshot
+import org.isoron.uhabits.core.models.projection.EffectiveReadRevision
+import org.isoron.uhabits.core.models.projection.EffectiveReadInvalidatedException
+import org.isoron.uhabits.core.models.projection.HabitProjectionIntegrityException
+import org.isoron.uhabits.core.ui.screens.statistics.CompareHabitsPresenter
+import org.isoron.uhabits.core.ui.screens.statistics.ComparePeriod
 import org.isoron.uhabits.core.ui.screens.statistics.StatisticsReportStateBuilder
-import org.isoron.uhabits.core.ui.screens.habits.show.views.FrequencyCardPresenter
-import org.isoron.uhabits.core.ui.screens.habits.show.views.OverviewCardPresenter
-import org.isoron.uhabits.core.ui.screens.habits.show.views.StreakCartPresenter
 import org.isoron.uhabits.databinding.ActivityCompareHabitsBinding
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -43,11 +46,11 @@ import kotlin.math.roundToInt
  * Dedicated full-screen analysis activity for comparing 2 to 4 habits:
  * - Deterministic, guaranteed distinct series palette
  * - Configurable comparison period (Week, Month, 3 Months, Year, All Time)
- * - Section 1: Overview (Loop score, month/year changes, total completions)
+ * - Section 1: Overview (Loop score, period changes, period completion, streak)
  * - Section 2: Stability (Multi-series Loop Score chart with interactive legend & scrub inspection)
  * - Section 3: Performance (Normalized History chart toward own target)
  * - Section 4: Calendar (Small multiples with identical time windows)
- * - Section 5: Streaks (Latest & best streaks using horizontal Loop streak bars)
+ * - Section 5: Streaks (Latest & record streaks using horizontal Loop streak bars)
  * - Section 6: Frequency (Small multiples weekday frequency where data permits)
  */
 class CompareHabitsActivity : AppCompatActivity() {
@@ -61,14 +64,6 @@ class CompareHabitsActivity : AppCompatActivity() {
         )
     }
 
-    enum class ComparePeriod(val days: Int) {
-        WEEK(7),
-        MONTH(30),
-        THREE_MONTHS(90),
-        YEAR(365),
-        ALL(-1)
-    }
-
     private lateinit var binding: ActivityCompareHabitsBinding
     private lateinit var themeSwitcher: AndroidThemeSwitcher
     private val dateFormatter = JavaLocalDateFormatter(Locale.getDefault())
@@ -76,6 +71,12 @@ class CompareHabitsActivity : AppCompatActivity() {
     private val selectedHabits = mutableListOf<Habit>()
     private var availableHabits: List<Habit> = emptyList()
     private var currentPeriod = ComparePeriod.MONTH
+    private var effectiveRevisionListener: (() -> Unit)? = null
+    private var observedRevision: EffectiveReadRevision? = null
+    internal var renderedSnapshots: Map<HabitRef, EffectiveHabitReadSnapshot> = emptyMap()
+        private set
+    internal var renderedRange: Pair<LocalDate, LocalDate>? = null
+        private set
 
     private val component get() = (application as HabitsApplication).component
     private val palette get() = MainTabsThemeBridge.resolve(this)
@@ -94,7 +95,7 @@ class CompareHabitsActivity : AppCompatActivity() {
         binding.habitChipsScroll.setBackgroundColor(palette.surface)
 
         setupToolbar()
-        parseInitialIntent()
+        parseInitialIntent(savedInstanceState)
         setupPeriodTabs()
         binding.addHabitButton.setOnClickListener { showHabitPickerDialog() }
         renderHabitChips()
@@ -104,24 +105,54 @@ class CompareHabitsActivity : AppCompatActivity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putLongArray("selected_habit_ids", selectedHabits.mapNotNull { it.id }.toLongArray())
+        outState.putString("comparison_period", currentPeriod.name)
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        val revision = component.effectiveReadRevision
+        observedRevision = revision
+        effectiveRevisionListener = {
+            runOnUiThread {
+                if (observedRevision === revision && !isFinishing && !isDestroyed) rebuildComparison()
+            }
+        }.also { listener ->
+            revision.addListener(listener)
+        }
+        // Refresh changes made while this Activity was paused, including calendar preferences.
+        rebuildComparison()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        effectiveRevisionListener?.let { observedRevision?.removeListener(it) }
+        observedRevision = null
+        effectiveRevisionListener = null
+    }
+
     private fun setupToolbar() {
         binding.toolbar.setNavigationOnClickListener { finish() }
     }
 
-    private fun parseInitialIntent() {
+    private fun parseInitialIntent(savedInstanceState: Bundle? = null) {
         val allowed = intent.getLongArrayExtra("allowed_habit_ids")?.toSet()
         val allActive = component.habitList.filter {
             !it.isArchived && (allowed == null || it.id?.let(allowed::contains) == true)
         }
         availableHabits = allActive
-        val habitIds = intent.getLongArrayExtra("initial_habit_ids")
+        val habitIds = (savedInstanceState?.getLongArray("selected_habit_ids")
+            ?: intent.getLongArrayExtra("initial_habit_ids"))?.toList()
         if (habitIds != null && habitIds.isNotEmpty()) {
-            habitIds.toList().mapNotNull { id -> allActive.firstOrNull { it.id == id } }
+            habitIds.distinct().mapNotNull { id -> allActive.firstOrNull { it.id == id } }
                 .take(4)
                 .forEach { selectedHabits.add(it) }
         }
 
-        val initialPeriodStr = intent.getStringExtra("initial_period")
+        val initialPeriodStr = savedInstanceState?.getString("comparison_period")
+            ?: intent.getStringExtra("initial_period")
         currentPeriod = when (initialPeriodStr) {
             "WEEK" -> ComparePeriod.WEEK
             "MONTH" -> ComparePeriod.MONTH
@@ -371,22 +402,10 @@ class CompareHabitsActivity : AppCompatActivity() {
             (resources.displayMetrics.heightPixels * 0.78f).toInt())
     }
 
-    private fun getStartDateForPeriod(today: LocalDate): LocalDate {
-        val periodWindowStart = when (currentPeriod) {
-            ComparePeriod.WEEK -> today.minus(6)
-            ComparePeriod.MONTH -> today.minus(29)
-            ComparePeriod.THREE_MONTHS -> today.minus(89)
-            ComparePeriod.YEAR -> today.minus(364)
-            ComparePeriod.ALL -> LocalDate(1970, 1, 1)
-        }
-        val earliestHabitStart = selectedHabits.map {
-            StatisticsReportStateBuilder.getHabitStartDate(it, today)
-        }.minOrNull() ?: today
-        return maxOf(periodWindowStart, earliestHabitStart)
-    }
-
     private fun rebuildComparison() {
         binding.compareContentContainer.removeAllViews()
+        renderedSnapshots = emptyMap()
+        renderedRange = null
 
         if (selectedHabits.size < 2) {
             val warning = TextView(this).apply {
@@ -401,40 +420,62 @@ class CompareHabitsActivity : AppCompatActivity() {
         }
 
         val today = getToday()
-        val startDate = getStartDateForPeriod(today)
+        val queryFrom = CompareHabitsPresenter.getQueryStartDate(today, currentPeriod)
+        val snapshots = try {
+            component.effectiveHabitReads?.snapshots(selectedHabits, queryFrom, today)
+        } catch (_: HabitProjectionIntegrityException) {
+            binding.compareContentContainer.addView(unavailableObservation())
+            return
+        } catch (_: EffectiveReadInvalidatedException) {
+            binding.compareContentContainer.addView(unavailableObservation())
+            return
+        }
+        val startDate = CompareHabitsPresenter.getStartDateForPeriod(selectedHabits, today, currentPeriod, snapshots)
+        renderedSnapshots = snapshots.orEmpty()
+        renderedRange = startDate to today
 
         // 1. Overview Card
-        addOverviewCard()
+        addOverviewCard(startDate, today, snapshots)
 
         // 2. Stability Chart Card (Multi-series Loop Score)
-        addStabilityChartCard(startDate, today)
+        addStabilityChartCard(startDate, today, snapshots)
 
         // 3. Execution / Performance Chart Card (Normalized progress toward own target)
-        addExecutionChartCard(startDate, today)
+        addExecutionChartCard(startDate, today, snapshots)
 
         // 4. Calendar Small Multiples
-        addCalendarSmallMultiplesCard(startDate, today)
+        addCalendarSmallMultiplesCard(startDate, today, snapshots)
 
         // 5. Streaks Comparison Card
-        addStreaksComparisonCard()
+        addStreaksComparisonCard(snapshots)
 
         // 6. Frequency Comparison Card
-        addFrequencyComparisonCard()
+        addFrequencyComparisonCard(snapshots)
     }
+
+    private fun unavailableObservation() = TextView(this).apply {
+        text = getString(R.string.effective_read_unavailable)
+        textSize = 12f
+        setTextColor(themeColor(R.attr.contrast60))
+        setPadding(dp(16f).toInt(), dp(8f).toInt(), dp(16f).toInt(), dp(8f).toInt())
+    }
+
+    private fun formatQuantity(value: Double) = java.text.DecimalFormat("0.##").format(value)
 
     // -------------------------------------------------------------
     // SECTION 1: ОБЗОР (Overview)
     // -------------------------------------------------------------
-    private fun addOverviewCard() {
+    private fun addOverviewCard(
+        startDate: LocalDate,
+        today: LocalDate,
+        snapshots: Map<HabitRef, EffectiveHabitReadSnapshot>? = null
+    ) {
         val (card, container) = createCard(getString(R.string.compare_overview))
-        val theme = themeSwitcher.currentTheme
-        val today = getToday()
-        val startDate = getStartDateForPeriod(today)
 
         selectedHabits.forEachIndexed { i, habit ->
             val seriesColor = SERIES_COLORS[i % SERIES_COLORS.size]
-            val state = OverviewCardPresenter.buildState(habit, theme)
-            val streakState = StreakCartPresenter.buildState(habit, theme)
+            val snapshot = habit.uuid?.let { u -> snapshots?.get(HabitRef(u)) }
+            val metricState = CompareHabitsPresenter.buildOverviewMetrics(habit, startDate, today, currentPeriod, snapshot)
 
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -488,54 +529,52 @@ class CompareHabitsActivity : AppCompatActivity() {
                 metricsRow.addView(block)
             }
 
-            val knownEntries = habit.originalEntries.getKnown().filter { entry ->
-                val start = habit.effectiveStatisticsStartDate()
-                (start == null || entry.date >= start) && entry.date <= today && entry.value != Entry.SKIP
-            }
-
             // 1. Stability (Loop score on today)
-            val scoreToday: Double = habit.scores.getByInterval(today, today).firstOrNull()?.value ?: state.scoreToday.toDouble()
             addMetric(
                 getString(R.string.compare_stat_stability),
-                if (knownEntries.isEmpty()) "—" else "${(scoreToday * 100).roundToInt()}%",
+                metricState.scoreToday?.let { "${(it * 100).roundToInt()}%" } ?: "—",
                 isAccent = true
             )
 
             // 2. Period Change (delta to start of current comparison period)
-            val habitStart = StatisticsReportStateBuilder.getHabitStartDate(habit, today)
-            val prevDate = when (currentPeriod) {
-                ComparePeriod.WEEK -> today.minus(7)
-                ComparePeriod.MONTH -> today.minus(30)
-                ComparePeriod.THREE_MONTHS -> today.minus(90)
-                ComparePeriod.YEAR -> today.minus(365)
-                ComparePeriod.ALL -> habitStart
-            }
-            val scorePrev = habit.scores.getByInterval(prevDate, prevDate).firstOrNull()?.value
-            val delta = if (scorePrev != null && habitStart <= prevDate) {
-                ((scoreToday - scorePrev) * 100).roundToInt()
-            } else null
+            val delta = metricState.periodDelta?.let { (it * 100).roundToInt() }
             addMetric(
                 getString(R.string.compare_stat_change),
                 if (delta != null) "${if (delta > 0) "+" else ""}$delta п.п." else "—"
             )
 
             // 3. Period Completion (%)
-            val sliceProg = if (habitStart > today) null else {
-                StatisticsReportStateBuilder.evaluateHabitSlice(habit, maxOf(startDate, habitStart), today)?.progress
-            }
+            val sliceProg = metricState.periodCompletion
             addMetric(
                 getString(R.string.compare_stat_completion),
                 if (sliceProg != null) "${(sliceProg * 100).roundToInt()}%" else "—"
             )
 
             // 4. Streak
-            val currStreak = streakState.latestStreak?.length ?: 0
+            val currStreak = metricState.streakLength ?: 0
             addMetric(
                 getString(R.string.compare_stat_streak),
                 if (currStreak > 0) "$currStreak" else "—"
             )
 
             row.addView(metricsRow)
+            if (habit.isNumerical && snapshot?.hasContributions == true) {
+                val goal = try {
+                    snapshot.goalAchievementOn(today).progress
+                } catch (_: HabitProjectionIntegrityException) { null }
+                row.addView(TextView(this).apply {
+                    tag = "compare_goal_${habit.id}"
+                    text = if (goal == null) getString(R.string.effective_read_unavailable) else {
+                        val prefix = if (goal.value.hasCompleteCoverage) "" else "≥"
+                        val actual = goal.value.totalValue?.let { formatQuantity(it / 1000.0) } ?: "—"
+                        "$prefix$actual / ${formatQuantity(goal.goal.targetValue)} ${goal.goal.unit}"
+                    }
+                    contentDescription = text
+                    textSize = 12f
+                    setTextColor(themeColor(R.attr.contrast60))
+                    setPadding(dp(16f).toInt(), dp(4f).toInt(), 0, 0)
+                })
+            }
             container.addView(row)
 
             if (i < selectedHabits.lastIndex) {
@@ -557,7 +596,11 @@ class CompareHabitsActivity : AppCompatActivity() {
     // -------------------------------------------------------------
     // SECTION 2: УСТОЙЧИВОСТЬ (Loop Score multi-line chart)
     // -------------------------------------------------------------
-    private fun addStabilityChartCard(startDate: LocalDate, today: LocalDate) {
+    private fun addStabilityChartCard(
+        startDate: LocalDate,
+        today: LocalDate,
+        snapshots: Map<HabitRef, EffectiveHabitReadSnapshot>? = null
+    ) {
         val (card, container) = createCard(
             getString(R.string.compare_stability),
             getString(R.string.compare_stability_loop_score)
@@ -565,10 +608,8 @@ class CompareHabitsActivity : AppCompatActivity() {
 
         val series = selectedHabits.mapIndexed { i, habit ->
             val color = SERIES_COLORS[i % SERIES_COLORS.size]
-            val habitStart = habit.effectiveStatisticsStartDate()?.let { maxOf(startDate, it) } ?: startDate
-            val scores = habit.scores.getByInterval(habitStart, today).map {
-                Pair(it.date, it.value)
-            }
+            val snapshot = habit.uuid?.let { u -> snapshots?.get(HabitRef(u)) }
+            val scores = CompareHabitsPresenter.buildStabilitySeries(habit, startDate, today, snapshot)
             CompareHabitsMultiLineChartView.SeriesItem(habit.id ?: 0L, habit.name, color, scores)
         }
 
@@ -631,33 +672,17 @@ class CompareHabitsActivity : AppCompatActivity() {
     // -------------------------------------------------------------
     // SECTION 3: ВЫПОЛНЕНИЕ / HISTORY (Normalized target completion)
     // -------------------------------------------------------------
-    private fun addExecutionChartCard(startDate: LocalDate, today: LocalDate) {
+    private fun addExecutionChartCard(
+        startDate: LocalDate,
+        today: LocalDate,
+        snapshots: Map<HabitRef, EffectiveHabitReadSnapshot>? = null
+    ) {
         val (card, container) = createCard(getString(R.string.compare_execution))
 
-        // Normalized progress toward habit's own target: 0-100%
         val series = selectedHabits.mapIndexed { i, habit ->
             val color = SERIES_COLORS[i % SERIES_COLORS.size]
-            val points = mutableListOf<Pair<LocalDate, Double>>()
-            var curr = habit.effectiveStatisticsStartDate()?.let { maxOf(startDate, it) } ?: startDate
-            while (curr <= today) {
-                val entry = habit.computedEntries.get(curr)
-                val value = entry.value
-                val goal = habit.goalAt(curr)
-                val normProgress = when {
-                    value == Entry.SKIP || value == Entry.UNKNOWN -> null
-                    habit.isNumerical -> {
-                        val target = if (goal.targetValue > 0.0) goal.targetValue else 1.0
-                        (value / 1000.0 / target).coerceIn(0.0, 1.0)
-                    }
-                    else -> {
-                        if (value == Entry.YES_MANUAL || value == Entry.YES_AUTO) 1.0 else 0.0
-                    }
-                }
-                if (normProgress != null) {
-                    points.add(Pair(curr, normProgress))
-                }
-                curr = curr.plus(1)
-            }
+            val snapshot = habit.uuid?.let { u -> snapshots?.get(HabitRef(u)) }
+            val points = CompareHabitsPresenter.buildExecutionSeries(habit, startDate, today, snapshot)
             CompareHabitsMultiLineChartView.SeriesItem(habit.id ?: 0L, habit.name, color, points)
         }
 
@@ -679,7 +704,11 @@ class CompareHabitsActivity : AppCompatActivity() {
     // -------------------------------------------------------------
     // SECTION 4: КАЛЕНДАРЬ (Small Multiples)
     // -------------------------------------------------------------
-    private fun addCalendarSmallMultiplesCard(startDate: LocalDate, today: LocalDate) {
+    private fun addCalendarSmallMultiplesCard(
+        startDate: LocalDate,
+        today: LocalDate,
+        snapshots: Map<HabitRef, EffectiveHabitReadSnapshot>? = null
+    ) {
         val (card, container) = createCard(getString(R.string.compare_calendar))
         val firstWeekday = component.preferences.firstWeekday
         val calendarStart = if (currentPeriod == ComparePeriod.MONTH) today.startOfMonth() else startDate
@@ -689,6 +718,7 @@ class CompareHabitsActivity : AppCompatActivity() {
 
         selectedHabits.forEachIndexed { i, habit ->
             val seriesColor = SERIES_COLORS[i % SERIES_COLORS.size]
+            val snapshot = habit.uuid?.let { u -> snapshots?.get(HabitRef(u)) }
 
             val habitSection = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -719,10 +749,11 @@ class CompareHabitsActivity : AppCompatActivity() {
             habitSection.addView(header)
 
             habitSection.addView(CompareCalendarView(this).apply {
+                tag = "compare_calendar_${habit.id}"
                 setData(habit, calendarStart, calendarEnd, today,
                     if (currentPeriod == ComparePeriod.WEEK) calendarStart.dayOfWeek else firstWeekday,
                     currentPeriod == ComparePeriod.MONTH || currentPeriod == ComparePeriod.WEEK,
-                    seriesColor, themeColor(R.attr.contrast20), themeColor(R.attr.contrast60))
+                    seriesColor, themeColor(R.attr.contrast20), themeColor(R.attr.contrast60), snapshot)
             })
             calendars.addView(habitSection)
         }
@@ -736,26 +767,20 @@ class CompareHabitsActivity : AppCompatActivity() {
     // -------------------------------------------------------------
     // SECTION 5: СЕРИИ (Streaks Comparison)
     // -------------------------------------------------------------
-    private fun addStreaksComparisonCard() {
+    private fun addStreaksComparisonCard(snapshots: Map<HabitRef, EffectiveHabitReadSnapshot>? = null) {
         val (card, container) = createCard(getString(R.string.compare_streaks))
-        val theme = themeSwitcher.currentTheme
 
         val allStreaks = selectedHabits.flatMap { h ->
-            val st = StreakCartPresenter.buildState(h, theme)
-            val bestHist = st.bestStreaks.firstOrNull()
-            val latest = st.latestStreak
-            val record = if (latest != null && (bestHist == null || latest.length >= bestHist.length)) {
-                latest
-            } else {
-                bestHist
-            }
-            listOfNotNull(latest, record)
+            val snapshot = h.uuid?.let { u -> snapshots?.get(HabitRef(u)) }
+            val st = CompareHabitsPresenter.buildStreakState(h, snapshot)
+            listOfNotNull(st.latestStreak, st.recordStreak)
         }
         val sharedMax = allStreaks.maxOfOrNull { it.length }?.toLong() ?: 1L
 
         selectedHabits.forEachIndexed { i, habit ->
             val seriesColor = SERIES_COLORS[i % SERIES_COLORS.size]
-            val streakState = StreakCartPresenter.buildState(habit, theme)
+            val snapshot = habit.uuid?.let { u -> snapshots?.get(HabitRef(u)) }
+            val streakState = CompareHabitsPresenter.buildStreakState(habit, snapshot)
 
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -784,13 +809,7 @@ class CompareHabitsActivity : AppCompatActivity() {
             })
             row.addView(header)
 
-            val latest = streakState.latestStreak
-            val bestHist = streakState.bestStreaks.firstOrNull()
-            val recordStreak = if (latest != null && (bestHist == null || latest.length >= bestHist.length)) {
-                latest
-            } else {
-                bestHist
-            }
+            if (!streakState.isExact) row.addView(unavailableObservation())
 
             fun addStreak(labelRes: Int, streaks: List<org.isoron.uhabits.core.models.Streak>, alpha: Int) {
                 if (streaks.isEmpty()) return
@@ -809,7 +828,7 @@ class CompareHabitsActivity : AppCompatActivity() {
                 })
             }
             addStreak(R.string.streak_current, listOfNotNull(streakState.latestStreak), 120)
-            addStreak(R.string.streak_record, listOfNotNull(recordStreak), 255)
+            addStreak(R.string.streak_record, listOfNotNull(streakState.recordStreak), 255)
 
             container.addView(row)
         }
@@ -819,13 +838,13 @@ class CompareHabitsActivity : AppCompatActivity() {
     // -------------------------------------------------------------
     // SECTION 6: ЧАСТОТА (Frequency Comparison)
     // -------------------------------------------------------------
-    private fun addFrequencyComparisonCard() {
-        val theme = themeSwitcher.currentTheme
+    private fun addFrequencyComparisonCard(snapshots: Map<HabitRef, EffectiveHabitReadSnapshot>? = null) {
         val firstWeekday = component.preferences.firstWeekday
 
         val today = getToday()
         val habitsWithHistory = selectedHabits.filter {
-            val habitStart = StatisticsReportStateBuilder.getHabitStartDate(it, today)
+            val snapshot = it.uuid?.let { u -> snapshots?.get(HabitRef(u)) }
+            val habitStart = StatisticsReportStateBuilder.getHabitStartDate(it, today, snapshot)
             habitStart.daysUntil(today) >= 14
         }
         if (habitsWithHistory.isEmpty()) return
@@ -834,7 +853,8 @@ class CompareHabitsActivity : AppCompatActivity() {
 
         habitsWithHistory.forEachIndexed { i, habit ->
             val seriesColor = SERIES_COLORS[selectedHabits.indexOf(habit) % SERIES_COLORS.size]
-            val freqState = FrequencyCardPresenter.buildState(habit, firstWeekday, theme)
+            val snapshot = habit.uuid?.let { u -> snapshots?.get(HabitRef(u)) }
+            val frequency = CompareHabitsPresenter.buildFrequency(habit, snapshot)
 
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -871,9 +891,10 @@ class CompareHabitsActivity : AppCompatActivity() {
                 setColor(seriesColor)
                 setFirstWeekday(firstWeekday)
                 setIsNumerical(habit.isNumerical)
-                setFrequency(freqState.frequency)
+                setFrequency(frequency)
             }
-            row.addView(chart)
+            if (snapshot?.hasContributions == true && frequency.isEmpty()) row.addView(unavailableObservation())
+            else row.addView(chart)
             container.addView(row)
         }
         binding.compareContentContainer.addView(card)

@@ -1,5 +1,6 @@
 package org.isoron.uhabits.core.database
 
+import org.isoron.platform.Synchronized
 import org.isoron.platform.io.Database
 import org.isoron.platform.io.PreparedStatement
 import org.isoron.platform.io.StepResult
@@ -32,6 +33,8 @@ data class HabitData(
 )
 
 class HabitRepository(private val db: Database) {
+    // Reused statements require operation-level locking, including row extraction.
+    // Individual statement locks cannot protect a reset/bind/step/read sequence.
     private val findAllStmt by lazy {
         db.prepareStatement(
             """SELECT id, name, description, question, freq_num, freq_den, color,
@@ -77,6 +80,7 @@ class HabitRepository(private val db: Database) {
         )
     }
 
+    @Synchronized
     fun findAll(): List<HabitData> {
         findAllStmt.reset()
         val results = mutableListOf<HabitData>()
@@ -86,6 +90,7 @@ class HabitRepository(private val db: Database) {
         return results
     }
 
+    @Synchronized
     fun insert(data: HabitData): Long {
         normalizeForWrite(data)
         if (data.id != null) {
@@ -101,6 +106,7 @@ class HabitRepository(private val db: Database) {
         return db.queryLong("SELECT last_insert_rowid()")
     }
 
+    @Synchronized
     fun update(data: HabitData) {
         normalizeForWrite(data)
         updateStmt.reset()
@@ -109,11 +115,13 @@ class HabitRepository(private val db: Database) {
         updateStmt.step()
     }
 
+    @Synchronized
     fun delete(id: Long) {
         val record = findAll().find { it.id == id } ?: return
         update(record.copy(updatedAt = record.updatedAt, deletedAt = record.updatedAt))
     }
 
+    @Synchronized
     fun findByUuid(uuid: String): HabitData? {
         findByUuidStmt.reset()
         findByUuidStmt.bindText(1, uuid)
@@ -121,8 +129,10 @@ class HabitRepository(private val db: Database) {
         return readRow(findByUuidStmt)
     }
 
+    @Synchronized
     fun execSQL(sql: String) = db.run(sql)
 
+    @Synchronized
     fun execSQL(sql: String, bind: PreparedStatement.() -> Unit) = db.run(sql, bind)
 
     private fun bindForInsert(stmt: PreparedStatement, data: HabitData, offset: Int = 0) {
@@ -156,9 +166,9 @@ class HabitRepository(private val db: Database) {
     private fun readRow(stmt: PreparedStatement): HabitData {
         return HabitData(
             id = stmt.getLong(0),
-            name = stmt.getText(1),
-            description = stmt.getText(2),
-            question = stmt.getText(3),
+            name = stmt.getTextOrNull(1) ?: "",
+            description = stmt.getTextOrNull(2) ?: "",
+            question = stmt.getTextOrNull(3) ?: "",
             freqNum = stmt.getInt(4),
             freqDen = stmt.getInt(5),
             color = stmt.getInt(6),

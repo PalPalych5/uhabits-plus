@@ -17,12 +17,20 @@ import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
+import org.isoron.uhabits.core.containers.HabitRef
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.PaletteColor
+import org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshot
 import org.isoron.uhabits.core.ui.screens.statistics.StatisticsHabitResult
 import org.isoron.uhabits.intents.IntentFactory
 import kotlin.math.roundToInt
+
+sealed class HabitInsight {
+    data class ConsecutiveSkips(val count: Int) : HabitInsight()
+    data class Streak(val length: Int) : HabitInsight()
+    object Stable : HabitInsight()
+}
 
 class StatisticsHabitInsightsView @JvmOverloads constructor(
     context: Context,
@@ -41,6 +49,7 @@ class StatisticsHabitInsightsView @JvmOverloads constructor(
     private var onSurfaceVariant = 0
     private var divider = 0
     private var themeColorResolver: ((Int) -> Int)? = null
+    private var snapshots: Map<HabitRef, EffectiveHabitReadSnapshot>? = null
 
     init {
         orientation = VERTICAL
@@ -83,6 +92,17 @@ class StatisticsHabitInsightsView @JvmOverloads constructor(
         onSurfaceVariant: Int,
         divider: Int,
         themeColorResolver: (Int) -> Int
+    ) = setData(strong, attention, accentColor, onSurface, onSurfaceVariant, divider, themeColorResolver, null)
+
+    fun setData(
+        strong: List<StatisticsHabitResult>,
+        attention: List<StatisticsHabitResult>,
+        accentColor: Int,
+        onSurface: Int,
+        onSurfaceVariant: Int,
+        divider: Int,
+        themeColorResolver: (Int) -> Int,
+        snapshots: Map<HabitRef, EffectiveHabitReadSnapshot>?
     ) {
         this.strongHabits = strong
         this.attentionHabits = attention
@@ -91,6 +111,7 @@ class StatisticsHabitInsightsView @JvmOverloads constructor(
         this.onSurfaceVariant = onSurfaceVariant
         this.divider = divider
         this.themeColorResolver = themeColorResolver
+        this.snapshots = snapshots
 
         renderRows()
     }
@@ -127,7 +148,9 @@ class StatisticsHabitInsightsView @JvmOverloads constructor(
     }
 
     private fun createHabitRow(result: StatisticsHabitResult): View {
-        val habitColor = themeColorResolver?.invoke(result.habit.color.paletteIndex) ?: accentColor
+        val snapshot = result.habit.uuid?.let { u -> snapshots?.get(HabitRef(u)) }
+        val presentation = snapshot?.takeIf { it.canUseLegacyEntryAdapter }?.presentationHabit() ?: result.habit
+        val habitColor = themeColorResolver?.invoke(presentation.color.paletteIndex) ?: accentColor
 
         val row = LinearLayout(context).apply {
             orientation = HORIZONTAL
@@ -139,7 +162,7 @@ class StatisticsHabitInsightsView @JvmOverloads constructor(
             context.theme.resolveAttribute(android.R.attr.selectableItemBackground, out, true)
             setBackgroundResource(out.resourceId)
             setOnClickListener {
-                context.startActivity(IntentFactory().startShowHabitActivity(context, result.habit))
+                context.startActivity(IntentFactory().startShowHabitActivity(context, presentation))
             }
         }
 
@@ -161,11 +184,11 @@ class StatisticsHabitInsightsView @JvmOverloads constructor(
             layoutParams = LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f)
         }
         val nameView = TextView(context).apply {
-            text = result.habit.name
+            text = presentation.name
             textSize = 14f
             setTextColor(onSurface)
         }
-        val insightText = generateHabitInsightText(result.habit)
+        val insightText = generateHabitInsightText(presentation, snapshot)
         val subtitleView = TextView(context).apply {
             text = insightText
             textSize = 12f
@@ -182,7 +205,7 @@ class StatisticsHabitInsightsView @JvmOverloads constructor(
             layoutParams = LayoutParams(dp(50f).toInt(), dp(20f).toInt()).apply {
                 rightMargin = dp(12f).toInt()
             }
-            setHistory(getHabitHistoryData(result.habit), habitColor)
+            setHistory(getHabitHistoryData(presentation, snapshot), habitColor)
         }
 
         // Percentage
@@ -200,46 +223,12 @@ class StatisticsHabitInsightsView @JvmOverloads constructor(
         return row
     }
 
-    private fun getHabitHistoryData(habit: Habit): List<Float> {
-        val today = getToday()
-        val data = mutableListOf<Float>()
-        for (i in 9 downTo 0) {
-            val entry = habit.computedEntries.get(today.minus(i))
-            val value = when {
-                entry.value == Entry.SKIP || entry.value == Entry.UNKNOWN -> 0f
-                habit.isNumerical -> (entry.value / 1000.0 / habit.targetValue.coerceAtLeast(1.0)).toFloat().coerceIn(0f, 1f)
-                else -> if (entry.value == Entry.YES_MANUAL || entry.value == Entry.YES_AUTO) 1f else 0f
-            }
-            data.add(value)
+    private fun generateHabitInsightText(habit: Habit, snapshot: EffectiveHabitReadSnapshot?): String {
+        return when (val insight = computeInsight(habit, snapshot, getToday())) {
+            is HabitInsight.ConsecutiveSkips -> context.getString(R.string.statistics_insight_consecutive_skips, insight.count)
+            is HabitInsight.Streak -> context.getString(R.string.statistics_insight_streak, insight.length)
+            is HabitInsight.Stable -> context.getString(R.string.statistics_insight_stable)
         }
-        return data
-    }
-
-    private fun generateHabitInsightText(habit: Habit): String {
-        val today = getToday()
-        
-        // 1. Check for consecutive skips
-        var skips = 0
-        for (i in 0..9) {
-            val entry = habit.computedEntries.get(today.minus(i))
-            if (entry.value == Entry.NO) {
-                skips++
-            } else if (entry.value == Entry.YES_MANUAL || entry.value == Entry.YES_AUTO) {
-                break
-            }
-        }
-        if (skips >= 3) {
-            return context.getString(R.string.statistics_insight_consecutive_skips, skips)
-        }
-
-        // 2. Check for current streak
-        val currentStreak = habit.streaks.getLatest()?.length ?: 0
-        if (currentStreak >= 5) {
-            return context.getString(R.string.statistics_insight_streak, currentStreak)
-        }
-
-        // 3. Fallback to weekly drops/rhythm (or default label)
-        return context.getString(R.string.statistics_insight_stable)
     }
 
     private fun dp(value: Float): Float = value * resources.displayMetrics.density
@@ -275,6 +264,105 @@ class StatisticsHabitInsightsView @JvmOverloads constructor(
                 if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
             canvas.drawPath(path, paint)
+        }
+    }
+
+    companion object {
+        fun getHabitHistoryData(
+            habit: Habit,
+            snapshot: EffectiveHabitReadSnapshot? = null,
+            today: LocalDate = getToday()
+        ): List<Float> {
+            val data = mutableListOf<Float>()
+            for (i in 9 downTo 0) {
+                val targetDate = today.minus(i)
+                val value = if (snapshot != null && snapshot.hasContributions) {
+                    val day = snapshot.dayOrNull(targetDate)
+                    val totalValue = day?.totalValue
+                    if (day == null || !day.includedInStatistics || day.isSkipped || totalValue == null) {
+                        0f
+                    } else if (habit.isNumerical) {
+                        val target = habit.targetValue.coerceAtLeast(1.0)
+                        (totalValue / 1000.0 / target).toFloat().coerceIn(0f, 1f)
+                    } else {
+                        val v = day.manualEntry.value
+                        if (v == Entry.YES_MANUAL || v == Entry.YES_AUTO) 1f else 0f
+                    }
+                } else {
+                    val entry = habit.computedEntries.get(targetDate)
+                    when {
+                        entry.value == Entry.SKIP || entry.value == Entry.UNKNOWN -> 0f
+                        habit.isNumerical -> (entry.value / 1000.0 / habit.targetValue.coerceAtLeast(1.0)).toFloat().coerceIn(0f, 1f)
+                        else -> if (entry.value == Entry.YES_MANUAL || entry.value == Entry.YES_AUTO) 1f else 0f
+                    }
+                }
+                data.add(value)
+            }
+            return data
+        }
+
+        fun computeInsight(
+            habit: Habit,
+            snapshot: EffectiveHabitReadSnapshot? = null,
+            today: LocalDate = getToday()
+        ): HabitInsight {
+            // 1. Check for consecutive skips
+            var skips = 0
+            for (i in 0..9) {
+                val targetDate = today.minus(i)
+                val isNo = if (snapshot != null && snapshot.hasContributions) {
+                    val day = snapshot.dayOrNull(targetDate)
+                    if (day == null) {
+                        false
+                    } else if (!day.includedInStatistics || day.isSkipped) {
+                        false
+                    } else if (habit.isNumerical) {
+                        val total = day.totalValue
+                        if (total != null && total == 0L) {
+                            true
+                        } else if (total != null && total > 0L) {
+                            break
+                        } else {
+                            false
+                        }
+                    } else {
+                        val v = day.manualEntry.value
+                        if (v == Entry.NO) true
+                        else if (v == Entry.YES_MANUAL || v == Entry.YES_AUTO) break
+                        else false
+                    }
+                } else {
+                    val entry = habit.computedEntries.get(targetDate)
+                    if (entry.value == Entry.NO) {
+                        true
+                    } else if (entry.value == Entry.YES_MANUAL || entry.value == Entry.YES_AUTO) {
+                        break
+                    } else if (habit.isNumerical && entry.value > 0) {
+                        break
+                    } else {
+                        false
+                    }
+                }
+                if (isNo) {
+                    skips++
+                }
+            }
+            if (skips >= 3) {
+                return HabitInsight.ConsecutiveSkips(skips)
+            }
+
+            // 2. Check for current streak
+            val currentStreak = if (snapshot != null && snapshot.hasContributions) {
+                snapshot.streakResult.streaks?.firstOrNull()?.length ?: 0
+            } else {
+                habit.streaks.getLatest()?.length ?: 0
+            }
+            if (currentStreak >= 5) {
+                return HabitInsight.Streak(currentStreak)
+            }
+
+            // 3. Fallback to stable
+            return HabitInsight.Stable
         }
     }
 }
