@@ -33,6 +33,8 @@ import org.isoron.uhabits.core.models.HabitList.Order
 import org.isoron.uhabits.core.models.HabitMatcher
 import org.isoron.uhabits.core.tasks.Task
 import org.isoron.uhabits.core.tasks.TaskRunner
+import org.isoron.uhabits.core.containers.HabitRef
+import org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshot
 
 /**
  * A HabitCardListCache fetches and keeps a cache of all the data necessary to
@@ -57,6 +59,11 @@ class HabitCardListCache(
 ) : CommandRunner.Listener {
 
     private val logger = logging.getLogger("HabitCardListCache")
+    /** Optional dataset read capability; production legacy leaves this unset. Batch called once per refresh. */
+    var effectiveSnapshots: ((List<Habit>) -> Map<HabitRef, EffectiveHabitReadSnapshot>)? = null
+    private var matcher = HabitMatcher()
+
+    fun getEffectiveSnapshot(habitId: Long): EffectiveHabitReadSnapshot? = data.snapshots[habitId]
 
     private var checkmarkCount = 0
     private var currentFetchTask: Task? = null
@@ -141,7 +148,7 @@ class HabitCardListCache(
 
     @Synchronized
     override fun onCommandFinished(command: Command) {
-        if (command is CreateRepetitionCommand) {
+        if (command is CreateRepetitionCommand && effectiveSnapshots == null) {
             command.habit.id?.let { refreshHabit(it) }
         } else {
             refreshAllHabits()
@@ -175,6 +182,7 @@ class HabitCardListCache(
         data.checkmarks.remove(id)
         data.notes.remove(id)
         data.scores.remove(id)
+        data.snapshots.remove(id)
         listener.onItemRemoved(position)
     }
 
@@ -193,6 +201,7 @@ class HabitCardListCache(
 
     @Synchronized
     fun setFilter(matcher: HabitMatcher) {
+        this.matcher = matcher
         filteredHabits = allHabits.getFiltered(matcher)
     }
 
@@ -214,6 +223,7 @@ class HabitCardListCache(
     }
 
     private inner class CacheData {
+        val snapshots = mutableMapOf<Long?, EffectiveHabitReadSnapshot>()
         val idToHabit: MutableMap<Long?, Habit> = mutableMapOf()
         val habits: MutableList<Habit>
         val checkmarks: MutableMap<Long?, IntArray>
@@ -260,10 +270,57 @@ class HabitCardListCache(
 
         @Synchronized
         fun fetchHabits() {
-            for (h in filteredHabits) {
+            val load = effectiveSnapshots
+            val candidates = if (load == null) filteredHabits.toList() else
+                allHabits.getFiltered(matcher.copy(isCompletedAllowed = true, isEnteredAllowed = true)).toList()
+            val batch = load?.invoke(candidates).orEmpty()
+            val today = getToday()
+            val selected = candidates.filter { h ->
+                val snapshot = batch[HabitRef(requireNotNull(h.uuid))]
+                snapshot == null || ((matcher.isCompletedAllowed || !snapshot.compatibilityCompletionOn(today).isCompleted) &&
+                    (matcher.isEnteredAllowed || if (!snapshot.hasContributions) !h.isEnteredToday() else
+                        (snapshot.day(today).manualEntry.value == org.isoron.uhabits.core.models.Entry.UNKNOWN &&
+                            snapshot.day(today).contributions.isEmpty())))
+            }.toMutableList()
+            if (load != null && batch.values.any { it.hasContributions }) {
+                val originalPositions = candidates.withIndex().associate { it.value.id to it.index }
+                fun compare(order: Order, a: Habit, b: Habit): Int {
+                    val sa = batch.getValue(HabitRef(requireNotNull(a.uuid)))
+                    val sb = batch.getValue(HabitRef(requireNotNull(b.uuid)))
+                    return when (order) {
+                        Order.BY_SCORE_DESC, Order.BY_SCORE_ASC -> {
+                            val va = sa.scoreResult.on(today); val vb = sb.scoreResult.on(today)
+                            val c = when { va == null && vb == null -> 0; va == null -> 1; vb == null -> -1; else -> va.compareTo(vb) }
+                            if (order == Order.BY_SCORE_ASC && va != null && vb != null) -c else c
+                        }
+                        Order.BY_STATUS_DESC, Order.BY_STATUS_ASC -> {
+                            val c = sb.compatibilityCompletionOn(today).isCompleted.compareTo(sa.compatibilityCompletionOn(today).isCompleted)
+                            val type = b.isNumerical.compareTo(a.isNumerical)
+                            val value = (sb.day(today).totalValue ?: sb.day(today).manualEntry.value.toLong())
+                                .compareTo(sa.day(today).totalValue ?: sa.day(today).manualEntry.value.toLong())
+                            val result = if (c != 0) c else if (type != 0) type else value
+                            if (order == Order.BY_STATUS_ASC) -result else result
+                        }
+                        Order.BY_NAME_ASC -> a.name.compareTo(b.name)
+                        Order.BY_NAME_DESC -> b.name.compareTo(a.name)
+                        Order.BY_COLOR_ASC -> a.color.compareTo(b.color)
+                        Order.BY_COLOR_DESC -> b.color.compareTo(a.color)
+                        Order.BY_POSITION -> a.position.compareTo(b.position)
+                        // These comparators include position/name tie-breaks in the legacy model.
+                        else -> originalPositions.getValue(a.id).compareTo(originalPositions.getValue(b.id))
+                    }
+                }
+                selected.sortWith { a, b ->
+                    val first = compare(primaryOrder, a, b)
+                    val second = if (first == 0) compare(secondaryOrder, a, b) else first
+                    if (second != 0) second else originalPositions.getValue(a.id).compareTo(originalPositions.getValue(b.id))
+                }
+            }
+            for (h in selected) {
                 if (h.id == null) continue
                 habits.add(h)
                 idToHabit[h.id] = h
+                batch[HabitRef(requireNotNull(h.uuid))]?.let { snapshots[h.id] = it }
             }
         }
 
@@ -321,7 +378,8 @@ class HabitCardListCache(
                 if (!isCurrent()) return
                 val habit = newData.habits[position]
                 if (targetId != null && targetId != habit.id) continue
-                newData.scores[habit.id] = habit.scores[today].value
+                val snapshot = newData.snapshots[habit.id]
+                newData.scores[habit.id] = if (snapshot == null) habit.scores[today].value else snapshot.scoreResult.on(today) ?: Double.NaN
                 val checkmarkList = mutableListOf<Int>()
                 val noteList = mutableListOf<String>()
                 for ((_, value, note) in habit.computedEntries.getByInterval(dateFrom, today)) {
@@ -360,6 +418,7 @@ class HabitCardListCache(
             data.scores[id] = newData.scores[id]!!
             data.checkmarks[id] = newData.checkmarks[id]!!
             data.notes[id] = newData.notes[id]!!
+            newData.snapshots[id]?.let { data.snapshots[id] = it }
             listener.onItemInserted(position)
         }
 
@@ -392,6 +451,7 @@ class HabitCardListCache(
             val newCheckmarks = newData.checkmarks[id]!!
             val newNoteIndicators = newData.notes[id]!!
             var unchanged = true
+            if (data.snapshots[id]?.revision != newData.snapshots[id]?.revision || newData.snapshots[id] != null || data.snapshots[id] != null) unchanged = false
             if (oldScore != newScore) unchanged = false
             if (!oldCheckmarks.contentEquals(newCheckmarks)) unchanged = false
             if (!oldNoteIndicators.contentEquals(newNoteIndicators)) unchanged = false
@@ -399,6 +459,8 @@ class HabitCardListCache(
             data.scores[id] = newScore
             data.checkmarks[id] = newCheckmarks
             data.notes[id] = newNoteIndicators
+            data.snapshots.remove(id)
+            newData.snapshots[id]?.let { data.snapshots[id] = it }
             listener.onItemChanged(position)
         }
 

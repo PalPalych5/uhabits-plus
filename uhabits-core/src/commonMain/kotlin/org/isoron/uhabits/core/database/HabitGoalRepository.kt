@@ -89,6 +89,8 @@ class HabitGoalRepository(private val db: Database) {
         } else {
             data
         }
+        val existing = findByUuid(normalized.uuid)
+        if (existing?.copy(id = normalized.id) == normalized) return
         upsertStmt.reset()
         upsertStmt.bindLong(1, normalized.habitId)
         upsertStmt.bindText(2, normalized.uuid)

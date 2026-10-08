@@ -179,11 +179,19 @@ abstract class HabitsApplicationComponent(
         } else null
     }
 
+    val effectiveReadRevision = org.isoron.uhabits.core.models.projection.EffectiveReadRevision(session.datasetId)
+
+    val effectiveHabitReads: org.isoron.uhabits.focus.EffectiveHabitReadController? by lazy {
+        if (session.isExperimental) org.isoron.uhabits.focus.EffectiveHabitReadController(
+            appContext, providedDb, preferences, effectiveReadRevision, habitCardListCache, habitList,
+        ) else null
+    }
+
     val db: AndroidDatabase
         get() = providedDb
 
     private val providedDb: AndroidDatabase by lazy {
-        AndroidDatabase(DatabaseUtils.openDatabase())
+        AndroidDatabase(DatabaseUtils.openDatabase(), if (session.isExperimental) effectiveReadRevision else null)
     }
 
     @AppScope

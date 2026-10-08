@@ -91,6 +91,23 @@ class ListHabitsBehaviorTest : BaseUnitTest() {
     }
 
     @Test
+    fun numericalEditorSeedsOnlyManualQuantity() {
+        val today = getToday()
+        habit2.originalEntries.add(Entry(today, 30000, "manual"))
+        habit2.recompute()
+        habit2.computedEntries.add(Entry(today, 90000, "derived"))
+        every { screen.showNumberPopup(any(), any(), any()) } calls { args ->
+            capturedPicker = args.arg<NumberPickerCallback>(2)
+            Unit
+        }
+        behavior.onEdit(habit2, today, 0f, 0f)
+        verify { screen.showNumberPopup(30.0, "manual", any()) }
+        capturedPicker!!.onNumberPicked(40.0, "edited")
+        assertEquals(40000, habit2.originalEntries.get(today).value)
+        assertEquals("edited", habit2.originalEntries.get(today).notes)
+    }
+
+    @Test
     fun testOnExportCSV() = runTest {
         val outputDir = createTempDir()
         every { dirFinder.getCSVOutputDir() } returns outputDir

@@ -61,14 +61,14 @@ class WidgetBehavior(
     }
 
     fun onIncrement(habit: Habit, date: LocalDate, amount: Int) {
-        val entry = habit.computedEntries.get(date)
+        val entry = habit.originalEntries.get(date)
         val currentValue = entry.value
         setValue(habit, date, currentValue + amount, entry.notes)
         notificationTray.cancel(habit)
     }
 
     fun onDecrement(habit: Habit, date: LocalDate, amount: Int) {
-        val entry = habit.computedEntries.get(date)
+        val entry = habit.originalEntries.get(date)
         val currentValue = entry.value
         setValue(habit, date, currentValue - amount, entry.notes)
         notificationTray.cancel(habit)

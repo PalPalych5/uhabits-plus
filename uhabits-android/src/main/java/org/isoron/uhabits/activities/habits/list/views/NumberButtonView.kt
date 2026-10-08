@@ -110,6 +110,10 @@ class NumberButtonView(
         }
 
     var onEdit: () -> Unit = { }
+    var effectiveDay: org.isoron.uhabits.core.models.projection.EffectiveHabitDay? = null
+        set(value) { field = value; invalidate() }
+    var effectiveCompletion: org.isoron.uhabits.core.models.projection.HabitGoalStatus? = null
+        set(value) { field = value; invalidate() }
 
     private var drawer: Drawer = Drawer(context)
 
@@ -176,7 +180,10 @@ class NumberButtonView(
         }
 
         fun draw(canvas: Canvas) {
+            val day = effectiveDay
             val activeColor = when {
+                effectiveCompletion == org.isoron.uhabits.core.models.projection.HabitGoalStatus.SATISFIED -> color
+                day != null -> mediumContrast
                 value < 0.0 -> lowContrast
                 (targetType == AT_LEAST) && (value >= threshold) -> color
                 (targetType == AT_MOST) && (value <= threshold) -> color
@@ -188,6 +195,21 @@ class NumberButtonView(
             val textSize: Float
 
             when {
+                day != null && day.isSkipped -> {
+                    label = resources.getString(R.string.fa_skipped)
+                    textSize = dim(R.dimen.smallTextSize)
+                    typeface = getFontAwesome()
+                }
+                day != null && day.totalValue != null -> {
+                    label = (if (!day.hasCompleteCoverage) "≥" else "") + (day.totalValue!! / 1000.0).toShortString()
+                    typeface = BOLD_TYPEFACE
+                    textSize = dim(R.dimen.smallTextSize)
+                }
+                day != null -> {
+                    label = "?"
+                    typeface = NORMAL_TYPEFACE
+                    textSize = dim(R.dimen.smallTextSize)
+                }
                 value == Entry.SKIP.toDouble() / 1000 -> {
                     label = resources.getString(R.string.fa_skipped)
                     textSize = dim(R.dimen.smallTextSize)

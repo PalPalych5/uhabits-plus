@@ -127,11 +127,19 @@ class AndroidPreparedStatement(
 }
 
 class AndroidDatabase(
-    private val db: SQLiteDatabase
+    private val db: SQLiteDatabase,
+    revision: org.isoron.uhabits.core.models.projection.EffectiveReadRevision? = null,
 ) : org.isoron.platform.io.Database {
 
-    override fun prepareStatement(sql: String): PreparedStatement =
-        AndroidPreparedStatement(db, sql)
+    private val connection: org.isoron.platform.io.Database = object : org.isoron.platform.io.Database {
+        override fun prepareStatement(sql: String): PreparedStatement = AndroidPreparedStatement(db, sql)
+        override fun close() = db.close()
+    }.let { raw ->
+        if (revision == null) raw else org.isoron.uhabits.core.models.projection.EffectiveReadDatabase(raw, revision)
+    }
 
-    override fun close() = db.close()
+    override fun prepareStatement(sql: String): PreparedStatement =
+        connection.prepareStatement(sql)
+
+    override fun close() = connection.close()
 }

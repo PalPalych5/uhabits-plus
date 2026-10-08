@@ -104,6 +104,8 @@ class HabitCardView(
     var score
         get() = scoreRing.getPercentage().toDouble()
         set(value) {
+            scoreRing.visibility = if (value.isNaN()) GONE else VISIBLE
+            if (value.isNaN()) return
             scoreRing.setPercentage(value.toFloat())
             scoreRing.setPrecision(1.0f / 16)
         }
@@ -133,6 +135,10 @@ class HabitCardView(
             checkmarkPanel.notes = values
             numberPanel.notes = values
         }
+
+    var effectiveSnapshot: org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshot?
+        get() = numberPanel.effectiveSnapshot
+        set(value) { numberPanel.effectiveSnapshot = value?.takeIf { it.hasContributions } }
 
     var checkmarkPanel: CheckmarkPanelView
     private var numberPanel: NumberPanelView

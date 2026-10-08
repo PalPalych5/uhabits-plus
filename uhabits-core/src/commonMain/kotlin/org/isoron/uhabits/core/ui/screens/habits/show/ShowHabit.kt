@@ -23,6 +23,13 @@ import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.PaletteColor
+import org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshot
+import org.isoron.uhabits.core.models.projection.EffectiveReadExactness
+import org.isoron.uhabits.core.models.projection.GoalPeriodAchievement
+import org.isoron.uhabits.core.models.projection.HabitGoalStatus
+import org.isoron.uhabits.core.models.projection.HabitProjectionIntegrityException
+import org.isoron.platform.time.getToday
+import org.isoron.uhabits.core.ui.views.HistoryChart
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.ui.screens.habits.show.views.BarCardPresenter
 import org.isoron.uhabits.core.ui.screens.habits.show.views.BarCardState
@@ -57,7 +64,14 @@ data class ShowHabitState(
     val frequency: FrequencyCardState,
     val history: HistoryCardState,
     val bar: BarCardState,
-    val theme: Theme
+    val theme: Theme,
+    val scoreUnavailable: Boolean = false,
+    val streakUnavailable: Boolean = false,
+    val quantityUnavailable: Boolean = false,
+    val hasAutomaticQuantity: Boolean = false,
+    val hasIncompleteCoverage: Boolean = false,
+    val goalAchievement: GoalPeriodAchievement? = null,
+    val goalAchievementUnavailable: Boolean = false
 )
 
 class ShowHabitPresenter(
@@ -89,9 +103,20 @@ class ShowHabitPresenter(
         fun buildState(
             habit: Habit,
             preferences: Preferences,
-            theme: Theme
+            theme: Theme,
+            snapshot: EffectiveHabitReadSnapshot? = null
         ): ShowHabitState {
-            return ShowHabitState(
+            // Legacy quantity cards aggregate Int entries. Check their whole read domain rather
+            // than clamping individual days or letting a monthly/weekday bucket overflow.
+            val quantityUnavailable = snapshot?.hasContributions == true && (
+                !snapshot.canUseLegacyEntryAdapter ||
+                    snapshot.days.filter { it.includedInStatistics && !it.isSkipped }
+                        .sumOf { it.totalValue ?: 0L } > Int.MAX_VALUE
+                )
+            val readHabit = if (quantityUnavailable) habit else snapshot?.presentationHabit() ?: habit
+            val scoreUnavailable = snapshot != null && snapshot.scoreResult.scores == null
+            val streakUnavailable = snapshot != null && snapshot.streakResult.streaks == null
+            val base = ShowHabitState(
                 title = habit.name,
                 color = habit.color,
                 isNumerical = habit.isNumerical,
@@ -101,44 +126,102 @@ class ShowHabitPresenter(
                     theme = theme
                 ),
                 overview = OverviewCardPresenter.buildState(
-                    habit = habit,
+                    habit = readHabit,
                     theme = theme
                 ),
                 notes = NotesCardPresenter.buildState(
                     habit = habit
                 ),
                 target = TargetCardPresenter.buildState(
-                    habit = habit,
+                    habit = readHabit,
                     firstWeekday = preferences.firstWeekdayInt,
                     theme = theme
                 ),
                 streaks = StreakCartPresenter.buildState(
-                    habit = habit,
+                    habit = readHabit,
                     theme = theme
                 ),
                 scores = ScoreCardPresenter.buildState(
                     spinnerPosition = preferences.scoreCardSpinnerPosition,
-                    habit = habit,
+                    habit = readHabit,
                     firstWeekday = preferences.firstWeekdayInt,
                     theme = theme
                 ),
                 frequency = FrequencyCardPresenter.buildState(
-                    habit = habit,
+                    habit = readHabit,
                     firstWeekday = preferences.firstWeekday,
                     theme = theme
                 ),
                 history = HistoryCardPresenter.buildState(
-                    habit = habit,
+                    habit = readHabit,
                     firstWeekday = preferences.firstWeekday,
                     theme = theme
                 ),
                 bar = BarCardPresenter.buildState(
-                    habit = habit,
+                    habit = readHabit,
                     firstWeekday = preferences.firstWeekdayInt,
                     boolSpinnerPosition = preferences.barCardBoolSpinnerPosition,
                     numericalSpinnerPosition = preferences.barCardNumericalSpinnerPosition,
                     theme = theme
                 )
+            )
+            if (snapshot == null) return base
+            val today = getToday()
+            val oldest = habit.effectiveStatisticsStartDate() ?: snapshot.observedFrom ?: today
+            val historyDates = readHabit.computedEntries.getByInterval(oldest, today).map { it.date }
+            val history = if (habit.isNumerical && snapshot.hasContributions) base.history.copy(
+                series = historyDates.map { date ->
+                    when (snapshot.compatibilityCompletionOn(date).status) {
+                        HabitGoalStatus.SATISFIED -> HistoryChart.Square.ON
+                        HabitGoalStatus.NOT_SATISFIED -> HistoryChart.Square.GREY
+                        HabitGoalStatus.SKIPPED -> HistoryChart.Square.HATCHED
+                        HabitGoalStatus.UNKNOWN -> if (snapshot.day(date).totalValue != null) HistoryChart.Square.GREY else HistoryChart.Square.OFF
+                        else -> HistoryChart.Square.OFF
+                    }
+                },
+                notesIndicators = historyDates.map { snapshot.day(it).manualEntry.notes.isNotEmpty() }
+            ) else base.history
+            val streaks = snapshot.streakResult.streaks
+            val latest = streaks?.firstOrNull()
+            var goalAchievementUnavailable = false
+            val goalAchievement = try {
+                snapshot.goalAchievementOn(today)
+            } catch (_: HabitProjectionIntegrityException) {
+                // An incompatible historical unit boundary prevents calendar aggregation.
+                // It must not erase otherwise unchanged legacy score/history representations.
+                goalAchievementUnavailable = true
+                null
+            }
+            val effectiveFrequency = hashMapOf<org.isoron.platform.time.LocalDate, Array<Int>>()
+            if (habit.isNumerical && snapshot.hasContributions && !quantityUnavailable) {
+                snapshot.days.filter { it.includedInStatistics && !it.isSkipped && it.totalValue != null && it.manualEntry.date <= today }
+                    .forEach { day ->
+                        val date = day.manualEntry.date
+                        val bucket = effectiveFrequency.getOrPut(date.startOfMonth()) { Array(7) { 0 } }
+                        val weekday = (date.dayOfWeek.daysSinceSunday + 1) % 7
+                        bucket[weekday] += requireNotNull(day.totalValue).toInt()
+                    }
+            }
+            return base.copy(
+                scoreUnavailable = scoreUnavailable,
+                streakUnavailable = streakUnavailable,
+                quantityUnavailable = quantityUnavailable,
+                hasAutomaticQuantity = snapshot.hasContributions,
+                hasIncompleteCoverage = snapshot.hasContributions && snapshot.days.any {
+                    it.manualEntry.date <= today && it.manualEntry.date >= oldest &&
+                        it.includedInStatistics && !it.isSkipped && !it.hasCompleteCoverage
+                },
+                goalAchievement = goalAchievement,
+                goalAchievementUnavailable = goalAchievementUnavailable,
+                history = history,
+                scores = if (scoreUnavailable) base.scores.copy(scores = emptyList()) else base.scores,
+                streaks = if (snapshot.streakResult.exactness == EffectiveReadExactness.LEGACY_COMPATIBILITY) base.streaks else base.streaks.copy(
+                    latestStreak = latest,
+                    bestStreaks = streaks.orEmpty().filterNot { it == latest }.sortedWith { a, b -> b.compareLonger(a) }.take(10)
+                ),
+                frequency = if (habit.isNumerical && snapshot.hasContributions && !quantityUnavailable) base.frequency.copy(
+                    frequency = effectiveFrequency
+                ) else base.frequency
             )
         }
     }

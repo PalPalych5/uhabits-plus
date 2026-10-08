@@ -1,0 +1,110 @@
+/* Copyright (C) 2026 Álinson Santos Xavier and contributors. GPL-3.0-or-later. */
+package org.isoron.uhabits.focus
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Handler
+import android.os.Looper
+import androidx.core.content.ContextCompat
+import org.isoron.platform.time.computeToday
+import org.isoron.platform.time.getToday
+import org.isoron.platform.time.setToday
+import org.isoron.uhabits.core.containers.HabitRef
+import org.isoron.uhabits.core.contribution.sqlite.SQLiteContributionRepository
+import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.models.HabitList
+import org.isoron.uhabits.core.models.projection.*
+import org.isoron.uhabits.core.preferences.Preferences
+import org.isoron.uhabits.core.ui.screens.habits.list.HabitCardListCache
+import org.isoron.uhabits.database.AndroidDatabase
+import java.util.TimeZone
+
+/** Read capability only: never constructs Focus capture, rules, schema or automatic writers. */
+class EffectiveHabitReadController(
+    private val context: Context,
+    db: AndroidDatabase,
+    private val preferences: Preferences,
+    val revision: EffectiveReadRevision,
+    private val cache: HabitCardListCache,
+    private val habits: HabitList,
+) : Preferences.Listener {
+    private val provider = EffectiveHabitReadSnapshotProvider(SQLiteContributionRepository(db))
+    private val handler = Handler(Looper.getMainLooper())
+    private var disposed = false
+    private var calendar = captureCalendar()
+    private var restoreModels = false
+    private val refresh = Runnable {
+        if (!disposed) {
+            if (restoreModels) { habits.forEach { it.recompute() }; restoreModels = false }
+            cache.refreshAllHabits()
+        }
+    }
+    private val changed: () -> Unit = {
+        if (!disposed) { handler.removeCallbacks(refresh); handler.post(refresh) }
+    }
+    private val rollback: () -> Unit = {
+        if (!disposed) {
+            habits.forEach { it.originalEntries.invalidate() }
+            restoreModels = true
+            changed()
+        }
+    }
+    private val receiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) { calendarChanged(force = true) }
+    }
+
+    init {
+        cache.effectiveSnapshots = ::snapshots
+        revision.addListener(changed)
+        revision.addRollbackListener(rollback)
+        preferences.addListener(this)
+        ContextCompat.registerReceiver(context, receiver, IntentFilter().apply {
+            addAction(Intent.ACTION_TIMEZONE_CHANGED)
+            addAction(Intent.ACTION_TIME_CHANGED)
+            addAction(Intent.ACTION_DATE_CHANGED)
+        }, ContextCompat.RECEIVER_NOT_EXPORTED)
+    }
+
+    private fun captureCalendar() = EffectiveReadCalendarContext(
+        TimeZone.getDefault().id, preferences.firstWeekday, preferences.midnightDelayHours, 0,
+    )
+
+    fun snapshots(habits: List<Habit>): Map<HabitRef, EffectiveHabitReadSnapshot> {
+        check(!disposed)
+        repeat(3) {
+            val captured = captureCalendar()
+            val capturedRevision = revision.value
+            val today = getToday()
+            val result = provider.prepare(habits, today.minus(365), today, revision.datasetId, capturedRevision, captured)
+            if (!disposed && captured == captureCalendar() && capturedRevision == revision.value) return result
+        }
+        error("Dataset/calendar changed repeatedly during snapshot creation; refresh required")
+    }
+    fun snapshot(habit: Habit): EffectiveHabitReadSnapshot = snapshots(listOf(habit)).getValue(HabitRef(requireNotNull(habit.uuid)))
+
+    private fun calendarChanged(force: Boolean = false) {
+        if (disposed) return
+        val current = captureCalendar()
+        if (force || current != calendar) {
+            calendar = current
+            setToday(computeToday(current.hourOffset, current.minuteOffset))
+            revision.changed()
+        }
+    }
+    override fun onCheckmarkSequenceChanged() = calendarChanged()
+    override fun onHabitListAppearanceChanged() = calendarChanged()
+    override fun onSyncFinished() = calendarChanged()
+    fun dispose() {
+        if (disposed) return
+        disposed = true
+        handler.removeCallbacksAndMessages(null)
+        cache.effectiveSnapshots = null
+        revision.removeListener(changed)
+        revision.removeRollbackListener(rollback)
+        revision.dispose()
+        preferences.removeListener(this)
+        context.unregisterReceiver(receiver)
+    }
+}

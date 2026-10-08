@@ -43,6 +43,9 @@ class NumberPanelView(
     private val buttonFactory: NumberButtonViewFactory
 ) : ButtonPanelView<NumberButtonView>(context, preferences) {
 
+    var effectiveSnapshot: org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshot? = null
+        set(value) { field = value; setupButtons() }
+
     var habit: Habit? = null
         set(value) {
             field = value
@@ -100,6 +103,12 @@ class NumberPanelView(
 
         buttons.forEachIndexed { index, button ->
             val date = today.minus(index + dataOffset)
+            button.effectiveDay = effectiveSnapshot?.let { snapshot ->
+                if (date < snapshot.from || date > snapshot.to) null else snapshot.day(date)
+            }
+            button.effectiveCompletion = effectiveSnapshot?.let { snapshot ->
+                if (date < snapshot.from || date > snapshot.to) null else snapshot.compatibilityCompletionOn(date).status
+            }
             button.value = when {
                 index + dataOffset < values.size -> values[index + dataOffset]
                 else -> 0.0

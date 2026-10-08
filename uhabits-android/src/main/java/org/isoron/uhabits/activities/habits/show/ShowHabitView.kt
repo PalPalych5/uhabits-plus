@@ -62,18 +62,35 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
         binding.scoreCard.setState(data.scores)
         binding.frequencyCard.setState(data.frequency)
         binding.historyCard.setState(data.history)
+        binding.historyCard.visibility = VISIBLE
+        binding.targetCard.visibility = if (data.isNumerical) VISIBLE else GONE
         binding.barCard.setState(data.bar)
+        binding.scoreCard.visibility = if (data.scoreUnavailable) GONE else VISIBLE
+        binding.streakCard.visibility = if (data.streakUnavailable) GONE else VISIBLE
+        binding.barCard.visibility = if (data.quantityUnavailable) GONE else VISIBLE
+        binding.frequencyCard.visibility = if (data.quantityUnavailable) GONE else VISIBLE
+        // Target's Long-based current-period row remains supported when legacy Int charts are gated.
+        binding.effectiveReadNotice.visibility = if (data.hasAutomaticQuantity || data.quantityUnavailable) VISIBLE else GONE
+        binding.effectiveReadNotice.setText(when {
+            data.quantityUnavailable -> org.isoron.uhabits.R.string.effective_read_quantity_unavailable
+            data.hasIncompleteCoverage -> org.isoron.uhabits.R.string.effective_read_incomplete
+            else -> org.isoron.uhabits.R.string.effective_read_provenance
+        })
 
         binding.timerCard.setColor(data.theme.color(data.color).toInt())
         val isTimerVisible = data.isNumerical && isTimerEnabled && habitUnit.isMinuteUnit()
         binding.timerCard.visibility = if (isTimerVisible) View.VISIBLE else View.GONE
 
-        if (data.isNumerical) {
-            binding.overviewCard.visibility = GONE
-        } else {
-            binding.targetCard.visibility = GONE
-        }
+        binding.overviewCard.visibility = if (data.isNumerical) GONE else VISIBLE
         binding.linearLayout.applyBottomInset()
+    }
+
+    /** Integrity failure must not leave a previous/manual-only result visible. Editing stays manual. */
+    fun setEffectiveReadUnavailable() {
+        listOf(binding.overviewCard, binding.targetCard, binding.scoreCard, binding.streakCard,
+            binding.historyCard, binding.barCard, binding.frequencyCard).forEach { it.visibility = GONE }
+        binding.effectiveReadNotice.visibility = VISIBLE
+        binding.effectiveReadNotice.setText(org.isoron.uhabits.R.string.effective_read_unavailable)
     }
 
     fun setListener(presenter: ShowHabitPresenter) {

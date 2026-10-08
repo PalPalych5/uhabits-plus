@@ -18,7 +18,7 @@ data class AddNumericalEntryOpCommand(
     override fun run() {
         if (deltaValue == 0) return
         val entries = habit.originalEntries as? SQLiteEntryList ?: return
-        val current = habit.computedEntries.get(date)
+        val current = habit.originalEntries.get(date)
         val oldValue = if (current.value == Entry.UNKNOWN || current.value == Entry.SKIP) 0 else current.value
         val newValue = oldValue + deltaValue
         entries.addWithDelta(date, deltaValue, newValue, notes)

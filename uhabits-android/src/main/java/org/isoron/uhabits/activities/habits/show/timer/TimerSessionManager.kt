@@ -542,7 +542,7 @@ class TimerSessionManager(
         if (minutes <= 0.0) return
         val habit = habitList.getById(habitId) ?: return
         val today = getToday()
-        val entry = habit.computedEntries.get(today)
+        val entry = habit.originalEntries.get(today)
         commandRunner.run(
             AddNumericalEntryOpCommand(
                 habitList = habitList,

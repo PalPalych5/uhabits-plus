@@ -47,11 +47,13 @@ class HabitExtensionRepository(private val db: Database) {
     }
 
     fun upsert(data: HabitExtensionData) {
+        val existing = findByHabitId(data.habitId)
         val blockIdToWrite = if (authorityMode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
-            findByHabitId(data.habitId)?.blockId
+            existing?.blockId
         } else {
             data.blockId
         }
+        if (existing == data.copy(blockId = blockIdToWrite)) return
 
         upsertStmt.reset()
         upsertStmt.bindLong(1, data.habitId)

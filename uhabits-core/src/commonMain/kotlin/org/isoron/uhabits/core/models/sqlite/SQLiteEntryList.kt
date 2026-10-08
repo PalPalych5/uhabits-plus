@@ -62,6 +62,8 @@ class SQLiteEntryList(
 
     override fun add(entry: Entry) {
         loadRecords()
+        val previous = super.get(entry.date)
+        if (previous.value == entry.value && previous.notes == entry.notes) return
         val habitId = habitId ?: throw IllegalStateException("habitId must be set")
         val uuid = entryUuid(entry.date)
         val updatedAt = syncManager.now()

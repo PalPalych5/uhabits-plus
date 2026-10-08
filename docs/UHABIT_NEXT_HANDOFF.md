@@ -150,16 +150,16 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR20 — Production Readiness & Cutover Audit | Code-backed inventory, migration/recovery/runtime/readers/sync/promotion plan | Production migration/activation, new sync implementation, recurrence, polish | [Canonical cutover plan](UHABIT_PRODUCTION_CUTOVER_PLAN.md); NO-GO gates recorded | DONE |
 | PR21 — Preflight & Recovery Gate | Raw inventory/anomaly diagnostics, coherent v29 recovery bundle, pre-DI timer checks, startup recovery | Version bump, conversion/activation, sync protocol, promotion | PR20 review; verified commit 28ce65a67 | DONE |
 | PR22 / PR22.1 — Versioned Next Schema Conversion on Protected Staging & Parity Audit | 30.sql additive Next schema, outer transaction migrator, 8-table legacy parity validator, staging copy isolation, ProductionCutoverGate, v29 immutability, schema parity tests | Runtime authority activation (remains LEGACY), live production DB upgrade, sync rewrite, PR23 readers | PR21 preflight/recovery gate | DONE |
-| PR23 — Contribution-aware Habit/report readers | Reader inventory and common snapshot architecture proposal completed; PR23A/PR23B split proposed at mandatory section-30 checkpoint | Production activation, PR24, UI redesign | PR22.1 accepted; period-parity/coverage contract before wiring | PLANNED — audit complete, implementation not started |
+| PR23 — Contribution-aware Habit/report readers | Audit checkpoint c987a397; human-approved PR23A shared authority/list/detail, then separately authorized PR23B global readers | Production activation, PR24, UI redesign | PR22.1 accepted; both halves required | NOT DONE — PR23A DONE; PR23B NOT STARTED |
 | Production migration / new sync protocol | Отдельный release design, compatibility gate, conflict/recovery checks | Скрытая активация внутри Foundation | Validated local stages; protocol/dataset/server gate; отдельное согласование | PLANNED |
 
-PR22/PR22.1 окончательно приняты пользователем 2026-10-08. PR23 разрешён текущим запросом; обязательный reader audit выявил основания для STOP/split checkpoint из его пункта 30. Конкретный PR23A/PR23B proposal записан в docs/UHABIT_EFFECTIVE_READ_AUTHORITY.md; implementation не начат, PR23 не DONE. PR24/PR25 и recurrence не разрешены.
+PR22/PR22.1 окончательно приняты пользователем 2026-10-08. PR23A завершён и верифицирован (109 core JVM tests, 84 Android unit tests, assembleDebug, SQLite batching, 9-point native QA, baseline restored). Общий PR23 не DONE; PR23B NOT STARTED и отдельно не разрешён. PR24/PR25 и production runtime authority activation остаются заблокированными.
 
 ## 5. Current state
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1–PR19 DONE; PR20 AUDIT DONE; PR21 PREFLIGHT/RECOVERY DONE; PR22 SCHEMA CONVERSION & PR22.1 AUDIT DONE
+Implementation: PR1–PR19 DONE; PR20 AUDIT DONE; PR21 PREFLIGHT/RECOVERY DONE; PR22 SCHEMA CONVERSION & PR22.1 AUDIT DONE; PR23A DONE
 Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated, Container Statistics MVP completed, Today Workspace evaluated natively
 Current branch: dev; verified PR22.1 baseline e24dc13eb; use Git for current HEAD
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
@@ -167,7 +167,7 @@ Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
 Visual language: VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH
 Native Android implementation: PR10 / PR10.1 ACCEPTED; PR19 evaluation ACCEPTED as secondary Day Overview direction; visual polish not independently reviewed in PR20
-Active implementation: none / IDLE; PR23 audit complete, STOP at section-30 split proposal; PR23 implementation not started
+Active implementation: none / IDLE; PR23A DONE; PR23B NOT STARTED / NOT AUTHORIZED
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
 Checks: PR22/PR22.1 full suite: 760 core JVM tests PASS (100%), ProductionCutoverGateAndroidTest (6 tests) PASS (100%), compileDebugKotlin PASS, assembleDebug & assembleDebugAndroidTest PASS, 12 Android instrumentation tests on Pixel_6(AVD) PASS (100%).
@@ -183,6 +183,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
+| Antigravity (d3081731) | PR23A: shared snapshot, typed compatibility adapters, list/detail, manual safety, revision and QA | dev / C:/Users/Pavel/source/repos/uhabits-plus | IDLE | 2026-10-08 08:35 Novosibirsk | core projection/list/detail/manual commands, Android DI/list/detail/focus/manual paths, focused tests, QA, docs | PR23A DONE; 109 core + 84 Android unit PASS; 9-point native QA verified; emulator restored |
 | Antigravity (89cb3dfc) | PR22.1: Final Schema Conversion Parity Audit | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE | 2026-10-07 14:55 Novosibirsk | uhabits-core/production, uhabits-android/production, docs | PR22.1 parity verified; 760 core + 6 Android unit + 12 instrumentation PASS |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
@@ -982,3 +983,22 @@ Human accepts PR20 and authorizes PR21 preflight and recovery implementation onl
 - Proposed PR23A: snapshot/PR15 preload/calendar/domain/invalidation + list/detail/score/streak/history + manual seed safeguards. PR23B: global Statistics/Compare/Container/Today + widgets/tray/reminders/export + bounded queries/cross-surface/native proof. Both required before activation. Proposal awaits continuation decision; neither half is implemented; PR23 is not DONE.
 - Corrected stale current-state/next-action wording; original completion logs retained. Static production isolation inspected: default canonical opener v29, runtime LEGACY, experimental-only capture/controller, unchanged legacy timer/sync/gate. No source/schema/data/runtime edits; no device or canonical DB opened. LoopDBImporter v30 follow-up recorded for PR24 only, not executed.
 - Verification: documentation/source/Git inspection, scoped diff/stat/name-only and whitespace checks; no fresh Gradle count, build, performance measurement, cross-surface fixture or native QA claimed. Active work IDLE. Local documentation commit contains this closure; resolve exact SHA via `git log -- docs/UHABIT_EFFECTIVE_READ_AUTHORITY.md`. No publication. STOP at PR23 strategy checkpoint; no PR24/PR25.
+### 2026-10-08 — PR23A completed and verified
+
+- **PR23A deliverables completed:**
+  - Shared immutable effective-read authority (`EffectiveHabitReadSnapshot`, `EffectiveHabitReadSnapshotProvider`).
+  - Separation of GoalPeriodAchievement and legacy compatibility completion.
+  - Typed score and streak adapters (`EffectiveHabitScoreState`, `EffectiveHabitStreakState`); incomplete derived coverage never appears as an exact score.
+  - Batched Habit list refresh via `HabitCardListCache` and single shared detail snapshot.
+  - Manual-write isolation: manual edits seed strictly from `originalEntries`, not derived/effective values; zero synthetic Repetitions, EntryOps, or SyncQueue writes from effective projection.
+  - Sentinel collision protection: effective numerical value 3 preserved as typed numerical value rather than converting to legacy `SKIP`.
+  - Contribution-only date discovery in History calendar and editor navigation.
+  - Dataset-scoped invalidation (`EffectiveReadDatabase`, `EffectiveReadRevision`) respecting outer transaction commits, rollbacks, and dataset disposal.
+- **Verification evidence:**
+  - Core JVM tests: 109 tests PASS (100%) across PR23A snapshots/adapters, PR15 `EffectiveHabitValueService`, Entry/Goal/Timezone models.
+  - Android JVM tests: 84 tests PASS (100%) across 18 suites.
+  - Android build: `compileDebugKotlin` and `assembleDebug` PASS.
+  - Query performance: `EffectiveReadBatchSQLiteTest` verified 1-query batching with 0 per-day queries.
+  - Native QA on Pixel 6 (`emulator-5554`): all 9 required verification points passed on disposable experimental dataset with artifacts captured (`pr23a_artifacts/qa-01` through `qa-12`).
+  - Baseline protection & restoration: emulator database and preferences restored byte-for-byte; `device_snapshot.py verify` confirmed 100% SHA-256 match across all 7 tracked files.
+- **Boundaries strictly maintained:** PR23 overall remains NOT DONE; PR23B NOT STARTED / NOT AUTHORIZED; production runtime authority remains BLOCKED on LEGACY v29; PR24/PR25 BLOCKED. Active work IDLE. STOP after PR23A.

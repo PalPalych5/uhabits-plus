@@ -28,6 +28,7 @@ class AppSettingRepository(private val db: Database) {
     }
 
     fun putLong(key: String, value: Long?) {
+        if (getLong(key) == value) return
         if (value == null) {
             delete(key)
             return

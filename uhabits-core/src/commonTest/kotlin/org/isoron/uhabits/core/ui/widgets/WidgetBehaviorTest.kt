@@ -128,6 +128,20 @@ class WidgetBehaviorTest : BaseUnitTest() {
     }
 
     @Test
+    fun numericalAdjustmentsIgnoreDerivedReadQuantity() {
+        habit = fixtures.createNumericalHabit()
+        habit.originalEntries.add(Entry(today, 30000, "manual"))
+        habit.recompute()
+        habit.computedEntries.add(Entry(today, 90000, "derived"))
+        behavior.onIncrement(habit, today, 10000)
+        behavior.onDecrement(habit, today, 10000)
+        verify {
+            commandRunner.run(CreateRepetitionCommand(habitList, habit, today, 40000, "manual"))
+            commandRunner.run(CreateRepetitionCommand(habitList, habit, today, 20000, "manual"))
+        }
+    }
+
+    @Test
     fun testOnDecrement() {
         habit = fixtures.createNumericalHabit()
         habit.originalEntries.add(Entry(today, 500))

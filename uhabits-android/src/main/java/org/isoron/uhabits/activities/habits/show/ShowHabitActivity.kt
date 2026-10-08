@@ -86,6 +86,10 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
     private lateinit var themeSwitcher: AndroidThemeSwitcher
     private lateinit var widgetUpdater: WidgetUpdater
     private var focusCredit: org.isoron.uhabits.focus.FocusCreditController? = null
+    private var effectiveReads: org.isoron.uhabits.focus.EffectiveHabitReadController? = null
+    private val effectiveHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val effectiveRefresh = Runnable { if (!isFinishing) screen.refresh() }
+    private val effectiveObserver: () -> Unit = { effectiveHandler.removeCallbacks(effectiveRefresh); effectiveHandler.post(effectiveRefresh) }
     private val focusObserver: () -> Unit = { screen.refresh() }
 
     private val scope = CoroutineScope(Dispatchers.Main)
@@ -115,6 +119,7 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
         commandRunner = appComponent.commandRunner
         widgetUpdater = appComponent.widgetUpdater
         focusCredit = appComponent.focusCreditController
+        effectiveReads = appComponent.effectiveHabitReads
 
         themeSwitcher = AndroidThemeSwitcher(this, preferences)
         themeSwitcher.apply()
@@ -174,6 +179,8 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
         habit.observable.addListener(this)
         habitList.observable.addListener(this)
         focusCredit?.addObserver(focusObserver)
+        effectiveReads?.revision?.addListener(effectiveObserver)
+        effectiveReads?.revision?.addRollbackListener(effectiveObserver)
         supportFragmentManager.findFragmentByTag("historyEditor")?.let {
             (it as HistoryEditorDialog).setOnDateClickedListener(presenter.historyCardPresenter)
         }
@@ -187,6 +194,9 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
         habit.observable.removeListener(this)
         habitList.observable.removeListener(this)
         focusCredit?.removeObserver(focusObserver)
+        effectiveReads?.revision?.removeListener(effectiveObserver)
+        effectiveReads?.revision?.removeRollbackListener(effectiveObserver)
+        effectiveHandler.removeCallbacks(effectiveRefresh)
         super.onPause()
     }
 
@@ -247,21 +257,32 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
 
         override fun refresh() {
             scope.launch {
-                view.setState(
+                val loaded = runCatching {
+                    val snapshot = effectiveReads?.snapshot(habit)
                     ShowHabitPresenter.buildState(
                         habit = habit,
                         preferences = preferences,
-                        theme = themeSwitcher.currentTheme
+                        theme = themeSwitcher.currentTheme,
+                        snapshot = snapshot,
                     )
-                )
+                }
+                if (loaded.isFailure) {
+                    view.setEffectiveReadUnavailable()
+                    return@launch
+                }
+                val state = loaded.getOrThrow()
+                view.setState(state)
                 val controller = focusCredit
                 val eligible = controller != null && runCatching {
                     org.isoron.uhabits.core.rules.HabitTimeValueConverter.validateTargetHabit(habit)
                 }.isSuccess
                 if (eligible) {
-                    val progress = runCatching { FocusProgressPresentation.from(controller!!.goalProgress(habit)) }
-                    view.setFocusProgress(progress.getOrNull(), progress.isFailure)
-                } else view.setFocusProgress(null)
+                    if (state.goalAchievementUnavailable) view.setFocusProgress(null, true)
+                    else {
+                        val progress = runCatching { FocusProgressPresentation.from(state.goalAchievement?.progress ?: controller!!.goalProgress(habit)) }
+                        view.setFocusProgress(progress.getOrNull(), progress.isFailure)
+                    }
+                } else view.setFocusProgress(null, state.quantityUnavailable)
             }
         }
 

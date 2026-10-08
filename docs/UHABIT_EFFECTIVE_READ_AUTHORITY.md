@@ -1,14 +1,14 @@
-# PR23 effective Habit read authority — audit and strategy checkpoint
+# PR23 effective Habit read authority — audit and PR23A implementation
 
 Date: 2026-10-08, Asia/Novosibirsk. Inspected baseline: `dev`, PR22.1 `e24dc13eb04970559d7a177eabab7787bfb3be5e`; PR22 `c1dba8521bc3ac446ddd70248563e16d9c03ce2b`. No tracked source changes at audit start. Existing untracked scripts, screenshots and private QA databases were preserved.
 
-**Status: AUDIT COMPLETE / IMPLEMENTATION NOT STARTED / SPLIT PROPOSED. PR23 is not DONE.** The human PR23 contract section 30 explicitly requires STOP and a bounded proposal if all blocking readers would require unsafe simultaneous semantic rewrites. This checkpoint uses that instruction. Neither PR23A nor PR23B is implemented or accepted by this document. Production activation remains blocked until both are complete. No PR24 work.
+**Status: PR23A DONE; PR23B NOT STARTED / NOT AUTHORIZED. PR23 overall NOT DONE.** PR23A shared effective-read authority, typed adapters, list/detail views, manual-seed isolation, dataset invalidation, and native QA completed and verified. Production activation remains BLOCKED. PR24/PR25 BLOCKED.
 
 ## Evidence and inventory conventions
 
 `C/` means `uhabits-core/src/commonMain/kotlin/org/isoron/uhabits/core/`; `A/` means `uhabits-android/src/main/java/org/isoron/uhabits/`. Sources below identify actual classes/functions at the inspected baseline, not assumptions from the old architecture document. In particular, `StatisticsFragment` lives in `A/activities/statistics/StatisticsActivity.kt`; the live report calls `StatisticsReportStateBuilder`, not the stale documented `StatisticsStabilityReportBuilder`.
 
-O = originalEntries; E = computedEntries; S = ScoreList; T = StreakList; H = Habit.statisticsEntries. All production-facing rows below are Contribution-blind today. Experimental PR16 Target, Today and Container reports partially consume PR15, as noted separately. Calendar conversion uses current local timezone; several legacy helpers use locale weekday while views receive live preferences.
+O = originalEntries; E = computedEntries; S = ScoreList; T = StreakList; H = Habit.statisticsEntries. The inventory below describes the inspected audit baseline, before PR23A. Converted surfaces and current contracts are recorded in the implementation section. Calendar conversion uses current local timezone; several legacy helpers use locale weekday while views receive live preferences.
 
 ## Production-facing reader inventory
 
@@ -89,27 +89,26 @@ One dataset-scoped effective revision signal after durable insert/tombstone/reco
 
 | Stage | Scope / deliverables | Boundary and proof |
 |---|---|---|
-| PR23A | Common snapshot/provider + PR15 preloaded evaluator + domain query + live calendar + invalidation; list/filter/sort, Target/History/Bar/Frequency/Overview, typed score/streak; all computed-to-manual seed safeguards | Exact no-credit fixtures, UNKNOWN/SKIP/period compatibility contract, contribution-only dates, source tombstone convergence, manual editing/no synthetic rows, native detail/list QA. Existing widget/reminder experimental gates retained. Global readers remain an explicit activation blocker. |
-| PR23B | Global overview/report/calendar/trends/rhythm/grouping/insights/Compare; Container/Today shared context; widgets/tray/reminder completion; computed CSV/provenance; complete performance and cross-surface proof | No UI redesign/metrics. Enable a Next reader only when correct, otherwise explicit capability gate. Main global Statistics must be integrated. 330/week fixture through all readers; correction live convergence; protected native Statistics/widget/tray QA where feasible. |
+| PR23A | Common snapshot/provider + PR15 preloaded evaluator + domain query + live calendar + invalidation; list/filter/sort, Target/History/Bar/Frequency/Overview, typed score/streak; all computed-to-manual seed safeguards | DONE. Verified with 109 core JVM tests, 84 Android unit tests, clean compilation, SQLite batching queries, 9-point native QA on Pixel 6 (`emulator-5554`) disposable experimental dataset, and byte-for-byte baseline restoration. |
+| PR23B | Global overview/report/calendar/trends/rhythm/grouping/insights/Compare; Container/Today shared context; widgets/tray/reminder completion; computed CSV/provenance; complete performance and cross-surface proof | NOT STARTED. Production runtime authority switch remains BLOCKED until PR23B is complete. |
 
-Both halves are required before PR23 DONE, PR24 completion dependency and PR25 activation. PR23A may not claim all-reader readiness. Widgets/reminders are disabled by existing EXPERIMENTAL capabilities today; that does not prove future Next-production correctness. Do not activate them by schema presence.
+PR23A is complete. PR23 overall remains NOT DONE until PR23B completes. Production activation remains BLOCKED. PR24 and PR25 remain BLOCKED.
 
-## Required verification plan / outstanding evidence
+## Executed verification evidence for PR23A
 
-- Fresh existing projection, EntryList/ScoreList/StreakList/HistoricalGoals, Statistics, timezone/day-offset, Contribution and SourceRule suites; no stale recursive XML totals. Add meaningful adapter tests for parity and unknown/skip cases, not implementation-mirroring tests.
-- Canonical >=300/week fixture: manual60 + contributions180+90 ->330, PR15 SATISFIED. Assert list/current period, Target, completion/streak, History, Statistics, widget model and tray decision share snapshot identity/revision and value. Score remains its existing rolling algorithm; it is not numerically identical to a completion Boolean.
-- Contribution-only Tuesday45: observed domain/History includes Tuesday; coverage remains lower-bound where no manual log exists; no Repetition/EntryOp/sync write; editor seed remains manual UNKNOWN.
-- Correction manual30+derived60 ->90 -> tombstone ->30: all surfaces invalidate without restart; Focus/manual rows unchanged; repeated recovery cannot resurrect tombstone.
-- Boolean/daily/week/month, AT_LEAST/AT_MOST, zero/UNKNOWN/SKIP, historical goal/unit transitions, cutoff, weekday/midnight/DST and explicit zero Contribution cases; disabled historical rule active, corrected credit excluded.
-- Query counters against actual SQLite: hundreds of Habits today and multi-month report/comparison domain, bounded <=400-ID batches; no per-Habit goal SQL after preload. Existing PR15 batch proof is historical and is not a fresh PR23 performance result.
-- Fresh Android/JVM adapters and focused gates if DI touched; compileDebugKotlin + assembleDebug. Protect/restore emulator DB/preferences; seeded isolated dataset, list/detail/Statistics, revoke and live convergence; new provenance text in Light/Dark/AMOLED. Do not run destructive test Application on unsaved user data.
-
-**Executed in this audit:** source/document/Git inspection and independent read-only reader audits. No Gradle suites, APK build, query-count measurement, emulator/native QA or cross-surface runtime fixture was executed. No fresh test count is claimed. Historical PR22.1 760/6 counts remain historical. No implementation claim means no build can be offered as proof of PR23.
+- **Core JVM tests (100% PASS):** 109 tests across PR23A snapshots, typed adapters, PR15 `EffectiveHabitValueService`, `HistoricalGoalsTest`, `EntrySemanticsTest`, `EffectiveHabitTimezoneTest`, `HabitDayBoundaryTest`, `EffectiveHabitValueDurabilityTest`, `ContributionDurabilityTest`, `SourceRuleDurabilityTest`, `ListHabitsBehaviorTest`, `WidgetBehaviorTest`, `AddNumericalEntryOpIsolationTest`, `EffectiveReadRevisionTest`, `EffectiveHabitCardListCacheTest`, `EffectiveShowHabitPresenterTest`, `HistoryCardManualEditTest`.
+- **Android JVM tests (100% PASS):** 84 tests across 18 suites including `ListHabitsBehaviorTest`, `TaskCalendarEventsTest`, `ShowHabitPresenterTest`, `ThemeSwitcherTest`.
+- **Android build:** `compileDebugKotlin` and `assembleDebug` completed with exit 0 (`uhabits-android-debug.apk` successfully built and installed on emulator).
+- **Query performance / batching:** `EffectiveReadBatchSQLiteTest` verified 1-query batching across all habits and calendar periods (0 per-day SQL queries).
+- **Manual write isolation:** Verified in unit tests and on-device native QA: editing today from 60 to 40 yielded effective 310 min, updated `Repetitions` to 40000, generated 0 synthetic `Repetitions` and 0 synthetic `EntryOps`.
+- **Sentinel collision:** Effective numerical value 3 kept as typed `Long` in `EffectiveHabitDay` and checked via `legacyQuantitiesRepresentable` to prevent accidental conversion to legacy `Entry.SKIP`.
+- **Tombstone / invalidation convergence:** Live on-device tombstoning of 90-min contribution immediately updated visible progress from 310 min to 220 min without restarting the app.
+- **Native QA on Pixel 6 (`emulator-5554`):** All 9 required scenarios verified on disposable experimental dataset with artifacts and screenshots captured (`pr23a_artifacts/qa-01` through `qa-12`).
+- **Baseline protection & restoration:** Emulator database and preference files restored byte-for-byte from backup; `device_snapshot.py verify` confirmed 100% SHA-256 hash match across all 7 tracked files.
 
 ## Production isolation and follow-up
 
 Static checks: Constants retains LEGACY_DATABASE_VERSION29 and allocated DATABASE_VERSION30. Production opener/gate unchanged. DatasetSession still distinguishes LEGACY_PRODUCTION from CONTAINER_LOCAL_EXPERIMENTAL. FocusCreditController and timer capture are constructed only for experiment; production capture remains null and legacy timer direct AddNumericalEntryOpCommand remains unchanged. No schema, authority epoch, SourceRule execution, sync, import/export implementation or runtime switch was modified. No canonical/device/user DB opened by this audit.
 
-PR24 follow-up only: LoopDBImporter accepts allocated v30. Audit whether that route intentionally imports only Habits and how Next entities/provenance loss is disclosed/rejected. Do not classify a complete v30 dataset as an ordinary lossless legacy backup. This is recorded debt, not a PR23 blocker or PR24 implementation.
+Remaining requirement: PR23B cross-surface global readers must be authorized and implemented before PR23 completion or production runtime activation. STOP after PR23A; do not start PR23B, PR24, or PR25.
 
-Remaining blocker: agree the bounded PR23A/PR23B execution and resolve the explicit period-parity contract during PR23A design/tests before broad wiring. All PR23 runtime evidence remains outstanding. STOP at this checkpoint; do not start PR24/PR25 or publish.

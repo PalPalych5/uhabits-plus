@@ -129,7 +129,8 @@ class HabitCardListAdapter(
         val checkmarks = cache.getCheckmarks(habit.id!!)
         val notes = cache.getNotes(habit.id!!)
         val selected = selected.contains(habit)
-        listView!!.bindCardView(holder, habit, score, checkmarks, notes, selected)
+        val card = listView!!.bindCardView(holder, habit, score, checkmarks, notes, selected) as HabitCardView
+        card.effectiveSnapshot = cache.getEffectiveSnapshot(habit.id!!)
     }
 
     override fun onViewAttachedToWindow(holder: HabitCardViewHolder) {

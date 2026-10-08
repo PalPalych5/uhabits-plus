@@ -128,7 +128,7 @@ class HistoryCardPresenter(
     }
 
     private fun showNumberPopup(date: LocalDate) {
-        val entry = habit.computedEntries.get(date)
+        val entry = habit.originalEntries.get(date)
         val oldValue = entry.value
         screen.showNumberPopup(
             value = oldValue / 1000.0,

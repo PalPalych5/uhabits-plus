@@ -1,0 +1,6 @@
+<resources>
+    <string name="effective_read_unavailable">Habit progress is unavailable. Check the experimental data integrity.</string>
+    <string name="effective_read_provenance">Includes Focus credit. Editing a day changes its manual value only.</string>
+    <string name="effective_read_incomplete">Includes Focus credit and incomplete manual history. Quantities are lower bounds; score and streak are unavailable. Editing changes the manual value only.</string>
+    <string name="effective_read_quantity_unavailable">This quantity cannot be shown by the existing charts. Calendar progress and manual editing remain available.</string>
+</resources>

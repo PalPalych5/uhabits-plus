@@ -49,6 +49,17 @@
                 android:id="@+id/subtitleCard"
                 style="@style/ShowHabit.Subtitle" />
 
+            <TextView
+                android:id="@+id/effectiveReadNotice"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="8dp"
+                android:textSize="12sp"
+                android:textColor="?contrast100"
+                android:visibility="gone" />
+
             <org.isoron.uhabits.activities.habits.show.views.TimerCardView
                 android:id="@+id/timerCard"
                 style="@style/ShowHabit.Card"

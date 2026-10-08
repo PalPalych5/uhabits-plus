@@ -33,6 +33,8 @@ import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.ui.screens.habits.show.views.HistoryCardPresenter
+import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitPresenter
+import org.isoron.uhabits.focus.EffectiveHabitReadController
 import org.isoron.uhabits.core.ui.views.HistoryChart
 import org.isoron.uhabits.core.ui.views.LightTheme
 import org.isoron.uhabits.core.ui.views.OnDateClickedListener
@@ -44,6 +46,10 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener {
     private lateinit var commandRunner: CommandRunner
     private lateinit var habit: Habit
     private lateinit var preferences: Preferences
+    private var effectiveReads: EffectiveHabitReadController? = null
+    private val onEffectiveChange: () -> Unit = {
+        if (::dataView.isInitialized) dataView.post { if (isResumed) refreshData() }
+    }
     lateinit var dataView: AndroidDataView
 
     private var chart: HistoryChart? = null
@@ -55,6 +61,7 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener {
         commandRunner = component.commandRunner
         habit = component.habitList.getById(requireArguments().getLong("habit"))!!
         preferences = component.preferences
+        effectiveReads = component.effectiveHabitReads
 
         val themeSwitcher = AndroidThemeSwitcher(requireActivity(), preferences)
         themeSwitcher.apply()
@@ -93,11 +100,15 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener {
     override fun onResume() {
         super.onResume()
         commandRunner.addListener(this)
+        effectiveReads?.revision?.addListener(onEffectiveChange)
+        effectiveReads?.revision?.addRollbackListener(onEffectiveChange)
         refreshData()
     }
 
     override fun onPause() {
         commandRunner.removeListener(this)
+        effectiveReads?.revision?.removeListener(onEffectiveChange)
+        effectiveReads?.revision?.removeRollbackListener(onEffectiveChange)
         super.onPause()
     }
 
@@ -107,11 +118,17 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener {
     }
 
     private fun refreshData() {
-        val model = HistoryCardPresenter.buildState(
-            habit,
-            preferences.firstWeekday,
-            theme = LightTheme()
-        )
+        // Only the presentation is projected. Date clicks retain the parent's presenter,
+        // whose numerical editor reads canonical manual entries from the real Habit.
+        val model = runCatching {
+            val snapshot = effectiveReads?.snapshot(habit)
+            if (snapshot == null) HistoryCardPresenter.buildState(habit, preferences.firstWeekday, LightTheme())
+            else ShowHabitPresenter.buildState(habit, preferences, LightTheme(), snapshot).history
+        }.getOrElse {
+            android.widget.Toast.makeText(requireContext(), R.string.focus_credit_unavailable, android.widget.Toast.LENGTH_LONG).show()
+            dismissAllowingStateLoss()
+            return
+        }
         chart?.series = model.series
         chart?.defaultSquare = model.defaultSquare
         chart?.notesIndicators = model.notesIndicators

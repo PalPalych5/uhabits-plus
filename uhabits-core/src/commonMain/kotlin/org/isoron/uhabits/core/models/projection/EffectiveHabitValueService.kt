@@ -82,6 +82,27 @@ class EffectiveHabitValueService(
     fun valuesForRange(habits: List<Habit>, from: LocalDate, to: LocalDate): Map<HabitRef, EffectiveHabitValue> {
         require(from <= to) { "Range start must not follow its end" }
         val byRef = habits.associateBy { HabitRef(requireNotNull(it.uuid)) }
+        return daysForRange(habits, from, to).mapValues { (ref, days) ->
+            val habit = byRef.getValue(ref)
+            val observedDays = days.filter { it.includedInStatistics && !it.isSkipped && it.totalValue != null }
+            if (observedDays.map { unitKey(goalAt(habit, it.manualEntry.date).unit) }.distinct().size > 1) {
+                throw HabitProjectionIntegrityException("Cannot aggregate different historical Habit units")
+            }
+            if (days.any { it.includedInStatistics && !it.isSkipped && it.contributions.isNotEmpty() }) {
+                // A range may straddle a unit change even when facts occur on only one side.
+                // Never sum a known manual hour/page measurement with minute Contributions.
+                for (day in observedDays) {
+                    validateUnits(habit, day.manualEntry.date)
+                }
+            }
+            aggregate(days)
+        }
+    }
+
+    /** Batched per-day facts, with no invalid cross-unit all-history aggregate. */
+    fun daysForRange(habits: List<Habit>, from: LocalDate, to: LocalDate): Map<HabitRef, List<EffectiveHabitDay>> {
+        require(from <= to) { "Range start must not follow its end" }
+        val byRef = habits.associateBy { HabitRef(requireNotNull(it.uuid)) }
         require(byRef.size == habits.size) { "Duplicate Habit identities in projection batch" }
         if (byRef.isEmpty()) return emptyMap()
         // A configured offset inside a DST overlap can make the existing Habit date label
@@ -97,18 +118,7 @@ class EffectiveHabitValueService(
             val days = habit.originalEntries.getByInterval(from, to).map { entry ->
                 projectDay(habit, entry, byDay[entry.date].orEmpty())
             }.sortedBy { it.manualEntry.date }
-            val observedDays = days.filter { it.includedInStatistics && !it.isSkipped && it.totalValue != null }
-            if (observedDays.map { unitKey(goalAt(habit, it.manualEntry.date).unit) }.distinct().size > 1) {
-                throw HabitProjectionIntegrityException("Cannot aggregate different historical Habit units")
-            }
-            if (days.any { it.includedInStatistics && !it.isSkipped && it.contributions.isNotEmpty() }) {
-                // A range may straddle a unit change even when facts occur on only one side.
-                // Never sum a known manual hour/page measurement with minute Contributions.
-                for (day in observedDays) {
-                    validateUnits(habit, day.manualEntry.date)
-                }
-            }
-            aggregate(days)
+            days
         }
     }
 
@@ -125,7 +135,20 @@ class EffectiveHabitValueService(
             30 -> from.plus(from.monthLength - 1)
             else -> date
         }
-        val value = valueForRange(habit, from, to)
+        return goalProgressOn(habit, date, valueForRange(habit, from, to))
+    }
+
+    /** Evaluates an already loaded complete period; performs no repository reads. */
+    fun goalProgressOn(habit: Habit, date: LocalDate, preloaded: EffectiveHabitValue): EffectiveHabitGoal =
+        goalProgressOn(habit, date, preloaded.days)
+
+    fun goalProgressOn(habit: Habit, date: LocalDate, preloadedDays: List<EffectiveHabitDay>): EffectiveHabitGoal {
+        val goal = goalAt(habit, date)
+        val from = when (goal.frequency.denominator) { 7 -> date.startOfWeek(firstWeekday); 30 -> date.startOfMonth(); else -> date }
+        val to = when (goal.frequency.denominator) { 7 -> from.plus(6); 30 -> from.plus(from.monthLength - 1); else -> date }
+        val days = preloadedDays.filter { it.manualEntry.date >= from && it.manualEntry.date <= to }
+        require(days.size == to.daysSince2000 - from.daysSince2000 + 1) { "Preloaded values must cover the entire goal period" }
+        val value = aggregate(days)
         if (habit.isNumerical && value.days.any {
             it.includedInStatistics && !it.isSkipped && it.totalValue != null &&
                 unitKey(goalAt(habit, it.manualEntry.date).unit) != unitKey(goal.unit)
@@ -152,6 +175,10 @@ class EffectiveHabitValueService(
         }
         return EffectiveHabitGoal(goal, from, to, value, status)
     }
+
+    internal fun hasUniformObservationUnits(habit: Habit, days: List<EffectiveHabitDay>): Boolean =
+        days.filter { it.includedInStatistics && !it.isSkipped && it.totalValue != null }
+            .map { unitKey(goalAt(habit, it.manualEntry.date).unit) }.distinct().size <= 1
 
     private fun projectDay(habit: Habit, entry: Entry, contributions: List<Contribution>): EffectiveHabitDay {
         if (contributions.isNotEmpty()) {

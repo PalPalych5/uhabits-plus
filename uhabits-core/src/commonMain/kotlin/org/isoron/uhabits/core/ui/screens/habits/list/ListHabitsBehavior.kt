@@ -54,7 +54,8 @@ open class ListHabitsBehavior(
     }
 
     open fun onEdit(habit: Habit, date: LocalDate, x: Float, y: Float) {
-        val entry = habit.computedEntries.get(date)
+        val entry = if (habit.isNumerical) habit.originalEntries.get(date)
+        else habit.computedEntries.get(date)
         if (habit.type == HabitType.NUMERICAL) {
             val goal = habit.goalAt(date)
             val oldValue = entry.value.toDouble() / 1000
