@@ -2,7 +2,7 @@
 
 Date: 2026-10-08, Asia/Novosibirsk. Inspected baseline: `dev`, PR22.1 `e24dc13eb04970559d7a177eabab7787bfb3be5e`; PR22 `c1dba8521bc3ac446ddd70248563e16d9c03ce2b`. No tracked source changes at audit start. Existing untracked scripts, screenshots and private QA databases were preserved.
 
-**Status: PR23A DONE; PR23B NOT STARTED / NOT AUTHORIZED. PR23 overall NOT DONE.** PR23A shared effective-read authority, typed adapters, list/detail views, manual-seed isolation, dataset invalidation, and native QA completed and verified. Production activation remains BLOCKED. PR24/PR25 BLOCKED.
+**Status: PR23A DONE; PR23B IN_PROGRESS (Global Statistics checkpoint completed and verified; Compare, Widgets, Notifications, CSV remaining). PR23 overall NOT DONE.** Production activation remains BLOCKED. PR24/PR25 BLOCKED.
 
 ## Evidence and inventory conventions
 
@@ -90,9 +90,9 @@ One dataset-scoped effective revision signal after durable insert/tombstone/reco
 | Stage | Scope / deliverables | Boundary and proof |
 |---|---|---|
 | PR23A | Common snapshot/provider + PR15 preloaded evaluator + domain query + live calendar + invalidation; list/filter/sort, Target/History/Bar/Frequency/Overview, typed score/streak; all computed-to-manual seed safeguards | DONE. Verified with 109 core JVM tests, 84 Android unit tests, clean compilation, SQLite batching queries, 9-point native QA on Pixel 6 (`emulator-5554`) disposable experimental dataset, and byte-for-byte baseline restoration. |
-| PR23B | Global overview/report/calendar/trends/rhythm/grouping/insights/Compare; Container/Today shared context; widgets/tray/reminder completion; computed CSV/provenance; complete performance and cross-surface proof | NOT STARTED. Production runtime authority switch remains BLOCKED until PR23B is complete. |
+| PR23B | Global overview/report/calendar/trends/rhythm/grouping/insights/Compare; Container/Today shared context; widgets/tray/reminder completion; computed CSV/provenance; complete performance and cross-surface proof | IN_PROGRESS (Global Statistics checkpoint completed and verified; Compare, Widgets, Notifications, CSV remaining). Production runtime authority switch remains BLOCKED until PR23B is complete. |
 
-PR23A is complete. PR23 overall remains NOT DONE until PR23B completes. Production activation remains BLOCKED. PR24 and PR25 remain BLOCKED.
+PR23A is complete. PR23B Global Statistics checkpoint is complete. PR23 overall remains NOT DONE until PR23B completes. Production activation remains BLOCKED. PR24 and PR25 remain BLOCKED.
 
 ## Executed verification evidence for PR23A
 
@@ -106,9 +106,31 @@ PR23A is complete. PR23 overall remains NOT DONE until PR23B completes. Producti
 - **Native QA on Pixel 6 (`emulator-5554`):** All 9 required scenarios verified on disposable experimental dataset with artifacts and screenshots captured (`pr23a_artifacts/qa-01` through `qa-12`).
 - **Baseline protection & restoration:** Emulator database and preference files restored byte-for-byte from backup; `device_snapshot.py verify` confirmed 100% SHA-256 hash match across all 7 tracked files.
 
+## Executed verification evidence for PR23B Global Statistics Checkpoint
+
+- **Core JVM tests (100% PASS, 84 tests across 6 suites):**
+  - `StatisticsEffectiveReportTest`: 9 tests PASS (no-contribution parity, contribution-only date discovery, lower bound proofs, AT_MOST limits, SKIP provenance exclusion, canonical fixture 330m -> 240m convergence, historical goals, cutoffs, weekday alignment).
+  - `StatisticsReportStateBuilderTest`: 36 tests PASS.
+  - `StatisticsOverviewTest`: 11 tests PASS.
+  - `EffectiveHabitReadSnapshotTest`: 19 tests PASS (including `manualPlusCreditAndEditNeverCopiesDerivedQuantity` manual-write isolation regression test).
+  - `EffectiveReadRevisionTest`: 7 tests PASS.
+  - `EffectiveReadBatchSQLiteTest`: 2 tests PASS (500 habits over multi-month range use 4 indexed queries; global statistics report uses 0 per-day or per-goal queries after preloading; verified index usage on `Contributions`).
+- **Android compilation & packaging:**
+  - `compileDebugKotlin`: exit 0.
+  - `assembleDebug`: exit 0.
+- **Manual-write isolation invariant:**
+  - Verified in `EffectiveHabitReadSnapshotTest`: `detachedPresentation()` populates only `projected.computedEntries`, leaving `projected.originalEntries` pristine so manual edit seeds derive strictly from original/manual entries.
+- **Native Emulator QA on Pixel 6 (`emulator-5554`) with disposable experimental dataset:**
+  - Statistics Activity opens cleanly and renders effective progress.
+  - Day tab: PR23 Study displays 330 / 300 min (100% reached, ON_TRACK); PR23 Limit displays 20 / 60 min (0% PENDING due to incomplete coverage); level completion displays 33% (1/3).
+  - All-Time tab: Discovers contribution-only earliest date (29 Sept 2026) from 45m focus session on prior Tuesday.
+  - Canonical Fixture & Tombstone Convergence: After tombstoning 90m focus session, PR23 Study immediately updates to 240 / 300 min (80% PENDING) and level completion updates to 27% (0/3).
+  - Reactive invalidation: `StatisticsActivity` observes `effectiveReadRevision` and calendar context, re-rendering reports on data mutation.
+  - Baseline protection & restoration: All emulator database and preference files restored byte-for-byte; `device_snapshot.py verify` confirmed 100% SHA-256 match across all 13 files.
+
 ## Production isolation and follow-up
 
 Static checks: Constants retains LEGACY_DATABASE_VERSION29 and allocated DATABASE_VERSION30. Production opener/gate unchanged. DatasetSession still distinguishes LEGACY_PRODUCTION from CONTAINER_LOCAL_EXPERIMENTAL. FocusCreditController and timer capture are constructed only for experiment; production capture remains null and legacy timer direct AddNumericalEntryOpCommand remains unchanged. No schema, authority epoch, SourceRule execution, sync, import/export implementation or runtime switch was modified. No canonical/device/user DB opened by this audit.
 
-Remaining requirement: PR23B cross-surface global readers must be authorized and implemented before PR23 completion or production runtime activation. STOP after PR23A; do not start PR23B, PR24, or PR25.
+Remaining requirement: PR23B remaining scope (CompareHabitsActivity, widgets, notifications/tray, CSV export) must be completed before PR23 completion or production runtime activation. STOP after Global Statistics checkpoint; PR23B remains IN_PROGRESS; do not start PR24 or PR25.
 

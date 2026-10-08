@@ -18,6 +18,7 @@
  */
 package org.isoron.uhabits.core.ui.screens.habits.list
 
+import kotlin.concurrent.Volatile
 import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.Synchronized
 import org.isoron.platform.time.getToday
@@ -310,9 +311,11 @@ class HabitCardListCache(
                         else -> originalPositions.getValue(a.id).compareTo(originalPositions.getValue(b.id))
                     }
                 }
+                val primOrder = primaryOrder
+                val secOrder = secondaryOrder
                 selected.sortWith { a, b ->
-                    val first = compare(primaryOrder, a, b)
-                    val second = if (first == 0) compare(secondaryOrder, a, b) else first
+                    val first = compare(primOrder, a, b)
+                    val second = if (first == 0) compare(secOrder, a, b) else first
                     if (second != 0) second else originalPositions.getValue(a.id).compareTo(originalPositions.getValue(b.id))
                 }
             }
@@ -338,6 +341,7 @@ class HabitCardListCache(
     private inner class RefreshTask : Task {
         private val newData: CacheData
         private val targetId: Long?
+        @Volatile
         private var isCancelled = false
         private var runner: TaskRunner? = null
 
@@ -356,12 +360,10 @@ class HabitCardListCache(
             this.generation = generation
         }
 
-        @Synchronized
         override fun cancel() {
             isCancelled = true
         }
 
-        @Synchronized
         private fun isCurrent(): Boolean = !isCancelled && generation == refreshGeneration
 
         @Synchronized

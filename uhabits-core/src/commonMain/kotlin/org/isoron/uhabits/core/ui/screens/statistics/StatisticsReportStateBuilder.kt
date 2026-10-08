@@ -9,6 +9,8 @@ import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitType
 import org.isoron.uhabits.core.models.NumericalHabitType
+import org.isoron.uhabits.core.containers.HabitRef
+import org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshot
 import kotlin.math.roundToInt
 
 enum class StatisticsPeriod {
@@ -160,6 +162,7 @@ object StatisticsReportStateBuilder {
         today: LocalDate,
         firstWeekday: DayOfWeek,
         filters: StatisticsFilterState,
+        snapshots: Map<HabitRef, EffectiveHabitReadSnapshot>? = null,
         shouldCancel: () -> Boolean = { false }
     ): StatisticsReportState {
         val filteredHabits = habits.filter { habit ->
@@ -187,33 +190,35 @@ object StatisticsReportStateBuilder {
             filteredHabits.filter { filters.tierScope.includes(it.dayTier) }
         }
 
-        val earliestStart = filteredHabits.map { getHabitStartDate(it, today) }.minOrNull() ?: today
+        val earliestStart = filteredHabits.map { getHabitStartDate(it, today, snapshots?.get(it.ref)) }.minOrNull() ?: today
         val actualStart = if (period == StatisticsPeriod.ALL) earliestStart else start
 
         // 1. Per-habit evaluation over period (equal weight macro-average)
         val habitResults = filteredHabits.mapNotNull { habit ->
             if (shouldCancel()) return@mapNotNull null
-            val relevantPeriods = getPeriodsForReport(habit, actualStart, end, today, firstWeekday)
-            val evaluated = relevantPeriods.map { evaluatePeriod(habit, it, today) }
+            val snapshot = snapshots?.get(habit.ref)
+            val presentation = snapshot?.presentationHabit() ?: habit
+            val relevantPeriods = getPeriodsForReport(habit, actualStart, end, today, firstWeekday, snapshot)
+            val evaluated = relevantPeriods.map { evaluatePeriod(habit, it, today, snapshot) }
             val valid = evaluated.filter { it.progress != null }
-            if (valid.isEmpty() && evaluated.none { it.status == StatisticsResultStatus.SKIPPED }) {
+            if (valid.isEmpty() && evaluated.none { it.status == StatisticsResultStatus.SKIPPED || it.actual > 0.0 }) {
                 null
             } else {
-                val actual = valid.sumOf { it.actual }
-                val target = valid.sumOf { it.target }
+                val actual = evaluated.sumOf { it.actual }
+                val target = evaluated.sumOf { it.target }
                 val progress = if (valid.isEmpty()) 0.0 else valid.map { it.progress!! }.average()
 
                 val status = when {
-                    valid.any { it.status == StatisticsResultStatus.VIOLATED } -> StatisticsResultStatus.VIOLATED
-                    valid.any { it.status == StatisticsResultStatus.MISSED } -> StatisticsResultStatus.MISSED
-                    valid.any { it.status == StatisticsResultStatus.PENDING } -> StatisticsResultStatus.PENDING
-                    valid.any { it.status == StatisticsResultStatus.ON_TRACK } -> StatisticsResultStatus.ON_TRACK
-                    valid.all { it.status == StatisticsResultStatus.SKIPPED } -> StatisticsResultStatus.SKIPPED
+                    evaluated.any { it.status == StatisticsResultStatus.VIOLATED } -> StatisticsResultStatus.VIOLATED
+                    evaluated.any { it.status == StatisticsResultStatus.MISSED } -> StatisticsResultStatus.MISSED
+                    evaluated.any { it.status == StatisticsResultStatus.PENDING } -> StatisticsResultStatus.PENDING
+                    evaluated.any { it.status == StatisticsResultStatus.ON_TRACK } -> StatisticsResultStatus.ON_TRACK
+                    evaluated.all { it.status == StatisticsResultStatus.SKIPPED } -> StatisticsResultStatus.SKIPPED
                     else -> StatisticsResultStatus.COMPLETED
                 }
 
                 StatisticsHabitResult(
-                    habit = habit,
+                    habit = presentation,
                     progress = progress,
                     actual = actual,
                     target = target,
@@ -272,16 +277,17 @@ object StatisticsReportStateBuilder {
                 )
             } else {
                 val dailyScopeHabits = scopeHabits.filter { habit ->
-                    getHabitStartDate(habit, today) <= d &&
+                    getHabitStartDate(habit, today, snapshots?.get(habit.ref)) <= d &&
                         habit.goalAt(d).frequency.denominator == 1
                 }
                 if (dailyScopeHabits.isNotEmpty()) {
                     hasAnyDailyMinimumGoals = true
                 }
                 val evals = dailyScopeHabits.map { habit ->
+                    val snapshot = snapshots?.get(habit.ref)
                     val goal = habit.goalAt(d)
                     val p = GoalPeriod(d, d, goal.frequency, goal.targetType, goal.targetValue, goal.unit)
-                    evaluatePeriod(habit, p, today)
+                    evaluatePeriod(habit, p, today, snapshot)
                 }
                 val nonSkipped = evals.filter { it.status != StatisticsResultStatus.SKIPPED }
                 val isSkipped = evals.isNotEmpty() && nonSkipped.isEmpty()
@@ -337,13 +343,15 @@ object StatisticsReportStateBuilder {
         val remainingMinimumHabits: List<StatisticsHabitResult>
         if (period == StatisticsPeriod.DAY) {
             val dayScopeHabits = scopeHabits.filter { habit ->
-                getHabitStartDate(habit, today) <= start &&
+                getHabitStartDate(habit, today, snapshots?.get(habit.ref)) <= start &&
                     habit.goalAt(start).frequency.denominator == 1
             }
             val dayEvals = dayScopeHabits.map { habit ->
+                val snapshot = snapshots?.get(habit.ref)
+                val presentation = snapshot?.presentationHabit() ?: habit
                 val goal = habit.goalAt(start)
                 val p = GoalPeriod(start, start, goal.frequency, goal.targetType, goal.targetValue, goal.unit)
-                habit to evaluatePeriod(habit, p, today)
+                presentation to evaluatePeriod(habit, p, today, snapshot)
             }
             val nonSkippedEvals = dayEvals.filter { it.second.status != StatisticsResultStatus.SKIPPED }
             todayMinimumCount = if (nonSkippedEvals.isNotEmpty()) {
@@ -376,8 +384,8 @@ object StatisticsReportStateBuilder {
         val comparisonDelta = if (comparisonWindow == null) {
             null
         } else {
-            val currProg = calculateOverallProgressForRange(scopeHabits, comparisonWindow.currentStart, comparisonWindow.currentEnd, today, firstWeekday)
-            val prevProg = calculateOverallProgressForRange(scopeHabits, comparisonWindow.previousStart, comparisonWindow.previousEnd, today, firstWeekday)
+            val currProg = calculateOverallProgressForRange(scopeHabits, comparisonWindow.currentStart, comparisonWindow.currentEnd, today, firstWeekday, snapshots)
+            val prevProg = calculateOverallProgressForRange(scopeHabits, comparisonWindow.previousStart, comparisonWindow.previousEnd, today, firstWeekday, snapshots)
             if (currProg != null && prevProg != null) {
                 currProg - prevProg
             } else null
@@ -388,7 +396,9 @@ object StatisticsReportStateBuilder {
         } else {
             val sliceDays = comparisonWindow.currentStart.daysUntil(comparisonWindow.currentEnd) + 1
             scopeHabits.mapNotNull { habit ->
-                val habitStart = getHabitStartDate(habit, today)
+                val snapshot = snapshots?.get(habit.ref)
+                val presentation = snapshot?.presentationHabit() ?: habit
+                val habitStart = getHabitStartDate(habit, today, snapshot)
                 if (habitStart.isNewerThan(comparisonWindow.previousStart) || habit.isArchived) {
                     return@mapNotNull null
                 }
@@ -396,8 +406,8 @@ object StatisticsReportStateBuilder {
                 if (goal.frequency.denominator > 1 && sliceDays < 4) {
                     return@mapNotNull null
                 }
-                val currEval = evaluateHabitSlice(habit, comparisonWindow.currentStart, comparisonWindow.currentEnd)
-                val prevEval = evaluateHabitSlice(habit, comparisonWindow.previousStart, comparisonWindow.previousEnd)
+                val currEval = evaluateHabitSlice(habit, comparisonWindow.currentStart, comparisonWindow.currentEnd, snapshot)
+                val prevEval = evaluateHabitSlice(habit, comparisonWindow.previousStart, comparisonWindow.previousEnd, snapshot)
                 if (currEval?.progress == null || prevEval?.progress == null) {
                     return@mapNotNull null
                 }
@@ -409,7 +419,7 @@ object StatisticsReportStateBuilder {
                 }
                 val points = ((currEval.progress - prevEval.progress) * 100).roundToInt()
                 if (points == 0) null
-                else StatisticsHabitChange(habit, points, currEval.progress, prevEval.progress)
+                else StatisticsHabitChange(presentation, points, currEval.progress, prevEval.progress)
             }.sortedByDescending { kotlin.math.abs(it.deltaPoints) }.take(3)
         }
 
@@ -433,7 +443,7 @@ object StatisticsReportStateBuilder {
                     val mStart = LocalDate(actualStart.year, month, 1)
                     val mEnd = mStart.plus(mStart.monthLength - 1)
                     val prog = if (mStart <= today) {
-                        calculateOverallProgressForRange(scopeHabits, mStart, mEnd, today, firstWeekday)
+                        calculateOverallProgressForRange(scopeHabits, mStart, mEnd, today, firstWeekday, snapshots)
                     } else null
                     StatisticsBucket(mStart, mEnd, prog)
                 }
@@ -446,7 +456,7 @@ object StatisticsReportStateBuilder {
                     var currMonth = actualStart.startOfMonth()
                     while (currMonth <= end) {
                         val mEnd = currMonth.plus(currMonth.monthLength - 1)
-                        val prog = calculateOverallProgressForRange(scopeHabits, currMonth, mEnd, today, firstWeekday)
+                        val prog = calculateOverallProgressForRange(scopeHabits, currMonth, mEnd, today, firstWeekday, snapshots)
                         buckets.add(StatisticsBucket(currMonth, mEnd, prog))
                         currMonth = currMonth.plus(currMonth.monthLength)
                     }
@@ -455,7 +465,7 @@ object StatisticsReportStateBuilder {
                     (actualStart.year..end.year).map { y ->
                         val yStart = LocalDate(y, 1, 1)
                         val yEnd = LocalDate(y, 12, 31)
-                        val prog = calculateOverallProgressForRange(scopeHabits, yStart, yEnd, today, firstWeekday)
+                        val prog = calculateOverallProgressForRange(scopeHabits, yStart, yEnd, today, firstWeekday, snapshots)
                         StatisticsBucket(yStart, yEnd, prog)
                     }
                 }
@@ -493,7 +503,10 @@ object StatisticsReportStateBuilder {
         // 9. Habit stability (belongs ONLY to All Time)
         val habitStability = if (period == StatisticsPeriod.ALL) {
             filteredHabits.map {
-                StatisticsHabitStabilityItem(it, it.scores[today].value)
+                val snapshot = snapshots?.get(it.ref)
+                val presentation = snapshot?.presentationHabit() ?: it
+                val score = snapshot?.scoreResult?.on(today) ?: it.scores[today].value
+                StatisticsHabitStabilityItem(presentation, score)
             }.sortedByDescending { it.score }
         } else emptyList()
 
@@ -528,11 +541,17 @@ object StatisticsReportStateBuilder {
         )
     }
 
-    fun getHabitStartDate(habit: Habit, today: LocalDate): LocalDate {
+    fun getHabitStartDate(
+        habit: Habit,
+        today: LocalDate,
+        snapshot: EffectiveHabitReadSnapshot? = null
+    ): LocalDate {
         val startAttr = habit.effectiveStatisticsStartDate()
         if (startAttr != null) return startAttr
         val firstEntry = habit.originalEntries.getKnown().minByOrNull { it.date }?.date
-        if (firstEntry != null) return firstEntry
+        val observedFrom = snapshot?.observedFrom
+        val earliest = listOfNotNull(firstEntry, observedFrom).minOrNull()
+        if (earliest != null) return earliest
         return today
     }
 
@@ -541,9 +560,10 @@ object StatisticsReportStateBuilder {
         start: LocalDate,
         end: LocalDate,
         today: LocalDate,
-        firstWeekday: DayOfWeek
+        firstWeekday: DayOfWeek,
+        snapshot: EffectiveHabitReadSnapshot? = null
     ): List<GoalPeriod> {
-        val habitStart = getHabitStartDate(habit, today)
+        val habitStart = getHabitStartDate(habit, today, snapshot)
         if (end < habitStart) return emptyList()
 
         val limitDate = if (end.isNewerThan(today)) end else today
@@ -651,7 +671,8 @@ object StatisticsReportStateBuilder {
     fun evaluatePeriod(
         habit: Habit,
         p: GoalPeriod,
-        today: LocalDate
+        today: LocalDate,
+        snapshot: EffectiveHabitReadSnapshot? = null
     ): EvaluatedPeriod {
         var actual = 0.0
         var skippedDays = 0
@@ -661,29 +682,58 @@ object StatisticsReportStateBuilder {
         }
         val totalDays = p.start.daysUntil(effectiveEnd) + 1
         var hasEntries = false
+        var allIncludedDaysComplete = true
 
-        var curr = p.start
-        while (curr <= effectiveEnd) {
-            val entry = habit.computedEntries.get(curr)
-            val v = entry.value
+        if (snapshot == null || !snapshot.hasContributions) {
+            var curr = p.start
+            while (curr <= effectiveEnd) {
+                val entry = habit.computedEntries.get(curr)
+                val v = entry.value
 
-            if (v == Entry.SKIP) {
-                skippedDays++
-            } else {
-                if (v != Entry.UNKNOWN) {
-                    hasEntries = true
-                }
-                if (habit.isNumerical) {
-                    if (v != Entry.UNKNOWN && v > 0) {
-                        actual += v / 1000.0
-                    }
+                if (v == Entry.SKIP) {
+                    skippedDays++
                 } else {
-                    if (v == Entry.YES_MANUAL || v == Entry.YES_AUTO) {
-                        actual += 1.0
+                    if (v != Entry.UNKNOWN) {
+                        hasEntries = true
+                    }
+                    if (habit.isNumerical) {
+                        if (v != Entry.UNKNOWN && v > 0) {
+                            actual += v / 1000.0
+                        }
+                    } else {
+                        if (v == Entry.YES_MANUAL || v == Entry.YES_AUTO) {
+                            actual += 1.0
+                        }
                     }
                 }
+                curr = curr.plus(1)
             }
-            curr = curr.plus(1)
+        } else {
+            var curr = p.start
+            while (curr <= effectiveEnd) {
+                val day = snapshot.day(curr)
+                if (day.isSkipped) {
+                    skippedDays++
+                } else {
+                    if (day.totalValue != null) {
+                        hasEntries = true
+                    }
+                    if (!day.hasCompleteCoverage) {
+                        allIncludedDaysComplete = false
+                    }
+                    if (habit.isNumerical) {
+                        if (day.totalValue != null && day.totalValue > 0) {
+                            actual += day.totalValue / 1000.0
+                        }
+                    } else {
+                        val v = day.manualEntry.value
+                        if (v == Entry.YES_MANUAL || v == Entry.YES_AUTO) {
+                            actual += 1.0
+                        }
+                    }
+                }
+                curr = curr.plus(1)
+            }
         }
 
         val eligibleDays = totalDays - skippedDays
@@ -713,11 +763,16 @@ object StatisticsReportStateBuilder {
                 progress = 0.0
                 status = StatisticsResultStatus.VIOLATED
             } else {
-                progress = 1.0
-                status = if (p.end < today) {
-                    StatisticsResultStatus.COMPLETED
+                if (snapshot != null && snapshot.hasContributions && !allIncludedDaysComplete) {
+                    progress = null
+                    status = StatisticsResultStatus.PENDING
                 } else {
-                    StatisticsResultStatus.ON_TRACK
+                    progress = 1.0
+                    status = if (p.end < today) {
+                        StatisticsResultStatus.COMPLETED
+                    } else {
+                        StatisticsResultStatus.ON_TRACK
+                    }
                 }
             }
         } else {
@@ -733,7 +788,11 @@ object StatisticsReportStateBuilder {
                         StatisticsResultStatus.ON_TRACK
                     }
                 } else if (p.end < today) {
-                    StatisticsResultStatus.MISSED
+                    if (snapshot != null && snapshot.hasContributions && !allIncludedDaysComplete) {
+                        StatisticsResultStatus.PENDING
+                    } else {
+                        StatisticsResultStatus.MISSED
+                    }
                 } else {
                     StatisticsResultStatus.PENDING
                 }
@@ -831,7 +890,8 @@ object StatisticsReportStateBuilder {
     fun evaluateHabitSlice(
         habit: Habit,
         sliceStart: LocalDate,
-        sliceEnd: LocalDate
+        sliceEnd: LocalDate,
+        snapshot: EffectiveHabitReadSnapshot? = null
     ): HabitSliceEvaluation? {
         val statisticsStart = habit.effectiveStatisticsStartDate()
         val effectiveStart = if (statisticsStart != null && statisticsStart > sliceStart) statisticsStart else sliceStart
@@ -842,29 +902,59 @@ object StatisticsReportStateBuilder {
         var skippedDays = 0
         var hasEntries = false
         var observations = 0
+        var allIncludedDaysComplete = true
 
-        var curr = effectiveStart
-        while (curr <= sliceEnd) {
-            val entry = habit.computedEntries.get(curr)
-            val v = entry.value
-            if (v == Entry.SKIP) {
-                skippedDays++
-            } else {
-                if (v != Entry.UNKNOWN) {
-                    hasEntries = true
-                    observations++
-                }
-                if (habit.isNumerical) {
-                    if (v != Entry.UNKNOWN && v > 0) {
-                        actual += v / 1000.0
-                    }
+        if (snapshot == null || !snapshot.hasContributions) {
+            var curr = effectiveStart
+            while (curr <= sliceEnd) {
+                val entry = habit.computedEntries.get(curr)
+                val v = entry.value
+                if (v == Entry.SKIP) {
+                    skippedDays++
                 } else {
-                    if (v == Entry.YES_MANUAL || v == Entry.YES_AUTO) {
-                        actual += 1.0
+                    if (v != Entry.UNKNOWN) {
+                        hasEntries = true
+                        observations++
+                    }
+                    if (habit.isNumerical) {
+                        if (v != Entry.UNKNOWN && v > 0) {
+                            actual += v / 1000.0
+                        }
+                    } else {
+                        if (v == Entry.YES_MANUAL || v == Entry.YES_AUTO) {
+                            actual += 1.0
+                        }
                     }
                 }
+                curr = curr.plus(1)
             }
-            curr = curr.plus(1)
+        } else {
+            var curr = effectiveStart
+            while (curr <= sliceEnd) {
+                val day = snapshot.day(curr)
+                if (day.isSkipped) {
+                    skippedDays++
+                } else {
+                    if (day.totalValue != null) {
+                        hasEntries = true
+                        observations++
+                    }
+                    if (!day.hasCompleteCoverage) {
+                        allIncludedDaysComplete = false
+                    }
+                    if (habit.isNumerical) {
+                        if (day.totalValue != null && day.totalValue > 0) {
+                            actual += day.totalValue / 1000.0
+                        }
+                    } else {
+                        val v = day.manualEntry.value
+                        if (v == Entry.YES_MANUAL || v == Entry.YES_AUTO) {
+                            actual += 1.0
+                        }
+                    }
+                }
+                curr = curr.plus(1)
+            }
         }
 
         val eligibleDays = totalDays - skippedDays
@@ -893,6 +983,7 @@ object StatisticsReportStateBuilder {
             null
         } else if (habit.isNumerical && goal.targetType == NumericalHabitType.AT_MOST) {
             if (actual > target) 0.0
+            else if (snapshot != null && snapshot.hasContributions && !allIncludedDaysComplete) null
             else 1.0
         } else {
             if (target > 0.0) minOf(actual / target, 1.0) else 1.0
@@ -927,15 +1018,21 @@ object StatisticsReportStateBuilder {
         start: LocalDate,
         end: LocalDate,
         today: LocalDate,
-        firstWeekday: DayOfWeek
+        firstWeekday: DayOfWeek,
+        snapshots: Map<HabitRef, EffectiveHabitReadSnapshot>? = null
     ): Double? {
         val effectiveEnd = if (end.isNewerThan(today)) today else end
         if (start.isNewerThan(effectiveEnd)) return null
         val progresses = habits.mapNotNull { habit ->
-            val habitStart = getHabitStartDate(habit, today)
+            val snapshot = snapshots?.get(habit.ref)
+            val habitStart = getHabitStartDate(habit, today, snapshot)
             if (habitStart > effectiveEnd) null
-            else evaluateHabitSlice(habit, maxOf(start, habitStart), effectiveEnd)?.progress
+            else evaluateHabitSlice(habit, maxOf(start, habitStart), effectiveEnd, snapshot)?.progress
         }
         return if (progresses.isNotEmpty()) progresses.average() else null
     }
 }
+
+private val Habit.ref: HabitRef?
+    get() = uuid?.let { HabitRef(it) }
+

@@ -184,7 +184,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| Antigravity (af122ed2) | PR23B: Complete Effective Read Authority Across Statistics, Widgets and Exports | dev / C:/Users/Pavel/source/repos/uhabits-plus | IN_PROGRESS | 2026-10-08 09:55 Novosibirsk | Statistics, Compare, widgets, reminders/notifications, CSV export, calendar context, cross-surface proof, tests, native QA | in progress |
+| Antigravity (af122ed2) | PR23B: Complete Effective Read Authority Across Statistics, Widgets and Exports | dev / C:/Users/Pavel/source/repos/uhabits-plus | IN_PROGRESS | 2026-10-08 09:55 Novosibirsk | Statistics, Compare, widgets, reminders/notifications, CSV export, calendar context, cross-surface proof, tests, native QA | PR23B IN_PROGRESS (Global Statistics checkpoint completed & verified; Compare, Widgets, Notifications, CSV remaining) |
 | Antigravity (d3081731) | PR23A: shared snapshot, typed compatibility adapters, list/detail, manual safety, revision and QA | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE | 2026-10-08 08:35 Novosibirsk | core projection/list/detail/manual commands, Android DI/list/detail/focus/manual paths, focused tests, QA, docs | PR23A DONE; 109 core + 84 Android unit PASS; 9-point native QA verified; emulator restored |
 | Antigravity (89cb3dfc) | PR22.1: Final Schema Conversion Parity Audit | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE | 2026-10-07 14:55 Novosibirsk | uhabits-core/production, uhabits-android/production, docs | PR22.1 parity verified; 760 core + 6 Android unit + 12 instrumentation PASS |
 
@@ -1004,3 +1004,30 @@ Human accepts PR20 and authorizes PR21 preflight and recovery implementation onl
   - Native QA on Pixel 6 (`emulator-5554`): all 9 required verification points passed on disposable experimental dataset with artifacts captured (`pr23a_artifacts/qa-01` through `qa-12`).
   - Baseline protection & restoration: emulator database and preferences restored byte-for-byte; `device_snapshot.py verify` confirmed 100% SHA-256 match across all 7 tracked files.
 - **Boundaries strictly maintained:** PR23 overall remains NOT DONE; PR23B NOT STARTED / NOT AUTHORIZED; production runtime authority remains BLOCKED on LEGACY v29; PR24/PR25 BLOCKED. Active work IDLE. STOP after PR23A.
+
+### 2026-10-08 — PR23B checkpoint: Global Statistics completed and verified
+
+- **PR23B Global Statistics checkpoint completed:**
+  - `StatisticsOverview` and `StatisticsReportStateBuilder` wired to shared `EffectiveHabitReadSnapshotProvider` read authority.
+  - Contribution-only date discovery operational across global report ranges (earliest date discovered in All-Time tab without manual entries).
+  - Conservative UNKNOWN / lower-bound proofs: AT_LEAST proven reached only when lower bound satisfies target; AT_MOST incomplete coverage retained as PENDING (not falsely completed).
+  - SKIP provenance exclusion preserved: explicit SKIP entries excluded from active goal counting.
+  - Historical goal changes, cutoffs, and live first-weekday preferences respected.
+  - Manual-write isolation preserved: `detachedPresentation()` populates strictly `computedEntries`, keeping `originalEntries` pristine for manual edit seeds.
+  - Reactive invalidation wired in `StatisticsActivity`: observes `effectiveReadRevision` and calendar context, auto-refreshing report on data changes.
+  - Startup deadlock fixed in `HabitCardListCache`: non-blocking volatile cancel and cached sort orders.
+- **Verification evidence:**
+  - Core JVM tests: 84 tests PASS (100%) across `StatisticsEffectiveReportTest`, `StatisticsReportStateBuilderTest`, `StatisticsOverviewTest`, `EffectiveHabitReadSnapshotTest`, `EffectiveReadRevisionTest`, and `EffectiveReadBatchSQLiteTest`.
+  - Android build: `compileDebugKotlin` and `assembleDebug` PASS (exit 0).
+  - Query performance: `EffectiveReadBatchSQLiteTest` proved 4 indexed queries for 500 habits over 90-day range (chunked <=400 IDs) and 0 per-day or per-goal queries after preloading; verified index usage on `Contributions`.
+  - Native emulator QA (`emulator-5554`): verified on disposable experimental dataset:
+    - Day tab displays PR23 Study 330/300 min (100% reached, ON_TRACK), PR23 Limit 20/60 min (0% PENDING), level completion 33% (1/3).
+    - All-Time tab discovers contribution-only start date (29 Sept 2026).
+    - Canonical fixture tombstone: tombstoning the 90m session updates PR23 Study to 240/300 min (80% PENDING) and level completion to 27% (0/3).
+    - Byte-for-byte restoration: emulator databases and preferences restored to pristine baseline; `device_snapshot.py verify` confirmed 100% SHA-256 match across all 13 files.
+- **Boundaries and stopping rule:**
+  - PR23B remains **IN_PROGRESS**; PR23 overall remains NOT DONE.
+  - Unfinished partial changes in `CompareHabitsActivity.kt` preserved safely and left UNSTAGED for next checkpoint.
+  - Remaining PR23B scope: Compare, Widgets, Notifications/tray, CSV export.
+  - Production database remains legacy schema v29; cutover gate active; PR24/PR25 BLOCKED.
+

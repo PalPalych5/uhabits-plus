@@ -122,7 +122,9 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         val end: LocalDate,
         val filters: StatisticsFilterState,
         val habitCount: Int,
-        val dbVersion: Int
+        val dbVersion: Int,
+        val effectiveRevision: Long = 0L,
+        val calendar: org.isoron.uhabits.core.models.projection.EffectiveReadCalendarContext? = null
     )
 
     private fun clampAnchorDateToCurrentPeriod() {
@@ -199,9 +201,18 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         return binding.root
     }
 
+    private val effectiveRevisionListener: () -> Unit = {
+        activity?.runOnUiThread {
+            if (viewBinding != null && isAdded) {
+                requestReportUpdate("effective_revision_change", delayMs = 0L, forceRender = true)
+            }
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         component.habitList.observable.addListener(this)
+        component.effectiveReadRevision.addListener(effectiveRevisionListener)
         viewBinding?.let {
             currentFilters = currentFilters.copy(
                 dayTiersEnabled = component.preferences.isDayTiersEnabled,
@@ -226,6 +237,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     }
 
     override fun onPause() {
+        component.effectiveReadRevision.removeListener(effectiveRevisionListener)
         component.habitList.observable.removeListener(this)
         cancelPendingReportUpdate()
         super.onPause()
@@ -597,7 +609,9 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
             end = end,
             filters = updatedFilters,
             habitCount = runCatching { component.habitList.size() }.getOrDefault(-1),
-            dbVersion = dbVersion
+            dbVersion = dbVersion,
+            effectiveRevision = component.effectiveReadRevision.value,
+            calendar = component.effectiveHabitReads?.currentCalendar
         )
     }
 
@@ -643,6 +657,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
             private var previousData: StatisticsReportState? = null
 
             override suspend fun doInBackground() {
+                val snapshots = component.effectiveHabitReads?.snapshots(habits, start, end)
                 calculatedData = StatisticsReportStateBuilder.build(
                     habits = habits,
                     period = reportKey.tab.toStatisticsPeriod(),
@@ -651,6 +666,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
                     today = getToday(),
                     firstWeekday = firstWeekday,
                     filters = reportKey.filters,
+                    snapshots = snapshots,
                     shouldCancel = { taskGeneration != activeReportGeneration }
                 )
                 if (reportKey.tab == ReportTab.WEEK || reportKey.tab == ReportTab.MONTH) {
@@ -662,6 +678,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
                     val previousEnd = previousStart.plus(
                         (comparableDays - 1).coerceAtLeast(0).coerceAtMost(previousStart.daysUntil(previousPeriodEnd))
                     )
+                    val prevSnapshots = component.effectiveHabitReads?.snapshots(habits, previousStart, previousEnd)
                     previousData = StatisticsReportStateBuilder.build(
                         habits = habits,
                         period = reportKey.tab.toStatisticsPeriod(),
@@ -670,6 +687,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
                         today = getToday(),
                         firstWeekday = firstWeekday,
                         filters = reportKey.filters,
+                        snapshots = prevSnapshots,
                         shouldCancel = { taskGeneration != activeReportGeneration }
                     )
                 }

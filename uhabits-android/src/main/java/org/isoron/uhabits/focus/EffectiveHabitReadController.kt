@@ -71,16 +71,26 @@ class EffectiveHabitReadController(
         TimeZone.getDefault().id, preferences.firstWeekday, preferences.midnightDelayHours, 0,
     )
 
-    fun snapshots(habits: List<Habit>): Map<HabitRef, EffectiveHabitReadSnapshot> {
+    val currentCalendar: EffectiveReadCalendarContext get() = captureCalendar()
+
+    fun snapshots(
+        habits: List<Habit>,
+        from: org.isoron.platform.time.LocalDate,
+        to: org.isoron.platform.time.LocalDate
+    ): Map<HabitRef, EffectiveHabitReadSnapshot> {
         check(!disposed)
         repeat(3) {
             val captured = captureCalendar()
             val capturedRevision = revision.value
-            val today = getToday()
-            val result = provider.prepare(habits, today.minus(365), today, revision.datasetId, capturedRevision, captured)
+            val result = provider.prepare(habits, from, to, revision.datasetId, capturedRevision, captured)
             if (!disposed && captured == captureCalendar() && capturedRevision == revision.value) return result
         }
         error("Dataset/calendar changed repeatedly during snapshot creation; refresh required")
+    }
+
+    fun snapshots(habits: List<Habit>): Map<HabitRef, EffectiveHabitReadSnapshot> {
+        val today = getToday()
+        return snapshots(habits, today.minus(365), today)
     }
     fun snapshot(habit: Habit): EffectiveHabitReadSnapshot = snapshots(listOf(habit)).getValue(HabitRef(requireNotNull(habit.uuid)))
 

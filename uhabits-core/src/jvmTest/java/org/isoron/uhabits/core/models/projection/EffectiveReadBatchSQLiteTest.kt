@@ -56,4 +56,59 @@ class EffectiveReadBatchSQLiteTest : BaseUnitTest() {
             assertEquals(500, snapshots.size)
         } finally { database.close() }
     }
+
+    @Test fun globalStatisticsReportUsesZeroPerDayOrPerGoalQueriesAfterPreload() = runTest {
+        val database = TestDatabaseHelper.createEmptyDatabase()
+        try {
+            ContributionSchema.createSchema(database)
+            var selects = 0
+            val counted = object : Database by database {
+                override fun prepareStatement(sql: String): PreparedStatement {
+                    if (sql.trimStart().startsWith("SELECT") && sql.contains("FROM Contributions")) selects++
+                    return database.prepareStatement(sql)
+                }
+            }
+            val facts = SQLiteContributionRepository(counted)
+            val end = LocalDate(2026, 10, 8)
+            setToday(end)
+            val habits = (0 until 50).map { index -> modelFactory.buildHabit().apply {
+                uuid = "stat-batch-$index"; type = HabitType.NUMERICAL; unit = "min"
+                targetValue = 300.0; frequency = Frequency(1, 7); dayTier = DayTier.MINIMUM
+                originalEntries.add(Entry(end.minus(30), 0)); originalEntries.add(Entry(end, 0)); recompute()
+            } }
+            habits.forEachIndexed { index, habit ->
+                val instant = startOfLocalDay(end.minus(index % 30)) + 1000
+                facts.record(Contribution(ContributionId("stat-credit-$index"), HabitRef(habit.uuid!!),
+                    ContributionSourceType.FOCUS_SESSION, "source-$index", 45000, instant, instant, instant))
+            }
+            selects = 0
+            val snapshots = EffectiveHabitReadSnapshotProvider(facts).prepare(habits, end.minus(30), end,
+                "stat-batch", 1, EffectiveReadCalendarContext("local", DayOfWeek.MONDAY, 0, 0))
+            assertEquals(2, selects)
+            val initialSelects = selects
+
+            val report = org.isoron.uhabits.core.ui.screens.statistics.StatisticsReportStateBuilder.build(
+                habits = habits,
+                period = org.isoron.uhabits.core.ui.screens.statistics.StatisticsPeriod.MONTH,
+                start = end.minus(30),
+                end = end,
+                today = end,
+                firstWeekday = DayOfWeek.MONDAY,
+                filters = org.isoron.uhabits.core.ui.screens.statistics.StatisticsFilterState(habitStatus = org.isoron.uhabits.core.ui.screens.statistics.StatisticsHabitStatusFilter.ALL),
+                snapshots = snapshots
+            )
+            val overview = org.isoron.uhabits.core.ui.screens.statistics.StatisticsOverviewStateBuilder.build(
+                habits = habits,
+                start = end.minus(30),
+                end = end,
+                firstWeekday = DayOfWeek.MONDAY,
+                snapshots = snapshots
+            )
+
+            assertEquals(initialSelects, selects)
+            assertEquals(50, report.habits.size)
+            assertNotNull(report.overallProgress)
+            assertNotNull(overview)
+        } finally { database.close() }
+    }
 }

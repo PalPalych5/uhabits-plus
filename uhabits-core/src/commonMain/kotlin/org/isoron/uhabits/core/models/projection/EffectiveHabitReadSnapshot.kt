@@ -218,7 +218,12 @@ class EffectiveHabitReadSnapshotProvider(private val repository: ContributionRep
             }
             ref to dates.filter { habit.isDateIncludedInStatistics(it) }
         }
-        val earliest = (domains.values.flatten() + frozen.mapNotNull { it.effectiveStatisticsStartDate() } + from).minOrNull()!!
+        val allKnown = domains.values.flatten() + frozen.mapNotNull { it.effectiveStatisticsStartDate() }
+        val earliest = if (allKnown.isNotEmpty()) {
+            if (from.year < 2000) allKnown.minOrNull()!! else minOf(allKnown.minOrNull()!!, from)
+        } else {
+            if (from.year < 2000) getToday() else from
+        }
         val compatibilityTo = getToday().plus(30)
         val latest = (domains.values.flatten() + to + compatibilityTo).maxOrNull()!!
         // Complete week/month envelope also supplies periods at historical goal boundaries.
