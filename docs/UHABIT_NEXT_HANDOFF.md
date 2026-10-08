@@ -150,16 +150,17 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR20 — Production Readiness & Cutover Audit | Code-backed inventory, migration/recovery/runtime/readers/sync/promotion plan | Production migration/activation, new sync implementation, recurrence, polish | [Canonical cutover plan](UHABIT_PRODUCTION_CUTOVER_PLAN.md); NO-GO gates recorded | DONE |
 | PR21 — Preflight & Recovery Gate | Raw inventory/anomaly diagnostics, coherent v29 recovery bundle, pre-DI timer checks, startup recovery | Version bump, conversion/activation, sync protocol, promotion | PR20 review; verified commit 28ce65a67 | DONE |
 | PR22 / PR22.1 — Versioned Next Schema Conversion on Protected Staging & Parity Audit | 30.sql additive Next schema, outer transaction migrator, 8-table legacy parity validator, staging copy isolation, ProductionCutoverGate, v29 immutability, schema parity tests | Runtime authority activation (remains LEGACY), live production DB upgrade, sync rewrite, PR23 readers | PR21 preflight/recovery gate | DONE |
-| PR23 — Contribution-aware Habit/report readers | Audit checkpoint c987a397; human-approved PR23A shared authority/list/detail, then separately authorized PR23B global readers | Production activation, PR24, UI redesign | PR22.1 accepted; both halves required | NOT DONE — PR23A DONE; PR23B NOT STARTED |
+| PR23 — Contribution-aware Habit/report readers | Audit checkpoint c987a397; PR23A shared authority/list/detail, then PR23B global readers (Statistics, Compare, widgets, reminders, CSV, calendar context, convergence) | Production activation, PR24, UI redesign | PR22.1 accepted; PR23A verified | IN_PROGRESS (PR23A DONE, PR23B IN_PROGRESS) |
+| PR24 — Production backup/recovery & release hardening | Complete production backup manifest/restore/preferences adapters, startup crash reconciliation, accessibility/device QA; release hardening before PR25 | Cloud sync, experimental promotion/merge | PR21–PR23 complete | PLANNED / BLOCKED |
 | Production migration / new sync protocol | Отдельный release design, compatibility gate, conflict/recovery checks | Скрытая активация внутри Foundation | Validated local stages; protocol/dataset/server gate; отдельное согласование | PLANNED |
 
-PR22/PR22.1 окончательно приняты пользователем 2026-10-08. PR23A завершён и верифицирован (109 core JVM tests, 84 Android unit tests, assembleDebug, SQLite batching, 9-point native QA, baseline restored). Общий PR23 не DONE; PR23B NOT STARTED и отдельно не разрешён. PR24/PR25 и production runtime authority activation остаются заблокированными.
+PR22/PR22.1 окончательно приняты пользователем 2026-10-08. PR23A завершён и верифицирован (109 core JVM tests, 84 Android unit tests, assembleDebug, SQLite batching, 9-point native QA, baseline restored). PR23B выполняется: complete effective read authority across Statistics, Compare, widgets, reminders, CSV exports, calendar context and cross-surface proof. PR24 (production backup/recovery and release hardening, not experimental promotion/merge) и PR25/production runtime authority activation остаются заблокированными. `DATABASE_VERSION = 30` выделена для Next schema, но канонический production открывается по умолчанию на legacy schema v29 (`ProductionCutoverGate`).
 
 ## 5. Current state
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1–PR19 DONE; PR20 AUDIT DONE; PR21 PREFLIGHT/RECOVERY DONE; PR22 SCHEMA CONVERSION & PR22.1 AUDIT DONE; PR23A DONE
+Implementation: PR1–PR19 DONE; PR20 AUDIT DONE; PR21 PREFLIGHT/RECOVERY DONE; PR22 SCHEMA CONVERSION & PR22.1 AUDIT DONE; PR23A DONE; PR23B IN_PROGRESS
 Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated, Container Statistics MVP completed, Today Workspace evaluated natively
 Current branch: dev; verified PR22.1 baseline e24dc13eb; use Git for current HEAD
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
@@ -167,11 +168,11 @@ Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
 Visual language: VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH
 Native Android implementation: PR10 / PR10.1 ACCEPTED; PR19 evaluation ACCEPTED as secondary Day Overview direction; visual polish not independently reviewed in PR20
-Active implementation: none / IDLE; PR23A DONE; PR23B NOT STARTED / NOT AUTHORIZED
+Active implementation: Antigravity (af122ed2) PR23B IN_PROGRESS; PR24/PR25 BLOCKED
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
 Checks: PR22/PR22.1 full suite: 760 core JVM tests PASS (100%), ProductionCutoverGateAndroidTest (6 tests) PASS (100%), compileDebugKotlin PASS, assembleDebug & assembleDebugAndroidTest PASS, 12 Android instrumentation tests on Pixel_6(AVD) PASS (100%).
-Production DB schema: v29 default on canonical uhabits.db (ProductionCutoverGate enforced); v30 installed on protected staging copies
+Production DB schema: v29 default on canonical uhabits.db (ProductionCutoverGate enforced; Constants.DATABASE_VERSION = 30 allocated for Next schema); v30 installed on protected staging copies
 Production runtime authority: LEGACY_PRODUCTION / LEGACY (metadata runtime_authority = 'LEGACY')
 Production UI: unchanged (mode default is LEGACY)
 Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
@@ -183,7 +184,8 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| Antigravity (d3081731) | PR23A: shared snapshot, typed compatibility adapters, list/detail, manual safety, revision and QA | dev / C:/Users/Pavel/source/repos/uhabits-plus | IDLE | 2026-10-08 08:35 Novosibirsk | core projection/list/detail/manual commands, Android DI/list/detail/focus/manual paths, focused tests, QA, docs | PR23A DONE; 109 core + 84 Android unit PASS; 9-point native QA verified; emulator restored |
+| Antigravity (af122ed2) | PR23B: Complete Effective Read Authority Across Statistics, Widgets and Exports | dev / C:/Users/Pavel/source/repos/uhabits-plus | IN_PROGRESS | 2026-10-08 09:55 Novosibirsk | Statistics, Compare, widgets, reminders/notifications, CSV export, calendar context, cross-surface proof, tests, native QA | in progress |
+| Antigravity (d3081731) | PR23A: shared snapshot, typed compatibility adapters, list/detail, manual safety, revision and QA | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE | 2026-10-08 08:35 Novosibirsk | core projection/list/detail/manual commands, Android DI/list/detail/focus/manual paths, focused tests, QA, docs | PR23A DONE; 109 core + 84 Android unit PASS; 9-point native QA verified; emulator restored |
 | Antigravity (89cb3dfc) | PR22.1: Final Schema Conversion Parity Audit | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE | 2026-10-07 14:55 Novosibirsk | uhabits-core/production, uhabits-android/production, docs | PR22.1 parity verified; 760 core + 6 Android unit + 12 instrumentation PASS |
 
 Других зарегистрированных implementation работ нет. Доступный Codex research chat в worktree 38f8 при проверке idle. Состояние независимых Antigravity sessions автоматически не установлено: отсутствие записи не доказывает отсутствие работающего процесса.
