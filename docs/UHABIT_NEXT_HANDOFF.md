@@ -3,7 +3,7 @@
 > Этот файл является первым документом, который должен читать агент перед работой над UHabit Next.  
 > Если фактическое состояние Git противоречит этому файлу, агент обязан проверить Git/код и обновить handoff, а не слепо доверять устаревшему статусу.
 
-Last verified: **2026-10-07, Asia/Novosibirsk**. Maintainer: текущая работающая сессия Codex / Antigravity. Это живой статус, а не замена ТЗ, исследованиям или Foundation design.
+Last verified: **2026-10-08, Asia/Novosibirsk**. Maintainer: текущая работающая сессия Codex / Antigravity. Это живой статус, а не замена ТЗ, исследованиям или Foundation design.
 
 **Canonical location:** `C:/Users/Pavel/source/repos/uhabits-plus/docs/UHABIT_NEXT_HANDOFF.md`. На этом компьютере все агенты, включая работающих в другом worktree, читают и обновляют именно этот файл. Канонические документы (UHABIT_NEXT_HANDOFF.md, UHabit_Next_Spec.md, uhabit-next-foundation-plan.md) зафиксированы в Git через исключения в .gitignore (!docs/...) и синхронизируются через commit/checkout/pull. Этот файл не меняет AGENTS.md или автоматический bootstrap harness: чтение должно быть включено в инструкции запуска агента.
 
@@ -150,9 +150,10 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR20 — Production Readiness & Cutover Audit | Code-backed inventory, migration/recovery/runtime/readers/sync/promotion plan | Production migration/activation, new sync implementation, recurrence, polish | [Canonical cutover plan](UHABIT_PRODUCTION_CUTOVER_PLAN.md); NO-GO gates recorded | DONE |
 | PR21 — Preflight & Recovery Gate | Raw inventory/anomaly diagnostics, coherent v29 recovery bundle, pre-DI timer checks, startup recovery | Version bump, conversion/activation, sync protocol, promotion | PR20 review; verified commit 28ce65a67 | DONE |
 | PR22 / PR22.1 — Versioned Next Schema Conversion on Protected Staging & Parity Audit | 30.sql additive Next schema, outer transaction migrator, 8-table legacy parity validator, staging copy isolation, ProductionCutoverGate, v29 immutability, schema parity tests | Runtime authority activation (remains LEGACY), live production DB upgrade, sync rewrite, PR23 readers | PR21 preflight/recovery gate | DONE |
+| PR23 — Contribution-aware Habit/report readers | Reader inventory and common snapshot architecture proposal completed; PR23A/PR23B split proposed at mandatory section-30 checkpoint | Production activation, PR24, UI redesign | PR22.1 accepted; period-parity/coverage contract before wiring | PLANNED — audit complete, implementation not started |
 | Production migration / new sync protocol | Отдельный release design, compatibility gate, conflict/recovery checks | Скрытая активация внутри Foundation | Validated local stages; protocol/dataset/server gate; отдельное согласование | PLANNED |
 
-Последующие этапы — предложения, не разрешение реализовать roadmap автоматически. PR22 завершает текущий запрос; следующий ограниченный scope — PR23 по отдельному запросу. Recurrence отложена до разрешения production-readiness границ.
+PR22/PR22.1 окончательно приняты пользователем 2026-10-08. PR23 разрешён текущим запросом; обязательный reader audit выявил основания для STOP/split checkpoint из его пункта 30. Конкретный PR23A/PR23B proposal записан в docs/UHABIT_EFFECTIVE_READ_AUTHORITY.md; implementation не начат, PR23 не DONE. PR24/PR25 и recurrence не разрешены.
 
 ## 5. Current state
 
@@ -160,13 +161,13 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 Architecture preparation: DONE
 Implementation: PR1–PR19 DONE; PR20 AUDIT DONE; PR21 PREFLIGHT/RECOVERY DONE; PR22 SCHEMA CONVERSION & PR22.1 AUDIT DONE
 Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated, Container Statistics MVP completed, Today Workspace evaluated natively
-Current branch: dev; PR22 implementation baseline; use Git for current HEAD
+Current branch: dev; verified PR22.1 baseline e24dc13eb; use Git for current HEAD
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
 Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
 Visual language: VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH
 Native Android implementation: PR10 / PR10.1 ACCEPTED; PR19 evaluation ACCEPTED as secondary Day Overview direction; visual polish not independently reviewed in PR20
-Active implementation: none / IDLE; PR22 completed; STOP before PR23
+Active implementation: none / IDLE; PR23 audit complete, STOP at section-30 split proposal; PR23 implementation not started
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
 Checks: PR22/PR22.1 full suite: 760 core JVM tests PASS (100%), ProductionCutoverGateAndroidTest (6 tests) PASS (100%), compileDebugKotlin PASS, assembleDebug & assembleDebugAndroidTest PASS, 12 Android instrumentation tests on Pixel_6(AVD) PASS (100%).
@@ -201,7 +202,7 @@ Handoff — coordination register, не атомарный mutex: одновре
 ## 7. Next actions
 
 1. PR10.1 принят: `VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH`. Compact — утверждённая V1; повторный большой visual pass или PR10.2 не нужен. [Gallery/video](../pr101_artifacts/index.html), [report](../pr101_artifacts/REPORT.md), [evidence](../pr101_artifacts/evidence.json) остаются историческими QA-артефактами; их статус на момент проверки не переписывать.
-2. PR11–PR19 DONE; PR20 audit DONE; PR21 Preflight & Recovery Gate DONE; PR22 Versioned Next Schema Conversion on Protected Staging DONE. Read [UHABIT_PRODUCTION_CUTOVER_PLAN.md](UHABIT_PRODUCTION_CUTOVER_PLAN.md), [UHABIT_PRODUCTION_PREFLIGHT_RECOVERY.md](UHABIT_PRODUCTION_PREFLIGHT_RECOVERY.md), and [UHABIT_PRODUCTION_SCHEMA_CONVERSION.md](UHABIT_PRODUCTION_SCHEMA_CONVERSION.md) before release work. Next proposed implementation: PR23 Contribution-aware Habit/report readers, requiring separate authorization. Production runtime/cloud/promotion are NO-GO today. STOP until separate implementation request; recurrence deferred.
+2. PR11–PR22.1 DONE; PR22.1 accepted 2026-10-08. PR23 authorized; reader audit completed and stopped at mandatory section-30 checkpoint. Review [effective read authority proposal](UHABIT_EFFECTIVE_READ_AUTHORITY.md): PR23A shared snapshot/score/streak/history/invalidation/manual seed safeguards, then PR23B Statistics/widgets/notifications/export/performance proof. Resolve calendar-period completion versus exact legacy no-credit parity in PR23A before wiring. Both halves block activation; neither is implemented. Production runtime/cloud/promotion remain NO-GO; no PR24/PR25 started.
 3. Четыре отложенных долга (не условие продолжения разработки): **metadata compaction** — в Today скрывать обычный «План сегодня», сохраняя нетипичный/пропущенный план и сочетание с deadline; **phone calendar labels** — краткое название хотя бы одной задачи + `+N` вместо одних маркеров; **tablet detail pane** — list + detail вместо modal sheet; **IME composer chrome** — скрывать глобальную нижнюю навигацию при активном composer + IME и возвращать после закрытия клавиатуры.
 4. Drawer и Detail приняты как V1; дальнейший icon/color Container polish отложен. Physical device/TalkBack/comprehensive large-font/RTL and measured frame pacing remain unverified; принятие визуальной V1 не расширяет техническое QA evidence.
 
@@ -972,3 +973,12 @@ Human accepts PR20 and authorizes PR21 preflight and recovery implementation onl
 - Seven failure hooks tested both through exceptions and real child JVM `Runtime.halt(73)` without finally/unwind; fresh gate restart classification/retry preserves original bytes at every hook, including partial cleanup. Directory fsync best effort; this is process-death evidence, not hardware power-loss certification. No bundle restore/retention/purge UI or WAL recovery policy is implemented.
 - Proof of boundary: Constants.kt still `DATABASE_VERSION = 29`; DatasetSessionFactory.production remains LEGACY_PRODUCTION/LEGACY; production timer/sync protocol and migration assets are unchanged. No production Next activation, organization baseline, promotion, merge, cloud change, recurrence, Today/UI redesign or PR22 code.
 - Active work **IDLE**. Local commit includes this closure; resolve identity with `git log -- docs/UHABIT_PRODUCTION_PREFLIGHT_RECOVERY.md`. No publication. STOP after PR21. Next bounded scope, only after separate human authorization: **PR22 versioned schema conversion on protected staging**, fresh source/bundle revalidation, exact version allocation and complete parity; still exclude runtime/cloud activation.
+
+### 2026-10-08 — PR22.1 accepted / PR23 reader audit and split checkpoint
+
+- Human accepts PR22/PR22.1 as DONE and authorizes PR23 read authority only. Actual clean tracked baseline `dev` / `e24dc13eb04970559d7a177eabab7787bfb3be5e`; PR22 `c1dba8521bc3ac446ddd70248563e16d9c03ce2b`. Existing untracked QA/private artifacts preserved.
+- Completed source inventory with two bounded read-only audits (Habit/detail/widget/tray/export and global Statistics). Concrete artifact: [effective read authority](UHABIT_EFFECTIVE_READ_AUTHORITY.md), including current sources/calendar/cache/provenance, proposed immutable PR15-backed snapshot, domain query, typed coverage, score/streak adapters and shared invalidation.
+- Mandatory user contract section 30 STOP triggered by actual hazards: computed-to-manual editor/delta/timer seeds would persist automatic credit; ScoreList UNKNOWN-as-zero lacks coverage; global reports independently prorate SKIP/evaluate periods; legacy AT_LEAST day completion differs from PR15 calendar periods, conflicting with exact no-credit parity if replaced universally. No guessed score or completion policy implemented.
+- Proposed PR23A: snapshot/PR15 preload/calendar/domain/invalidation + list/detail/score/streak/history + manual seed safeguards. PR23B: global Statistics/Compare/Container/Today + widgets/tray/reminders/export + bounded queries/cross-surface/native proof. Both required before activation. Proposal awaits continuation decision; neither half is implemented; PR23 is not DONE.
+- Corrected stale current-state/next-action wording; original completion logs retained. Static production isolation inspected: default canonical opener v29, runtime LEGACY, experimental-only capture/controller, unchanged legacy timer/sync/gate. No source/schema/data/runtime edits; no device or canonical DB opened. LoopDBImporter v30 follow-up recorded for PR24 only, not executed.
+- Verification: documentation/source/Git inspection, scoped diff/stat/name-only and whitespace checks; no fresh Gradle count, build, performance measurement, cross-surface fixture or native QA claimed. Active work IDLE. Local documentation commit contains this closure; resolve exact SHA via `git log -- docs/UHABIT_EFFECTIVE_READ_AUTHORITY.md`. No publication. STOP at PR23 strategy checkpoint; no PR24/PR25.
