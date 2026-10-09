@@ -21,7 +21,11 @@ package org.isoron.uhabits.core.reminders
 import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.time.DateUtils
 import org.isoron.uhabits.core.AppScope
+import org.isoron.uhabits.core.commands.AddNumericalEntryOpCommand
+import org.isoron.uhabits.core.commands.BatchCreateRepetitionCommand
 import org.isoron.uhabits.core.commands.ChangeHabitColorCommand
+import org.isoron.uhabits.core.commands.ClearAllEntriesCommand
+import org.isoron.uhabits.core.commands.ClearHabitEntriesCommand
 import org.isoron.uhabits.core.commands.Command
 import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.commands.CreateRepetitionCommand
@@ -41,7 +45,11 @@ open class ReminderScheduler(
     @Synchronized
     override fun onCommandFinished(command: Command) {
         if (command is CreateRepetitionCommand) return
+        if (command is BatchCreateRepetitionCommand) return
+        if (command is AddNumericalEntryOpCommand) return
         if (command is ChangeHabitColorCommand) return
+        if (command is ClearHabitEntriesCommand) return
+        if (command is ClearAllEntriesCommand) return
         scheduleAll()
     }
 

@@ -184,7 +184,7 @@ abstract class HabitsApplicationComponent(
 
     val effectiveHabitReads: org.isoron.uhabits.focus.EffectiveHabitReadController? by lazy {
         if (session.isExperimental) org.isoron.uhabits.focus.EffectiveHabitReadController(
-            appContext, providedDb, preferences, effectiveReadRevision, habitCardListCache, habitList,
+            appContext, providedDb, preferences, effectiveReadRevision, habitCardListCache, habitList, notificationTray,
         ) else null
     }
 

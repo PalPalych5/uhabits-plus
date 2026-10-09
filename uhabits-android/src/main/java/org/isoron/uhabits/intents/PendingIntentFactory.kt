@@ -52,38 +52,42 @@ class PendingIntentFactory(
         intent, (context.applicationContext as HabitsApplication).component.session, habit
     )
 
+    private fun bindNotification(intent: Intent, habit: Habit): Intent = NotificationIntentIdentity.bind(
+        intent, (context.applicationContext as HabitsApplication).component.session, habit
+    )
+
     fun addCheckmark(habit: Habit, date: LocalDate?): PendingIntent =
         getBroadcast(
             context,
-            1,
+            (habit.id!! % 100000).toInt() * 10 + 1,
             Intent(context, WidgetReceiver::class.java).apply {
                 data = Uri.parse(habit.uriString)
                 action = WidgetReceiver.ACTION_ADD_REPETITION
                 if (date != null) putExtra("timestamp", date.unixTime)
-            }.let { bindWidget(it, habit) },
+            }.let { bindWidget(it, habit) }.let { bindNotification(it, habit) },
             FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT
         )
 
     fun dismissNotification(habit: Habit): PendingIntent =
         getBroadcast(
             context,
-            0,
+            (habit.id!! % 100000).toInt() * 10 + 4,
             Intent(context, ReminderReceiver::class.java).apply {
-                action = WidgetReceiver.ACTION_DISMISS_REMINDER
+                action = ReminderReceiver.ACTION_DISMISS_REMINDER
                 data = Uri.parse(habit.uriString)
-            },
+            }.let { bindNotification(it, habit) },
             FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT
         )
 
     fun removeRepetition(habit: Habit, date: LocalDate?): PendingIntent =
         getBroadcast(
             context,
-            3,
+            (habit.id!! % 100000).toInt() * 10 + 2,
             Intent(context, WidgetReceiver::class.java).apply {
                 action = WidgetReceiver.ACTION_REMOVE_REPETITION
                 data = Uri.parse(habit.uriString)
                 if (date != null) putExtra("timestamp", date.unixTime)
-            }.let { bindWidget(it, habit) },
+            }.let { bindWidget(it, habit) }.let { bindNotification(it, habit) },
             FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT
         )
 
@@ -94,9 +98,9 @@ class PendingIntentFactory(
                 intentFactory.startShowHabitActivity(
                     context,
                     habit
-                )
+                ).let { bindNotification(it, habit) }
             )
-            .getPendingIntent(0, FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT)!!
+            .getPendingIntent((habit.id!! % 100000).toInt() * 10 + 8, FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT)!!
 
     fun showWidgetHabit(habit: Habit): PendingIntent =
         androidx.core.app.TaskStackBuilder.create(context)
@@ -124,31 +128,31 @@ class PendingIntentFactory(
     ): PendingIntent =
         getBroadcast(
             context,
-            (habit.id!! % Integer.MAX_VALUE).toInt() + 1,
+            (habit.id!! % 100000).toInt() * 10 + 6,
             Intent(context, ReminderReceiver::class.java).apply {
                 action = ReminderReceiver.ACTION_SHOW_REMINDER
                 data = Uri.parse(habit.uriString)
                 putExtra("timestamp", timestamp)
                 putExtra("reminderTime", reminderTime)
-            },
+            }.let { bindNotification(it, habit) },
             FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT
         )
 
     fun snoozeNotification(habit: Habit): PendingIntent =
         getBroadcast(
             context,
-            0,
+            (habit.id!! % 100000).toInt() * 10 + 5,
             Intent(context, ReminderReceiver::class.java).apply {
                 data = Uri.parse(habit.uriString)
                 action = ReminderReceiver.ACTION_SNOOZE_REMINDER
-            },
+            }.let { bindNotification(it, habit) },
             FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT
         )
 
     fun toggleCheckmark(habit: Habit, timestamp: Long?): PendingIntent =
         getBroadcast(
             context,
-            2,
+            (habit.id!! % 100000).toInt() * 10 + 3,
             Intent(context, WidgetReceiver::class.java).apply {
                 data = Uri.parse(habit.uriString)
                 action = WidgetReceiver.ACTION_TOGGLE_REPETITION
@@ -170,12 +174,12 @@ class PendingIntentFactory(
     fun showNumberPicker(habit: Habit, date: LocalDate): PendingIntent? {
         return getActivity(
             context,
-            (habit.id!! % Integer.MAX_VALUE).toInt() + 1,
+            (habit.id!! % 100000).toInt() * 10 + 7,
             MainActivity.intent(context, MainDestination.HABITS).apply {
                 action = ListHabitsActivity.ACTION_EDIT
                 putExtra("habit", habit.id)
                 putExtra("timestamp", date.unixTime)
-            }.let { bindWidget(it, habit) },
+            }.let { bindWidget(it, habit) }.let { bindNotification(it, habit) },
             FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT
         )
     }

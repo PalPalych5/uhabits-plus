@@ -21,14 +21,19 @@ package org.isoron.uhabits.core.ui
 import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.AppScope
-import org.isoron.uhabits.core.commands.Command
-import org.isoron.uhabits.core.commands.CommandRunner
+import org.isoron.uhabits.core.commands.AddNumericalEntryOpCommand
+import org.isoron.uhabits.core.commands.ArchiveHabitsCommand
 import org.isoron.uhabits.core.commands.ClearAllEntriesCommand
 import org.isoron.uhabits.core.commands.ClearHabitEntriesCommand
+import org.isoron.uhabits.core.commands.Command
+import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.commands.CreateRepetitionCommand
 import org.isoron.uhabits.core.commands.DeleteHabitsCommand
+import org.isoron.uhabits.core.commands.EditHabitCommand
+import org.isoron.uhabits.core.commands.EditHabitGoalCommand
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.NumericalHabitType
+import org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshot
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.tasks.Task
 import org.isoron.uhabits.core.tasks.TaskRunner
@@ -42,10 +47,34 @@ open class NotificationTray(
     private val systemTray: SystemTray
 ) : CommandRunner.Listener, Preferences.Listener {
     private val active: MutableMap<Habit, NotificationData> = mutableMapOf()
+
+    open var effectiveSnapshotProvider: ((Habit) -> EffectiveHabitReadSnapshot?)? = null
+
+    private fun matches(h1: Habit, h2: Habit): Boolean {
+        if (h1 === h2) return true
+        if (h1.id != null && h2.id != null && h1.id == h2.id) return true
+        if (!h1.uuid.isNullOrEmpty() && !h2.uuid.isNullOrEmpty() && h1.uuid == h2.uuid) return true
+        return false
+    }
+
+    open fun isShowing(habit: Habit): Boolean = active.keys.any { matches(it, habit) }
+
     open fun cancel(habit: Habit) {
         val notificationId = getNotificationId(habit)
         systemTray.removeNotification(notificationId)
-        active.remove(habit)
+        val iterator = active.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            if (matches(entry.key, habit)) {
+                iterator.remove()
+            }
+        }
+    }
+
+    open fun cancelAll() {
+        for (habit in active.keys.toList()) {
+            cancel(habit)
+        }
     }
 
     override fun onCommandFinished(command: Command) {
@@ -61,7 +90,19 @@ open class NotificationTray(
             habitListSnapshot().firstOrNull { it.id == command.habitId }?.let { cancel(it) }
         }
         if (command is ClearAllEntriesCommand) {
-            for (habit in active.keys.toList()) cancel(habit)
+            cancelAll()
+        }
+        if (command is ArchiveHabitsCommand) {
+            for (habit in command.selected) cancel(habit)
+        }
+        if (command is AddNumericalEntryOpCommand) {
+            habitListSnapshot().firstOrNull { matches(it, command.habit) }?.let { reshow(it) }
+        }
+        if (command is EditHabitGoalCommand) {
+            habitListSnapshot().firstOrNull { it.id == command.habitId || matches(it, command.modified) }?.let { reshow(it) }
+        }
+        if (command is EditHabitCommand) {
+            habitListSnapshot().firstOrNull { it.id == command.habitId || matches(it, command.modified) }?.let { reshow(it) }
         }
     }
 
@@ -69,8 +110,16 @@ open class NotificationTray(
         reshowAll()
     }
 
+    open fun onEffectiveRevisionChanged() {
+        reshowAll()
+    }
+
     open fun show(habit: Habit, date: LocalDate, reminderTime: Long) {
         val data = NotificationData(date, reminderTime)
+        val existing = active.keys.firstOrNull { matches(it, habit) }
+        if (existing != null && existing !== habit) {
+            active.remove(existing)
+        }
         active[habit] = data
         taskRunner.execute(ShowNotificationTask(habit, data))
     }
@@ -86,19 +135,20 @@ open class NotificationTray(
     }
 
     private fun getNotificationId(habit: Habit): Int {
-        val id = habit.id ?: return 0
+        val id = habit.id ?: (habit.uuid?.hashCode()?.toLong()?.and(0x7FFFFFFF) ?: 0L)
         return (id % Int.MAX_VALUE).toInt()
     }
 
     private fun reshowAll() {
-        for ((habit, data) in active.entries) {
+        for ((habit, data) in active.entries.toList()) {
             taskRunner.execute(ShowNotificationTask(habit, data))
         }
     }
 
     open fun reshow(habit: Habit) {
-        active[habit]?.let {
-            taskRunner.execute(ShowNotificationTask(habit, it))
+        val entry = active.entries.firstOrNull { matches(it.key, habit) }
+        if (entry != null) {
+            taskRunner.execute(ShowNotificationTask(entry.key, entry.value))
         }
     }
 
@@ -122,25 +172,34 @@ open class NotificationTray(
         private val reminderTime: Long = data.reminderTime
 
         override suspend fun doInBackground() {
-            isCompleted = habit.isCompletedToday()
+            val snapshot = effectiveSnapshotProvider?.invoke(habit)
+            isCompleted = if (snapshot != null) {
+                snapshot.compatibilityCompletionOn(date).isCompleted
+            } else {
+                habit.isCompletedOn(date)
+            }
         }
 
         override fun onPostExecute() {
             systemTray.log("Showing notification for habit=" + habit.id)
             if (isCompleted && habit.targetType != NumericalHabitType.AT_MOST) {
                 systemTray.log("Habit ${habit.id} already checked. Skipping.")
+                cancel(habit)
                 return
             }
             if (!habit.hasReminder()) {
                 systemTray.log("Habit ${habit.id} does not have a reminder. Skipping.")
+                cancel(habit)
                 return
             }
             if (habit.isArchived) {
                 systemTray.log("Habit ${habit.id} is archived. Skipping.")
+                cancel(habit)
                 return
             }
             if (!shouldShowReminderToday()) {
                 systemTray.log("Habit ${habit.id} not supposed to run today. Skipping.")
+                cancel(habit)
                 return
             }
             systemTray.showNotification(

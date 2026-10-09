@@ -53,6 +53,10 @@ class ReminderReceiver : BroadcastReceiver() {
         val todayMillis = getToday().unixTime
         val data = intent.data
         if (data != null) habit = habits.getById(ContentUris.parseId(data))
+        if (habit != null && !org.isoron.uhabits.intents.NotificationIntentIdentity.accepts(intent, appComponent.session, habit)) {
+            Log.w(TAG, "Rejected reminder intent for habit ${habit.id} due to dataset or identity mismatch")
+            return
+        }
         val timestamp = intent.getLongExtra("timestamp", todayMillis)
         val reminderTime = intent.getLongExtra("reminderTime", todayMillis)
         try {

@@ -194,9 +194,56 @@ PR23A is complete. PR23B Global Statistics checkpoint is complete. PR23 overall 
     - Preserved forensic emulator `emulator-5554` untouched.
     - Screenshots captured in `pr23b_widgets_qa/run/screenshots/widgets-qa/` (`qa-01-widgets-six-render.png`, `qa-02-widget-before-correction-330.png`, `qa-03-widget-after-correction-240.png`, `qa-04-manual-isolation.png`).
 
+## Executed verification evidence for PR23B Notifications & Reminder Tray Checkpoint
+
+- **Notification Reader Inventory & Completion Policies:**
+  - `NotificationTray`:
+    - Evaluates `effectiveSnapshotProvider?.invoke(habit)?.compatibilityCompletionOn(date)?.isCompleted` (or falls back to `habit.isCompletedOn(date)` when snapshot provider is null).
+    - Completion suppression policy: When `isCompleted` is true AND `targetType != NumericalHabitType.AT_MOST`, notification is suppressed or cancelled from the tray.
+    - AT_MOST exception: Reminders for AT_MOST habits are **never** suppressed by completion (matches legacy invariant where AT_MOST reminders encourage vigilance).
+    - Daily reminder vs Weekly goal achievement distinction: For weekly numerical habits (e.g. 300 min/week), today's reminder is suppressed if and only if today's compatibility completion target is reached; achieving the weekly target on prior days does not suppress today's reminder unless today itself satisfies the completion criteria.
+  - `ReminderScheduler`:
+    - Manages system alarms for future reminders (`AlarmManager`).
+    - Alarm rescheduling optimization: Ignores entry-only mutations (`AddNumericalEntryOpCommand`, `BatchCreateRepetitionCommand`, `ClearHabitEntriesCommand`, `ClearAllEntriesCommand`) to avoid mass alarm rescheduling on routine checkmark/numerical updates; reschedules only on structural habit changes (`EditHabitCommand`, `EditHabitGoalCommand`, reminder time/day preference changes).
+  - `ReminderController`:
+    - Handles incoming alarm broadcasts (`ACTION_SHOW_REMINDER`, `ACTION_DISMISS_REMINDER`, `ACTION_SNOOZE_REMINDER`).
+    - Delegates display and suppression to `NotificationTray.show(habit, reminderDate, reminderTime)`.
+  - `ReminderReceiver`:
+    - Broadcast receiver entry point. Validates `NotificationIntentIdentity.accepts(intent, session, habit)` before delegating to `ReminderController`. If rejected, drops the intent silently to prevent cross-dataset mutation.
+
+- **Shared Effective-Read Authority Integration:**
+  - Wires `notificationTray.effectiveSnapshotProvider` through `EffectiveHabitReadController` to provide `EffectiveHabitReadSnapshot` containing contribution projections.
+  - Handles timezone boundaries and `midnightDelayHours`: contributions are bucketed using `calendar.hourOffset` / `preferences.midnightDelayHours` ensuring identical observation boundaries between UI and notifications.
+  - Conservative UNKNOWN semantics: for AT_LEAST, a known lower bound can prove completion if `lowerBound >= targetValue`; for AT_MOST, incomplete coverage remains UNKNOWN and never falsely proves completion.
+
+- **PendingIntent & Dataset Isolation Safety:**
+  - Created `NotificationIntentIdentity`: binds `notification.dataset` and `notification.habit.uuid` as Intent extras and URI query parameters.
+  - Updated `PendingIntentFactory`: binds `NotificationIntentIdentity` on all notification action intents (`showReminder`, `dismissNotification`, `snoozeNotification`, `showHabit`, `addCheckmark`, `removeRepetition`, `showNumberPicker`), assigning distinct request codes.
+  - `WidgetReceiver` and `ReminderReceiver`: accept notification-initiated actions only when identity matches the active dataset and habit UUID. Stale intents from dataset A cannot modify dataset B.
+
+- **End-to-End Invalidation Path:**
+  - Subscribed `NotificationTray` to `EffectiveReadRevision`: repository mutations (Contributions insert/tombstone) trigger `onEffectiveRevisionChanged()` which executes `reshowAll()`.
+  - Visible notifications are dynamically updated or dismissed on durable mutation (e.g., active notification at 240m automatically dismissed when contribution brings total to 330m; restored if contribution tombstoned back to 240m).
+  - `cancelAll()` clears all active notifications on dataset session switch or service shutdown.
+
+- **Sequential Verification Pipeline:**
+  - `compileDebugKotlin`: exit 0.
+  - Domain tests: `NotificationTrayTest` (12 tests) PASS (100%).
+  - Android unit tests: `NotificationIntentIdentityTest` (4 tests), `ReminderControllerTest` PASS (100%).
+  - Full Core JVM suite (`:uhabits-core:jvmTest`): 139 suites, 858 tests PASS (100%), 0 failures, 0 errors, 0 skipped.
+  - Full Android JVM suite (`:uhabits-android:testDebugUnitTest`): 21 suites, 99 tests PASS (100%), 0 failures, 0 errors, 0 skipped.
+  - `assembleDebug` & `assembleDebugAndroidTest`: exit 0.
+  - Native instrumentation QA (`NotificationsEffectiveAndroidTest` on dedicated disposable AVD `UHabit_PR23B_Notifications` port 5556 / serial `emulator-5554`):
+    - All 3 tests PASS (`OK (3 tests)`):
+      1. `atMostExceptionAndCancelAll`: PASS (AT_MOST reminder remains shown even when satisfied; `cancelAll` cleanly dismisses).
+      2. `canonicalFixture_notificationsEffectiveLifecycleAndLiveInvalidation`: PASS (240m active shown -> 330m contribution auto-dismissed -> tombstone back to 240m unsuppressed/shown).
+      3. `pendingIntentIdentity_datasetAndHabitIsolation`: PASS (cross-dataset intent rejected, habit entry untouched).
+    - Screenshots captured in `pr23b_notifications_qa/run/screenshots/notifications-qa/` (`pr23b-notification-active-240m.png`, `pr23b-notification-dismissed-330m.png`, `pr23b-notification-restored-240m.png`, `pr23b-notification-atmost-shown.png`).
+    - APK SHA-256 hashes and clean logcat recorded in `pr23b_notifications_qa/run/`.
+
 ## Production isolation and follow-up
 
 Static checks: Constants retains LEGACY_DATABASE_VERSION 29 and allocated DATABASE_VERSION 30. Production opener/gate unchanged. DatasetSession still distinguishes LEGACY_PRODUCTION from CONTAINER_LOCAL_EXPERIMENTAL. FocusCreditController and timer capture are constructed only for experiment; production capture remains null and legacy timer direct AddNumericalEntryOpCommand remains unchanged. No schema, authority epoch, SourceRule execution, sync, import/export implementation or runtime switch was modified. No canonical/device/user DB opened by this audit.
 
-Remaining requirement: PR23B remaining scope (Notifications/tray, CSV export) must be completed before PR23 completion or production runtime activation. STOP after Widgets checkpoint; PR23B remains IN_PROGRESS; do not start Notifications, CSV, PR24 or PR25.
+Remaining requirement: PR23B remaining scope (CSV export) must be completed before PR23 completion or production runtime activation. STOP after Notifications checkpoint; PR23B remains IN_PROGRESS; do not start CSV, PR24 or PR25.
 

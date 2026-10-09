@@ -46,8 +46,8 @@ internal abstract class WidgetComponent(
 class WidgetReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val app = context.applicationContext as HabitsApplication
-        if (!app.component.session.capabilities.widgetsEnabled) {
-            Log.i(TAG, "Widgets disabled in active session, ignoring intent")
+        if (!app.component.session.capabilities.widgetsEnabled && !app.component.session.capabilities.remindersEnabled) {
+            Log.i(TAG, "Widgets and reminders disabled in active session, ignoring intent")
             return
         }
         val component = WidgetComponent::class.create(app.component)
@@ -61,8 +61,10 @@ class WidgetReceiver : BroadcastReceiver() {
             var data: CheckmarkIntentData? = null
             if (intent.action !== ACTION_UPDATE_WIDGETS_VALUE) {
                 data = parser.parseCheckmarkIntent(intent)
-                if (!org.isoron.uhabits.intents.WidgetIntentIdentity.accepts(intent, app.component.session, data.habit)) {
-                    Log.i(TAG, "Ignoring stale widget action")
+                val acceptedByWidget = org.isoron.uhabits.intents.WidgetIntentIdentity.accepts(intent, app.component.session, data.habit)
+                val acceptedByNotification = org.isoron.uhabits.intents.NotificationIntentIdentity.accepts(intent, app.component.session, data.habit)
+                if (!acceptedByWidget && !acceptedByNotification) {
+                    Log.i(TAG, "Ignoring stale widget or notification action")
                     return
                 }
             }

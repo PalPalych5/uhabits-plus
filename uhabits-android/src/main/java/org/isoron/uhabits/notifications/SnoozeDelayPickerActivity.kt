@@ -58,11 +58,16 @@ class SnoozeDelayPickerActivity : FragmentActivity(), OnItemClickListener {
         val data = intent.data
         if (data == null) {
             finish()
+            return
         } else {
             habit = appComponent.habitList.getById(ContentUris.parseId(data))
         }
-        if (habit == null) finish()
-        androidColor = themeSwitcher.currentTheme.color(habit!!.color).toInt()
+        val currentHabit = habit
+        if (currentHabit == null || !org.isoron.uhabits.intents.NotificationIntentIdentity.accepts(intent, appComponent.session, currentHabit)) {
+            finish()
+            return
+        }
+        androidColor = themeSwitcher.currentTheme.color(currentHabit.color).toInt()
         reminderController = appComponent.reminderController
         val options = resources.getStringArray(R.array.snooze_picker_names).toList()
         val customDialog = CustomDialogs.showSimpleListDialog(

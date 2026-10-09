@@ -396,7 +396,9 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
         val habitId = intent.extras?.getLong("habit") ?: return
         val timestampMillis = intent.extras?.getLong("timestamp") ?: return
         val habit = appComponent.habitList.getById(habitId) ?: return
-        if (!org.isoron.uhabits.intents.WidgetIntentIdentity.accepts(intent, appComponent.session, habit)) return
+        val acceptedByWidget = org.isoron.uhabits.intents.WidgetIntentIdentity.accepts(intent, appComponent.session, habit)
+        val acceptedByNotification = org.isoron.uhabits.intents.NotificationIntentIdentity.accepts(intent, appComponent.session, habit)
+        if (!acceptedByWidget && !acceptedByNotification) return
         component.listHabitsBehavior.onEdit(
             habit,
             LocalDate.fromUnixTime(timestampMillis),

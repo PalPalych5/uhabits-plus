@@ -222,6 +222,7 @@ class HabitsApplication : Application() {
         reminderScheduler = null
         widgetUpdater?.stopListening()
         widgetUpdater = null
+        notificationTray?.cancelAll()
         notificationTray?.stopListening()
         notificationTray = null
         if (isComponentInitialized) {

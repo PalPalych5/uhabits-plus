@@ -117,10 +117,16 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
         val selectedHabit = intent.data?.let { uri ->
             runCatching { habitList.getById(ContentUris.parseId(uri)) }.getOrNull()
         }
+        val hasNotificationIdentity = intent.hasExtra(org.isoron.uhabits.intents.NotificationIntentIdentity.DATASET) ||
+            intent.hasExtra(org.isoron.uhabits.intents.NotificationIntentIdentity.HABIT_UUID) ||
+            intent.data?.getQueryParameter(org.isoron.uhabits.intents.NotificationIntentIdentity.DATASET) != null
+        val hasWidgetIdentity = intent.hasExtra(org.isoron.uhabits.intents.WidgetIntentIdentity.DATASET) ||
+            intent.hasExtra(org.isoron.uhabits.intents.WidgetIntentIdentity.HABIT_UUID) ||
+            intent.data?.getQueryParameter(org.isoron.uhabits.intents.WidgetIntentIdentity.DATASET) != null
+
         if (selectedHabit == null ||
-            ((intent.hasExtra(org.isoron.uhabits.intents.WidgetIntentIdentity.DATASET) ||
-                intent.hasExtra(org.isoron.uhabits.intents.WidgetIntentIdentity.HABIT_UUID)) &&
-                !org.isoron.uhabits.intents.WidgetIntentIdentity.accepts(intent, appComponent.session, selectedHabit))) {
+            (hasNotificationIdentity && !org.isoron.uhabits.intents.NotificationIntentIdentity.accepts(intent, appComponent.session, selectedHabit)) ||
+            (hasWidgetIdentity && !org.isoron.uhabits.intents.WidgetIntentIdentity.accepts(intent, appComponent.session, selectedHabit))) {
             finish()
             return
         }

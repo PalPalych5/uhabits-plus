@@ -16,7 +16,6 @@ object WidgetIntentIdentity {
         putExtra(HABIT_UUID, habit.uuid)
         val base = intent.data ?: Uri.parse(habit.uriString)
         data = base.buildUpon()
-            .clearQuery()
             .appendQueryParameter(DATASET, session.datasetId)
             .appendQueryParameter(HABIT_UUID, habit.uuid)
             .build()

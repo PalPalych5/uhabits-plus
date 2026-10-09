@@ -29,6 +29,7 @@ class EffectiveHabitReadController(
     val revision: EffectiveReadRevision,
     private val cache: HabitCardListCache,
     private val habits: HabitList,
+    private val notificationTray: org.isoron.uhabits.core.ui.NotificationTray? = null,
 ) : Preferences.Listener {
     private val provider = EffectiveHabitReadSnapshotProvider(SQLiteContributionRepository(db))
     private val handler = Handler(Looper.getMainLooper())
@@ -42,7 +43,11 @@ class EffectiveHabitReadController(
         }
     }
     private val changed: () -> Unit = {
-        if (!disposed) { handler.removeCallbacks(refresh); handler.post(refresh) }
+        if (!disposed) {
+            handler.removeCallbacks(refresh)
+            handler.post(refresh)
+            notificationTray?.onEffectiveRevisionChanged()
+        }
     }
     private val rollback: () -> Unit = {
         if (!disposed) {
@@ -57,6 +62,14 @@ class EffectiveHabitReadController(
 
     init {
         cache.effectiveSnapshots = ::snapshots
+        notificationTray?.effectiveSnapshotProvider = { habit ->
+            try {
+                snapshot(habit)
+            } catch (t: Throwable) {
+                android.util.Log.e("EffectiveHabitReadController", "Failed to compute snapshot for habit ${habit.id}", t)
+                null
+            }
+        }
         revision.addListener(changed)
         revision.addRollbackListener(rollback)
         preferences.addListener(this)
@@ -111,6 +124,7 @@ class EffectiveHabitReadController(
     fun dispose() {
         if (disposed) return
         disposed = true
+        notificationTray?.effectiveSnapshotProvider = null
         handler.removeCallbacksAndMessages(null)
         cache.effectiveSnapshots = null
         revision.removeListener(changed)
