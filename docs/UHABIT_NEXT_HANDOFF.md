@@ -184,6 +184,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
+| Antigravity (ecfd46fd) | PR23 Final Acceptance: Independent Cross-Surface Audit | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after PR23 | 2026-10-09 20:50 Novosibirsk | docs/UHABIT_NEXT_HANDOFF.md, docs/UHABIT_EFFECTIVE_READ_AUTHORITY.md, docs/UHABIT_PR23_FINAL_ACCEPTANCE.md, CoroutineTaskRunner, LiveInvalidationAndroidTest | Independent cross-surface audit and final acceptance completed: PR23A and PR23B (5/5 checkpoints) fully accepted. 868 core JVM + 99 Android JVM + 14 native instrumentation tests 100% PASS. Concurrency fix in CoroutineTaskRunner.await() verified. Canonical report: docs/UHABIT_PR23_FINAL_ACCEPTANCE.md. Active work IDLE. PR24/PR25 BLOCKED; LEGACY v29 unchanged. |
 | Antigravity (5e1829b1) | PR23B: Contribution-Aware CSV Export Checkpoint | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after CSV checkpoint | 2026-10-09 18:38 Novosibirsk | HabitsCSVExporter, ExportCSVTask, ListHabitsBehavior, ShowHabitMenuPresenter, CSV models/adapters, CSV tests, native CSV QA, docs | CSV export checkpoint fully verified: sequential builds PASS, JVM suites PASS (core 10/10 CSV + SQLite batching test; all suites exit 0), native QA 3/3 PASS on UHabit_PR23B_Notifications, zero synthetic DB writes, exact provenance & legacy parity. PR23 overall pending final cross-surface audit; PR24/PR25 BLOCKED; LEGACY v29 unchanged. |
 | Antigravity (92f1f747) | PR23B: Notifications & Reminder Tray Checkpoint | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after Notifications | 2026-10-09 17:05 Novosibirsk | NotificationTray, ReminderScheduler, ReminderController, ReminderReceiver, PendingIntentFactory, AndroidNotificationTray, tests, native QA, docs | Notifications checkpoint fully verified: sequential builds PASS, JVM suites PASS (858 core + 99 Android), native QA 3/3 PASS on UHabit_PR23B_Notifications, screenshots captured. CSV PENDING; PR24/PR25 BLOCKED; LEGACY v29 unchanged. |
 | Codex Widgets 2026-10-09 | PR23B Widgets effective reads, lifecycle, actions and protected QA | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after Widgets | 2026-10-09 | Widget adapters/providers/updater/stack/actions, focused tests, disposable offline QA, docs | Widgets checkpoint fully verified: sequential builds PASS, JVM suites PASS, native QA 4/4 PASS on UHabit_PR23B_Widgets, screenshots captured. Notifications/CSV PENDING; PR24/PR25 BLOCKED; LEGACY v29 unchanged. |
@@ -1068,8 +1069,33 @@ Human accepts PR20 and authorizes PR21 preflight and recovery implementation onl
   - Exported archives unpacked and programmatically verified in `pr23b_csv_qa/`.
   - Single running emulator discipline observed; emulator cleanly terminated via `emu kill` (verified 0 running emulator/qemu processes).
 - **Boundaries and stopping rule:**
-  - PR23B all functional checkpoints (Global Statistics, Compare, Widgets, Notifications & Reminder Tray, CSV Export) are **DONE**.
-  - Overall PR23 remains **IN_PROGRESS**, pending final cross-surface audit.
-  - PR24 / PR25 remain **BLOCKED**. Production database remains legacy schema v29; cutover gate active. STOP after CSV checkpoint.
+### 2026-10-09 — PR23 Final Acceptance: Independent Cross-Surface Audit completed
+
+- **PR23 Final Acceptance completed and verified across all surfaces:**
+  - Independent cross-surface audit confirmed data, architectural, semantic, and transactional consistency across Habit List, Habit Detail, History, Global Statistics, Compare Habits, Widgets (6 types), Notifications & Reminder Tray, and CSV Export.
+  - Common deterministic fixture proven on real SQLite API: Study habit (Weekly AT_LEAST 300m, manual 60m + focus 180m + focus 90m = 330m SATISFIED) -> tombstone 90m focus session via `removeById` -> updates cleanly to 240m UNKNOWN/PENDING across all readers with zero synthetic writes, zero duplicate credit, and zero schema modifications.
+  - Manual-write isolation verified: manual edit seeds strictly use `originalEntries`; delta increments/decrements never materialize derived Focus credit.
+  - Intent security & lifecycle verified: `WidgetIntentIdentity` and `NotificationIntentIdentity` isolate datasets and habit UUIDs; stale cross-dataset PendingIntents rejected.
+  - Concurrency hardened: `@Synchronized` job management and snapshot-safe `await()` in `CoroutineTaskRunner` resolved coroutine iteration race.
+  - Bounded queries: 0 per-day SQL queries across all consumers; 4 indexed chunked queries for 500 habits over 90-day range.
+- **Verification evidence:**
+  - Full Core JVM suite: 139 test suites, 868 tests, 0 failures, 0 errors, 0 skipped (**100% PASS**).
+  - Full Android JVM suite: 21 test suites, 99 tests, 0 failures, 0 errors, 0 skipped (**100% PASS**).
+  - Native Instrumentation QA on disposable offline emulator (`emulator-5554`): 14 tests across 5 suites (**100% PASS**):
+    - `LiveInvalidationAndroidTest`: 1/1 PASS.
+    - `StatisticsEffectiveAndroidTest`: 3/3 PASS.
+    - `WidgetsEffectiveAndroidTest`: 4/4 PASS.
+    - `NotificationsEffectiveAndroidTest`: 3/3 PASS.
+    - `CSVExportEffectiveAndroidTest`: 3/3 PASS.
+  - Compilations & packaging: `compileDebugKotlin`, `assembleDebug`, and `assembleDebugAndroidTest` (**100% PASS**).
+  - Disposable emulator cleanly terminated (0 emulator/qemu processes).
+  - Canonical acceptance report: `docs/UHABIT_PR23_FINAL_ACCEPTANCE.md`.
+- **Boundaries strictly maintained:**
+  - PR23A, PR23B (5/5 checkpoints), and PR23 overall are **DONE / ACCEPTED**.
+  - Production runtime authority remains strictly **LEGACY_PRODUCTION** (schema v29).
+  - `Constants.DATABASE_VERSION = 30` remains allocated but inactive; `ProductionCutoverGate` remains closed.
+  - PR24 (Backup & Recovery) and PR25 (Cloud Sync v2) remain strictly **BLOCKED**.
+  - Active work **IDLE**. STOP after PR23.
+
 
 

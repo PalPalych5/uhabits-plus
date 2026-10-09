@@ -25,6 +25,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.isoron.platform.Synchronized
 
 class CoroutineTaskRunner(
     mainDispatcher: CoroutineDispatcher,
@@ -36,21 +37,54 @@ class CoroutineTaskRunner(
     private val jobs = mutableListOf<Job>()
     private var activeCount = 0
 
-    override val activeTaskCount: Int get() = activeCount
+    override val activeTaskCount: Int
+        @Synchronized get() = activeCount
 
+    @Synchronized
     override fun addListener(listener: TaskRunner.Listener) {
         listeners.add(listener)
     }
 
+    @Synchronized
     override fun removeListener(listener: TaskRunner.Listener) {
         listeners.remove(listener)
+    }
+
+    @Synchronized
+    private fun addJob(job: Job) {
+        jobs.add(job)
+    }
+
+    @Synchronized
+    private fun removeJob(job: Job) {
+        jobs.remove(job)
+    }
+
+    @Synchronized
+    private fun getJobsSnapshot(): List<Job> = jobs.toList()
+
+    @Synchronized
+    private fun clearJobs(completed: List<Job>) {
+        jobs.removeAll(completed.toSet())
+    }
+
+    @Synchronized
+    private fun incrementActive(): List<TaskRunner.Listener> {
+        activeCount++
+        return listeners.toList()
+    }
+
+    @Synchronized
+    private fun decrementActive(): List<TaskRunner.Listener> {
+        activeCount--
+        return listeners.toList()
     }
 
     override fun execute(task: Task) {
         task.onAttached(this)
         val job = scope.launch {
-            activeCount++
-            listeners.forEach { it.onTaskStarted(task) }
+            val startListeners = incrementActive()
+            startListeners.forEach { it.onTaskStarted(task) }
             task.onPreExecute()
             if (!task.isCanceled()) {
                 withContext(ioDispatcher) {
@@ -58,16 +92,17 @@ class CoroutineTaskRunner(
                 }
             }
             task.onPostExecute()
-            activeCount--
-            listeners.forEach { it.onTaskFinished(task) }
+            val finishListeners = decrementActive()
+            finishListeners.forEach { it.onTaskFinished(task) }
         }
-        job.invokeOnCompletion { jobs.remove(job) }
-        jobs.add(job)
+        job.invokeOnCompletion { removeJob(job) }
+        addJob(job)
     }
 
     override suspend fun await() {
-        jobs.joinAll()
-        jobs.clear()
+        val snapshot = getJobsSnapshot()
+        snapshot.joinAll()
+        clearJobs(snapshot)
     }
 
     override fun publishProgress(task: Task, progress: Int) {

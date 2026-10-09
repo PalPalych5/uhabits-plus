@@ -21,6 +21,9 @@ import org.isoron.uhabits.core.contribution.sqlite.SQLiteContributionRepository
 import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.HabitType
 import org.isoron.uhabits.intents.IntentFactory
+import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
+import org.isoron.uhabits.core.containers.session.DatasetCapabilities
+import org.isoron.uhabits.core.containers.session.DatasetMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -43,8 +46,12 @@ class LiveInvalidationAndroidTest {
         val testPrefs = "uhabits-test-inval-prefs-$suffix"
 
         val expSession = originalSession.copy(
+            datasetId = "exp-$suffix",
             databaseFilename = testDbName,
             preferencesNamespace = testPrefs,
+            mode = DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL,
+            organizationAuthority = OrganizationAuthorityMode.CONTAINER_LOCAL,
+            capabilities = DatasetCapabilities.EXPERIMENTAL.copy(remindersEnabled = true, widgetsEnabled = true),
         )
 
         instrumentation.runOnMainSync { app.rebuildComponent(expSession) }
