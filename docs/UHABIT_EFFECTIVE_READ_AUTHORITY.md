@@ -20,6 +20,27 @@ Fresh verification: 132 core tests/13 suites, 92 Android JVM tests/19 suites, an
 
 ## Evidence and inventory conventions
 
+## PR23B Widgets checkpoint — inventory before implementation
+
+2026-10-08, baseline6cefb744. Scope: Widgets only; Notifications/CSV and production activation excluded. Compare's system-ANR visual limitation remains open.
+
+| Widget | Existing read and claim | Actions | Calendar/range | Planned authority/gate |
+|---|---|---|---|---|
+| Checkmark | computedEntries today, isCompletedOn, scores today; daily quantity/check and score ring | Boolean toggle; numerical manual popup | getToday with midnight offset | Typed effective daily quantity/compatibility completion; lower-bound marker; unavailable score ring; never label weekly achievement daily |
+| Target | TargetCardPresenter statisticsEntries multi-interval sums/prorated targets | Open detail | weekday/current multi-period ranges | Legacy without credit; canonical PR15 current calendar-goal progress with status/coverage/manual-Focus breakdown for derived inputs |
+| History | HistoryCardPresenter computedEntries series and manual notes | Open detail | history dates/live weekday | Typed snapshot compatibility history, includes Contribution-only dates; manual provenance preserved |
+| Score | ScoreCardPresenter scores/group averages | Open detail | spinner bucket/live weekday/full history | Typed score result; incomplete/unrepresentable explicit unavailable |
+| Streak | habit.streaks best streaks | Open detail | current/history horizon | Typed streak result; unavailable if unproven, exact legacy branch retained |
+| Frequency | originalEntries weekday/month quantities (x1000) for numerical; Boolean YES_MANUAL count | Open detail | full observed history/weekday | Preloaded effective numerical quantities, same units; explicit gate for uncertain/incompatible/overflow buckets, Boolean manual frequency unchanged |
+
+Delivery inventory: WidgetUpdater currently listens to CommandRunner only, broadcasts six provider updates; BaseWidgetProvider spawns an unbounded raw thread per update and options render synchronously. StackWidget/StackRemoteViewsFactory generate bitmap RemoteViews; factory retains local Habit IDs, has no dataset token and an empty onDataSetChanged. Periodic/start-day broadcasts remain necessary after cold start. All widgets currently omit Contributions. Individual core card presenters are legacy; ShowHabitPresenter wraps selected typed fields, and is not a uniformly canonical multi-period Target adapter.
+
+Manual authority: numerical popup and shared WidgetBehavior use originalEntries; WidgetBehavior increment/decrement currently mishandle UNKNOWN/SKIP seeds, overflow and sentinel result3. These delta methods currently serve automation, while Home Screen numerical clicks open the manual editor. Widget PendingIntents/stack rows identify only local IDs and need dataset/UUID stale-action rejection.
+
+Capabilities: experimental widgetsEnabled remains false until explicit runtime activation; this checkpoint must support tested typed rendering behind that gate, using explicitly enabled disposable test sessions without enabling production Next. Providers/adapters must also enforce the gate and replace stale views after dataset switches. No manual-only fallback may claim total derived progress.
+
+Implementation plan: pure typed widget adapters over shared snapshots; one coalesced Android update batch across active widget selections/ranges, reused by landscape/portrait/stack rows; dataset-owned revision/calendar subscriptions with shutdown, Android provider/cold-start delivery, scoped PendingIntent identity. Measure real SQLite effective-read queries rather than assume Activity observers update RemoteViews.
+
 `C/` means `uhabits-core/src/commonMain/kotlin/org/isoron/uhabits/core/`; `A/` means `uhabits-android/src/main/java/org/isoron/uhabits/`. Sources below identify actual classes/functions at the inspected baseline, not assumptions from the old architecture document. In particular, `StatisticsFragment` lives in `A/activities/statistics/StatisticsActivity.kt`; the live report calls `StatisticsReportStateBuilder`, not the stale documented `StatisticsStabilityReportBuilder`.
 
 O = originalEntries; E = computedEntries; S = ScoreList; T = StreakList; H = Habit.statisticsEntries. The inventory below describes the inspected audit baseline, before PR23A. Converted surfaces and current contracts are recorded in the implementation section. Calendar conversion uses current local timezone; several legacy helpers use locale weekday while views receive live preferences.
@@ -142,9 +163,40 @@ PR23A is complete. PR23B Global Statistics checkpoint is complete. PR23 overall 
   - Reactive invalidation: `StatisticsActivity` observes `effectiveReadRevision` and calendar context, re-rendering reports on data mutation.
   - Baseline protection & restoration: All emulator database and preference files restored byte-for-byte; `device_snapshot.py verify` confirmed 100% SHA-256 match across all 13 files.
 
+## Executed verification evidence for PR23B Widgets Checkpoint
+
+- **Pure typed presenters & architecture:**
+  - `EffectiveWidgetPresenter`: pure presenter for Checkmark, Target, History, Score, Streak, Frequency widgets over shared effective read snapshots.
+  - Safe gating: typed Score and Streak return explicit unavailable states when history coverage is incomplete; Frequency gates to null when observed days contain unproven/UNKNOWN contributions.
+  - No synthetic Repetitions or EntryOps; no duplicated Focus aggregation; Boolean no-Contribution parity verified.
+- **Intent Security & Lifecycle Isolation:**
+  - `WidgetIntentIdentity`: encodes `widget.dataset` and `widget.habit.uuid` in URI query parameters and extras; `accepts()` enforces active dataset match and immutable Habit UUID.
+  - Cross-dataset rejection: Stale PendingIntents created in dataset A are rejected at receiver dispatch in dataset B. `Intent.filterEquals()` treats distinct datasets and Habit UUIDs as distinct Android PendingIntents.
+  - `WidgetReceiver`: validates `WidgetIntentIdentity.accepts()` before mutating or dispatching; unhandled or mismatched intents safely ignored.
+- **Manual-write isolation:**
+  - Verified fixture (30 min manual + 60 min focus = 90 min effective):
+    - Increment +10 min: manual = 40 min, effective = 100 min, Focus credit = 60 min.
+    - Decrement -10 min: manual = 30 min, effective = 90 min, Focus credit = 60 min.
+    - Focus contributions are never copied into manual entries or used as manual edit seeds.
+- **End-to-end reactive invalidation:**
+  - Canonical 330 min -> 240 min correction propagated through:
+    `ContributionRepository.removeById()` -> durable commit -> `EffectiveReadRevision.changed()` -> `WidgetUpdater` -> Android `RemoteViews`.
+- **Query performance & batching:**
+  - `EffectiveReadBatchSQLiteTest`: 500 habits over multi-month range use 4 indexed queries; verified bounded range loading with `from = habits.mapNotNull { it.effectiveStatisticsStartDate() }.minOrNull() ?: today.minus(365)`.
+- **Sequential verification pipeline:**
+  - `compileDebugKotlin`: exit 0.
+  - Focused widget tests: `EffectiveWidgetPresenterTest` (10 tests), `WidgetBehaviorTest` (9 tests), `WidgetIntentIdentityTest` (3 tests), `EffectiveReadBatchSQLiteTest` (3 tests) — all PASS (100%).
+  - Core JVM suite (`:uhabits-core:jvmTest`): 138 suites, 846 tests PASS (100%), 0 failures, 0 errors, 0 skipped.
+  - Android JVM suite (`:uhabits-android:testDebugUnitTest`): 20 suites, 95 tests PASS (100%), 0 failures, 0 errors, 0 skipped.
+  - `assembleDebug` & `assembleDebugAndroidTest`: exit 0.
+  - Native instrumentation QA (`WidgetsEffectiveAndroidTest` on dedicated disposable AVD `UHabit_PR23B_Widgets` port 5556 / serial `127.0.0.1:5557`):
+    - All 4 tests PASS (`OK (4 tests)`).
+    - Preserved forensic emulator `emulator-5554` untouched.
+    - Screenshots captured in `pr23b_widgets_qa/run/screenshots/widgets-qa/` (`qa-01-widgets-six-render.png`, `qa-02-widget-before-correction-330.png`, `qa-03-widget-after-correction-240.png`, `qa-04-manual-isolation.png`).
+
 ## Production isolation and follow-up
 
-Static checks: Constants retains LEGACY_DATABASE_VERSION29 and allocated DATABASE_VERSION30. Production opener/gate unchanged. DatasetSession still distinguishes LEGACY_PRODUCTION from CONTAINER_LOCAL_EXPERIMENTAL. FocusCreditController and timer capture are constructed only for experiment; production capture remains null and legacy timer direct AddNumericalEntryOpCommand remains unchanged. No schema, authority epoch, SourceRule execution, sync, import/export implementation or runtime switch was modified. No canonical/device/user DB opened by this audit.
+Static checks: Constants retains LEGACY_DATABASE_VERSION 29 and allocated DATABASE_VERSION 30. Production opener/gate unchanged. DatasetSession still distinguishes LEGACY_PRODUCTION from CONTAINER_LOCAL_EXPERIMENTAL. FocusCreditController and timer capture are constructed only for experiment; production capture remains null and legacy timer direct AddNumericalEntryOpCommand remains unchanged. No schema, authority epoch, SourceRule execution, sync, import/export implementation or runtime switch was modified. No canonical/device/user DB opened by this audit.
 
-Remaining requirement: PR23B remaining scope (CompareHabitsActivity, widgets, notifications/tray, CSV export) must be completed before PR23 completion or production runtime activation. STOP after Global Statistics checkpoint; PR23B remains IN_PROGRESS; do not start PR24 or PR25.
+Remaining requirement: PR23B remaining scope (Notifications/tray, CSV export) must be completed before PR23 completion or production runtime activation. STOP after Widgets checkpoint; PR23B remains IN_PROGRESS; do not start Notifications, CSV, PR24 or PR25.
 

@@ -24,9 +24,11 @@ import android.content.Context
 import android.view.View
 import org.isoron.platform.gui.toInt
 import org.isoron.platform.time.DayOfWeek
+import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.views.FrequencyChart
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.ui.views.WidgetTheme
+import org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter
 import org.isoron.uhabits.widgets.views.GraphWidgetView
 
 class FrequencyWidget(
@@ -40,18 +42,35 @@ class FrequencyWidget(
     override val defaultWidth: Int = 200
 
     override fun getOnClickPendingIntent(context: Context): PendingIntent =
-        pendingIntentFactory.showHabit(habit)
+        pendingIntentFactory.showWidgetHabit(habit)
 
     override fun refreshData(v: View) {
         val widgetView = v as GraphWidgetView
         widgetView.setTitle(habit.name)
         widgetView.setBackgroundAlpha(preferedBackgroundAlpha)
         if (preferedBackgroundAlpha >= 255) widgetView.setShadowAlpha(0x4f)
-        (widgetView.dataView as FrequencyChart).apply {
-            setFirstWeekday(firstWeekday)
-            setColor(WidgetTheme().color(habit.color).toInt())
-            setIsNumerical(habit.isNumerical)
-            setFrequency(habit.originalEntries.computeWeekdayFrequency(habit.isNumerical))
+        val snapshot = effectiveSnapshot
+        val model = if (snapshot != null) {
+            EffectiveWidgetPresenter.frequency(
+                habit, snapshot, firstWeekday, WidgetTheme()
+            )
+        } else {
+            null
+        }
+        if (snapshot != null && model == null) {
+            widgetView.setStatus(context.getString(R.string.widget_effective_frequency_unavailable))
+        } else {
+            widgetView.setStatus(null)
+            (widgetView.dataView as FrequencyChart).apply {
+                setFirstWeekday(firstWeekday)
+                setColor(WidgetTheme().color(habit.color).toInt())
+                setIsNumerical(habit.isNumerical)
+                if (model != null) {
+                    setFrequency(model.frequency)
+                } else {
+                    setFrequency(habit.originalEntries.computeWeekdayFrequency(habit.isNumerical))
+                }
+            }
         }
     }
 

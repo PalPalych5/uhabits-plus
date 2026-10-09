@@ -23,10 +23,12 @@ import android.app.PendingIntent
 import android.content.Context
 import android.view.View
 import org.isoron.platform.gui.toInt
+import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.views.ScoreChart
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.ui.screens.habits.show.views.ScoreCardPresenter
 import org.isoron.uhabits.core.ui.views.WidgetTheme
+import org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter
 import org.isoron.uhabits.widgets.views.GraphWidgetView
 
 class ScoreWidget(
@@ -39,23 +41,35 @@ class ScoreWidget(
     override val defaultWidth: Int = 300
 
     override fun getOnClickPendingIntent(context: Context): PendingIntent =
-        pendingIntentFactory.showHabit(habit)
+        pendingIntentFactory.showWidgetHabit(habit)
 
     override fun refreshData(view: View) {
-        val viewModel = ScoreCardPresenter.buildState(
-            habit = habit,
-            firstWeekday = prefs.firstWeekdayInt,
-            spinnerPosition = prefs.scoreCardSpinnerPosition,
-            theme = WidgetTheme()
-        )
         val widgetView = view as GraphWidgetView
         widgetView.setBackgroundAlpha(preferedBackgroundAlpha)
         if (preferedBackgroundAlpha >= 255) widgetView.setShadowAlpha(0x4f)
-        (widgetView.dataView as ScoreChart).apply {
-            setIsTransparencyEnabled(true)
-            setBucketSize(viewModel.bucketSize)
-            setColor(WidgetTheme().color(habit.color).toInt())
-            setScores(viewModel.scores)
+        val snapshot = effectiveSnapshot
+        val viewModel = if (snapshot != null) {
+            EffectiveWidgetPresenter.score(
+                habit, snapshot, prefs.firstWeekdayInt, prefs.scoreCardSpinnerPosition, WidgetTheme()
+            )
+        } else {
+            ScoreCardPresenter.buildState(
+                habit = habit,
+                firstWeekday = prefs.firstWeekdayInt,
+                spinnerPosition = prefs.scoreCardSpinnerPosition,
+                theme = WidgetTheme()
+            )
+        }
+        if (viewModel == null) {
+            widgetView.setStatus(context.getString(R.string.widget_effective_score_unavailable))
+        } else {
+            widgetView.setStatus(null)
+            (widgetView.dataView as ScoreChart).apply {
+                setIsTransparencyEnabled(true)
+                setBucketSize(viewModel.bucketSize)
+                setColor(WidgetTheme().color(habit.color).toInt())
+                setScores(viewModel.scores)
+            }
         }
     }
 

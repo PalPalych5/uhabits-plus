@@ -122,4 +122,96 @@ class EffectiveReadBatchSQLiteTest : BaseUnitTest() {
             assertNotNull(overview)
         } finally { database.close() }
     }
+
+    @Test fun widgetPresentersBatchSingleAndMultipleWithoutPerDayOrPerWidgetQueries() = runTest {
+        val database = TestDatabaseHelper.createEmptyDatabase()
+        try {
+            ContributionSchema.createSchema(database)
+            var selects = 0
+            val counted = object : Database by database {
+                override fun prepareStatement(sql: String): PreparedStatement {
+                    if (sql.trimStart().startsWith("SELECT") && sql.contains("FROM Contributions")) selects++
+                    return database.prepareStatement(sql)
+                }
+            }
+            val facts = SQLiteContributionRepository(counted)
+            val end = LocalDate(2026, 10, 8)
+            setToday(end)
+            val theme = org.isoron.uhabits.core.ui.views.WidgetTheme()
+
+            val habits = (0 until 6).map { index -> modelFactory.buildHabit().apply {
+                uuid = "widget-batch-$index"; type = HabitType.NUMERICAL; unit = "min"
+                targetValue = 300.0; frequency = Frequency(1, 7)
+                originalEntries.add(Entry(end.minus(30), 0)); originalEntries.add(Entry(end, 30000)); recompute()
+            } }
+            habits.forEachIndexed { index, habit ->
+                val instant = startOfLocalDay(end.minus(index)) + 1000
+                facts.record(Contribution(ContributionId("w-credit-$index"), HabitRef(habit.uuid!!),
+                    ContributionSourceType.FOCUS_SESSION, "source-$index", 60000, instant, instant, instant))
+            }
+
+            // 1. Single widget snapshot preload
+            selects = 0
+            val singleSnapshots = EffectiveHabitReadSnapshotProvider(facts).prepare(
+                listOf(habits.first()), end.minus(30), end, "single-widget", 1,
+                EffectiveReadCalendarContext("local", DayOfWeek.MONDAY, 0, 0)
+            )
+            val singleSelects = selects
+            assertEquals(2, singleSelects)
+
+            // Presenting all six widgets for this habit consumes snapshot with 0 extra queries
+            val singleSnapshot = singleSnapshots.getValue(HabitRef(habits.first().uuid!!))
+            org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter.checkmark(habits.first(), singleSnapshot, end)
+            org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter.target(singleSnapshot, end)
+            org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter.history(habits.first(), singleSnapshot, theme)
+            org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter.score(habits.first(), singleSnapshot, 1, 0, theme)
+            org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter.streak(habits.first(), singleSnapshot, theme)
+            org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter.frequency(habits.first(), singleSnapshot, DayOfWeek.MONDAY, theme)
+            assertEquals(singleSelects, selects)
+
+            // 2. Multi-widget batch preload (6 distinct habits on screen)
+            selects = 0
+            val multiSnapshots = EffectiveHabitReadSnapshotProvider(facts).prepare(
+                habits, end.minus(30), end, "multi-widget", 1,
+                EffectiveReadCalendarContext("local", DayOfWeek.MONDAY, 0, 0)
+            )
+            val multiSelects = selects
+            assertEquals(2, multiSelects)
+
+            // All 6 widgets presented across all 6 habits
+            habits.forEach { habit ->
+                val snap = multiSnapshots.getValue(HabitRef(habit.uuid!!))
+                org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter.checkmark(habit, snap, end)
+                org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter.target(snap, end)
+                org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter.history(habit, snap, theme)
+                org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter.score(habit, snap, 1, 0, theme)
+                org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter.streak(habit, snap, theme)
+                org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter.frequency(habit, snap, DayOfWeek.MONDAY, theme)
+            }
+            assertEquals(multiSelects, selects)
+
+            // 3. Contribution correction
+            val removedResult = facts.removeById(ContributionId("w-credit-0"), startOfLocalDay(end) + 2000)
+            assertEquals(ContributionRemovalResult.REMOVED, removedResult)
+            selects = 0
+            val correctedSnapshots = EffectiveHabitReadSnapshotProvider(facts).prepare(
+                listOf(habits.first()), end.minus(30), end, "corrected-widget", 2,
+                EffectiveReadCalendarContext("local", DayOfWeek.MONDAY, 0, 0)
+            )
+            assertEquals(2, selects)
+            val correctedSnapshot = correctedSnapshots.getValue(HabitRef(habits.first().uuid!!))
+            val checkmarkState = org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter.checkmark(habits.first(), correctedSnapshot, end)
+            assertEquals(30000L, checkmarkState.quantity)
+            assertEquals(2, selects)
+
+            // 4. Cold-start refresh
+            selects = 0
+            val coldStartSnapshots = EffectiveHabitReadSnapshotProvider(facts).prepare(
+                habits, end.minus(30), end, "cold-start", 1,
+                EffectiveReadCalendarContext("local", DayOfWeek.MONDAY, 0, 0)
+            )
+            assertEquals(2, selects)
+            assertEquals(6, coldStartSnapshots.size)
+        } finally { database.close() }
+    }
 }

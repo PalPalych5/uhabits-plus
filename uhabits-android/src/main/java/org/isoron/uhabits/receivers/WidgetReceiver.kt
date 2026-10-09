@@ -61,6 +61,10 @@ class WidgetReceiver : BroadcastReceiver() {
             var data: CheckmarkIntentData? = null
             if (intent.action !== ACTION_UPDATE_WIDGETS_VALUE) {
                 data = parser.parseCheckmarkIntent(intent)
+                if (!org.isoron.uhabits.intents.WidgetIntentIdentity.accepts(intent, app.component.session, data.habit)) {
+                    Log.i(TAG, "Ignoring stale widget action")
+                    return
+                }
             }
             when (intent.action) {
                 ACTION_ADD_REPETITION -> {

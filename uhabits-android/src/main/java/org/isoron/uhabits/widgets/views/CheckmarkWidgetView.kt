@@ -23,6 +23,8 @@ import android.util.AttributeSet
 import android.util.TypedValue
 import android.view.View
 import android.widget.TextView
+import android.widget.LinearLayout
+import android.view.Gravity
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.views.RingView
@@ -51,6 +53,9 @@ class CheckmarkWidgetView : HabitWidgetView {
     var entryValue = 0
     var entryState = 0
     var isNumerical = false
+    var effectiveText: String? = null
+    var scoreAvailable = true
+    private lateinit var quantityLabel: TextView
     private var preferences: Preferences? = null
 
     constructor(context: Context?) : super(context) {
@@ -87,6 +92,10 @@ class CheckmarkWidgetView : HabitWidgetView {
         ring.setColor(fgColor)
         ring.setBackgroundColor(bgColor)
         ring.setText(text)
+        ring.visibility = if (scoreAvailable) VISIBLE else GONE
+        quantityLabel.visibility = if (scoreAvailable) GONE else VISIBLE
+        quantityLabel.text = "$text\n${resources.getString(R.string.widget_effective_score_unavailable)}"
+        quantityLabel.setTextColor(fgColor)
         ring.setIsStrokedTextEnabled(strokedTextEnabled)
         label.text = name
         label.setTextColor(fgColor)
@@ -105,7 +114,7 @@ class CheckmarkWidgetView : HabitWidgetView {
         }
 
     private val text: String
-        get() = if (isNumerical) {
+        get() = effectiveText ?: if (isNumerical) {
             (max(0, entryValue) / 1000.0).toShortString()
         } else {
             when (entryState) {
@@ -156,6 +165,8 @@ class CheckmarkWidgetView : HabitWidgetView {
             (context.applicationContext as HabitsApplication).component
         preferences = appComponent.preferences
         ring = findViewById<View>(R.id.scoreRing) as RingView
+        quantityLabel = TextView(context).apply { gravity = Gravity.CENTER; textSize = 13f; visibility = GONE; maxLines = 3 }
+        (ring.parent as LinearLayout).addView(quantityLabel, 1, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 0.9f))
         label = findViewById<View>(R.id.label) as TextView
         ring.setIsTransparencyEnabled(true)
         if (isInEditMode) {

@@ -68,17 +68,7 @@ abstract class BaseWidgetProvider : AppWidgetProvider() {
         widgetId: Int,
         options: Bundle
     ) {
-        try {
-            updateDependencies(context)
-            context.setTheme(R.style.WidgetTheme)
-            val widget = getWidgetFromId(context, widgetId)
-            val dims = getDimensionsFromOptions(context, options)
-            widget.setDimensions(dims)
-            updateAppWidget(manager, widget)
-        } catch (e: RuntimeException) {
-            drawErrorWidget(context, manager, widgetId, e)
-            e.printStackTrace()
-        }
+        (context.applicationContext as HabitsApplication).component.widgetRenderer.request(javaClass, intArrayOf(widgetId))
     }
 
     override fun onDeleted(context: Context?, ids: IntArray?) {
@@ -100,12 +90,7 @@ abstract class BaseWidgetProvider : AppWidgetProvider() {
         manager: AppWidgetManager,
         widgetIds: IntArray
     ) {
-        updateDependencies(context)
-        context.setTheme(R.style.WidgetTheme)
-        Thread {
-            Looper.prepare()
-            for (id in widgetIds) update(context, manager, id)
-        }.start()
+        (context.applicationContext as HabitsApplication).component.widgetRenderer.request(javaClass, widgetIds)
     }
 
     protected fun getHabitsFromWidgetId(widgetId: Int): List<Habit> {

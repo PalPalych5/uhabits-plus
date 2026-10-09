@@ -61,16 +61,27 @@ class WidgetBehavior(
     }
 
     fun onIncrement(habit: Habit, date: LocalDate, amount: Int) {
-        val entry = habit.originalEntries.get(date)
-        val currentValue = entry.value
-        setValue(habit, date, currentValue + amount, entry.notes)
-        notificationTray.cancel(habit)
+        adjustManualQuantity(habit, date, amount, increment = true)
     }
 
     fun onDecrement(habit: Habit, date: LocalDate, amount: Int) {
+        adjustManualQuantity(habit, date, amount, increment = false)
+    }
+
+    private fun adjustManualQuantity(habit: Habit, date: LocalDate, amount: Int, increment: Boolean) {
+        require(habit.isNumerical) { "Quantity adjustments require a numerical Habit" }
+        require(amount >= 0) { "Adjustment amount must be nonnegative" }
         val entry = habit.originalEntries.get(date)
-        val currentValue = entry.value
-        setValue(habit, date, currentValue - amount, entry.notes)
+        // Sentinels describe missing/excluded observations, never a quantity to increment.
+        val currentValue = when (entry.value) {
+            Entry.UNKNOWN, Entry.SKIP -> 0L
+            else -> entry.value.toLong().also { require(it >= 0) }
+        }
+        val newValue = if (increment) currentValue + amount else (currentValue - amount).coerceAtLeast(0)
+        require(newValue <= Int.MAX_VALUE && newValue != Entry.SKIP.toLong()) {
+            "Manual quantity cannot be represented without a sentinel collision"
+        }
+        setValue(habit, date, newValue.toInt(), entry.notes)
         notificationTray.cancel(habit)
     }
 

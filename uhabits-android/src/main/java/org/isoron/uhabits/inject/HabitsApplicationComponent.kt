@@ -180,6 +180,7 @@ abstract class HabitsApplicationComponent(
     }
 
     val effectiveReadRevision = org.isoron.uhabits.core.models.projection.EffectiveReadRevision(session.datasetId)
+    val widgetRenderer by lazy { org.isoron.uhabits.widgets.WidgetRenderCoordinator(appContext, this) }
 
     val effectiveHabitReads: org.isoron.uhabits.focus.EffectiveHabitReadController? by lazy {
         if (session.isExperimental) org.isoron.uhabits.focus.EffectiveHabitReadController(

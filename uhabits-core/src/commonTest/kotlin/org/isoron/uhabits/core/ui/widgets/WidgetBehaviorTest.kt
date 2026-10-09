@@ -34,6 +34,14 @@ import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.ui.NotificationTray
 import kotlin.test.BeforeTest
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import org.isoron.uhabits.core.commands.CommandRunner
+import org.isoron.uhabits.core.containers.HabitRef
+import org.isoron.uhabits.core.contribution.*
+import org.isoron.uhabits.core.contribution.memory.MemoryContributionRepository
+import org.isoron.uhabits.core.models.projection.EffectiveHabitValueService
+import org.isoron.platform.time.startOfLocalDay
 import dev.mokkery.verify.VerifyMode.Companion.not as notCalled
 
 class WidgetBehaviorTest : BaseUnitTest() {
@@ -154,5 +162,59 @@ class WidgetBehaviorTest : BaseUnitTest() {
         }
         verify { notificationTray.cancel(habit) }
         verify(notCalled) { preferences.isSkipEnabled }
+    }
+
+    @Test
+    fun executedAdjustmentsPreserveContributionAndManualNotes() {
+        habit = fixtures.createNumericalHabit()
+        habit.unit = "min"
+        habit.originalEntries.add(Entry(today, 30000, "manual"))
+        val repository = MemoryContributionRepository()
+        val instant = startOfLocalDay(today) + 1000
+        val contribution = Contribution(ContributionId("widget-credit"), HabitRef(habit.uuid!!),
+            ContributionSourceType.FOCUS_SESSION, "widget-focus", 60000, instant, instant, instant)
+        repository.record(contribution)
+        val service = EffectiveHabitValueService(repository)
+        val executing = WidgetBehavior(habitList, CommandRunner(taskRunner), notificationTray, preferences)
+        assertEquals(90000L, service.valueForDay(habit, today).totalValue)
+        executing.onIncrement(habit, today, 10000)
+        assertEquals(Entry(today, 40000, "manual"), habit.originalEntries.get(today))
+        assertEquals(100000L, service.valueForDay(habit, today).totalValue)
+        executing.onDecrement(habit, today, 10000)
+        assertEquals(Entry(today, 30000, "manual"), habit.originalEntries.get(today))
+        assertEquals(90000L, service.valueForDay(habit, today).totalValue)
+        assertEquals(listOf(contribution), service.valueForDay(habit, today).contributions)
+    }
+
+    @Test
+    fun sentinelSeedsBecomeZeroAndDecrementsClampToZero() {
+        habit = fixtures.createNumericalHabit()
+        val executing = WidgetBehavior(habitList, CommandRunner(taskRunner), notificationTray, preferences)
+        for (seed in listOf(Entry.UNKNOWN, Entry.SKIP, 0)) {
+            habit.originalEntries.add(Entry(today, seed, "notes"))
+            executing.onIncrement(habit, today, 1000)
+            assertEquals(Entry(today, 1000, "notes"), habit.originalEntries.get(today))
+            executing.onDecrement(habit, today, 2000)
+            assertEquals(Entry(today, 0, "notes"), habit.originalEntries.get(today))
+        }
+    }
+
+    @Test
+    fun collisionsAndOverflowRejectWithoutWriting() {
+        habit = fixtures.createNumericalHabit()
+        val executing = WidgetBehavior(habitList, CommandRunner(taskRunner), notificationTray, preferences)
+        for ((seed, amount) in listOf(2 to 1, Int.MAX_VALUE to 1)) {
+            habit.originalEntries.add(Entry(today, seed, "preserve"))
+            assertFailsWith<IllegalArgumentException> { executing.onIncrement(habit, today, amount) }
+            assertEquals(Entry(today, seed, "preserve"), habit.originalEntries.get(today))
+        }
+        habit.originalEntries.add(Entry(today, 4))
+        assertFailsWith<IllegalArgumentException> { executing.onDecrement(habit, today, 1) }
+        assertEquals(4, habit.originalEntries.get(today).value)
+        habit.originalEntries.add(Entry(today, 1))
+        executing.onIncrement(habit, today, 1)
+        assertEquals(2, habit.originalEntries.get(today).value)
+        executing.onDecrement(habit, today, 1)
+        assertEquals(1, habit.originalEntries.get(today).value)
     }
 }

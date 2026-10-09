@@ -46,9 +46,13 @@ open class WidgetUpdater(
     private val widgetPrefs: WidgetPreferences,
     private val intentScheduler: IntentScheduler,
     private val preferences: Preferences
-) : CommandRunner.Listener {
+) : CommandRunner.Listener, Preferences.Listener {
+    private var owner: org.isoron.uhabits.inject.HabitsApplicationComponent? = null
+    private val revisionChanged: () -> Unit = { updateWidgets() }
 
     override fun onCommandFinished(command: Command) {
+        // Experimental mutations publish only after a successful outer commit through revision.
+        if (owner?.session?.isExperimental == true) return
         if (command is CreateRepetitionCommand) {
             updateWidgets(command.habit.id)
         } else {
@@ -62,7 +66,11 @@ open class WidgetUpdater(
      * widgets will get updated.
      */
     open fun startListening() {
+        if (owner != null) return
+        owner = (context.applicationContext as org.isoron.uhabits.HabitsApplication).component
         commandRunner.addListener(this)
+        owner!!.effectiveReadRevision.addListener(revisionChanged)
+        preferences.addListener(this)
     }
 
     /**
@@ -71,6 +79,10 @@ open class WidgetUpdater(
      */
     open fun stopListening() {
         commandRunner.removeListener(this)
+        preferences.removeListener(this)
+        owner?.effectiveReadRevision?.removeListener(revisionChanged)
+        owner?.widgetRenderer?.shutdown()
+        owner = null
     }
 
     open fun scheduleStartDayWidgetUpdate() {
@@ -79,14 +91,8 @@ open class WidgetUpdater(
     }
 
     open fun updateWidgets(modifiedHabitId: Long?) {
-        taskRunner.execute {
-            updateWidgets(modifiedHabitId, CheckmarkWidgetProvider::class.java)
-            updateWidgets(modifiedHabitId, HistoryWidgetProvider::class.java)
-            updateWidgets(modifiedHabitId, ScoreWidgetProvider::class.java)
-            updateWidgets(modifiedHabitId, StreakWidgetProvider::class.java)
-            updateWidgets(modifiedHabitId, FrequencyWidgetProvider::class.java)
-            updateWidgets(modifiedHabitId, TargetWidgetProvider::class.java)
-        }
+        val component = owner ?: (context.applicationContext as org.isoron.uhabits.HabitsApplication).component
+        component.widgetRenderer.requestAll()
     }
 
     private fun updateWidgets(modifiedHabitId: Long?, providerClass: Class<*>) {
@@ -112,4 +118,7 @@ open class WidgetUpdater(
     open fun updateWidgets() {
         updateWidgets(null)
     }
+    override fun onHabitListAppearanceChanged() = updateWidgets()
+    override fun onCheckmarkSequenceChanged() = updateWidgets()
+    override fun onSyncFinished() = updateWidgets()
 }

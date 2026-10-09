@@ -40,6 +40,7 @@ import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.inject.AppContext
 import org.isoron.uhabits.receivers.ReminderReceiver
 import org.isoron.uhabits.receivers.WidgetReceiver
+import org.isoron.uhabits.HabitsApplication
 
 @Inject
 @AppScope
@@ -47,6 +48,9 @@ class PendingIntentFactory(
     @AppContext private val context: Context,
     private val intentFactory: IntentFactory
 ) {
+    private fun bindWidget(intent: Intent, habit: Habit): Intent = WidgetIntentIdentity.bind(
+        intent, (context.applicationContext as HabitsApplication).component.session, habit
+    )
 
     fun addCheckmark(habit: Habit, date: LocalDate?): PendingIntent =
         getBroadcast(
@@ -56,7 +60,7 @@ class PendingIntentFactory(
                 data = Uri.parse(habit.uriString)
                 action = WidgetReceiver.ACTION_ADD_REPETITION
                 if (date != null) putExtra("timestamp", date.unixTime)
-            },
+            }.let { bindWidget(it, habit) },
             FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT
         )
 
@@ -79,7 +83,7 @@ class PendingIntentFactory(
                 action = WidgetReceiver.ACTION_REMOVE_REPETITION
                 data = Uri.parse(habit.uriString)
                 if (date != null) putExtra("timestamp", date.unixTime)
-            },
+            }.let { bindWidget(it, habit) },
             FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT
         )
 
@@ -94,6 +98,11 @@ class PendingIntentFactory(
             )
             .getPendingIntent(0, FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT)!!
 
+    fun showWidgetHabit(habit: Habit): PendingIntent =
+        androidx.core.app.TaskStackBuilder.create(context)
+            .addNextIntentWithParentStack(bindWidget(intentFactory.startShowHabitActivity(context, habit), habit))
+            .getPendingIntent(0, FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT)!!
+
     fun showHabitTemplate(): PendingIntent {
         return getActivity(
             context,
@@ -104,9 +113,9 @@ class PendingIntentFactory(
     }
 
     fun showHabitFillIn(habit: Habit) =
-        Intent().apply {
+        bindWidget(Intent().apply {
             data = Uri.parse(habit.uriString)
-        }
+        }, habit)
 
     fun showReminder(
         habit: Habit,
@@ -144,7 +153,7 @@ class PendingIntentFactory(
                 data = Uri.parse(habit.uriString)
                 action = WidgetReceiver.ACTION_TOGGLE_REPETITION
                 if (timestamp != null) putExtra("timestamp", timestamp)
-            },
+            }.let { bindWidget(it, habit) },
             FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT
         )
 
@@ -166,7 +175,7 @@ class PendingIntentFactory(
                 action = ListHabitsActivity.ACTION_EDIT
                 putExtra("habit", habit.id)
                 putExtra("timestamp", date.unixTime)
-            },
+            }.let { bindWidget(it, habit) },
             FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT
         )
     }
@@ -182,10 +191,10 @@ class PendingIntentFactory(
         )
     }
 
-    fun showNumberPickerFillIn(habit: Habit, date: LocalDate) = Intent().apply {
+    fun showNumberPickerFillIn(habit: Habit, date: LocalDate) = bindWidget(Intent().apply {
         putExtra("habit", habit.id)
         putExtra("timestamp", date.unixTime)
-    }
+    }, habit)
 
     private fun getIntentTemplateFlags(): Int {
         var flags = 0
@@ -205,8 +214,8 @@ class PendingIntentFactory(
             getIntentTemplateFlags()
         )
 
-    fun toggleCheckmarkFillIn(habit: Habit, date: LocalDate) = Intent().apply {
+    fun toggleCheckmarkFillIn(habit: Habit, date: LocalDate) = bindWidget(Intent().apply {
         data = Uri.parse(habit.uriString)
         putExtra("timestamp", date.unixTime)
-    }
+    }, habit)
 }

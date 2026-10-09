@@ -35,6 +35,8 @@ import org.isoron.uhabits.intents.PendingIntentFactory
 import kotlin.math.max
 
 abstract class BaseWidget(val context: Context, val id: Int, val stacked: Boolean) {
+    var effectiveSnapshot: org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshot? = null
+    var accessibilityDescription: String? = null
     private val widgetPrefs: WidgetPreferences
     protected val prefs: Preferences
     protected val pendingIntentFactory: PendingIntentFactory
@@ -86,6 +88,7 @@ abstract class BaseWidget(val context: Context, val id: Int, val stacked: Boolea
     ) {
         val bitmap = getBitmapFromView(view)
         remoteViews.setImageViewBitmap(R.id.imageView, bitmap)
+        accessibilityDescription?.let { remoteViews.setContentDescription(R.id.button, it) }
         adjustRemoteViewsPadding(remoteViews, view, width, height)
         val onClickIntent = getOnClickPendingIntent(context)
         if (onClickIntent != null) remoteViews.setOnClickPendingIntent(R.id.button, onClickIntent)

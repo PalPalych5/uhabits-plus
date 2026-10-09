@@ -97,10 +97,18 @@ internal class StackRemoteViewsFactory(private val context: Context, intent: Int
         val habits = habitIds.map { habitList.getById(it) ?: throw HabitNotFoundException() }
         val h = habits[position]
         val widget = constructWidget(h, prefs)
+        if (app.component.session.capabilities.widgetsEnabled) {
+            val ref = h.uuid?.let { org.isoron.uhabits.core.containers.HabitRef(it) }
+            val from = h.effectiveStatisticsStartDate() ?: getToday().minus(365)
+            widget.effectiveSnapshot = ref?.let {
+                app.component.widgetRenderer.lastBatchSnapshots[it]
+                    ?: app.component.effectiveHabitReads?.snapshots(listOf(h), from, getToday())?.get(it)
+            }
+        }
         widget.setDimensions(getDimensionsFromOptions(context, options))
         val landscapeViews = widget.landscapeRemoteViews
         val portraitViews = widget.portraitRemoteViews
-        val factory = PendingIntentFactory(context, IntentFactory())
+        val factory = app.component.pendingIntentFactory
         val today = getToday()
         val intent = StackWidgetType.getIntentFillIn(factory, widgetType, h, habits, today)
         landscapeViews.setOnClickFillInIntent(R.id.button, intent)
@@ -152,6 +160,19 @@ internal class StackRemoteViewsFactory(private val context: Context, intent: Int
     }
 
     override fun onDataSetChanged() {
+        val app = context.applicationContext as HabitsApplication
+        if (app.component.session.capabilities.widgetsEnabled) {
+            val habitList = app.component.habitList
+            val habits = habitIds.toList().mapNotNull { habitList.getById(it) }
+            val from = habits.mapNotNull { it.effectiveStatisticsStartDate() }.minOrNull() ?: getToday().minus(365)
+            runCatching {
+                app.component.effectiveHabitReads?.snapshots(
+                    habits,
+                    from,
+                    getToday()
+                )
+            }
+        }
     }
 
     init {

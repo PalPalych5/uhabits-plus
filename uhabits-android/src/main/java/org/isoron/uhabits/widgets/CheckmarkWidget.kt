@@ -24,9 +24,12 @@ import android.content.Context
 import android.view.View
 import org.isoron.platform.gui.toInt
 import org.isoron.platform.time.getToday
+import org.isoron.uhabits.activities.habits.list.views.toShortString
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.models.projection.HabitGoalStatus
 import org.isoron.uhabits.core.ui.views.WidgetTheme
+import org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter
 import org.isoron.uhabits.widgets.views.CheckmarkWidgetView
 
 open class CheckmarkWidget(
@@ -53,14 +56,40 @@ open class CheckmarkWidget(
             setBackgroundAlpha(preferedBackgroundAlpha)
             activeColor = WidgetTheme().color(habit.color).toInt()
             name = habit.name
-            entryValue = habit.computedEntries.get(today).value
-            if (habit.isNumerical) {
-                isNumerical = true
-                entryState = getNumericalEntryState()
+            val snapshot = effectiveSnapshot
+            if (snapshot != null) {
+                val state = EffectiveWidgetPresenter.checkmark(habit, snapshot, today)
+                isNumerical = habit.isNumerical
+                if (habit.isNumerical) {
+                    val rawValue = state.quantity ?: 0L
+                    entryValue = rawValue.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                    val qty = state.quantity
+                    effectiveText = if (qty != null) {
+                        (qty / 1000.0).toShortString()
+                    } else null
+                    entryState = when (state.compatibilityCompletion) {
+                        HabitGoalStatus.SATISFIED -> Entry.YES_MANUAL
+                        else -> Entry.NO
+                    }
+                } else {
+                    effectiveText = null
+                    entryValue = habit.computedEntries.get(today).value
+                    entryState = habit.computedEntries.get(today).value
+                }
+                scoreAvailable = state.score != null
+                percentage = state.score?.toFloat() ?: 0f
             } else {
-                entryState = habit.computedEntries.get(today).value
+                effectiveText = null
+                scoreAvailable = true
+                entryValue = habit.computedEntries.get(today).value
+                if (habit.isNumerical) {
+                    isNumerical = true
+                    entryState = getNumericalEntryState()
+                } else {
+                    entryState = habit.computedEntries.get(today).value
+                }
+                percentage = habit.scores[today].value.toFloat()
             }
-            percentage = habit.scores[today].value.toFloat()
             refresh()
         }
     }

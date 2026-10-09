@@ -114,7 +114,17 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
 
         val appComponent = (applicationContext as HabitsApplication).component
         habitList = appComponent.habitList
-        habit = habitList.getById(ContentUris.parseId(intent.data!!))!!
+        val selectedHabit = intent.data?.let { uri ->
+            runCatching { habitList.getById(ContentUris.parseId(uri)) }.getOrNull()
+        }
+        if (selectedHabit == null ||
+            ((intent.hasExtra(org.isoron.uhabits.intents.WidgetIntentIdentity.DATASET) ||
+                intent.hasExtra(org.isoron.uhabits.intents.WidgetIntentIdentity.HABIT_UUID)) &&
+                !org.isoron.uhabits.intents.WidgetIntentIdentity.accepts(intent, appComponent.session, selectedHabit))) {
+            finish()
+            return
+        }
+        habit = selectedHabit
         preferences = appComponent.preferences
         commandRunner = appComponent.commandRunner
         widgetUpdater = appComponent.widgetUpdater
@@ -175,6 +185,7 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
 
     override fun onResume() {
         super.onResume()
+        if (!::presenter.isInitialized) return
         commandRunner.addListener(this)
         habit.observable.addListener(this)
         habitList.observable.addListener(this)
@@ -189,6 +200,10 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
     }
 
     override fun onPause() {
+        if (!::presenter.isInitialized) {
+            super.onPause()
+            return
+        }
         dismissCurrentDialog()
         commandRunner.removeListener(this)
         habit.observable.removeListener(this)

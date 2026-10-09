@@ -225,6 +225,7 @@ class HabitsApplication : Application() {
         notificationTray?.stopListening()
         notificationTray = null
         if (isComponentInitialized) {
+            component.widgetRenderer.shutdown()
             runCatching { component.effectiveHabitReads?.dispose() }
             runCatching { component.focusCreditController?.dispose() }
             runCatching { component.syncCoordinator.dispose() }

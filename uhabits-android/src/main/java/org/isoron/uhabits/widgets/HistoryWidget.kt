@@ -29,6 +29,7 @@ import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.ui.screens.habits.show.views.HistoryCardPresenter
 import org.isoron.uhabits.core.ui.views.HistoryChart
 import org.isoron.uhabits.core.ui.views.WidgetTheme
+import org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter
 import org.isoron.uhabits.widgets.views.GraphWidgetView
 import java.util.Locale
 
@@ -43,20 +44,27 @@ class HistoryWidget(
     override val defaultWidth: Int = 250
 
     override fun getOnClickPendingIntent(context: Context): PendingIntent {
-        return pendingIntentFactory.showHabit(habit)
+        return pendingIntentFactory.showWidgetHabit(habit)
     }
 
     override fun refreshData(view: View) {
         val widgetView = view as GraphWidgetView
         widgetView.setBackgroundAlpha(preferedBackgroundAlpha)
         if (preferedBackgroundAlpha >= 255) widgetView.setShadowAlpha(0x4f)
-        val model = HistoryCardPresenter.buildState(
-            habit = habit,
-            firstWeekday = prefs.firstWeekday,
-            theme = WidgetTheme()
-        )
+        widgetView.setStatus(null)
+        val snapshot = effectiveSnapshot
+        val model = if (snapshot != null) {
+            EffectiveWidgetPresenter.history(habit, snapshot, WidgetTheme())
+        } else {
+            HistoryCardPresenter.buildState(
+                habit = habit,
+                firstWeekday = prefs.firstWeekday,
+                theme = WidgetTheme()
+            )
+        }
         (widgetView.dataView as AndroidDataView).apply {
             val historyChart = (this.view as HistoryChart)
+            historyChart.paletteColor = habit.color
             historyChart.series = model.series
             historyChart.defaultSquare = model.defaultSquare
             historyChart.notesIndicators = model.notesIndicators

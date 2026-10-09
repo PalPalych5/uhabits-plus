@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_effective_score_unavailable">Score unavailable</string>
+    <string name="widget_effective_streak_unavailable">Streak unavailable\nInsufficient data</string>
+    <string name="widget_effective_frequency_unavailable">Frequency unavailable\nInsufficient data</string>
+    <string name="widget_effective_goal_unavailable">Goal unavailable</string>
+    <string name="widget_effective_goal_reached">Goal reached</string>
+    <string name="widget_effective_goal_not_reached">Goal not reached</string>
+    <string name="widget_effective_unknown">Incomplete data</string>
+    <string name="widget_effective_skipped">Skipped</string>
+    <string name="widget_effective_excluded">Excluded</string>
+    <string name="widget_effective_breakdown">Manual %1$s · Focus %2$s</string>
+    <string name="widget_effective_calendar">%1$s · Calendar goals</string>
+</resources>

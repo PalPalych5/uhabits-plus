@@ -25,9 +25,12 @@ import android.view.View
 import android.view.ViewGroup.LayoutParams
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import org.isoron.platform.gui.toInt
+import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.views.StreakChart
 import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.models.Streak
 import org.isoron.uhabits.core.ui.views.WidgetTheme
+import org.isoron.uhabits.core.ui.widgets.EffectiveWidgetPresenter
 import org.isoron.uhabits.widgets.views.GraphWidgetView
 
 class StreakWidget(
@@ -40,15 +43,32 @@ class StreakWidget(
     override val defaultWidth: Int = 200
 
     override fun getOnClickPendingIntent(context: Context): PendingIntent =
-        pendingIntentFactory.showHabit(habit)
+        pendingIntentFactory.showWidgetHabit(habit)
 
     override fun refreshData(view: View) {
         val widgetView = view as GraphWidgetView
         widgetView.setBackgroundAlpha(preferedBackgroundAlpha)
         if (preferedBackgroundAlpha >= 255) widgetView.setShadowAlpha(0x4f)
-        (widgetView.dataView as StreakChart).apply {
-            setColor(WidgetTheme().color(habit.color).toInt())
-            setStreaks(habit.streaks.getBest(maxStreakCount))
+        val snapshot = effectiveSnapshot
+        val model = if (snapshot != null) {
+            EffectiveWidgetPresenter.streak(habit, snapshot, WidgetTheme())
+        } else {
+            null
+        }
+        if (snapshot != null && model == null) {
+            widgetView.setStatus(context.getString(R.string.widget_effective_streak_unavailable))
+        } else {
+            widgetView.setStatus(null)
+            (widgetView.dataView as StreakChart).apply {
+                setColor(WidgetTheme().color(habit.color).toInt())
+                if (model != null) {
+                    val list = mutableListOf<Streak>()
+                    model.bestStreaks.forEach { list.add(it) }
+                    setStreaks(list)
+                } else {
+                    setStreaks(habit.streaks.getBest(maxStreakCount))
+                }
+            }
         }
     }
 
