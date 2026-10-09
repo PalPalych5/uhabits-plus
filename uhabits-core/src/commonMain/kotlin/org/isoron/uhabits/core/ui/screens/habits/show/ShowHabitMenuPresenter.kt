@@ -67,10 +67,12 @@ class ShowHabitMenuPresenter(
         screen.close()
     }
 
+    var effectiveSnapshotProvider: ((List<Habit>, org.isoron.platform.time.LocalDate, org.isoron.platform.time.LocalDate) -> Map<org.isoron.uhabits.core.containers.HabitRef, org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshot>)? = null
+
     fun onExportCSV() {
         val outputDir = system.getCSVOutputDir()
         taskRunner.execute(
-            ExportCSVTask(habitList, listOf(habit), outputDir) { filename: String? ->
+            ExportCSVTask(habitList, listOf(habit), outputDir, effectiveSnapshotProvider) { filename: String? ->
                 if (filename != null) {
                     screen.showSendFileScreen(filename)
                 } else {

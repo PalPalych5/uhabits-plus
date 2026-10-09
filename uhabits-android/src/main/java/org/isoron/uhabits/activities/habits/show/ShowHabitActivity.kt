@@ -158,6 +158,11 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
             system = HabitsDirFinder(AndroidDirFinder(this)),
             taskRunner = appComponent.taskRunner
         )
+        if (effectiveReads != null) {
+            menuPresenter.effectiveSnapshotProvider = { habits, from, to ->
+                effectiveReads?.snapshots(habits, from, to).orEmpty()
+            }
+        }
 
         menu = ShowHabitMenu(
             activity = this,

@@ -8,6 +8,7 @@ import org.isoron.uhabits.core.containers.HabitRef
 import org.isoron.uhabits.core.contribution.*
 import org.isoron.uhabits.core.contribution.sqlite.*
 import org.isoron.uhabits.core.models.*
+import org.isoron.uhabits.core.io.HabitsCSVExporter
 import kotlin.test.*
 
 class EffectiveReadBatchSQLiteTest : BaseUnitTest() {
@@ -212,6 +213,56 @@ class EffectiveReadBatchSQLiteTest : BaseUnitTest() {
             )
             assertEquals(2, selects)
             assertEquals(6, coldStartSnapshots.size)
+        } finally { database.close() }
+    }
+
+    @Test fun csvExportUsesZeroPerDayOrPerHabitQueriesAfterPreload() = runTest {
+        val database = TestDatabaseHelper.createEmptyDatabase()
+        try {
+            ContributionSchema.createSchema(database)
+            var selects = 0
+            val counted = object : Database by database {
+                override fun prepareStatement(sql: String): PreparedStatement {
+                    if (sql.trimStart().startsWith("SELECT") && sql.contains("FROM Contributions")) selects++
+                    return database.prepareStatement(sql)
+                }
+            }
+            val facts = SQLiteContributionRepository(counted)
+            val end = LocalDate(2026, 10, 8)
+            setToday(end)
+            val testHabitList = modelFactory.buildHabitList()
+            val habits = (0 until 50).map { index -> modelFactory.buildHabit().apply {
+                uuid = "csv-batch-$index"; name = "Habit $index"; type = HabitType.NUMERICAL; unit = "min"
+                targetValue = 300.0; frequency = Frequency(1, 7); dayTier = DayTier.MINIMUM
+                originalEntries.add(Entry(end.minus(30), 0)); originalEntries.add(Entry(end, 0)); recompute()
+            } }
+            habits.forEach { testHabitList.add(it) }
+            habits.forEachIndexed { index, habit ->
+                val instant = startOfLocalDay(end.minus(index % 30)) + 1000
+                facts.record(Contribution(ContributionId("csv-credit-$index"), HabitRef(habit.uuid!!),
+                    ContributionSourceType.FOCUS_SESSION, "source-$index", 45000, instant, instant, instant))
+            }
+            selects = 0
+            val calendar = EffectiveReadCalendarContext("local", DayOfWeek.MONDAY, 0, 0)
+            val provider: (List<Habit>, LocalDate, LocalDate) -> Map<HabitRef, EffectiveHabitReadSnapshot> = { hList, from, to ->
+                EffectiveHabitReadSnapshotProvider(facts).prepare(hList, from, to, "csv-batch", 1, calendar)
+            }
+
+            val exporter = HabitsCSVExporter(testHabitList, habits, provider)
+            val archiveBytes = exporter.writeArchive()
+
+            // 50 habits in a single batch <= 400 IDs uses exactly 2 queries (1 for active, 1 for removed)
+            assertEquals(2, selects)
+            assertTrue(archiveBytes.isNotEmpty())
+
+            val entries = ZipReader(archiveBytes).entries()
+            assertNotNull(entries.find { it.name == "Effective.csv" })
+            assertNotNull(entries.find { it.name == "EffectiveScores.csv" })
+            assertEquals(50, entries.count { it.name.endsWith("/Effective.csv") })
+            assertEquals(50, entries.count { it.name.endsWith("/EffectiveScores.csv") })
+
+            // No extra queries occurred during writing individual files or matrices
+            assertEquals(2, selects)
         } finally { database.close() }
     }
 }

@@ -27,10 +27,15 @@ data class EffectiveHabitDay(
     val contributions: List<Contribution>,
     val isNumerical: Boolean,
     val includedInStatistics: Boolean,
+    val tombstonedContributions: List<Contribution> = emptyList(),
+    val tombstonedContributionValue: Long = 0L,
 ) {
     val isSkipped: Boolean get() = manualEntry.value == Entry.SKIP
     val hasCompleteCoverage: Boolean get() = manualValue != null
     val contributionCount: Int get() = contributions.size
+    val effectiveLowerBound: Long
+        get() = if (!isNumerical || isSkipped || !includedInStatistics) 0L
+        else (manualValue ?: 0L) + contributionValue
 }
 
 data class EffectiveHabitValue(
@@ -110,13 +115,14 @@ class EffectiveHabitValueService(
         // function, rather than assuming each label is always one contiguous UTC interval.
         val start = startOfLocalDay(from.minus(1), hourOffset, minuteOffset)
         val end = startOfLocalDay(to.plus(2), hourOffset, minuteOffset)
-        val facts = repository.getByHabitsInRange(byRef.keys, start, end - 1)
-            .filter { it.isActive }
-            .groupBy { it.targetHabit }
+        val allFacts = repository.getByHabitsInRange(byRef.keys, start, end - 1, includeRemoved = true)
+        val facts = allFacts.filter { it.isActive }.groupBy { it.targetHabit }
+        val tombstonedFacts = allFacts.filter { !it.isActive }.groupBy { it.targetHabit }
         return byRef.mapValues { (ref, habit) ->
             val byDay = facts[ref].orEmpty().groupBy { localDateAt(it.effectiveTimestamp, hourOffset, minuteOffset) }
+            val tombstonedByDay = tombstonedFacts[ref].orEmpty().groupBy { localDateAt(it.effectiveTimestamp, hourOffset, minuteOffset) }
             val days = habit.originalEntries.getByInterval(from, to).map { entry ->
-                projectDay(habit, entry, byDay[entry.date].orEmpty())
+                projectDay(habit, entry, byDay[entry.date].orEmpty(), tombstonedByDay[entry.date].orEmpty())
             }.sortedBy { it.manualEntry.date }
             days
         }
@@ -180,17 +186,27 @@ class EffectiveHabitValueService(
         days.filter { it.includedInStatistics && !it.isSkipped && it.totalValue != null }
             .map { unitKey(goalAt(habit, it.manualEntry.date).unit) }.distinct().size <= 1
 
-    private fun projectDay(habit: Habit, entry: Entry, contributions: List<Contribution>): EffectiveHabitDay {
+    private fun projectDay(
+        habit: Habit,
+        entry: Entry,
+        contributions: List<Contribution>,
+        tombstonedContributions: List<Contribution> = emptyList(),
+    ): EffectiveHabitDay {
         if (contributions.isNotEmpty()) {
             validateUnits(habit, entry.date)
         }
         if (entry.value < Entry.UNKNOWN) throw HabitProjectionIntegrityException("Invalid manual value ${entry.value}")
         val manual = if (habit.isNumerical && entry.value != Entry.UNKNOWN && entry.value != Entry.SKIP) entry.value.toLong() else null
         val automatic = contributions.fold(0L) { sum, fact -> add(sum, fact.contributedValue) }
+        val tombstoned = tombstonedContributions.fold(0L) { sum, fact -> add(sum, fact.contributedValue) }
         val included = habit.isDateIncludedInStatistics(entry.date)
         val total = if (!habit.isNumerical || entry.value == Entry.SKIP || !included || (manual == null && contributions.isEmpty())) null
         else add(manual ?: 0L, automatic)
-        return EffectiveHabitDay(entry, manual, automatic, total, contributions, habit.isNumerical, included)
+        return EffectiveHabitDay(
+            entry, manual, automatic, total, contributions, habit.isNumerical, included,
+            tombstonedContributions = tombstonedContributions,
+            tombstonedContributionValue = tombstoned,
+        )
     }
 
     private fun aggregate(days: List<EffectiveHabitDay>): EffectiveHabitValue {

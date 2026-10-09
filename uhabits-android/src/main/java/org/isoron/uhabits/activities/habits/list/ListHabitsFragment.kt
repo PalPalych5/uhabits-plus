@@ -73,6 +73,12 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             parent = appComponent,
             activityContext = activity
         )
+        val effectiveReads = appComponent.effectiveHabitReads
+        if (effectiveReads != null) {
+            component.listHabitsBehavior.effectiveSnapshotProvider = { habits, from, to ->
+                effectiveReads.snapshots(habits, from, to)
+            }
+        }
         component.themeSwitcher.apply()
         prefs = appComponent.preferences
         prefs.addListener(this)

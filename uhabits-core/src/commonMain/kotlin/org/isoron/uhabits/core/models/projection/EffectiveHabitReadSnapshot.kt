@@ -51,6 +51,7 @@ class EffectiveHabitReadSnapshot internal constructor(
 ) {
     private val byDate = days.associateBy { it.manualEntry.date }
     val hasContributions: Boolean = days.any { it.contributions.isNotEmpty() }
+    val hasHistoricalContributions: Boolean get() = days.any { it.contributions.isNotEmpty() || it.tombstonedContributions.isNotEmpty() }
     val canUseLegacyEntryAdapter: Boolean = !hasContributions || (
         service.hasUniformObservationUnits(captured, days) && legacyQuantitiesRepresentable(days))
     private val representable get() = canUseLegacyEntryAdapter
@@ -210,8 +211,8 @@ class EffectiveHabitReadSnapshotProvider(private val repository: ContributionRep
         val frozen = habits.map(::copyDetached)
         val refs = frozen.map { HabitRef(requireNotNull(it.uuid)) }.toSet()
         require(refs.size == frozen.size) { "Duplicate Habit identities" }
-        val contributions = repository.getByHabitsInRange(refs, Long.MIN_VALUE, Long.MAX_VALUE)
-            .filter { it.isActive }.groupBy { it.targetHabit }
+        val contributions = repository.getByHabitsInRange(refs, Long.MIN_VALUE, Long.MAX_VALUE, includeRemoved = true)
+            .groupBy { it.targetHabit }
         val domains = frozen.associate { habit ->
             val ref = HabitRef(requireNotNull(habit.uuid))
             val dates = habit.originalEntries.getKnown().map { it.date } + contributions[ref].orEmpty().map {
@@ -241,7 +242,7 @@ class EffectiveHabitReadSnapshotProvider(private val repository: ContributionRep
         return frozen.associate { habit ->
             val ref = HabitRef(requireNotNull(habit.uuid))
             val raw = values.getValue(ref)
-            val days = raw.map { it.copy(contributions = it.contributions.toList()) }.toList()
+            val days = raw.map { it.copy(contributions = it.contributions.toList(), tombstonedContributions = it.tombstonedContributions.toList()) }.toList()
             ref to EffectiveHabitReadSnapshot(datasetId, revision, calendar, ref, loadFrom, loadTo,
                 domains.getValue(ref).minOrNull(), domains.getValue(ref).maxOrNull(), to, compatibilityTo, habit, days, service, compatibilityService)
         }

@@ -150,7 +150,7 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR20 — Production Readiness & Cutover Audit | Code-backed inventory, migration/recovery/runtime/readers/sync/promotion plan | Production migration/activation, new sync implementation, recurrence, polish | [Canonical cutover plan](UHABIT_PRODUCTION_CUTOVER_PLAN.md); NO-GO gates recorded | DONE |
 | PR21 — Preflight & Recovery Gate | Raw inventory/anomaly diagnostics, coherent v29 recovery bundle, pre-DI timer checks, startup recovery | Version bump, conversion/activation, sync protocol, promotion | PR20 review; verified commit 28ce65a67 | DONE |
 | PR22 / PR22.1 — Versioned Next Schema Conversion on Protected Staging & Parity Audit | 30.sql additive Next schema, outer transaction migrator, 8-table legacy parity validator, staging copy isolation, ProductionCutoverGate, v29 immutability, schema parity tests | Runtime authority activation (remains LEGACY), live production DB upgrade, sync rewrite, PR23 readers | PR21 preflight/recovery gate | DONE |
-| PR23 — Contribution-aware Habit/report readers | Audit checkpoint c987a397; PR23A shared authority/list/detail, then PR23B global readers (Statistics, Compare, widgets, reminders, CSV, calendar context, convergence) | Production activation, PR24, UI redesign | PR22.1 accepted; PR23A verified | IN_PROGRESS (PR23A DONE, PR23B IN_PROGRESS) |
+| PR23 — Contribution-aware Habit/report readers | Audit checkpoint c987a397; PR23A shared authority/list/detail, then PR23B global readers (Statistics, Compare, widgets, reminders, CSV, calendar context, convergence) | Production activation, PR24, UI redesign | PR22.1 accepted; PR23A verified; PR23B functional checkpoints verified | IN_PROGRESS (PR23A DONE, PR23B all functional checkpoints DONE, pending final PR23 cross-surface audit) |
 | PR24 — Production backup/recovery & release hardening | Complete production backup manifest/restore/preferences adapters, startup crash reconciliation, accessibility/device QA; release hardening before PR25 | Cloud sync, experimental promotion/merge | PR21–PR23 complete | PLANNED / BLOCKED |
 | Production migration / new sync protocol | Отдельный release design, compatibility gate, conflict/recovery checks | Скрытая активация внутри Foundation | Validated local stages; protocol/dataset/server gate; отдельное согласование | PLANNED |
 
@@ -168,7 +168,7 @@ Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
 Visual language: VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH
 Native Android implementation: PR10 / PR10.1 ACCEPTED; PR19 evaluation ACCEPTED as secondary Day Overview direction; visual polish not independently reviewed in PR20
-Active implementation: IDLE after verified Compare takeover checkpoint; PR23B IN_PROGRESS; PR24/PR25 BLOCKED
+Active implementation: IDLE after verified CSV export checkpoint; PR23B all functional checkpoints DONE (pending final PR23 cross-surface audit); PR24/PR25 BLOCKED
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
 Checks: PR22/PR22.1 full suite: 760 core JVM tests PASS (100%), ProductionCutoverGateAndroidTest (6 tests) PASS (100%), compileDebugKotlin PASS, assembleDebug & assembleDebugAndroidTest PASS, 12 Android instrumentation tests on Pixel_6(AVD) PASS (100%).
@@ -184,6 +184,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
+| Antigravity (5e1829b1) | PR23B: Contribution-Aware CSV Export Checkpoint | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after CSV checkpoint | 2026-10-09 18:38 Novosibirsk | HabitsCSVExporter, ExportCSVTask, ListHabitsBehavior, ShowHabitMenuPresenter, CSV models/adapters, CSV tests, native CSV QA, docs | CSV export checkpoint fully verified: sequential builds PASS, JVM suites PASS (core 10/10 CSV + SQLite batching test; all suites exit 0), native QA 3/3 PASS on UHabit_PR23B_Notifications, zero synthetic DB writes, exact provenance & legacy parity. PR23 overall pending final cross-surface audit; PR24/PR25 BLOCKED; LEGACY v29 unchanged. |
 | Antigravity (92f1f747) | PR23B: Notifications & Reminder Tray Checkpoint | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after Notifications | 2026-10-09 17:05 Novosibirsk | NotificationTray, ReminderScheduler, ReminderController, ReminderReceiver, PendingIntentFactory, AndroidNotificationTray, tests, native QA, docs | Notifications checkpoint fully verified: sequential builds PASS, JVM suites PASS (858 core + 99 Android), native QA 3/3 PASS on UHabit_PR23B_Notifications, screenshots captured. CSV PENDING; PR24/PR25 BLOCKED; LEGACY v29 unchanged. |
 | Codex Widgets 2026-10-09 | PR23B Widgets effective reads, lifecycle, actions and protected QA | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after Widgets | 2026-10-09 | Widget adapters/providers/updater/stack/actions, focused tests, disposable offline QA, docs | Widgets checkpoint fully verified: sequential builds PASS, JVM suites PASS, native QA 4/4 PASS on UHabit_PR23B_Widgets, screenshots captured. Notifications/CSV PENDING; PR24/PR25 BLOCKED; LEGACY v29 unchanged. |
 | Codex Compare takeover 2026-10-08 | PR23B safe local QA and Compare checkpoint only | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after Compare | 2026-10-08 | Compare presenter/activity/calendar/charts; Statistics follow-up; repository concurrency regressions; isolated instrumentation; QA generator audit; docs | User-authorized takeover of interrupted Compare scope. No Widgets/Notifications/CSV/PR24/PR25, cloud, production activation or push. Existing dirty work preserved and audited before changes. |
@@ -1045,4 +1046,30 @@ Human accepts PR20 and authorizes PR21 preflight and recovery implementation onl
 - Visual limitation: unrelated Android37 system ANR overlays obstruct full-screen screenshots; numeric/model/calendar/revision assertions pass. No claim of unobstructed whole-screen visual review.
 - Compare checkpoint DONE; PR23B overall IN_PROGRESS. Widgets, Notifications/tray and CSV PENDING; PR24/PR25 BLOCKED; runtime authority LEGACY, pre-cutover production schema v29. STOP after Compare.
   - Production database remains legacy schema v29; cutover gate active; PR24/PR25 BLOCKED.
+
+### 2026-10-09 — PR23B checkpoint: Contribution-Aware CSV Export completed and verified
+
+- **Contribution-aware CSV export completed and verified:**
+  - Preserved existing CSV contract for no-contribution datasets (root `Habits.csv`, `Checkmarks.csv`, `Scores.csv`, and per-habit `<dir>/Checkmarks.csv`, `<dir>/Scores.csv`).
+  - Added additive effective outputs for contribution-aware datasets: root multi-habit matrix `Effective.csv` (exporting `>= <lowerBound>` for incomplete UNKNOWN), root matrix `EffectiveScores.csv` (exporting `UNAVAILABLE` when uncomputable), per-habit directory `<dir>/Effective.csv` (full provenance: `Date,ManualValue,ContributionValue,TombstonedValue,EffectiveValue,EffectiveLowerBound,Coverage,GoalStatus,Unit,Notes`), and `<dir>/EffectiveScores.csv`.
+  - Separation of manual facts, computed legacy, and effective observations maintained: legacy `Checkmarks.csv` retains raw manual facts; effective files contain projected effective quantities via shared `EffectiveHabitReadSnapshotProvider`.
+  - Zero synthetic database mutations: no Repetitions, EntryOps, or SyncQueue writes generated during export.
+  - Query batching: verified single-pass batch preload resulting in 0 per-day or per-habit SQL queries during export.
+  - RFC 4180 compliance with rigorous escaping for commas, double quotes, line breaks, and non-ASCII/Unicode.
+- **Verification evidence:**
+  - Core JVM tests: `HabitsCSVExporterTest` 10/10 PASS (legacy parity, canonical 330m -> 240m tombstone fixture, explicit zero vs UNKNOWN, SKIP with contributions, AT_MOST incomplete coverage, historical goals, CSV escaping, empty dataset, and mutation safety).
+  - SQLite query batching: `EffectiveReadBatchSQLiteTest` PASS (0 per-day queries).
+  - Test suites: `:uhabits-core:jvmTest` (139 suites, exit code 0) and `:uhabits-android:testDebugUnitTest` (21 suites, exit code 0).
+  - Compilation & builds: `compileDebugKotlin`, `assembleDebug`, and `assembleDebugAndroidTest` (exit code 0).
+  - Native Android instrumentation QA: `CSVExportEffectiveAndroidTest` (3/3 PASS on dedicated offline emulator `UHabit_PR23B_Notifications` with airplane mode 1, Wi-Fi 0):
+    1. `legacyNoContributionParityOnAndroid`: PASS (exact legacy 5 files for single habit, no Effective.csv).
+    2. `canonicalFixture_exportAndTombstoneOnAndroid`: PASS (330m -> 240m on tombstone, exact provenance, coverage, no synthetic writes, legacy checkmarks preserved).
+    3. `specialCharactersAndEscapingOnAndroid`: PASS (RFC 4180 escaping with quotes, commas, newlines, Cyrillic, emojis).
+  - Exported archives unpacked and programmatically verified in `pr23b_csv_qa/`.
+  - Single running emulator discipline observed; emulator cleanly terminated via `emu kill` (verified 0 running emulator/qemu processes).
+- **Boundaries and stopping rule:**
+  - PR23B all functional checkpoints (Global Statistics, Compare, Widgets, Notifications & Reminder Tray, CSV Export) are **DONE**.
+  - Overall PR23 remains **IN_PROGRESS**, pending final cross-surface audit.
+  - PR24 / PR25 remain **BLOCKED**. Production database remains legacy schema v29; cutover gate active. STOP after CSV checkpoint.
+
 

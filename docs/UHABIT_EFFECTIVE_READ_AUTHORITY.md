@@ -245,5 +245,63 @@ PR23A is complete. PR23B Global Statistics checkpoint is complete. PR23 overall 
 
 Static checks: Constants retains LEGACY_DATABASE_VERSION 29 and allocated DATABASE_VERSION 30. Production opener/gate unchanged. DatasetSession still distinguishes LEGACY_PRODUCTION from CONTAINER_LOCAL_EXPERIMENTAL. FocusCreditController and timer capture are constructed only for experiment; production capture remains null and legacy timer direct AddNumericalEntryOpCommand remains unchanged. No schema, authority epoch, SourceRule execution, sync, import/export implementation or runtime switch was modified. No canonical/device/user DB opened by this audit.
 
-Remaining requirement: PR23B remaining scope (CSV export) must be completed before PR23 completion or production runtime activation. STOP after Notifications checkpoint; PR23B remains IN_PROGRESS; do not start CSV, PR24 or PR25.
+## PR23B CSV export checkpoint — 2026-10-09
+
+**Scope:** Contribution-aware CSV export, effective observations, provenance, export backward compatibility, query batching, and native Android QA.
+
+### 1. Existing vs New CSV Contracts
+- **Complete backward compatibility for legacy/no-contribution datasets:**
+  - When no Contributions exist (legacy or experimental habits without focus credit), the exporter generates exactly the established legacy files:
+    - Root: `Habits.csv`, `Checkmarks.csv`, `Scores.csv`
+    - Per-habit: `<dir>/Checkmarks.csv`, `<dir>/Scores.csv`
+    - No `Effective.csv` or `EffectiveScores.csv` are created. External tooling and legacy importers continue to function with 100% parity.
+- **Additive effective outputs for contribution-aware datasets:**
+  - For habits with Contributions (active or tombstoned), additive clearly-labelled effective files are generated alongside the legacy files:
+    - Root `Effective.csv`: Multi-habit matrix of effective values (`>= <lowerBound>` for incomplete UNKNOWN, formatted numbers for complete coverage, `SKIP`, or `UNKNOWN`).
+    - Root `EffectiveScores.csv`: Multi-habit matrix of effective scores (exact scores or `UNAVAILABLE`).
+    - `<dir>/Effective.csv`: Per-habit effective daily observations with full provenance columns:
+      `Date,ManualValue,ContributionValue,TombstonedValue,EffectiveValue,EffectiveLowerBound,Coverage,GoalStatus,Unit,Notes`
+    - `<dir>/EffectiveScores.csv`: Per-habit effective daily scores (exact score or `UNAVAILABLE`).
+- **Separation of raw manual facts vs computed legacy vs effective observations:**
+  - `Checkmarks.csv`: contains strictly raw manual facts from `originalEntries` (or legacy computed presentation). Never contains synthetic derived Focus numbers.
+  - `Effective.csv`: contains effective observations (`EffectiveHabitDay`) combining manual observations and valid Contributions via shared PR15 projection authority.
+  - Zero database mutations: export never writes back to `Repetitions`, `EntryOps`, or `SyncQueue`.
+
+### 2. Provenance and Coverage Policy
+- Explicit breakdown: `ManualValue`, `ContributionValue`, `TombstonedValue`, `EffectiveValue`, `EffectiveLowerBound`, `Coverage` (`COMPLETE` / `INCOMPLETE`), `GoalStatus` (`SATISFIED`, `NOT_SATISFIED`, `UNKNOWN`, `SKIPPED`, `EXCLUDED`), `Unit`, and `Notes`.
+- Conservative exactness: Where manual entry is missing (`UNKNOWN`), coverage is `INCOMPLETE`. The exact `EffectiveValue` is exported as `UNKNOWN`, while `EffectiveLowerBound` preserves the known Focus contribution quantity. In root matrix `Effective.csv`, this is formatted as `>= <bound>`.
+- Goal status truthfulness: For AT_LEAST goals, a sufficiently high lower bound can prove satisfaction (`SATISFIED`), but an incomplete ongoing week is `UNKNOWN` (not proven reached yet). For AT_MOST goals, incomplete coverage cannot prove satisfaction.
+
+### 3. Canonical Tombstone Fixture
+- Habit: Study, Goal: AT_LEAST 300 min/week.
+- Step 1: Manual 60 min + Focus contributions (180 + 90 min) = 330 min total.
+  - Legacy `Checkmarks.csv` contains manual 60000.
+  - `Effective.csv` contains effective 330.0 (`COMPLETE,SATISFIED`).
+- Step 2: Tombstone the 90-minute contribution via legitimate repository API (`removeById`).
+  - Legacy `Checkmarks.csv` remains manual 60000.
+  - `Effective.csv` reflects manual 60.0, valid contribution 180.0, tombstoned 90.0, effective 240.0 (`COMPLETE,UNKNOWN`).
+  - No duplicate credit, no stale 330 value, no synthetic manual writes to database.
+
+### 4. Query Batching & Performance
+- Bounded batch query: 0 per-day SQL queries during export.
+- Preloads all selected habits across the export date interval using chunked repository batching (`EffectiveReadBatchSQLiteTest`).
+
+### 5. Verification Results
+- Unit & domain tests (`HabitsCSVExporterTest`): 10/10 PASS.
+- SQLite query batching (`EffectiveReadBatchSQLiteTest`): PASS (0 per-day queries).
+- Core JVM suite (`:uhabits-core:jvmTest`): PASS (exit code 0).
+- Android JVM suite (`:uhabits-android:testDebugUnitTest`): PASS (exit code 0).
+- Compilations & APK assemblies: `compileDebugKotlin`, `assembleDebug`, `assembleDebugAndroidTest` all exit code 0.
+- Native Android QA (`CSVExportEffectiveAndroidTest` on offline emulator `UHabit_PR23B_Notifications`):
+  - `legacyNoContributionParityOnAndroid`: PASS (exact legacy 5 files for single habit, no Effective.csv).
+  - `canonicalFixture_exportAndTombstoneOnAndroid`: PASS (330 -> 240 on tombstone, zero synthetic DB writes).
+  - `specialCharactersAndEscapingOnAndroid`: PASS (RFC 4180 escaping with quotes, commas, newlines, Cyrillic, emojis).
+  - Verified system Share Sheet invocation from Settings -> Data & Backup -> Export as CSV.
+  - All pulled ZIP archives programmatically verified in `pr23b_csv_qa/`.
+
+### 6. Status and Next Steps
+- CSV export checkpoint is **DONE**.
+- All functional checkpoints of PR23B (Global Statistics, Compare, Widgets, Notifications, CSV Export) are completed.
+- Overall PR23 remains **IN_PROGRESS**, pending the final cross-surface audit (including previously documented cold-start widget behavior and notification restoration semantics).
+- PR24 / PR25 remain **BLOCKED**. Production authority remains **LEGACY v29**. Next schema v30 remains allocated but not activated.
 

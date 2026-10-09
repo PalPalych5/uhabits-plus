@@ -83,11 +83,13 @@ open class ListHabitsBehavior(
         }
     }
 
+    open var effectiveSnapshotProvider: ((List<Habit>, LocalDate, LocalDate) -> Map<org.isoron.uhabits.core.containers.HabitRef, org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshot>)? = null
+
     open fun onExportCSV() {
         val selected = habitList.toList()
         val outputDir = dirFinder.getCSVOutputDir()
         taskRunner.execute(
-            ExportCSVTask(habitList, selected, outputDir) { filename: String? ->
+            ExportCSVTask(habitList, selected, outputDir, effectiveSnapshotProvider) { filename: String? ->
                 if (filename != null) {
                     screen.showSendFileScreen(filename)
                 } else {
