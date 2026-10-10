@@ -2,7 +2,7 @@
 
 Audit date: 2026-10-07, Asia/Novosibirsk. Source baseline: `dev`, PR19 `1cda48931` (verified Git HEAD before this documentation change). Status: **AUDIT COMPLETE / PRODUCTION CUTOVER NO-GO**. This document designs subsequent work; it does not authorize or implement migration, runtime activation, a sync protocol, promotion, recurrence or polish.
 
-Current follow-up (2026-10-08): PR21 and protected-staging PR22/PR22.1 are DONE and accepted; actual baseline `e24dc13eb`. Allocated schema is v30; canonical opener remains v29 with LEGACY authority. The original PR20 findings below remain a historical baseline, not current claims that PR21/22 are missing. PR23 was authorized and audited, then stopped at its mandatory section-30 split checkpoint; see [effective read authority inventory and concrete PR23A/PR23B proposal](UHABIT_EFFECTIVE_READ_AUTHORITY.md). No reader code is integrated yet. Runtime/release NO-GO remains; both proposed reader halves must complete before activation. PR24 backup/device/accessibility and PR25 authority switch remain separate, unstarted stages.
+Current follow-up (2026-10-10): PR21, PR22/PR22.1, PR23 (A and B, commit `588c09f53`), PR24A (Restore Safety Foundation), PR24A.1 (Snapshot Fidelity & API 28 Compatibility), and PR24B (Versioned Production Backup Archive) are DONE and accepted. Allocated schema is v30; canonical opener remains v29 with LEGACY authority. PR24 remains IN_PROGRESS; PR24C (Settings/Preferences Adapters & Release Hardening) is PENDING. PR25 authority switch and PR26 sync v2 remain strictly BLOCKED. Runtime/release NO-GO remains active until PR24 completion.
 
 ## Decision and evidence boundary
 

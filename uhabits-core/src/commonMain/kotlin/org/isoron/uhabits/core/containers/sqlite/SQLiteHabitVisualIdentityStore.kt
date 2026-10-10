@@ -21,6 +21,7 @@ package org.isoron.uhabits.core.containers.sqlite
 
 import org.isoron.platform.io.Database
 import org.isoron.platform.io.StepResult
+import org.isoron.platform.io.queryInt
 import org.isoron.uhabits.core.containers.HabitVisualIdentityStore
 import org.isoron.uhabits.core.containers.IconRef
 
@@ -82,19 +83,47 @@ class SQLiteHabitVisualIdentityStore(
             is IconRef.None -> return
         }
         val value = iconRef.key
-        val stmt = db.prepareStatement(
-            """
-            INSERT OR REPLACE INTO HabitVisualIdentities(habit_uuid, icon_type, icon_value)
-            VALUES(?, ?, ?)
-            """.trimIndent()
+        // Use safe transactional UPDATE then INSERT OR IGNORE strategy (compatible with SQLite 3.22.0)
+        // to avoid INSERT OR REPLACE deleting and re-inserting rows, triggering DELETE triggers or FK side-effects.
+        val updateStmt = db.prepareStatement(
+            "UPDATE HabitVisualIdentities SET icon_type = ?, icon_value = ? WHERE habit_uuid = ?"
         )
         try {
-            stmt.bindText(1, habitUuid)
-            stmt.bindText(2, type)
-            stmt.bindText(3, value)
-            stmt.step()
+            updateStmt.bindText(1, type)
+            updateStmt.bindText(2, value)
+            updateStmt.bindText(3, habitUuid)
+            updateStmt.step()
         } finally {
-            stmt.finalize()
+            updateStmt.finalize()
+        }
+
+        if (db.queryInt("SELECT changes()") == 0) {
+            val insertStmt = db.prepareStatement(
+                "INSERT OR IGNORE INTO HabitVisualIdentities(habit_uuid, icon_type, icon_value) VALUES(?, ?, ?)"
+            )
+            try {
+                insertStmt.bindText(1, habitUuid)
+                insertStmt.bindText(2, type)
+                insertStmt.bindText(3, value)
+                insertStmt.step()
+            } finally {
+                insertStmt.finalize()
+            }
+
+            if (db.queryInt("SELECT changes()") == 0) {
+                // If inserted concurrently between UPDATE and INSERT OR IGNORE, update again
+                val retryUpdateStmt = db.prepareStatement(
+                    "UPDATE HabitVisualIdentities SET icon_type = ?, icon_value = ? WHERE habit_uuid = ?"
+                )
+                try {
+                    retryUpdateStmt.bindText(1, type)
+                    retryUpdateStmt.bindText(2, value)
+                    retryUpdateStmt.bindText(3, habitUuid)
+                    retryUpdateStmt.step()
+                } finally {
+                    retryUpdateStmt.finalize()
+                }
+            }
         }
     }
 

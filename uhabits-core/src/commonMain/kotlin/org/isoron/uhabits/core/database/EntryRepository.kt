@@ -3,6 +3,7 @@ package org.isoron.uhabits.core.database
 import org.isoron.platform.Synchronized
 import org.isoron.platform.io.Database
 import org.isoron.platform.io.StepResult
+import org.isoron.platform.io.queryInt
 import org.isoron.platform.io.queryLong
 import org.isoron.platform.io.run
 
@@ -34,14 +35,14 @@ class EntryRepository(private val db: Database) {
         )
     }
 
-    private val insertStmt by lazy {
+    private val insertOrIgnoreStmt by lazy {
         db.prepareStatement(
-            """INSERT INTO Repetitions(habit, uuid, timestamp, value, notes, updated_at, deleted_at)
+            """INSERT OR IGNORE INTO Repetitions(habit, uuid, timestamp, value, notes, updated_at, deleted_at)
                VALUES (?, ?, ?, ?, ?, ?, ?)"""
         )
     }
 
-    private val updateByIdStmt by lazy {
+    private val updateByHabitAndTimestampStmt by lazy {
         db.prepareStatement(
             """UPDATE Repetitions SET
                uuid = ?,
@@ -49,7 +50,7 @@ class EntryRepository(private val db: Database) {
                notes = ?,
                updated_at = ?,
                deleted_at = ?
-               WHERE id = ?"""
+               WHERE habit = ? AND timestamp = ?"""
         )
     }
 
@@ -97,36 +98,51 @@ class EntryRepository(private val db: Database) {
     @Synchronized
     fun upsert(data: EntryData): Long {
         if (data.uuid.isBlank()) data.uuid = "${data.habitId}:${data.timestamp}"
+
+        // 1. Try update first by habit and timestamp
+        updateByHabitAndTimestampStmt.reset()
+        updateByHabitAndTimestampStmt.bindText(1, data.uuid)
+        updateByHabitAndTimestampStmt.bindInt(2, data.value)
+        updateByHabitAndTimestampStmt.bindText(3, data.notes)
+        updateByHabitAndTimestampStmt.bindLong(4, data.updatedAt)
+        if (data.deletedAt != null) updateByHabitAndTimestampStmt.bindLong(5, data.deletedAt!!) else updateByHabitAndTimestampStmt.bindNull(5)
+        updateByHabitAndTimestampStmt.bindLong(6, data.habitId!!)
+        updateByHabitAndTimestampStmt.bindLong(7, data.timestamp)
+        updateByHabitAndTimestampStmt.step()
+
+        if (db.queryInt("SELECT changes()") == 0) {
+            // 2. Row does not exist yet: try insert or ignore
+            insertOrIgnoreStmt.reset()
+            insertOrIgnoreStmt.bindLong(1, data.habitId!!)
+            insertOrIgnoreStmt.bindText(2, data.uuid)
+            insertOrIgnoreStmt.bindLong(3, data.timestamp)
+            insertOrIgnoreStmt.bindInt(4, data.value)
+            insertOrIgnoreStmt.bindText(5, data.notes)
+            insertOrIgnoreStmt.bindLong(6, data.updatedAt)
+            if (data.deletedAt != null) insertOrIgnoreStmt.bindLong(7, data.deletedAt!!) else insertOrIgnoreStmt.bindNull(7)
+            insertOrIgnoreStmt.step()
+
+            if (db.queryInt("SELECT changes()") == 0) {
+                // Another connection inserted concurrently: update the existing row
+                updateByHabitAndTimestampStmt.reset()
+                updateByHabitAndTimestampStmt.bindText(1, data.uuid)
+                updateByHabitAndTimestampStmt.bindInt(2, data.value)
+                updateByHabitAndTimestampStmt.bindText(3, data.notes)
+                updateByHabitAndTimestampStmt.bindLong(4, data.updatedAt)
+                if (data.deletedAt != null) updateByHabitAndTimestampStmt.bindLong(5, data.deletedAt!!) else updateByHabitAndTimestampStmt.bindNull(5)
+                updateByHabitAndTimestampStmt.bindLong(6, data.habitId!!)
+                updateByHabitAndTimestampStmt.bindLong(7, data.timestamp)
+                updateByHabitAndTimestampStmt.step()
+            }
+        }
+
         findIdByHabitAndTimestampStmt.reset()
         findIdByHabitAndTimestampStmt.bindLong(1, data.habitId!!)
         findIdByHabitAndTimestampStmt.bindLong(2, data.timestamp)
-        val existingId = if (findIdByHabitAndTimestampStmt.step() == StepResult.ROW) {
+        return if (findIdByHabitAndTimestampStmt.step() == StepResult.ROW) {
             findIdByHabitAndTimestampStmt.getLong(0)
         } else {
-            null
-        }
-
-        return if (existingId != null) {
-            updateByIdStmt.reset()
-            updateByIdStmt.bindText(1, data.uuid)
-            updateByIdStmt.bindInt(2, data.value)
-            updateByIdStmt.bindText(3, data.notes)
-            updateByIdStmt.bindLong(4, data.updatedAt)
-            if (data.deletedAt != null) updateByIdStmt.bindLong(5, data.deletedAt!!) else updateByIdStmt.bindNull(5)
-            updateByIdStmt.bindLong(6, existingId)
-            updateByIdStmt.step()
-            existingId
-        } else {
-            insertStmt.reset()
-            insertStmt.bindLong(1, data.habitId!!)
-            insertStmt.bindText(2, data.uuid)
-            insertStmt.bindLong(3, data.timestamp)
-            insertStmt.bindInt(4, data.value)
-            insertStmt.bindText(5, data.notes)
-            insertStmt.bindLong(6, data.updatedAt)
-            if (data.deletedAt != null) insertStmt.bindLong(7, data.deletedAt!!) else insertStmt.bindNull(7)
-            insertStmt.step()
-            db.queryLong("SELECT last_insert_rowid()")
+            -1L
         }
     }
 

@@ -11,15 +11,19 @@ class BackupCatalogTest {
     @Test
     fun filterKeepsOnlyBackupPattern() {
         val dir = createTempDirectory().toFile()
-        val backup = File(dir, "Loop Habits Backup 2026-06-24 120000.db").apply {
+        val backupDb = File(dir, "Loop Habits Backup 2026-06-24 120000.db").apply {
             writeText("a")
             setLastModified(2000L)
+        }
+        val backupZip = File(dir, "Loop Habits Backup 2026-06-24 130000.zip").apply {
+            writeText("z")
+            setLastModified(3000L)
         }
         File(dir, "random.txt").writeText("b")
 
         val filtered = BackupCatalog.filterLocalBackupFiles(dir.listFiles()?.toList().orEmpty())
 
-        assertEquals(listOf(backup), filtered)
+        assertEquals(listOf(backupZip, backupDb), filtered)
     }
 
     @Test

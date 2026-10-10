@@ -8,7 +8,14 @@ class BackupFileNamePolicyTest {
     @Test
     fun matchesExpectedBackupPattern() {
         assertTrue(BackupFileNamePolicy.isBackupFile("Loop Habits Backup 2026-06-24 120000.db"))
+        assertTrue(BackupFileNamePolicy.isBackupFile("Loop Habits Backup 2026-06-24 120000.zip"))
         assertFalse(BackupFileNamePolicy.isBackupFile("notes.txt"))
-        assertFalse(BackupFileNamePolicy.isBackupFile("Loop Habits Backup 2026-06-24 120000.zip"))
+        assertFalse(BackupFileNamePolicy.isBackupFile("Loop Habits Backup 2026-06-24 120000.tar"))
+
+        assertTrue(BackupFileNamePolicy.isZipBackup("Loop Habits Backup 2026-06-24 120000.zip"))
+        assertFalse(BackupFileNamePolicy.isZipBackup("Loop Habits Backup 2026-06-24 120000.db"))
+
+        assertTrue(BackupFileNamePolicy.isRawDbBackup("Loop Habits Backup 2026-06-24 120000.db"))
+        assertFalse(BackupFileNamePolicy.isRawDbBackup("Loop Habits Backup 2026-06-24 120000.zip"))
     }
 }

@@ -149,4 +149,26 @@ class EntryRepositoryTest {
 
         db.close()
     }
+
+    @Test
+    fun testConcurrentDuplicateUpsertsAcrossRepositoriesPreserveId() = runTest {
+        val db = TestDatabaseHelper.createEmptyDatabase()
+        val repo1 = EntryRepository(db)
+        val repo2 = EntryRepository(db)
+        val habitId = insertTestHabit(db)
+
+        val entry = EntryData(habitId = habitId, timestamp = 1700500000000, value = 2, notes = "initial")
+        val id1 = repo1.upsert(entry)
+        assertTrue(id1 > 0)
+
+        val id2 = repo2.upsert(entry.copy(value = 1, notes = "repo2 updated"))
+        assertEquals(id1, id2)
+
+        val loaded = repo1.findAllByHabitId(habitId).single()
+        assertEquals(id1, loaded.id)
+        assertEquals(1, loaded.value)
+        assertEquals("repo2 updated", loaded.notes)
+
+        db.close()
+    }
 }

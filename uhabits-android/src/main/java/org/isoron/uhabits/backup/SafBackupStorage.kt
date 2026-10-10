@@ -42,7 +42,7 @@ class SafBackupStorage(
         val folder = requireWritableFolder()
         val filename = BackupFileNamePolicy.buildFileName(timestamp)
         folder.findFile(filename)?.delete()
-        return folder.createFile("application/octet-stream", filename)
+        return folder.createFile("application/zip", filename)
             ?: throw IllegalStateException(context.getString(R.string.backup_external_create_failed))
     }
 

@@ -275,7 +275,11 @@ object DatabaseUtils {
         }
     }
 
-    fun validateDatabaseBackup(file: File): org.isoron.uhabits.backup.BackupValidationResult {
+    fun validateDatabaseBackup(file: File, targetVersion: Int = LEGACY_DATABASE_VERSION): org.isoron.uhabits.backup.BackupValidationResult {
+        return org.isoron.uhabits.backup.BackupArchiveValidator.validate(file, targetVersion)
+    }
+
+    fun validateRawSqliteBackup(file: File): org.isoron.uhabits.backup.BackupValidationResult {
         if (!file.exists() || file.length() <= 0L) {
             return org.isoron.uhabits.backup.BackupValidationResult(
                 isValid = false,
@@ -374,10 +378,6 @@ object DatabaseUtils {
     }
 
     fun restoreDatabaseFromBackup(context: Context, stagedBackupFile: File) {
-        val validation = validateDatabaseBackup(stagedBackupFile)
-        require(validation.isValid) { validation.errorMessage ?: "Invalid backup" }
-        val backupVersion = requireNotNull(validation.databaseVersion) { "Missing database version in backup" }
-
         val dbFile = getDatabaseFile(context)
         val activeFilename = dbFile.name
         val app = context.applicationContext as? HabitsApplication
@@ -391,55 +391,79 @@ object DatabaseUtils {
             LEGACY_DATABASE_VERSION
         }
 
+        val validation = validateDatabaseBackup(stagedBackupFile, targetVersion)
+        if (validation.compatibilityStatus == org.isoron.uhabits.backup.BackupCompatibilityStatus.REQUIRES_NEXT_AUTHORITY) {
+            throw org.isoron.uhabits.backup.BackupRestoreException.IncompatibleAuthorityException(
+                validation.errorMessage ?: "Cannot restore Next backup into legacy production dataset"
+            )
+        }
+        require(validation.isValid) { validation.errorMessage ?: "Invalid backup" }
+        val backupVersion = requireNotNull(validation.databaseVersion) { "Missing database version in backup" }
+
         // Validate that backup schema version does not exceed target authorization
         if (backupVersion > targetVersion) {
-            throw IllegalArgumentException(
+            throw org.isoron.uhabits.backup.BackupRestoreException.IncompatibleAuthorityException(
                 "Cannot restore backup with schema version $backupVersion into a dataset targeting version $targetVersion"
             )
         }
 
-        val backup = SQLiteDatabase.openDatabase(stagedBackupFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
-        val hasNextEntities = try {
-            val tables = DatabaseSnapshotter.listTables(AndroidDatabase(backup))
-            NEXT_TABLE_NAMES.any(tables::contains)
-        } finally { backup.close() }
-
-        require(session?.isExperimental == true || (!hasNextEntities && backupVersion <= LEGACY_DATABASE_VERSION)) {
-            "Experimental or UHabit Next backup cannot replace a production dataset"
-        }
-
         val parent = requireNotNull(dbFile.parentFile)
-        val restoreTemp = File(parent, "${dbFile.name}.restore.tmp")
-        val rollbackFile = File(parent, "${dbFile.name}.rollback")
-
-        // Reconcile any previous interrupted restore before starting a new one
-        reconcileInterruptedRestore(context, activeFilename)
-
-        cleanupSidecars(restoreTemp)
-        if (restoreTemp.exists()) restoreTemp.delete()
-
-        val journal = RestoreJournal(parent, activeFilename)
-        journal.recordState(RestoreJournal.State.PREPARING, targetVersion, stagedBackupFile.absolutePath)
-
-        if (session?.isExperimental == true) {
-            val source = SQLiteDatabase.openDatabase(stagedBackupFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
-            val stage = SQLiteDatabase.create(null)
-            val target = SQLiteDatabase.openOrCreateDatabase(restoreTemp, null)
+        val isZip = validation.format == org.isoron.uhabits.backup.BackupFormat.VERSIONED_ZIP
+        val dbCandidate = if (isZip) {
+            val tempExtracted = File.createTempFile("restore-extract-", ".db", parent)
             try {
-                val wrapped = AndroidDatabase(source)
-                val result = ContainerRestoreService.restore(wrapped, AndroidDatabase(stage), AndroidDatabase(target),
-                    externalManifest = compatibleOldExperimentalManifest(wrapped))
-                require(result is org.isoron.uhabits.core.containers.backup.RestoreResult.Success) {
-                    (result as? org.isoron.uhabits.core.containers.backup.RestoreResult.Failure)?.reason ?: "Invalid experimental backup"
-                }
-                require((result.kind as? DatasetKind.ExperimentalContainer)?.datasetUuid == session.datasetId) {
-                    "Restore requires the same experimental dataset identity"
-                }
-            } catch (error: Throwable) { restoreTemp.delete(); throw error }
-            finally { source.close(); stage.close(); target.close() }
+                org.isoron.uhabits.backup.BackupArchiveExtractor.extractDatabase(stagedBackupFile, tempExtracted)
+                tempExtracted
+            } catch (t: Throwable) {
+                tempExtracted.delete()
+                throw t
+            }
         } else {
-            stagedBackupFile.copyTo(restoreTemp, overwrite = true)
+            stagedBackupFile
         }
+
+        try {
+            val backup = SQLiteDatabase.openDatabase(dbCandidate.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+            val hasNextEntities = try {
+                val tables = DatabaseSnapshotter.listTables(AndroidDatabase(backup))
+                NEXT_TABLE_NAMES.any(tables::contains)
+            } finally { backup.close() }
+
+            require(session?.isExperimental == true || (!hasNextEntities && backupVersion <= LEGACY_DATABASE_VERSION)) {
+                "Experimental or UHabit Next backup cannot replace a production dataset"
+            }
+
+            val restoreTemp = File(parent, "${dbFile.name}.restore.tmp")
+            val rollbackFile = File(parent, "${dbFile.name}.rollback")
+
+            // Reconcile any previous interrupted restore before starting a new one
+            reconcileInterruptedRestore(context, activeFilename)
+
+            cleanupSidecars(restoreTemp)
+            if (restoreTemp.exists()) restoreTemp.delete()
+
+            val journal = RestoreJournal(parent, activeFilename)
+            journal.recordState(RestoreJournal.State.PREPARING, targetVersion, stagedBackupFile.absolutePath)
+
+            if (session?.isExperimental == true) {
+                val source = SQLiteDatabase.openDatabase(dbCandidate.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+                val stage = SQLiteDatabase.create(null)
+                val target = SQLiteDatabase.openOrCreateDatabase(restoreTemp, null)
+                try {
+                    val wrapped = AndroidDatabase(source)
+                    val result = ContainerRestoreService.restore(wrapped, AndroidDatabase(stage), AndroidDatabase(target),
+                        externalManifest = compatibleOldExperimentalManifest(wrapped))
+                    require(result is org.isoron.uhabits.core.containers.backup.RestoreResult.Success) {
+                        (result as? org.isoron.uhabits.core.containers.backup.RestoreResult.Failure)?.reason ?: "Invalid experimental backup"
+                    }
+                    require((result.kind as? DatasetKind.ExperimentalContainer)?.datasetUuid == session.datasetId) {
+                        "Restore requires the same experimental dataset identity"
+                    }
+                } catch (error: Throwable) { restoreTemp.delete(); throw error }
+                finally { source.close(); stage.close(); target.close() }
+            } else {
+                dbCandidate.copyTo(restoreTemp, overwrite = true)
+            }
 
         if (backupVersion < targetVersion) {
             val migrated = SQLiteDatabase.openDatabase(
@@ -537,6 +561,11 @@ object DatabaseUtils {
             cleanupSidecars(restoreTemp)
             restoreTemp.delete()
         }
+        } finally {
+            if (isZip && dbCandidate != stagedBackupFile) {
+                dbCandidate.delete()
+            }
+        }
     }
 
     fun openDatabase(): SQLiteDatabase {
@@ -573,7 +602,7 @@ object DatabaseUtils {
     @Volatile
     var forceSqliteCloneForTesting: Boolean = false
 
-    private fun createSnapshotViaSqliteClone(sourceDb: SQLiteDatabase, tempFile: File) {
+    internal fun createSnapshotViaSqliteClone(sourceDb: SQLiteDatabase, tempFile: File) {
         // 1. Audit schema objects in source database (fail closed on virtual tables or unknown objects)
         sourceDb.rawQuery(
             "SELECT type, name, sql FROM main.sqlite_master WHERE name NOT LIKE 'sqlite_%'",
@@ -755,7 +784,7 @@ object DatabaseUtils {
         }
     }
 
-    private fun checkpointDatabase(db: SQLiteDatabase) {
+    internal fun checkpointDatabase(db: SQLiteDatabase) {
         db.rawQuery("PRAGMA wal_checkpoint(FULL)", null).use {
             while (it.moveToNext()) {
                 // Drain cursor to ensure checkpoint is executed.
@@ -763,7 +792,7 @@ object DatabaseUtils {
         }
     }
 
-    private fun escapeSqlString(value: String): String {
+    internal fun escapeSqlString(value: String): String {
         return value.replace("'", "''")
     }
 

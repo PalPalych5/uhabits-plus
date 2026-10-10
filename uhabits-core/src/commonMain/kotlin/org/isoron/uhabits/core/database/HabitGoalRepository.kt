@@ -2,6 +2,7 @@ package org.isoron.uhabits.core.database
 
 import org.isoron.platform.io.Database
 import org.isoron.platform.io.StepResult
+import org.isoron.platform.io.queryInt
 
 data class HabitGoalData(
     val id: Long? = null,
@@ -28,9 +29,9 @@ class HabitGoalRepository(private val db: Database) {
         )
     }
 
-    private val insertStmt by lazy {
+    private val insertOrIgnoreStmt by lazy {
         db.prepareStatement(
-            """INSERT INTO HabitGoals(
+            """INSERT OR IGNORE INTO HabitGoals(
                habit_id, uuid, effective_timestamp, freq_num, freq_den, target_type, target_value,
                unit, updated_at, deleted_at
                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
@@ -100,30 +101,46 @@ class HabitGoalRepository(private val db: Database) {
         val existing = findByUuid(normalized.uuid)
         if (existing?.copy(id = normalized.id) == normalized) return
 
-        if (existing != null) {
-            updateByUuidStmt.reset()
-            updateByUuidStmt.bindInt(1, normalized.freqNum)
-            updateByUuidStmt.bindInt(2, normalized.freqDen)
-            updateByUuidStmt.bindInt(3, normalized.targetType)
-            updateByUuidStmt.bindReal(4, normalized.targetValue)
-            updateByUuidStmt.bindText(5, normalized.unit)
-            updateByUuidStmt.bindLong(6, normalized.updatedAt)
-            if (normalized.deletedAt != null) updateByUuidStmt.bindLong(7, normalized.deletedAt) else updateByUuidStmt.bindNull(7)
-            updateByUuidStmt.bindText(8, normalized.uuid)
-            updateByUuidStmt.step()
-        } else {
-            insertStmt.reset()
-            insertStmt.bindLong(1, normalized.habitId)
-            insertStmt.bindText(2, normalized.uuid)
-            insertStmt.bindLong(3, normalized.effectiveTimestamp)
-            insertStmt.bindInt(4, normalized.freqNum)
-            insertStmt.bindInt(5, normalized.freqDen)
-            insertStmt.bindInt(6, normalized.targetType)
-            insertStmt.bindReal(7, normalized.targetValue)
-            insertStmt.bindText(8, normalized.unit)
-            insertStmt.bindLong(9, normalized.updatedAt)
-            if (normalized.deletedAt != null) insertStmt.bindLong(10, normalized.deletedAt) else insertStmt.bindNull(10)
-            insertStmt.step()
+        // 1. Try update first by UUID
+        updateByUuidStmt.reset()
+        updateByUuidStmt.bindInt(1, normalized.freqNum)
+        updateByUuidStmt.bindInt(2, normalized.freqDen)
+        updateByUuidStmt.bindInt(3, normalized.targetType)
+        updateByUuidStmt.bindReal(4, normalized.targetValue)
+        updateByUuidStmt.bindText(5, normalized.unit)
+        updateByUuidStmt.bindLong(6, normalized.updatedAt)
+        if (normalized.deletedAt != null) updateByUuidStmt.bindLong(7, normalized.deletedAt) else updateByUuidStmt.bindNull(7)
+        updateByUuidStmt.bindText(8, normalized.uuid)
+        updateByUuidStmt.step()
+
+        if (db.queryInt("SELECT changes()") == 0) {
+            // 2. Row does not exist yet: try insert or ignore
+            insertOrIgnoreStmt.reset()
+            insertOrIgnoreStmt.bindLong(1, normalized.habitId)
+            insertOrIgnoreStmt.bindText(2, normalized.uuid)
+            insertOrIgnoreStmt.bindLong(3, normalized.effectiveTimestamp)
+            insertOrIgnoreStmt.bindInt(4, normalized.freqNum)
+            insertOrIgnoreStmt.bindInt(5, normalized.freqDen)
+            insertOrIgnoreStmt.bindInt(6, normalized.targetType)
+            insertOrIgnoreStmt.bindReal(7, normalized.targetValue)
+            insertOrIgnoreStmt.bindText(8, normalized.unit)
+            insertOrIgnoreStmt.bindLong(9, normalized.updatedAt)
+            if (normalized.deletedAt != null) insertOrIgnoreStmt.bindLong(10, normalized.deletedAt) else insertOrIgnoreStmt.bindNull(10)
+            insertOrIgnoreStmt.step()
+
+            if (db.queryInt("SELECT changes()") == 0) {
+                // Another connection inserted concurrently: update the existing row
+                updateByUuidStmt.reset()
+                updateByUuidStmt.bindInt(1, normalized.freqNum)
+                updateByUuidStmt.bindInt(2, normalized.freqDen)
+                updateByUuidStmt.bindInt(3, normalized.targetType)
+                updateByUuidStmt.bindReal(4, normalized.targetValue)
+                updateByUuidStmt.bindText(5, normalized.unit)
+                updateByUuidStmt.bindLong(6, normalized.updatedAt)
+                if (normalized.deletedAt != null) updateByUuidStmt.bindLong(7, normalized.deletedAt) else updateByUuidStmt.bindNull(7)
+                updateByUuidStmt.bindText(8, normalized.uuid)
+                updateByUuidStmt.step()
+            }
         }
     }
 

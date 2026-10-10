@@ -21,6 +21,7 @@ package org.isoron.uhabits.core.containers
 
 import kotlinx.coroutines.test.runTest
 import org.isoron.platform.io.TestDatabaseHelper
+import org.isoron.platform.io.run
 import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacadeImpl
 import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import org.isoron.uhabits.core.containers.memory.MemoryHabitVisualIdentityStore
@@ -181,5 +182,37 @@ class VisualIdentityTest {
         assertNull(facade.getHabitVisualIdentity("uuid-1"))
         facade.setHabitVisualIdentity("uuid-1", IconRef.Vector("book"))
         assertNull(facade.getHabitVisualIdentity("uuid-1"))
+    }
+
+    @Test
+    fun `SQLiteHabitVisualIdentityStore update does not fire delete triggers or recreate rows`() = runTest {
+        val db = TestDatabaseHelper.createEmptyDatabase()
+        OrganizationSchema.createSchema(db)
+        val store = SQLiteHabitVisualIdentityStore(db)
+
+        val habit1 = "uuid-test-1"
+        store.set(habit1, IconRef.Vector("heart"))
+        assertEquals(IconRef.Vector("heart"), store.get(habit1))
+
+        // Install a trigger that raises an error if DELETE is executed on HabitVisualIdentities.
+        // If INSERT OR REPLACE were used, SQLite would delete the row on conflict, firing this trigger.
+        db.run(
+            """
+            CREATE TRIGGER trg_test_no_delete
+            BEFORE DELETE ON HabitVisualIdentities
+            BEGIN
+                SELECT RAISE(ABORT, 'DELETE trigger fired during replace!');
+            END;
+            """.trimIndent()
+        )
+
+        // Updating existing entry must execute in-place UPDATE without firing DELETE trigger
+        store.set(habit1, IconRef.Vector("activity"))
+        assertEquals(IconRef.Vector("activity"), store.get(habit1))
+
+        // Inserting a new entry must also succeed without firing DELETE trigger
+        val habit2 = "uuid-test-2"
+        store.set(habit2, IconRef.Emoji("🔥"))
+        assertEquals(IconRef.Emoji("🔥"), store.get(habit2))
     }
 }

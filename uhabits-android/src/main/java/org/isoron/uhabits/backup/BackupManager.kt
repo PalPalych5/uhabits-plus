@@ -18,18 +18,15 @@ class BackupManager(
     fun backupNow(keep: Int = 5): BackupResult {
         val now = System.currentTimeMillis()
         val tempDir = requireNotNull(catalog.getPrivateBackupDir()) { "Backup directory unavailable" }
-        val tempFile = File(tempDir, "${BackupFileNamePolicy.buildFileName(now)}.tmp")
+        val finalFile = File(tempDir, BackupFileNamePolicy.buildFileName(now))
 
         return try {
-            val snapshot = DatabaseUtils.createDatabaseSnapshot(context, tempFile)
-            val finalFile = File(tempDir, BackupFileNamePolicy.buildFileName(now))
-            DatabaseUtils.publishLocalBackup(tempFile, finalFile)
-
+            val archiveResult = BackupArchiveCreator.createArchive(context, finalFile)
             catalog.applyPrivateRetention(keep)
-            statusStore.recordSuccess(finalFile.absolutePath, snapshot.sizeBytes, snapshot.databaseVersion, now)
-            BackupResult(finalFile.absolutePath, snapshot.sizeBytes, snapshot.databaseVersion)
+            statusStore.recordSuccess(finalFile.absolutePath, archiveResult.sizeBytes, archiveResult.databaseVersion, now)
+            BackupResult(finalFile.absolutePath, archiveResult.sizeBytes, archiveResult.databaseVersion)
         } catch (t: Throwable) {
-            tempFile.delete()
+            finalFile.delete()
             statusStore.recordFailure(t.message ?: "Backup failed", now)
             throw t
         }
@@ -41,14 +38,14 @@ class BackupManager(
         val tempFile = File(tempDir, "${BackupFileNamePolicy.buildFileName(now)}.tmp")
 
         return try {
-            val snapshot = DatabaseUtils.createDatabaseSnapshot(context, tempFile)
+            val archiveResult = BackupArchiveCreator.createArchive(context, tempFile)
             val target = createPublicBackupFile(now)
             DatabaseUtils.copyFileToDocument(context, tempFile, target)
             tempFile.delete()
 
             catalog.applyPublicRetention(keep)
-            statusStore.recordSuccess(target.uri.toString(), snapshot.sizeBytes, snapshot.databaseVersion, now)
-            BackupResult(target.uri.toString(), snapshot.sizeBytes, snapshot.databaseVersion)
+            statusStore.recordSuccess(target.uri.toString(), archiveResult.sizeBytes, archiveResult.databaseVersion, now)
+            BackupResult(target.uri.toString(), archiveResult.sizeBytes, archiveResult.databaseVersion)
         } catch (e: Exception) {
             tempFile.delete()
             statusStore.recordFailure(e.message ?: "Backup failed", now)
@@ -72,7 +69,7 @@ class BackupManager(
             try {
                 DatabaseUtils.validateDatabaseBackup(staged)
             } finally {
-                if (entry.source == BackupSource.PUBLIC) staged.delete()
+                staged.delete()
             }
         } catch (e: Exception) {
             BackupValidationResult(isValid = false, errorMessage = e.message ?: "Validation failed")
@@ -103,7 +100,8 @@ class BackupManager(
 
     private fun stageToLocalTemp(entry: BackupEntry): File {
         val tempDir = requireNotNull(catalog.getPrivateBackupDir()) { "Backup directory unavailable" }
-        val staged = File(tempDir, "restore-stage-${System.currentTimeMillis()}.db")
+        val ext = if (entry.name.endsWith(".zip", ignoreCase = true)) ".zip" else ".db"
+        val staged = File(tempDir, "restore-stage-${System.currentTimeMillis()}$ext")
         if (entry.source == BackupSource.PRIVATE) {
             val source = File(entry.location)
             source.copyTo(staged, overwrite = true)

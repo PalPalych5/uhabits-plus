@@ -151,17 +151,17 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR21 — Preflight & Recovery Gate | Raw inventory/anomaly diagnostics, coherent v29 recovery bundle, pre-DI timer checks, startup recovery | Version bump, conversion/activation, sync protocol, promotion | PR20 review; verified commit 28ce65a67 | DONE |
 | PR22 / PR22.1 — Versioned Next Schema Conversion on Protected Staging & Parity Audit | 30.sql additive Next schema, outer transaction migrator, 8-table legacy parity validator, staging copy isolation, ProductionCutoverGate, v29 immutability, schema parity tests | Runtime authority activation (remains LEGACY), live production DB upgrade, sync rewrite, PR23 readers | PR21 preflight/recovery gate | DONE |
 | PR23 — Contribution-aware Habit/report readers | Audit checkpoint c987a397; PR23A shared authority/list/detail, then PR23B global readers (Statistics, Compare, widgets, reminders, CSV, calendar context, convergence) | Production activation, PR24, UI redesign | PR22.1 accepted; PR23A verified; PR23B all functional checkpoints verified; final cross-surface audit ACCEPTED (commit 588c09f53) | DONE |
-| PR24 — Production backup/recovery & release hardening | PR24A Restore Safety Foundation DONE; PR24B versioned ZIP backup & manifest, PR24C settings/preferences adapters PENDING; release hardening before PR25 | Cloud sync, local cutover, experimental promotion/merge | PR21–PR23 complete | IN_PROGRESS (PR24A DONE) |
+| PR24 — Production backup/recovery & release hardening | PR24A Restore Safety Foundation DONE; PR24A.1 Snapshot Fidelity & API 28 DONE; PR24B Versioned ZIP Backup Archive DONE; PR24C settings/preferences adapters PENDING; release hardening before PR25 | Cloud sync, local cutover, experimental promotion/merge | PR21–PR23 complete | IN_PROGRESS (PR24A, PR24A.1, PR24B DONE) |
 | PR25 — Protected Local Production Cutover | Explicit production Next session/capabilities, exclusive capture, epoch-qualified callbacks, Task/Habit/Pomodoro recovery, local-only sync gate | Cloud publication, promotion/merge | PR24 complete | PLANNED / BLOCKED |
 | PR26 — Versioned Cloud Protocol (Sync v2) | New dataset epoch/server enforcement, complete outbox/apply/dependencies/conflicts, multi-device bootstrap | Blanket LWW, old-log mixing | PR25 local readiness + server release design | PLANNED / BLOCKED |
 
-PR22/PR22.1 окончательно приняты пользователем 2026-10-08. PR23 (A и B) официально закрыт и принят 2026-10-09 (коммит `588c09f53`). Все читатели переведены на shared EffectiveHabitReadSnapshot. В рамках PR24 (Production Backup, Recovery and Release Hardening) выполнен и верифицирован первый этап — PR24A (Production Restore Safety Foundation). PR24 в целом остаётся IN_PROGRESS; последующие этапы PR24 (PR24B Versioned ZIP Backup, PR24C Preferences & Device QA) PENDING. PR25 (Protected Local Cutover) и PR26 (Cloud Sync v2) остаются строго заблокированными. `DATABASE_VERSION = 30` выделена для Next schema, но канонический production открывается по умолчанию на legacy schema v29 (`ProductionCutoverGate`).
+PR22/PR22.1 окончательно приняты пользователем 2026-10-08. PR23 (A и B) официально закрыт и принят 2026-10-09 (коммит `588c09f53`). Все читатели переведены на shared EffectiveHabitReadSnapshot. В рамках PR24 (Production Backup, Recovery and Release Hardening) выполнены и верифицированы этапы PR24A (Production Restore Safety Foundation), PR24A.1 (Snapshot Fidelity & API 28 Compatibility) и PR24B (Versioned Production Backup Archive). PR24 в целом остаётся IN_PROGRESS; последующий этап PR24 (PR24C Settings/Preferences Adapters & Release Hardening) PENDING. PR25 (Protected Local Cutover) и PR26 (Cloud Sync v2) остаются строго заблокированными. `DATABASE_VERSION = 30` выделена для Next schema, но канонический production открывается по умолчанию на legacy schema v29 (`ProductionCutoverGate`).
 
 ## 5. Current state
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1–PR19 DONE; PR20 AUDIT DONE; PR21 PREFLIGHT/RECOVERY DONE; PR22 SCHEMA CONVERSION & PR22.1 AUDIT DONE; PR23 READ AUTHORITY DONE / ACCEPTED; PR24 IN_PROGRESS (PR24A DONE)
+Implementation: PR1–PR19 DONE; PR20 AUDIT DONE; PR21 PREFLIGHT/RECOVERY DONE; PR22 SCHEMA CONVERSION & PR22.1 AUDIT DONE; PR23 READ AUTHORITY DONE / ACCEPTED; PR24 IN_PROGRESS (PR24A, PR24A.1, PR24B DONE)
 Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated, Container Statistics MVP completed, Today Workspace evaluated natively
 Current branch: dev; verified PR23 baseline 588c09f53; use Git for current HEAD
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
@@ -1188,4 +1188,45 @@ Human accepts PR20 and authorizes PR21 preflight and recovery implementation onl
   - PR25 (Protected Local Cutover) and PR26 (Cloud Sync v2) remain strictly **BLOCKED**.
   - Production runtime authority remains strictly **LEGACY_PRODUCTION** (schema v29).
   - Active work: **STOP after PR24A.1**.
+
+### 2026-10-10 — PR24B: Versioned Production Backup Archive completed
+
+- **Preflight Audit & Compatibility Hardening Completed:**
+  - *`SQLiteHabitVisualIdentityStore` Safety:* Replaced `INSERT OR REPLACE` with a safe transactional `UPDATE` then `INSERT OR IGNORE` strategy. Verified with `BEFORE DELETE` trigger regression test in `VisualIdentityTest` that updating an existing visual identity never deletes/recreates rows, never alters rowids, never triggers foreign key actions, and never fires delete triggers.
+  - *Cross-Connection Concurrency in `HabitGoalRepository` & `EntryRepository`:* Replaced UPSERT with atomic `UPDATE` then `INSERT OR IGNORE` then `UPDATE` strategy. Prevents `SQLiteConstraintException` and race conditions across independent connections/instances without relying solely on JVM instance synchronization. Verified by duplicate and concurrent tests in `HabitGoalRepositoryTest` and `EntryRepositoryTest`.
+- **Versioned ZIP Backup Archive Architecture Implemented:**
+  - Format identifier: `uhabit-backup-zip`, version 1.
+  - Archive entries: `uhabits.db` (database snapshot), `manifest.json` (canonical integrity manifest), and reserved extension point `preferences.json` (for PR24C).
+  - Resource & Security Bounds: `MAX_TOTAL_ENTRIES = 20`, `MAX_MANIFEST_SIZE_BYTES = 1 MB`, `MAX_DATABASE_SIZE_BYTES = 1 GB`, `MAX_TOTAL_UNCOMPRESSED_BYTES = 1 GB`.
+  - Zip Slip & Path Traversal Defense: `BackupArchiveExtractor` rejects entry names with `..`, leading `/`, or leading `\`, failing immediately with `SecurityViolationException`.
+  - Duplicate Entry Defense: Extractor and validator reject archives containing duplicate entries.
+  - Checksum Integrity: Streaming SHA-256 verification of database payload and canonical manifest content (`CANONICAL:v1:...`). Corrupted or tampered databases/manifests fail closed.
+  - Manifest Metadata: Records database version, size in bytes, dataset mode, table inventory with exact row counts, integrity check results, minimum/maximum supported schema versions, runtime authority requirement, and restore policy (`FAIL_CLOSED_ON_INCOMPATIBLE_AUTHORITY`).
+- **Fail-Closed Runtime Authority & Legacy Compatibility:**
+  - Independent validator (`BackupArchiveValidator`) checks format (`VERSIONED_ZIP` vs `LEGACY_RAW_SQLITE` vs `UNKNOWN`).
+  - Strict Fail-Closed Rule: A v30 archive or any backup containing Next entities is rejected when targeted at v29 legacy production (`REQUIRES_NEXT_AUTHORITY`), preventing unauthorized schema promotion or accidental cutover.
+  - 100% Backward Compatibility: Legacy raw SQLite `.db` backups continue to validate and restore seamlessly via `DatabaseUtils.restoreDatabaseFromBackup()`.
+  - Non-blocking Snapshot Pipeline: Live DB write lock is released immediately after transactional SQLite clone/snapshot is taken. Subsequent SQLite checks, table inventory, row count collection, SHA-256 hashing, and ZIP compression run entirely on the immutable snapshot file, ensuring 0 write starvation for live app operations.
+  - Failure Injections: Comprehensive cleanup on failure (`DURING_SNAPSHOT`, `DURING_VALIDATION_PRE_ZIP`, `DURING_ZIP_WRITE`, `DURING_PUBLICATION`). No incomplete or corrupted temporary files are ever published.
+- **Verification Evidence:**
+  - **Core JVM Suite:** 100% PASS across `:uhabits-core:jvmTest`, including `VisualIdentityTest` trigger test, `HabitGoalRepositoryTest`, and `EntryRepositoryTest`.
+  - **Android JVM Suite:** 100% PASS across `:uhabits-android:testDebugUnitTest`, including `BackupArchiveManifestTest` (6 tests), `BackupArchiveZipSafetyTest` (6 tests), `BackupCatalogTest`, and `BackupFileNamePolicyTest`.
+  - **Native Android Instrumentation QA on dedicated Android 9 emulator (`UHabit_MinSdk_API28`, API 28, SQLite 3.22.0, offline discipline, airplane mode 1):**
+    - `BackupArchiveInstrumentationTest` (4/4 PASS):
+      1. `testCreateAndValidateVersionedZipBackup`: PASS (created v29 ZIP backup, verified manifest, table inventory, SHA-256, extracted and verified SQLite readability).
+      2. `testValidateRejectsV30ArchiveWhenTargetVersionIsV29`: PASS (v30 ZIP archive rejected with `REQUIRES_NEXT_AUTHORITY`; restore throws `IncompatibleAuthorityException`).
+      3. `testLegacyRawSqliteBackupRestorationStillWorksSeamlessly`: PASS (raw SQLite `.db` validated as `LEGACY_RAW_SQLITE` and restored data cleanly).
+      4. `testFailureInjectionDuringArchiveCreationCleansUpTempFiles`: PASS (all 4 failure injections clean up temp files with 0 corrupted published files).
+    - `RestoreSafetyAndroidTest` (7/7 PASS): All baseline PR24A restore safety tests PASS.
+    - `BackupManagerTest` (5/5 PASS): End-to-end backup and restore roundtrip PASS.
+    - Logcat audit: `pr24b_qa/logcat.log` captured via persistent daemon, 0 ANRs, 0 fatal exceptions.
+    - Emulator cleanly shut down (`adb -s emulator-5554 emu kill`, 0 running emulator/qemu processes).
+    - Forensic `Pixel_6` preserved untouched.
+- **Boundaries strictly maintained:**
+  - PR24A, PR24A.1, and PR24B are **DONE**. PR24 overall remains **IN_PROGRESS**.
+  - Subsequent PR24 checkpoint (PR24C Settings/Preferences Adapters & Release Hardening) is **PENDING**.
+  - PR25 (Protected Local Cutover) and PR26 (Cloud Sync v2) remain strictly **BLOCKED**.
+  - Production runtime authority remains strictly **LEGACY_PRODUCTION** (schema v29).
+  - Active work: **STOP after PR24B**.
+
 
