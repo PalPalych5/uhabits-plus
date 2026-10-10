@@ -33,6 +33,7 @@ class FocusCreditController(
     private val habits: HabitList,
     private val organization: HabitOrganizationFacade,
     private val preferences: Preferences,
+    private val syncManager: org.isoron.uhabits.core.sync.SyncManager? = null,
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val rules: SQLiteSourceRuleRepository
@@ -97,10 +98,18 @@ class FocusCreditController(
             check(!disposed)
             delegate.commit(journal, facts)
             if (facts.isEmpty()) return
+            facts.forEach { fact -> syncManager?.enqueueFocusSession(fact) }
             runCatching {
                 closeUnavailableRules()
                 facts.forEach { fact ->
-                    runCatching { reconciler.reconcileSession(fact.id, System.currentTimeMillis()) }
+                    runCatching {
+                        val outcomes = reconciler.reconcileSession(fact.id, System.currentTimeMillis())
+                        outcomes.forEach { outcome ->
+                            if (outcome is org.isoron.uhabits.core.rules.AttributionOutcome.Attributed && outcome.wasInserted) {
+                                syncManager?.enqueueContribution(outcome.contribution)
+                            }
+                        }
+                    }
                         .onFailure { pending.add(fact.id); Log.w(TAG, "Focus credit deferred until recovery", it) }
                 }
                 notifyChanged()

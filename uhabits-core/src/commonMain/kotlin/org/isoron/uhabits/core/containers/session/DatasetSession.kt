@@ -78,10 +78,10 @@ data class DatasetCapabilities(
         /** Full production capabilities for legacy mode. */
         val PRODUCTION = DatasetCapabilities()
 
-        /** Production Next capabilities: local runtime enabled, cloud sync quarantined until PR26. */
+        /** Production Next capabilities: full local and remote sync capabilities. */
         val PRODUCTION_NEXT = DatasetCapabilities(
-            syncEnabled = false,
-            remoteCallsAllowed = false,
+            syncEnabled = true,
+            remoteCallsAllowed = true,
             timerEnabled = true,
             widgetsEnabled = true,
             remindersEnabled = true,

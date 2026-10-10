@@ -127,10 +127,12 @@ abstract class HabitsApplicationComponent(
     abstract val widgetUpdater: WidgetUpdater
     abstract val userTaskRepository: UserTaskRepository
     abstract val userTaskService: UserTaskService
+    abstract val sqlModelFactory: SQLModelFactory
 
     val focusCreditController: org.isoron.uhabits.focus.FocusCreditController? by lazy {
         if (session.isNextArchitecture) org.isoron.uhabits.focus.FocusCreditController(
-            providedDb, habitList, organizationFacade, preferences
+            providedDb, habitList, organizationFacade, preferences,
+            syncManager = if (session.capabilities.syncEnabled && !session.isExperimental) sqlModelFactory.syncManager else null
         ) else null
     }
 
@@ -267,7 +269,10 @@ abstract class HabitsApplicationComponent(
     ): HabitOrganizationFacade {
         return if (session.organizationAuthority == OrganizationAuthorityMode.CONTAINER_LOCAL) {
             OrganizationSchema.createSchema(providedDb)
-            val store = SQLiteOrganizationStore(providedDb)
+            val store = SQLiteOrganizationStore(
+                providedDb,
+                syncManager = if (session.capabilities.syncEnabled && !session.isExperimental) sqlModelFactory.syncManager else null
+            )
             val visualIdentityStore = SQLiteHabitVisualIdentityStore(providedDb)
             val service = OrganizationServiceImpl(
                 store = store,
@@ -312,11 +317,15 @@ abstract class HabitsApplicationComponent(
 
     @AppScope
     @Provides
-    open fun userTaskService(repository: UserTaskRepository): UserTaskService {
+    open fun userTaskService(
+        repository: UserTaskRepository,
+        sqlModelFactory: SQLModelFactory
+    ): UserTaskService {
         return UserTaskServiceImpl(
             repository = repository,
             clock = { System.currentTimeMillis() },
-            idGenerator = { Uuid.random().toHexString() }
+            idGenerator = { Uuid.random().toHexString() },
+            syncManager = if (session.capabilities.syncEnabled && !session.isExperimental) sqlModelFactory.syncManager else null
         )
     }
 

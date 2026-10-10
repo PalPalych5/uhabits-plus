@@ -45,6 +45,7 @@ import org.isoron.uhabits.core.models.PaletteColor
 
 class SQLiteOrganizationStore(
     private val db: Database,
+    private val syncManager: org.isoron.uhabits.core.sync.SyncManager? = null,
 ) : OrganizationStore, OrganizationTransaction, ContainerQueries, HabitPlacementQueries, UnitOfWork {
 
     private var transactionDepth = 0
@@ -350,6 +351,7 @@ class SQLiteOrganizationStore(
             stmt.step()
             stmt.finalize()
         }
+        syncManager?.enqueueContainer(container, if (container.deletedAt != null) "delete" else "upsert")
     }
 
     override fun saveHabitPlacement(placement: HabitPlacement) {
@@ -374,6 +376,11 @@ class SQLiteOrganizationStore(
 
         stmt.step()
         stmt.finalize()
+        syncManager?.enqueueHabitPlacement(
+            placement.habit.uuid,
+            placement.containerId?.value,
+            placement.localOrder
+        )
     }
 
     override fun recordChange(change: OrganizationChangeRecord) {

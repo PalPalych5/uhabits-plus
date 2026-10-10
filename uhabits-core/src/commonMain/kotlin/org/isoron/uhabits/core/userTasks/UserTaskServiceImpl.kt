@@ -26,6 +26,7 @@ class UserTaskServiceImpl(
     private val repository: UserTaskRepository,
     private val clock: () -> Long,
     private val idGenerator: () -> String,
+    private val syncManager: org.isoron.uhabits.core.sync.SyncManager? = null,
 ) : UserTaskService {
 
     override fun createTask(
@@ -72,6 +73,7 @@ class UserTaskServiceImpl(
         )
 
         repository.save(task)
+        syncManager?.enqueueUserTask(task, "upsert")
         return task
     }
 
@@ -139,6 +141,7 @@ class UserTaskServiceImpl(
         )
 
         repository.save(updated)
+        syncManager?.enqueueUserTask(updated, "upsert")
         return updated
     }
 
@@ -159,6 +162,7 @@ class UserTaskServiceImpl(
             updatedAt = now,
         )
         repository.save(updated)
+        syncManager?.enqueueUserTask(updated, "upsert")
         return updated
     }
 
@@ -176,6 +180,7 @@ class UserTaskServiceImpl(
             updatedAt = now,
         )
         repository.save(updated)
+        syncManager?.enqueueUserTask(updated, "upsert")
         return updated
     }
 
@@ -186,7 +191,9 @@ class UserTaskServiceImpl(
                 deleteTask(sub.id, cascadeSubtasks = true)
             }
         }
+        val now = clock()
         repository.delete(id)
+        syncManager?.enqueueUserTaskDelete(id.value, now)
     }
 
     override fun reorderTasks(orderedIds: List<TaskId>) {
@@ -194,7 +201,9 @@ class UserTaskServiceImpl(
         orderedIds.forEachIndexed { index, taskId ->
             val task = repository.getById(taskId)
             if (task != null && task.sortOrder != index) {
-                repository.save(task.copy(sortOrder = index, updatedAt = now))
+                val updated = task.copy(sortOrder = index, updatedAt = now)
+                repository.save(updated)
+                syncManager?.enqueueUserTask(updated, "upsert")
             }
         }
     }

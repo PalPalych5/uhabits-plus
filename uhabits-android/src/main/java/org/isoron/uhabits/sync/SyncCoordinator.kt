@@ -90,6 +90,15 @@ class SyncCoordinator(
 
     init {
         if (session.capabilities.syncEnabled && session.mode != org.isoron.uhabits.core.containers.session.DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL) {
+            modelFactory.syncManager.onQueueAppended = {
+                if (isAutoSyncPaused) {
+                    // paused
+                } else if (isSyncing) {
+                    synchronized(this@SyncCoordinator) { isPendingSync = true }
+                } else {
+                    scheduleBackgroundSync("queue_appended")
+                }
+            }
             commandRunner.addListener(object : CommandRunner.Listener {
             override fun onCommandFinished(command: Command) {
                 if (isAutoSyncPaused) return
@@ -147,7 +156,7 @@ class SyncCoordinator(
     }
 
     fun scheduleBackgroundSync(reason: String = "command_runner") {
-        if (!session.capabilities.syncEnabled || !session.capabilities.remoteCallsAllowed || session.mode == org.isoron.uhabits.core.containers.session.DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL) {
+        if (!session.capabilities.syncEnabled || !session.capabilities.remoteCallsAllowed || session.isExperimental) {
             return
         }
         if (!isSyncReady()) {
@@ -233,10 +242,10 @@ class SyncCoordinator(
     }
 
     fun syncReadyReason(): SyncReadyReason {
-        if (!session.capabilities.syncEnabled || !session.capabilities.remoteCallsAllowed || session.mode == org.isoron.uhabits.core.containers.session.DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL) {
+        if (!session.capabilities.syncEnabled || !session.capabilities.remoteCallsAllowed || session.isExperimental) {
             return SyncReadyReason.SYNC_DISABLED
         }
-        if (modelFactory.habitBlockRepository.authorityMode == org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode.CONTAINER_LOCAL) {
+        if (!session.isNextArchitecture && modelFactory.habitBlockRepository.authorityMode == org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode.CONTAINER_LOCAL) {
             return SyncReadyReason.SYNC_DISABLED
         }
         if (!preferences.isSyncEnabled) return SyncReadyReason.SYNC_DISABLED
@@ -341,7 +350,7 @@ class SyncCoordinator(
     }
 
     suspend fun signIn(email: String, password: String): SyncRunResult = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        if (!session.capabilities.remoteCallsAllowed || !session.capabilities.syncEnabled || session.mode == org.isoron.uhabits.core.containers.session.DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL) {
+        if (!session.capabilities.remoteCallsAllowed || !session.capabilities.syncEnabled || session.isExperimental) {
             return@withContext configurationMissing("Синхронизация отключена в текущей сессии.")
         }
         val config = requireConfig()
@@ -362,7 +371,7 @@ class SyncCoordinator(
     }
 
     suspend fun signOut(): SyncRunResult = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        if (!session.capabilities.remoteCallsAllowed || !session.capabilities.syncEnabled || session.mode == org.isoron.uhabits.core.containers.session.DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL) {
+        if (!session.capabilities.remoteCallsAllowed || !session.capabilities.syncEnabled || session.isExperimental) {
             return@withContext syncUnavailable("Синхронизация отключена в текущей сессии.", IllegalStateException("Sync disabled in session"))
         }
         return@withContext runCatching {
@@ -620,7 +629,7 @@ class SyncCoordinator(
         )
     }
 
-    private fun bootstrapSyncQueue(): Int {
+    internal fun bootstrapSyncQueue(): Int {
         var insertedRecords = 0
         val now = modelFactory.syncManager.now()
         val deviceId = deviceIdProvider.value()
@@ -628,30 +637,34 @@ class SyncCoordinator(
         try {
             habitList.reload()
             val habits = habitList.toList()
-            val blocks = modelFactory.habitBlockRepository.findAll()
-            for (block in blocksForBootstrap(blocks, habits)) {
-                val blockUuid = if (block.uuid.isNullOrBlank()) {
-                    val newUuid = UUID.randomUUID().toString().replace("-", "")
-                    modelFactory.habitBlockRepository.update(block.copy(uuid = newUuid))
-                    newUuid
-                } else {
-                    block.uuid!!
+            if (!session.isNextArchitecture) {
+                val blocks = modelFactory.habitBlockRepository.findAll()
+                for (block in blocksForBootstrap(blocks, habits)) {
+                    val blockUuid = if (block.uuid.isNullOrBlank()) {
+                        val newUuid = UUID.randomUUID().toString().replace("-", "")
+                        modelFactory.habitBlockRepository.update(block.copy(uuid = newUuid))
+                        newUuid
+                    } else {
+                        block.uuid!!
+                    }
+                    val payloadJson = json(
+                        "name" to block.name,
+                        "color" to block.color.toString(),
+                        "position" to block.position.toString(),
+                        "is_archived" to block.isArchived.toString()
+                    )
+                    insertedRecords += insertBootstrapRecordIfMissing(
+                        opUuid = UUID.randomUUID().toString().replace("-", ""),
+                        entityType = "habit_block",
+                        entityUuid = blockUuid,
+                        operationType = "create",
+                        payloadJson = payloadJson,
+                        createdAt = now,
+                        deviceId = deviceId
+                    )
                 }
-                val payloadJson = json(
-                    "name" to block.name,
-                    "color" to block.color.toString(),
-                    "position" to block.position.toString(),
-                    "is_archived" to block.isArchived.toString()
-                )
-                insertedRecords += insertBootstrapRecordIfMissing(
-                    opUuid = UUID.randomUUID().toString().replace("-", ""),
-                    entityType = "habit_block",
-                    entityUuid = blockUuid,
-                    operationType = "create",
-                    payloadJson = payloadJson,
-                    createdAt = now,
-                    deviceId = deviceId
-                )
+            } else {
+                insertedRecords += bootstrapNextEntities(now, deviceId)
             }
 
             for (habit in habits) {
@@ -779,29 +792,33 @@ class SyncCoordinator(
         try {
             habitList.reload()
             val habits = habitList.toList()
-            val blocks = modelFactory.habitBlockRepository.findAll()
-            for (block in blocksForBootstrap(blocks, habits)) {
-                val blockUuid = if (block.uuid.isNullOrBlank()) {
-                    val newUuid = UUID.randomUUID().toString().replace("-", "")
-                    modelFactory.habitBlockRepository.update(block.copy(uuid = newUuid))
-                    newUuid
-                } else {
-                    block.uuid!!
+            if (!session.isNextArchitecture) {
+                val blocks = modelFactory.habitBlockRepository.findAll()
+                for (block in blocksForBootstrap(blocks, habits)) {
+                    val blockUuid = if (block.uuid.isNullOrBlank()) {
+                        val newUuid = UUID.randomUUID().toString().replace("-", "")
+                        modelFactory.habitBlockRepository.update(block.copy(uuid = newUuid))
+                        newUuid
+                    } else {
+                        block.uuid!!
+                    }
+                    insertedRecords += insertBootstrapRecordIfMissing(
+                        opUuid = UUID.randomUUID().toString().replace("-", ""),
+                        entityType = "habit_block",
+                        entityUuid = blockUuid,
+                        operationType = "create",
+                        payloadJson = json(
+                            "name" to block.name,
+                            "color" to block.color.toString(),
+                            "position" to block.position.toString(),
+                            "is_archived" to block.isArchived.toString()
+                        ),
+                        createdAt = now,
+                        deviceId = deviceId
+                    )
                 }
-                insertedRecords += insertBootstrapRecordIfMissing(
-                    opUuid = UUID.randomUUID().toString().replace("-", ""),
-                    entityType = "habit_block",
-                    entityUuid = blockUuid,
-                    operationType = "create",
-                    payloadJson = json(
-                        "name" to block.name,
-                        "color" to block.color.toString(),
-                        "position" to block.position.toString(),
-                        "is_archived" to block.isArchived.toString()
-                    ),
-                    createdAt = now,
-                    deviceId = deviceId
-                )
+            } else {
+                insertedRecords += bootstrapNextEntities(now, deviceId)
             }
 
             for (goal in currentGoalRows()) {
@@ -890,14 +907,52 @@ class SyncCoordinator(
             uuid.isNullOrBlank() || !syncQueueContains("habit", uuid)
         }
         if (missingHabit) return false
-        val blocks = modelFactory.habitBlockRepository.findAll()
-        return blocksForBootstrap(blocks, habits).all { block ->
-            !block.uuid.isNullOrBlank() && syncQueueContains("habit_block", block.uuid!!)
+        if (!session.isNextArchitecture) {
+            val blocks = modelFactory.habitBlockRepository.findAll()
+            return blocksForBootstrap(blocks, habits).all { block ->
+                !block.uuid.isNullOrBlank() && syncQueueContains("habit_block", block.uuid!!)
+            }
+        } else {
+            if (!isNextSchemaAvailable()) return true
+            val missingContainer = modelFactory.database.querySingle(
+                "SELECT count(*) FROM Containers WHERE uuid NOT IN (SELECT entity_uuid FROM SyncQueue WHERE entity_type = 'container')"
+            ) { it.getLong(0) } ?: 0L
+            if (missingContainer > 0) return false
+
+            val missingPlacement = modelFactory.database.querySingle(
+                """SELECT count(*) FROM HabitPlacements p
+                   INNER JOIN Habits h ON h.id = p.habit_id
+                   WHERE h.deleted_at IS NULL AND h.uuid IS NOT NULL
+                     AND h.uuid NOT IN (SELECT entity_uuid FROM SyncQueue WHERE entity_type = 'habit_placement')"""
+            ) { it.getLong(0) } ?: 0L
+            if (missingPlacement > 0) return false
+
+            val missingTask = modelFactory.database.querySingle(
+                "SELECT count(*) FROM UserTasks WHERE id NOT IN (SELECT entity_uuid FROM SyncQueue WHERE entity_type = 'user_task')"
+            ) { it.getLong(0) } ?: 0L
+            if (missingTask > 0) return false
+
+            val missingFocus = modelFactory.database.querySingle(
+                "SELECT count(*) FROM FocusSessions WHERE id NOT IN (SELECT entity_uuid FROM SyncQueue WHERE entity_type = 'focus_session')"
+            ) { it.getLong(0) } ?: 0L
+            if (missingFocus > 0) return false
+
+            val missingContribution = modelFactory.database.querySingle(
+                "SELECT count(*) FROM Contributions WHERE id NOT IN (SELECT entity_uuid FROM SyncQueue WHERE entity_type = 'contribution')"
+            ) { it.getLong(0) } ?: 0L
+            if (missingContribution > 0) return false
+
+            return true
         }
     }
 
     private fun habitPayload(habit: Habit): String {
         val goal = habit.currentGoal()
+        val blockUuid = if (session.isNextArchitecture) {
+            null
+        } else {
+            habit.blockId?.let { modelFactory.habitBlockRepository.findById(it)?.uuid }
+        }
         return json(
             "name" to habit.name,
             "description" to habit.description,
@@ -911,7 +966,7 @@ class SyncCoordinator(
             "target_type" to goal.targetType.value.toString(),
             "unit" to goal.unit,
             "day_tier" to habit.dayTier.name,
-            "block_uuid" to (habit.blockId?.let { modelFactory.habitBlockRepository.findById(it)?.uuid }),
+            "block_uuid" to blockUuid,
             "timer_enabled" to habit.timerEnabled.toString(),
             "statistics_start" to habit.statisticsStartDate?.unixTime?.toString(),
             "reminder_hour" to habit.reminder?.hour?.toString(),
@@ -1266,22 +1321,36 @@ class SyncCoordinator(
         // Do NOT run destructive cleanupDuplicateDefaultBlocks here.
         // Duplicate blocks are less harmful than losing habit-sphere assignments.
 
-        // Apply in dependency order: habit_block metadata first, then habits, then everything else.
-        val priority = mapOf("habit_block" to 0, "habit" to 1)
+        // Apply in dependency order: habit_block/container metadata first, then habits, then placements/goals/entries, then tasks, focus, contributions.
+        val priority = mapOf(
+            "habit_block" to 0,
+            "container" to 0,
+            "habit" to 1,
+            "habit_placement" to 2,
+            "user_task" to 3,
+            "focus_session" to 4,
+            "contribution" to 5
+        )
         val sortedEvents = events.sortedWith(compareBy { priority[it.entityType] ?: 2 })
 
         var skipped = 0
         val unresolvedHabitBlocks = mutableListOf<UnresolvedHabitBlock>()
+        val unresolvedContainerParents = mutableListOf<Pair<String, String>>()
 
         modelFactory.syncManager.withCapturePaused {
             sortedEvents.forEach { event ->
                 val applied = when (event.entityType) {
                     "habit_block" -> { applyBlock(event); true }
+                    "container" -> { applyContainer(event, unresolvedContainerParents); true }
                     "habit" -> {
                         val unresolved = applyHabit(event)
                         if (unresolved != null) unresolvedHabitBlocks.add(unresolved)
                         true
                     }
+                    "habit_placement" -> applyHabitPlacement(event)
+                    "user_task" -> { applyUserTask(event); true }
+                    "focus_session" -> { applyFocusSession(event); true }
+                    "contribution" -> applyContribution(event)
                     "habit_goal" -> applyGoal(event)
                     "entry" -> applyEntry(event)
                     "entry_op" -> applyEntryOp(event)
@@ -1291,7 +1360,20 @@ class SyncCoordinator(
                 if (!applied) {
                     skipped++
                     lastSkippedRemoteLogId = minOf(lastSkippedRemoteLogId ?: event.logId, event.logId)
-                    Log.w("SyncCoordinator", "Skipped remote event ${event.entityType} uuid=${event.entityUuid} (missing parent habit)")
+                    Log.w("SyncCoordinator", "Skipped remote event ${event.entityType} uuid=${event.entityUuid}")
+                }
+            }
+
+            // Second pass for unresolved container parents
+            for ((childUuid, parentUuid) in unresolvedContainerParents) {
+                val parentId = modelFactory.database.querySingle(
+                    "SELECT id FROM Containers WHERE uuid = ?",
+                    parentUuid
+                ) { it.getLong(0) }
+                if (parentId != null) {
+                    modelFactory.database.run(
+                        "UPDATE Containers SET parent_id = $parentId WHERE uuid = '$childUuid'"
+                    )
                 }
             }
 
@@ -1353,7 +1435,7 @@ class SyncCoordinator(
      * - Idempotent: safe to call multiple times per sync cycle.
      */
     internal fun repairDefaultBlockUuids() {
-        if (!session.capabilities.syncEnabled || session.organizationAuthority == org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode.CONTAINER_LOCAL || session.mode == org.isoron.uhabits.core.containers.session.DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL) {
+        if (!session.capabilities.syncEnabled || session.isNextArchitecture || session.isExperimental) {
             return
         }
         if (modelFactory.habitBlockRepository.authorityMode == org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode.CONTAINER_LOCAL) {
@@ -1454,7 +1536,7 @@ class SyncCoordinator(
         //   non-null blockUuid, found locally => use that local id
         //   non-null blockUuid, NOT found locally => preserve existing assignment; return for second pass
         val resolvedBlock = blockUuid?.let { modelFactory.habitBlockRepository.findByUuid(it) }
-        val blockUnresolved = blockUuid != null && resolvedBlock == null
+        val blockUnresolved = !session.isNextArchitecture && blockUuid != null && resolvedBlock == null
 
         val position = existing?.position ?: modelFactory.habitRepository.findAll().size
         val updated = HabitData(
@@ -1487,25 +1569,31 @@ class SyncCoordinator(
         }
 
         // Determine the blockId to write to HabitExtensions:
-        //   - Missing field (legacy payload) => keep existing assignment
-        //   - Explicit null (Other) => write null
-        //   - Resolved block => write its local id
-        //   - Unresolved (block not yet in DB) => keep existing assignment; do NOT write null
+        //   - In Next architecture: blockId is always null (containers provide organization)
+        //   - Legacy:
+        //       - Missing field (legacy payload) => keep existing assignment
+        //       - Explicit null (Other) => write null
+        //       - Resolved block => write its local id
+        //       - Unresolved (block not yet in DB) => keep existing assignment; do NOT write null
         val existingExtension = modelFactory.habitExtensionRepository.findByHabitId(habitId)
-        val blockIdToWrite = when {
-            !hasBlockUuid -> existingExtension?.blockId // legacy payload: preserve existing
-            blockUuid == null -> null  // explicit Other from remote
-            resolvedBlock != null -> resolvedBlock.id  // successfully resolved
-            else -> existingExtension?.blockId  // unresolved: preserve current
+        val blockIdToWrite = if (session.isNextArchitecture) {
+            null
+        } else {
+            when {
+                !hasBlockUuid -> existingExtension?.blockId
+                blockUuid == null -> null
+                resolvedBlock != null -> resolvedBlock.id
+                else -> existingExtension?.blockId
+            }
         }
 
         modelFactory.habitExtensionRepository.upsert(
             HabitExtensionData(
                 habitId = habitId,
-                dayTier = payload.optString("day_tier", "NORMAL"),
-                timerEnabled = payload.optString("timer_enabled", "false").toBoolean(),
+                dayTier = payload.optString("day_tier", existingExtension?.dayTier ?: "NORMAL"),
+                timerEnabled = payload.optString("timer_enabled", (existingExtension?.timerEnabled ?: false).toString()).toBoolean(),
                 blockId = blockIdToWrite,
-                statsStartTimestamp = payload.optionalLong("statistics_start", event)
+                statsStartTimestamp = payload.optionalLong("statistics_start", event) ?: existingExtension?.statsStartTimestamp
             )
         )
 
@@ -1674,7 +1762,546 @@ class SyncCoordinator(
         return event.createdAt >= localUpdatedAt
     }
 
+    private fun isNextSchemaAvailable(): Boolean =
+        modelFactory.database.querySingle(
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='Containers'"
+        ) { stmt -> stmt.getLong(0) > 0 } ?: false
+
+    private fun ensureRemoteOrganizationRevision(
+        opUuid: String,
+        recordedAt: Long,
+        operationType: String,
+        payload: String
+    ): Long {
+        val existingRevision = modelFactory.database.querySingle(
+            "SELECT revision FROM OrganizationChanges WHERE op_uuid = ?",
+            opUuid
+        ) { it.getLong(0) }
+        if (existingRevision != null) return existingRevision
+
+        val maxRev = modelFactory.database.querySingle(
+            "SELECT COALESCE(MAX(revision), 0) FROM OrganizationChanges"
+        ) { it.getLong(0) } ?: 0L
+        val newRev = maxRev + 1L
+
+        val stmt = modelFactory.database.prepareStatement(
+            "INSERT INTO OrganizationChanges (revision, op_uuid, recorded_at, operation_type, origin, command_payload) VALUES (?, ?, ?, ?, ?, ?)"
+        )
+        stmt.bindLong(1, newRev)
+        stmt.bindText(2, opUuid)
+        stmt.bindLong(3, recordedAt)
+        stmt.bindText(4, operationType)
+        stmt.bindText(5, "REMOTE_SYNC")
+        stmt.bindText(6, payload)
+        stmt.step()
+        stmt.finalize()
+
+        modelFactory.database.run(
+            "UPDATE OrganizationState SET current_revision = MAX(current_revision, $newRev) WHERE id = 1"
+        )
+
+        return newRev
+    }
+
+    private fun applyContainer(event: RemoteSyncEvent, unresolvedParents: MutableList<Pair<String, String>>) {
+        if (!isNextSchemaAvailable()) return
+        val payload = JSONObject(event.payloadJson)
+        val containerUuid = event.entityUuid
+        val existing = modelFactory.database.querySingle(
+            "SELECT id, updated_at, deleted_at FROM Containers WHERE uuid = ?",
+            containerUuid
+        ) { stmt ->
+            Triple(stmt.getLong(0), stmt.getLong(1), stmt.getLongOrNull(2))
+        }
+        val localUpdatedAt = existing?.second ?: 0L
+        val localDeletedAt = existing?.third
+        if (!shouldApply(localUpdatedAt, localDeletedAt, event)) return
+
+        val revision = ensureRemoteOrganizationRevision(
+            event.opUuid,
+            event.createdAt,
+            event.operationType,
+            event.payloadJson
+        )
+
+        if (event.operationType == "delete") {
+            val deletedAt = payload.optionalLong("deleted_at", event) ?: event.createdAt
+            modelFactory.database.run(
+                "UPDATE Containers SET deleted_at = $deletedAt, updated_at = ${event.createdAt}, revision = $revision WHERE uuid = '$containerUuid'"
+            )
+            return
+        }
+
+        val name = payload.optString("name", "Untitled")
+        val color = payload.optionalInt("color", event)
+        val icon = payload.optionalString("icon")
+        val siblingOrder = payload.intOrDefault("sibling_order", 0, event)
+        val isArchived = if (payload.optString("is_archived", "false").toBoolean()) 1 else 0
+        val createdAt = payload.optionalLong("created_at", event) ?: event.createdAt
+        val parentUuid = payload.optionalString("parent_uuid")
+        val parentLocalId = if (parentUuid != null) {
+            modelFactory.database.querySingle(
+                "SELECT id FROM Containers WHERE uuid = ?",
+                parentUuid
+            ) { it.getLong(0) }
+        } else null
+
+        if (parentUuid != null && parentLocalId == null) {
+            unresolvedParents.add(containerUuid to parentUuid)
+        }
+
+        if (existing == null) {
+            val stmt = modelFactory.database.prepareStatement(
+                """INSERT INTO Containers (
+                    uuid, parent_id, name, color, icon, sibling_order, is_archived,
+                    created_at, updated_at, deleted_at, revision
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)"""
+            )
+            stmt.bindText(1, containerUuid)
+            if (parentLocalId != null) stmt.bindLong(2, parentLocalId) else stmt.bindNull(2)
+            stmt.bindText(3, name)
+            if (color != null) stmt.bindInt(4, color) else stmt.bindNull(4)
+            if (icon != null) stmt.bindText(5, icon) else stmt.bindNull(5)
+            stmt.bindInt(6, siblingOrder)
+            stmt.bindInt(7, isArchived)
+            stmt.bindLong(8, createdAt)
+            stmt.bindLong(9, event.createdAt)
+            stmt.bindLong(10, revision)
+            stmt.step()
+            stmt.finalize()
+        } else {
+            val stmt = modelFactory.database.prepareStatement(
+                """UPDATE Containers SET
+                    parent_id = ?, name = ?, color = ?, icon = ?, sibling_order = ?,
+                    is_archived = ?, created_at = ?, updated_at = ?, deleted_at = NULL, revision = ?
+                WHERE uuid = ?"""
+            )
+            if (parentLocalId != null) stmt.bindLong(1, parentLocalId) else stmt.bindNull(1)
+            stmt.bindText(2, name)
+            if (color != null) stmt.bindInt(3, color) else stmt.bindNull(3)
+            if (icon != null) stmt.bindText(4, icon) else stmt.bindNull(4)
+            stmt.bindInt(5, siblingOrder)
+            stmt.bindInt(6, isArchived)
+            stmt.bindLong(7, createdAt)
+            stmt.bindLong(8, event.createdAt)
+            stmt.bindLong(9, revision)
+            stmt.bindText(10, containerUuid)
+            stmt.step()
+            stmt.finalize()
+        }
+    }
+
+    private fun applyHabitPlacement(event: RemoteSyncEvent): Boolean {
+        if (!isNextSchemaAvailable()) return true
+        val payload = JSONObject(event.payloadJson)
+        val habitUuid = payload.optString("habit_uuid", event.entityUuid)
+        val habitLocalId = modelFactory.database.querySingle(
+            "SELECT id FROM Habits WHERE uuid = ? AND deleted_at IS NULL",
+            habitUuid
+        ) { it.getLong(0) } ?: return false
+
+        val containerUuid = payload.optionalString("container_uuid")
+        val containerLocalId = if (containerUuid != null) {
+            modelFactory.database.querySingle(
+                "SELECT id FROM Containers WHERE uuid = ? AND deleted_at IS NULL",
+                containerUuid
+            ) { it.getLong(0) }
+        } else null
+
+        val localOrder = payload.intOrDefault("local_order", 0, event)
+        val revision = ensureRemoteOrganizationRevision(
+            event.opUuid,
+            event.createdAt,
+            event.operationType,
+            event.payloadJson
+        )
+
+        val stmt = modelFactory.database.prepareStatement(
+            """INSERT OR REPLACE INTO HabitPlacements (
+                habit_id, container_id, local_order, placement_origin, revision
+            ) VALUES (?, ?, ?, ?, ?)"""
+        )
+        stmt.bindLong(1, habitLocalId)
+        if (containerLocalId != null) stmt.bindLong(2, containerLocalId) else stmt.bindNull(2)
+        stmt.bindInt(3, localOrder)
+        stmt.bindText(4, "USER_CHANGE")
+        stmt.bindLong(5, revision)
+        stmt.step()
+        stmt.finalize()
+
+        return true
+    }
+
+    private fun applyUserTask(event: RemoteSyncEvent) {
+        if (!isNextSchemaAvailable()) return
+        val taskId = event.entityUuid
+        val existingUpdatedAt = modelFactory.database.querySingle(
+            "SELECT updated_at FROM UserTasks WHERE id = ?",
+            taskId
+        ) { it.getLong(0) }
+
+        if (existingUpdatedAt != null && event.createdAt < existingUpdatedAt) {
+            return
+        }
+
+        if (event.operationType == "delete") {
+            modelFactory.database.run("DELETE FROM UserTasks WHERE id = '$taskId'")
+            return
+        }
+
+        val payload = JSONObject(event.payloadJson)
+        val title = payload.optString("title", "Task")
+        val description = payload.optString("description", "")
+        val containerId = payload.optionalString("container_id")
+        val status = payload.optString("status", "PENDING")
+        val plannedDate = payload.optionalString("planned_date")
+        val deadline = payload.optionalLong("deadline", event)
+        val completedAt = payload.optionalLong("completed_at", event)
+        val parentTaskId = payload.optionalString("parent_task_id")
+        val sortOrder = payload.intOrDefault("sort_order", 0, event)
+        val createdAt = payload.optionalLong("created_at", event) ?: event.createdAt
+        val updatedAt = payload.optionalLong("updated_at", event) ?: event.createdAt
+
+        val stmt = modelFactory.database.prepareStatement(
+            """INSERT OR REPLACE INTO UserTasks (
+                id, title, description, container_id, status, planned_date,
+                deadline, completed_at, parent_task_id, sort_order, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+        )
+        stmt.bindText(1, taskId)
+        stmt.bindText(2, title)
+        stmt.bindText(3, description)
+        if (containerId != null) stmt.bindText(4, containerId) else stmt.bindNull(4)
+        stmt.bindText(5, status)
+        if (plannedDate != null) stmt.bindText(6, plannedDate) else stmt.bindNull(6)
+        if (deadline != null) stmt.bindLong(7, deadline) else stmt.bindNull(7)
+        if (completedAt != null) stmt.bindLong(8, completedAt) else stmt.bindNull(8)
+        if (parentTaskId != null) stmt.bindText(9, parentTaskId) else stmt.bindNull(9)
+        stmt.bindInt(10, sortOrder)
+        stmt.bindLong(11, createdAt)
+        stmt.bindLong(12, updatedAt)
+        stmt.step()
+        stmt.finalize()
+    }
+
+    private fun applyFocusSession(event: RemoteSyncEvent) {
+        if (!isNextSchemaAvailable()) return
+        val sessionId = event.entityUuid
+        val existingUpdatedAt = modelFactory.database.querySingle(
+            "SELECT updated_at FROM FocusSessions WHERE id = ?",
+            sessionId
+        ) { it.getLong(0) }
+
+        if (existingUpdatedAt != null && event.createdAt < existingUpdatedAt) {
+            return
+        }
+
+        if (event.operationType == "delete") {
+            modelFactory.database.run("DELETE FROM FocusSessions WHERE id = '$sessionId'")
+            return
+        }
+
+        val payload = JSONObject(event.payloadJson)
+        val startedAt = payload.requiredLong("started_at", event)
+        val endedAt = payload.requiredLong("ended_at", event)
+        val durationMs = payload.requiredLong("duration_ms", event)
+        val taskId = payload.optionalString("task_id")
+        val habitUuid = payload.optionalString("habit_uuid")
+        val containerId = payload.optionalString("container_id")
+        val source = payload.optString("source", "MANUAL")
+        val deviceId = payload.optionalString("device_id")
+        val createdAt = payload.optionalLong("created_at", event) ?: event.createdAt
+        val updatedAt = payload.optionalLong("updated_at", event) ?: event.createdAt
+        val primaryTargetType = payload.optionalString("primary_target_type")
+        val organizationContext = payload.optionalString("organization_context")
+
+        val stmt = modelFactory.database.prepareStatement(
+            """INSERT OR REPLACE INTO FocusSessions (
+                id, started_at, ended_at, duration_ms, task_id, habit_uuid,
+                container_id, source, device_id, created_at, updated_at,
+                revision, primary_target_type, organization_context
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)"""
+        )
+        stmt.bindText(1, sessionId)
+        stmt.bindLong(2, startedAt)
+        stmt.bindLong(3, endedAt)
+        stmt.bindLong(4, durationMs)
+        if (taskId != null) stmt.bindText(5, taskId) else stmt.bindNull(5)
+        if (habitUuid != null) stmt.bindText(6, habitUuid) else stmt.bindNull(6)
+        if (containerId != null) stmt.bindText(7, containerId) else stmt.bindNull(7)
+        stmt.bindText(8, source)
+        if (deviceId != null) stmt.bindText(9, deviceId) else stmt.bindNull(9)
+        stmt.bindLong(10, createdAt)
+        stmt.bindLong(11, updatedAt)
+        if (primaryTargetType != null) stmt.bindText(12, primaryTargetType) else stmt.bindNull(12)
+        if (organizationContext != null) stmt.bindText(13, organizationContext) else stmt.bindNull(13)
+        stmt.step()
+        stmt.finalize()
+    }
+
+    private fun applyContribution(event: RemoteSyncEvent): Boolean {
+        if (!isNextSchemaAvailable()) return true
+        val payload = JSONObject(event.payloadJson)
+        val contribId = event.entityUuid
+        val existing = modelFactory.database.querySingle(
+            "SELECT updated_at, removed_at FROM Contributions WHERE id = ?",
+            contribId
+        ) { stmt -> Pair(stmt.getLong(0), stmt.getLongOrNull(1)) }
+
+        val localUpdatedAt = existing?.first ?: 0L
+        val localRemovedAt = existing?.second
+        if (!shouldApply(localUpdatedAt, localRemovedAt, event)) return true
+
+        if (event.operationType == "remove") {
+            val removedAt = payload.optionalLong("removed_at", event) ?: event.createdAt
+            modelFactory.database.run(
+                "UPDATE Contributions SET removed_at = $removedAt, updated_at = ${event.createdAt} WHERE id = '$contribId'"
+            )
+            return true
+        }
+
+        val targetHabitUuid = payload.getString("target_habit_uuid")
+        val sourceType = payload.optString("source_type", "FOCUS_SESSION")
+        val sourceId = payload.getString("source_id")
+        val contributedValue = payload.requiredInt("contributed_value", event)
+        val effectiveTimestamp = payload.requiredLong("effective_timestamp", event)
+        val createdAt = payload.optionalLong("created_at", event) ?: event.createdAt
+        val updatedAt = payload.optionalLong("updated_at", event) ?: event.createdAt
+        val removedAt = payload.optionalLong("removed_at", event)
+        val sourceRuleId = payload.optionalString("source_rule_id")
+
+        val stmt = modelFactory.database.prepareStatement(
+            """INSERT OR REPLACE INTO Contributions (
+                id, target_habit_uuid, source_type, source_id, contributed_value,
+                effective_timestamp, created_at, updated_at, removed_at, source_rule_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+        )
+        stmt.bindText(1, contribId)
+        stmt.bindText(2, targetHabitUuid)
+        stmt.bindText(3, sourceType)
+        stmt.bindText(4, sourceId)
+        stmt.bindInt(5, contributedValue)
+        stmt.bindLong(6, effectiveTimestamp)
+        stmt.bindLong(7, createdAt)
+        stmt.bindLong(8, updatedAt)
+        if (removedAt != null) stmt.bindLong(9, removedAt) else stmt.bindNull(9)
+        if (sourceRuleId != null) stmt.bindText(10, sourceRuleId) else stmt.bindNull(10)
+        stmt.step()
+        stmt.finalize()
+
+        return true
+    }
+
+    private fun bootstrapNextEntities(now: Long, deviceId: String): Int {
+        if (!isNextSchemaAvailable()) return 0
+        var inserted = 0
+
+        // 1. Containers
+        modelFactory.database.query(
+            """SELECT c.uuid, p.uuid, c.name, c.color, c.icon, c.sibling_order,
+                      c.is_archived, c.created_at, c.updated_at, c.deleted_at
+               FROM Containers c
+               LEFT JOIN Containers p ON c.parent_id = p.id"""
+        ) { stmt ->
+            val uuid = stmt.getText(0)
+            val parentUuid = stmt.getTextOrNull(1)
+            val name = stmt.getText(2)
+            val color = stmt.getLongOrNull(3)
+            val icon = stmt.getTextOrNull(4)
+            val siblingOrder = stmt.getInt(5)
+            val isArchived = stmt.getInt(6) == 1
+            val createdAt = stmt.getLongOrNull(7)
+            val updatedAt = stmt.getLong(8)
+            val deletedAt = stmt.getLongOrNull(9)
+
+            val payload = json(
+                "uuid" to uuid,
+                "parent_uuid" to parentUuid,
+                "name" to name,
+                "color" to color?.toString(),
+                "icon" to icon,
+                "sibling_order" to siblingOrder.toString(),
+                "is_archived" to isArchived.toString(),
+                "created_at" to createdAt?.toString(),
+                "updated_at" to updatedAt.toString(),
+                "deleted_at" to deletedAt?.toString()
+            )
+            inserted += insertBootstrapRecordIfMissing(
+                opUuid = UUID.randomUUID().toString().replace("-", ""),
+                entityType = "container",
+                entityUuid = uuid,
+                operationType = if (deletedAt != null) "delete" else "upsert",
+                payloadJson = payload,
+                createdAt = updatedAt,
+                deviceId = deviceId
+            )
+        }
+
+        // 2. Habit Placements
+        modelFactory.database.query(
+            """SELECT h.uuid, c.uuid, p.local_order
+               FROM HabitPlacements p
+               INNER JOIN Habits h ON h.id = p.habit_id
+               LEFT JOIN Containers c ON c.id = p.container_id
+               WHERE h.deleted_at IS NULL AND h.uuid IS NOT NULL"""
+        ) { stmt ->
+            val habitUuid = stmt.getText(0)
+            val containerUuid = stmt.getTextOrNull(1)
+            val localOrder = stmt.getInt(2)
+
+            val payload = json(
+                "habit_uuid" to habitUuid,
+                "container_uuid" to containerUuid,
+                "local_order" to localOrder.toString(),
+                "updated_at" to now.toString()
+            )
+            inserted += insertBootstrapRecordIfMissing(
+                opUuid = UUID.randomUUID().toString().replace("-", ""),
+                entityType = "habit_placement",
+                entityUuid = habitUuid,
+                operationType = "place",
+                payloadJson = payload,
+                createdAt = now,
+                deviceId = deviceId
+            )
+        }
+
+        // 3. User Tasks
+        modelFactory.database.query(
+            """SELECT id, title, description, container_id, status, planned_date,
+                      deadline, completed_at, parent_task_id, sort_order, created_at, updated_at
+               FROM UserTasks"""
+        ) { stmt ->
+            val taskId = stmt.getText(0)
+            val title = stmt.getText(1)
+            val description = stmt.getText(2)
+            val containerId = stmt.getTextOrNull(3)
+            val status = stmt.getText(4)
+            val plannedDate = stmt.getTextOrNull(5)
+            val deadline = stmt.getLongOrNull(6)
+            val completedAt = stmt.getLongOrNull(7)
+            val parentTaskId = stmt.getTextOrNull(8)
+            val sortOrder = stmt.getInt(9)
+            val createdAt = stmt.getLong(10)
+            val updatedAt = stmt.getLong(11)
+
+            val payload = json(
+                "id" to taskId,
+                "title" to title,
+                "description" to description,
+                "container_id" to containerId,
+                "status" to status,
+                "planned_date" to plannedDate,
+                "deadline" to deadline?.toString(),
+                "completed_at" to completedAt?.toString(),
+                "parent_task_id" to parentTaskId,
+                "sort_order" to sortOrder.toString(),
+                "created_at" to createdAt.toString(),
+                "updated_at" to updatedAt.toString()
+            )
+            inserted += insertBootstrapRecordIfMissing(
+                opUuid = UUID.randomUUID().toString().replace("-", ""),
+                entityType = "user_task",
+                entityUuid = taskId,
+                operationType = "upsert",
+                payloadJson = payload,
+                createdAt = updatedAt,
+                deviceId = deviceId
+            )
+        }
+
+        // 4. Focus Sessions
+        modelFactory.database.query(
+            """SELECT id, started_at, ended_at, duration_ms, task_id, habit_uuid,
+                      container_id, source, device_id, created_at, updated_at,
+                      primary_target_type, organization_context
+               FROM FocusSessions"""
+        ) { stmt ->
+            val id = stmt.getText(0)
+            val startedAt = stmt.getLong(1)
+            val endedAt = stmt.getLong(2)
+            val durationMs = stmt.getLong(3)
+            val taskId = stmt.getTextOrNull(4)
+            val habitUuid = stmt.getTextOrNull(5)
+            val containerId = stmt.getTextOrNull(6)
+            val source = stmt.getText(7)
+            val rowDeviceId = stmt.getTextOrNull(8) ?: deviceId
+            val createdAt = stmt.getLong(9)
+            val updatedAt = stmt.getLong(10)
+            val primaryTargetType = stmt.getTextOrNull(11)
+            val orgContext = stmt.getTextOrNull(12)
+
+            val payload = json(
+                "id" to id,
+                "started_at" to startedAt.toString(),
+                "ended_at" to endedAt.toString(),
+                "duration_ms" to durationMs.toString(),
+                "task_id" to taskId,
+                "habit_uuid" to habitUuid,
+                "container_id" to containerId,
+                "source" to source,
+                "device_id" to rowDeviceId,
+                "created_at" to createdAt.toString(),
+                "updated_at" to updatedAt.toString(),
+                "primary_target_type" to primaryTargetType,
+                "organization_context" to orgContext
+            )
+            inserted += insertBootstrapRecordIfMissing(
+                opUuid = UUID.randomUUID().toString().replace("-", ""),
+                entityType = "focus_session",
+                entityUuid = id,
+                operationType = "upsert",
+                payloadJson = payload,
+                createdAt = updatedAt,
+                deviceId = deviceId
+            )
+        }
+
+        // 5. Contributions
+        modelFactory.database.query(
+            """SELECT id, target_habit_uuid, source_type, source_id, contributed_value,
+                      effective_timestamp, created_at, updated_at, removed_at, source_rule_id
+               FROM Contributions"""
+        ) { stmt ->
+            val id = stmt.getText(0)
+            val targetHabitUuid = stmt.getText(1)
+            val sourceType = stmt.getText(2)
+            val sourceId = stmt.getText(3)
+            val contributedValue = stmt.getInt(4)
+            val effectiveTimestamp = stmt.getLong(5)
+            val createdAt = stmt.getLong(6)
+            val updatedAt = stmt.getLong(7)
+            val removedAt = stmt.getLongOrNull(8)
+            val sourceRuleId = stmt.getTextOrNull(9)
+
+            val payload = json(
+                "id" to id,
+                "target_habit_uuid" to targetHabitUuid,
+                "source_type" to sourceType,
+                "source_id" to sourceId,
+                "contributed_value" to contributedValue.toString(),
+                "effective_timestamp" to effectiveTimestamp.toString(),
+                "created_at" to createdAt.toString(),
+                "updated_at" to updatedAt.toString(),
+                "removed_at" to removedAt?.toString(),
+                "source_rule_id" to sourceRuleId
+            )
+            inserted += insertBootstrapRecordIfMissing(
+                opUuid = UUID.randomUUID().toString().replace("-", ""),
+                entityType = "contribution",
+                entityUuid = id,
+                operationType = if (removedAt != null) "remove" else "upsert",
+                payloadJson = payload,
+                createdAt = updatedAt,
+                deviceId = deviceId
+            )
+        }
+
+        return inserted
+    }
+
     fun dispose() {
+        modelFactory.syncManager.onQueueAppended = null
         runCatching { syncScope.cancel() }
         synchronized(syncListeners) { syncListeners.clear() }
     }

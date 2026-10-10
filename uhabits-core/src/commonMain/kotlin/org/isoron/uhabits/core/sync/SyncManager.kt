@@ -3,10 +3,14 @@ package org.isoron.uhabits.core.sync
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 import org.isoron.platform.time.LocalDate
+import org.isoron.uhabits.core.containers.Container
 import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
+import org.isoron.uhabits.core.contribution.Contribution
 import org.isoron.uhabits.core.database.HabitBlockData
+import org.isoron.uhabits.core.focus.FocusSession
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.userTasks.UserTask
 
 /**
  * Local sync foundation only. Future remote sync should apply:
@@ -25,6 +29,7 @@ class SyncManager(
     private val blockUuidProvider: (Long?) -> String? = { null }
 ) {
     var authorityMode: OrganizationAuthorityMode = OrganizationAuthorityMode.LEGACY
+    var onQueueAppended: (() -> Unit)? = null
     private var pausedDepth = 0
 
     fun now(): Long = nowProvider()
@@ -208,6 +213,149 @@ class SyncManager(
         )
     }
 
+    fun enqueueContainer(container: Container, operationType: String = "upsert") {
+        enqueue(
+            "container",
+            container.id.value,
+            operationType,
+            json(
+                "uuid" to container.id.value,
+                "parent_uuid" to container.parentId?.value,
+                "name" to container.name,
+                "color" to container.color?.paletteIndex?.toString(),
+                "icon" to container.icon,
+                "sibling_order" to container.siblingOrder.toString(),
+                "is_archived" to container.isArchived.toString(),
+                "created_at" to container.createdAt?.toString(),
+                "updated_at" to container.updatedAt.toString(),
+                "deleted_at" to container.deletedAt?.toString()
+            )
+        )
+    }
+
+    fun enqueueContainerDelete(containerUuid: String, deletedAt: Long) {
+        enqueue(
+            "container",
+            containerUuid,
+            "delete",
+            json(
+                "uuid" to containerUuid,
+                "deleted_at" to deletedAt.toString(),
+                "updated_at" to deletedAt.toString()
+            )
+        )
+    }
+
+    fun enqueueHabitPlacement(
+        habitUuid: String,
+        containerUuid: String?,
+        localOrder: Int,
+        updatedAt: Long = now()
+    ) {
+        enqueue(
+            "habit_placement",
+            habitUuid,
+            "place",
+            json(
+                "habit_uuid" to habitUuid,
+                "container_uuid" to containerUuid,
+                "local_order" to localOrder.toString(),
+                "updated_at" to updatedAt.toString()
+            )
+        )
+    }
+
+    fun enqueueUserTask(task: UserTask, operationType: String = "upsert") {
+        enqueue(
+            "user_task",
+            task.id.value,
+            operationType,
+            json(
+                "id" to task.id.value,
+                "title" to task.title,
+                "description" to task.description,
+                "container_id" to task.containerId?.value,
+                "status" to task.status.name,
+                "planned_date" to task.plannedDate?.unixTime?.toString(),
+                "deadline" to task.deadline?.toString(),
+                "completed_at" to task.completedAt?.toString(),
+                "parent_task_id" to task.parentTaskId?.value,
+                "sort_order" to task.sortOrder.toString(),
+                "created_at" to task.createdAt.toString(),
+                "updated_at" to task.updatedAt.toString()
+            )
+        )
+    }
+
+    fun enqueueUserTaskDelete(taskId: String, deletedAt: Long) {
+        enqueue(
+            "user_task",
+            taskId,
+            "delete",
+            json(
+                "id" to taskId,
+                "deleted_at" to deletedAt.toString(),
+                "updated_at" to deletedAt.toString()
+            )
+        )
+    }
+
+    fun enqueueFocusSession(session: FocusSession, operationType: String = "upsert") {
+        enqueue(
+            "focus_session",
+            session.id.value,
+            operationType,
+            json(
+                "id" to session.id.value,
+                "started_at" to session.startedAt.toString(),
+                "ended_at" to session.endedAt.toString(),
+                "duration_ms" to session.durationMs.toString(),
+                "task_id" to session.taskId?.value,
+                "habit_uuid" to session.habit?.uuid,
+                "container_id" to session.containerId?.value,
+                "source" to session.source.name,
+                "device_id" to session.deviceId,
+                "created_at" to session.createdAt.toString(),
+                "updated_at" to session.updatedAt.toString(),
+                "primary_target_type" to session.primaryTargetType?.name,
+                "organization_context" to session.organizationContext
+            )
+        )
+    }
+
+    fun enqueueContribution(contribution: Contribution, operationType: String = "upsert") {
+        enqueue(
+            "contribution",
+            contribution.id.value,
+            operationType,
+            json(
+                "id" to contribution.id.value,
+                "target_habit_uuid" to contribution.targetHabit.uuid,
+                "source_type" to contribution.sourceType.name,
+                "source_id" to contribution.sourceId,
+                "contributed_value" to contribution.contributedValue.toString(),
+                "effective_timestamp" to contribution.effectiveTimestamp.toString(),
+                "created_at" to contribution.createdAt.toString(),
+                "updated_at" to contribution.updatedAt.toString(),
+                "removed_at" to contribution.removedAt?.toString(),
+                "source_rule_id" to contribution.sourceRuleId?.value
+            )
+        )
+    }
+
+    fun enqueueContributionRemove(contributionId: String, removedAt: Long) {
+        enqueue(
+            "contribution",
+            contributionId,
+            "remove",
+            json(
+                "id" to contributionId,
+                "removed_at" to removedAt.toString(),
+                "updated_at" to removedAt.toString()
+            )
+        )
+    }
+
     private fun entryUuid(habit: Habit, date: LocalDate): String =
         "${habit.uuid}:${date.unixTime}"
 
@@ -231,6 +379,7 @@ class SyncManager(
                 deviceId = deviceId
             )
         )
+        onQueueAppended?.invoke()
     }
 
     private fun json(vararg pairs: Pair<String, String?>): String {
