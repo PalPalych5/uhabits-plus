@@ -89,6 +89,7 @@ import org.isoron.uhabits.utils.StyledResources
 import org.isoron.uhabits.utils.startActivitySafely
 import org.isoron.uhabits.widgets.WidgetUpdater
 import org.isoron.uhabits.backup.BackupEntry
+import org.isoron.uhabits.backup.BackupFormat
 import org.isoron.uhabits.backup.BackupManager
 import org.isoron.uhabits.backup.BackupSource
 import org.isoron.uhabits.backup.BackupStatusStore
@@ -1276,6 +1277,18 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     private fun performPublicBackup() {
         if (!ensurePublicBackupFolderReady()) return
 
+        CustomDialogs.showConfirmDialog(
+            context = requireContext(),
+            title = getString(R.string.backup_unencrypted_warning_title),
+            message = getString(R.string.backup_unencrypted_warning_message),
+            isDestructive = false,
+            positiveText = getString(R.string.backup_continue)
+        ) {
+            executePublicBackup()
+        }
+    }
+
+    private fun executePublicBackup() {
         val app = requireContext().applicationContext as HabitsApplication
         app.component.taskRunner.execute(object : Task {
             private var result: Result<String>? = null
@@ -1335,14 +1348,48 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     }
 
     private fun showRestoreBackupConfirmation(entry: BackupEntry) {
-        CustomDialogs.showConfirmDialog(
-            context = requireContext(),
-            title = getString(R.string.restore_backup),
-            message = getString(R.string.restore_backup_warning),
-            isDestructive = true,
-            positiveText = getString(R.string.restore_backup_confirm)
-        ) {
-            performRestore(entry)
+        viewLifecycleOwner.lifecycleScope.launch {
+            val validation = withContext(Dispatchers.IO) {
+                backupManager.validateBackup(entry)
+            }
+            if (!isAdded) return@launch
+
+            if (!validation.isValid) {
+                val errorMsg = validation.errorMessage ?: getString(R.string.could_not_restore)
+                Toast.makeText(requireContext(), errorMsg, Toast.LENGTH_LONG).show()
+                return@launch
+            }
+
+            val formatStr = when (validation.format) {
+                BackupFormat.VERSIONED_ZIP -> getString(R.string.backup_format_versioned_zip)
+                BackupFormat.LEGACY_RAW_SQLITE -> getString(R.string.backup_format_legacy_sqlite)
+                else -> getString(R.string.backup_format_unknown)
+            }
+            val dbVerStr = validation.databaseVersion?.let { "v$it" } ?: "—"
+            val hasPrefs = validation.manifest?.preferencesSha256 != null
+            val prefsStr = if (hasPrefs) getString(R.string.backup_prefs_included) else getString(R.string.backup_prefs_not_included)
+
+            val details = buildString {
+                append(getString(R.string.restore_backup_warning))
+                append("\n\n")
+                append(getString(R.string.restore_backup_detail_format, formatStr))
+                append("\n")
+                append(getString(R.string.restore_backup_detail_version, dbVerStr))
+                append("\n")
+                append(getString(R.string.restore_backup_detail_preferences, prefsStr))
+                append("\n\n")
+                append(getString(R.string.restore_backup_quarantine_notice))
+            }
+
+            CustomDialogs.showConfirmDialog(
+                context = requireContext(),
+                title = getString(R.string.restore_backup),
+                message = details,
+                isDestructive = true,
+                positiveText = getString(R.string.restore_backup_confirm)
+            ) {
+                performRestore(entry)
+            }
         }
     }
 

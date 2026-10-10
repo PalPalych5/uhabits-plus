@@ -41,18 +41,20 @@ class BackupCatalog(
 
     private fun readPublicBackups(): List<BackupEntry> {
         val dir = safBackupStorage.getFolderOrNull() ?: return emptyList()
-        return dir.listFiles()
-            .filter { it.isFile && BackupFileNamePolicy.isBackupFile(it.name) }
-            .sortedByDescending { it.lastModified() }
-            .map {
-                BackupEntry(
-                    name = it.name ?: it.uri.toString(),
-                    location = it.uri.toString(),
-                    modifiedAt = it.lastModified(),
-                    sizeBytes = it.length(),
-                    source = BackupSource.PUBLIC
-                )
-            }
+        return runCatching {
+            dir.listFiles()
+                .filter { it.isFile && BackupFileNamePolicy.isBackupFile(it.name) }
+                .sortedByDescending { it.lastModified() }
+                .map {
+                    BackupEntry(
+                        name = it.name ?: it.uri.toString(),
+                        location = it.uri.toString(),
+                        modifiedAt = it.lastModified(),
+                        sizeBytes = it.length(),
+                        source = BackupSource.PUBLIC
+                    )
+                }
+        }.getOrDefault(emptyList())
     }
 
     private fun prunePrivateBackups(keep: Int) {
@@ -63,10 +65,12 @@ class BackupCatalog(
 
     private fun prunePublicBackups(keep: Int) {
         val dir = safBackupStorage.getFolderOrNull() ?: return
-        val backups = dir.listFiles()
-            .filter { it.isFile && BackupFileNamePolicy.isBackupFile(it.name) }
-            .sortedByDescending { it.lastModified() }
-        backups.drop(keep).forEach { it.delete() }
+        runCatching {
+            val backups = dir.listFiles()
+                .filter { it.isFile && BackupFileNamePolicy.isBackupFile(it.name) }
+                .sortedByDescending { it.lastModified() }
+            backups.drop(keep).forEach { it.delete() }
+        }
     }
 
     fun getPrivateBackupDir(): File? = dirFinder.getFilesDir(BACKUP_DIR_NAME)

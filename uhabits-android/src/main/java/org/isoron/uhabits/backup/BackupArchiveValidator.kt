@@ -77,6 +77,7 @@ object BackupArchiveValidator {
     private fun validateZipArchive(zipFile: File, targetVersion: Int): BackupValidationResult {
         val seenEntries = mutableSetOf<String>()
         var manifestContent: String? = null
+        var preferencesContent: String? = null
         val tempExtractedDb = File.createTempFile("val-uhabits-", ".db", zipFile.parentFile ?: File(System.getProperty("java.io.tmpdir")))
 
         try {
@@ -164,20 +165,25 @@ object BackupArchiveValidator {
                                 }
                             }
                             BackupArchiveFormat.PREFERENCES_ENTRY_NAME -> {
-                                // Reserved extension point: read safely under limits
+                                val baos = ByteArrayOutputStream()
                                 val buffer = ByteArray(8192)
                                 var read: Int
+                                var prefBytes = 0L
                                 while (zis.read(buffer).also { read = it } != -1) {
+                                    prefBytes += read
                                     totalUncompressedBytes += read
-                                    if (totalUncompressedBytes > BackupArchiveFormat.MAX_TOTAL_UNCOMPRESSED_BYTES) {
+                                    if (prefBytes > BackupArchiveFormat.MAX_PREFERENCES_SIZE_BYTES ||
+                                        totalUncompressedBytes > BackupArchiveFormat.MAX_TOTAL_UNCOMPRESSED_BYTES) {
                                         return BackupValidationResult(
                                             isValid = false,
                                             format = BackupFormat.VERSIONED_ZIP,
                                             compatibilityStatus = BackupCompatibilityStatus.CORRUPTED,
-                                            errorMessage = "Archive exceeds total uncompressed size limit"
+                                            errorMessage = "Preferences entry exceeds maximum allowed size"
                                         )
                                     }
+                                    baos.write(buffer, 0, read)
                                 }
+                                preferencesContent = baos.toString("UTF-8")
                             }
                             else -> {
                                 return BackupValidationResult(
@@ -251,12 +257,53 @@ object BackupArchiveValidator {
                 )
             }
 
+            // Verify preferences integrity and schema if present
+            if (manifest.preferencesSha256 != null) {
+                if (preferencesContent == null) {
+                    return BackupValidationResult(
+                        isValid = false,
+                        format = BackupFormat.VERSIONED_ZIP,
+                        compatibilityStatus = BackupCompatibilityStatus.CORRUPTED,
+                        errorMessage = "Archive is missing preferences entry declared in manifest"
+                    )
+                }
+                val prefDigest = MessageDigest.getInstance("SHA-256")
+                val actualPrefSha256 = prefDigest.digest(preferencesContent.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+                if (!actualPrefSha256.equals(manifest.preferencesSha256, ignoreCase = true)) {
+                    return BackupValidationResult(
+                        isValid = false,
+                        format = BackupFormat.VERSIONED_ZIP,
+                        compatibilityStatus = BackupCompatibilityStatus.CORRUPTED,
+                        errorMessage = "Preferences checksum mismatch: expected ${manifest.preferencesSha256}, actual $actualPrefSha256"
+                    )
+                }
+                val prefValidation = BackupPreferencesAdapter.validatePreferencesJson(preferencesContent)
+                if (!prefValidation.isValid) {
+                    return BackupValidationResult(
+                        isValid = false,
+                        format = BackupFormat.VERSIONED_ZIP,
+                        compatibilityStatus = BackupCompatibilityStatus.CORRUPTED,
+                        errorMessage = "Preferences validation failed: ${prefValidation.errorMessage}"
+                    )
+                }
+            } else {
+                if (preferencesContent != null) {
+                    return BackupValidationResult(
+                        isValid = false,
+                        format = BackupFormat.VERSIONED_ZIP,
+                        compatibilityStatus = BackupCompatibilityStatus.CORRUPTED,
+                        errorMessage = "Archive contains undeclared preferences entry"
+                    )
+                }
+            }
+
             // Verify canonical content SHA-256
             val expectedCanonicalSha = BackupArchiveManifest.computeCanonicalContentSha256(
                 databaseVersion = manifest.databaseVersion,
                 databaseSha256 = manifest.databaseSha256,
                 createdAt = manifest.createdAt,
-                tableInventory = manifest.tableInventory
+                tableInventory = manifest.tableInventory,
+                preferencesSha256 = manifest.preferencesSha256
             )
             if (!expectedCanonicalSha.equals(manifest.canonicalContentSha256, ignoreCase = true)) {
                 return BackupValidationResult(

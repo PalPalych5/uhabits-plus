@@ -56,7 +56,17 @@ class HabitsCSVExporter(
         val snapshots: Map<HabitRef, EffectiveHabitReadSnapshot>? = if (snapshotProvider != null && selectedHabits.isNotEmpty()) {
             val habitsWithUuid = selectedHabits.filter { it.uuid != null }
             if (habitsWithUuid.isNotEmpty()) {
-                snapshotProvider.invoke(habitsWithUuid, requestFrom, requestTo)
+                var result: Map<HabitRef, EffectiveHabitReadSnapshot>? = null
+                var attempts = 0
+                while (attempts < 3 && result == null) {
+                    try {
+                        result = snapshotProvider.invoke(habitsWithUuid, requestFrom, requestTo)
+                    } catch (e: Exception) {
+                        attempts++
+                        if (attempts >= 3) throw e
+                    }
+                }
+                result
             } else null
         } else null
 

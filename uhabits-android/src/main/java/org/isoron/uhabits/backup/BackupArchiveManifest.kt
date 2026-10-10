@@ -46,7 +46,10 @@ data class BackupArchiveManifest(
     val minSupportedAppVersion: Int = 1,
     val maxSupportedSchemaVersion: Int = 30,
     val runtimeAuthorityMode: String = "LEGACY_PRODUCTION",
-    val restorePolicy: String = "FAIL_CLOSED_ON_INCOMPATIBLE_AUTHORITY"
+    val restorePolicy: String = "FAIL_CLOSED_ON_INCOMPATIBLE_AUTHORITY",
+    val preferencesSha256: String? = null,
+    val preferencesSizeBytes: Long? = null,
+    val preferencesCount: Int? = null
 ) {
     fun toJson(): String {
         val root = JSONObject()
@@ -64,6 +67,15 @@ data class BackupArchiveManifest(
         dbObj.put("dataset_mode", datasetMode)
         if (datasetId != null) dbObj.put("dataset_id", datasetId)
         root.put("database", dbObj)
+
+        if (preferencesSha256 != null) {
+            val prefObj = JSONObject()
+            prefObj.put("filename", BackupArchiveFormat.PREFERENCES_ENTRY_NAME)
+            prefObj.put("sha256", preferencesSha256)
+            prefObj.put("size_bytes", preferencesSizeBytes ?: 0L)
+            prefObj.put("count", preferencesCount ?: 0)
+            root.put("preferences", prefObj)
+        }
 
         val schemaObj = JSONObject()
         schemaObj.put("total_tables", tableInventory.size)
@@ -128,6 +140,11 @@ data class BackupArchiveManifest(
             val runtimeAuthority = compatObj?.optString("runtime_authority_required", "LEGACY_PRODUCTION") ?: "LEGACY_PRODUCTION"
             val restorePolicy = compatObj?.optString("restore_policy", "FAIL_CLOSED_ON_INCOMPATIBLE_AUTHORITY") ?: "FAIL_CLOSED_ON_INCOMPATIBLE_AUTHORITY"
 
+            val prefObj = root.optJSONObject("preferences")
+            val preferencesSha256 = prefObj?.optString("sha256", null)
+            val preferencesSizeBytes = if (prefObj != null && prefObj.has("size_bytes")) prefObj.getLong("size_bytes") else null
+            val preferencesCount = if (prefObj != null && prefObj.has("count")) prefObj.getInt("count") else null
+
             return BackupArchiveManifest(
                 archiveFormat = archiveFormat,
                 formatVersion = formatVersion,
@@ -146,7 +163,10 @@ data class BackupArchiveManifest(
                 minSupportedAppVersion = minSchema,
                 maxSupportedSchemaVersion = maxSchema,
                 runtimeAuthorityMode = runtimeAuthority,
-                restorePolicy = restorePolicy
+                restorePolicy = restorePolicy,
+                preferencesSha256 = preferencesSha256,
+                preferencesSizeBytes = preferencesSizeBytes,
+                preferencesCount = preferencesCount
             )
         }
 
@@ -154,11 +174,13 @@ data class BackupArchiveManifest(
             databaseVersion: Int,
             databaseSha256: String,
             createdAt: Long,
-            tableInventory: List<TableInventoryEntry>
+            tableInventory: List<TableInventoryEntry>,
+            preferencesSha256: String? = null
         ): String {
             val sorted = tableInventory.sortedBy { it.tableName }
             val tableStr = sorted.joinToString(";") { "${it.tableName}:${it.rowCount}" }
-            val input = "CANONICAL:v1:$databaseVersion:$databaseSha256:$createdAt:$tableStr"
+            val prefSuffix = if (preferencesSha256 != null) ":PREF:$preferencesSha256" else ""
+            val input = "CANONICAL:v1:$databaseVersion:$databaseSha256:$createdAt:$tableStr$prefSuffix"
             val md = MessageDigest.getInstance("SHA-256")
             return md.digest(input.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
         }

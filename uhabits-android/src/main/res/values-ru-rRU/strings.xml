@@ -140,6 +140,7 @@
     <string name="help">Помощь и руководство</string>
     <string name="could_not_export">Ошибка экспорта данных.</string>
     <string name="could_not_import">Ошибка импорта данных.</string>
+    <string name="could_not_restore">Не удалось восстановить резервную копию.</string>
     <string name="file_not_recognized">Невозможно определить тип файла.</string>
     <string name="habits_imported">Привычки успешно импортированы.</string>
     <string name="import_data">Импортировать привычки</string>
@@ -224,6 +225,18 @@
     <string name="backup_external_create_failed">Не удалось создать файл резервной копии в выбранной папке.</string>
     <string name="backup_external_success">Внешняя резервная копия создана.</string>
     <string name="choose_folder">Выбрать папку</string>
+    <string name="backup_unencrypted_warning_title">Незашифрованная копия</string>
+    <string name="backup_unencrypted_warning_message">Резервные копии сохраняются в незашифрованном виде во внешнем хранилище и содержат полную историю привычек и настроек. Убедитесь в безопасности выбранной папки. Продолжить?</string>
+    <string name="backup_continue">Продолжить</string>
+    <string name="backup_format_versioned_zip">ZIP-архив (v1)</string>
+    <string name="backup_format_legacy_sqlite">База данных SQLite (legacy)</string>
+    <string name="backup_format_unknown">Неизвестный формат</string>
+    <string name="backup_prefs_included">Включены</string>
+    <string name="backup_prefs_not_included">Не включены (только база данных)</string>
+    <string name="restore_backup_detail_format">Формат: %1$s</string>
+    <string name="restore_backup_detail_version">Версия базы данных: %1$s</string>
+    <string name="restore_backup_detail_preferences">Настройки: %1$s</string>
+    <string name="restore_backup_quarantine_notice">Внимание: после восстановления облачная синхронизация будет приостановлена для проверки, чтобы защитить восстановленные данные.</string>
     <string name="bug_report_failed">Ошибка генерации отчёта об ошибке.</string>
     <string name="generate_bug_report">Сгенерировать отчёт об ошибке</string>
     <string name="generate_bug_report_summary">Создаёт диагностический отчёт для поиска причин проблемы.</string>

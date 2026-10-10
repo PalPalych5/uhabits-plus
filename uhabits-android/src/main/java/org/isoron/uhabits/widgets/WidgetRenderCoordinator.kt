@@ -114,6 +114,12 @@ class WidgetRenderCoordinator(
                         val portrait = widget.portraitRemoteViews
                         if (current(token) && revision == component.effectiveReadRevision.value) {
                             manager.updateAppWidget(id, RemoteViews(landscape, portrait))
+                            if (selectedHabits.size > 1) {
+                                manager.notifyAppWidgetViewDataChanged(
+                                    id,
+                                    StackWidgetType.getStackWidgetAdapterViewId(type)
+                                )
+                            }
                         }
                     } catch (failure: RuntimeException) {
                         if (current(token)) {

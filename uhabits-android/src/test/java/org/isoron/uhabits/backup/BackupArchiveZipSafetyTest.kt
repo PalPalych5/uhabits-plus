@@ -20,12 +20,14 @@
 package org.isoron.uhabits.backup
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
@@ -231,5 +233,196 @@ class BackupArchiveZipSafetyTest {
         assertEquals(manifest.databaseVersion, extractedManifest.databaseVersion)
         assertEquals(content.size.toLong(), destFile.length())
         assertEquals(content.decodeToString(), destFile.readBytes().decodeToString())
+    }
+
+    private fun validPreferencesJson(): String {
+        return JSONObject().apply {
+            put("format", "uhabit-backup-preferences")
+            put("format_version", 1)
+            put("values", JSONObject().apply {
+                put("pref_theme", 1)
+                put("pref_dark_theme", true)
+            })
+        }.toString()
+    }
+
+    @Test
+    fun extractorSuccessfullyExtractsArchiveWithPreferences() {
+        val zipFile = tempFolder.newFile("valid-with-prefs.zip")
+        val dbContent = "SQLite format 3\u0000genuine content".toByteArray(Charsets.US_ASCII)
+        val prefsJson = validPreferencesJson()
+        val prefsBytes = prefsJson.toByteArray(Charsets.UTF_8)
+        val dbSha = sha256(dbContent)
+        val prefsSha = sha256(prefsBytes)
+        val createdAt = 1700000000000L
+        val inventory = listOf(TableInventoryEntry("Habits", 1L))
+        val canonical = BackupArchiveManifest.computeCanonicalContentSha256(
+            databaseVersion = 29,
+            databaseSha256 = dbSha,
+            createdAt = createdAt,
+            tableInventory = inventory,
+            preferencesSha256 = prefsSha
+        )
+        val manifest = BackupArchiveManifest(
+            archiveFormat = BackupArchiveFormat.ARCHIVE_FORMAT,
+            formatVersion = 1,
+            appId = "org.isoron.uhabits",
+            appVersionCode = 230,
+            createdAt = createdAt,
+            databaseVersion = 29,
+            databaseSizeBytes = dbContent.size.toLong(),
+            databaseSha256 = dbSha,
+            datasetMode = "LEGACY_PRODUCTION",
+            tableInventory = inventory,
+            canonicalContentSha256 = canonical,
+            runtimeAuthorityMode = "LEGACY_PRODUCTION",
+            preferencesSha256 = prefsSha,
+            preferencesSizeBytes = prefsBytes.size.toLong(),
+            preferencesCount = 2
+        )
+
+        ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
+            zos.putNextEntry(ZipEntry(BackupArchiveFormat.SQLITE_ENTRY_NAME))
+            zos.write(dbContent)
+            zos.closeEntry()
+
+            zos.putNextEntry(ZipEntry(BackupArchiveFormat.PREFERENCES_ENTRY_NAME))
+            zos.write(prefsBytes)
+            zos.closeEntry()
+
+            zos.putNextEntry(ZipEntry(BackupArchiveFormat.MANIFEST_ENTRY_NAME))
+            zos.write(manifest.toJson().toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+        }
+
+        val destDb = tempFolder.newFile("dest_prefs.db")
+        val destPrefs = tempFolder.newFile("dest_prefs.json")
+        val extracted = BackupArchiveExtractor.extractArchive(zipFile, destDb, destPrefs)
+
+        assertEquals(29, extracted.manifest.databaseVersion)
+        assertEquals(prefsSha, extracted.manifest.preferencesSha256)
+        assertEquals(dbContent.decodeToString(), destDb.readBytes().decodeToString())
+        assertEquals(prefsJson, destPrefs.readText())
+    }
+
+    @Test
+    fun extractorAcceptsPr24BArchiveWithoutPreferences() {
+        val zipFile = tempFolder.newFile("pr24b.zip")
+        val content = "SQLite format 3\u0000dummy content".toByteArray(Charsets.US_ASCII)
+        createValidZipArchive(zipFile, dbContent = content)
+
+        val destDb = tempFolder.newFile("dest_pr24b.db")
+        val destPrefs = tempFolder.newFile("dest_pr24b.json")
+        val extracted = BackupArchiveExtractor.extractArchive(zipFile, destDb, destPrefs)
+
+        assertEquals(29, extracted.manifest.databaseVersion)
+        assertNull(extracted.manifest.preferencesSha256)
+        assertFalse(extracted.preferencesExtracted)
+        assertFalse(destPrefs.exists())
+    }
+
+    @Test
+    fun validatorRejectsTamperedPreferences() {
+        val zipFile = tempFolder.newFile("tampered-prefs.zip")
+        val dbContent = "SQLite format 3\u0000authentic data".toByteArray(Charsets.US_ASCII)
+        val prefsJson = validPreferencesJson()
+        val prefsBytes = prefsJson.toByteArray(Charsets.UTF_8)
+        val dbSha = sha256(dbContent)
+        val prefsSha = sha256(prefsBytes)
+        val createdAt = 1000L
+        val inventory = listOf(TableInventoryEntry("Habits", 1L))
+        val canonical = BackupArchiveManifest.computeCanonicalContentSha256(
+            databaseVersion = 29,
+            databaseSha256 = dbSha,
+            createdAt = createdAt,
+            tableInventory = inventory,
+            preferencesSha256 = prefsSha
+        )
+        val manifest = BackupArchiveManifest(
+            archiveFormat = BackupArchiveFormat.ARCHIVE_FORMAT,
+            formatVersion = 1,
+            appId = "org.isoron.uhabits",
+            appVersionCode = 1,
+            createdAt = createdAt,
+            databaseVersion = 29,
+            databaseSizeBytes = dbContent.size.toLong(),
+            databaseSha256 = dbSha,
+            datasetMode = "LEGACY_PRODUCTION",
+            tableInventory = inventory,
+            canonicalContentSha256 = canonical,
+            runtimeAuthorityMode = "LEGACY_PRODUCTION",
+            preferencesSha256 = prefsSha,
+            preferencesSizeBytes = prefsBytes.size.toLong(),
+            preferencesCount = 2
+        )
+
+        // Put corrupted preferences in zip
+        ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
+            zos.putNextEntry(ZipEntry(BackupArchiveFormat.SQLITE_ENTRY_NAME))
+            zos.write(dbContent)
+            zos.closeEntry()
+
+            zos.putNextEntry(ZipEntry(BackupArchiveFormat.PREFERENCES_ENTRY_NAME))
+            zos.write("tampered preferences content".toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+
+            zos.putNextEntry(ZipEntry(BackupArchiveFormat.MANIFEST_ENTRY_NAME))
+            zos.write(manifest.toJson().toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+        }
+
+        val validation = BackupArchiveValidator.validate(zipFile)
+        assertFalse(validation.isValid)
+        assertTrue(validation.errorMessage?.contains("Preferences checksum mismatch") == true)
+    }
+
+    @Test
+    fun validatorRejectsUnmanifestedPreferencesFile() {
+        val zipFile = tempFolder.newFile("unmanifested-prefs.zip")
+        val dbContent = "SQLite format 3\u0000authentic data".toByteArray(Charsets.US_ASCII)
+        val dbSha = sha256(dbContent)
+        val createdAt = 1000L
+        val inventory = listOf(TableInventoryEntry("Habits", 1L))
+        val canonical = BackupArchiveManifest.computeCanonicalContentSha256(
+            databaseVersion = 29,
+            databaseSha256 = dbSha,
+            createdAt = createdAt,
+            tableInventory = inventory,
+            preferencesSha256 = null // No preferences declared
+        )
+        val manifest = BackupArchiveManifest(
+            archiveFormat = BackupArchiveFormat.ARCHIVE_FORMAT,
+            formatVersion = 1,
+            appId = "org.isoron.uhabits",
+            appVersionCode = 1,
+            createdAt = createdAt,
+            databaseVersion = 29,
+            databaseSizeBytes = dbContent.size.toLong(),
+            databaseSha256 = dbSha,
+            datasetMode = "LEGACY_PRODUCTION",
+            tableInventory = inventory,
+            canonicalContentSha256 = canonical,
+            runtimeAuthorityMode = "LEGACY_PRODUCTION",
+            preferencesSha256 = null
+        )
+
+        ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
+            zos.putNextEntry(ZipEntry(BackupArchiveFormat.SQLITE_ENTRY_NAME))
+            zos.write(dbContent)
+            zos.closeEntry()
+
+            // Include preferences.json even though manifest didn't declare it
+            zos.putNextEntry(ZipEntry(BackupArchiveFormat.PREFERENCES_ENTRY_NAME))
+            zos.write(validPreferencesJson().toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+
+            zos.putNextEntry(ZipEntry(BackupArchiveFormat.MANIFEST_ENTRY_NAME))
+            zos.write(manifest.toJson().toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+        }
+
+        val unmanifestedValidation = BackupArchiveValidator.validate(zipFile)
+        assertFalse(unmanifestedValidation.isValid)
+        assertTrue(unmanifestedValidation.errorMessage?.contains("undeclared preferences") == true)
     }
 }

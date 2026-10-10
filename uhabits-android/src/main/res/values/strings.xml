@@ -142,6 +142,7 @@
     <string name="help">Help &amp; guide</string>
     <string name="could_not_export">Failed to export data.</string>
     <string name="could_not_import">Failed to import data.</string>
+    <string name="could_not_restore">Failed to restore backup.</string>
     <string name="file_not_recognized">File not recognized.</string>
     <string name="habits_imported">Habits imported successfully.</string>
     <string name="import_data">Import habits</string>
@@ -175,6 +176,18 @@
     <string name="backup_external_create_failed">Unable to create a backup file in the selected folder.</string>
     <string name="backup_external_success">Backup created in the selected external folder.</string>
     <string name="choose_folder">Choose folder</string>
+    <string name="backup_unencrypted_warning_title">Unencrypted Backup</string>
+    <string name="backup_unencrypted_warning_message">Backups are stored unencrypted in external storage and contain your complete habit history and settings. Make sure the destination folder is secure. Continue?</string>
+    <string name="backup_continue">Continue</string>
+    <string name="backup_format_versioned_zip">ZIP archive (v1)</string>
+    <string name="backup_format_legacy_sqlite">Legacy SQLite database</string>
+    <string name="backup_format_unknown">Unknown format</string>
+    <string name="backup_prefs_included">Included</string>
+    <string name="backup_prefs_not_included">Not included (database only)</string>
+    <string name="restore_backup_detail_format">Format: %1$s</string>
+    <string name="restore_backup_detail_version">Database version: %1$s</string>
+    <string name="restore_backup_detail_preferences">Preferences: %1$s</string>
+    <string name="restore_backup_quarantine_notice">Notice: After restore, cloud sync will be quarantined until manually reviewed to protect restored data.</string>
     <string name="bug_report_failed">Failed to generate bug report.</string>
     <string name="generate_bug_report">Generate bug report</string>
     <string name="generate_bug_report_summary">Creates a diagnostic report that can be shared for troubleshooting.</string>

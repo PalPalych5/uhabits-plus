@@ -151,17 +151,17 @@ Foundation plan перенесён в `docs/uhabit-next-foundation-plan.md` и �
 | PR21 — Preflight & Recovery Gate | Raw inventory/anomaly diagnostics, coherent v29 recovery bundle, pre-DI timer checks, startup recovery | Version bump, conversion/activation, sync protocol, promotion | PR20 review; verified commit 28ce65a67 | DONE |
 | PR22 / PR22.1 — Versioned Next Schema Conversion on Protected Staging & Parity Audit | 30.sql additive Next schema, outer transaction migrator, 8-table legacy parity validator, staging copy isolation, ProductionCutoverGate, v29 immutability, schema parity tests | Runtime authority activation (remains LEGACY), live production DB upgrade, sync rewrite, PR23 readers | PR21 preflight/recovery gate | DONE |
 | PR23 — Contribution-aware Habit/report readers | Audit checkpoint c987a397; PR23A shared authority/list/detail, then PR23B global readers (Statistics, Compare, widgets, reminders, CSV, calendar context, convergence) | Production activation, PR24, UI redesign | PR22.1 accepted; PR23A verified; PR23B all functional checkpoints verified; final cross-surface audit ACCEPTED (commit 588c09f53) | DONE |
-| PR24 — Production backup/recovery & release hardening | PR24A Restore Safety Foundation DONE; PR24A.1 Snapshot Fidelity & API 28 DONE; PR24B Versioned ZIP Backup Archive DONE; PR24C settings/preferences adapters PENDING; release hardening before PR25 | Cloud sync, local cutover, experimental promotion/merge | PR21–PR23 complete | IN_PROGRESS (PR24A, PR24A.1, PR24B DONE) |
+| PR24 — Production backup/recovery & release hardening | PR24A Restore Safety Foundation DONE; PR24A.1 Snapshot Fidelity & API 28 DONE; PR24B Versioned ZIP Backup Archive DONE; PR24C Preferences & Release Hardening DONE | Cloud sync, local cutover, experimental promotion/merge | PR21–PR23 complete | DONE (PR24A, PR24A.1, PR24B, PR24C DONE; PR24 acceptance ready) |
 | PR25 — Protected Local Production Cutover | Explicit production Next session/capabilities, exclusive capture, epoch-qualified callbacks, Task/Habit/Pomodoro recovery, local-only sync gate | Cloud publication, promotion/merge | PR24 complete | PLANNED / BLOCKED |
 | PR26 — Versioned Cloud Protocol (Sync v2) | New dataset epoch/server enforcement, complete outbox/apply/dependencies/conflicts, multi-device bootstrap | Blanket LWW, old-log mixing | PR25 local readiness + server release design | PLANNED / BLOCKED |
 
-PR22/PR22.1 окончательно приняты пользователем 2026-10-08. PR23 (A и B) официально закрыт и принят 2026-10-09 (коммит `588c09f53`). Все читатели переведены на shared EffectiveHabitReadSnapshot. В рамках PR24 (Production Backup, Recovery and Release Hardening) выполнены и верифицированы этапы PR24A (Production Restore Safety Foundation), PR24A.1 (Snapshot Fidelity & API 28 Compatibility) и PR24B (Versioned Production Backup Archive). PR24 в целом остаётся IN_PROGRESS; последующий этап PR24 (PR24C Settings/Preferences Adapters & Release Hardening) PENDING. PR25 (Protected Local Cutover) и PR26 (Cloud Sync v2) остаются строго заблокированными. `DATABASE_VERSION = 30` выделена для Next schema, но канонический production открывается по умолчанию на legacy schema v29 (`ProductionCutoverGate`).
+PR22/PR22.1 окончательно приняты пользователем 2026-10-08. PR23 (A и B) официально закрыт и принят 2026-10-09 (коммит `588c09f53`). Все читатели переведены на shared EffectiveHabitReadSnapshot. В рамках PR24 (Production Backup, Recovery and Release Hardening) выполнены и верифицированы этапы PR24A (Production Restore Safety Foundation), PR24A.1 (Snapshot Fidelity & API 28 Compatibility), PR24B (Versioned Production Backup Archive), и PR24C (Preferences, Crash-Safe Recovery and Release Hardening). Все подэтапы PR24 (A, A.1, B, C) завершены и верифицированы. PR25 (Protected Local Cutover) и PR26 (Cloud Sync v2) остаются строго заблокированными. `DATABASE_VERSION = 30` выделена для Next schema, но канонический production открывается по умолчанию на legacy schema v29 (`ProductionCutoverGate`).
 
 ## 5. Current state
 
 ```text
 Architecture preparation: DONE
-Implementation: PR1–PR19 DONE; PR20 AUDIT DONE; PR21 PREFLIGHT/RECOVERY DONE; PR22 SCHEMA CONVERSION & PR22.1 AUDIT DONE; PR23 READ AUTHORITY DONE / ACCEPTED; PR24 IN_PROGRESS (PR24A, PR24A.1, PR24B DONE)
+Implementation: PR1–PR19 DONE; PR20 AUDIT DONE; PR21 PREFLIGHT/RECOVERY DONE; PR22 SCHEMA CONVERSION & PR22.1 AUDIT DONE; PR23 READ AUTHORITY DONE / ACCEPTED; PR24 DONE (PR24A, PR24A.1, PR24B, PR24C DONE)
 Product Pivot: Habits/Tasks separate workspaces, Habit UI restored, Tasks MVP fully validated, Container Statistics MVP completed, Today Workspace evaluated natively
 Current branch: dev; verified PR23 baseline 588c09f53; use Git for current HEAD
 Canonical checkout: C:/Users/Pavel/source/repos/uhabits-plus
@@ -169,10 +169,10 @@ Tasks IA: APPROVED
 Adaptive App Shell: APPROVED
 Visual language: VISUAL_V1_APPROVED_WITH_DEFERRED_POLISH
 Native Android implementation: PR10 / PR10.1 ACCEPTED; PR19 evaluation ACCEPTED as secondary Day Overview direction; visual polish not independently reviewed in PR20
-Active implementation: PR24A Production Restore Safety Foundation DONE; PR24 overall IN_PROGRESS; PR25/PR26 BLOCKED
+Active implementation: PR24C Preferences, Crash-Safe Recovery & Release Hardening DONE; PR24 complete pending acceptance gate; PR25/PR26 BLOCKED
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
-Checks: PR24A fresh verification: 140 core JVM suites PASS (100%), 101 Android JVM tests PASS (100%), 18 native instrumentation tests PASS (100%: 7 RestoreSafety including testBackupSnapshotCreationOnDevice on API 28, 5 BackupManager, 6 AndroidDatabase), compileDebugKotlin PASS, assembleDebug & assembleDebugAndroidTest PASS.
+Checks: PR24C fresh verification: 876 core JVM tests PASS (100%), 32 backup Android JVM tests PASS (100%), 6 native instrumentation tests (BackupArchiveInstrumentationTest) PASS (100%) on API 28 emulator (UHabit_MinSdk_API28), 0 ANRs, compileDebugKotlin PASS, assembleDebug & assembleDebugAndroidTest PASS.
 Production DB schema: v29 default on canonical uhabits.db (ProductionCutoverGate enforced; Constants.DATABASE_VERSION = 30 allocated for Next schema); v30 installed on protected staging copies
 Production runtime authority: LEGACY_PRODUCTION / LEGACY (metadata runtime_authority = 'LEGACY')
 Production UI: unchanged (mode default is LEGACY)
@@ -185,7 +185,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| Antigravity (b79eaf3b) | PR24A: Production Restore Safety Foundation | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after PR24A | 2026-10-10 08:15 Novosibirsk | LoopDBImporter, SQLiteHabitList, DatabaseUtils, HabitsDatabaseOpener, HabitsApplication, RestoreJournal, RestoreSafetyAndroidTest, tests, docs | PR24A Restore Safety Foundation verified: 3 critical defects reproduced and resolved (unauthorized v30 migration blocked, empty-database creation on crash blocked, LoopDBImporter Next entity loss blocked). minSdk 28 SQLite 3.22.0 incompatibility independently proven; transactional SQLite clone fallback implemented (zero raw-file copying). Sync review flag set fail-closed. 140 core JVM suites PASS, 101 Android JVM tests PASS, 18 native tests PASS across disposable AVDs (7 RestoreSafety on API 28, 5 BackupManager, 6 AndroidDatabase). PR24 overall IN_PROGRESS; PR25/PR26 BLOCKED. |
+| Antigravity (b79eaf3b) | PR24C: Preferences, Crash-Safe Recovery and Release Hardening | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after PR24C | 2026-10-10 20:30 Novosibirsk | BackupPreferencesAdapter, BackupArchiveFormat/Manifest/Validator/Extractor/Creator, DatabaseUtils, SettingsFragment, WidgetRenderCoordinator, HabitsCSVExporter, CoroutineTaskRunner, tests, docs | PR24C completed: 34 portable preferences allowlist with typed validation, versioned preferences.json in ZIP archive, 100% backward compatibility for PR24B archives and raw SQLite backups, 10-phase crash-safe restore with dual rollback candidates and startup reconciliation, unconditional sync quarantine invariant across all restore/rollback paths, release hardening (coroutine task runner exception safety, widget cold-start refresh, CSV exporter projection retry, SAF catalog safety), UI modals (unencrypted backup warning & preview dialog). Verification: 876 core JVM PASS, 32 backup Android JVM PASS, 6 native tests PASS on API 28 emulator (0 ANRs). PR24 all phases complete pending final acceptance gate; PR25/PR26 BLOCKED. |
 | Antigravity (ecfd46fd) | PR23 Final Acceptance: Independent Cross-Surface Audit | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after PR23 | 2026-10-09 20:50 Novosibirsk | docs/UHABIT_NEXT_HANDOFF.md, docs/UHABIT_EFFECTIVE_READ_AUTHORITY.md, docs/UHABIT_PR23_FINAL_ACCEPTANCE.md, CoroutineTaskRunner, LiveInvalidationAndroidTest | Independent cross-surface audit and final acceptance completed: PR23A and PR23B (5/5 checkpoints) fully accepted. 868 core JVM + 99 Android JVM + 14 native instrumentation tests 100% PASS. Concurrency fix in CoroutineTaskRunner.await() verified. Canonical report: docs/UHABIT_PR23_FINAL_ACCEPTANCE.md. Active work IDLE. PR24/PR25 BLOCKED; LEGACY v29 unchanged. |
 | Antigravity (5e1829b1) | PR23B: Contribution-Aware CSV Export Checkpoint | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after CSV checkpoint | 2026-10-09 18:38 Novosibirsk | HabitsCSVExporter, ExportCSVTask, ListHabitsBehavior, ShowHabitMenuPresenter, CSV models/adapters, CSV tests, native CSV QA, docs | CSV export checkpoint fully verified: sequential builds PASS, JVM suites PASS (core 10/10 CSV + SQLite batching test; all suites exit 0), native QA 3/3 PASS on UHabit_PR23B_Notifications, zero synthetic DB writes, exact provenance & legacy parity. PR23 overall pending final cross-surface audit; PR24/PR25 BLOCKED; LEGACY v29 unchanged. |
 | Antigravity (92f1f747) | PR23B: Notifications & Reminder Tray Checkpoint | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after Notifications | 2026-10-09 17:05 Novosibirsk | NotificationTray, ReminderScheduler, ReminderController, ReminderReceiver, PendingIntentFactory, AndroidNotificationTray, tests, native QA, docs | Notifications checkpoint fully verified: sequential builds PASS, JVM suites PASS (858 core + 99 Android), native QA 3/3 PASS on UHabit_PR23B_Notifications, screenshots captured. CSV PENDING; PR24/PR25 BLOCKED; LEGACY v29 unchanged. |
@@ -1223,10 +1223,64 @@ Human accepts PR20 and authorizes PR21 preflight and recovery implementation onl
     - Emulator cleanly shut down (`adb -s emulator-5554 emu kill`, 0 running emulator/qemu processes).
     - Forensic `Pixel_6` preserved untouched.
 - **Boundaries strictly maintained:**
-  - PR24A, PR24A.1, and PR24B are **DONE**. PR24 overall remains **IN_PROGRESS**.
-  - Subsequent PR24 checkpoint (PR24C Settings/Preferences Adapters & Release Hardening) is **PENDING**.
-  - PR25 (Protected Local Cutover) and PR26 (Cloud Sync v2) remain strictly **BLOCKED**.
+  - PR24A, PR24A.1, and PR24B are **DONE**.
+  - Subsequent PR24 checkpoint (PR24C Settings/Preferences Adapters & Release Hardening) is **DONE** (see below).
+
+### 2026-10-10 — PR24C: Preferences, Crash-Safe Recovery and Release Hardening completed
+
+- **Preferences Inventory & Classification:**
+  - Audited all application preferences across `SharedPreferences` keys.
+  - Implemented `BackupPreferencesAdapter` with a strict allowlist of 34 portable settings:
+    - Display/Theme: `pref_theme`, `pref_pure_black`, `pref_app_language`, `pref_interface_mode`, `pref_font_size`, `pref_icon_style`, `pref_dim_completed`, `pref_widget_compact_score`, `pref_widget_show_target`, `pref_show_header_score`, `pref_show_card_tags`, `pref_show_streak_badge`.
+    - Scheduling/Habits: `pref_first_weekday`, `pref_midnight_delay`, `pref_show_archived`, `pref_confirm_delete`, `pref_tap_to_toggle`, `pref_sound_effects`, `pref_vibrate_on_toggle`.
+    - Timer/Pomodoro: `pref_pomodoro_work_duration`, `pref_pomodoro_short_break`, `pref_pomodoro_long_break`, `pref_pomodoro_long_break_interval`, `pref_pomodoro_auto_start_break`, `pref_pomodoro_auto_start_work`, `pref_pomodoro_sound_enabled`, `pref_pomodoro_vibration_enabled`.
+    - Notifications: `pref_notifications_enabled`, `pref_notification_sound`, `pref_notification_vibrate`, `pref_notification_led`, `pref_notification_reminder_time`, `pref_reminder_snooze_interval`, `pref_quiet_hours_enabled`.
+  - Strict Exclusion List: Never serializes secrets (`pref_sync_key`, credentials), sync state (`pref_sync_enabled`, `pref_sync_account`, `pref_sync_device_id`), authority switches (`pref_developer`, `pref_container_local_mode`, `pref_production_cutover_authorized`), or transient session state. Unclassified keys excluded fail-closed.
+  - Type & Range Validation: All allowlisted values checked for correct types and bounded numeric ranges before import.
+- **Versioned preferences.json in ZIP Archive:**
+  - Format identifier: `uhabit-backup-preferences`, version 1.
+  - Deterministic serialization: Sorted keys, RFC 8259 compliance, canonical JSON format.
+  - Integrity Manifest Coverage: `BackupArchiveManifest` includes `preferencesSha256`, `preferencesSizeBytes`, and `preferencesCount`.
+  - 100% Backward Compatibility: PR24B archives (without `preferences.json`) and legacy raw SQLite `.db` backups remain valid with a documented database-only restoration policy.
+- **10-Phase Crash-Safe Restoration with Dual Recovery Candidates:**
+  - Phase 1: Pre-validation of backup archive / database file before modifying any active state.
+  - Phase 2: Runtime authority compatibility check (`FAIL_CLOSED_ON_INCOMPATIBLE_AUTHORITY`).
+  - Phase 3: Disk space pre-check (`(db_size * 3) + 10MB`).
+  - Phase 4: Staging extracted database and portable preferences candidate.
+  - Phase 5: Preparation of dual rollback candidates (`${dbFile.name}.restore.rollback` and `${dbFile.name}.prefs.restore.rollback`).
+  - Phase 6: Atomic database file swap via `Files.move(..., ATOMIC_MOVE, REPLACE_EXISTING)`.
+  - Phase 7: Application and validation of portable preferences.
+  - Phase 8: Database reopening and validation.
+  - Phase 9: Unconditional sync quarantine gate (`pref_sync_review_required = true`, reason recorded).
+  - Phase 10: Cleanup of rollback candidates and restore journal clearing.
+  - Rollback on failure: In `catch (e: Exception)`, database is restored from `.rollback`, preferences are imported from `.prefs.rollback`, sync quarantine is set `true`, and original database is re-initialized.
+  - Startup Reconciliation (`DatabaseUtils.reconcileInterruptedRestore`): Automatically detects crashed/interrupted restores on startup, recovers valid rollback files, restores preferences rollback candidates, preserves ambiguous recovery candidates as `${dbFile.name}.recovery.<timestamp>`, and sets sync quarantine unconditionally.
+- **Release Hardening:**
+  - `CoroutineTaskRunner`: Wrapped `scope.launch` block in `try ... catch (t: Throwable) { if (t is CancellationException) throw t } finally { decrementActive(); onTaskFinished() }` ensuring unhandled task exceptions never corrupt active count or leak jobs.
+  - `WidgetRenderCoordinator`: Added proactive cold-start initialization to ensure AppWidget refresh upon process restart without stale cache.
+  - `HabitsCSVExporter`: Added automatic retry loop on `ProjectionInvalidatedException` for consistent concurrent CSV export during live projection changes.
+  - `BackupManager` & `BackupCatalog`: Enclosed SAF file operations and pruning in `runCatching` to handle external storage provider errors gracefully.
+- **Android Settings UI & SAF:**
+  - Unencrypted backup warning modal displayed prior to exporting backup via Storage Access Framework.
+  - Async backup inspection and confirmation modal on restore, surfacing format version, database version, preferences inclusion, and sync quarantine notice.
+- **Verification Evidence:**
+  - **Core JVM Suite:** 100% PASS across `:uhabits-core:jvmTest` (876 tests executed, including `CoroutineTaskRunnerTest`).
+  - **Android JVM Suite:** 100% PASS across `:uhabits-android:testDebugUnitTest`, including `BackupPreferencesAdapterTest` (10 tests), `BackupArchiveZipSafetyTest` (10 tests), `BackupArchiveManifestTest` (6 tests), `BackupCatalogTest`, and `BackupFileNamePolicyTest`.
+  - **Native Android Instrumentation QA on API 28 emulator (`UHabit_MinSdk_API28`, API 28, SQLite 3.22.0):**
+    - `BackupArchiveInstrumentationTest` (6/6 PASS):
+      1. `testCreateAndValidateVersionedZipBackup`: PASS.
+      2. `testValidateRejectsV30ArchiveWhenTargetVersionIsV29`: PASS.
+      3. `testLegacyRawSqliteBackupRestorationStillWorksSeamlessly`: PASS.
+      4. `testFailureInjectionDuringArchiveCreationCleansUpTempFiles`: PASS.
+      5. `testCreateAndRestoreBackupWithPreferences`: PASS (ZIP backup with preferences created, validated, restored, portable settings applied, secrets preserved, sync quarantine enforced, DB records restored).
+      6. `testRestoreFailureInjectionRollsBackCleanly`: PASS (failure injection during restore rolls back DB, rolls back preferences, sets sync quarantine, leaves DB functional).
+    - 0 ANRs, 0 app crashes during test execution.
+- **Boundaries strictly maintained:**
+  - PR24 (A, A.1, B, C) is **DONE** and fully verified.
   - Production runtime authority remains strictly **LEGACY_PRODUCTION** (schema v29).
-  - Active work: **STOP after PR24B**.
+  - Production cutover gate remains **CLOSED**.
+  - PR25 (Protected Local Cutover) and PR26 (Cloud Sync v2) remain strictly **BLOCKED**.
+  - Active work: **STOP after PR24C**.
+
 
 

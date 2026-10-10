@@ -20,6 +20,7 @@
 package org.isoron.uhabits.backup
 
 import android.database.sqlite.SQLiteDatabase
+import androidx.preference.PreferenceManager
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.BaseAndroidTest
 import org.isoron.uhabits.core.models.Entry
@@ -244,6 +245,132 @@ class BackupArchiveInstrumentationTest : BaseAndroidTest() {
             } finally {
                 BackupArchiveCreator.failureInjection = BackupArchiveCreator.CreationFailureInjection.NONE
             }
+        }
+    }
+
+    @Test
+    fun testCreateAndRestoreBackupWithPreferences() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(targetContext)
+        prefs.edit()
+            .putInt("pref_theme", 2)
+            .putBoolean("pref_pure_black", true)
+            .putString("pref_app_language", "ru")
+            .putString("pref_sync_key", "secret-password")
+            .putBoolean("pref_sync_review_required", false)
+            .commit()
+
+        fixtures.purgeHabits(habitList)
+        val habit = fixtures.createEmptyHabit()
+        habit.name = "Language Habit"
+        habitList.update(listOf(habit))
+        habit.recompute()
+
+        val targetZip = File(targetContext.cacheDir, "test_prefs_backup.zip")
+        if (targetZip.exists()) targetZip.delete()
+
+        try {
+            val result = BackupArchiveCreator.createArchive(targetContext, targetZip)
+            assertTrue(targetZip.exists())
+            assertEquals(29, result.databaseVersion)
+
+            val validation = BackupArchiveValidator.validate(targetZip, targetVersion = 29)
+            assertTrue(validation.isValid)
+            assertNotNull(validation.manifest?.preferencesSha256)
+            assertEquals(true, (validation.manifest?.preferencesCount ?: 0) > 0)
+
+            // Modify preferences and habits before restore
+            prefs.edit()
+                .putInt("pref_theme", 0)
+                .putBoolean("pref_pure_black", false)
+                .putString("pref_app_language", "en")
+                .commit()
+            fixtures.purgeHabits(habitList)
+
+            // Restore from backup
+            DatabaseUtils.restoreDatabaseFromBackup(targetContext, targetZip)
+
+            // Verify preferences restored
+            assertEquals(2, prefs.getInt("pref_theme", -1))
+            assertTrue(prefs.getBoolean("pref_pure_black", false))
+            assertEquals("ru", prefs.getString("pref_app_language", null))
+
+            // Verify secret was preserved
+            assertEquals("secret-password", prefs.getString("pref_sync_key", null))
+
+            // Verify sync quarantine invariant unconditionally applied
+            assertTrue("pref_sync_review_required must be true after restore", prefs.getBoolean("pref_sync_review_required", false))
+
+            // Verify database restored
+            val db = DatabaseUtils.openDatabase()
+            try {
+                db.rawQuery("SELECT name FROM Habits", null).use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals("Language Habit", cursor.getString(0))
+                }
+            } finally {
+                db.close()
+            }
+        } finally {
+            targetZip.delete()
+        }
+    }
+
+    @Test
+    fun testRestoreFailureInjectionRollsBackCleanly() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(targetContext)
+        prefs.edit()
+            .putInt("pref_theme", 1)
+            .putBoolean("pref_pure_black", false)
+            .commit()
+
+        fixtures.purgeHabits(habitList)
+        val habit = fixtures.createEmptyHabit()
+        habit.name = "Original Habit"
+        habitList.update(listOf(habit))
+        habit.recompute()
+
+        val backupZip = File(targetContext.cacheDir, "rollback_test.zip")
+        if (backupZip.exists()) backupZip.delete()
+
+        try {
+            BackupArchiveCreator.createArchive(targetContext, backupZip)
+
+            // Change state before failed restore
+            prefs.edit().putInt("pref_theme", 3).commit()
+            fixtures.purgeHabits(habitList)
+            val newHabit = fixtures.createEmptyHabit()
+            newHabit.name = "Unrestored Habit"
+            habitList.update(listOf(newHabit))
+            newHabit.recompute()
+
+            // Inject failure during preferences apply
+            DatabaseUtils.restoreFailureInjection = DatabaseUtils.RestoreFailureInjection.BEFORE_PREFERENCES_APPLY
+            try {
+                DatabaseUtils.restoreDatabaseFromBackup(targetContext, backupZip)
+                fail("Expected IOException from injected failure")
+            } catch (e: IOException) {
+                // Expected failure
+            } finally {
+                DatabaseUtils.restoreFailureInjection = DatabaseUtils.RestoreFailureInjection.NONE
+            }
+
+            // Verify preferences rolled back to state prior to restore attempt
+            assertEquals(3, prefs.getInt("pref_theme", -1))
+            // Verify sync quarantine invariant set upon rollback
+            assertTrue(prefs.getBoolean("pref_sync_review_required", false))
+
+            // Verify database rolled back to state prior to restore attempt
+            val db = DatabaseUtils.openDatabase()
+            try {
+                db.rawQuery("SELECT name FROM Habits", null).use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals("Unrestored Habit", cursor.getString(0))
+                }
+            } finally {
+                db.close()
+            }
+        } finally {
+            backupZip.delete()
         }
     }
 }

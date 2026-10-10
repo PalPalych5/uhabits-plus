@@ -40,7 +40,12 @@ class BackupManager(
         return try {
             val archiveResult = BackupArchiveCreator.createArchive(context, tempFile)
             val target = createPublicBackupFile(now)
-            DatabaseUtils.copyFileToDocument(context, tempFile, target)
+            try {
+                DatabaseUtils.copyFileToDocument(context, tempFile, target)
+            } catch (copyErr: Throwable) {
+                runCatching { target.delete() }
+                throw copyErr
+            }
             tempFile.delete()
 
             catalog.applyPublicRetention(keep)

@@ -176,4 +176,63 @@ class BackupArchiveManifestTest {
             // Success
         }
     }
+
+    @Test
+    fun roundTripWithPreferencesMetadata() {
+        val inventory = listOf(TableInventoryEntry("Habits", 5L))
+        val createdAt = 1700000000000L
+        val prefSha = "f2ca1bb6c7e907d06dafe4687e579fce76b37e4e93b7605022da52e6ccc26fd2"
+        val canonical = BackupArchiveManifest.computeCanonicalContentSha256(
+            databaseVersion = 29,
+            databaseSha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            createdAt = createdAt,
+            tableInventory = inventory,
+            preferencesSha256 = prefSha
+        )
+        val original = BackupArchiveManifest(
+            archiveFormat = BackupArchiveFormat.ARCHIVE_FORMAT,
+            formatVersion = 1,
+            appId = "org.isoron.uhabits",
+            appVersionCode = 230,
+            createdAt = createdAt,
+            databaseVersion = 29,
+            databaseSha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            databaseSizeBytes = 4096L,
+            datasetMode = "LEGACY_PRODUCTION",
+            tableInventory = inventory,
+            canonicalContentSha256 = canonical,
+            runtimeAuthorityMode = "LEGACY_PRODUCTION",
+            preferencesSha256 = prefSha,
+            preferencesSizeBytes = 512L,
+            preferencesCount = 10
+        )
+
+        val json = original.toJson()
+        val parsed = BackupArchiveManifest.fromJson(json)
+
+        assertEquals(prefSha, parsed.preferencesSha256)
+        assertEquals(512L, parsed.preferencesSizeBytes)
+        assertEquals(10, parsed.preferencesCount)
+        assertEquals(canonical, parsed.canonicalContentSha256)
+    }
+
+    @Test
+    fun canonicalHashWithPreferencesChangesHash() {
+        val inventory = listOf(TableInventoryEntry("Habits", 10L))
+        val withoutPref = BackupArchiveManifest.computeCanonicalContentSha256(29, "abc", 1000L, inventory)
+        val withPref1 = BackupArchiveManifest.computeCanonicalContentSha256(29, "abc", 1000L, inventory, preferencesSha256 = "p1")
+        val withPref2 = BackupArchiveManifest.computeCanonicalContentSha256(29, "abc", 1000L, inventory, preferencesSha256 = "p2")
+
+        assertNotEquals(withoutPref, withPref1)
+        assertNotEquals(withPref1, withPref2)
+    }
+
+    @Test
+    fun canonicalHashWithoutPreferencesMatchesLegacy() {
+        val inventory = listOf(TableInventoryEntry("Habits", 10L))
+        val defaultCall = BackupArchiveManifest.computeCanonicalContentSha256(29, "abc", 1000L, inventory)
+        val explicitNull = BackupArchiveManifest.computeCanonicalContentSha256(29, "abc", 1000L, inventory, preferencesSha256 = null)
+
+        assertEquals(defaultCall, explicitNull)
+    }
 }

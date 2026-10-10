@@ -85,15 +85,20 @@ class CoroutineTaskRunner(
         val job = scope.launch {
             val startListeners = incrementActive()
             startListeners.forEach { it.onTaskStarted(task) }
-            task.onPreExecute()
-            if (!task.isCanceled()) {
-                withContext(ioDispatcher) {
-                    task.doInBackground()
+            try {
+                task.onPreExecute()
+                if (!task.isCanceled()) {
+                    withContext(ioDispatcher) {
+                        task.doInBackground()
+                    }
                 }
+                task.onPostExecute()
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
+            } finally {
+                val finishListeners = decrementActive()
+                finishListeners.forEach { it.onTaskFinished(task) }
             }
-            task.onPostExecute()
-            val finishListeners = decrementActive()
-            finishListeners.forEach { it.onTaskFinished(task) }
         }
         job.invokeOnCompletion { removeJob(job) }
         addJob(job)

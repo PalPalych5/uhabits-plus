@@ -53,6 +53,19 @@ object DatabaseUtils {
     private var opener: HabitsDatabaseOpener? = null
     private var currentDatabaseFilename: String? = null
 
+    var restoreFailureInjection: RestoreFailureInjection = RestoreFailureInjection.NONE
+
+    enum class RestoreFailureInjection {
+        NONE,
+        BEFORE_STAGING,
+        AFTER_JOURNAL_PREPARING,
+        AFTER_MOVE_ORIGINAL,
+        AFTER_INSTALL_REPLACEMENT,
+        BEFORE_PREFERENCES_APPLY,
+        AFTER_PREFERENCES_APPLY,
+        BEFORE_CLEANUP
+    }
+
     val LEGACY_TABLE_NAMES = listOf(
         "Habits",
         "Repetitions",
@@ -122,29 +135,72 @@ object DatabaseUtils {
         val dbFile = getDatabaseFile(context, resolvedName)
         val parent = dbFile.parentFile ?: return
         val rollbackFile = File(parent, "${dbFile.name}.rollback")
+        val prefsRollbackFile = File(parent, "${dbFile.name}.prefs.rollback")
         val restoreTemp = File(parent, "${dbFile.name}.restore.tmp")
+        val prefsRestoreTemp = File(parent, "${dbFile.name}.prefs.restore.tmp")
         val journal = RestoreJournal(parent, resolvedName)
         val state = journal.readState()
+        val sharedPrefs = PreferenceManager.getDefaultSharedPreferences(context)
 
         cleanupSidecars(restoreTemp)
         if (restoreTemp.exists()) restoreTemp.delete()
+        if (prefsRestoreTemp.exists()) prefsRestoreTemp.delete()
 
-        if (!rollbackFile.exists()) {
+        // 1. Missing or empty primary database check with existing recovery artifacts
+        if (!dbFile.exists() || dbFile.length() == 0L) {
+            if (rollbackFile.exists()) {
+                cleanupSidecars(dbFile)
+                Files.move(
+                    rollbackFile.toPath(),
+                    dbFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE
+                )
+                if (prefsRollbackFile.exists()) {
+                    runCatching {
+                        org.isoron.uhabits.backup.BackupPreferencesAdapter.importPreferences(sharedPrefs, prefsRollbackFile.readText())
+                    }
+                    prefsRollbackFile.delete()
+                }
+                sharedPrefs.edit()
+                    .putBoolean("pref_sync_review_required", true)
+                    .putString("pref_sync_review_reason", "Database restored from recovery rollback")
+                    .commit()
+                journal.clear()
+                Log.i("DatabaseUtils", "Reconciled interrupted restore: restored $resolvedName from rollback candidate")
+                return
+            }
+
+            // Check if any archived recovery candidate exists: ${dbFile.name}.recovery.*
+            val recoveryFiles = parent.listFiles { _, name -> name.startsWith("${dbFile.name}.recovery.") }
+                ?.filter { it.length() > 0L }
+                ?.sortedByDescending { it.lastModified() }
+            if (!recoveryFiles.isNullOrEmpty()) {
+                val bestCandidate = recoveryFiles.firstOrNull { validateDatabaseBackup(it).isValid }
+                if (bestCandidate != null) {
+                    cleanupSidecars(dbFile)
+                    Files.copy(
+                        bestCandidate.toPath(),
+                        dbFile.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING
+                    )
+                    sharedPrefs.edit()
+                        .putBoolean("pref_sync_review_required", true)
+                        .putString("pref_sync_review_reason", "Database restored from archived recovery artifact")
+                        .commit()
+                    journal.clear()
+                    Log.i("DatabaseUtils", "Recovered missing primary database from ${bestCandidate.name}")
+                    return
+                }
+            }
+
             journal.clear()
             return
         }
 
-        // Rollback file exists: an interrupted restore or recovery candidate is present.
-        if (!dbFile.exists() || dbFile.length() == 0L) {
-            cleanupSidecars(dbFile)
-            Files.move(
-                rollbackFile.toPath(),
-                dbFile.toPath(),
-                StandardCopyOption.REPLACE_EXISTING,
-                StandardCopyOption.ATOMIC_MOVE
-            )
+        if (!rollbackFile.exists()) {
+            if (prefsRollbackFile.exists()) prefsRollbackFile.delete()
             journal.clear()
-            Log.i("DatabaseUtils", "Reconciled interrupted restore: restored $resolvedName from rollback candidate")
             return
         }
 
@@ -153,6 +209,11 @@ object DatabaseUtils {
             val validation = validateDatabaseBackup(dbFile)
             if (validation.isValid) {
                 rollbackFile.delete()
+                if (prefsRollbackFile.exists()) prefsRollbackFile.delete()
+                sharedPrefs.edit()
+                    .putBoolean("pref_sync_review_required", true)
+                    .putString("pref_sync_review_reason", "Database restored from backup")
+                    .commit()
                 journal.clear()
                 Log.i("DatabaseUtils", "Reconciled interrupted restore: APPLIED state confirmed, cleared rollback")
                 return
@@ -170,6 +231,16 @@ object DatabaseUtils {
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE
             )
+            if (prefsRollbackFile.exists()) {
+                runCatching {
+                    org.isoron.uhabits.backup.BackupPreferencesAdapter.importPreferences(sharedPrefs, prefsRollbackFile.readText())
+                }
+                prefsRollbackFile.delete()
+            }
+            sharedPrefs.edit()
+                .putBoolean("pref_sync_review_required", true)
+                .putString("pref_sync_review_reason", "Database restored from valid rollback candidate")
+                .commit()
             journal.clear()
             Log.i("DatabaseUtils", "Reconciled interrupted restore: recovered valid rollback file to $resolvedName")
             return
@@ -184,6 +255,19 @@ object DatabaseUtils {
             StandardCopyOption.REPLACE_EXISTING,
             StandardCopyOption.ATOMIC_MOVE
         )
+        if (prefsRollbackFile.exists()) {
+            val archivePrefs = File(parent, "${dbFile.name}.prefs.recovery.$timestamp")
+            Files.move(
+                prefsRollbackFile.toPath(),
+                archivePrefs.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
+        }
+        sharedPrefs.edit()
+            .putBoolean("pref_sync_review_required", true)
+            .putString("pref_sync_review_reason", "Interrupted restore reconciled; recovery candidate preserved")
+            .commit()
         journal.clear()
         Log.w("DatabaseUtils", "Preserved ambiguous rollback file as ${archiveRollback.name}")
     }
@@ -382,8 +466,9 @@ object DatabaseUtils {
         val activeFilename = dbFile.name
         val app = context.applicationContext as? HabitsApplication
         val session = app?.component?.session
+        val sharedPrefs = PreferenceManager.getDefaultSharedPreferences(context)
 
-        // PR24A: Determine authorized target schema version from cutover gate and session authority
+        // Phase 1: Validate the entire archive before modifying active state
         val isCutoverAuthorized = ProductionCutoverGate.isCutoverAuthorized(activeFilename)
         val targetVersion = if (session?.isExperimental == true || isCutoverAuthorized) {
             DATABASE_VERSION
@@ -400,7 +485,7 @@ object DatabaseUtils {
         require(validation.isValid) { validation.errorMessage ?: "Invalid backup" }
         val backupVersion = requireNotNull(validation.databaseVersion) { "Missing database version in backup" }
 
-        // Validate that backup schema version does not exceed target authorization
+        // Phase 2: Determine compatible schema and runtime authority
         if (backupVersion > targetVersion) {
             throw org.isoron.uhabits.backup.BackupRestoreException.IncompatibleAuthorityException(
                 "Cannot restore backup with schema version $backupVersion into a dataset targeting version $targetVersion"
@@ -408,14 +493,37 @@ object DatabaseUtils {
         }
 
         val parent = requireNotNull(dbFile.parentFile)
+
+        // Phase 3: Verify sufficient disk space and accessible restore destination
+        val requiredBytes = (validation.manifest?.databaseSizeBytes ?: stagedBackupFile.length()) * 3 + 10 * 1024 * 1024L
+        if (parent.usableSpace in 1 until requiredBytes) {
+            throw org.isoron.uhabits.backup.BackupRestoreException.InsufficientStorageException(
+                "Insufficient storage space for restore: required $requiredBytes bytes, available ${parent.usableSpace} bytes"
+            )
+        }
+
+        if (restoreFailureInjection == RestoreFailureInjection.BEFORE_STAGING) {
+            throw IOException("Injected failure before restore staging")
+        }
+
+        // Phase 4 & 5: Staging and recovery candidate preparation
         val isZip = validation.format == org.isoron.uhabits.backup.BackupFormat.VERSIONED_ZIP
+        val tempExtractedPrefs = if (isZip && validation.manifest?.preferencesSha256 != null) {
+            File.createTempFile("restore-extract-prefs-", ".json", parent)
+        } else null
+
         val dbCandidate = if (isZip) {
             val tempExtracted = File.createTempFile("restore-extract-", ".db", parent)
             try {
-                org.isoron.uhabits.backup.BackupArchiveExtractor.extractDatabase(stagedBackupFile, tempExtracted)
+                org.isoron.uhabits.backup.BackupArchiveExtractor.extractArchive(
+                    stagedBackupFile,
+                    tempExtracted,
+                    tempExtractedPrefs
+                )
                 tempExtracted
             } catch (t: Throwable) {
                 tempExtracted.delete()
+                tempExtractedPrefs?.delete()
                 throw t
             }
         } else {
@@ -435,6 +543,7 @@ object DatabaseUtils {
 
             val restoreTemp = File(parent, "${dbFile.name}.restore.tmp")
             val rollbackFile = File(parent, "${dbFile.name}.rollback")
+            val prefsRollbackFile = File(parent, "${dbFile.name}.prefs.rollback")
 
             // Reconcile any previous interrupted restore before starting a new one
             reconcileInterruptedRestore(context, activeFilename)
@@ -442,8 +551,13 @@ object DatabaseUtils {
             cleanupSidecars(restoreTemp)
             if (restoreTemp.exists()) restoreTemp.delete()
 
+            // Phase 6: Persist the restore transaction state before file replacement
             val journal = RestoreJournal(parent, activeFilename)
             journal.recordState(RestoreJournal.State.PREPARING, targetVersion, stagedBackupFile.absolutePath)
+
+            if (restoreFailureInjection == RestoreFailureInjection.AFTER_JOURNAL_PREPARING) {
+                throw IOException("Injected failure after journal PREPARING")
+            }
 
             if (session?.isExperimental == true) {
                 val source = SQLiteDatabase.openDatabase(dbCandidate.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
@@ -451,120 +565,181 @@ object DatabaseUtils {
                 val target = SQLiteDatabase.openOrCreateDatabase(restoreTemp, null)
                 try {
                     val wrapped = AndroidDatabase(source)
-                    val result = ContainerRestoreService.restore(wrapped, AndroidDatabase(stage), AndroidDatabase(target),
-                        externalManifest = compatibleOldExperimentalManifest(wrapped))
+                    val result = ContainerRestoreService.restore(
+                        wrapped, AndroidDatabase(stage), AndroidDatabase(target),
+                        externalManifest = compatibleOldExperimentalManifest(wrapped)
+                    )
                     require(result is org.isoron.uhabits.core.containers.backup.RestoreResult.Success) {
                         (result as? org.isoron.uhabits.core.containers.backup.RestoreResult.Failure)?.reason ?: "Invalid experimental backup"
                     }
                     require((result.kind as? DatasetKind.ExperimentalContainer)?.datasetUuid == session.datasetId) {
                         "Restore requires the same experimental dataset identity"
                     }
-                } catch (error: Throwable) { restoreTemp.delete(); throw error }
-                finally { source.close(); stage.close(); target.close() }
+                } catch (error: Throwable) {
+                    restoreTemp.delete()
+                    throw error
+                } finally {
+                    source.close(); stage.close(); target.close()
+                }
             } else {
                 dbCandidate.copyTo(restoreTemp, overwrite = true)
             }
 
-        if (backupVersion < targetVersion) {
-            val migrated = SQLiteDatabase.openDatabase(
-                restoreTemp.absolutePath,
-                null,
-                SQLiteDatabase.OPEN_READWRITE
-            )
-            try {
-                val wrappedDb = AndroidDatabase(migrated)
-                val intermediateTarget = if (targetVersion >= 30 && backupVersion < 29) 29 else targetVersion
-                if (wrappedDb.getVersion() < intermediateTarget) {
-                    runBlocking {
-                        wrappedDb.migrateTo(intermediateTarget) { version ->
-                            val filename = "%02d.sql".format(version)
-                            context.assets.open("migrations/$filename").bufferedReader().readText()
+            if (backupVersion < targetVersion) {
+                val migrated = SQLiteDatabase.openDatabase(
+                    restoreTemp.absolutePath,
+                    null,
+                    SQLiteDatabase.OPEN_READWRITE
+                )
+                try {
+                    val wrappedDb = AndroidDatabase(migrated)
+                    val intermediateTarget = if (targetVersion >= 30 && backupVersion < 29) 29 else targetVersion
+                    if (wrappedDb.getVersion() < intermediateTarget) {
+                        runBlocking {
+                            wrappedDb.migrateTo(intermediateTarget) { version ->
+                                val filename = "%02d.sql".format(version)
+                                context.assets.open("migrations/$filename").bufferedReader().readText()
+                            }
                         }
                     }
-                }
-                if (targetVersion >= 30 && wrappedDb.getVersion() == 29) {
-                    val result = ProductionNextSchemaMigrator.migrate(
-                        db = wrappedDb,
-                        cutoverTimestamp = System.currentTimeMillis(),
-                        ownsTransaction = false
-                    )
-                    if (result is ProductionNextMigrationResult.Failure) {
-                        throw IllegalStateException("Version 30 schema migration failed: ${result.reason}", result.cause)
+                    if (targetVersion >= 30 && wrappedDb.getVersion() == 29) {
+                        val result = ProductionNextSchemaMigrator.migrate(
+                            db = wrappedDb,
+                            cutoverTimestamp = System.currentTimeMillis(),
+                            ownsTransaction = false
+                        )
+                        if (result is ProductionNextMigrationResult.Failure) {
+                            throw IllegalStateException("Version 30 schema migration failed: ${result.reason}", result.cause)
+                        }
                     }
+                } finally {
+                    migrated.close()
                 }
-            } finally {
-                migrated.close()
             }
-        }
 
-        val migratedValidation = validateDatabaseBackup(restoreTemp)
-        require(migratedValidation.isValid && migratedValidation.databaseVersion == targetVersion) {
-            migratedValidation.errorMessage ?: "Migrated backup is invalid"
-        }
+            val migratedValidation = validateDatabaseBackup(restoreTemp)
+            require(migratedValidation.isValid && migratedValidation.databaseVersion == targetVersion) {
+                migratedValidation.errorMessage ?: "Migrated backup is invalid"
+            }
 
-        if (session?.isExperimental == true) requireNotNull(app).shutdownForDatabaseRestoreRestart()
-        closeDatabase()
-        cleanupSidecars(dbFile)
+            if (session?.isExperimental == true) requireNotNull(app).shutdownForDatabaseRestoreRestart()
+            closeDatabase()
+            cleanupSidecars(dbFile)
 
-        journal.recordState(RestoreJournal.State.SWAPPING, targetVersion, stagedBackupFile.absolutePath)
+            // Save portable preferences rollback candidate before modifying anything
+            if (tempExtractedPrefs != null && tempExtractedPrefs.exists()) {
+                val currentPortableExport = org.isoron.uhabits.backup.BackupPreferencesAdapter.exportPreferences(
+                    sharedPrefs = sharedPrefs,
+                    appId = context.packageName
+                )
+                prefsRollbackFile.writeText(currentPortableExport)
+            }
 
-        try {
-            if (dbFile.exists()) {
+            journal.recordState(RestoreJournal.State.SWAPPING, targetVersion, stagedBackupFile.absolutePath)
+
+            try {
+                if (dbFile.exists()) {
+                    Files.move(
+                        dbFile.toPath(),
+                        rollbackFile.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE
+                    )
+                }
+
+                if (restoreFailureInjection == RestoreFailureInjection.AFTER_MOVE_ORIGINAL) {
+                    throw IOException("Injected failure after move original database")
+                }
+
                 Files.move(
+                    restoreTemp.toPath(),
                     dbFile.toPath(),
-                    rollbackFile.toPath(),
                     StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE
                 )
-            }
-            Files.move(
-                restoreTemp.toPath(),
-                dbFile.toPath(),
-                StandardCopyOption.REPLACE_EXISTING,
-                StandardCopyOption.ATOMIC_MOVE
-            )
-            journal.recordState(RestoreJournal.State.APPLIED, targetVersion, stagedBackupFile.absolutePath)
 
-            initializeDatabase(context, activeFilename)
-            openDatabase().close()
+                if (restoreFailureInjection == RestoreFailureInjection.AFTER_INSTALL_REPLACEMENT) {
+                    throw IOException("Injected failure after installing replacement database")
+                }
 
-            // PR24A: Sync safety - keep restore fail-closed/offline by requiring sync review
-            val sharedPrefs = PreferenceManager.getDefaultSharedPreferences(context)
-            if (sharedPrefs.getBoolean("pref_sync_enabled", false)) {
+                if (restoreFailureInjection == RestoreFailureInjection.BEFORE_PREFERENCES_APPLY) {
+                    throw IOException("Injected failure before preferences apply")
+                }
+
+                // Phase 7: Safely apply portable preferences if present
+                if (tempExtractedPrefs != null && tempExtractedPrefs.exists()) {
+                    org.isoron.uhabits.backup.BackupPreferencesAdapter.importPreferences(
+                        sharedPrefs = sharedPrefs,
+                        jsonStr = tempExtractedPrefs.readText()
+                    )
+                }
+
+                if (restoreFailureInjection == RestoreFailureInjection.AFTER_PREFERENCES_APPLY) {
+                    throw IOException("Injected failure after preferences apply")
+                }
+
+                journal.recordState(RestoreJournal.State.APPLIED, targetVersion, stagedBackupFile.absolutePath)
+
+                // Phase 8: Validate the resulting database and restored settings
+                initializeDatabase(context, activeFilename)
+                openDatabase().close()
+
+                // Phase 9: Set or preserve required sync-quarantine gate unconditionally upon restore
                 sharedPrefs.edit()
                     .putBoolean("pref_sync_review_required", true)
                     .putString("pref_sync_review_reason", "Database restored from backup")
                     .commit()
-            }
 
-            if (session?.isExperimental == true) {
-                context.getSharedPreferences(session.preferencesNamespace + "_timer", Context.MODE_PRIVATE).edit().clear().commit()
+                if (session?.isExperimental == true) {
+                    context.getSharedPreferences(session.preferencesNamespace + "_timer", Context.MODE_PRIVATE).edit().clear().commit()
+                }
+
+                if (restoreFailureInjection == RestoreFailureInjection.BEFORE_CLEANUP) {
+                    throw IOException("Injected failure before cleanup")
+                }
+
+                // Phase 10: Finalize the transaction and retain recovery data
+                rollbackFile.delete()
+                prefsRollbackFile.delete()
+                journal.clear()
+            } catch (e: Exception) {
+                closeDatabase()
+                if (rollbackFile.exists()) {
+                    cleanupSidecars(dbFile)
+                    Files.move(
+                        rollbackFile.toPath(),
+                        dbFile.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE
+                    )
+                }
+                if (prefsRollbackFile.exists()) {
+                    runCatching {
+                        org.isoron.uhabits.backup.BackupPreferencesAdapter.importPreferences(
+                            sharedPrefs = sharedPrefs,
+                            jsonStr = prefsRollbackFile.readText()
+                        )
+                    }
+                    prefsRollbackFile.delete()
+                }
+                sharedPrefs.edit()
+                    .putBoolean("pref_sync_review_required", true)
+                    .putString("pref_sync_review_reason", "Restore failed and rolled back")
+                    .commit()
+                initializeDatabase(context, activeFilename)
+                journal.clear()
+                if (session?.isExperimental == true) throw ExperimentalRestoreRestartRequiredException(e)
+                throw e
+            } finally {
+                cleanupSidecars(restoreTemp)
+                restoreTemp.delete()
+                tempExtractedPrefs?.delete()
             }
-            rollbackFile.delete()
-            journal.clear()
-        } catch (e: Exception) {
-            closeDatabase()
-            if (rollbackFile.exists()) {
-                cleanupSidecars(dbFile)
-                Files.move(
-                    rollbackFile.toPath(),
-                    dbFile.toPath(),
-                    StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE
-                )
-            }
-            initializeDatabase(context, activeFilename)
-            journal.clear()
-            if (session?.isExperimental == true) throw ExperimentalRestoreRestartRequiredException(e)
-            throw e
-        } finally {
-            cleanupSidecars(restoreTemp)
-            restoreTemp.delete()
-        }
         } finally {
             if (isZip && dbCandidate != stagedBackupFile) {
                 dbCandidate.delete()
             }
+            tempExtractedPrefs?.delete()
         }
     }
 

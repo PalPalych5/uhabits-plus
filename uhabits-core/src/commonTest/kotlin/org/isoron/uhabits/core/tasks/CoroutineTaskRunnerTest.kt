@@ -49,4 +49,26 @@ class CoroutineTaskRunnerTest : BaseUnitTest() {
             task.onPostExecute()
         }
     }
+
+    @Test
+    fun testExceptionInTaskDecrementsActiveCount() {
+        var finishedCalled = false
+        runner.addListener(object : TaskRunner.Listener {
+            override fun onTaskStarted(task: Task) {}
+            override fun onTaskFinished(task: Task) {
+                finishedCalled = true
+            }
+        })
+        val failingTask = object : Task {
+            override suspend fun doInBackground() {
+                throw RuntimeException("Task failure")
+            }
+        }
+        try {
+            runner.execute(failingTask)
+        } catch (ignored: Throwable) {
+        }
+        kotlin.test.assertEquals(0, runner.activeTaskCount)
+        kotlin.test.assertTrue(finishedCalled)
+    }
 }

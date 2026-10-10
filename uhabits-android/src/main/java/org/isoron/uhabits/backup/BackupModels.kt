@@ -60,4 +60,5 @@ sealed class BackupRestoreException(message: String, cause: Throwable? = null) :
     class UnsupportedVersionException(message: String) : BackupRestoreException(message)
     class CorruptedArchiveException(message: String, cause: Throwable? = null) : BackupRestoreException(message, cause)
     class SecurityViolationException(message: String) : BackupRestoreException(message)
+    class InsufficientStorageException(message: String) : BackupRestoreException(message)
 }

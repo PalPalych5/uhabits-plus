@@ -53,6 +53,7 @@ object BackupArchiveCreator {
         NONE,
         DURING_SNAPSHOT,
         DURING_VALIDATION_PRE_ZIP,
+        DURING_PREFERENCES_EXPORT,
         DURING_ZIP_WRITE,
         DURING_POST_ZIP_VALIDATION,
         DURING_PUBLICATION
@@ -178,11 +179,33 @@ object BackupArchiveCreator {
             // Step 4b: Compute SHA-256 of snapshot file
             val snapshotSha256 = computeFileSha256(tempSnapshotDb)
             val createdAt = System.currentTimeMillis()
+
+            // Step 4c: Export allowlisted portable preferences
+            if (failureInjection == CreationFailureInjection.DURING_PREFERENCES_EXPORT) {
+                throw IOException("Injected failure during preferences export")
+            }
+            val sharedPrefs = if (isExperimental) {
+                context.getSharedPreferences("uhabits_prefs_${session!!.preferencesNamespace}", Context.MODE_PRIVATE)
+            } else {
+                androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+            }
+            val preferencesJsonStr = BackupPreferencesAdapter.exportPreferences(
+                sharedPrefs = sharedPrefs,
+                appId = context.packageName,
+                createdAt = createdAt
+            )
+            val preferencesBytes = preferencesJsonStr.toByteArray(Charsets.UTF_8)
+            val prefDigest = MessageDigest.getInstance("SHA-256")
+            val preferencesSha256 = prefDigest.digest(preferencesBytes).joinToString("") { "%02x".format(it) }
+            val preferencesValidation = BackupPreferencesAdapter.validatePreferencesJson(preferencesJsonStr)
+            val preferencesCount = preferencesValidation.preferenceCount
+
             val canonicalContentSha256 = BackupArchiveManifest.computeCanonicalContentSha256(
                 databaseVersion = dbVersion,
                 databaseSha256 = snapshotSha256,
                 createdAt = createdAt,
-                tableInventory = tableInventory
+                tableInventory = tableInventory,
+                preferencesSha256 = preferencesSha256
             )
 
             // Step 5: Construct manifest
@@ -207,7 +230,10 @@ object BackupArchiveCreator {
                 minSupportedAppVersion = 1,
                 maxSupportedSchemaVersion = 30,
                 runtimeAuthorityMode = if (isExperimental) "EXPERIMENTAL" else "LEGACY_PRODUCTION",
-                restorePolicy = "FAIL_CLOSED_ON_INCOMPATIBLE_AUTHORITY"
+                restorePolicy = "FAIL_CLOSED_ON_INCOMPATIBLE_AUTHORITY",
+                preferencesSha256 = preferencesSha256,
+                preferencesSizeBytes = preferencesBytes.size.toLong(),
+                preferencesCount = preferencesCount
             )
 
             if (failureInjection == CreationFailureInjection.DURING_ZIP_WRITE) {
@@ -237,6 +263,13 @@ object BackupArchiveCreator {
                                 zos.write(buffer, 0, read)
                             }
                         }
+                        zos.closeEntry()
+
+                        // Entry 3: preferences.json
+                        val prefEntry = ZipEntry(BackupArchiveFormat.PREFERENCES_ENTRY_NAME)
+                        prefEntry.size = preferencesBytes.size.toLong()
+                        zos.putNextEntry(prefEntry)
+                        zos.write(preferencesBytes)
                         zos.closeEntry()
                     }
                 }
