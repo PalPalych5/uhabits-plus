@@ -73,7 +73,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     private var bottomNavigationAnimationToken = 0
     private lateinit var workspaceSidebar: MainWorkspaceSidebar
     private val experimentalWide: Boolean
-        get() = appComponent.session.isExperimental && resources.configuration.screenWidthDp >= 600
+        get() = appComponent.session.isNextArchitecture && resources.configuration.screenWidthDp >= 600
 
     private val permissionLauncher = registerForActivityResult(RequestPermission()) { granted ->
         if (granted) scheduleReminders()
@@ -155,8 +155,8 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         reportsTabAnimator = TabAnimator(binding.iconReports, binding.labelReports)
         settingsTabAnimator = TabAnimator(binding.iconSettings, binding.labelSettings)
 
-        binding.btnNavTasks.visibility = if (appComponent.session.isExperimental) View.VISIBLE else View.GONE
-        binding.btnNavSettings.visibility = if (appComponent.session.isExperimental) View.GONE else View.VISIBLE
+        binding.btnNavTasks.visibility = if (appComponent.session.isNextArchitecture) View.VISIBLE else View.GONE
+        binding.btnNavSettings.visibility = if (appComponent.session.isNextArchitecture) View.GONE else View.VISIBLE
 
         binding.btnNavHabits.setOnClickListener {
             onBottomItemClicked(MainDestination.HABITS)
@@ -229,7 +229,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     private fun fragmentFor(destination: MainDestination): Fragment {
-        if (destination == MainDestination.TASKS && !appComponent.session.isExperimental) {
+        if (destination == MainDestination.TASKS && !appComponent.session.isNextArchitecture) {
             return fragmentFor(MainDestination.HABITS)
         }
         val tag = tagFor(destination)
@@ -414,7 +414,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         previous: MainDestination? = null
     ) {
         val activeColor = AccentColorManager.getAccentColor(this, prefs)
-        val inactiveColor = if (appComponent.session.isExperimental) MainTabsThemeBridge.resolve(this).onSurfaceVariant else ContextCompat.getColor(
+        val inactiveColor = if (appComponent.session.isNextArchitecture) MainTabsThemeBridge.resolve(this).onSurfaceVariant else ContextCompat.getColor(
             this,
             if (AndroidThemeSwitcher(this, prefs).isNightMode) R.color.grey_500 else R.color.grey_600
         )
@@ -425,25 +425,25 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         val settingsActive = destination.bottomItemDestination == MainDestination.SETTINGS
 
         // Update colors
-        habitsTabAnimator.updateColors(activeColor, inactiveColor, if (appComponent.session.isExperimental) 1f else 0.54f)
-        if (appComponent.session.isExperimental) {
-            tasksTabAnimator.updateColors(activeColor, inactiveColor, if (appComponent.session.isExperimental) 1f else 0.54f)
+        habitsTabAnimator.updateColors(activeColor, inactiveColor, if (appComponent.session.isNextArchitecture) 1f else 0.54f)
+        if (appComponent.session.isNextArchitecture) {
+            tasksTabAnimator.updateColors(activeColor, inactiveColor, if (appComponent.session.isNextArchitecture) 1f else 0.54f)
         }
-        reportsTabAnimator.updateColors(activeColor, inactiveColor, if (appComponent.session.isExperimental) 1f else 0.54f)
-        settingsTabAnimator.updateColors(activeColor, inactiveColor, if (appComponent.session.isExperimental) 1f else 0.54f)
+        reportsTabAnimator.updateColors(activeColor, inactiveColor, if (appComponent.session.isNextArchitecture) 1f else 0.54f)
+        settingsTabAnimator.updateColors(activeColor, inactiveColor, if (appComponent.session.isNextArchitecture) 1f else 0.54f)
 
         // Animate or snap selection state
         val shouldAnimate = animate && areSystemAnimationsEnabled()
         if (shouldAnimate) {
             habitsTabAnimator.animateTo(habitsActive)
-            if (appComponent.session.isExperimental) {
+            if (appComponent.session.isNextArchitecture) {
                 tasksTabAnimator.animateTo(tasksActive)
             }
             reportsTabAnimator.animateTo(reportsActive)
             settingsTabAnimator.animateTo(settingsActive)
         } else {
             habitsTabAnimator.snapTo(habitsActive)
-            if (appComponent.session.isExperimental) {
+            if (appComponent.session.isNextArchitecture) {
                 tasksTabAnimator.snapTo(tasksActive)
             }
             reportsTabAnimator.snapTo(reportsActive)
@@ -458,7 +458,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     override fun navigate(destination: MainDestination) {
-        if (destination == MainDestination.TASKS && !appComponent.session.isExperimental) return
+        if (destination == MainDestination.TASKS && !appComponent.session.isNextArchitecture) return
         if (isBottomTabTransitionRunning) return
         val previous = navigationState.current
         if (!navigationState.navigate(destination)) return
@@ -596,7 +596,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        if (item.itemId == MENU_WORKSPACE_SETTINGS && appComponent.session.isExperimental) {
+        if (item.itemId == MENU_WORKSPACE_SETTINGS && appComponent.session.isNextArchitecture) {
             navigate(MainDestination.SETTINGS)
             return true
         }
@@ -624,7 +624,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         val openTaskTimer = intent.getBooleanExtra("task.focus.open", false)
         intent.removeExtra("task.focus.open")
         intent.removeExtra("task.focus.dataset")
-        if (openTaskTimer && appComponent.session.isExperimental && appComponent.session.datasetId == timerDataset) {
+        if (openTaskTimer && appComponent.session.isNextArchitecture && appComponent.session.datasetId == timerDataset) {
             val manager = appComponent.timerSessionManager
             val target = manager.currentTarget
             if (target?.kind == org.isoron.uhabits.core.focus.FocusPrimaryTargetType.TASK && manager.snapshot().hasActiveSession &&
@@ -848,7 +848,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
     private fun updateAdaptiveNavigation(destination: MainDestination) {
         if (!::workspaceSidebar.isInitialized) return
-        if (appComponent.session.isExperimental) {
+        if (appComponent.session.isNextArchitecture) {
             val palette = MainTabsThemeBridge.resolve(this)
             androidx.core.view.WindowInsetsControllerCompat(window, binding.root).apply {
                 isAppearanceLightStatusBars = !palette.isDark
@@ -860,7 +860,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         ) View.VISIBLE else View.GONE
         workspaceSidebar.showSelection(destination)
         binding.workspaceSecondaryToolbar.visibility = if (
-            appComponent.session.isExperimental && !experimentalWide && destination == MainDestination.STATISTICS
+            appComponent.session.isNextArchitecture && !experimentalWide && destination == MainDestination.STATISTICS
         ) View.VISIBLE else View.GONE
         androidx.core.view.ViewCompat.requestApplyInsets(binding.workspaceSecondaryToolbar)
         androidx.core.view.ViewCompat.requestApplyInsets(workspaceSidebar)
@@ -868,7 +868,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     override fun onPrepareOptionsMenu(menu: Menu): Boolean {
-        val showSettings = appComponent.session.isExperimental &&
+        val showSettings = appComponent.session.isNextArchitecture &&
             navigationState.current == MainDestination.HABITS
         val settings = menu.findItem(MENU_WORKSPACE_SETTINGS) ?: if (showSettings) {
             menu.add(0, MENU_WORKSPACE_SETTINGS, 100, R.string.settings).apply {
@@ -919,7 +919,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     private fun parseDestination(destName: String?): MainDestination? {
         if (destName == "TODAY") return MainDestination.HABITS
         val destination = destName?.let { runCatching { MainDestination.valueOf(it) }.getOrNull() }
-        return destination?.takeUnless { it == MainDestination.TASKS && !appComponent.session.isExperimental }
+        return destination?.takeUnless { it == MainDestination.TASKS && !appComponent.session.isNextArchitecture }
     }
 
     private fun canAnimateMainTabTransition(

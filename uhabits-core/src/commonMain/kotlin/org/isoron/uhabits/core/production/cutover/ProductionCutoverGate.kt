@@ -34,14 +34,25 @@ import kotlin.concurrent.Volatile
 object ProductionCutoverGate {
     const val AUTHORITY_LEGACY_PRODUCTION = "LEGACY_PRODUCTION"
     const val AUTHORITY_LEGACY = "LEGACY"
+    const val AUTHORITY_NEXT = "NEXT"
 
     @Volatile
     private var explicitCutoverAuthorized: Boolean = false
 
+    @Volatile
+    private var persistedCutoverCheck: ((String) -> Boolean)? = null
+
+    /**
+     * Registers a callback to check whether cutover was persisted for a database file.
+     */
+    fun registerPersistedCutoverCheck(check: ((String) -> Boolean)?) {
+        persistedCutoverCheck = check
+    }
+
     /**
      * Whether cutover to v30 is authorized globally.
      */
-    fun isCutoverAuthorized(): Boolean = explicitCutoverAuthorized
+    fun isCutoverAuthorized(): Boolean = explicitCutoverAuthorized || (persistedCutoverCheck?.invoke(DATABASE_FILENAME) == true)
 
     /**
      * Whether cutover to v30 is authorized for the given database filename.
@@ -52,7 +63,7 @@ object ProductionCutoverGate {
         val canonicalName = DATABASE_FILENAME
         val isCanonical = databaseFilename == canonicalName || databaseFilename.endsWith("/$canonicalName") || databaseFilename.endsWith("\\$canonicalName")
         if (!isCanonical) return true
-        return explicitCutoverAuthorized
+        return explicitCutoverAuthorized || (persistedCutoverCheck?.invoke(databaseFilename) == true)
     }
 
     /**

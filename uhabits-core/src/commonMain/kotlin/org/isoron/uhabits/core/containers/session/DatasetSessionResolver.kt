@@ -73,6 +73,20 @@ object DatasetSessionFactory {
         capabilities = DatasetCapabilities.PRODUCTION,
     )
 
+    /** Production Next session — uses production DB with full UHabit Next capabilities. */
+    fun productionNext(
+        datasetUuid: String = "production",
+        authorityEpoch: Long = 1L
+    ): DatasetSession = DatasetSession(
+        datasetId = datasetUuid,
+        mode = DatasetMode.PRODUCTION_NEXT,
+        databaseFilename = DATABASE_FILENAME,
+        preferencesNamespace = "",
+        organizationAuthority = OrganizationAuthorityMode.CONTAINER_LOCAL,
+        capabilities = DatasetCapabilities.PRODUCTION_NEXT,
+        foundationVersion = 1,
+    )
+
     /** Experimental session from validated metadata. */
     fun experimental(metadata: ExperimentalDatasetMetadata): DatasetSession = DatasetSession(
         datasetId = metadata.datasetId,

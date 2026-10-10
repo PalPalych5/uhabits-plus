@@ -63,7 +63,7 @@ class TimerSessionManager(
     )
 
     fun prepareTask(id: TaskId, title: String): Boolean {
-        if (disposed || !session.isExperimental || captureStore == null) return false
+        if (disposed || !session.isNextArchitecture || captureStore == null) return false
         if (runtime.snapshot().hasActiveSession) return isCurrentTask(id)
         val durations = taskDurations(id)
         val changed = runtime.configurePomodoro(GENERIC_TARGET_ID, title,
@@ -73,7 +73,7 @@ class TimerSessionManager(
     }
 
     fun updateTaskDurations(id: TaskId, title: String, focusMinutes: Int, breakMinutes: Int): Boolean {
-        if (disposed || !session.isExperimental || captureStore == null) return false
+        if (disposed || !session.isNextArchitecture || captureStore == null) return false
         if (focusMinutes !in MIN_FOCUS_MINUTES..MAX_FOCUS_MINUTES || breakMinutes !in MIN_BREAK_MINUTES..MAX_BREAK_MINUTES) return false
         if (runtime.snapshot().hasActiveSession && !isCurrentTask(id)) return false
         if (!runtime.configurePomodoro(GENERIC_TARGET_ID, title, focusMinutes.minutesToMillis(), breakMinutes.minutesToMillis())) return false
@@ -84,7 +84,7 @@ class TimerSessionManager(
     }
 
     fun switchTaskMode(id: TaskId, title: String, mode: TimerMode): Boolean {
-        if (disposed || !session.isExperimental || captureStore == null) return false
+        if (disposed || !session.isNextArchitecture || captureStore == null) return false
         if (runtime.snapshot().hasActiveSession && !isCurrentTask(id)) return false
         if (mode == TimerMode.POMODORO && !prepareTask(id, title)) return false
         val changed = runtime.switchMode(GENERIC_TARGET_ID, title, mode)
@@ -93,7 +93,7 @@ class TimerSessionManager(
     }
 
     fun toggleTask(id: TaskId, title: String): Boolean {
-        if (disposed || !session.isExperimental || captureStore == null) return false
+        if (disposed || !session.isNextArchitecture || captureStore == null) return false
         val state = runtime.snapshot()
         if (state.hasActiveSession) return if (isCurrentTask(id)) pauseOrResumeCurrent() else false
         return startTask(id, state.mode)
@@ -271,7 +271,7 @@ class TimerSessionManager(
         if (disposed) false else captureTargetResolver(FocusPrimaryTargetType.CONTAINER, id.value)?.let { startTarget(it.second, it.first, mode) } ?: false
 
     fun startTarget(target: FocusCaptureTarget, title: String, mode: TimerMode = TimerMode.STOPWATCH): Boolean {
-        if (disposed || !session.isExperimental || captureStore == null || !session.capabilities.timerEnabled) return false
+        if (disposed || !session.isNextArchitecture || captureStore == null || !session.capabilities.timerEnabled) return false
         val before = runtime.snapshot()
         if (before.hasActiveSession && runtime.currentTarget?.let { it.kind != target.kind || it.id != target.id } != false) return false
         if (!before.hasActiveSession) {
@@ -289,7 +289,7 @@ class TimerSessionManager(
         val state = runtime.snapshot()
         val id = state.habitId ?: return false
         if (id != GENERIC_TARGET_ID) habitList.getById(id)?.let { return startOrPause(it) }
-        if (!session.isExperimental || captureStore == null) return false
+        if (!session.isNextArchitecture || captureStore == null) return false
         val changed = if (state.isRunning) runtime.pause(id) else {
             val target = runtime.currentTarget ?: return false
             runtime.start(id, state.habitName, target)
@@ -303,7 +303,7 @@ class TimerSessionManager(
         val state = runtime.snapshot()
         val id = state.habitId ?: return
         if (id != GENERIC_TARGET_ID) habitList.getById(id)?.let { finish(it); return }
-        if (!session.isExperimental || captureStore == null) return
+        if (!session.isNextArchitecture || captureStore == null) return
         runtime.finish(id)
         handler.removeCallbacks(ticker)
         clearCompletionDisplay()
@@ -314,7 +314,7 @@ class TimerSessionManager(
         if (disposed) return
         val id = runtime.snapshot().habitId ?: return
         if (id != GENERIC_TARGET_ID) habitList.getById(id)?.let { reset(it); return }
-        if (!session.isExperimental || captureStore == null) return
+        if (!session.isNextArchitecture || captureStore == null) return
         runtime.reset(id)
         handler.removeCallbacks(ticker)
         clearCompletionDisplay()
@@ -326,7 +326,7 @@ class TimerSessionManager(
         val state = runtime.snapshot()
         val id = state.habitId ?: return
         if (id != GENERIC_TARGET_ID) habitList.getById(id)?.let { takeBreakManually(it); return }
-        if (!session.isExperimental || captureStore == null || state.mode != TimerMode.POMODORO || state.phase != PomodoroPhase.FOCUS) return
+        if (!session.isNextArchitecture || captureStore == null || state.mode != TimerMode.POMODORO || state.phase != PomodoroPhase.FOCUS) return
         runtime.transitionToBreakManually()
         clearCompletionDisplay()
         refreshRuntimePresentation()
@@ -444,7 +444,7 @@ class TimerSessionManager(
         if (disposed || !session.capabilities.timerEnabled) return false
         if (eventId != lastCompletionEventId) return false
         val habit = habitList.getById(habitId)
-        if (habit == null && habitId != GENERIC_TARGET_ID && (!session.isExperimental || captureStore == null)) return false
+        if (habit == null && habitId != GENERIC_TARGET_ID && (!session.isNextArchitecture || captureStore == null)) return false
         var state = runtime.snapshot()
         if (state.hasActiveSession && state.habitId != habitId) return false
 
@@ -536,8 +536,8 @@ class TimerSessionManager(
     }
 
     private fun saveElapsed(habitId: Long, elapsedMillis: Long) {
-        // Preserve legacy accrual. Experimental work facts await explicit Contribution rules.
-        if (session.isExperimental) return
+        // Preserve legacy accrual. Next architecture work facts are captured in Focus journal.
+        if (session.isNextArchitecture) return
         val minutes = elapsedMillisToTenthsMinutes(elapsedMillis)
         if (minutes <= 0.0) return
         val habit = habitList.getById(habitId) ?: return

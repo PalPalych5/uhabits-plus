@@ -79,7 +79,7 @@ class ListHabitsMenu(
         // so no separate ContainersActivity entry is displayed.
         menu.findItem(R.id.actionContainers)?.isVisible = false
         menu.findItem(R.id.actionTodayEvaluation)?.isVisible =
-            (activity.applicationContext as HabitsApplication).component.session.isExperimental
+            (activity.applicationContext as HabitsApplication).component.session.isNextArchitecture
     }
 
     fun onCreate(inflater: MenuInflater, menu: Menu) {

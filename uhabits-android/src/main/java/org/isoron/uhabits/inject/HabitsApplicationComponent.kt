@@ -129,7 +129,7 @@ abstract class HabitsApplicationComponent(
     abstract val userTaskService: UserTaskService
 
     val focusCreditController: org.isoron.uhabits.focus.FocusCreditController? by lazy {
-        if (session.isExperimental) org.isoron.uhabits.focus.FocusCreditController(
+        if (session.isNextArchitecture) org.isoron.uhabits.focus.FocusCreditController(
             providedDb, habitList, organizationFacade, preferences
         ) else null
     }
@@ -137,7 +137,7 @@ abstract class HabitsApplicationComponent(
     val containerStatisticsService: org.isoron.uhabits.core.containers.statistics.ContainerStatisticsService? by lazy {
         val cQueries = organizationFacade.containerQueries
         val pQueries = organizationFacade.habitPlacementQueries
-        if (session.isExperimental && cQueries != null && pQueries != null) {
+        if (session.isNextArchitecture && cQueries != null && pQueries != null) {
             FocusSessionSchema.createSchema(providedDb)
             org.isoron.uhabits.core.contribution.sqlite.ContributionSchema.createSchema(providedDb)
             val contribRepo = org.isoron.uhabits.core.contribution.sqlite.SQLiteContributionRepository(providedDb)
@@ -156,7 +156,7 @@ abstract class HabitsApplicationComponent(
     val todayEvaluationService: org.isoron.uhabits.core.today.TodayEvaluationService? by lazy {
         val cQueries = organizationFacade.containerQueries
         val pQueries = organizationFacade.habitPlacementQueries
-        if (session.isExperimental) {
+        if (session.isNextArchitecture) {
             FocusSessionSchema.createSchema(providedDb)
             org.isoron.uhabits.core.contribution.sqlite.ContributionSchema.createSchema(providedDb)
             val contribRepo = org.isoron.uhabits.core.contribution.sqlite.SQLiteContributionRepository(providedDb)
@@ -183,7 +183,7 @@ abstract class HabitsApplicationComponent(
     val widgetRenderer by lazy { org.isoron.uhabits.widgets.WidgetRenderCoordinator(appContext, this) }
 
     val effectiveHabitReads: org.isoron.uhabits.focus.EffectiveHabitReadController? by lazy {
-        if (session.isExperimental) org.isoron.uhabits.focus.EffectiveHabitReadController(
+        if (session.isNextArchitecture) org.isoron.uhabits.focus.EffectiveHabitReadController(
             appContext, providedDb, preferences, effectiveReadRevision, habitCardListCache, habitList, notificationTray,
         ) else null
     }
@@ -192,7 +192,7 @@ abstract class HabitsApplicationComponent(
         get() = providedDb
 
     private val providedDb: AndroidDatabase by lazy {
-        AndroidDatabase(DatabaseUtils.openDatabase(), if (session.isExperimental) effectiveReadRevision else null)
+        AndroidDatabase(DatabaseUtils.openDatabase(), if (session.isNextArchitecture) effectiveReadRevision else null)
     }
 
     @AppScope
@@ -305,7 +305,7 @@ abstract class HabitsApplicationComponent(
     @Provides
     open fun userTaskRepository(): UserTaskRepository {
         // Resolving a lazy Task dependency must never install an unversioned schema in v29.
-        check(session.isExperimental) { "UserTasks are unavailable in legacy production" }
+        check(session.isNextArchitecture) { "UserTasks are unavailable in legacy production" }
         UserTaskSchema.createSchema(providedDb)
         return SQLiteUserTaskRepository(providedDb)
     }
@@ -346,7 +346,7 @@ abstract class HabitsApplicationComponent(
         facade: HabitOrganizationFacade,
         deviceIdentityManager: DeviceIdentityManager
     ): TimerSessionManager {
-        val capture = if (session.isExperimental) {
+        val capture = if (session.isNextArchitecture) {
             FocusSessionSchema.createSchema(providedDb)
             requireNotNull(focusCreditController).captureStore(SQLiteFocusCaptureStore(providedDb))
         } else null
@@ -369,15 +369,15 @@ abstract class HabitsApplicationComponent(
         completionNotifier = completionNotifier,
         session = session,
         captureStore = capture,
-        deviceId = if (session.isExperimental) deviceIdentityManager.deviceId else null,
+        deviceId = if (session.isNextArchitecture) deviceIdentityManager.deviceId else null,
         focusTargetProvider = { habitId ->
-            if (!session.isExperimental) null else habitList.getById(habitId)?.let { habit ->
+            if (!session.isNextArchitecture) null else habitList.getById(habitId)?.let { habit ->
                 val uuid = requireNotNull(habit.uuid)
                 target(FocusPrimaryTargetType.HABIT, uuid, facade.getPlacementInfo(uuid).containerId)
             }
         },
         captureTargetResolver = { kind, id ->
-            if (!session.isExperimental) null else when (kind) {
+            if (!session.isNextArchitecture) null else when (kind) {
                 FocusPrimaryTargetType.TASK -> SQLiteUserTaskRepository(providedDb).getById(org.isoron.uhabits.core.userTasks.TaskId(id))
                     ?.let { it.title to target(kind, id, it.containerId) }
                 FocusPrimaryTargetType.CONTAINER -> facade.containerQueries?.find(ContainerId(id))

@@ -69,7 +69,7 @@ class TaskFocusBottomSheet : BottomSheetDialogFragment() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(palette.surface)
         }
-        if (!component.session.isExperimental || !isCurrentDataset()) return root
+        if (!component.session.isNextArchitecture || !isCurrentDataset()) return root
         val id = TaskId(requireArguments().getString("taskId")!!)
         val title = requireArguments().getString("title") ?: ""
         root.addView(TextView(requireContext()).apply {
@@ -94,7 +94,7 @@ class TaskFocusBottomSheet : BottomSheetDialogFragment() {
 
     override fun onStart() {
         super.onStart()
-        if (!component.session.isExperimental || !isCurrentDataset()) { dismiss(); return }
+        if (!component.session.isNextArchitecture || !isCurrentDataset()) { dismiss(); return }
         (dialog as? BottomSheetDialog)?.let { sheet ->
             sheet.behavior.skipCollapsed = true
             sheet.behavior.state = BottomSheetBehavior.STATE_EXPANDED
@@ -120,7 +120,7 @@ class TaskFocusBottomSheet : BottomSheetDialogFragment() {
 
     override fun onResume() {
         super.onResume()
-        if (!isCurrentDataset() || !component.session.isExperimental) dismissAllowingStateLoss()
+        if (!isCurrentDataset() || !component.session.isNextArchitecture) dismissAllowingStateLoss()
         else if (::timer.isInitialized) timer.refreshAlertHealth()
     }
 

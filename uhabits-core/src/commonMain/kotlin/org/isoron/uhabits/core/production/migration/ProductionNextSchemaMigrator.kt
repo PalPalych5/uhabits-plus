@@ -50,6 +50,8 @@ object ProductionNextSchemaMigrator {
         sourceSchemaSha256: String? = null,
         ownsTransaction: Boolean = true,
         failureInjectionPoint: MigrationFailurePoint? = null,
+        runtimeAuthority: String = "LEGACY",
+        authorityEpoch: Long = 0L,
     ): ProductionNextMigrationResult {
         val currentVersion = db.getVersion()
         if (currentVersion != 29) {
@@ -82,8 +84,8 @@ object ProductionNextSchemaMigrator {
             mode = "PRODUCTION_NEXT",
             sourceFileSha256 = sourceFileSha256,
             sourceSchemaSha256 = sourceSchemaSha256,
-            runtimeAuthority = "LEGACY",
-            authorityEpoch = 0L,
+            runtimeAuthority = runtimeAuthority,
+            authorityEpoch = authorityEpoch,
             conversionOpUuid = effectiveConversionOpUuid,
             baselineOpUuid = effectiveBaselineOpUuid,
         )
@@ -106,8 +108,8 @@ object ProductionNextSchemaMigrator {
             sourceSnapshotSha256 = beforeInventory.snapshotSha256,
             sourceFileSha256 = sourceFileSha256,
             sourceSchemaSha256 = sourceSchemaSha256,
-            runtimeAuthority = "LEGACY",
-            authorityEpoch = 0L,
+            runtimeAuthority = runtimeAuthority,
+            authorityEpoch = authorityEpoch,
             conversionOpUuid = effectiveConversionOpUuid,
             baselineOpUuid = effectiveBaselineOpUuid,
         )

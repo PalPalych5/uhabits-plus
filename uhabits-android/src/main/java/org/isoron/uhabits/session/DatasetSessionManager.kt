@@ -67,6 +67,10 @@ class DatasetSessionManager(
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     override fun resolvedSession(): DatasetSession {
+        if (isProductionNextSelected()) {
+            val datasetUuid = sessionPrefs.getString(KEY_DATASET_ID, "production") ?: "production"
+            return DatasetSessionFactory.productionNext(datasetUuid)
+        }
         val metadata = loadExperimentalMetadata()
         return if (metadata != null && isExperimentalSelected()) {
             DatasetSessionFactory.experimental(metadata)
@@ -76,10 +80,31 @@ class DatasetSessionManager(
     }
 
     /**
-     * Resolves the session at process startup, running validation on the experimental database if selected.
-     * If the experimental database is missing or corrupt, falls back safely to production and records the error.
+     * Resolves the session at process startup, running validation on the selected database.
+     * If the selected database is missing or corrupt, falls back safely to legacy production and records the error.
      */
     fun resolveSessionOnStartup(): DatasetSession {
+        if (isProductionNextSelected()) {
+            val datasetUuid = sessionPrefs.getString(KEY_DATASET_ID, "production") ?: "production"
+            val dbFile = DatabaseUtils.getDatabaseFile(context)
+            if (dbFile.exists()) {
+                val validation = DatabaseUtils.validateDatabaseBackup(dbFile, org.isoron.uhabits.core.DATABASE_VERSION)
+                if (validation.isValid && validation.databaseVersion == org.isoron.uhabits.core.DATABASE_VERSION) {
+                    Log.i(TAG, "Production Next dataset validated successfully on startup: $datasetUuid")
+                    return DatasetSessionFactory.productionNext(datasetUuid)
+                } else {
+                    Log.w(TAG, "Production Next database failed validation (${validation.errorMessage}), safely falling back to legacy production")
+                    recordStartupError("Продуктовый датасет Next повреждён или не соответствует версии: ${validation.errorMessage}. Выполнен безопасный возврат в базовый режим.")
+                    clearProductionNextSelection()
+                    return DatasetSessionFactory.production()
+                }
+            } else {
+                Log.w(TAG, "Production database file missing, falling back to legacy production")
+                clearProductionNextSelection()
+                return DatasetSessionFactory.production()
+            }
+        }
+
         if (!isExperimentalSelected()) {
             return DatasetSessionFactory.production()
         }
@@ -113,6 +138,24 @@ class DatasetSessionManager(
     fun isExperimentalSelected(): Boolean {
         val modeStr = sessionPrefs.getString(KEY_SELECTED_MODE, DatasetMode.LEGACY_PRODUCTION.name)
         return modeStr == DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL.name
+    }
+
+    fun isProductionNextSelected(): Boolean {
+        val modeStr = sessionPrefs.getString(KEY_SELECTED_MODE, DatasetMode.LEGACY_PRODUCTION.name)
+        return modeStr == DatasetMode.PRODUCTION_NEXT.name
+    }
+
+    fun persistProductionNextSelection(datasetUuid: String = "production") {
+        sessionPrefs.edit()
+            .putString(KEY_SELECTED_MODE, DatasetMode.PRODUCTION_NEXT.name)
+            .putString(KEY_DATASET_ID, datasetUuid)
+            .commit()
+    }
+
+    fun clearProductionNextSelection() {
+        sessionPrefs.edit()
+            .putString(KEY_SELECTED_MODE, DatasetMode.LEGACY_PRODUCTION.name)
+            .commit()
     }
 
     override fun loadExperimentalMetadata(): ExperimentalDatasetMetadata? {

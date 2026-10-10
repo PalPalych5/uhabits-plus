@@ -99,5 +99,17 @@ class ProductionCutoverGateAndroidTest {
         assertEquals(29, LEGACY_DATABASE_VERSION)
         assertEquals(30, DATABASE_VERSION)
     }
+
+    @Test
+    fun persistedCutoverCheckAuthorizesWhenRegistered() {
+        assertFalse(ProductionCutoverGate.isCutoverAuthorized("uhabits.db"))
+        try {
+            ProductionCutoverGate.registerPersistedCutoverCheck { filename -> filename == "uhabits.db" }
+            assertTrue(ProductionCutoverGate.isCutoverAuthorized("uhabits.db"))
+        } finally {
+            ProductionCutoverGate.registerPersistedCutoverCheck(null)
+            assertFalse(ProductionCutoverGate.isCutoverAuthorized("uhabits.db"))
+        }
+    }
 }
 

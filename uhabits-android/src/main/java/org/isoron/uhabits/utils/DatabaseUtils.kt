@@ -470,7 +470,7 @@ object DatabaseUtils {
 
         // Phase 1: Validate the entire archive before modifying active state
         val isCutoverAuthorized = ProductionCutoverGate.isCutoverAuthorized(activeFilename)
-        val targetVersion = if (session?.isExperimental == true || isCutoverAuthorized) {
+        val targetVersion = if (session?.isNextArchitecture == true || isCutoverAuthorized) {
             DATABASE_VERSION
         } else {
             LEGACY_DATABASE_VERSION
@@ -537,8 +537,8 @@ object DatabaseUtils {
                 NEXT_TABLE_NAMES.any(tables::contains)
             } finally { backup.close() }
 
-            require(session?.isExperimental == true || (!hasNextEntities && backupVersion <= LEGACY_DATABASE_VERSION)) {
-                "Experimental or UHabit Next backup cannot replace a production dataset"
+            require(session?.isNextArchitecture == true || isCutoverAuthorized || (!hasNextEntities && backupVersion <= LEGACY_DATABASE_VERSION)) {
+                "Experimental or UHabit Next backup cannot replace a legacy production dataset"
             }
 
             val restoreTemp = File(parent, "${dbFile.name}.restore.tmp")
@@ -606,7 +606,9 @@ object DatabaseUtils {
                         val result = ProductionNextSchemaMigrator.migrate(
                             db = wrappedDb,
                             cutoverTimestamp = System.currentTimeMillis(),
-                            ownsTransaction = false
+                            ownsTransaction = false,
+                            runtimeAuthority = if (session?.isNextArchitecture == true || isCutoverAuthorized) "NEXT" else "LEGACY",
+                            authorityEpoch = if (session?.isNextArchitecture == true || isCutoverAuthorized) 1L else 0L
                         )
                         if (result is ProductionNextMigrationResult.Failure) {
                             throw IllegalStateException("Version 30 schema migration failed: ${result.reason}", result.cause)
@@ -971,7 +973,7 @@ object DatabaseUtils {
         return value.replace("'", "''")
     }
 
-    private fun cleanupSidecars(file: File) {
+    internal fun cleanupSidecars(file: File) {
         File("${file.absolutePath}-wal").delete()
         File("${file.absolutePath}-shm").delete()
     }

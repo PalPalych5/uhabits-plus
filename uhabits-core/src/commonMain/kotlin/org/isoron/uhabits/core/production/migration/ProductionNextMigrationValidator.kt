@@ -451,8 +451,12 @@ object ProductionNextMigrationValidator {
                 if (cutoverAt != expectedMetadata.cutoverAt) errors.add("OrganizationState cutover_at mismatch: $cutoverAt vs ${expectedMetadata.cutoverAt}")
                 if (sourceSchemaVer != 29) errors.add("OrganizationState source_schema_version was $sourceSchemaVer, expected 29")
                 if (sourceSnapshotSha != beforeInventory.snapshotSha256) errors.add("OrganizationState source_snapshot_sha256 mismatch")
-                if (runtimeAuthority != "LEGACY") errors.add("OrganizationState runtime_authority must be 'LEGACY' in PR22, was '$runtimeAuthority'")
-                if (authorityEpoch != 0L) errors.add("OrganizationState authority_epoch must be 0, was $authorityEpoch")
+                if (runtimeAuthority != expectedMetadata.runtimeAuthority) {
+                    errors.add("OrganizationState runtime_authority mismatch: expected '${expectedMetadata.runtimeAuthority}', was '$runtimeAuthority'")
+                }
+                if (authorityEpoch != expectedMetadata.authorityEpoch) {
+                    errors.add("OrganizationState authority_epoch mismatch: expected ${expectedMetadata.authorityEpoch}, was $authorityEpoch")
+                }
                 if (expectedMetadata.conversionOpUuid.isNotBlank() && conversionOpUuid != expectedMetadata.conversionOpUuid) {
                     errors.add("OrganizationState conversion_op_uuid mismatch: '$conversionOpUuid' vs '${expectedMetadata.conversionOpUuid}'")
                 }

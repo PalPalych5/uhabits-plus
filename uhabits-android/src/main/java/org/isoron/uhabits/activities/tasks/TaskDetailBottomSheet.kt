@@ -147,7 +147,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         setupListeners()
         viewReady = true
         view.findViewById<View>(R.id.rowDetailFocus).apply {
-            visibility = if (launchComponent.session.isExperimental && currentTask != null) View.VISIBLE else View.GONE
+            visibility = if (launchComponent.session.isNextArchitecture && currentTask != null) View.VISIBLE else View.GONE
             setOnClickListener {
                 val app = requireContext().applicationContext as HabitsApplication
                 if (app.component !== launchComponent || taskDeleted) return@setOnClickListener

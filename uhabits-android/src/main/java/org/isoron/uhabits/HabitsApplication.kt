@@ -61,6 +61,11 @@ class HabitsApplication : Application() {
         // PR24A: reconcile any interrupted database restore before DI or SQLite opening can create an empty database
         DatabaseUtils.reconcileInterruptedRestore(this)
 
+        // PR25: register persisted cutover gate check
+        org.isoron.uhabits.core.production.cutover.ProductionCutoverGate.registerPersistedCutoverCheck {
+            sessionManager.isProductionNextSelected()
+        }
+
         // PR21 explicit preparation/recovery must inspect legacy state before normal session
         // resolution, DB opening, sync, or timer constructors can write. No migration follows it.
         org.isoron.uhabits.production.ProductionPreparationStartup.runBeforeDependencyInjection(this)

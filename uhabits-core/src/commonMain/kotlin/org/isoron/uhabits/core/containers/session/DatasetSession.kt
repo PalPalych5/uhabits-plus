@@ -43,14 +43,19 @@ data class DatasetSession(
 ) {
     val isExperimental: Boolean
         get() = mode == DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL
+
+    val isNextArchitecture: Boolean
+        get() = mode == DatasetMode.PRODUCTION_NEXT || mode == DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL
 }
 
 /**
- * Minimal dataset modes for PR6. Not scattered boolean flags.
+ * Dataset modes determining runtime configuration and capabilities.
  */
 enum class DatasetMode {
-    /** Original production database with full sync, reminders, widgets, timer. */
+    /** Original legacy production database with legacy capabilities. */
     LEGACY_PRODUCTION,
+    /** Production database migrated to UHabit Next (v30 schema, Tasks, Containers, Focus, Statistics). */
+    PRODUCTION_NEXT,
     /** Isolated experimental copy: dataset-aware timer capture, no sync, restricted jobs. */
     CONTAINER_LOCAL_EXPERIMENTAL,
 }
@@ -70,8 +75,19 @@ data class DatasetCapabilities(
     val backupEnabled: Boolean = true,
 ) {
     companion object {
-        /** Full production capabilities. */
+        /** Full production capabilities for legacy mode. */
         val PRODUCTION = DatasetCapabilities()
+
+        /** Production Next capabilities: local runtime enabled, cloud sync quarantined until PR26. */
+        val PRODUCTION_NEXT = DatasetCapabilities(
+            syncEnabled = false,
+            remoteCallsAllowed = false,
+            timerEnabled = true,
+            widgetsEnabled = true,
+            remindersEnabled = true,
+            backgroundJobsEnabled = true,
+            backupEnabled = true,
+        )
 
         /** Experimental: everything that could mutate wrong dataset is blocked. */
         val EXPERIMENTAL = DatasetCapabilities(
