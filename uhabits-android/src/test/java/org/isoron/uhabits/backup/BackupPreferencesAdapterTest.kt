@@ -24,6 +24,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -244,6 +245,7 @@ class BackupPreferencesAdapterTest {
             .putString("pref_sync_key", "secret-password-123")
             .putString("sync_device_id", "device-uuid-999")
             .putBoolean("pref_developer", true)
+            .putBoolean("pref_sync_review_required", true)
             .putString("unknown_key", "ignored")
             .apply()
 
@@ -256,6 +258,7 @@ class BackupPreferencesAdapterTest {
         assertFalse(prefMap.has("pref_sync_key"))
         assertFalse(prefMap.has("sync_device_id"))
         assertFalse(prefMap.has("pref_developer"))
+        assertFalse(prefMap.has("pref_sync_review_required"))
         assertFalse(prefMap.has("unknown_key"))
     }
 
@@ -300,6 +303,32 @@ class BackupPreferencesAdapterTest {
         assertEquals(2, prefs.getInt("pref_theme", -1))
         assertTrue(prefs.getBoolean("pref_pure_black", false))
         assertEquals("ru", prefs.getString("pref_app_language", null))
+    }
+
+    @Test
+    fun importRejectsUnallowlistedAndUnauthorizedKeys() {
+        val prefs = TestSharedPreferences()
+        prefs.edit()
+            .putBoolean("pref_sync_review_required", true)
+            .putString("pref_sync_key", "original-secret")
+            .apply()
+
+        val importJson = buildPreferencesJson(
+            entries = mapOf(
+                "pref_theme" to Pair("INT", 1),
+                "pref_sync_review_required" to Pair("BOOLEAN", false),
+                "pref_developer" to Pair("BOOLEAN", true)
+            )
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            BackupPreferencesAdapter.importPreferences(prefs, importJson)
+        }
+
+        // State remains completely untouched
+        assertTrue("pref_sync_review_required must remain unchanged after rejected import", prefs.getBoolean("pref_sync_review_required", false))
+        assertEquals("original-secret", prefs.getString("pref_sync_key", null))
+        assertFalse(prefs.contains("pref_developer"))
     }
 
     @Test

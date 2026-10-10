@@ -72,4 +72,22 @@ class RestoreJournalTest {
         // Corrupted journal defaults to safe rollback state SWAPPING
         assertEquals(RestoreJournal.State.SWAPPING, state!!.state)
     }
+
+    @Test
+    fun testEmptyFileReturnsNull() {
+        val dir = tempFolder.root
+        val journal = RestoreJournal(dir, "uhabits.db")
+        journal.journalFile.writeText("")
+
+        assertNull(journal.readState())
+    }
+
+    @Test
+    fun testClearOnNonExistentFileDoesNotThrow() {
+        val dir = tempFolder.root
+        val journal = RestoreJournal(dir, "uhabits.db")
+        assertFalse(journal.exists)
+        journal.clear()
+        assertFalse(journal.exists)
+    }
 }
