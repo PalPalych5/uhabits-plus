@@ -158,7 +158,7 @@ Persisted Repetitions (manual) + Persisted Contributions (Focus sessions)
    - 0 per-day or per-goal queries across all consumer surfaces.
 2. **Concurrency Fix in `CoroutineTaskRunner.kt`:**
    - **Issue Discovered:** Concurrent coroutine completion during `component.taskRunner.await()` caused `ConcurrentModificationException` when iterating over `mutableListOf<Job>()`.
-   - **Fix Implemented:** Made job registration, removal, and listener updates `@Synchronized`, and took an immutable snapshot (`jobs.toList()`) in `await()` before invoking `joinAll()`. Verified with 100% pass rate in `CoroutineTaskRunnerTest`.
+   - **Fix Implemented:** Made job registration, removal, and listener updates `@Synchronized`, and took an immutable snapshot (`jobs.toList()`) in `await()` before invoking `joinAll()`. (Note: existing `CoroutineTaskRunnerTest` verifies sequential execution; dedicated concurrent race regression test is recommended for PR24 hardening).
 
 ---
 
@@ -168,12 +168,13 @@ Persisted Repetitions (manual) + Persisted Contributions (Focus sessions)
 |---|---|---|---|
 | **Core JVM Suite (`:uhabits-core:jvmTest`)** | 139 suites / 868 tests | **100% PASS** | Exit code 0, 0 failures, 0 skipped |
 | **Android JVM Suite (`:uhabits-android:testDebugUnitTest`)** | 21 suites / 99 tests | **100% PASS** | Exit code 0, 0 failures, 0 skipped |
-| **Native Android Instrumentation (on `emulator-5554`)** | 5 suites / 14 tests | **100% PASS** | Dedicated offline test environment |
+| **Native Android Instrumentation (on disposable AVD `UHabit_PR23B_Notifications`, adb serial `emulator-5554`)** | 5 suites / 14 tests | **100% PASS** | Dedicated offline test environment (airplane mode 1, Wi-Fi 0). Preserved forensic `Pixel_6` was NOT touched. |
 | - `LiveInvalidationAndroidTest` | 1 test | PASS | Revision propagation on device |
-| - `StatisticsEffectiveAndroidTest` | 3 tests | PASS | Statistics effective presentation & tombstone |
-| - `WidgetsEffectiveAndroidTest` | 4 tests | PASS | 6 widget types, manual isolation, tombstone |
-| - `NotificationsEffectiveAndroidTest` | 3 tests | PASS | Completion suppression, AT_MOST, isolation |
-| - `CSVExportEffectiveAndroidTest` | 3 tests | PASS | Legacy parity, additive effective export, RFC 4180 |
+| - `StatisticsEffectiveAndroidTest` | 3 tests | PASS | Tests report progress, active statistics refresh, and active **Compare Habits** screen live refresh (`activeCompareHabitsActivityRefreshesOnLiveContributionRemoval`) |
+| - `WidgetsEffectiveAndroidTest` | 4 tests | PASS | 6 widget types, manual isolation, tombstone, stale pending intent rejection |
+| - `NotificationsEffectiveAndroidTest` | 3 tests | PASS | Completion suppression, AT_MOST exception, pending intent dataset isolation |
+| - `CSVExportEffectiveAndroidTest` | 3 tests | PASS | Legacy parity, additive effective export, RFC 4180 escaping |
+| **Dedicated Prior Checkpoint: Compare Habits QA (`pr23b_compare_qa/`)** | 9 tests | **100% PASS** | Executed on isolated disposable AVD `UHabit_PR23B_Compare` (`emulator-5556`). See `pr23b_compare_qa/REPORT.md`. |
 | **Android APK Compilation & Packaging** | 3 build tasks | **100% PASS** | `compileDebugKotlin`, `assembleDebug`, `assembleDebugAndroidTest` |
 
 ---
@@ -186,7 +187,10 @@ All production cutover boundaries remain strictly enforced:
 - **Next Database Version:** Schema v30 is allocated in `Constants.DATABASE_VERSION` for Next, but completely inactive in production.
 - **Production Cutover Gate:** `ProductionCutoverGate` remains closed.
 - **Timer & Sync Authority:** Production timer uses legacy `TimerSessionManager` and direct `AddNumericalEntryOpCommand`; production sync v1 is untouched; no sync v2 or cloud cutover.
-- **Subsequent Stages:** PR24 (Backup & Recovery) and PR25 (Cloud Sync v2) remain strictly **BLOCKED**.
+- **Subsequent Stages per Canonical Roadmap:**
+  - **PR24:** Production Backup, Recovery and Release Hardening (currently PREPARING / BLOCKED).
+  - **PR25:** Protected Local-Only Production Cutover (BLOCKED).
+  - **PR26:** Cloud Sync Protocol v2 (BLOCKED).
 
 ---
 

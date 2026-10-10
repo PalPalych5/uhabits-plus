@@ -22,12 +22,19 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
+import androidx.preference.PreferenceManager
 import kotlinx.coroutines.runBlocking
+import org.isoron.platform.io.getVersion
 import org.isoron.platform.io.migrateTo
 import org.isoron.uhabits.HabitsApplication.Companion.isTestMode
 import org.isoron.uhabits.HabitsDatabaseOpener
+import org.isoron.uhabits.backup.RestoreJournal
 import org.isoron.uhabits.core.DATABASE_FILENAME
 import org.isoron.uhabits.core.DATABASE_VERSION
+import org.isoron.uhabits.core.LEGACY_DATABASE_VERSION
+import org.isoron.uhabits.core.production.cutover.ProductionCutoverGate
+import org.isoron.uhabits.core.production.migration.ProductionNextMigrationResult
+import org.isoron.uhabits.core.production.migration.ProductionNextSchemaMigrator
 import org.isoron.uhabits.database.AndroidDatabase
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.core.containers.backup.*
@@ -44,6 +51,32 @@ class ExperimentalRestoreRestartRequiredException(cause: Throwable) : IOExceptio
 object DatabaseUtils {
     private var opener: HabitsDatabaseOpener? = null
     private var currentDatabaseFilename: String? = null
+
+    val LEGACY_TABLE_NAMES = listOf(
+        "Habits",
+        "Repetitions",
+        "HabitExtensions",
+        "HabitBlocks",
+        "HabitGoals",
+        "AppSettings",
+        "SyncQueue",
+        "EntryOps"
+    )
+
+    val NEXT_TABLE_NAMES = listOf(
+        "OrganizationState",
+        "OrganizationChanges",
+        "Containers",
+        "ContainerHistory",
+        "HabitPlacements",
+        "HabitPlacementHistory",
+        "LegacyBlockMap",
+        "HabitVisualIdentities",
+        "UserTasks",
+        "FocusSessions",
+        "Contributions",
+        "SourceRules"
+    )
 
     @JvmStatic
     fun getDatabaseFile(context: Context, filename: String? = null): File {
@@ -62,10 +95,13 @@ object DatabaseUtils {
     fun initializeDatabase(context: Context?, filename: String? = null) {
         val resolvedName = filename ?: defaultDatabaseFilename
         currentDatabaseFilename = resolvedName
-        val targetVersion = if (org.isoron.uhabits.core.production.cutover.ProductionCutoverGate.isCutoverAuthorized(resolvedName)) {
+        if (context != null) {
+            reconcileInterruptedRestore(context, resolvedName)
+        }
+        val targetVersion = if (ProductionCutoverGate.isCutoverAuthorized(resolvedName)) {
             DATABASE_VERSION
         } else {
-            org.isoron.uhabits.core.LEGACY_DATABASE_VERSION
+            LEGACY_DATABASE_VERSION
         }
         opener = HabitsDatabaseOpener(
             context!!,
@@ -78,6 +114,77 @@ object DatabaseUtils {
         opener?.close()
         opener = null
         currentDatabaseFilename = null
+    }
+
+    fun reconcileInterruptedRestore(context: Context, filename: String? = null) {
+        val resolvedName = filename ?: defaultDatabaseFilename
+        val dbFile = getDatabaseFile(context, resolvedName)
+        val parent = dbFile.parentFile ?: return
+        val rollbackFile = File(parent, "${dbFile.name}.rollback")
+        val restoreTemp = File(parent, "${dbFile.name}.restore.tmp")
+        val journal = RestoreJournal(parent, resolvedName)
+        val state = journal.readState()
+
+        cleanupSidecars(restoreTemp)
+        if (restoreTemp.exists()) restoreTemp.delete()
+
+        if (!rollbackFile.exists()) {
+            journal.clear()
+            return
+        }
+
+        // Rollback file exists: an interrupted restore or recovery candidate is present.
+        if (!dbFile.exists() || dbFile.length() == 0L) {
+            cleanupSidecars(dbFile)
+            Files.move(
+                rollbackFile.toPath(),
+                dbFile.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
+            journal.clear()
+            Log.i("DatabaseUtils", "Reconciled interrupted restore: restored $resolvedName from rollback candidate")
+            return
+        }
+
+        // Both dbFile and rollbackFile exist.
+        if (state?.state == RestoreJournal.State.APPLIED) {
+            val validation = validateDatabaseBackup(dbFile)
+            if (validation.isValid) {
+                rollbackFile.delete()
+                journal.clear()
+                Log.i("DatabaseUtils", "Reconciled interrupted restore: APPLIED state confirmed, cleared rollback")
+                return
+            }
+        }
+
+        val rollbackValidation = validateDatabaseBackup(rollbackFile)
+        val dbValidation = validateDatabaseBackup(dbFile)
+
+        if (!dbValidation.isValid && rollbackValidation.isValid) {
+            cleanupSidecars(dbFile)
+            Files.move(
+                rollbackFile.toPath(),
+                dbFile.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
+            journal.clear()
+            Log.i("DatabaseUtils", "Reconciled interrupted restore: recovered valid rollback file to $resolvedName")
+            return
+        }
+
+        // Both are valid or state is ambiguous. Never destructively overwrite an existing recovery candidate!
+        val timestamp = System.currentTimeMillis()
+        val archiveRollback = File(parent, "${dbFile.name}.recovery.$timestamp")
+        Files.move(
+            rollbackFile.toPath(),
+            archiveRollback.toPath(),
+            StandardCopyOption.REPLACE_EXISTING,
+            StandardCopyOption.ATOMIC_MOVE
+        )
+        journal.clear()
+        Log.w("DatabaseUtils", "Preserved ambiguous rollback file as ${archiveRollback.name}")
     }
 
     fun createDatabaseSnapshot(context: Context, tempFile: File): SnapshotInfo {
@@ -105,9 +212,9 @@ object DatabaseUtils {
         try {
             db.execSQL("VACUUM INTO '${escapeSqlString(tempFile.absolutePath)}'")
         } catch (e: Exception) {
-            Log.w("DatabaseUtils", "VACUUM INTO failed, falling back to validated file copy", e)
-            val source = getDatabaseFile(context)
-            source.copyTo(tempFile, overwrite = true)
+            Log.e("DatabaseUtils", "VACUUM INTO snapshot failed", e)
+            tempFile.delete()
+            throw IOException("Database snapshot failed: VACUUM INTO error: ${e.message}", e)
         }
 
         val validation = validateDatabaseBackup(tempFile)
@@ -199,6 +306,9 @@ object DatabaseUtils {
                     add("SyncQueue")
                     add("EntryOps")
                 }
+                if (version >= 30) {
+                    addAll(NEXT_TABLE_NAMES)
+                }
             }
             val presentTables = db.rawQuery(
                 "select name from sqlite_master where type='table'", null
@@ -213,7 +323,7 @@ object DatabaseUtils {
                     errorMessage = "Backup is missing required tables"
                 )
             } else {
-                if (ContainerBackupRouter.REQUIRED_ORGANIZATION_TABLES.any(presentTables::contains) || presentTables.contains("FocusSessions")) {
+                if (NEXT_TABLE_NAMES.any(presentTables::contains)) {
                     val stage = SQLiteDatabase.create(null)
                     val target = SQLiteDatabase.create(null)
                     try {
@@ -238,28 +348,50 @@ object DatabaseUtils {
     fun restoreDatabaseFromBackup(context: Context, stagedBackupFile: File) {
         val validation = validateDatabaseBackup(stagedBackupFile)
         require(validation.isValid) { validation.errorMessage ?: "Invalid backup" }
+        val backupVersion = requireNotNull(validation.databaseVersion) { "Missing database version in backup" }
 
         val dbFile = getDatabaseFile(context)
         val activeFilename = dbFile.name
         val app = context.applicationContext as? HabitsApplication
         val session = app?.component?.session
+
+        // PR24A: Determine authorized target schema version from cutover gate and session authority
+        val isCutoverAuthorized = ProductionCutoverGate.isCutoverAuthorized(activeFilename)
+        val targetVersion = if (session?.isExperimental == true || isCutoverAuthorized) {
+            DATABASE_VERSION
+        } else {
+            LEGACY_DATABASE_VERSION
+        }
+
+        // Validate that backup schema version does not exceed target authorization
+        if (backupVersion > targetVersion) {
+            throw IllegalArgumentException(
+                "Cannot restore backup with schema version $backupVersion into a dataset targeting version $targetVersion"
+            )
+        }
+
         val backup = SQLiteDatabase.openDatabase(stagedBackupFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
-        val hasOrganization = try {
+        val hasNextEntities = try {
             val tables = DatabaseSnapshotter.listTables(AndroidDatabase(backup))
-            ContainerBackupRouter.REQUIRED_ORGANIZATION_TABLES.any(tables::contains) || "FocusSessions" in tables
+            NEXT_TABLE_NAMES.any(tables::contains)
         } finally { backup.close() }
-        require(session?.isExperimental == true || !hasOrganization) { "Experimental backup cannot replace a production dataset" }
+
+        require(session?.isExperimental == true || (!hasNextEntities && backupVersion <= LEGACY_DATABASE_VERSION)) {
+            "Experimental or UHabit Next backup cannot replace a production dataset"
+        }
+
         val parent = requireNotNull(dbFile.parentFile)
         val restoreTemp = File(parent, "${dbFile.name}.restore.tmp")
         val rollbackFile = File(parent, "${dbFile.name}.rollback")
+
+        // Reconcile any previous interrupted restore before starting a new one
+        reconcileInterruptedRestore(context, activeFilename)
+
         cleanupSidecars(restoreTemp)
         if (restoreTemp.exists()) restoreTemp.delete()
-        if (rollbackFile.exists()) {
-            if (dbFile.exists()) {
-                throw IOException("Previous database restore rollback requires manual recovery")
-            }
-            Files.move(rollbackFile.toPath(), dbFile.toPath(), StandardCopyOption.ATOMIC_MOVE)
-        }
+
+        val journal = RestoreJournal(parent, activeFilename)
+        journal.recordState(RestoreJournal.State.PREPARING, targetVersion, stagedBackupFile.absolutePath)
 
         if (session?.isExperimental == true) {
             val source = SQLiteDatabase.openDatabase(stagedBackupFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
@@ -277,9 +409,11 @@ object DatabaseUtils {
                 }
             } catch (error: Throwable) { restoreTemp.delete(); throw error }
             finally { source.close(); stage.close(); target.close() }
-        } else stagedBackupFile.copyTo(restoreTemp, overwrite = true)
+        } else {
+            stagedBackupFile.copyTo(restoreTemp, overwrite = true)
+        }
 
-        if ((validation.databaseVersion ?: DATABASE_VERSION) < DATABASE_VERSION) {
+        if (backupVersion < targetVersion) {
             val migrated = SQLiteDatabase.openDatabase(
                 restoreTemp.absolutePath,
                 null,
@@ -287,10 +421,23 @@ object DatabaseUtils {
             )
             try {
                 val wrappedDb = AndroidDatabase(migrated)
-                runBlocking {
-                    wrappedDb.migrateTo(DATABASE_VERSION) { version ->
-                        val filename = "%02d.sql".format(version)
-                        context.assets.open("migrations/$filename").bufferedReader().readText()
+                val intermediateTarget = if (targetVersion >= 30 && backupVersion < 29) 29 else targetVersion
+                if (wrappedDb.getVersion() < intermediateTarget) {
+                    runBlocking {
+                        wrappedDb.migrateTo(intermediateTarget) { version ->
+                            val filename = "%02d.sql".format(version)
+                            context.assets.open("migrations/$filename").bufferedReader().readText()
+                        }
+                    }
+                }
+                if (targetVersion >= 30 && wrappedDb.getVersion() == 29) {
+                    val result = ProductionNextSchemaMigrator.migrate(
+                        db = wrappedDb,
+                        cutoverTimestamp = System.currentTimeMillis(),
+                        ownsTransaction = false
+                    )
+                    if (result is ProductionNextMigrationResult.Failure) {
+                        throw IllegalStateException("Version 30 schema migration failed: ${result.reason}", result.cause)
                     }
                 }
             } finally {
@@ -299,13 +446,15 @@ object DatabaseUtils {
         }
 
         val migratedValidation = validateDatabaseBackup(restoreTemp)
-        require(migratedValidation.isValid && migratedValidation.databaseVersion == DATABASE_VERSION) {
+        require(migratedValidation.isValid && migratedValidation.databaseVersion == targetVersion) {
             migratedValidation.errorMessage ?: "Migrated backup is invalid"
         }
 
         if (session?.isExperimental == true) requireNotNull(app).shutdownForDatabaseRestoreRestart()
         closeDatabase()
         cleanupSidecars(dbFile)
+
+        journal.recordState(RestoreJournal.State.SWAPPING, targetVersion, stagedBackupFile.absolutePath)
 
         try {
             if (dbFile.exists()) {
@@ -322,12 +471,25 @@ object DatabaseUtils {
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE
             )
+            journal.recordState(RestoreJournal.State.APPLIED, targetVersion, stagedBackupFile.absolutePath)
+
             initializeDatabase(context, activeFilename)
             openDatabase().close()
+
+            // PR24A: Sync safety - keep restore fail-closed/offline by requiring sync review
+            val sharedPrefs = PreferenceManager.getDefaultSharedPreferences(context)
+            if (sharedPrefs.getBoolean("pref_sync_enabled", false)) {
+                sharedPrefs.edit()
+                    .putBoolean("pref_sync_review_required", true)
+                    .putString("pref_sync_review_reason", "Database restored from backup")
+                    .commit()
+            }
+
             if (session?.isExperimental == true) {
                 context.getSharedPreferences(session.preferencesNamespace + "_timer", Context.MODE_PRIVATE).edit().clear().commit()
             }
             rollbackFile.delete()
+            journal.clear()
         } catch (e: Exception) {
             closeDatabase()
             if (rollbackFile.exists()) {
@@ -340,6 +502,7 @@ object DatabaseUtils {
                 )
             }
             initializeDatabase(context, activeFilename)
+            journal.clear()
             if (session?.isExperimental == true) throw ExperimentalRestoreRestartRequiredException(e)
             throw e
         } finally {

@@ -2,7 +2,7 @@
 
 Date: 2026-10-08, Asia/Novosibirsk. Inspected baseline: `dev`, PR22.1 `e24dc13eb04970559d7a177eabab7787bfb3be5e`; PR22 `c1dba8521bc3ac446ddd70248563e16d9c03ce2b`. No tracked source changes at audit start. Existing untracked scripts, screenshots and private QA databases were preserved.
 
-**Status: PR23A DONE; PR23B DONE (all 5 checkpoints completed and verified: Global Statistics, Compare Habits, Widgets, Notifications, CSV). PR23 overall DONE / ACCEPTED.** Production activation remains BLOCKED. PR24/PR25 BLOCKED.
+**Status: PR23A DONE; PR23B DONE (all 5 checkpoints completed and verified: Global Statistics, Compare Habits, Widgets, Notifications, CSV). PR23 overall DONE / ACCEPTED.** Production activation remains BLOCKED. PR24 (Backup/Recovery), PR25 (Local Cutover), and PR26 (Cloud Sync v2) remain BLOCKED.
 
 ## PR23B Compare checkpoint — 2026-10-08
 
@@ -303,6 +303,6 @@ Static checks: Constants retains LEGACY_DATABASE_VERSION 29 and allocated DATABA
 - CSV export checkpoint is **DONE**.
 - All functional checkpoints of PR23B (Global Statistics, Compare, Widgets, Notifications, CSV Export) are completed and verified.
 - Independent cross-surface audit completed: PR23 overall is **DONE / ACCEPTED** (canonical report: `docs/UHABIT_PR23_FINAL_ACCEPTANCE.md`).
-- PR24 / PR25 remain **BLOCKED**. Production authority remains **LEGACY v29**. Next schema v30 remains allocated but not activated.
+- PR24 (Backup & Recovery and Release Hardening), PR25 (Local Production Cutover), and PR26 (Cloud Sync v2) remain **BLOCKED**. Production authority remains **LEGACY v29**. Next schema v30 remains allocated but not activated.
 
 

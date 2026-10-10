@@ -40,8 +40,43 @@ class HabitsDatabaseOpener(
         db.setForeignKeyConstraintsEnabled(true)
     }
 
+    companion object {
+        fun hasEvidenceOfExistingDataset(context: Context, databaseFilename: String): Boolean {
+            val dbFile = context.getDatabasePath(databaseFilename)
+            val parent = dbFile.parentFile
+            if (parent != null) {
+                if (java.io.File(parent, "$databaseFilename.rollback").exists()) return true
+                if (java.io.File(parent, "$databaseFilename.restore.state").exists()) return true
+                if (java.io.File(parent, "$databaseFilename.restore.tmp").exists()) return true
+                val recoveryFiles = parent.listFiles { file ->
+                    file.name.startsWith("$databaseFilename.recovery.") || file.name == "$databaseFilename.invalid"
+                }
+                if (!recoveryFiles.isNullOrEmpty()) return true
+            }
+
+            val recoveryDir = java.io.File(context.noBackupFilesDir, "production-recovery")
+            if (java.io.File(recoveryDir, "preparation.state").exists()) return true
+
+            val canonicalName = org.isoron.uhabits.core.DATABASE_FILENAME
+            if (databaseFilename == canonicalName || databaseFilename.endsWith("/$canonicalName") || databaseFilename.endsWith("\\$canonicalName")) {
+                val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+                val hasPrefs = prefs.contains("last_app_version") ||
+                    prefs.contains("pref_sync_device_id") ||
+                    prefs.contains("pref_first_weekday")
+                if (hasPrefs) return true
+            }
+
+            return false
+        }
+    }
+
     override fun onCreate(db: SQLiteDatabase) {
         db.disableWriteAheadLogging()
+        if (hasEvidenceOfExistingDataset(context, databaseFilename)) {
+            throw IllegalStateException(
+                "Refusing to create empty database for '$databaseFilename': evidence of existing dataset or interrupted restore found."
+            )
+        }
         db.version = 8
         onUpgrade(db, -1, version)
     }

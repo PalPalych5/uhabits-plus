@@ -236,9 +236,13 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
         list.removeAll()
         extensionRepository.deleteAll()
         appSettingRepository.delete(GLOBAL_STATS_START_KEY)
-        repository.execSQL("delete from habits")
         repository.execSQL("delete from repetitions")
         repository.execSQL("delete from HabitGoals")
+        runCatching { repository.execSQL("delete from HabitPlacements") }
+        runCatching { repository.execSQL("delete from HabitVisualIdentities") }
+        runCatching { repository.execSQL("delete from Contributions") }
+        runCatching { repository.execSQL("delete from SourceRules") }
+        repository.execSQL("delete from habits")
         observable.notifyListeners()
     }
 

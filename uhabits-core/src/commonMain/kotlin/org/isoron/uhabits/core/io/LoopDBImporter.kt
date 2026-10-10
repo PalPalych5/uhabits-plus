@@ -47,6 +47,11 @@ import org.isoron.uhabits.core.models.sqlite.SQLModelFactory
 import org.isoron.uhabits.core.utils.isSQLite3File
 
 /**
+ * Exception thrown when an import database contains UHabit Next entities that would be silently discarded.
+ */
+class NextEntitiesDetectedException(message: String) : IllegalStateException(message)
+
+/**
  * Class that imports data from database files exported by Loop Habit Tracker.
  */
 @Inject
@@ -60,6 +65,23 @@ class LoopDBImporter(
 ) : AbstractImporter() {
 
     private val logger = logging.getLogger("LoopDBImporter")
+
+    companion object {
+        val NEXT_TABLE_NAMES = setOf(
+            "OrganizationState",
+            "OrganizationChanges",
+            "Containers",
+            "ContainerHistory",
+            "HabitPlacements",
+            "HabitPlacementHistory",
+            "LegacyBlockMap",
+            "HabitVisualIdentities",
+            "UserTasks",
+            "FocusSessions",
+            "Contributions",
+            "SourceRules"
+        )
+    }
 
     override suspend fun canHandle(file: UserFile): Boolean {
         if (!isSQLite3File(file)) return false
@@ -76,6 +98,14 @@ class LoopDBImporter(
             logger.error("Cannot handle file: incompatible version: ${db.getVersion()} > $DATABASE_VERSION")
             canHandle = false
         }
+        val nextTableCount = db.querySingle(
+            "select count(*) from SQLITE_MASTER where type='table' and name in (" +
+                NEXT_TABLE_NAMES.joinToString(",") { "'$it'" } + ")"
+        ) { it.getInt(0) } ?: 0
+        if (nextTableCount > 0) {
+            logger.error("Cannot handle file: UHabit Next entities detected ($nextTableCount tables). Ordinary import would silently discard Next data.")
+            canHandle = false
+        }
         db.close()
         return canHandle
     }
@@ -83,6 +113,16 @@ class LoopDBImporter(
     override suspend fun importHabitsFromFile(file: UserFile) {
         val db = opener.open(file.pathString)
         try {
+        val nextTableCount = db.querySingle(
+            "select count(*) from SQLITE_MASTER where type='table' and name in (" +
+                NEXT_TABLE_NAMES.joinToString(",") { "'$it'" } + ")"
+        ) { it.getInt(0) } ?: 0
+        if (nextTableCount > 0) {
+            throw NextEntitiesDetectedException(
+                "Cannot import database: file contains UHabit Next entities ($nextTableCount tables) which would be silently lost. Use full backup restore instead."
+            )
+        }
+
         db.migrateTo(DATABASE_VERSION) { version ->
             val filename = org.isoron.platform.io.format("%02d.sql", version)
             fileOpener.openResourceFile("migrations/$filename").lines().joinToString("\n")
