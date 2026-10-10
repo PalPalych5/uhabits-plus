@@ -292,4 +292,20 @@ class RestoreSafetyAndroidTest {
             prefs.getBoolean("pref_sync_review_required", false))
         assertEquals("Database restored from backup", prefs.getString("pref_sync_review_reason", ""))
     }
+
+    @Test
+    fun testBackupSnapshotCreationOnDevice() {
+        createLegacyV29Backup(canonicalDbFile, "SnapshotTestHabit")
+        DatabaseUtils.initializeDatabase(context, DATABASE_FILENAME)
+
+        val tempBackupFile = File(testDir, "test_snapshot.db")
+        val snapshotInfo = DatabaseUtils.createDatabaseSnapshot(context, tempBackupFile)
+        assertTrue(tempBackupFile.exists())
+        assertTrue(snapshotInfo.sizeBytes > 0)
+        assertEquals(LEGACY_DATABASE_VERSION, snapshotInfo.databaseVersion)
+
+        val validation = DatabaseUtils.validateDatabaseBackup(tempBackupFile)
+        assertTrue(validation.isValid)
+        assertEquals(LEGACY_DATABASE_VERSION, validation.databaseVersion)
+    }
 }

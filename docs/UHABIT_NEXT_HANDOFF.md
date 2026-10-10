@@ -3,7 +3,7 @@
 > Этот файл является первым документом, который должен читать агент перед работой над UHabit Next.  
 > Если фактическое состояние Git противоречит этому файлу, агент обязан проверить Git/код и обновить handoff, а не слепо доверять устаревшему статусу.
 
-Last verified: **2026-10-08, Asia/Novosibirsk**. Maintainer: текущая работающая сессия Codex / Antigravity. Это живой статус, а не замена ТЗ, исследованиям или Foundation design.
+Last verified: **2026-10-10, Asia/Novosibirsk**. Maintainer: текущая работающая сессия Codex / Antigravity. Это живой статус, а не замена ТЗ, исследованиям или Foundation design.
 
 **Canonical location:** `C:/Users/Pavel/source/repos/uhabits-plus/docs/UHABIT_NEXT_HANDOFF.md`. На этом компьютере все агенты, включая работающих в другом worktree, читают и обновляют именно этот файл. Канонические документы (UHABIT_NEXT_HANDOFF.md, UHabit_Next_Spec.md, uhabit-next-foundation-plan.md) зафиксированы в Git через исключения в .gitignore (!docs/...) и синхронизируются через commit/checkout/pull. Этот файл не меняет AGENTS.md или автоматический bootstrap harness: чтение должно быть включено в инструкции запуска агента.
 
@@ -172,7 +172,7 @@ Native Android implementation: PR10 / PR10.1 ACCEPTED; PR19 evaluation ACCEPTED 
 Active implementation: PR24A Production Restore Safety Foundation DONE; PR24 overall IN_PROGRESS; PR25/PR26 BLOCKED
 Documentation/IA commit: 5c89f0a2e
 PR10 implementation/evidence commit: 629b3be13
-Checks: PR24A fresh verification: 140 core JVM suites PASS (100%), 101 Android JVM tests PASS (100%), 17 native instrumentation tests PASS (100%: 6 RestoreSafety, 5 BackupManager, 6 AndroidDatabase), compileDebugKotlin PASS, assembleDebug & assembleDebugAndroidTest PASS.
+Checks: PR24A fresh verification: 140 core JVM suites PASS (100%), 101 Android JVM tests PASS (100%), 18 native instrumentation tests PASS (100%: 7 RestoreSafety including testBackupSnapshotCreationOnDevice on API 28, 5 BackupManager, 6 AndroidDatabase), compileDebugKotlin PASS, assembleDebug & assembleDebugAndroidTest PASS.
 Production DB schema: v29 default on canonical uhabits.db (ProductionCutoverGate enforced; Constants.DATABASE_VERSION = 30 allocated for Next schema); v30 installed on protected staging copies
 Production runtime authority: LEGACY_PRODUCTION / LEGACY (metadata runtime_authority = 'LEGACY')
 Production UI: unchanged (mode default is LEGACY)
@@ -185,7 +185,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
-| Antigravity (b79eaf3b) | PR24A: Production Restore Safety Foundation | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after PR24A | 2026-10-10 08:15 Novosibirsk | LoopDBImporter, SQLiteHabitList, DatabaseUtils, HabitsDatabaseOpener, HabitsApplication, RestoreJournal, RestoreSafetyAndroidTest, tests, docs | PR24A Restore Safety Foundation verified: 3 critical defects reproduced and resolved (unauthorized v30 migration blocked, empty-database creation on crash blocked, LoopDBImporter Next entity loss blocked). SQLite VACUUM INTO adopted; raw file copy removed. Sync review flag set fail-closed. 140 core JVM suites PASS, 101 Android JVM tests PASS, 17 native tests PASS on disposable AVD (6 RestoreSafety, 5 BackupManager, 6 AndroidDatabase). PR24 overall IN_PROGRESS; PR25/PR26 BLOCKED. |
+| Antigravity (b79eaf3b) | PR24A: Production Restore Safety Foundation | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after PR24A | 2026-10-10 08:15 Novosibirsk | LoopDBImporter, SQLiteHabitList, DatabaseUtils, HabitsDatabaseOpener, HabitsApplication, RestoreJournal, RestoreSafetyAndroidTest, tests, docs | PR24A Restore Safety Foundation verified: 3 critical defects reproduced and resolved (unauthorized v30 migration blocked, empty-database creation on crash blocked, LoopDBImporter Next entity loss blocked). minSdk 28 SQLite 3.22.0 incompatibility independently proven; transactional SQLite clone fallback implemented (zero raw-file copying). Sync review flag set fail-closed. 140 core JVM suites PASS, 101 Android JVM tests PASS, 18 native tests PASS across disposable AVDs (7 RestoreSafety on API 28, 5 BackupManager, 6 AndroidDatabase). PR24 overall IN_PROGRESS; PR25/PR26 BLOCKED. |
 | Antigravity (ecfd46fd) | PR23 Final Acceptance: Independent Cross-Surface Audit | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after PR23 | 2026-10-09 20:50 Novosibirsk | docs/UHABIT_NEXT_HANDOFF.md, docs/UHABIT_EFFECTIVE_READ_AUTHORITY.md, docs/UHABIT_PR23_FINAL_ACCEPTANCE.md, CoroutineTaskRunner, LiveInvalidationAndroidTest | Independent cross-surface audit and final acceptance completed: PR23A and PR23B (5/5 checkpoints) fully accepted. 868 core JVM + 99 Android JVM + 14 native instrumentation tests 100% PASS. Concurrency fix in CoroutineTaskRunner.await() verified. Canonical report: docs/UHABIT_PR23_FINAL_ACCEPTANCE.md. Active work IDLE. PR24/PR25 BLOCKED; LEGACY v29 unchanged. |
 | Antigravity (5e1829b1) | PR23B: Contribution-Aware CSV Export Checkpoint | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after CSV checkpoint | 2026-10-09 18:38 Novosibirsk | HabitsCSVExporter, ExportCSVTask, ListHabitsBehavior, ShowHabitMenuPresenter, CSV models/adapters, CSV tests, native CSV QA, docs | CSV export checkpoint fully verified: sequential builds PASS, JVM suites PASS (core 10/10 CSV + SQLite batching test; all suites exit 0), native QA 3/3 PASS on UHabit_PR23B_Notifications, zero synthetic DB writes, exact provenance & legacy parity. PR23 overall pending final cross-surface audit; PR24/PR25 BLOCKED; LEGACY v29 unchanged. |
 | Antigravity (92f1f747) | PR23B: Notifications & Reminder Tray Checkpoint | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after Notifications | 2026-10-09 17:05 Novosibirsk | NotificationTray, ReminderScheduler, ReminderController, ReminderReceiver, PendingIntentFactory, AndroidNotificationTray, tests, native QA, docs | Notifications checkpoint fully verified: sequential builds PASS, JVM suites PASS (858 core + 99 Android), native QA 3/3 PASS on UHabit_PR23B_Notifications, screenshots captured. CSV PENDING; PR24/PR25 BLOCKED; LEGACY v29 unchanged. |
@@ -1111,28 +1111,34 @@ Human accepts PR20 and authorizes PR21 preflight and recovery implementation onl
        - *Fix:* Added `NEXT_TABLE_NAMES` inventory. `canHandle()` returns `false` if any Next tables are present, and `importHabitsFromFile()` throws `NextEntitiesDetectedException` to block silent data loss.
     4. *Foreign key constraint violation on database wipe:* In `SQLiteHabitList.removeAll()`, deleting `habits` before child tables violated foreign key constraints under SQLite FK enforcement (`code 787`).
        - *Fix:* Deletion order changed to delete child tables (`repetitions`, `HabitGoals`, and Next tables) before deleting `habits`.
-  - **Backup Snapshot Mechanism Hardened:**
-    - Evaluated SQLite `VACUUM INTO` against SQLite Online Backup API. Adopted `VACUUM INTO` as the canonical snapshot mechanism.
-    - Removed unsafe raw file-copy fallback under WAL mode (`createDatabaseSnapshot` fails closed if `VACUUM INTO` fails).
+  - **Backup Snapshot Mechanism Hardened & minSdk 28 SQLite Compatibility:**
+    - Evaluated SQLite `VACUUM INTO` against SQLite Online Backup API.
+    - *minSdk 28 Incompatibility Independently Verified:* `minSdk` is 28 (Android 9.0 Pie), which bundles SQLite 3.22.0. SQLite `VACUUM INTO` was introduced in SQLite 3.27.0 (bundled in Android 10+ / API 29+). On API 28, `VACUUM INTO` throws `near "INTO": syntax error`.
+    - *Transactional SQLite Clone Fallback (Zero Raw-File Copying):* On API 29+, `VACUUM INTO` executes natively. On API 28 (or when `VACUUM INTO` fails), `createSnapshotViaSqliteClone()` attaches the destination file (`ATTACH DATABASE ... AS snapshot`), executes within an immediate transaction (`beginTransaction()`), preserves `PRAGMA snapshot.user_version`, replicates all user table definitions and indices dynamically from `main.sqlite_master`, copies rows via `INSERT INTO snapshot.t SELECT * FROM main.t`, commits, and detaches (`DETACH DATABASE snapshot`). Because attached databases default to journal mode DELETE, the resulting file is a self-contained, crash-resilient single-file snapshot without sidecar dependencies.
+    - Unsafe raw file-copy fallback under WAL mode completely removed (`createDatabaseSnapshot` fails closed on unexpected errors; zero raw copies).
     - Hardened schema validation (`validateDatabaseBackup`) to check full table inventories (8 legacy, 12 Next) instead of obsolete hardcoded table counts.
+    - *Secondary Discovery on API 28 SQLite 3.22.0:* `HabitGoalRepository` and `EntryRepository` use `INSERT ... ON CONFLICT DO UPDATE` (UPSERT), which requires SQLite 3.24.0+ and fails on SQLite 3.22.0. Tracked for repository layer compatibility.
   - **Sync Safety Enforced:**
     - Restore operation explicitly sets `pref_sync_review_required = true` with reason `"Database restored from backup"` via `restoreDatabaseFromBackup()`.
     - Sync stays fail-closed/offline without touching `sync_device_id` or triggering remote writes.
 - **Verification Evidence:**
   - **Core JVM Suite:** 140 test suites PASS (100%), including `LoopDBImporterTest` (3/3 PASS) and `ImportTest` (PASS).
   - **Android JVM Suite:** 22 test suites / 101 tests PASS (100%), including `RestoreJournalTest` (2/2 PASS).
-  - **Native Android Instrumentation QA** (on disposable offline AVD `UHabit_PR23B_Notifications`, adb serial `emulator-5554`, airplane mode 1): 17 tests PASS (100%):
-    - `RestoreSafetyAndroidTest` (6 tests):
-      1. `testCleanFirstInstallCreatesEmptyDatabaseSuccessfully`: PASS
-      2. `testRestoreSetsSyncReviewRequired`: PASS
-      3. `testRestoreV29BackupInLegacyProductionDoesNotTriggerV30Migration`: PASS
-      4. `testCrashDuringRestorePreservesRollbackAndRecoversOnStartup`: PASS
-      5. `testEvidenceOfExistingDatasetRefusesToCreateEmptyDatabase`: PASS
-      6. `testRestoringV30OrNextBackupIntoLegacyProductionFailsClosed`: PASS
-    - `BackupManagerTest`: 5/5 PASS.
-    - `AndroidDatabaseTest`: 6/6 PASS.
+  - **Native Android Instrumentation QA across Disposable Offline AVDs:**
+    - *Disposable AVD 1:* `UHabit_PR23B_Notifications` (Android 14 / API 34):
+      - `RestoreSafetyAndroidTest` (6 tests): PASS (100%).
+      - `BackupManagerTest`: 5/5 PASS.
+      - `AndroidDatabaseTest`: 6/6 PASS.
+    - *Dedicated Disposable AVD 2:* `UHabit_MinSdk_API28` (Android 9 / API 28, SQLite 3.22.0, adb serial `emulator-5554`, offline discipline, airplane mode 1):
+      - Persistent logcat captured to `/data/local/tmp/logcat.log` and pulled to `pr24a_min_sdk_qa/logcat.log`.
+      - Emulator stdout/stderr preserved in `pr24a_min_sdk_qa/emulator-stdout.log` and `pr24a_min_sdk_qa/emulator-stderr.log`.
+      - AVD identity recorded in `pr24a_min_sdk_qa/avd-identity.json` (`sdk: 28`, `release: 9`, `sqlite_version: 3.22.0`).
+      - Startup ANR trace collected in `pr24a_min_sdk_qa/anr_startup.txt`: verified as system ANR (`com.google.android.googlequicksearchbox` cold boot timeout); 0 application ANRs.
+      - Defect reproduced on device: `sqlite3` CLI `VACUUM INTO` and test `testBackupSnapshotCreationOnDevice` initially threw `near "INTO": syntax error`.
+      - Fix verified: `RestoreSafetyAndroidTest` (7 tests, including `testBackupSnapshotCreationOnDevice`): 100% PASS on `UHabit_MinSdk_API28`.
   - Compilations & packaging: `compileDebugKotlin`, `assembleDebug`, `assembleDebugAndroidTest` (100% PASS).
-  - Disposable emulator cleanly shut down (`adb -s emulator-5554 emu kill`, 0 running emulator/qemu processes).
+  - Disposable emulators cleanly shut down (`adb -s emulator-5554 emu kill`, 0 running emulator/qemu processes).
+  - Forensic `Pixel_6` preserved untouched.
 - **Boundaries strictly maintained:**
   - PR24A is **DONE**. PR24 overall is **IN_PROGRESS**.
   - Subsequent PR24 checkpoints (PR24B Versioned ZIP Backup & Manifest, PR24C Preferences & Device QA) PENDING.

@@ -20,6 +20,7 @@ package org.isoron.uhabits.utils
 
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
+import android.os.Build
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import androidx.preference.PreferenceManager
@@ -209,12 +210,29 @@ object DatabaseUtils {
 
         checkpointDatabase(db)
 
-        try {
-            db.execSQL("VACUUM INTO '${escapeSqlString(tempFile.absolutePath)}'")
-        } catch (e: Exception) {
-            Log.e("DatabaseUtils", "VACUUM INTO snapshot failed", e)
-            tempFile.delete()
-            throw IOException("Database snapshot failed: VACUUM INTO error: ${e.message}", e)
+        // On Android 10+ (API 29+, bundled SQLite >= 3.28.0), VACUUM INTO is natively supported.
+        // On Android 9 (API 28, bundled SQLite 3.22.0) or if VACUUM INTO is unsupported,
+        // create atomic snapshot via transactional SQLite schema and table cloning without raw-file copying.
+        var snapshotSucceeded = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                db.execSQL("VACUUM INTO '${escapeSqlString(tempFile.absolutePath)}'")
+                snapshotSucceeded = true
+            } catch (e: Exception) {
+                Log.w("DatabaseUtils", "VACUUM INTO failed on API >= 29, falling back to SQLite clone", e)
+                if (tempFile.exists()) tempFile.delete()
+            }
+        }
+
+        if (!snapshotSucceeded) {
+            try {
+                createSnapshotViaSqliteClone(db, tempFile)
+                snapshotSucceeded = true
+            } catch (e: Exception) {
+                Log.e("DatabaseUtils", "SQLite snapshot clone failed", e)
+                tempFile.delete()
+                throw IOException("Database snapshot failed: ${e.message}", e)
+            }
         }
 
         val validation = validateDatabaseBackup(tempFile)
@@ -526,6 +544,63 @@ object DatabaseUtils {
         return ContainerBackupManifest(formatVersion = 1, datasetUuid = kind.datasetUuid, createdAt = 0,
             foundationVersion = kind.foundationVersion, datasetMode = kind.mode, sourceSnapshotSha256 = hash,
             canonicalChecksum = ContainerBackupManifest.computeCanonicalChecksum(kind.datasetUuid, hash, 0, 1, kind.foundationVersion))
+    }
+
+    private fun createSnapshotViaSqliteClone(sourceDb: SQLiteDatabase, tempFile: File) {
+        val escapedPath = escapeSqlString(tempFile.absolutePath)
+        sourceDb.execSQL("ATTACH DATABASE '$escapedPath' AS snapshot")
+        try {
+            sourceDb.beginTransaction()
+            try {
+                val sourceVersion = sourceDb.version
+                sourceDb.execSQL("PRAGMA snapshot.user_version = $sourceVersion")
+
+                // 1. Recreate tables in snapshot
+                val tableNames = mutableListOf<String>()
+                sourceDb.rawQuery(
+                    "SELECT name, sql FROM main.sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL",
+                    null
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val name = cursor.getString(0)
+                        val sql = cursor.getString(1)
+                        val snapshotSql = sql.replaceFirst(
+                            Regex("""(?i)\bCREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?["`]?${Regex.escape(name)}["`]?\b"""),
+                            "CREATE TABLE snapshot.`$name`"
+                        )
+                        sourceDb.execSQL(snapshotSql)
+                        tableNames.add(name)
+                    }
+                }
+
+                // 2. Copy table data
+                for (table in tableNames) {
+                    sourceDb.execSQL("INSERT INTO snapshot.`$table` SELECT * FROM main.`$table`")
+                }
+
+                // 3. Recreate indices in snapshot
+                sourceDb.rawQuery(
+                    "SELECT name, sql FROM main.sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL",
+                    null
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val name = cursor.getString(0)
+                        val sql = cursor.getString(1)
+                        val snapshotSql = sql.replaceFirst(
+                            Regex("""(?i)\bCREATE\s+(UNIQUE\s+)?INDEX\s+(IF\s+NOT\s+EXISTS\s+)?["`]?${Regex.escape(name)}["`]?\b"""),
+                            "CREATE $1INDEX snapshot.`$name`"
+                        )
+                        sourceDb.execSQL(snapshotSql)
+                    }
+                }
+
+                sourceDb.setTransactionSuccessful()
+            } finally {
+                sourceDb.endTransaction()
+            }
+        } finally {
+            sourceDb.execSQL("DETACH DATABASE snapshot")
+        }
     }
 
     private fun checkpointDatabase(db: SQLiteDatabase) {
