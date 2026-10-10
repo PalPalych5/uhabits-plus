@@ -28,20 +28,26 @@ class HabitGoalRepository(private val db: Database) {
         )
     }
 
-    private val upsertStmt by lazy {
+    private val insertStmt by lazy {
         db.prepareStatement(
             """INSERT INTO HabitGoals(
                habit_id, uuid, effective_timestamp, freq_num, freq_den, target_type, target_value,
                unit, updated_at, deleted_at
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(uuid) DO UPDATE SET
-                   freq_num=excluded.freq_num,
-                   freq_den=excluded.freq_den,
-                   target_type=excluded.target_type,
-                   target_value=excluded.target_value,
-                   unit=excluded.unit,
-                   updated_at=excluded.updated_at,
-                   deleted_at=excluded.deleted_at"""
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+        )
+    }
+
+    private val updateByUuidStmt by lazy {
+        db.prepareStatement(
+            """UPDATE HabitGoals SET
+               freq_num = ?,
+               freq_den = ?,
+               target_type = ?,
+               target_value = ?,
+               unit = ?,
+               updated_at = ?,
+               deleted_at = ?
+               WHERE uuid = ?"""
         )
     }
 
@@ -59,6 +65,7 @@ class HabitGoalRepository(private val db: Database) {
         )
     }
 
+    @kotlin.jvm.Synchronized
     fun findAllByHabitId(habitId: Long): List<HabitGoalData> {
         findAllByHabitIdStmt.reset()
         findAllByHabitIdStmt.bindLong(1, habitId)
@@ -83,6 +90,7 @@ class HabitGoalRepository(private val db: Database) {
         return results
     }
 
+    @kotlin.jvm.Synchronized
     fun upsert(data: HabitGoalData) {
         val normalized = if (data.uuid.isBlank()) {
             data.copy(uuid = "${data.habitId}:goal:${data.effectiveTimestamp}")
@@ -91,22 +99,37 @@ class HabitGoalRepository(private val db: Database) {
         }
         val existing = findByUuid(normalized.uuid)
         if (existing?.copy(id = normalized.id) == normalized) return
-        upsertStmt.reset()
-        upsertStmt.bindLong(1, normalized.habitId)
-        upsertStmt.bindText(2, normalized.uuid)
-        upsertStmt.bindLong(3, normalized.effectiveTimestamp)
-        upsertStmt.bindInt(4, normalized.freqNum)
-        upsertStmt.bindInt(5, normalized.freqDen)
-        upsertStmt.bindInt(6, normalized.targetType)
-        upsertStmt.bindReal(7, normalized.targetValue)
-        upsertStmt.bindText(8, normalized.unit)
-        upsertStmt.bindLong(9, normalized.updatedAt)
-        if (normalized.deletedAt != null) upsertStmt.bindLong(10, normalized.deletedAt) else upsertStmt.bindNull(10)
-        upsertStmt.step()
+
+        if (existing != null) {
+            updateByUuidStmt.reset()
+            updateByUuidStmt.bindInt(1, normalized.freqNum)
+            updateByUuidStmt.bindInt(2, normalized.freqDen)
+            updateByUuidStmt.bindInt(3, normalized.targetType)
+            updateByUuidStmt.bindReal(4, normalized.targetValue)
+            updateByUuidStmt.bindText(5, normalized.unit)
+            updateByUuidStmt.bindLong(6, normalized.updatedAt)
+            if (normalized.deletedAt != null) updateByUuidStmt.bindLong(7, normalized.deletedAt) else updateByUuidStmt.bindNull(7)
+            updateByUuidStmt.bindText(8, normalized.uuid)
+            updateByUuidStmt.step()
+        } else {
+            insertStmt.reset()
+            insertStmt.bindLong(1, normalized.habitId)
+            insertStmt.bindText(2, normalized.uuid)
+            insertStmt.bindLong(3, normalized.effectiveTimestamp)
+            insertStmt.bindInt(4, normalized.freqNum)
+            insertStmt.bindInt(5, normalized.freqDen)
+            insertStmt.bindInt(6, normalized.targetType)
+            insertStmt.bindReal(7, normalized.targetValue)
+            insertStmt.bindText(8, normalized.unit)
+            insertStmt.bindLong(9, normalized.updatedAt)
+            if (normalized.deletedAt != null) insertStmt.bindLong(10, normalized.deletedAt) else insertStmt.bindNull(10)
+            insertStmt.step()
+        }
     }
 
     fun insert(data: HabitGoalData) = upsert(data)
 
+    @kotlin.jvm.Synchronized
     fun findByUuid(uuid: String): HabitGoalData? {
         findByUuidStmt.reset()
         findByUuidStmt.bindText(1, uuid)
@@ -126,6 +149,7 @@ class HabitGoalRepository(private val db: Database) {
         )
     }
 
+    @kotlin.jvm.Synchronized
     fun replaceAll(habitId: Long, goals: List<HabitGoalData>, updatedAt: Long) {
         softDeleteByHabitId(habitId, updatedAt)
         goals.sortedBy { it.effectiveTimestamp }.forEach {
@@ -136,6 +160,7 @@ class HabitGoalRepository(private val db: Database) {
     fun replaceAll(habitId: Long, goals: List<HabitGoalData>) =
         replaceAll(habitId, goals, updatedAt = 0)
 
+    @kotlin.jvm.Synchronized
     fun softDeleteByHabitId(habitId: Long, deletedAt: Long) {
         softDeleteByHabitIdStmt.reset()
         softDeleteByHabitIdStmt.bindLong(1, deletedAt)

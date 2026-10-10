@@ -126,4 +126,27 @@ class EntryRepositoryTest {
 
         db.close()
     }
+
+    @Test
+    fun testUpsertPreservesExistingIdAndUpdateSemantics() = runTest {
+        val db = TestDatabaseHelper.createEmptyDatabase()
+        val repo = EntryRepository(db)
+        val habitId = insertTestHabit(db)
+
+        val initial = EntryData(habitId = habitId, timestamp = 1700000000000, value = 2, notes = "first")
+        val generatedId = repo.insert(initial)
+        assertTrue(generatedId > 0)
+
+        // Upsert with same habit and timestamp
+        val updated = EntryData(habitId = habitId, timestamp = 1700000000000, value = 1, notes = "updated")
+        val returnedId = repo.upsert(updated)
+        assertEquals(generatedId, returnedId)
+
+        val loaded = repo.findAllByHabitId(habitId).single()
+        assertEquals(generatedId, loaded.id)
+        assertEquals(1, loaded.value)
+        assertEquals("updated", loaded.notes)
+
+        db.close()
+    }
 }

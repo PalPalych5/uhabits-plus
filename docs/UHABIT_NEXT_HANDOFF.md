@@ -1144,4 +1144,48 @@ Human accepts PR20 and authorizes PR21 preflight and recovery implementation onl
   - Subsequent PR24 checkpoints (PR24B Versioned ZIP Backup & Manifest, PR24C Preferences & Device QA) PENDING.
   - PR25 (Protected Local Cutover) and PR26 (Cloud Sync v2) remain strictly **BLOCKED**.
   - Production runtime authority remains strictly **LEGACY_PRODUCTION** (schema v29).
-  - Active work: **STOP after PR24A**.
+
+### 2026-10-10 — PR24A.1: Snapshot Fidelity and Android 9 Compatibility completed
+
+- **Snapshot Fidelity & Schema Parity Proven:**
+  - Comprehensive audit of `DatabaseUtils.createSnapshotViaSqliteClone()`:
+    - Tables DDL, rows, triggers, views, and explicit indexes replicated dynamically from `main.sqlite_master`.
+    - Foreign keys and constraints: `PRAGMA snapshot.defer_foreign_keys = ON` during clone execution.
+    - Schema metadata: `PRAGMA snapshot.user_version` and `PRAGMA snapshot.application_id` preserved.
+    - Autoincrement sequence gap preservation: `sqlite_sequence` explicitly synchronized so deleted high-ID rows do not cause sequence reset or reused primary keys upon restore.
+    - Fail-closed validation on unsupported objects (virtual tables like FTS/rtree, unknown sqlite_master types) — aborts snapshot creation safely rather than silently omitting schema or data.
+    - DDL regex parsing hardened: resolved `nullINDEX` syntax error on non-unique indexes and eliminated quote-stripping issues for quoted identifiers (e.g., `"android_metadata"`).
+    - Null safety in `DatabaseSnapshotter.kt`: safe handling of nullable columns (`description`, `question`, `reminder_days`, `highlight`, `uuid`, `unit`) via `getTextOrNull`/`getIntOrNull` with `bindNull`. Added `buildManifest()` helper.
+- **Android 9 (API 28, SQLite 3.22.0) UPSERT Incompatibility Resolved:**
+  - SQLite 3.22.0 (bundled in Android 9 Pie) does not support `INSERT ... ON CONFLICT DO UPDATE` (UPSERT syntax introduced in SQLite 3.24.0).
+  - Executable SQL audited and resolved:
+    - `HabitGoalRepository`: Replaced UPSERT with atomic synchronized `findId/findByUuid + insert / updateByUuid`, preserving existing primary key IDs, update semantics, and atomicity.
+    - `EntryRepository`: Replaced UPSERT with atomic synchronized `findIdByHabitAndTimestamp + updateById / insert`, preserving existing repetition IDs.
+    - `SQLiteHabitVisualIdentityStore`: Replaced UPSERT with standard `INSERT OR REPLACE INTO HabitVisualIdentities(...)`.
+- **Failure Injection & Concurrency Hardening:**
+  - Injection points tested: schema creation, row copying, index creation, commit, DETACH, validation, and publication.
+  - In all failure scenarios, no partial/corrupted temporary database is published as a valid backup, temporary files are cleanly deleted, and the source database remains intact.
+  - Concurrent writer testing in WAL mode during snapshot creation: 0 write starvation, snapshot finishes successfully without blocking or failing writers.
+- **Verification Evidence:**
+  - Core JVM Test Suite: `:uhabits-core:jvmTest` (100% PASS, including new ID-preservation regression tests in `HabitGoalRepositoryTest` and `EntryRepositoryTest`).
+  - Android JVM Test Suite: `:uhabits-android:testDebugUnitTest` (100% PASS).
+  - Native Android Instrumentation QA on dedicated Android 9 emulator (`UHabit_MinSdk_API28`, API 28, SQLite 3.22.0, offline discipline, airplane mode 1):
+    - `SnapshotFidelityAndroidTest` (6/6 PASS):
+      1. `testSnapshotFidelityLegacyV29Dataset`: PASS.
+      2. `testSnapshotFidelityNextV30Dataset`: PASS.
+      3. `testUnsupportedVirtualTableFailsClosed`: PASS.
+      4. `testCrashAndFailureInjectionsPreserveSourceAndCleanTempFiles`: PASS.
+      5. `testConcurrentWritersDuringSnapshotCreation`: PASS (0 write starvation).
+      6. `testAndroid9UpsertCompatibilityOnDevice`: PASS (verified `HabitGoalRepository`, `EntryRepository`, and `SQLiteHabitVisualIdentityStore` directly on SQLite 3.22.0).
+    - `RestoreSafetyAndroidTest` (7/7 PASS): All baseline PR24A restore safety tests PASS.
+    - `BackupManagerTest` (5/5 PASS): All legacy backup/restore tests PASS.
+  - Logcat audit: `pr24a_min_sdk_qa/pr24a1_fidelity_logcat.log` pulled, 0 application ANRs.
+  - Disposable emulator cleanly shut down (`adb -s emulator-5554 emu kill`, 0 running emulator/qemu processes).
+  - Forensic `Pixel_6` preserved untouched.
+- **Boundaries strictly maintained:**
+  - PR24A and PR24A.1 are **DONE**. PR24 overall is **IN_PROGRESS**.
+  - Subsequent PR24 checkpoints (PR24B Versioned ZIP Backup & Manifest, PR24C Preferences & Device QA) PENDING.
+  - PR25 (Protected Local Cutover) and PR26 (Cloud Sync v2) remain strictly **BLOCKED**.
+  - Production runtime authority remains strictly **LEGACY_PRODUCTION** (schema v29).
+  - Active work: **STOP after PR24A.1**.
+

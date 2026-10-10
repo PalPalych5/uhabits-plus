@@ -28,16 +28,28 @@ class EntryRepository(private val db: Database) {
         )
     }
 
-    private val upsertStmt by lazy {
+    private val findIdByHabitAndTimestampStmt by lazy {
+        db.prepareStatement(
+            "SELECT id FROM Repetitions WHERE habit = ? AND timestamp = ? LIMIT 1"
+        )
+    }
+
+    private val insertStmt by lazy {
         db.prepareStatement(
             """INSERT INTO Repetitions(habit, uuid, timestamp, value, notes, updated_at, deleted_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(habit, timestamp) DO UPDATE SET
-                   uuid=excluded.uuid,
-                   value=excluded.value,
-                   notes=excluded.notes,
-                   updated_at=excluded.updated_at,
-                   deleted_at=excluded.deleted_at"""
+               VALUES (?, ?, ?, ?, ?, ?, ?)"""
+        )
+    }
+
+    private val updateByIdStmt by lazy {
+        db.prepareStatement(
+            """UPDATE Repetitions SET
+               uuid = ?,
+               value = ?,
+               notes = ?,
+               updated_at = ?,
+               deleted_at = ?
+               WHERE id = ?"""
         )
     }
 
@@ -85,16 +97,37 @@ class EntryRepository(private val db: Database) {
     @Synchronized
     fun upsert(data: EntryData): Long {
         if (data.uuid.isBlank()) data.uuid = "${data.habitId}:${data.timestamp}"
-        upsertStmt.reset()
-        upsertStmt.bindLong(1, data.habitId!!)
-        upsertStmt.bindText(2, data.uuid)
-        upsertStmt.bindLong(3, data.timestamp)
-        upsertStmt.bindInt(4, data.value)
-        upsertStmt.bindText(5, data.notes)
-        upsertStmt.bindLong(6, data.updatedAt)
-        if (data.deletedAt != null) upsertStmt.bindLong(7, data.deletedAt!!) else upsertStmt.bindNull(7)
-        upsertStmt.step()
-        return db.queryLong("SELECT last_insert_rowid()")
+        findIdByHabitAndTimestampStmt.reset()
+        findIdByHabitAndTimestampStmt.bindLong(1, data.habitId!!)
+        findIdByHabitAndTimestampStmt.bindLong(2, data.timestamp)
+        val existingId = if (findIdByHabitAndTimestampStmt.step() == StepResult.ROW) {
+            findIdByHabitAndTimestampStmt.getLong(0)
+        } else {
+            null
+        }
+
+        return if (existingId != null) {
+            updateByIdStmt.reset()
+            updateByIdStmt.bindText(1, data.uuid)
+            updateByIdStmt.bindInt(2, data.value)
+            updateByIdStmt.bindText(3, data.notes)
+            updateByIdStmt.bindLong(4, data.updatedAt)
+            if (data.deletedAt != null) updateByIdStmt.bindLong(5, data.deletedAt!!) else updateByIdStmt.bindNull(5)
+            updateByIdStmt.bindLong(6, existingId)
+            updateByIdStmt.step()
+            existingId
+        } else {
+            insertStmt.reset()
+            insertStmt.bindLong(1, data.habitId!!)
+            insertStmt.bindText(2, data.uuid)
+            insertStmt.bindLong(3, data.timestamp)
+            insertStmt.bindInt(4, data.value)
+            insertStmt.bindText(5, data.notes)
+            insertStmt.bindLong(6, data.updatedAt)
+            if (data.deletedAt != null) insertStmt.bindLong(7, data.deletedAt!!) else insertStmt.bindNull(7)
+            insertStmt.step()
+            db.queryLong("SELECT last_insert_rowid()")
+        }
     }
 
     @Synchronized

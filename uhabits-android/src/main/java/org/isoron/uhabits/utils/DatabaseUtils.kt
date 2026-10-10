@@ -214,7 +214,7 @@ object DatabaseUtils {
         // On Android 9 (API 28, bundled SQLite 3.22.0) or if VACUUM INTO is unsupported,
         // create atomic snapshot via transactional SQLite schema and table cloning without raw-file copying.
         var snapshotSucceeded = false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !forceSqliteCloneForTesting) {
             try {
                 db.execSQL("VACUUM INTO '${escapeSqlString(tempFile.absolutePath)}'")
                 snapshotSucceeded = true
@@ -235,6 +235,11 @@ object DatabaseUtils {
             }
         }
 
+        if (snapshotFailureInjection == SnapshotFailureInjection.DURING_VALIDATION) {
+            tempFile.delete()
+            throw IOException("Injected failure during validation")
+        }
+
         val validation = validateDatabaseBackup(tempFile)
         if (!validation.isValid || validation.databaseVersion == null) {
             tempFile.delete()
@@ -248,6 +253,10 @@ object DatabaseUtils {
     }
 
     fun publishLocalBackup(tempFile: File, finalFile: File) {
+        if (snapshotFailureInjection == SnapshotFailureInjection.DURING_PUBLICATION) {
+            tempFile.delete()
+            throw IOException("Injected failure during publication")
+        }
         finalFile.parentFile?.mkdirs()
         if (finalFile.exists()) finalFile.delete()
         Files.move(
@@ -349,7 +358,8 @@ object DatabaseUtils {
                         val result = ContainerRestoreService.restore(wrapped, AndroidDatabase(stage), AndroidDatabase(target),
                             externalManifest = compatibleOldExperimentalManifest(wrapped))
                         if (result is org.isoron.uhabits.core.containers.backup.RestoreResult.Failure) {
-                            return org.isoron.uhabits.backup.BackupValidationResult(false, errorMessage = result.reason)
+                            val detailedMsg = if (result.errors.isNotEmpty()) "${result.reason}: ${result.errors.joinToString("; ")}" else result.reason
+                            return org.isoron.uhabits.backup.BackupValidationResult(false, errorMessage = detailedMsg)
                         }
                     } finally { stage.close(); target.close() }
                 }
@@ -546,16 +556,65 @@ object DatabaseUtils {
             canonicalChecksum = ContainerBackupManifest.computeCanonicalChecksum(kind.datasetUuid, hash, 0, 1, kind.foundationVersion))
     }
 
-    private fun createSnapshotViaSqliteClone(sourceDb: SQLiteDatabase, tempFile: File) {
-        val escapedPath = escapeSqlString(tempFile.absolutePath)
-        sourceDb.execSQL("ATTACH DATABASE '$escapedPath' AS snapshot")
-        try {
-            sourceDb.beginTransaction()
-            try {
-                val sourceVersion = sourceDb.version
-                sourceDb.execSQL("PRAGMA snapshot.user_version = $sourceVersion")
+    enum class SnapshotFailureInjection {
+        NONE,
+        DURING_SCHEMA_CREATION,
+        DURING_ROW_COPYING,
+        DURING_INDEX_CREATION,
+        DURING_COMMIT,
+        DURING_DETACH,
+        DURING_VALIDATION,
+        DURING_PUBLICATION
+    }
 
-                // 1. Recreate tables in snapshot
+    @Volatile
+    var snapshotFailureInjection: SnapshotFailureInjection = SnapshotFailureInjection.NONE
+
+    @Volatile
+    var forceSqliteCloneForTesting: Boolean = false
+
+    private fun createSnapshotViaSqliteClone(sourceDb: SQLiteDatabase, tempFile: File) {
+        // 1. Audit schema objects in source database (fail closed on virtual tables or unknown objects)
+        sourceDb.rawQuery(
+            "SELECT type, name, sql FROM main.sqlite_master WHERE name NOT LIKE 'sqlite_%'",
+            null
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                val type = cursor.getString(0)
+                val name = cursor.getString(1)
+                val sql = cursor.getString(2)
+                if (type !in listOf("table", "index", "view", "trigger")) {
+                    throw IllegalStateException("Unsupported SQLite schema object type: $type for $name")
+                }
+                if (sql != null && sql.contains(Regex("""(?i)\bCREATE\s+VIRTUAL\s+TABLE\b"""))) {
+                    throw IllegalStateException("Virtual tables are unsupported for snapshot clone: $name")
+                }
+            }
+        }
+
+        val escapedPath = escapeSqlString(tempFile.absolutePath)
+        var attached = false
+        try {
+            sourceDb.execSQL("ATTACH DATABASE '$escapedPath' AS snapshot")
+            attached = true
+
+            // Read metadata from source
+            val sourceVersion = sourceDb.version
+            val appId = sourceDb.rawQuery("PRAGMA main.application_id", null).use { cursor ->
+                if (cursor.moveToFirst()) cursor.getInt(0) else 0
+            }
+
+            sourceDb.beginTransactionNonExclusive()
+            try {
+                sourceDb.execSQL("PRAGMA snapshot.user_version = $sourceVersion")
+                sourceDb.execSQL("PRAGMA snapshot.application_id = $appId")
+                sourceDb.execSQL("PRAGMA defer_foreign_keys = ON")
+
+                if (snapshotFailureInjection == SnapshotFailureInjection.DURING_SCHEMA_CREATION) {
+                    throw IOException("Injected failure during schema creation")
+                }
+
+                // 2. Recreate tables in snapshot
                 val tableNames = mutableListOf<String>()
                 sourceDb.rawQuery(
                     "SELECT name, sql FROM main.sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL",
@@ -565,20 +624,44 @@ object DatabaseUtils {
                         val name = cursor.getString(0)
                         val sql = cursor.getString(1)
                         val snapshotSql = sql.replaceFirst(
-                            Regex("""(?i)\bCREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?["`]?${Regex.escape(name)}["`]?\b"""),
-                            "CREATE TABLE snapshot.`$name`"
+                            Regex("""(?i)\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:["`\[]?${Regex.escape(name)}["`\]]?)\s*(\(|AS\b)"""),
+                            "CREATE TABLE snapshot.`$name` $1"
                         )
                         sourceDb.execSQL(snapshotSql)
                         tableNames.add(name)
                     }
                 }
 
-                // 2. Copy table data
+                if (snapshotFailureInjection == SnapshotFailureInjection.DURING_ROW_COPYING) {
+                    throw IOException("Injected failure during row copying")
+                }
+
+                // 3. Copy table data
                 for (table in tableNames) {
                     sourceDb.execSQL("INSERT INTO snapshot.`$table` SELECT * FROM main.`$table`")
                 }
 
-                // 3. Recreate indices in snapshot
+                // 4. Preserve sqlite_sequence / AUTOINCREMENT counters
+                val hasSequence = sourceDb.rawQuery(
+                    "SELECT 1 FROM main.sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'",
+                    null
+                ).use { it.moveToFirst() }
+                if (hasSequence) {
+                    val snapshotHasSequence = sourceDb.rawQuery(
+                        "SELECT 1 FROM snapshot.sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'",
+                        null
+                    ).use { it.moveToFirst() }
+                    if (snapshotHasSequence) {
+                        sourceDb.execSQL("DELETE FROM snapshot.sqlite_sequence")
+                        sourceDb.execSQL("INSERT INTO snapshot.sqlite_sequence(name, seq) SELECT name, seq FROM main.sqlite_sequence")
+                    }
+                }
+
+                if (snapshotFailureInjection == SnapshotFailureInjection.DURING_INDEX_CREATION) {
+                    throw IOException("Injected failure during index creation")
+                }
+
+                // 5. Recreate explicit indices in snapshot
                 sourceDb.rawQuery(
                     "SELECT name, sql FROM main.sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL",
                     null
@@ -586,20 +669,89 @@ object DatabaseUtils {
                     while (cursor.moveToNext()) {
                         val name = cursor.getString(0)
                         val sql = cursor.getString(1)
+                        val isUnique = sql.trim().uppercase().startsWith("CREATE UNIQUE")
+                        val prefix = if (isUnique) "CREATE UNIQUE INDEX" else "CREATE INDEX"
                         val snapshotSql = sql.replaceFirst(
-                            Regex("""(?i)\bCREATE\s+(UNIQUE\s+)?INDEX\s+(IF\s+NOT\s+EXISTS\s+)?["`]?${Regex.escape(name)}["`]?\b"""),
-                            "CREATE $1INDEX snapshot.`$name`"
+                            Regex("""(?i)\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:["`\[]?${Regex.escape(name)}["`\]]?)\s+(ON\b)"""),
+                            "$prefix snapshot.`$name` $1"
                         )
                         sourceDb.execSQL(snapshotSql)
                     }
+                }
+
+                // 6. Recreate views in snapshot
+                sourceDb.rawQuery(
+                    "SELECT name, sql FROM main.sqlite_master WHERE type = 'view' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL",
+                    null
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val name = cursor.getString(0)
+                        val sql = cursor.getString(1)
+                        val snapshotSql = sql.replaceFirst(
+                            Regex("""(?i)\bCREATE\s+VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:["`\[]?${Regex.escape(name)}["`\]]?)\s+(AS\b)"""),
+                            "CREATE VIEW snapshot.`$name` $1"
+                        )
+                        sourceDb.execSQL(snapshotSql)
+                    }
+                }
+
+                // 7. Recreate triggers in snapshot
+                sourceDb.rawQuery(
+                    "SELECT name, sql FROM main.sqlite_master WHERE type = 'trigger' AND name NOT LIKE 'sqlite_%' AND sql IS NOT NULL",
+                    null
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val name = cursor.getString(0)
+                        val sql = cursor.getString(1)
+                        val snapshotSql = sql.replaceFirst(
+                            Regex("""(?i)\bCREATE\s+TRIGGER\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:["`\[]?${Regex.escape(name)}["`\]]?)\s+"""),
+                            "CREATE TRIGGER snapshot.`$name` "
+                        )
+                        sourceDb.execSQL(snapshotSql)
+                    }
+                }
+
+                // 8. Integrity check on snapshot before commit
+                sourceDb.rawQuery("PRAGMA snapshot.integrity_check", null).use { cursor ->
+                    if (!cursor.moveToFirst() || cursor.getString(0) != "ok") {
+                        val msg = if (cursor.count > 0) cursor.getString(0) else "integrity_check failed"
+                        throw IllegalStateException("Integrity check failed on snapshot: $msg")
+                    }
+                }
+
+                // 9. Foreign key check on snapshot before commit
+                sourceDb.rawQuery("PRAGMA snapshot.foreign_key_check", null).use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val table = cursor.getString(0)
+                        val rowid = cursor.getLong(1)
+                        val target = cursor.getString(2)
+                        throw IllegalStateException("Foreign key violation in snapshot: table $table row $rowid -> $target")
+                    }
+                }
+
+                if (snapshotFailureInjection == SnapshotFailureInjection.DURING_COMMIT) {
+                    throw IOException("Injected failure during commit")
                 }
 
                 sourceDb.setTransactionSuccessful()
             } finally {
                 sourceDb.endTransaction()
             }
+
+            if (snapshotFailureInjection == SnapshotFailureInjection.DURING_DETACH) {
+                throw IOException("Injected failure during detach")
+            }
         } finally {
-            sourceDb.execSQL("DETACH DATABASE snapshot")
+            if (attached) {
+                try {
+                    sourceDb.execSQL("DETACH DATABASE snapshot")
+                } catch (e: Exception) {
+                    Log.w("DatabaseUtils", "DETACH DATABASE snapshot failed", e)
+                    if (snapshotFailureInjection != SnapshotFailureInjection.DURING_DETACH) {
+                        throw e
+                    }
+                }
+            }
         }
     }
 

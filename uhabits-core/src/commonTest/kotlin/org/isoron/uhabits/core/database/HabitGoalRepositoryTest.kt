@@ -25,6 +25,17 @@ class HabitGoalRepositoryTest {
         assertEquals(2, loaded.size)
         assertEquals(20.0, loaded[0].targetValue)
         assertEquals(15.0, loaded[1].targetValue)
+
+        val originalGoal = loaded[1]
+        val originalId = originalGoal.id
+
+        // Upsert modified goal with same uuid
+        goals.upsert(originalGoal.copy(targetValue = 25.0, unit = "pages"))
+        val updated = goals.findByUuid(originalGoal.uuid)
+        assertEquals(originalId, updated?.id)
+        assertEquals(25.0, updated?.targetValue)
+        assertEquals("pages", updated?.unit)
+
         db.close()
     }
 }

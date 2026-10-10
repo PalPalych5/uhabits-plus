@@ -25,6 +25,7 @@ import org.isoron.platform.io.getVersion
 import org.isoron.platform.io.querySingle
 import org.isoron.platform.io.run
 import org.isoron.platform.io.setVersion
+import org.isoron.uhabits.core.containers.migration.RawLegacyInventoryReader
 import org.isoron.uhabits.core.containers.sqlite.OrganizationSchema
 
 object DatabaseSnapshotter {
@@ -225,6 +226,49 @@ object DatabaseSnapshotter {
         }
     }
 
+    fun buildManifest(
+        sourceDb: Database,
+        timestamp: Long,
+        preferences: Map<String, String> = emptyMap()
+    ): ContainerBackupManifest {
+        val inspection = ContainerBackupRouter.inspect(sourceDb)
+        val containerKind = inspection.kind as? DatasetKind.ExperimentalContainer
+            ?: throw IllegalStateException("Source database is not an experimental container dataset: ${inspection.kind}")
+
+        val inventory = RawLegacyInventoryReader.read(sourceDb)
+        val focusChecksum = FocusBackupInventory.checksum(sourceDb)
+        val contributionChecksum = ContributionBackupInventory.checksum(sourceDb)
+        val sourceRulesChecksum = SourceRuleBackupInventory.checksum(sourceDb)
+        val canonicalChecksum = ContainerBackupManifest.computeCanonicalChecksum(
+            datasetUuid = containerKind.datasetUuid,
+            sourceSnapshotSha256 = inventory.snapshotSha256,
+            createdAt = timestamp,
+            foundationVersion = containerKind.foundationVersion,
+            focusSessionsSha256 = focusChecksum,
+            contributionsSha256 = contributionChecksum,
+            sourceRulesSha256 = sourceRulesChecksum,
+        )
+
+        val appSettingsMap = inventory.settings.associate { it.key to (it.longValue ?: 0L) }
+        val sanitizedPrefs = ContainerBackupManifest.sanitizePreferences(preferences)
+
+        return ContainerBackupManifest(
+            formatVersion = ContainerBackupManifest.CURRENT_FORMAT_VERSION,
+            sourceSchemaVersion = sourceDb.getVersion(),
+            foundationVersion = containerKind.foundationVersion,
+            datasetMode = containerKind.mode,
+            datasetUuid = containerKind.datasetUuid,
+            createdAt = timestamp,
+            sourceSnapshotSha256 = inventory.snapshotSha256,
+            canonicalChecksum = canonicalChecksum,
+            appSettings = appSettingsMap,
+            nonSecretPreferences = sanitizedPrefs,
+            focusSessionsSha256 = focusChecksum,
+            contributionsSha256 = contributionChecksum,
+            sourceRulesSha256 = sourceRulesChecksum,
+        )
+    }
+
     fun writeManifest(db: Database, manifest: ContainerBackupManifest) {
         db.run(
             """
@@ -355,23 +399,23 @@ object DatabaseSnapshotter {
         )
         while (select.step() == StepResult.ROW) {
             insert.bindLong(1, select.getLong(0))
-            insert.bindText(2, select.getText(1))
+            val uuid = select.getTextOrNull(1); if (uuid != null) insert.bindText(2, uuid) else insert.bindNull(2)
             insert.bindText(3, select.getText(2))
-            insert.bindText(4, select.getText(3))
-            insert.bindText(5, select.getText(4))
+            val desc = select.getTextOrNull(3); if (desc != null) insert.bindText(4, desc) else insert.bindNull(4)
+            val q = select.getTextOrNull(4); if (q != null) insert.bindText(5, q) else insert.bindNull(5)
             insert.bindInt(6, select.getInt(5))
             insert.bindInt(7, select.getInt(6))
             insert.bindInt(8, select.getInt(7))
             insert.bindInt(9, select.getInt(8))
             val rh = select.getIntOrNull(9); if (rh != null) insert.bindInt(10, rh) else insert.bindNull(10)
             val rm = select.getIntOrNull(10); if (rm != null) insert.bindInt(11, rm) else insert.bindNull(11)
-            insert.bindInt(12, select.getInt(11))
-            insert.bindInt(13, select.getInt(12))
+            val rd = select.getIntOrNull(11); if (rd != null) insert.bindInt(12, rd) else insert.bindNull(12)
+            val hl = select.getIntOrNull(12); if (hl != null) insert.bindInt(13, hl) else insert.bindNull(13)
             insert.bindInt(14, select.getInt(13))
             insert.bindInt(15, select.getInt(14))
             insert.bindReal(16, select.getReal(15))
             insert.bindInt(17, select.getInt(16))
-            insert.bindText(18, select.getText(17))
+            val unit = select.getTextOrNull(17); if (unit != null) insert.bindText(18, unit) else insert.bindText(18, "")
             insert.bindLong(19, select.getLong(18))
             val del = select.getLongOrNull(19); if (del != null) insert.bindLong(20, del) else insert.bindNull(20)
             insert.step()
@@ -394,7 +438,8 @@ object DatabaseSnapshotter {
         )
         while (select.step() == StepResult.ROW) {
             insert.bindLong(1, select.getLong(0))
-            insert.bindText(2, select.getText(1))
+            val uuid = select.getTextOrNull(1) ?: "block-${select.getLong(0)}"
+            insert.bindText(2, uuid)
             insert.bindText(3, select.getText(2))
             insert.bindInt(4, select.getInt(3))
             val icon = select.getTextOrNull(4); if (icon != null) insert.bindText(5, icon) else insert.bindNull(5)
@@ -455,7 +500,7 @@ object DatabaseSnapshotter {
             insert.bindInt(5, select.getInt(4))
             insert.bindInt(6, select.getInt(5))
             insert.bindReal(7, select.getReal(6))
-            insert.bindText(8, select.getText(7))
+            val unit = select.getTextOrNull(7); if (unit != null) insert.bindText(8, unit) else insert.bindText(8, "")
             val u = select.getTextOrNull(8); if (u != null) insert.bindText(9, u) else insert.bindNull(9)
             insert.bindLong(10, select.getLong(9))
             val del = select.getLongOrNull(10); if (del != null) insert.bindLong(11, del) else insert.bindNull(11)

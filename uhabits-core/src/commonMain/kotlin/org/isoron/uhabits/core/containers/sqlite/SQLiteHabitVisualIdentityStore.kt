@@ -84,9 +84,8 @@ class SQLiteHabitVisualIdentityStore(
         val value = iconRef.key
         val stmt = db.prepareStatement(
             """
-            INSERT INTO HabitVisualIdentities(habit_uuid, icon_type, icon_value)
+            INSERT OR REPLACE INTO HabitVisualIdentities(habit_uuid, icon_type, icon_value)
             VALUES(?, ?, ?)
-            ON CONFLICT(habit_uuid) DO UPDATE SET icon_type = excluded.icon_type, icon_value = excluded.icon_value
             """.trimIndent()
         )
         try {
