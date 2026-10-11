@@ -554,18 +554,6 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                             showIcon = true
                         ) { showProductionCutoverDialog() }
                     )
-                } else if (currentSession.mode == DatasetMode.PRODUCTION_NEXT) {
-                    add(subsection("data_next_cutover", "UHabit Next"))
-                    add(
-                        SettingItem.Status(
-                            "pref_production_cutover_status",
-                            R.drawable.ic_settings_terminal,
-                            "Режим UHabit Next активен",
-                            "База данных v30. Разделы, задачи и фокус включены.",
-                            false,
-                            childPresentation()
-                        )
-                    )
                 }
                 add(subsection("data_delete", getString(R.string.settings_subsection_delete_data), destructive = true))
                 add(navigation("hardResetStatistics", R.drawable.ic_settings_trash, getString(R.string.reset_statistics), getString(R.string.delete_entries_forever), showIcon = true, danger = true) { showHardResetStatisticsDialog() })
@@ -659,8 +647,10 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             navigation("seedDemoData", R.drawable.ic_settings_report_analytics, getString(R.string.demo_data_seed_title), getString(R.string.demo_data_seed_summary), showIcon = true) { showSeedConfirmationDialog(isReset = false) },
             navigation("exportSyncDiagnostics", R.drawable.ic_settings_report_analytics, getString(R.string.sync_export_diagnostics_title), getString(R.string.sync_export_diagnostics_summary), showIcon = true) { exportSyncDiagnostics() },
             navigation("bugReport", R.drawable.ic_settings_bug, getString(R.string.generate_bug_report), getString(R.string.generate_bug_report_summary), showIcon = true) { actionHandler().onSettingsAction(SettingsAction.BUG_REPORT) },
-            subsection("developer_experimental", "Экспериментальные функции"),
-            navigation(
+        )
+        if (currentSession.mode != DatasetMode.PRODUCTION_NEXT) {
+            items.add(subsection("developer_experimental", "Экспериментальные функции"))
+            items.add(navigation(
                 "pref_container_experiment",
                 R.drawable.ic_settings_terminal,
                 "Эксперимент: UHabit Next (Разделы)",
@@ -669,8 +659,8 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 else
                     "Создать изолированную копию данных и протестировать режим разделов.",
                 showIcon = true
-            ) { showContainerExperimentDialog() }
-        )
+            ) { showContainerExperimentDialog() })
+        }
         if (!currentSession.isNextArchitecture) {
             items.add(subsection("developer_cutover", "UHabit Next"))
             items.add(
@@ -1658,13 +1648,22 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     }
 
     private fun showSeedConfirmationDialog(isReset: Boolean) {
-        val title = if (isReset) getString(R.string.demo_data_confirm_reset_title) else getString(R.string.demo_data_confirm_title)
-        val message = if (isReset) getString(R.string.demo_data_confirm_reset_message) else getString(R.string.demo_data_confirm_message)
+        val component = HabitsApplication.component
+        val session = component.session
+        val marker = java.io.File(requireContext().filesDir, "${DemoDataGenerator.DISPOSABLE_MARKER}-${session.datasetId}")
+        if (!BuildConfig.DEBUG || !session.isExperimental || !marker.isFile ||
+            marker.readText().trim() != session.databaseFilename) {
+            Toast.makeText(requireContext(), "Демо-данные доступны только в одноразовой QA-базе", Toast.LENGTH_LONG).show()
+            return
+        }
+        val shouldReset = isReset || !component.habitList.isEmpty
+        val title = if (shouldReset) getString(R.string.demo_data_confirm_reset_title) else getString(R.string.demo_data_confirm_title)
+        val message = if (shouldReset) getString(R.string.demo_data_confirm_reset_message) else getString(R.string.demo_data_confirm_message)
         CustomDialogs.showConfirmDialog(
             context = requireContext(),
             title = title,
             message = message,
-            isDestructive = isReset
+            isDestructive = shouldReset
         ) {
             val habitsApp = requireContext().applicationContext as HabitsApplication
             val component = habitsApp.component
@@ -1681,7 +1680,7 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                             habitList = component.habitList,
                             widgetUpdater = component.widgetUpdater,
                             cache = component.habitCardListCache,
-                            isReset = isReset
+                            isReset = shouldReset
                         )
                         true
                     } catch (e: Exception) {
@@ -1802,6 +1801,9 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         val habitsApp = requireContext().applicationContext as HabitsApplication
         val sessionManager = habitsApp.sessionManager
         val currentSession = habitsApp.component.session
+
+        // This obsolete activation entry must not switch an already-cut-over user.
+        if (currentSession.mode == DatasetMode.PRODUCTION_NEXT) return
 
         if (currentSession.isExperimental) {
             if (habitsApp.component.timerSessionManager.snapshot().hasActiveSession) {

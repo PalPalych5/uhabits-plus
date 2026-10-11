@@ -23,6 +23,7 @@ import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
+import kotlin.time.TimeSource
 
 data class CreateRepetitionCommand(
     val habitList: HabitList,
@@ -31,21 +32,31 @@ data class CreateRepetitionCommand(
     val value: Int,
     val notes: String
 ) : Command {
+    var timingObserver: ((String, Double) -> Unit)? = null
+    private inline fun timed(stage: String, action: () -> Unit) {
+        val observer = timingObserver
+        if (observer == null) { action(); return }
+        val started = TimeSource.Monotonic.markNow()
+        action()
+        observer(stage, started.elapsedNow().inWholeNanoseconds / 1e6)
+    }
     override fun run() {
         val entries = habit.originalEntries
         val previous = entries.get(date)
         if (previous.value == value && previous.notes == notes) return
-        entries.add(Entry(date, value, notes))
-        habit.recompute()
-        habit.id?.let {
-            habitList.refreshHabitFromDatabase(it, habit)
+        timed("repetition.sqliteWrite") { entries.add(Entry(date, value, notes)) }
+        timed("repetition.modelRecompute") { habit.recompute() }
+        timed("repetition.modelRefresh") {
+            habit.id?.let { habitList.refreshHabitFromDatabase(it, habit) }
         }
-        habitList.resort()
+        timed("repetition.resortAndObservers") { habitList.resort() }
         val syncManager = (habitList as? SQLiteHabitList)?.syncManager ?: return
-        if (value == Entry.UNKNOWN) {
-            syncManager.enqueueEntryDelete(habit, date)
-        } else {
-            syncManager.enqueueEntrySet(habit, date, value, notes)
+        timed("repetition.syncQueue") {
+            if (value == Entry.UNKNOWN) {
+                syncManager.enqueueEntryDelete(habit, date)
+            } else {
+                syncManager.enqueueEntrySet(habit, date, value, notes)
+            }
         }
     }
 }

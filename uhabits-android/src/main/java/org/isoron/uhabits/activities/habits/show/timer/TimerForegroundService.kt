@@ -34,6 +34,16 @@ class TimerForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         ensureNotificationChannel(this)
+        // Fulfil startForegroundService before resolving the dataset/timer. A rapid
+        // finish or cancel can make the timer idle before onStartCommand arrives.
+        val initialNotification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(getString(R.string.timer_notification_channel))
+            .setOngoing(true).setOnlyAlertOnce(true).setSilent(true).build()
+        ServiceCompat.startForeground(this, NOTIFICATION_ID, initialNotification,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0)
+        isForeground = true
         manager = (applicationContext as HabitsApplication).component.timerSessionManager
         manager.addListener(listener)
     }
@@ -50,7 +60,7 @@ class TimerForegroundService : Service() {
     }
 
     override fun onDestroy() {
-        manager.removeListener(listener)
+        if (::manager.isInitialized) manager.removeListener(listener)
         if (isForeground) stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }

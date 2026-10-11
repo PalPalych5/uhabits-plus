@@ -71,6 +71,8 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 class StatisticsFragment : Fragment(), ModelObservable.Listener {
+    private data class FocusTotal(val containerId: org.isoron.uhabits.core.containers.ContainerId?, val name: String, val durationMs: Long)
+    private var focusTotals: List<FocusTotal> = emptyList()
     private fun dp(value: Float): Float = InterfaceUtils.dpToPixels(requireContext(), value)
     private lateinit var themeSwitcher: AndroidThemeSwitcher
     private var viewBinding: ActivityStatisticsBinding? = null
@@ -622,6 +624,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     private fun performViewUpdate(result: StatisticsReportState, previous: StatisticsReportState?) {
         val (pageScroll, pageContainer) = createPageView()
         if (result.matchingHabits == 0) {
+            if (component.session.isNextArchitecture) addFocusSection(pageContainer)
             addNoDataView(pageContainer, noHabits = true)
         } else {
             renderStatisticsReport(pageContainer, result, previous)
@@ -659,9 +662,23 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         component.taskRunner.execute(object : org.isoron.uhabits.core.tasks.Task {
             private var calculatedData: StatisticsReportState? = null
             private var previousData: StatisticsReportState? = null
+            private var calculatedFocusTotals: List<FocusTotal> = emptyList()
 
             override suspend fun doInBackground() {
                 try {
+                    if (component.session.isNextArchitecture) {
+                        fun midnight(date: LocalDate) = java.util.Calendar.getInstance().apply {
+                            clear()
+                            set(date.year, date.month - 1, date.day)
+                        }.timeInMillis
+                        val sessions = org.isoron.uhabits.core.focus.sqlite.SQLiteFocusSessionRepository(component.db)
+                            .getByTimeRange(midnight(start), midnight(end.plus(1)))
+                        calculatedFocusTotals = sessions.groupBy { it.containerId }.map { (id, facts) ->
+                            val name = id?.let { component.organizationFacade.containerQueries?.find(it, includeDeleted = true)?.name }
+                                ?: if (id == null) "Без раздела" else "Удалённый раздел"
+                            FocusTotal(id, name, facts.sumOf { it.durationMs })
+                        }.sortedByDescending { it.durationMs }
+                    }
                     val snapshots = component.effectiveHabitReads?.snapshots(habits, start, end)
                     calculatedData = StatisticsReportStateBuilder.build(
                         habits = habits,
@@ -707,6 +724,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
                 if (viewBinding == null || !isAdded || taskGeneration != activeReportGeneration) return
                 if (reportKey != currentKey) return
                 val result = calculatedData ?: return
+                focusTotals = calculatedFocusTotals
                 updateReportHeader(result.start, result.end)
 
                 renderReport(result, previousData, taskGeneration)
@@ -761,6 +779,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         report: StatisticsReportState,
         previous: StatisticsReportState?
     ) {
+        if (component.session.isNextArchitecture) addFocusSection(container)
         when (report.period) {
             StatisticsPeriod.DAY -> {
                 addDayOverviewSection(container, report)
@@ -811,6 +830,49 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
                 addHabitStabilitySection(container, report)
             }
         }
+    }
+
+    private fun addFocusSection(container: LinearLayout) {
+        val (card, content) = createSection("Фокус по разделам", "Сессии, завершённые за период · все задачи и привычки")
+        fun duration(millis: Long): String {
+            val seconds = millis / 1000
+            return if (seconds >= 3600) "${seconds / 3600} ч ${seconds / 60 % 60} мин"
+                else if (seconds >= 60) "${seconds / 60} мин ${seconds % 60} с" else "$seconds с"
+        }
+        content.addView(TextView(requireContext()).apply {
+            text = "Всего: ${duration(focusTotals.sumOf { it.durationMs })}"
+            textSize = 18f
+            setTextColor(palette.onSurface)
+            setPadding(0, dp(8f).toInt(), 0, dp(8f).toInt())
+        })
+        if (focusTotals.isEmpty()) content.addView(TextView(requireContext()).apply {
+            text = "За этот период ещё нет завершённых сессий"
+            setTextColor(palette.onSurfaceVariant)
+        })
+        focusTotals.forEach { total ->
+            content.addView(TextView(requireContext()).apply {
+                text = "${total.name} · ${duration(total.durationMs)}"
+                textSize = 16f
+                minHeight = dp(48f).toInt()
+                gravity = Gravity.CENTER_VERTICAL
+                setTextColor(palette.onSurface)
+                total.containerId?.let { id ->
+                    val value = android.util.TypedValue()
+                    context.theme.resolveAttribute(android.R.attr.selectableItemBackground, value, true)
+                    setBackgroundResource(value.resourceId)
+                    setOnClickListener {
+                        org.isoron.uhabits.activities.containers.statistics.ContainerStatisticsActivity.start(requireContext(), id)
+                    }
+                }
+            })
+        }
+        content.addView(TextView(requireContext()).apply {
+            text = "Раздел на момент сессии. Время дочерних разделов показано отдельно."
+            textSize = 12f
+            setTextColor(palette.onSurfaceVariant)
+            setPadding(0, dp(8f).toInt(), 0, 0)
+        })
+        container.addView(card)
     }
 
     private fun addDayOverviewSection(container: LinearLayout, report: StatisticsReportState) {

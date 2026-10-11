@@ -522,8 +522,8 @@
     <string name="demo_data_reset_summary">Deletes generated demo habits and creates them again.</string>
     <string name="demo_data_confirm_title">Generate Demo Data?</string>
     <string name="demo_data_confirm_reset_title">Reset Demo Data?</string>
-    <string name="demo_data_confirm_message">This will update generated demo habits and spheres. Non-demo user data will not be affected. Do you want to proceed?</string>
-    <string name="demo_data_confirm_reset_message">Warning: This will wipe the entire local database (all your habits, spheres, and history) and replace it with demo data. This action cannot be undone. Are you sure you want to proceed?</string>
+    <string name="demo_data_confirm_message">Creates habits, tasks, containers and Focus history only in a separate disposable QA dataset. Real data is inaccessible to this generator.</string>
+    <string name="demo_data_confirm_reset_message">Reset the disposable QA dataset and recreate demonstration habits, tasks, containers and Focus history? The real database is protected.</string>
     <string name="demo_data_confirm_proceed">Proceed</string>
     <string name="demo_data_generating">Generating demo data...</string>
     <string name="demo_data_generated_success">Demo data successfully generated!</string>

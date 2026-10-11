@@ -143,6 +143,10 @@ class TaskFocusAndroidTest {
                 f.instrumentation.waitForIdleSync()
                 scenario.onActivity {
                     val timerSheet = workspace.childFragmentManager.findFragmentByTag(TaskFocusBottomSheet.TAG) as TaskFocusBottomSheet
+                    assertFalse("Preparation must not start work", f.component.timerSessionManager.snapshot().hasActiveSession)
+                    assertNull(f.component.timerSessionManager.currentTarget)
+                    val confirm = findStartButton(timerSheet.requireView())
+                    assertTrue(confirm.performClick())
                     assertTrue(f.component.timerSessionManager.isTaskTarget(task.id))
                     assertTrue(f.component.timerSessionManager.snapshot().isRunning)
                     assertSame(detail, workspace.childFragmentManager.findFragmentByTag("task_detail"))
@@ -163,6 +167,16 @@ class TaskFocusAndroidTest {
             }
             assertFalse(f.component.userTaskRepository.getById(task.id)!!.isCompleted)
         } finally { f.close() }
+    }
+
+    private fun findStartButton(root: View): View {
+        if (root is android.widget.Button && root.text.toString() == "Начать") return root
+        if (root is android.view.ViewGroup) {
+            for (i in 0 until root.childCount) {
+                runCatching { findStartButton(root.getChildAt(i)) }.getOrNull()?.let { return it }
+            }
+        }
+        error("Focus confirmation button missing")
     }
 
     @Test fun idleTaskPomodoroConfigurationAndBreakReuseCanonicalRuntime() {

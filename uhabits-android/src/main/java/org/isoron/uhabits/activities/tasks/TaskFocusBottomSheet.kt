@@ -30,10 +30,14 @@ import org.isoron.uhabits.inject.HabitsApplicationComponent
 
 /** Hosts the existing timer view; Task Detail and its workspace stay underneath. */
 class TaskFocusBottomSheet : BottomSheetDialogFragment() {
+    var onClosed: (() -> Unit)? = null
     private lateinit var component: HabitsApplicationComponent
     private lateinit var timer: TimerCardView
+    private var startButton: com.google.android.material.button.MaterialButton? = null
+    private val timerListener = org.isoron.uhabits.activities.habits.show.timer.TimerSessionManager.Listener {
+        startButton?.visibility = if (component.timerSessionManager.snapshot().hasActiveSession) View.GONE else View.VISIBLE
+    }
     private var pendingStart: (() -> Unit)? = null
-    private var launchConsumed = false
     private var awaitingPermission = false
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val action = pendingStart
@@ -44,10 +48,8 @@ class TaskFocusBottomSheet : BottomSheetDialogFragment() {
             if (action != null) action.invoke()
             else if (wasAwaiting && !component.timerSessionManager.snapshot().hasActiveSession) {
                 val id = TaskId(requireArguments().getString("taskId")!!)
-                if (!launchConsumed && requireArguments().getBoolean("autoStart")) component.timerSessionManager.startTask(id)
-                else component.timerSessionManager.toggleTask(id, requireArguments().getString("title") ?: "")
+                component.timerSessionManager.toggleTask(id, requireArguments().getString("title") ?: "")
             }
-            if (wasAwaiting) launchConsumed = true
         }
         if (!granted && isAdded) Toast.makeText(requireContext(), R.string.timer_notification_permission_denied, Toast.LENGTH_LONG).show()
     }
@@ -59,7 +61,6 @@ class TaskFocusBottomSheet : BottomSheetDialogFragment() {
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         component = (requireContext().applicationContext as HabitsApplication).component
-        launchConsumed = state?.getBoolean("launchConsumed") ?: false
         awaitingPermission = state?.getBoolean("awaitingPermission") ?: false
     }
 
@@ -81,6 +82,16 @@ class TaskFocusBottomSheet : BottomSheetDialogFragment() {
             val pad = TaskThemeUtils.dpInt(context, 16f)
             setPadding(pad, pad, pad, 0)
         })
+        root.addView(TextView(requireContext()).apply {
+            val task = component.userTaskRepository.getById(id)
+            text = task?.containerId?.let { containerId ->
+                component.organizationFacade.availableContainers().find { it.key == containerId.value }?.name
+            } ?: "Без раздела"
+            textSize = 14f
+            setTextColor(palette.onSurfaceVariant)
+            val pad = TaskThemeUtils.dpInt(context, 16f)
+            setPadding(pad, pad / 2, pad, pad)
+        })
         timer = TimerCardView(requireContext()).apply {
             setTask(id, title, component.timerSessionManager)
             setColor(palette.accent)
@@ -88,6 +99,19 @@ class TaskFocusBottomSheet : BottomSheetDialogFragment() {
             setAlertHealth(component.pomodoroCompletionNotifier::health, ::openAlertSettings)
         }
         root.addView(timer)
+        startButton = com.google.android.material.button.MaterialButton(requireContext()).apply {
+            text = "Начать"
+            backgroundTintList = android.content.res.ColorStateList.valueOf(palette.accent)
+            setTextColor(if (androidx.core.graphics.ColorUtils.calculateLuminance(palette.accent) > 0.179)
+                android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+            contentDescription = "Начать фокус"
+            setOnClickListener { timer.startPreparedTask() }
+        }
+        root.addView(startButton, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            val margin = TaskThemeUtils.dpInt(requireContext(), 16f)
+            setMargins(margin, 0, margin, margin)
+        })
         // The shared duration wheel can exceed a landscape sheet's available height.
         return androidx.core.widget.NestedScrollView(requireContext()).apply { addView(root) }
     }
@@ -95,6 +119,8 @@ class TaskFocusBottomSheet : BottomSheetDialogFragment() {
     override fun onStart() {
         super.onStart()
         if (!component.session.isNextArchitecture || !isCurrentDataset()) { dismiss(); return }
+        component.timerSessionManager.addListener(timerListener)
+        timerListener.onTimerChanged()
         (dialog as? BottomSheetDialog)?.let { sheet ->
             sheet.behavior.skipCollapsed = true
             sheet.behavior.state = BottomSheetBehavior.STATE_EXPANDED
@@ -105,17 +131,8 @@ class TaskFocusBottomSheet : BottomSheetDialogFragment() {
                     cornerRadii = floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
                 }
         }
-        if (!launchConsumed && !awaitingPermission && requireArguments().getBoolean("autoStart")) {
-            val manager = component.timerSessionManager
-            // Opening an already active session never pauses it or changes its mode.
-            if (!manager.snapshot().hasActiveSession) ensurePermission {
-                if (isCurrentDataset()) {
-                    manager.startTask(TaskId(requireArguments().getString("taskId")!!))
-                    launchConsumed = true
-                }
-            }
-            else launchConsumed = true
-        }
+        // Opening preparation is read-only with respect to captured work.
+        // The shared timer's explicit Start control owns session creation.
     }
 
     override fun onResume() {
@@ -124,10 +141,20 @@ class TaskFocusBottomSheet : BottomSheetDialogFragment() {
         else if (::timer.isInitialized) timer.refreshAlertHealth()
     }
 
+    override fun onStop() {
+        component.timerSessionManager.removeListener(timerListener)
+        super.onStop()
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        outState.putBoolean("launchConsumed", launchConsumed)
         outState.putBoolean("awaitingPermission", awaitingPermission)
+    }
+
+    override fun onDismiss(dialog: android.content.DialogInterface) {
+        super.onDismiss(dialog)
+        onClosed?.invoke()
+        onClosed = null
     }
 
     private fun ensurePermission(action: () -> Unit) {
@@ -158,7 +185,7 @@ class TaskFocusBottomSheet : BottomSheetDialogFragment() {
 
     companion object {
         const val TAG = "taskFocusTimer"
-        fun newInstance(id: TaskId, title: String, autoStart: Boolean = true) = TaskFocusBottomSheet().apply {
+        fun newInstance(id: TaskId, title: String, autoStart: Boolean = false) = TaskFocusBottomSheet().apply {
             arguments = Bundle().apply {
                 putString("taskId", id.value)
                 putString("title", title)

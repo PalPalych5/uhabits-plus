@@ -52,8 +52,19 @@ class WidgetRenderCoordinator(
     }
 
     fun requestAll() {
-        val manager = AppWidgetManager.getInstance(context)
-        PROVIDERS.forEach { request(it, manager.getAppWidgetIds(ComponentName(context, it))) }
+        if (disposed) return
+        // Widget discovery uses Binder even when no widgets are installed. Command
+        // completion must not wait for those unrelated system-service round trips.
+        handler.post {
+            if (disposed) return@post
+            executor.execute {
+                if (disposed || HabitsApplication.component !== component) return@execute
+                val manager = AppWidgetManager.getInstance(context)
+                PROVIDERS.forEach { provider ->
+                    if (!disposed) request(provider, manager.getAppWidgetIds(ComponentName(context, provider)))
+                }
+            }
+        }
     }
 
     fun shutdown() {

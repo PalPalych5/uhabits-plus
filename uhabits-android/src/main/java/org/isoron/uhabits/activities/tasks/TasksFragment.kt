@@ -19,8 +19,6 @@
 
 package org.isoron.uhabits.activities.tasks
 
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -397,15 +395,15 @@ class TasksFragment : Fragment() {
         }
 
         quickPlan.setOnClickListener {
-            AlertDialog.Builder(requireContext()).setItems(arrayOf("Сегодня", "Завтра", "Выбрать дату", "Без плана")) { _, choice ->
+            AlertDialog.Builder(requireContext()).setItems(arrayOf("Сегодня", "Завтра", "Выбрать дату", "Очистить плановую дату")) { _, choice ->
                 when (choice) {
                     0 -> quickPlanned = getToday()
                     1 -> quickPlanned = LocalDate(getToday().daysSince2000 + 1)
                     3 -> quickPlanned = null
                     2 -> {
-                        val cal = Calendar.getInstance()
-                        DatePickerDialog(requireContext(), { _, y, m, d -> quickPlanned = LocalDate(y, m + 1, d); refreshOptionLabels() },
-                            cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
+                        TaskDatePicker.show(childFragmentManager, quickPlanned ?: getToday(), "Плановая дата") { date ->
+                            if (isAdded) { quickPlanned = date; refreshOptionLabels() }
+                        }
                     }
                 }
                 refreshOptionLabels()
@@ -421,17 +419,52 @@ class TasksFragment : Fragment() {
         }
 
         quickDeadline.setOnClickListener {
-            AlertDialog.Builder(requireContext()).setItems(arrayOf("Выбрать дедлайн", "Без дедлайна")) { _, choice ->
-                if (choice == 1) { quickDue = null; refreshOptionLabels() } else {
-                    val cal = Calendar.getInstance()
-                    DatePickerDialog(requireContext(), { _, y, m, d ->
-                        TimePickerDialog(requireContext(), { _, h, minute ->
-                            quickDue = Calendar.getInstance().apply { set(y, m, d, h, minute, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
-                            refreshOptionLabels()
-                        }, 18, 0, true).show()
-                    }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
+            fun applyDate(date: LocalDate) {
+                val previous = Calendar.getInstance().apply { quickDue?.let { timeInMillis = it } }
+                quickDue = Calendar.getInstance().apply {
+                    set(date.year, date.month - 1, date.day,
+                        if (quickDue == null) 18 else previous.get(Calendar.HOUR_OF_DAY),
+                        if (quickDue == null) 0 else previous.get(Calendar.MINUTE), 0)
+                    set(Calendar.MILLISECOND, 0)
+                }.timeInMillis
+                refreshOptionLabels()
+            }
+            val options = mutableListOf("Сегодня", "Завтра", "Выбрать дату", "Очистить дедлайн")
+            if (quickDue != null) options.add("Изменить время")
+            AlertDialog.Builder(requireContext()).setTitle("Дедлайн")
+                .setItems(options.toTypedArray()) { _, choice ->
+                when (choice) {
+                    0 -> applyDate(getToday())
+                    1 -> applyDate(LocalDate(getToday().daysSince2000 + 1))
+                    2 -> {
+                        val cal = Calendar.getInstance().apply { quickDue?.let { timeInMillis = it } }
+                        TaskDatePicker.show(childFragmentManager,
+                            LocalDate(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH)),
+                            "Дедлайн") { date -> if (isAdded) applyDate(date) }
+                    }
+                    3 -> { quickDue = null; refreshOptionLabels() }
+                    4 -> quickDue?.let { initial ->
+                        TaskDatePicker.showTime(requireContext(), initial) { deadline ->
+                            if (isAdded) { quickDue = deadline; refreshOptionLabels() }
+                        }
+                    }
                 }
             }.show()
+        }
+
+        TaskDatePicker.reconnect(childFragmentManager, "Плановая дата") { date ->
+            quickPlanned = date
+            refreshOptionLabels()
+        }
+        TaskDatePicker.reconnect(childFragmentManager, "Дедлайн") { date ->
+            val previous = Calendar.getInstance().apply { quickDue?.let { timeInMillis = it } }
+            quickDue = Calendar.getInstance().apply {
+                set(date.year, date.month - 1, date.day,
+                    if (quickDue == null) 18 else previous.get(Calendar.HOUR_OF_DAY),
+                    if (quickDue == null) 0 else previous.get(Calendar.MINUTE), 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            refreshOptionLabels()
         }
 
         fun submitQuickAdd() {

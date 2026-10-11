@@ -88,6 +88,9 @@ class HabitCardListCacheConcurrencyTest : BaseUnitTest() {
         try {
             val read = executor.submit { runBlocking { task.doInBackground() } }
             check(entered.await(5, TimeUnit.SECONDS))
+            // A queued UI progress callback must never wait for the reader monitor.
+            // Previously this call blocked until the entire snapshot/SQL batch completed.
+            executor.submit { task.onProgressUpdate(-1) }.get(100, TimeUnit.MILLISECONDS)
             // Must finish while the reader still holds the RefreshTask monitor.
             executor.submit { cache.cancelTasks() }.get(2, TimeUnit.SECONDS)
             cache.refreshHabit(habitList.getByPosition(0).id!!)

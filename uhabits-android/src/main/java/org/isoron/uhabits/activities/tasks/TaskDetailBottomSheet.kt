@@ -19,8 +19,6 @@
 
 package org.isoron.uhabits.activities.tasks
 
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import android.content.DialogInterface
 import android.graphics.Color
 import android.graphics.Paint
@@ -163,15 +161,52 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                     return@setOnClickListener
                 }
                 if (parentFragmentManager.findFragmentByTag(TaskFocusBottomSheet.TAG) == null) {
-                    TaskFocusBottomSheet.newInstance(id, etTitle.text.toString()).show(parentFragmentManager, TaskFocusBottomSheet.TAG)
+                    TaskFocusBottomSheet.newInstance(id, etTitle.text.toString()).apply {
+                        onClosed = { if (viewReady) refreshFocusSummary() }
+                    }.show(parentFragmentManager, TaskFocusBottomSheet.TAG)
                 }
             }
         }
+        refreshFocusSummary(view)
         return view
+    }
+
+    private fun refreshFocusSummary(root: View? = view) {
+        if (!launchComponent.session.isNextArchitecture) return
+        val id = taskId ?: return
+        launchComponent.taskRunner.execute(object : org.isoron.uhabits.core.tasks.Task {
+            private var duration = 0L
+            override suspend fun doInBackground() {
+                duration = org.isoron.uhabits.core.focus.sqlite.SQLiteFocusSessionRepository(launchComponent.db)
+                    .getByTask(id).sumOf { it.durationMs }
+            }
+            override fun onPostExecute() {
+                if (!isAdded || root !== view || (requireContext().applicationContext as HabitsApplication).component !== launchComponent)
+                    return
+                val seconds = duration / 1000
+                val formatted = when {
+                    seconds >= 3600 -> "${seconds / 3600} ч ${seconds / 60 % 60} мин"
+                    seconds >= 60 -> "${seconds / 60} мин ${seconds % 60} с"
+                    else -> "$seconds с"
+                }
+                root?.findViewById<TextView>(R.id.tvDetailFocus)?.apply {
+                    maxLines = 2
+                    text = "Начать фокус · всего $formatted"
+                }
+            }
+        })
     }
 
     override fun onStart() {
         super.onStart()
+        TaskDatePicker.reconnect(childFragmentManager, "Плановая дата") { date ->
+            selectedPlannedDate = date
+            updatePlannedDateDisplay()
+            saveChanges()
+        }
+        TaskDatePicker.reconnect(childFragmentManager, "Дедлайн") { date ->
+            applyDeadlineDate(date.year, date.month - 1, date.day)
+        }
         (dialog as? BottomSheetDialog)?.let { sheet ->
             sheet.dismissWithAnimation = true
             sheet.behavior.skipCollapsed = true
@@ -329,7 +364,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             tvPlannedDateValue.text = "Запланировать"
             btnClearPlannedDate.visibility = View.GONE
         } else {
-            val today = runCatching { getToday() }.getOrDefault(LocalDate(2026, 10, 4))
+            val today = getToday()
             val text = when {
                 p == today -> "Сегодня"
                 p.daysSince2000 == today.daysSince2000 + 1 -> "Завтра"
@@ -346,7 +381,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         val d = selectedDeadline
         tvDeadlineValue.setTextColor(if (d == null) palette.onSurfaceVariant else palette.onSurface)
         if (d == null) {
-            tvDeadlineValue.text = "Добавить дедлайн"
+            tvDeadlineValue.text = "Без дедлайна"
             btnClearDeadline.visibility = View.GONE
         } else {
             val df = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
@@ -496,11 +531,11 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun showPlannedDatePicker() {
-        val options = arrayOf("Сегодня", "Завтра", "Выбрать дату в календаре")
+        val options = arrayOf("Сегодня", "Завтра", "Выбрать дату в календаре", "Очистить плановую дату")
         AlertDialog.Builder(requireContext())
             .setTitle("Запланировать на")
             .setItems(options) { _, which ->
-                val today = runCatching { getToday() }.getOrDefault(LocalDate(2026, 10, 4))
+                val today = getToday()
                 when (which) {
                     0 -> {
                         selectedPlannedDate = today
@@ -514,17 +549,16 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                     }
                     2 -> {
                         val initial = selectedPlannedDate ?: today
-                        DatePickerDialog(
-                            requireContext(),
-                            { _, year, month, dayOfMonth ->
-                                selectedPlannedDate = LocalDate(year, month + 1, dayOfMonth)
+                        showDatePicker(initial, "Плановая дата") { date ->
+                                selectedPlannedDate = date
                                 updatePlannedDateDisplay()
                                 saveChanges()
-                            },
-                            initial.year,
-                            initial.month - 1,
-                            initial.day
-                        ).show()
+                        }
+                    }
+                    3 -> {
+                        selectedPlannedDate = null
+                        updatePlannedDateDisplay()
+                        saveChanges()
                     }
                 }
             }
@@ -532,32 +566,63 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun showDeadlinePicker() {
+        val options = mutableListOf("Сегодня", "Завтра", "Выбрать дату в календаре", "Очистить дедлайн")
+        if (selectedDeadline != null) options.add("Изменить время")
+        AlertDialog.Builder(requireContext())
+            .setTitle("Дедлайн")
+            .setItems(options.toTypedArray()) { _, which ->
+                val today = getToday()
+                when (which) {
+                    0 -> applyDeadlineDate(today.year, today.month - 1, today.day)
+                    1 -> LocalDate(today.daysSince2000 + 1).let { applyDeadlineDate(it.year, it.month - 1, it.day) }
+                    2 -> showCustomDeadlinePicker()
+                    3 -> {
+                        selectedDeadline = null
+                        updateDeadlineDisplay()
+                        saveChanges()
+                    }
+                    4 -> selectedDeadline?.let { initial ->
+                        TaskDatePicker.showTime(requireContext(), initial) { deadline ->
+                            if (isAdded && !taskDeleted &&
+                                (requireContext().applicationContext as HabitsApplication).component === launchComponent) {
+                                selectedDeadline = deadline
+                                updateDeadlineDisplay()
+                                saveChanges()
+                            }
+                        }
+                    }
+                }
+            }.show()
+    }
+
+    private fun applyDeadlineDate(year: Int, month: Int, day: Int) {
+        val previous = Calendar.getInstance().apply { selectedDeadline?.let { timeInMillis = it } }
+        selectedDeadline = Calendar.getInstance().apply {
+            set(year, month, day,
+                if (selectedDeadline == null) 18 else previous.get(Calendar.HOUR_OF_DAY),
+                if (selectedDeadline == null) 0 else previous.get(Calendar.MINUTE), 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        updateDeadlineDisplay()
+        saveChanges()
+    }
+
+    private fun showCustomDeadlinePicker() {
         val cal = Calendar.getInstance().apply {
             selectedDeadline?.let { timeInMillis = it }
         }
-        DatePickerDialog(
-            requireContext(),
-            { _, year, month, dayOfMonth ->
-                TimePickerDialog(
-                    requireContext(),
-                    { _, hourOfDay, minute ->
-                        val selected = Calendar.getInstance().apply {
-                            set(year, month, dayOfMonth, hourOfDay, minute, 0)
-                            set(Calendar.MILLISECOND, 0)
-                        }
-                        selectedDeadline = selected.timeInMillis
-                        updateDeadlineDisplay()
-                        saveChanges()
-                    },
-                    if (selectedDeadline == null) 18 else cal.get(Calendar.HOUR_OF_DAY),
-                    if (selectedDeadline == null) 0 else cal.get(Calendar.MINUTE),
-                    true
-                ).show()
-            },
-            cal.get(Calendar.YEAR),
-            cal.get(Calendar.MONTH),
-            cal.get(Calendar.DAY_OF_MONTH)
-        ).show()
+        showDatePicker(LocalDate(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1,
+            cal.get(Calendar.DAY_OF_MONTH)), "Дедлайн") { date ->
+            applyDeadlineDate(date.year, date.month - 1, date.day)
+        }
+    }
+
+    private fun showDatePicker(initial: LocalDate, title: String, apply: (LocalDate) -> Unit) {
+        TaskDatePicker.show(childFragmentManager, initial, title) { date ->
+            if (!isAdded || taskDeleted || (requireContext().applicationContext as HabitsApplication).component !== launchComponent)
+                return@show
+            apply(date)
+        }
     }
 
     private fun saveChanges() {

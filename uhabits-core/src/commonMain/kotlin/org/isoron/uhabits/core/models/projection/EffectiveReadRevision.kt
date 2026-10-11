@@ -44,6 +44,10 @@ class EffectiveReadDatabase(
 
     override fun prepareStatement(sql: String): PreparedStatement {
         val statement = delegate.prepareStatement(sql)
+        // SELECT cannot change transaction frames or invalidate effective values. In
+        // particular, do not serialize every returned history row with writers and
+        // recompile/reparse SQL on each step while the UI is reading another query.
+        if (sql.trimStart().startsWith("SELECT", ignoreCase = true)) return statement
         return object : PreparedStatement by statement {
             override fun step(): org.isoron.platform.io.StepResult {
                 return observedStep(sql, statement)

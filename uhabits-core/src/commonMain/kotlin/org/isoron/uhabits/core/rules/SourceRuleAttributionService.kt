@@ -83,11 +83,17 @@ class SourceRuleAttributionService(
 ) {
 
     /**
-     * Attributes a finalized [session] against all active rules.
+     * Attributes a finalized [session] against all active rules or direct habit targets.
      *
-     * @return list of [AttributionOutcome] for each rule evaluation.
+     * @return list of [AttributionOutcome] for each rule evaluation or direct habit attribution.
      */
     fun attributeSession(session: FocusSession, now: Long = session.endedAt): List<AttributionOutcome> {
+        // Direct habit attribution: when the session was recorded directly for a habit,
+        // attribute it to that habit without requiring an explicit container rule.
+        if (session.habit != null) {
+            return attributeDirectHabitSession(session, now)
+        }
+
         // Ended rules remain recoverable for work committed during their immutable interval.
         // A legacy disabled rule without an end timestamp has no invented interval history.
         val activeRules = ruleRepository.getAll(includeRemoved = true).filter { it.isEnabled }
@@ -212,6 +218,87 @@ class SourceRuleAttributionService(
         }
 
         return outcomes
+    }
+
+    private fun attributeDirectHabitSession(session: FocusSession, now: Long): List<AttributionOutcome> {
+        val targetHabit = session.habit ?: return emptyList()
+
+        val historical = contributionRepository.getBySource(
+            ContributionSourceType.FOCUS_SESSION, session.id.value, includeRemoved = true,
+        ).firstOrNull { it.targetHabit == targetHabit }
+        if (historical != null) {
+            return if (historical.isActive) {
+                listOf(AttributionOutcome.Attributed(historical, wasInserted = false))
+            } else {
+                emptyList()
+            }
+        }
+
+        if (habitResolver != null) {
+            val habitInfo = habitResolver.invoke(targetHabit)
+            if (habitInfo == null) {
+                return listOf(AttributionOutcome.IncompatibleTarget(targetHabit, "Target habit unavailable"))
+            }
+            try {
+                HabitTimeValueConverter.validateTargetHabit(
+                    isNumerical = habitInfo.isNumerical,
+                    unit = habitInfo.unit,
+                    name = habitInfo.name,
+                    uuid = targetHabit.uuid,
+                )
+            } catch (e: IncompatibleTargetHabitException) {
+                return listOf(AttributionOutcome.IncompatibleTarget(targetHabit, e.message ?: "Incompatible target"))
+            }
+        }
+
+        val activeRules = ruleRepository.getAll(includeRemoved = true).filter { it.isEnabled && it.targetHabit == targetHabit }
+        val matchingRule = activeRules.filter { rule ->
+            HistoricalContainerMatcher.matches(rule, session) &&
+                session.endedAt >= rule.effectiveFrom &&
+                (rule.removedAt == null || session.endedAt < rule.removedAt) &&
+                (sourceEligibility?.invoke(rule, session) != false)
+        }.minWithOrNull(
+            compareByDescending<SourceRule> { it.sourceContainerId == session.containerId }
+                .thenBy { it.id.value }
+        )
+
+        val habitValue = HabitTimeValueConverter.convertFocusDurationToHabitValue(session.durationMs)
+        val contributionId = deterministicContributionId(session.id.value, targetHabit.uuid)
+
+        val existingContribution = contributionRepository.getById(contributionId)
+        if (existingContribution != null) {
+            if (existingContribution.isActive &&
+                existingContribution.sourceRuleId == matchingRule?.id &&
+                existingContribution.contributedValue == habitValue
+            ) {
+                return listOf(AttributionOutcome.Attributed(existingContribution, wasInserted = false))
+            }
+        }
+
+        val contribution = Contribution(
+            id = contributionId,
+            targetHabit = targetHabit,
+            sourceType = ContributionSourceType.FOCUS_SESSION,
+            sourceId = session.id.value,
+            contributedValue = habitValue,
+            effectiveTimestamp = session.endedAt,
+            createdAt = existingContribution?.createdAt ?: now,
+            updatedAt = now,
+            sourceRuleId = matchingRule?.id,
+        )
+
+        val recordResult = try {
+            contributionRepository.record(contribution)
+        } catch (error: ContributionConflictException) {
+            val winner = contributionRepository.getById(contributionId) ?: throw error
+            if (winner.targetHabit != contribution.targetHabit || winner.sourceType != contribution.sourceType ||
+                winner.sourceId != contribution.sourceId || winner.contributedValue != contribution.contributedValue ||
+                winner.effectiveTimestamp != contribution.effectiveTimestamp || winner.sourceRuleId != contribution.sourceRuleId) throw error
+            return if (winner.isActive) listOf(AttributionOutcome.Attributed(winner, wasInserted = false)) else emptyList()
+        }
+        val inserted = recordResult == ContributionRecordResult.INSERTED
+        val finalContribution = if (inserted) contribution else (contributionRepository.getById(contributionId) ?: contribution)
+        return listOf(AttributionOutcome.Attributed(finalContribution, wasInserted = inserted))
     }
 
     /**

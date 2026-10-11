@@ -500,8 +500,8 @@
     <string name="demo_data_reset_summary">Удаляет демо-привычки и создаёт их заново.</string>
     <string name="demo_data_confirm_title">Создать демо-данные?</string>
     <string name="demo_data_confirm_reset_title">Сбросить демо-данные?</string>
-    <string name="demo_data_confirm_message">Это обновит сгенерированные демо-привычки и сферы. Пользовательские данные не изменятся. Продолжить?</string>
-    <string name="demo_data_confirm_reset_message">Внимание: это полностью очистит локальную базу данных (все ваши привычки, сферы и историю) и заменит их демо-данными. Действие необратимо. Вы уверены, что хотите продолжить?</string>
+    <string name="demo_data_confirm_message">Создаёт привычки, задачи, разделы и историю фокуса только в отдельной одноразовой QA-базе. Реальные данные недоступны генератору.</string>
+    <string name="demo_data_confirm_reset_message">Сбросить одноразовую QA-базу и заново создать демонстрационные привычки, задачи, разделы и историю фокуса? Реальная база защищена.</string>
     <string name="demo_data_confirm_proceed">Продолжить</string>
     <string name="demo_data_generating">Генерация демо-данных...</string>
     <string name="demo_data_generated_success">Демо-данные успешно созданы!</string>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="TaskDatePickerTheme" parent="ThemeOverlay.MaterialComponents.MaterialCalendar">
+        <item name="colorPrimary">?attr/aboutScreenColor</item>
+        <item name="colorAccent">?attr/aboutScreenColor</item>
+        <item name="colorSurface">?attr/cardBgColor</item>
+        <item name="colorOnSurface">?attr/android:textColor</item>
+        <item name="android:textColorPrimary">?attr/android:textColor</item>
+        <item name="shapeAppearanceMediumComponent">@style/DialogShapeAppearance</item>
+    </style>
+</resources>

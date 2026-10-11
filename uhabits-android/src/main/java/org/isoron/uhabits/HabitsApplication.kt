@@ -85,7 +85,9 @@ class HabitsApplication : Application() {
 
         val session = sessionManager.resolveSessionOnStartup()
 
-        if (isTestMode()) {
+        // Ordinary legacy tests start empty. Persisted Next datasets must survive
+        // instrumentation process restarts (and must never be silently purged).
+        if (isTestMode() && !session.isNextArchitecture) {
             val db = DatabaseUtils.getDatabaseFile(context, session.databaseFilename)
             if (db.exists()) db.delete()
         }

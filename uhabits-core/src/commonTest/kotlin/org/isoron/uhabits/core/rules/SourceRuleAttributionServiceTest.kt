@@ -348,4 +348,122 @@ class SourceRuleAttributionServiceTest {
         assertEquals(60_000L, past.durationMs)
         assertEquals(61_000L, past.endedAt)
     }
+
+    @Test
+    fun testDirectStopwatchOnHabitCreditsHabitWithoutContainerRules() {
+        val service = createService()
+        // 15 minutes stopwatch = 900,000 ms
+        val session = FocusSession(
+            id = FocusSessionId("stopwatch-1"),
+            startedAt = 1000L,
+            endedAt = 1000L + 900_000L,
+            durationMs = 900_000L,
+            source = FocusSessionSource.TIMER,
+            habit = HabitRef("h-deep-work"),
+            createdAt = 1000L,
+            updatedAt = 901_000L,
+        )
+        val outcomes = service.attributeSession(session)
+        assertEquals(1, outcomes.size)
+        val outcome = outcomes.single() as AttributionOutcome.Attributed
+        assertTrue(outcome.wasInserted)
+        assertEquals(HabitRef("h-deep-work"), outcome.contribution.targetHabit)
+        assertEquals(15_000L, outcome.contribution.contributedValue) // 15.0 min on x1000 scale
+        assertNull(outcome.contribution.sourceRuleId)
+
+        // Idempotency: repeated attribution produces no duplicates
+        val repeatOutcomes = service.attributeSession(session)
+        assertEquals(1, repeatOutcomes.size)
+        val repeat = repeatOutcomes.single() as AttributionOutcome.Attributed
+        assertFalse(repeat.wasInserted)
+        assertEquals(1, contribRepo.getAll().size)
+    }
+
+    @Test
+    fun testDirectPomodoroOnHabitCreditsHabitWithoutContainerRules() {
+        val service = createService()
+        // 25 minutes pomodoro = 1,500,000 ms
+        val session = FocusSession(
+            id = FocusSessionId("pomodoro-1"),
+            startedAt = 1000L,
+            endedAt = 1000L + 1_500_000L,
+            durationMs = 1_500_000L,
+            source = FocusSessionSource.TIMER,
+            habit = HabitRef("h-study"),
+            createdAt = 1000L,
+            updatedAt = 1_501_000L,
+        )
+        val outcomes = service.attributeSession(session)
+        assertEquals(1, outcomes.size)
+        val outcome = outcomes.single() as AttributionOutcome.Attributed
+        assertTrue(outcome.wasInserted)
+        assertEquals(HabitRef("h-study"), outcome.contribution.targetHabit)
+        assertEquals(25_000L, outcome.contribution.contributedValue) // 25.0 min on x1000 scale
+        assertEquals(1, contribRepo.getAll().size)
+    }
+
+    @Test
+    fun testDirectSessionOnIncompatibleHabitDoesNotCredit() {
+        val service = createService()
+        // Session directly targeting boolean habit
+        val sessionBoolean = FocusSession(
+            id = FocusSessionId("s-bool"),
+            startedAt = 1000L,
+            endedAt = 61_000L,
+            durationMs = 60_000L,
+            source = FocusSessionSource.TIMER,
+            habit = HabitRef("h-boolean"),
+            createdAt = 1000L,
+            updatedAt = 61_000L,
+        )
+        val outcomesBool = service.attributeSession(sessionBoolean)
+        assertEquals(1, outcomesBool.size)
+        assertTrue(outcomesBool.single() is AttributionOutcome.IncompatibleTarget)
+        assertTrue(contribRepo.getAll().isEmpty())
+
+        // Session directly targeting steps habit (non-minute unit)
+        val sessionSteps = FocusSession(
+            id = FocusSessionId("s-steps"),
+            startedAt = 1000L,
+            endedAt = 61_000L,
+            durationMs = 60_000L,
+            source = FocusSessionSource.TIMER,
+            habit = HabitRef("h-steps"),
+            createdAt = 1000L,
+            updatedAt = 61_000L,
+        )
+        val outcomesSteps = service.attributeSession(sessionSteps)
+        assertEquals(1, outcomesSteps.size)
+        assertTrue(outcomesSteps.single() is AttributionOutcome.IncompatibleTarget)
+        assertTrue(contribRepo.getAll().isEmpty())
+    }
+
+    @Test
+    fun testTaskSessionWithoutMatchingRuleRecordsNoContributions() {
+        val service = createService()
+        // Session on a task without any rules configured
+        val taskSession = FocusSession(
+            id = FocusSessionId("task-no-rule"),
+            startedAt = 1000L,
+            endedAt = 61_000L,
+            durationMs = 60_000L,
+            source = FocusSessionSource.TIMER,
+            taskId = org.isoron.uhabits.core.userTasks.TaskId("task-1"),
+            containerId = ContainerId("c-unrelated"),
+            createdAt = 1000L,
+            updatedAt = 61_000L,
+        )
+        val outcomes = service.attributeSession(taskSession)
+        assertTrue(outcomes.isEmpty())
+        assertTrue(contribRepo.getAll().isEmpty())
+    }
+
+    @Test
+    fun testManualDurationAndFocusDurationProduceEquivalentEffectiveQuantity() {
+        // Manual 15 minutes in AddNumericalEntryOpCommand uses deltaValue = (15.0 * 1000.0).roundToInt() = 15000L
+        val manualValue = 15_000L
+        val focusDurationMs = 15 * 60 * 1000L
+        val computedFocusValue = HabitTimeValueConverter.convertFocusDurationToHabitValue(focusDurationMs)
+        assertEquals(manualValue, computedFocusValue)
+    }
 }

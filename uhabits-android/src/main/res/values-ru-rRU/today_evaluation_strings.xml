@@ -31,7 +31,7 @@
     <string name="today_eval_missed_plan_note">План был: %1$s · Требует перепланирования</string>
     <string name="today_eval_overdue_deadline_note">Дедлайн: %1$s</string>
     <string name="today_eval_focus_credit_badge">+%1$s фокуса</string>
-    <string name="today_eval_menu_item">Обзор дня (Today)</string>
+    <string name="today_eval_menu_item">Обзор дня</string>
     <string name="today_eval_experiment_pref_title">Эксперимент: Обзор дня (Today)</string>
     <string name="today_eval_experiment_pref_summary">Открыть нативный экспериментальный экран Today</string>
 </resources>

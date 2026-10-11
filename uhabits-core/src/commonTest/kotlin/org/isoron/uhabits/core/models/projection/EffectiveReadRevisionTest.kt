@@ -12,6 +12,7 @@ import org.isoron.uhabits.core.database.HabitGoalData
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.sqlite.SQLModelFactory
 import org.isoron.platform.time.LocalDate
+import org.isoron.platform.time.setToday
 import kotlin.test.*
 
 class EffectiveReadRevisionTest {
@@ -114,6 +115,7 @@ class EffectiveReadRevisionTest {
 
     @Test
     fun repeatedManualGoalAndCutoffWritesDoNotPublish() = runTest {
+        setToday(LocalDate(2026, 10, 11))
         val raw = TestDatabaseHelper.createEmptyDatabase()
         val revision = EffectiveReadRevision("dataset-a")
         val db = EffectiveReadDatabase(raw, revision)

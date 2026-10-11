@@ -321,6 +321,11 @@ class TimerCardView : LinearLayout {
         updateUIState()
     }
 
+    /** Explicit preparation confirmation; never toggles a running session. */
+    fun startPreparedTask() {
+        if (taskId != null && manager?.snapshot()?.hasActiveSession == false) toggleTimer()
+    }
+
     private fun switchMode(mode: TimerMode) {
         taskId?.let { manager?.switchTaskMode(it, taskTitle, mode); return }
         habit?.let { manager?.switchMode(it, mode) }
@@ -374,6 +379,7 @@ class TimerCardView : LinearLayout {
         val isSessionActive = state.hasActiveSession || hasElapsed
         val isCurrentTargetSession = matchesTarget
 
+        startPauseBtn.visibility = if (taskId != null && !state.hasActiveSession && !hasElapsed) View.GONE else View.VISIBLE
         startPauseBtn.isEnabled = !conflict
         val primaryIconRes = if (state.isRunning) R.drawable.ic_timer_pause else R.drawable.ic_timer_play
         updatePrimaryIcon(primaryIconRes)

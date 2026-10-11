@@ -52,7 +52,8 @@ class TargetCardView(context: Context, attrs: AttributeSet) : LinearLayout(conte
             return
         }
         binding.focusGoal.visibility = View.VISIBLE
-        binding.focusBreakdown.visibility = View.VISIBLE
+        binding.focusBreakdown.visibility = if (progress.total != null ||
+            progress.focus != 0L || progress.excludedFocus != 0L) View.VISIBLE else View.GONE
         val format = NumberFormat.getNumberInstance().apply { maximumFractionDigits = 3 }
         fun amount(value: Long) = "${format.format(value / 1000.0)} ${progress.unit}"
         val skipped = progress.status == HabitGoalStatus.SKIPPED || progress.status == HabitGoalStatus.EXCLUDED

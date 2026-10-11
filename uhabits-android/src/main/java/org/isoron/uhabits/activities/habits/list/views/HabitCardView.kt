@@ -98,6 +98,7 @@ class HabitCardView(
                 newHabit?.observable?.addListener(this)
             }
             field = newHabit
+            label.contentDescription = newHabit?.name
             if (newHabit != null) copyAttributesFrom(newHabit)
         }
 

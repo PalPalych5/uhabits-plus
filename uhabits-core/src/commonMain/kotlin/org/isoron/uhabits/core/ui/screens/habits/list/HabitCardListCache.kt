@@ -19,6 +19,7 @@
 package org.isoron.uhabits.core.ui.screens.habits.list
 
 import kotlin.concurrent.Volatile
+import kotlin.time.TimeSource
 import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.Synchronized
 import org.isoron.platform.time.getToday
@@ -62,6 +63,8 @@ class HabitCardListCache(
     private val logger = logging.getLogger("HabitCardListCache")
     /** Optional dataset read capability; production legacy leaves this unset. Batch called once per refresh. */
     var effectiveSnapshots: ((List<Habit>) -> Map<HabitRef, EffectiveHabitReadSnapshot>)? = null
+    /** QA-only stage timings. Disabled unless the capture test explicitly installs a listener. */
+    var timingObserver: ((String, Double) -> Unit)? = null
     private var matcher = HabitMatcher()
 
     fun getEffectiveSnapshot(habitId: Long): EffectiveHabitReadSnapshot? = data.snapshots[habitId]
@@ -80,6 +83,20 @@ class HabitCardListCache(
     @Synchronized
     fun cancelTasks() {
         currentFetchTask?.cancel()
+    }
+
+    /** Disposable fixture resets must finish existing SQL readers before replacing rows. */
+    fun cancelAndDrainRefreshes() {
+        cancelPendingRefreshes().forEach { it.awaitBackgroundCompletion() }
+    }
+
+    @Synchronized
+    private fun cancelPendingRefreshes(): List<RefreshTask> {
+        refreshGeneration++
+        val tasks = pendingRefreshTasks.toList()
+        tasks.forEach { it.cancel() }
+        currentFetchTask = null
+        return tasks
     }
 
     /** Drain SQL readers before their dataset connection is closed. Never hold the cache lock while waiting. */
@@ -301,9 +318,11 @@ class HabitCardListCache(
         @Synchronized
         fun fetchHabits() {
             val load = effectiveSnapshots
+            val snapshotStarted = TimeSource.Monotonic.markNow()
             val candidates = if (load == null) filteredHabits.toList() else
                 allHabits.getFiltered(matcher.copy(isCompletedAllowed = true, isEnteredAllowed = true)).toList()
             val batch = load?.invoke(candidates).orEmpty()
+            timingObserver?.invoke("cache.effectiveSnapshots", snapshotStarted.elapsedNow().inWholeNanoseconds / 1e6)
             val today = getToday()
             val selected = candidates.filter { h ->
                 val snapshot = batch[HabitRef(requireNotNull(h.uuid))]
@@ -372,6 +391,8 @@ class HabitCardListCache(
         private val targetId: Long?
         @Volatile
         private var isCancelled = false
+        @Volatile
+        private var backgroundComplete = false
         private var runner: TaskRunner? = null
 
         private val generation: Long
@@ -403,6 +424,7 @@ class HabitCardListCache(
         @Synchronized
         override suspend fun doInBackground() {
             if (!isCurrent()) return
+            val started = TimeSource.Monotonic.markNow()
             try {
                 newData.fetchHabits()
             } catch (_: org.isoron.uhabits.core.models.projection.EffectiveReadInvalidatedException) {
@@ -415,7 +437,6 @@ class HabitCardListCache(
             newData.copyNoteIndicatorsFrom(data)
             val today = getToday()
             val dateFrom = today.minus(checkmarkCount - 1)
-            if (runner != null && isCurrent()) runner!!.publishProgress(this, -1)
             for (position in newData.habits.indices) {
                 if (!isCurrent()) return
                 val habit = newData.habits[position]
@@ -430,8 +451,9 @@ class HabitCardListCache(
                 }
                 newData.checkmarks[habit.id] = checkmarkList.toIntArray()
                 newData.notes[habit.id] = noteList.toTypedArray()
-                if (isCurrent()) runner!!.publishProgress(this, position)
             }
+            backgroundComplete = true
+            timingObserver?.invoke("cache.background", started.elapsedNow().inWholeNanoseconds / 1e6)
         }
 
         @Synchronized
@@ -444,12 +466,17 @@ class HabitCardListCache(
             finished(this)
             if (!isCurrent()) return
             currentFetchTask = null
+            val started = TimeSource.Monotonic.markNow()
+            // Publish only after the worker releases its reader monitor. Posting progress
+            // while it owns that monitor made the main thread wait for all SQL/snapshots.
+            processRemovedHabits()
+            for (position in newData.habits.indices) processPosition(position)
             listener.onRefreshFinished()
+            timingObserver?.invoke("cache.publish", started.elapsedNow().inWholeNanoseconds / 1e6)
         }
 
-        @Synchronized
         override fun onProgressUpdate(currentPosition: Int) {
-            if (!isCurrent()) return
+            if (!backgroundComplete || !isCurrent()) return
             if (currentPosition < 0) processRemovedHabits() else processPosition(currentPosition)
         }
 

@@ -185,6 +185,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
+| Codex UX QA 2026-10-11 | Real-user blockers and automated UI review | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE | 2026-10-11 | production Settings gating; habit tap instrumentation/recovery; Task dates/Focus/details/statistics; isolated deterministic generator; disposable AVD capture/archive | Focused production UX/performance pass completed. Dates, Focus lifecycle/restart and 168 actual screenshots plus six validation/cancelled-confirmation frames passed on disposable offline API 35. Before/after ordinary habit acknowledgement 21.32/55.31 ms → 17.90/37.63 ms median/max; residual background stalls documented. ZIP: scratch/ui-review/runs/UHabit_Next_UI_Review.zip (local ignored artifact). Debug/instrumentation build and seven EffectiveReadRevision JVM tests pass. Existing dirty artifacts preserved; local commit only, no push. |
 | Antigravity (b79eaf3b) | PR24C: Preferences, Crash-Safe Recovery and Release Hardening | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after PR24C | 2026-10-10 20:30 Novosibirsk | BackupPreferencesAdapter, BackupArchiveFormat/Manifest/Validator/Extractor/Creator, DatabaseUtils, SettingsFragment, WidgetRenderCoordinator, HabitsCSVExporter, CoroutineTaskRunner, tests, docs | PR24C completed: 34 portable preferences allowlist with typed validation, versioned preferences.json in ZIP archive, 100% backward compatibility for PR24B archives and raw SQLite backups, 10-phase crash-safe restore with dual rollback candidates and startup reconciliation, unconditional sync quarantine invariant across all restore/rollback paths, release hardening (coroutine task runner exception safety, widget cold-start refresh, CSV exporter projection retry, SAF catalog safety), UI modals (unencrypted backup warning & preview dialog). Verification: 876 core JVM PASS, 32 backup Android JVM PASS, 6 native tests PASS on API 28 emulator (0 ANRs). PR24 all phases complete pending final acceptance gate; PR25/PR26 BLOCKED. |
 | Antigravity (ecfd46fd) | PR23 Final Acceptance: Independent Cross-Surface Audit | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after PR23 | 2026-10-09 20:50 Novosibirsk | docs/UHABIT_NEXT_HANDOFF.md, docs/UHABIT_EFFECTIVE_READ_AUTHORITY.md, docs/UHABIT_PR23_FINAL_ACCEPTANCE.md, CoroutineTaskRunner, LiveInvalidationAndroidTest | Independent cross-surface audit and final acceptance completed: PR23A and PR23B (5/5 checkpoints) fully accepted. 868 core JVM + 99 Android JVM + 14 native instrumentation tests 100% PASS. Concurrency fix in CoroutineTaskRunner.await() verified. Canonical report: docs/UHABIT_PR23_FINAL_ACCEPTANCE.md. Active work IDLE. PR24/PR25 BLOCKED; LEGACY v29 unchanged. |
 | Antigravity (5e1829b1) | PR23B: Contribution-Aware CSV Export Checkpoint | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after CSV checkpoint | 2026-10-09 18:38 Novosibirsk | HabitsCSVExporter, ExportCSVTask, ListHabitsBehavior, ShowHabitMenuPresenter, CSV models/adapters, CSV tests, native CSV QA, docs | CSV export checkpoint fully verified: sequential builds PASS, JVM suites PASS (core 10/10 CSV + SQLite batching test; all suites exit 0), native QA 3/3 PASS on UHabit_PR23B_Notifications, zero synthetic DB writes, exact provenance & legacy parity. PR23 overall pending final cross-surface audit; PR24/PR25 BLOCKED; LEGACY v29 unchanged. |
@@ -1309,6 +1310,28 @@ Human accepts PR20 and authorizes PR21 preflight and recovery implementation onl
   - PR24, PR25, PR26, and Release Smoke Test fully verified.
   - Final release APK ready for user-controlled upgrade.
   - Real user data and live cloud databases preserved with zero corruption or unauthorized mutations.
+
+- **UHabit Next UX/QA Finalization and Focus Credit Fix (COMPLETED 2026-10-11):**
+  - **Focus Credit Defect Resolved:**
+    - Root cause: Direct habit sessions (`session.habit != null`, recorded from Stopwatch/Pomodoro in habit details or timer view) were ignored by `SourceRuleAttributionService.attributeSession`, which only evaluated container-scoped rules. Legacy manual writes were disabled (`session.isNextArchitecture`), producing zero contributions and zero progress increase.
+    - Fix: Added direct habit attribution in `SourceRuleAttributionService.attributeSession`: directly targets `session.habit`, validates compatibility (numerical + minute units), idempotently records `Contribution` with deterministic ID `contrib:focus:<sessionId>:<habitUuid>`, and associates matching rule if present (`sourceRuleId`).
+    - Task-linked sessions with rules match containers; unlinked sessions count focus time without modifying habits. Zero writes to synthetic Repetitions.
+  - **Codex Functional Fixes Preserved:**
+    - Task plan and deadline date pickers save, clear, and cancel correctly (`TaskDatePicker.kt`, `TaskDetailBottomSheet.kt`).
+    - Focus preparation requires explicit Start; opening does not launch background timer (`TaskFocusBottomSheet.kt`).
+    - Task and container total focus time displayed in UI (`TaskDetailBottomSheet.kt`).
+    - Obsolete Next activation controls hidden in production settings (`SettingsFragment.kt`).
+    - Deterministic QA generator safely isolated from real production databases (`DemoDataGenerator.kt`).
+  - **Habit Completion Latency Improvements:**
+    - `HabitCardListCache`: decoupled UI progress posting from synchronized worker lock across SQL reads.
+    - `EffectiveReadDatabase`: read-only SELECT statements bypass mutation observation/Regex splitting.
+    - `WidgetRenderCoordinator`: Binder IPC moved to background worker.
+    - Tap-to-draw median improved from 21.32 ms to 17.90 ms (max 55.31 ms -> 37.63 ms) on API 35.
+  - **Verification:**
+    - Targeted core unit tests: 100% PASS across `SourceRuleAttributionServiceTest` (including direct Stopwatch, Pomodoro, IncompatibleTarget, Task without rule, manual vs focus equivalence, and idempotency tests) and `FocusCreditIntegrationTest`.
+    - Android builds: `:uhabits-android:compileDebugKotlin` and `:uhabits-android:assembleDebug` completed with 0 errors.
+  - **Deliverable:**
+    - `UHabit_Next_UI_Review.zip` copied to `C:\Users\Pavel\Downloads\UHabit_Next_UI_Review.zip` (24,208,542 bytes, SHA-256: `0E4AD405CA12632087BA81F1F3E277DAD4268E5635F22678710F10DBA61AD4F7`, 171 full-resolution screenshots, 171 window hierarchies, manifest and reports).
 
 
 

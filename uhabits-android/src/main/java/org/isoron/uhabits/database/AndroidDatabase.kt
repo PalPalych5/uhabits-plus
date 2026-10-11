@@ -23,6 +23,12 @@ import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteStatement
 import org.isoron.platform.io.PreparedStatement
 import org.isoron.platform.io.StepResult
+import android.os.SystemClock
+
+/** Explicit instrumentation opt-in. SQL text and bindings are never exported. */
+object AndroidSqlTiming {
+    @Volatile var observer: ((String, Double) -> Unit)? = null
+}
 
 class AndroidPreparedStatement(
     private val db: SQLiteDatabase,
@@ -39,6 +45,18 @@ class AndroidPreparedStatement(
 
     @Synchronized
     override fun step(): StepResult {
+        val observer = AndroidSqlTiming.observer
+        if (observer == null) return executeStep()
+        val started = SystemClock.elapsedRealtimeNanos()
+        try {
+            return executeStep()
+        } finally {
+            observer(sql.trimStart().takeWhile { !it.isWhitespace() }.uppercase(),
+                (SystemClock.elapsedRealtimeNanos() - started) / 1e6)
+        }
+    }
+
+    private fun executeStep(): StepResult {
         if (isQuery) {
             if (cursor == null) {
                 val args = buildBindArgs()

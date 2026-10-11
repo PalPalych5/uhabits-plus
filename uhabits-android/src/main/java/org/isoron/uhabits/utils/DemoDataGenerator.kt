@@ -1,588 +1,184 @@
 package org.isoron.uhabits.utils
 
 import android.content.Context
-import org.isoron.platform.io.begin
-import org.isoron.platform.io.commit
 import org.isoron.platform.io.run
-import org.isoron.platform.time.DayOfWeek
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.BuildConfig
+import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.core.database.EntryData
-import org.isoron.uhabits.core.database.HabitBlockData
 import org.isoron.uhabits.core.models.*
 import org.isoron.uhabits.core.models.sqlite.SQLModelFactory
-import org.isoron.uhabits.core.models.sqlite.SQLiteEntryList
+import org.isoron.uhabits.core.containers.*
+import org.isoron.uhabits.core.focus.*
+import org.isoron.uhabits.core.focus.sqlite.*
+import org.isoron.uhabits.core.rules.*
+import org.isoron.uhabits.core.rules.sqlite.*
+import org.isoron.uhabits.core.contribution.sqlite.*
+import org.isoron.uhabits.core.userTasks.*
 import org.isoron.uhabits.core.ui.screens.habits.list.HabitCardListCache
 import org.isoron.uhabits.widgets.WidgetUpdater
+import java.io.File
+import org.json.JSONObject
+import org.json.JSONArray
 import kotlin.random.Random
 
+/** Single existing developer generator. Requires an explicitly disposable, isolated offline dataset. */
 object DemoDataGenerator {
-    private const val DEMO_HABIT_UUID_PREFIX = "dec0de0a0000000000000000"
-    private const val DEMO_BLOCK_UUID_PREFIX = "dec0de0b0000000000000000"
-
-    fun generate(
-        context: Context,
-        modelFactory: SQLModelFactory,
-        habitList: HabitList,
-        widgetUpdater: WidgetUpdater?,
-        cache: HabitCardListCache,
-        isReset: Boolean
-    ) {
-        if (!BuildConfig.DEBUG) {
-            throw SecurityException("Demo data generation is only allowed in debug builds.")
+    const val SEED = 20261011
+    const val DISPOSABLE_MARKER = "uhabit-disposable-qa"
+    fun generate(context: Context, modelFactory: SQLModelFactory, habitList: HabitList,
+                 widgetUpdater: WidgetUpdater?, cache: HabitCardListCache, isReset: Boolean,
+                 referenceDate: LocalDate = getToday(), seed: Int = SEED) {
+        val component = HabitsApplication.component
+        val session = component.session
+        val marker = File(context.filesDir, "$DISPOSABLE_MARKER-${session.datasetId}")
+        check(BuildConfig.DEBUG && session.isExperimental && !session.capabilities.syncEnabled &&
+            !session.capabilities.remoteCallsAllowed && marker.isFile &&
+            marker.readText().trim() == session.databaseFilename &&
+            component.sqlModelFactory === modelFactory && component.habitList === habitList &&
+            component.dbFile.canonicalFile == context.getDatabasePath(session.databaseFilename).canonicalFile &&
+            session.databaseFilename != org.isoron.uhabits.core.DATABASE_FILENAME) {
+            "Generate Data requires an explicitly marked disposable isolated offline QA dataset; production is forbidden"
         }
-        
+        check(!component.timerSessionManager.snapshot().hasActiveSession) { "Cannot reseed during an active Focus session" }
+        check(isReset || habitList.isEmpty) { "Disposable fixture already populated; use explicit reset/reseed" }
+        cache.cancelAndDrainRefreshes()
         val db = modelFactory.database
-        val blockRepo = modelFactory.habitBlockRepository
-        
-        // 1. Wipe database or selectively delete demo items
-        if (isReset) {
-            habitList.removeAll() // Clears habits, extensions, repetitions in DB, and in-memory list
-            db.run("DELETE FROM HabitBlocks")
-        } else {
-            // Delete only demo habits
-            val toRemove = habitList.filter { isDemoHabit(it) }
-            for (h in toRemove) {
-                habitList.remove(h)
-            }
-            // Delete only demo blocks
-            val demoBlocks = blockRepo.findAll().filter { isDemoBlock(it) }
-            for (b in demoBlocks) {
-                blockRepo.delete(b.id!!)
-            }
-            hardDeleteDemoUuidRows(db)
-        }
-        
-        // 2. Insert Habit Blocks (spheres)
-        val blockIds = mutableMapOf<String, Long>()
-        
-        val blocks = listOf(
-            HabitBlockData(name = "Health", color = 7, icon = "favorite", position = 0, uuid = demoBlockUuid(0)),
-            HabitBlockData(name = "Study", color = 11, icon = "school", position = 1, uuid = demoBlockUuid(1)),
-            HabitBlockData(name = "Sport", color = 6, icon = "directions_run", position = 2, uuid = demoBlockUuid(2)),
-            HabitBlockData(name = "Mind", color = 13, icon = "spa", position = 3, uuid = demoBlockUuid(3)),
-            HabitBlockData(name = "Work", color = 1, icon = "work", position = 4, uuid = demoBlockUuid(4)),
-            HabitBlockData(name = "Household", color = 16, icon = "home", position = 5, uuid = demoBlockUuid(5))
-        )
-        
-        for (b in blocks) {
-            val id = blockRepo.insert(b)
-            blockIds[b.name] = id
-        }
-        
-        // Spec definition helper class
-        class DemoHabitSpec(
-            val name: String,
-            val description: String,
-            val question: String,
-            val type: HabitType,
-            val targetType: NumericalHabitType = NumericalHabitType.AT_LEAST,
-            val targetValue: Double = 0.0,
-            val unit: String = "",
-            val color: PaletteColor,
-            val frequency: Frequency = Frequency.DAILY,
-            val dayTier: DayTier = DayTier.NORMAL,
-            val blockName: String? = null,
-            val timerEnabled: Boolean = false,
-            val isArchived: Boolean = false,
-            val generator: (LocalDate, Int, Random) -> Int? // returns value to insert, or null if skipped/none
-        )
-        
-        // Today and 730 days ago
-        val today = getToday()
-        val startDate = today.minus(730)
-        
-        // 3. Define all the habits specs
-        val specs = listOf(
-            // Health sphere
-            DemoHabitSpec(
-                name = "Drink Water",
-                description = "Keep hydrated throughout the day",
-                question = "Did you drink at least 2L of water today?",
-                type = HabitType.YES_NO,
-                color = PaletteColor(8),
-                dayTier = DayTier.MINIMUM,
-                blockName = "Health"
-            ) { _, dayOffset, rand ->
-                // Missed period between 400 and 440
-                if (dayOffset in 400..440) {
-                    if (dayOffset % 7 == 0) Entry.SKIP else Entry.NO
-                } else if (dayOffset in 100..300 || dayOffset in 450..600) {
-                    // Long streak test
-                    if (dayOffset % 15 == 0) Entry.SKIP else Entry.YES_MANUAL
-                } else {
-                    val randVal = rand.nextDouble()
-                    if (randVal < 0.85) Entry.YES_MANUAL else if (randVal < 0.90) Entry.SKIP else Entry.NO
-                }
-            },
-            DemoHabitSpec(
-                name = "Take Vitamins",
-                description = "Daily supplements",
-                question = "Did you take your vitamins?",
-                type = HabitType.YES_NO,
-                color = PaletteColor(15),
-                dayTier = DayTier.MINIMUM,
-                blockName = "Health"
-            ) { _, dayOffset, _ ->
-                // Broken streaks: 20 days on, 5 days off
-                val mod = dayOffset % 25
-                if (mod < 20) {
-                    Entry.YES_MANUAL
-                } else {
-                    if (mod == 22) Entry.SKIP else Entry.NO
-                }
-            },
-            DemoHabitSpec(
-                name = "Sleep 8 hours",
-                description = "Track sleep duration",
-                question = "How long did you sleep last night?",
-                type = HabitType.NUMERICAL,
-                targetType = NumericalHabitType.AT_LEAST,
-                targetValue = 8.0,
-                unit = "h",
-                color = PaletteColor(10),
-                dayTier = DayTier.NORMAL,
-                blockName = "Health"
-            ) { _, _, rand ->
-                val randVal = rand.nextDouble()
-                when {
-                    randVal < 0.05 -> Entry.SKIP
-                    randVal < 0.15 -> 0
-                    randVal < 0.40 -> (4.0 + rand.nextDouble() * 3.5).toInt() * 1000
-                    randVal < 0.85 -> (8.0 + rand.nextDouble() * 2.0).toInt() * 1000
-                    else -> (10.0 + rand.nextDouble() * 3.0).toInt() * 1000
-                }
-            },
-            DemoHabitSpec(
-                name = "Eat Junk Food",
-                description = "Avoid unhealthy meals",
-                question = "How many times did you eat junk food today?",
-                type = HabitType.NUMERICAL,
-                targetType = NumericalHabitType.AT_MOST,
-                targetValue = 1.0,
-                unit = "times",
-                color = PaletteColor(0),
-                dayTier = DayTier.OPTIONAL,
-                blockName = "Health"
-            ) { _, _, rand ->
-                val randVal = rand.nextDouble()
-                when {
-                    randVal < 0.50 -> 0
-                    randVal < 0.80 -> 1000
-                    else -> (2 + rand.nextInt(3)) * 1000
-                }
-            },
-            
-            // Study sphere
-            DemoHabitSpec(
-                name = "Read Book",
-                description = "Read non-fiction literature",
-                question = "How many pages did you read today?",
-                type = HabitType.NUMERICAL,
-                targetType = NumericalHabitType.AT_LEAST,
-                targetValue = 20.0,
-                unit = "pages",
-                color = PaletteColor(11),
-                dayTier = DayTier.NORMAL,
-                blockName = "Study"
-            ) { _, _, rand ->
-                val randVal = rand.nextDouble()
-                when {
-                    randVal < 0.30 -> 0
-                    randVal < 0.50 -> (5 + rand.nextInt(14)) * 1000
-                    else -> (20 + rand.nextInt(15)) * 1000
-                }
-            },
-            DemoHabitSpec(
-                name = "Write Code",
-                description = "Contribute to pet projects",
-                question = "Did you code today?",
-                type = HabitType.YES_NO,
-                color = PaletteColor(12),
-                dayTier = DayTier.IDEAL,
-                blockName = "Study"
-            ) { _, dayOffset, rand ->
-                // Missed period between 400 and 460
-                if (dayOffset in 400..460) {
-                    Entry.NO
-                } else {
-                    if (rand.nextDouble() < 0.75) Entry.YES_MANUAL else Entry.NO
-                }
-            },
-            DemoHabitSpec(
-                name = "Learn Russian / Выучить русские слова",
-                description = "Expand vocabulary",
-                question = "How many words did you learn?",
-                type = HabitType.NUMERICAL,
-                targetType = NumericalHabitType.AT_LEAST,
-                targetValue = 10.0,
-                unit = "words",
-                color = PaletteColor(13),
-                dayTier = DayTier.NORMAL,
-                blockName = "Study"
-            ) { _, _, rand ->
-                val randVal = rand.nextDouble()
-                when {
-                    randVal < 0.40 -> 0
-                    randVal < 0.55 -> (2 + rand.nextInt(7)) * 1000
-                    else -> (10 + rand.nextInt(10)) * 1000
-                }
-            },
-            
-            // Sport sphere
-            DemoHabitSpec(
-                name = "Morning Stretch / Утренняя разминка",
-                description = "Get blood flowing",
-                question = "Did you stretch this morning?",
-                type = HabitType.YES_NO,
-                color = PaletteColor(5),
-                dayTier = DayTier.MINIMUM,
-                blockName = "Sport"
-            ) { _, _, rand ->
-                if (rand.nextDouble() < 0.60) Entry.YES_MANUAL else Entry.NO
-            },
-            DemoHabitSpec(
-                name = "Running",
-                description = "Cardio training",
-                question = "How far did you run today?",
-                type = HabitType.NUMERICAL,
-                targetType = NumericalHabitType.AT_LEAST,
-                targetValue = 5.0,
-                unit = "km",
-                color = PaletteColor(6),
-                frequency = Frequency.THREE_TIMES_PER_WEEK,
-                dayTier = DayTier.NORMAL,
-                blockName = "Sport"
-            ) { date, _, rand ->
-                val dow = date.dayOfWeek
-                val runDay = dow == DayOfWeek.MONDAY || dow == DayOfWeek.WEDNESDAY || dow == DayOfWeek.FRIDAY
-                if (runDay && rand.nextDouble() < 0.80) {
-                    ((5.0 + rand.nextDouble() * 5.0).toInt()) * 1000
-                } else {
-                    0
-                }
-            },
-            DemoHabitSpec(
-                name = "Gym Workout",
-                description = "Strength training session",
-                question = "How long was your workout?",
-                type = HabitType.NUMERICAL,
-                targetType = NumericalHabitType.AT_LEAST,
-                targetValue = 60.0,
-                unit = "min",
-                color = PaletteColor(7),
-                frequency = Frequency.THREE_TIMES_PER_WEEK,
-                dayTier = DayTier.NORMAL,
-                blockName = "Sport",
-                timerEnabled = true
-            ) { date, _, rand ->
-                val dow = date.dayOfWeek
-                val gymDay = dow == DayOfWeek.TUESDAY || dow == DayOfWeek.THURSDAY || dow == DayOfWeek.SATURDAY
-                if (gymDay && rand.nextDouble() < 0.85) {
-                    ((60.0 + rand.nextDouble() * 30.0).toInt()) * 1000
-                } else {
-                    0
-                }
-            },
-            
-            // Mind sphere
-            DemoHabitSpec(
-                name = "Meditation / Медитация 🧘",
-                description = "Focus on breath",
-                question = "How long did you meditate?",
-                type = HabitType.NUMERICAL,
-                targetType = NumericalHabitType.AT_LEAST,
-                targetValue = 15.0,
-                unit = "min",
-                color = PaletteColor(4),
-                dayTier = DayTier.NORMAL,
-                blockName = "Mind",
-                timerEnabled = true
-            ) { _, _, rand ->
-                if (rand.nextDouble() < 0.70) {
-                    ((15.0 + rand.nextDouble() * 15.0).toInt()) * 1000
-                } else {
-                    0
-                }
-            },
-            DemoHabitSpec(
-                name = "Gratitude Journal / Дневник благодарности",
-                description = "Write three things you are grateful for",
-                question = "Did you write in your journal today?",
-                type = HabitType.YES_NO,
-                color = PaletteColor(3),
-                dayTier = DayTier.OPTIONAL,
-                blockName = "Mind"
-            ) { _, _, rand ->
-                if (rand.nextDouble() < 0.80) Entry.YES_MANUAL else Entry.NO
-            },
-            
-            // Work sphere
-            DemoHabitSpec(
-                name = "Check Email / Проверка почты",
-                description = "Inbox zero",
-                question = "Did you clean your inbox?",
-                type = HabitType.YES_NO,
-                color = PaletteColor(0xFF000000.toInt()), // Custom black
-                dayTier = DayTier.MINIMUM,
-                blockName = "Work"
-            ) { _, _, rand ->
-                if (rand.nextDouble() < 0.95) Entry.YES_MANUAL else Entry.NO
-            },
-            DemoHabitSpec(
-                name = "Deep Work / Фокусированная работа",
-                description = "Uninterrupted work hours",
-                question = "How many deep work hours today?",
-                type = HabitType.NUMERICAL,
-                targetType = NumericalHabitType.AT_LEAST,
-                targetValue = 4.0,
-                unit = "h",
-                color = PaletteColor(0xFFFF0000.toInt()), // Custom red
-                dayTier = DayTier.IDEAL,
-                blockName = "Work"
-            ) { _, _, rand ->
-                if (rand.nextDouble() < 0.65) {
-                    ((4.0 + rand.nextDouble() * 4.0).toInt()) * 1000
-                } else {
-                    0
-                }
-            },
-            
-            // Household sphere
-            DemoHabitSpec(
-                name = "Clean Room / Уборка",
-                description = "Weekly cleaning",
-                question = "Did you clean your room today?",
-                type = HabitType.YES_NO,
-                color = PaletteColor(16),
-                frequency = Frequency.WEEKLY,
-                dayTier = DayTier.OPTIONAL,
-                blockName = "Household"
-            ) { date, _, rand ->
-                if (date.dayOfWeek == DayOfWeek.SUNDAY && rand.nextDouble() < 0.90) Entry.YES_MANUAL else Entry.NO
-            },
-            DemoHabitSpec(
-                name = "Water Plants",
-                description = "Keep house green",
-                question = "Did you water the plants?",
-                type = HabitType.YES_NO,
-                color = PaletteColor(0xFF00FF00.toInt()), // Custom green
-                frequency = Frequency.TWO_TIMES_PER_WEEK,
-                dayTier = DayTier.OPTIONAL,
-                blockName = "Household"
-            ) { date, _, rand ->
-                val dow = date.dayOfWeek
-                val waterDay = dow == DayOfWeek.WEDNESDAY || dow == DayOfWeek.SATURDAY
-                if (waterDay && rand.nextDouble() < 0.95) Entry.YES_MANUAL else Entry.NO
-            },
-            
-            // Other / Unassigned
-            DemoHabitSpec(
-                name = "No Sphere Habit",
-                description = "Test habit without a block",
-                question = "Is this done?",
-                type = HabitType.YES_NO,
-                color = PaletteColor(18),
-                dayTier = DayTier.NORMAL
-            ) { _, _, rand ->
-                if (rand.nextDouble() < 0.50) Entry.YES_MANUAL else Entry.NO
-            },
-            DemoHabitSpec(
-                name = "Archived Habit",
-                description = "Legacy habit",
-                question = "Done?",
-                type = HabitType.YES_NO,
-                color = PaletteColor(19),
-                dayTier = DayTier.NORMAL,
-                isArchived = true
-            ) { _, dayOffset, rand ->
-                // Only active in first 300 days
-                if (dayOffset < 300 && rand.nextDouble() < 0.80) Entry.YES_MANUAL else Entry.NO
-            },
-            DemoHabitSpec(
-                name = "Extreme Color Habit (White)",
-                description = "To check contrast issues",
-                question = "Done?",
-                type = HabitType.YES_NO,
-                color = PaletteColor(0xFFFFFFFF.toInt()),
-                dayTier = DayTier.NORMAL
-            ) { _, _, rand ->
-                if (rand.nextDouble() < 0.70) Entry.YES_MANUAL else Entry.NO
-            },
-            DemoHabitSpec(
-                name = "Extreme Color Habit (Blue)",
-                description = "Check pure blue",
-                question = "Done?",
-                type = HabitType.YES_NO,
-                color = PaletteColor(0xFF0000FF.toInt()),
-                dayTier = DayTier.NORMAL
-            ) { _, _, rand ->
-                if (rand.nextDouble() < 0.70) Entry.YES_MANUAL else Entry.NO
-            },
-            DemoHabitSpec(
-                name = "Extreme Color Habit (Grey)",
-                description = "Check mid grey",
-                question = "Done?",
-                type = HabitType.YES_NO,
-                color = PaletteColor(0xFF808080.toInt()),
-                dayTier = DayTier.NORMAL
-            ) { _, _, rand ->
-                if (rand.nextDouble() < 0.70) Entry.YES_MANUAL else Entry.NO
-            },
-            DemoHabitSpec(
-                name = "Very Long Name Habit: This is a habit with an extremely long name designed to test text wrapping and truncation in various cards and screens",
-                description = "UI wrapping check",
-                question = "Is this long name habit completed today?",
-                type = HabitType.YES_NO,
-                color = PaletteColor(2),
-                dayTier = DayTier.NORMAL
-            ) { _, _, rand ->
-                if (rand.nextDouble() < 0.60) Entry.YES_MANUAL else Entry.NO
-            },
-            DemoHabitSpec(
-                name = "Short",
-                description = "UI minimal check",
-                question = "Done?",
-                type = HabitType.YES_NO,
-                color = PaletteColor(1),
-                dayTier = DayTier.NORMAL
-            ) { _, _, rand ->
-                if (rand.nextDouble() < 0.85) Entry.YES_MANUAL else Entry.NO
-            },
-            DemoHabitSpec(
-                name = "Очень длинное название привычки для проверки: Длинное описание привычки на русском языке, предназначенное для проверки правильности переноса текста и ограничения длины на различных экранах приложения",
-                description = "Проверка переноса текста",
-                question = "Вы выполнили эту сверхдлинную привычку сегодня?",
-                type = HabitType.YES_NO,
-                color = PaletteColor(3),
-                dayTier = DayTier.NORMAL
-            ) { _, _, rand ->
-                if (rand.nextDouble() < 0.60) Entry.YES_MANUAL else Entry.NO
-            },
-            
-            // Recent active habit
-            DemoHabitSpec(
-                name = "New Habit (Recent)",
-                description = "Added recently",
-                question = "Did you complete the new habit?",
-                type = HabitType.YES_NO,
-                color = PaletteColor(4),
-                dayTier = DayTier.NORMAL
-            ) { _, dayOffset, rand ->
-                // Only active in the last 15 days (day 715 to 730)
-                if (dayOffset >= 715) {
-                    if (rand.nextDouble() < 0.80) Entry.YES_MANUAL else Entry.NO
-                } else {
-                    null
-                }
-            }
-        )
-        
-        // 4. Insert all habits and repetitions
-        db.begin()
+        val store = org.isoron.uhabits.core.containers.sqlite.SQLiteOrganizationStore(db)
+        val org = OrganizationServiceImpl(store, object : UnitOfWork {
+            override fun <T> executeInTransaction(block: (OrganizationTransaction) -> T): T = block(store)
+        }, store, store, clock = { referenceDate.minus(181).unixTime },
+            idGenerator = { error("Fixture operations require stable explicit IDs") },
+            habitIdentityLookup = { ref -> modelFactory.habitRepository.findByUuid(ref.uuid) != null })
+        // Reset is intentionally all-or-nothing for this disposable dataset, never prefix-delete user data.
+        db.run("SAVEPOINT demo_seed")
         try {
-            val rand = Random(42) // Fixed random seed
-            val entryRepo = modelFactory.entryRepository
-            
-            for ((index, spec) in specs.withIndex()) {
-                // Build Habit object
-                val habit = modelFactory.buildHabit()
-                habit.uuid = demoHabitUuid(index)
-                habit.name = spec.name
-                habit.description = spec.description
-                habit.question = spec.question
-                habit.type = spec.type
-                habit.targetType = spec.targetType
-                habit.targetValue = spec.targetValue
-                habit.unit = spec.unit
-                habit.color = spec.color
-                habit.frequency = spec.frequency
-                habit.dayTier = spec.dayTier
-                habit.timerEnabled = spec.timerEnabled
-                habit.isArchived = spec.isArchived
-                habit.blockId = spec.blockName?.let { blockIds[it] }
-                
-                // Add to habitList, which inserts main row + extensions and adds to in-memory list
-                habitList.add(habit)
-                val habitId = habit.id!!
-                
-                // Generate historical repetitions
-                for (dayOffset in 0..730) {
-                    val date = startDate.plus(dayOffset)
-                    val value = spec.generator(date, dayOffset, rand)
-                    if (value != null) {
-                        val hasNote = value > 0 && rand.nextDouble() < 0.1
-                        val data = EntryData(
-                            habitId = habitId,
-                            timestamp = date.unixTime,
-                            value = value,
-                            notes = if (hasNote) "Demo note for ${spec.name} on ${date.toCSVString()}" else ""
-                        )
-                        entryRepo.insert(data)
+            listOf("Contributions", "SourceRules", "FocusSessions", "UserTasks", "HabitPlacementHistory",
+                "HabitPlacements", "LegacyBlockMap", "ContainerHistory").forEach { db.run("DELETE FROM $it") }
+            repeat(16) { db.run("DELETE FROM Containers WHERE id NOT IN (SELECT parent_id FROM Containers WHERE parent_id IS NOT NULL)") }
+            db.run("DELETE FROM OrganizationChanges WHERE revision > (SELECT cutover_revision FROM OrganizationState WHERE id = 1)")
+            db.run("UPDATE OrganizationState SET current_revision = cutover_revision WHERE id = 1")
+            // Normal Next APIs deliberately prohibit hard purges. This explicitly marked
+            // disposable fixture reset uses the same transaction and reloads the cache.
+            listOf("Repetitions", "HabitGoals", "HabitExtensions", "HabitVisualIdentities", "Habits")
+                .forEach { db.run("DELETE FROM $it") }
+            (habitList as org.isoron.uhabits.core.models.sqlite.SQLiteHabitList).reload()
+            db.run("DELETE FROM HabitBlocks")
+            val names = listOf("Учёба", "Разработка", "Проекты", "Спорт", "Здоровье", "Дом", "Личное")
+            val containers = names.mapIndexed { i, name ->
+                org.create(CreateContainer(name, color = PaletteColor(i + 1), opUuid = "qa-create-container-$i", explicitId = ContainerId("qa-container-$i"))).getOrThrow().id
+            }.toMutableList()
+            containers += org.create(CreateContainer("Курсовая работа", parentId = containers[0], opUuid = "qa-create-coursework", explicitId = ContainerId("qa-coursework"))).getOrThrow().id
+            containers += org.create(CreateContainer("Мобильное приложение", parentId = containers[1], opUuid = "qa-create-android", explicitId = ContainerId("qa-android"))).getOrThrow().id
+            org.create(CreateContainer("Пустой раздел", opUuid = "qa-create-empty", explicitId = ContainerId("qa-empty"))).getOrThrow()
+            val titles = listOf("Читать книгу", "Изучать материалы", "Зарядка", "Прогулка", "Писать код", "Повторять лекции", "Пить воду", "Растяжка", "Порядок дома", "Планировать день", "Практика языка", "Работа над проектом", "Сон", "Экранное время", "Уборка", "Бег", "Дневник целей", "Разбор заметок", "Учебный фокус", "Ревью кода", "Отдых", "Велосипед", "Медитация", "Овощи", "Читать статьи", "Практика задач", "Домашние дела", "Подготовка занятий", "Сладости", "Социальные сети", "Архив: курс", "Новая привычка")
+            val random = Random(seed)
+            val habits = titles.mapIndexed { i, title ->
+                modelFactory.buildHabit().apply {
+                    uuid = "dec0de0a0000000000000000" + i.toString(16).padStart(8, '0')
+                    name = title; description = "Демонстрационная привычка для визуальной проверки"
+                    color = PaletteColor(i % 16); type = if (i % 3 == 0 || i == 18) HabitType.NUMERICAL else HabitType.YES_NO
+                    targetType = if (i == 13 || i == 28 || i == 29) NumericalHabitType.AT_MOST else NumericalHabitType.AT_LEAST
+                    if (i == 13 || i == 28 || i == 29) type = HabitType.NUMERICAL
+                    targetValue = when (i) {
+                        3, 27, 29, 30 -> 30.0
+                        6 -> 8.0
+                        9, 24 -> 15.0
+                        12 -> 7.0
+                        13, 28 -> 2.0
+                        15 -> 3.0
+                        18, 21 -> 45.0
+                        else -> 20.0
                     }
+                    unit = when (i) {
+                        0 -> "стр."
+                        6 -> "стак."
+                        12, 13 -> "ч"
+                        15 -> "км"
+                        18 -> "min" // Existing Focus source rule credits minute units.
+                        28 -> "порций"
+                        else -> if (type == HabitType.NUMERICAL) "мин" else ""
+                    }
+                    frequency = if (i % 7 == 0) Frequency(12, 30) else if (i % 5 == 0) Frequency(3, 7) else Frequency.DAILY
+                    isArchived = i == 30; timerEnabled = i == 18
+                    habitList.add(this)
+                    for (offset in 0..180) {
+                        val value = when {
+                            (offset + i) % 29 == 0 -> Entry.UNKNOWN
+                            (offset + i) % 23 == 0 -> Entry.SKIP
+                            type == HabitType.NUMERICAL -> if ((offset + i) % 11 == 0) 0 else {
+                                val maximum = when (i) {
+                                    6 -> 10
+                                    12 -> 9
+                                    13, 28 -> 4
+                                    15 -> 8
+                                    3, 18, 21, 27, 30 -> 90
+                                    29 -> 60
+                                    else -> 40
+                                }
+                                random.nextInt(0, maximum + 1) * 1000
+                            }
+                            random.nextDouble() < 0.73 -> Entry.YES_MANUAL
+                            else -> Entry.NO
+                        }
+                        modelFactory.entryRepository.insert(EntryData(habitId = id!!, timestamp = referenceDate.minus(offset).unixTime, value = value, notes = if (offset % 31 == 1) "Плановая практика" else ""))
+                    }
+                    org.placeHabit(PlaceHabit(HabitRef(uuid!!), containers[i % containers.size], opUuid = "qa-place-$i", expectedRevision = org.currentRevision())).getOrThrow()
                 }
             }
-            
-            db.commit()
-        } catch (e: Exception) {
-            // Commit on failure is standard for Loop DB, but let's try to roll back or re-throw
-            throw e
+            val taskTitles = listOf("Завершить курсовую работу", "Повторить материалы лекции", "Реализовать экран проекта", "Проверить тесты", "Подготовить план тренировки", "Разобрать учебные заметки", "Купить продукты", "Обновить документацию", "Решить практические задачи", "Подготовить презентацию", "Прочитать главу", "Проверить ревью")
+            val created = referenceDate.minus(180).unixTime
+            db.run("UPDATE Containers SET created_at = $created, updated_at = $created")
+            db.run("UPDATE ContainerHistory SET created_at = $created, updated_at = $created")
+            db.run("UPDATE OrganizationChanges SET recorded_at = $created")
+            db.run("UPDATE OrganizationState SET cutover_at = $created")
+            val tasks = (0 until 84).map { i ->
+                val completed = i % 5 == 0 || (i >= 72 && (i - 72) % 5 == 0)
+                UserTask(TaskId("qa-task-$i"), taskTitles[i % taskTitles.size] + if (i >= 12) " · ${i / 12 + 1}" else "",
+                    description = "Проверить результат и записать следующий шаг.\nДемонстрационные данные.",
+                    containerId = if (i % 7 == 0) null else containers[i % containers.size],
+                    status = if (completed) TaskStatus.COMPLETED else TaskStatus.PENDING,
+                    plannedDate = if (i % 4 == 0) null else referenceDate.plus(i % 13 - 5),
+                    deadline = if (i % 3 == 0) referenceDate.plus(i % 13 - 3).let { date -> java.util.Calendar.getInstance().apply { clear(); set(date.year, date.month - 1, date.day, 20, 0) }.timeInMillis } else null,
+                    completedAt = if (completed) referenceDate.minus(i % 15).unixTime + 12 * 3600000L else null,
+                    parentTaskId = if (i >= 72) TaskId("qa-task-${i - 72}") else null,
+                    sortOrder = i, createdAt = created, updatedAt = referenceDate.unixTime + 23 * 3600000L)
+                    .also { component.userTaskRepository.save(it) }
+            }
+            FocusSessionSchema.createSchema(db); SourceRuleSchema.createSchema(db); ContributionSchema.createSchema(db)
+            val ruleRepo = SQLiteSourceRuleRepository(db)
+            val focusRepo = SQLiteFocusSessionRepository(db)
+            val target = HabitRef(habits[18].uuid!!)
+            ruleRepo.record(SourceRule(SourceRuleId("qa-study-focus"), sourceContainerId = containers[0], targetHabit = target, effectiveFrom = created, createdAt = created, updatedAt = created))
+            val attribution = SourceRuleAttributionService(ruleRepo, SQLiteContributionRepository(db), habitResolver = { ref -> habits.firstOrNull { it.uuid == ref.uuid }?.let { TargetHabitInfo(it.isNumerical, it.unit, it.name) } })
+            for (i in 0 until 64) {
+                val task = tasks[i % 72]
+                val start = referenceDate.minus(i % 45 + 1).unixTime + (9 + i % 7) * 3600000L
+                val duration = (15 + random.nextInt(46)) * 60000L
+                val sessionFact = FocusSession(FocusSessionId("qa-focus-$i"), start, start + duration, duration, taskId = task.id, containerId = task.containerId,
+                    source = FocusSessionSource.TIMER, deviceId = "disposable-qa", createdAt = start + duration, updatedAt = start + duration,
+                    organizationContext = task.containerId?.let { containerId ->
+                        JSONObject().put("schema", 1).put("datasetId", session.datasetId)
+                            .put("organizationRevision", org.currentRevision().value)
+                            .put("path", JSONArray().apply {
+                                org.containerQueries.path(containerId).nodes.forEach { node ->
+                                    put(JSONObject().put("id", node.value).put("name", org.containerQueries.find(node)?.name))
+                                }
+                            }).toString()
+                    })
+                focusRepo.record(sessionFact); attribution.attributeSession(sessionFact)
+            }
+            db.run("RELEASE SAVEPOINT demo_seed")
+        } catch (failure: Throwable) {
+            db.run("ROLLBACK TO SAVEPOINT demo_seed"); db.run("RELEASE SAVEPOINT demo_seed")
+            (habitList as? org.isoron.uhabits.core.models.sqlite.SQLiteHabitList)?.reload()
+            component.effectiveReadRevision.changed()
+            cache.refreshAllHabits()
+            throw failure
         }
-        
-        // 5. Force recomputation of computed entries, scores, and streaks in-memory
-        for (habit in habitList) {
-            habit.originalEntries.invalidate()
-            habit.recompute()
-        }
-        
-        // 6. Notify observers and update widgets/cache
-        habitList.observable.notifyListeners()
-        cache.refreshAllHabits()
-        widgetUpdater?.updateWidgets()
-    }
-
-    private fun isDemoHabit(habit: Habit): Boolean {
-        return habit.uuid?.startsWith(DEMO_HABIT_UUID_PREFIX) == true ||
-            habit.name.startsWith("[Demo] ", ignoreCase = true)
-    }
-
-    private fun isDemoBlock(block: HabitBlockData): Boolean {
-        return block.uuid?.startsWith(DEMO_BLOCK_UUID_PREFIX) == true ||
-            block.name.startsWith("[Demo] ", ignoreCase = true)
-    }
-
-    private fun demoHabitUuid(index: Int): String {
-        return DEMO_HABIT_UUID_PREFIX + index.toString(16).padStart(8, '0')
-    }
-
-    private fun demoBlockUuid(index: Int): String {
-        return DEMO_BLOCK_UUID_PREFIX + index.toString(16).padStart(8, '0')
-    }
-
-    private fun hardDeleteDemoUuidRows(db: org.isoron.platform.io.Database) {
-        val habitLike = "$DEMO_HABIT_UUID_PREFIX%"
-        val blockLike = "$DEMO_BLOCK_UUID_PREFIX%"
-        db.run(
-            "DELETE FROM Repetitions WHERE habit IN (SELECT id FROM Habits WHERE uuid LIKE ?)"
-        ) {
-            bindText(1, habitLike)
-        }
-        db.run(
-            "DELETE FROM HabitGoals WHERE habit_id IN (SELECT id FROM Habits WHERE uuid LIKE ?)"
-        ) {
-            bindText(1, habitLike)
-        }
-        db.run(
-            "DELETE FROM HabitExtensions WHERE habit_id IN (SELECT id FROM Habits WHERE uuid LIKE ?)"
-        ) {
-            bindText(1, habitLike)
-        }
-        db.run("DELETE FROM Habits WHERE uuid LIKE ?") {
-            bindText(1, habitLike)
-        }
-        db.run("DELETE FROM HabitBlocks WHERE uuid LIKE ?") {
-            bindText(1, blockLike)
-        }
+        habitList.forEach { it.originalEntries.invalidate(); it.recompute() }
+        component.effectiveReadRevision.changed()
+        habitList.observable.notifyListeners(); cache.refreshAllHabits()
     }
 }
