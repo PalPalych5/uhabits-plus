@@ -1296,8 +1296,18 @@ Human accepts PR20 and authorizes PR21 preflight and recovery implementation onl
   - Unit test suite `SyncCoordinatorNextTest`: 100% PASS (5/5 tests).
   - Production build `:uhabits-android:assembleDebug` completed successfully (`uhabits-android-debug.apk` built).
 
+- **Release Smoke Test & Installation Readiness (COMPLETED):**
+  - Commit: `e5e8ff59a`.
+  - Clean installation and upgrade from v29 verified on Android 9 emulator (`UHabit_MinSdk_API28`, API 28).
+  - Wired explicit v29 → v30 cutover dialog in Settings UI (`SettingsFragment.kt`, `SettingsIconRegistry.kt`).
+  - Fixed `DatabaseUtils.kt` backup validator to recognize `PRODUCTION_NEXT` and `STAGED` databases with `OrganizationState`.
+  - Realistic user workflow verified: seeded v29 dataset, performed cutover to v30, created container "Work.", created task "Read report", completed focus stopwatch session, credited 1081 to habit "Бег", verified statistics update and cold-start restart persistence (zero duplicate entries or contributions).
+  - Cloud Sync v2 multi-device interoperability tested against isolated test server (`scratch/supabase_mock_server.py`) across two devices: Device 1 uploaded 35 bootstrap entities, Device 2 pulled and reconstructed all entities, executed offline edits (new task, task completion, ephemeral task deletion), pushed changes, Device 1 pulled updates and verified clean propagation with zero duplicates.
+  - Final Release APK assembled: `uhabits-android/build/outputs/apk/debug/uhabits-android-debug.apk` (SHA-256: `71DE0B4103BAC3D3177746514A212FDCC94BBD37EC193A921B0D5BCFB45D799C`, `versionCode=20301`, `versionName=2.3.1`).
+
 - **Current Status:**
-  - PR24, PR25, and PR26 roadmap is fully delivered and verified.
+  - PR24, PR25, PR26, and Release Smoke Test fully verified.
+  - Final release APK ready for user-controlled upgrade.
   - Real user data and live cloud databases preserved with zero corruption or unauthorized mutations.
 
 
