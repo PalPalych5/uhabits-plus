@@ -20,6 +20,9 @@ package org.isoron.uhabits.activities.settings
 import org.isoron.uhabits.session.DatasetSessionManager
 import org.isoron.uhabits.core.containers.session.DatasetActivationResult
 import org.isoron.uhabits.core.containers.session.DatasetMode
+import org.isoron.uhabits.production.ProductionCutoverManager
+import org.isoron.uhabits.production.CutoverPreflightResult
+import org.isoron.uhabits.core.production.cutover.ProductionCutoverResult
 
 import android.app.backup.BackupManager as AndroidBackupManager
 import android.app.NotificationManager
@@ -539,6 +542,31 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 add(navigation("importData", R.drawable.ic_settings_import, getString(R.string.import_data), getString(R.string.import_data_summary), showIcon = true) { actionHandler().onSettingsAction(SettingsAction.IMPORT_DATA) })
                 add(subsection("data_restore", getString(R.string.settings_subsection_restore)))
                 add(navigation("restoreBackup", R.drawable.ic_settings_database_down, getString(R.string.restore_backup), getString(R.string.restore_backup_local_summary), showIcon = true) { showRestoreBackupDialog() })
+                val currentSession = (requireContext().applicationContext as HabitsApplication).component.session
+                if (!currentSession.isNextArchitecture) {
+                    add(subsection("data_next_cutover", "UHabit Next"))
+                    add(
+                        navigation(
+                            "pref_production_cutover",
+                            R.drawable.ic_settings_git_merge,
+                            "Переход на UHabit Next (v30)",
+                            "Защищённое обновление базы данных с добавлением задач, разделов и фокуса",
+                            showIcon = true
+                        ) { showProductionCutoverDialog() }
+                    )
+                } else if (currentSession.mode == DatasetMode.PRODUCTION_NEXT) {
+                    add(subsection("data_next_cutover", "UHabit Next"))
+                    add(
+                        SettingItem.Status(
+                            "pref_production_cutover_status",
+                            R.drawable.ic_settings_terminal,
+                            "Режим UHabit Next активен",
+                            "База данных v30. Разделы, задачи и фокус включены.",
+                            false,
+                            childPresentation()
+                        )
+                    )
+                }
                 add(subsection("data_delete", getString(R.string.settings_subsection_delete_data), destructive = true))
                 add(navigation("hardResetStatistics", R.drawable.ic_settings_trash, getString(R.string.reset_statistics), getString(R.string.delete_entries_forever), showIcon = true, danger = true) { showHardResetStatisticsDialog() })
             }
@@ -620,7 +648,8 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     )
 
     private fun buildDeveloperSection(): SettingsSectionModel {
-        val isExp = (requireContext().applicationContext as HabitsApplication).component.session.isExperimental
+        val currentSession = (requireContext().applicationContext as HabitsApplication).component.session
+        val isExp = currentSession.isExperimental
         val items = mutableListOf<SettingItem>(
             settingSwitch("pref_developer", R.drawable.ic_settings_terminal, getString(R.string.developer_mode_title), null, prefs.isDeveloper) { prefs.isDeveloper = it },
             subsection("developer_connection", getString(R.string.settings_subsection_connection)),
@@ -642,6 +671,18 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 showIcon = true
             ) { showContainerExperimentDialog() }
         )
+        if (!currentSession.isNextArchitecture) {
+            items.add(subsection("developer_cutover", "UHabit Next"))
+            items.add(
+                navigation(
+                    "pref_production_cutover_dev",
+                    R.drawable.ic_settings_git_merge,
+                    "Переход на UHabit Next (v30)",
+                    "Защищённое обновление продуктовой базы данных",
+                    showIcon = true
+                ) { showProductionCutoverDialog() }
+            )
+        }
         if (isExp) {
             items.add(
                 navigation(
@@ -1842,6 +1883,60 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                                 }
                                 is DatasetActivationResult.ValidationFailed -> {
                                     Toast.makeText(requireContext(), result.reason, Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun showProductionCutoverDialog() {
+        val habitsApp = requireContext().applicationContext as HabitsApplication
+        val cutoverManager = ProductionCutoverManager(requireContext())
+        when (val preflight = cutoverManager.preflight()) {
+            is CutoverPreflightResult.Blocked -> {
+                CustomDialogs.showInfoDialog(
+                    context = requireContext(),
+                    title = "Переход заблокирован",
+                    message = preflight.reason,
+                    positiveText = "Понятно"
+                )
+            }
+            is CutoverPreflightResult.AlreadyCutover -> {
+                Toast.makeText(requireContext(), "База данных уже переведена на UHabit Next", Toast.LENGTH_SHORT).show()
+            }
+            is CutoverPreflightResult.Ready -> {
+                val message = "Будет выполнено защищённое обновление базы данных до версии 30:\n\n" +
+                    "• Ваши привычки и вся история сохраняются в полном объёме.\n" +
+                    "• Будут включены разделы (Containers), задачи (Tasks) и сессии фокуса.\n" +
+                    "• Перед обновлением автоматически создаётся резервная копия для отката.\n" +
+                    "• Облачная синхронизация переводится в карантин для безопасного подтверждения.\n\n" +
+                    "Выполнить переход на UHabit Next?"
+                CustomDialogs.showConfirmDialog(
+                    context = requireContext(),
+                    title = "Переход на UHabit Next",
+                    message = message,
+                    isDestructive = false,
+                    positiveText = "Выполнить переход"
+                ) {
+                    Toast.makeText(requireContext(), "Выполнение перехода...", Toast.LENGTH_SHORT).show()
+                    lifecycleScope.launch(Dispatchers.IO) {
+                        val result = cutoverManager.executeCutover()
+                        withContext(Dispatchers.Main) {
+                            when (result) {
+                                is ProductionCutoverResult.Success -> {
+                                    Toast.makeText(requireContext(), "Переход успешно завершён. Перезапуск приложения...", Toast.LENGTH_SHORT).show()
+                                    restartForDatasetSession(habitsApp)
+                                }
+                                is ProductionCutoverResult.Failure -> {
+                                    CustomDialogs.showInfoDialog(
+                                        context = requireContext(),
+                                        title = "Ошибка перехода",
+                                        message = "Не удалось выполнить переход (${result.stage}): ${result.reason}.\n\nИсходная база данных сохранена без изменений.",
+                                        positiveText = "Закрыть"
+                                    )
                                 }
                             }
                         }

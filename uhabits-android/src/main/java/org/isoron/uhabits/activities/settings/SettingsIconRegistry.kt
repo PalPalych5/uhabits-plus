@@ -59,7 +59,9 @@ object SettingsIconRegistry {
         "pref_sync_base_url" to R.drawable.ic_settings_link,
         "pref_sync_key" to R.drawable.ic_settings_key,
         "pref_encryption_key" to R.drawable.ic_settings_shield_lock,
-        "exportSyncDiagnostics" to R.drawable.ic_settings_report_analytics
+        "exportSyncDiagnostics" to R.drawable.ic_settings_report_analytics,
+        "pref_production_cutover" to R.drawable.ic_settings_git_merge,
+        "pref_production_cutover_dev" to R.drawable.ic_settings_git_merge
     )
 
     val allowedSemanticRepeats: Set<Set<String>> = setOf(

@@ -438,13 +438,68 @@ object DatabaseUtils {
                     errorMessage = "Backup is missing required tables"
                 )
             } else {
-                if (NEXT_TABLE_NAMES.any(presentTables::contains)) {
+                if ("OrganizationState" in presentTables) {
+                    val (orgMode, foundationVersion, runtimeAuthority) = db.rawQuery(
+                        "SELECT mode, foundation_version, runtime_authority FROM OrganizationState WHERE id = 1", null
+                    ).use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            Triple(cursor.getString(0), cursor.getInt(1), cursor.getString(2))
+                        } else {
+                            Triple(null, -1, null)
+                        }
+                    }
+
+                    if (orgMode == null) {
+                        return org.isoron.uhabits.backup.BackupValidationResult(
+                            isValid = false,
+                            errorMessage = "OrganizationState table exists but row with id=1 is missing"
+                        )
+                    }
+
+                    if (orgMode in listOf("PRODUCTION_NEXT", "STAGED")) {
+                        if (foundationVersion <= 0 || foundationVersion > org.isoron.uhabits.core.containers.backup.ContainerBackupManifest.CURRENT_FOUNDATION_VERSION) {
+                            return org.isoron.uhabits.backup.BackupValidationResult(
+                                isValid = false,
+                                errorMessage = "Unsupported foundation_version $foundationVersion in OrganizationState"
+                            )
+                        }
+                        if (runtimeAuthority !in listOf("LEGACY", "NEXT")) {
+                            return org.isoron.uhabits.backup.BackupValidationResult(
+                                isValid = false,
+                                errorMessage = "Invalid runtime_authority '$runtimeAuthority' in OrganizationState"
+                            )
+                        }
+                        val fkCheckCount = db.rawQuery("PRAGMA foreign_key_check", null).use { it.count }
+                        if (fkCheckCount > 0) {
+                            return org.isoron.uhabits.backup.BackupValidationResult(
+                                isValid = false,
+                                errorMessage = "Database failed foreign_key_check ($fkCheckCount violations)"
+                            )
+                        }
+                    } else {
+                        val stage = SQLiteDatabase.create(null)
+                        val target = SQLiteDatabase.create(null)
+                        try {
+                            val wrapped = AndroidDatabase(db)
+                            val result = ContainerRestoreService.restore(
+                                wrapped, AndroidDatabase(stage), AndroidDatabase(target),
+                                externalManifest = compatibleOldExperimentalManifest(wrapped)
+                            )
+                            if (result is org.isoron.uhabits.core.containers.backup.RestoreResult.Failure) {
+                                val detailedMsg = if (result.errors.isNotEmpty()) "${result.reason}: ${result.errors.joinToString("; ")}" else result.reason
+                                return org.isoron.uhabits.backup.BackupValidationResult(false, errorMessage = detailedMsg)
+                            }
+                        } finally { stage.close(); target.close() }
+                    }
+                } else if (NEXT_TABLE_NAMES.any(presentTables::contains)) {
                     val stage = SQLiteDatabase.create(null)
                     val target = SQLiteDatabase.create(null)
                     try {
                         val wrapped = AndroidDatabase(db)
-                        val result = ContainerRestoreService.restore(wrapped, AndroidDatabase(stage), AndroidDatabase(target),
-                            externalManifest = compatibleOldExperimentalManifest(wrapped))
+                        val result = ContainerRestoreService.restore(
+                            wrapped, AndroidDatabase(stage), AndroidDatabase(target),
+                            externalManifest = compatibleOldExperimentalManifest(wrapped)
+                        )
                         if (result is org.isoron.uhabits.core.containers.backup.RestoreResult.Failure) {
                             val detailedMsg = if (result.errors.isNotEmpty()) "${result.reason}: ${result.errors.joinToString("; ")}" else result.reason
                             return org.isoron.uhabits.backup.BackupValidationResult(false, errorMessage = detailedMsg)
