@@ -67,6 +67,8 @@ class HabitCardListAdapter(
         return cache.hasNoHabit()
     }
 
+    val hasLoaded: Boolean get() = cache.hasLoaded
+
     /**
      * Sets all items as not selected.
      */

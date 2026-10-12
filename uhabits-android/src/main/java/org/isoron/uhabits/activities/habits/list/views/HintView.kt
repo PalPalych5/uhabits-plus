@@ -37,6 +37,8 @@ class HintView(
 ) : LinearLayout(context) {
 
     val hintContent: TextView
+    private var hasActiveHint = false
+    private var suppressed = false
 
     init {
         isClickable = true
@@ -70,17 +72,30 @@ class HintView(
 
     fun showNext() {
         if (!hintList.shouldShow()) return
-        val hint = hintList.pop() ?: return
+        val hint = hintList.pop()?.takeIf { it.isNotBlank() } ?: return
 
         hintContent.text = hint
+        hasActiveHint = true
         requestLayout()
 
+        animate().cancel()
+        animate().setListener(null)
         alpha = 0.0f
-        visibility = View.VISIBLE
+        updateVisibility()
         animate().alpha(1f).duration = 500
     }
 
+    fun setSuppressed(value: Boolean) {
+        suppressed = value
+        updateVisibility()
+    }
+
+    private fun updateVisibility() {
+        visibility = if (hasActiveHint && !suppressed) View.VISIBLE else View.GONE
+    }
+
     private fun dismiss() {
+        hasActiveHint = false
         animate().alpha(0f).setDuration(500).setListener(DismissAnimator())
     }
 

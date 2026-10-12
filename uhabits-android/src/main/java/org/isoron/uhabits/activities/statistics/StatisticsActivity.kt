@@ -833,7 +833,12 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     }
 
     private fun addFocusSection(container: LinearLayout) {
-        val (card, content) = createSection("Фокус по разделам", "Сессии, завершённые за период · все задачи и привычки")
+        val (card, content) = createSection("Фокус по разделам")
+        content.addView(summaryText(
+            "Сессии, завершённые за период · все задачи и привычки",
+            12f,
+            palette.onSurfaceVariant
+        ), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         fun duration(millis: Long): String {
             val seconds = millis / 1000
             return if (seconds >= 3600) "${seconds / 3600} ч ${seconds / 60 % 60} мин"

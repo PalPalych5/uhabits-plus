@@ -133,12 +133,12 @@ class ListHabitsRootView(
             header.visibility = GONE
             listView.visibility = GONE
             llEmpty.visibility = GONE
-            hintView.visibility = GONE
+            hintView.setSuppressed(true)
             containerHomeView?.visibility = VISIBLE
         } else {
             header.visibility = VISIBLE
             listView.visibility = VISIBLE
-            hintView.visibility = VISIBLE
+            hintView.setSuppressed(false)
             containerHomeView?.visibility = GONE
             updateEmptyView()
         }
@@ -190,7 +190,9 @@ class ListHabitsRootView(
             llEmpty.hide()
             return
         }
-        if (listAdapter.itemCount == 0) {
+        if (!listAdapter.hasLoaded) {
+            llEmpty.hide()
+        } else if (listAdapter.itemCount == 0) {
             if (listAdapter.isSearching()) {
                 llEmpty.showNotFound()
             } else if (listAdapter.hasNoHabit()) {

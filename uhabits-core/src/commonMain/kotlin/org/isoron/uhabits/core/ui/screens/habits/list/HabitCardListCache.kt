@@ -75,6 +75,8 @@ class HabitCardListCache(
     @Volatile
     private var shutDown = false
     private var refreshGeneration = 0L
+    var hasLoaded: Boolean = false
+        private set
     private var listener: Listener
     private val data: CacheData
     private var filteredHabits: HabitList
@@ -471,6 +473,7 @@ class HabitCardListCache(
             // while it owns that monitor made the main thread wait for all SQL/snapshots.
             processRemovedHabits()
             for (position in newData.habits.indices) processPosition(position)
+            hasLoaded = true
             listener.onRefreshFinished()
             timingObserver?.invoke("cache.publish", started.elapsedNow().inWholeNanoseconds / 1e6)
         }

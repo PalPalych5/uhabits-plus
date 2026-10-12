@@ -19,6 +19,8 @@
 
 package org.isoron.uhabits.activities.habits.list.views
 
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
 import org.isoron.platform.time.LocalDate
@@ -28,6 +30,7 @@ import org.isoron.uhabits.R
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.PaletteColor
 import org.junit.Test
+import org.junit.Assert.assertEquals
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
@@ -99,5 +102,31 @@ class HabitCardViewTest : BaseViewTest() {
         habit1.observable.notifyListeners()
         Thread.sleep(500)
         assertRenders(view, "$PATH/render_changed.png")
+    }
+
+    @Test
+    fun unknownScorePreservesTitleAndNumericColumns() {
+        for (width in listOf(360, 400)) {
+            for (habit in listOf(habit1, habit2)) {
+                view.habit = habit.apply { name = "Развитие голоса и речи" }
+                view.score = 0.5
+                measureView(view, dpToPixels(width), dpToPixels(50))
+                val content = view.getChildAt(0) as LinearLayout
+                val title = (0 until content.childCount).map { content.getChildAt(it) }
+                    .filterIsInstance<TextView>().first()
+                val originalLeft = title.left
+                val originalWidth = title.width
+                val panel = content.getChildAt(if (habit.isNumerical) content.childCount - 1 else content.childCount - 2)
+                val numericLeft = panel.left
+                view.score = Double.NaN
+                measureView(view, dpToPixels(width), dpToPixels(50))
+                assertEquals(originalLeft, title.left)
+                assertEquals(originalWidth, title.width)
+                assertEquals(numericLeft, panel.left)
+                view.score = 0.5
+                measureView(view, dpToPixels(width), dpToPixels(50))
+                assertEquals(originalLeft, title.left)
+                }
+        }
     }
 }

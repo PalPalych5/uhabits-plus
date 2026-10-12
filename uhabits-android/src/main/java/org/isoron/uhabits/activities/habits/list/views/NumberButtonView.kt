@@ -42,6 +42,7 @@ import org.isoron.uhabits.utils.drawNotesIndicator
 import org.isoron.uhabits.utils.getFontAwesome
 import org.isoron.uhabits.utils.sres
 import java.text.DecimalFormat
+import org.isoron.uhabits.utils.HabitQuantityFormatter
 
 private val BOLD_TYPEFACE = Typeface.create("sans-serif-condensed", Typeface.BOLD)
 private val NORMAL_TYPEFACE = Typeface.create("sans-serif-condensed", Typeface.NORMAL)
@@ -190,6 +191,7 @@ class NumberButtonView(
                 else -> mediumContrast
             }
 
+            var displayUnits = units
             val label: String
             val typeface: Typeface
             val textSize: Float
@@ -201,12 +203,15 @@ class NumberButtonView(
                     typeface = getFontAwesome()
                 }
                 day != null && day.totalValue != null -> {
-                    label = (if (!day.hasCompleteCoverage) "≥" else "") + (day.totalValue!! / 1000.0).toShortString()
+                    val amount = HabitQuantityFormatter.format(day.totalValue!! / 1000.0, units, !day.hasCompleteCoverage, compact = true)
+                    displayUnits = amount.unit
+                    label = (if (!day.hasCompleteCoverage) "≥" else "") + amount.number
                     typeface = BOLD_TYPEFACE
                     textSize = dim(R.dimen.smallTextSize)
                 }
                 day != null -> {
-                    label = "?"
+                    label = "—"
+                    displayUnits = ""
                     typeface = NORMAL_TYPEFACE
                     textSize = dim(R.dimen.smallTextSize)
                 }
@@ -217,15 +222,18 @@ class NumberButtonView(
                 }
 
                 value >= 0 -> {
-                    label = value.toShortString()
+                    val amount = HabitQuantityFormatter.format(value, units, compact = true)
+                    displayUnits = amount.unit
+                    label = amount.number
                     typeface = BOLD_TYPEFACE
                     textSize = dim(R.dimen.smallTextSize)
                 }
 
                 preferences.areQuestionMarksEnabled -> {
-                    label = resources.getString(R.string.fa_question)
-                    typeface = getFontAwesome()
-                    textSize = dim(R.dimen.smallerTextSize)
+                    label = "—"
+                    displayUnits = ""
+                    typeface = NORMAL_TYPEFACE
+                    textSize = dim(R.dimen.smallTextSize)
                 }
 
                 else -> {
@@ -240,7 +248,13 @@ class NumberButtonView(
             pNumber.typeface = typeface
             pUnit.color = activeColor
 
-            if (units.isBlank()) {
+            contentDescription = when {
+                day != null && day.isSkipped -> resources.getString(R.string.focus_credit_day_excluded)
+                day != null && day.totalValue == null -> resources.getString(R.string.focus_credit_unknown)
+                else -> "$label $displayUnits".trim()
+            }
+
+            if (displayUnits.isBlank()) {
                 // Draw number without units
                 rect.set(0f, 0f, width.toFloat(), height.toFloat())
                 rect.offset(0f, 0.5f * em)
@@ -252,7 +266,7 @@ class NumberButtonView(
 
                 // Draw units
                 val maxUnitsWidth = width * 0.9f
-                var trimmedUnits = units
+                var trimmedUnits = displayUnits
                 while (trimmedUnits.length > 2 && pUnit.measureText(trimmedUnits) > maxUnitsWidth) {
                     trimmedUnits = trimmedUnits.dropLast(2) + "…"
                 }

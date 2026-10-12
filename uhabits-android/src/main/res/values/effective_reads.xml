@@ -3,4 +3,7 @@
     <string name="effective_read_provenance">Includes Focus credit. Editing a day changes its manual value only.</string>
     <string name="effective_read_incomplete">Includes Focus credit and incomplete manual history. Quantities are lower bounds; score and streak are unavailable. Editing changes the manual value only.</string>
     <string name="effective_read_quantity_unavailable">This quantity cannot be shown by the existing charts. Calendar progress and manual editing remain available.</string>
+    <string name="effective_read_summary">Includes Focus · Details</string>
+    <string name="effective_read_summary_unavailable">Some charts are unavailable · Details</string>
+    <string name="effective_read_summary_incomplete">Includes Focus · Some days have no entry · Details</string>
 </resources>

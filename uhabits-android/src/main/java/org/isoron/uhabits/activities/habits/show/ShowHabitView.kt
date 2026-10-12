@@ -34,6 +34,8 @@ import org.isoron.uhabits.utils.applyBottomInset
 import org.isoron.uhabits.utils.applyToolbarInsets
 import org.isoron.uhabits.utils.setupToolbar
 import org.isoron.platform.gui.toInt
+import androidx.appcompat.app.AlertDialog
+import org.isoron.uhabits.R
 import android.view.View
 
 class ShowHabitView(context: Context) : FrameLayout(context) {
@@ -71,11 +73,20 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
         binding.frequencyCard.visibility = if (data.quantityUnavailable) GONE else VISIBLE
         // Target's Long-based current-period row remains supported when legacy Int charts are gated.
         binding.effectiveReadNotice.visibility = if (data.hasAutomaticQuantity || data.quantityUnavailable) VISIBLE else GONE
-        binding.effectiveReadNotice.setText(when {
+        val provenance = when {
             data.quantityUnavailable -> org.isoron.uhabits.R.string.effective_read_quantity_unavailable
             data.hasIncompleteCoverage -> org.isoron.uhabits.R.string.effective_read_incomplete
             else -> org.isoron.uhabits.R.string.effective_read_provenance
+        }
+        binding.effectiveReadNotice.setText(when {
+            data.quantityUnavailable && !data.hasAutomaticQuantity -> R.string.effective_read_summary_unavailable
+            data.hasIncompleteCoverage -> R.string.effective_read_summary_incomplete
+            else -> R.string.effective_read_summary
         })
+        binding.effectiveReadNotice.setOnClickListener {
+            AlertDialog.Builder(context).setTitle(R.string.focus_credit_breakdown)
+                .setMessage(provenance).setPositiveButton(android.R.string.ok, null).show()
+        }
 
         binding.timerCard.setColor(data.theme.color(data.color).toInt())
         val isTimerVisible = data.isNumerical && isTimerEnabled && habitUnit.isMinuteUnit()

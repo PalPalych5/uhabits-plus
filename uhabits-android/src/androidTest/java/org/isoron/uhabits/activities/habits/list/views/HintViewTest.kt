@@ -18,6 +18,7 @@
  */
 package org.isoron.uhabits.activities.habits.list.views
 
+import android.view.View
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
 import dev.mokkery.answering.returns
@@ -63,6 +64,34 @@ class HintViewTest : BaseViewTest() {
         view.performClick()
         skipAnimation(view)
         assertThat(view.alpha, equalTo(0f))
+    }
+
+    @Test
+    fun missingOrBlankHintStaysGoneAfterReturningToHabits() {
+        for (text in arrayOf<String?>(null, "", "  \n ")) {
+            every { list.pop() } returns text
+            val emptyView = HintView(targetContext, list)
+            emptyView.showNext()
+            emptyView.setSuppressed(true)
+            emptyView.setSuppressed(false)
+            assertThat(emptyView.visibility, equalTo(View.GONE))
+        }
+    }
+
+    @Test
+    fun validHintReturnsButDismissedHintDoesNot() {
+        view.setSuppressed(true)
+        assertThat(view.visibility, equalTo(View.GONE))
+        view.setSuppressed(false)
+        assertThat(view.visibility, equalTo(View.VISIBLE))
+        val capture = java.io.File(targetContext.getExternalFilesDir(null), "hotfix/banner-valid.png")
+        capture.parentFile!!.mkdirs()
+        java.io.FileOutputStream(capture).use { renderView(view).compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        view.performClick()
+        skipAnimation(view)
+        view.setSuppressed(true)
+        view.setSuppressed(false)
+        assertThat(view.visibility, equalTo(View.GONE))
     }
 
     companion object {

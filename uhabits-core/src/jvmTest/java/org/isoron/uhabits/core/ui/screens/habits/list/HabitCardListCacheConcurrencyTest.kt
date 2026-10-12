@@ -15,6 +15,8 @@ import java.util.concurrent.TimeoutException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class HabitCardListCacheConcurrencyTest : BaseUnitTest() {
     @Test
@@ -33,9 +35,12 @@ class HabitCardListCacheConcurrencyTest : BaseUnitTest() {
         val listener = mock<HabitCardListCache.Listener>()
         cache.setListener(listener)
         cache.setCheckmarkCount(10)
+        assertFalse(cache.hasLoaded)
         cache.refreshAllHabits()
         runBlocking { captured.last().doInBackground() }
+        assertFalse(cache.hasLoaded)
         captured.last().onPostExecute()
+        assertTrue(cache.hasLoaded)
         val previousCount = cache.habitCount
         resetCalls(listener)
         cache.effectiveSnapshots = {

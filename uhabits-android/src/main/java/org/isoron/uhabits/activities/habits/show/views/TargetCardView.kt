@@ -25,6 +25,7 @@ import android.view.LayoutInflater
 import android.widget.LinearLayout
 import android.view.View
 import androidx.appcompat.app.AlertDialog
+import org.isoron.uhabits.utils.HabitQuantityFormatter
 import java.text.NumberFormat
 import org.isoron.uhabits.activities.habits.show.FocusProgressPresentation
 import org.isoron.uhabits.core.models.projection.HabitGoalStatus
@@ -54,23 +55,24 @@ class TargetCardView(context: Context, attrs: AttributeSet) : LinearLayout(conte
         binding.focusGoal.visibility = View.VISIBLE
         binding.focusBreakdown.visibility = if (progress.total != null ||
             progress.focus != 0L || progress.excludedFocus != 0L) View.VISIBLE else View.GONE
-        val format = NumberFormat.getNumberInstance().apply { maximumFractionDigits = 3 }
-        fun amount(value: Long) = "${format.format(value / 1000.0)} ${progress.unit}"
+        fun amount(value: Long) = HabitQuantityFormatter.format(value / 1000.0, progress.unit, progress.lowerBound).toString()
         val skipped = progress.status == HabitGoalStatus.SKIPPED || progress.status == HabitGoalStatus.EXCLUDED
         val value = progress.total?.let(::amount) ?: resources.getString(
             if (skipped) R.string.focus_credit_day_excluded else R.string.focus_credit_unknown
         )
         binding.focusValue.text = if (progress.lowerBound) "≥ $value" else value
-        val target = "${if (progress.atMost) "≤" else "≥"} ${format.format(progress.target)} ${progress.unit}"
+        val target = "${if (progress.atMost) "≤" else "≥"} ${HabitQuantityFormatter.format(progress.target, progress.unit)}"
         binding.focusGoal.text = resources.getString(R.string.focus_credit_goal, target)
         binding.focusCoverage.visibility = if (skipped || progress.lowerBound) View.VISIBLE else View.GONE
         binding.focusCoverage.setText(if (skipped) R.string.focus_credit_skipped else R.string.focus_credit_incomplete)
         binding.focusBreakdown.setOnClickListener {
+            val exactFormat = NumberFormat.getNumberInstance().apply { maximumFractionDigits = 3 }
+            fun exact(value: Long) = "${exactFormat.format(value / 1000.0)} ${progress.unit}"
             val message = buildString {
-                append(resources.getString(R.string.focus_credit_manual)).append("\n").append(amount(progress.manual))
-                append("\n\n").append(resources.getString(R.string.focus_credit_focus)).append("\n").append(amount(progress.focus))
+                append(resources.getString(R.string.focus_credit_manual)).append("\n").append(exact(progress.manual))
+                append("\n\n").append(resources.getString(R.string.focus_credit_focus)).append("\n").append(exact(progress.focus))
                 if (progress.excludedFocus != 0L) {
-                    append("\n\n").append(resources.getString(R.string.focus_credit_excluded)).append("\n").append(amount(progress.excludedFocus))
+                    append("\n\n").append(resources.getString(R.string.focus_credit_excluded)).append("\n").append(exact(progress.excludedFocus))
                 }
                 if (progress.lowerBound || progress.total == null) {
                     append("\n\n").append(resources.getString(R.string.focus_credit_incomplete))

@@ -105,7 +105,8 @@ class HabitCardView(
     var score
         get() = scoreRing.getPercentage().toDouble()
         set(value) {
-            scoreRing.visibility = if (value.isNaN()) GONE else VISIBLE
+            // Unknown scores have no ring, but retain the same title inset as exact scores.
+            scoreRing.visibility = if (value.isNaN()) INVISIBLE else VISIBLE
             if (value.isNaN()) return
             scoreRing.setPercentage(value.toFloat())
             scoreRing.setPrecision(1.0f / 16)
