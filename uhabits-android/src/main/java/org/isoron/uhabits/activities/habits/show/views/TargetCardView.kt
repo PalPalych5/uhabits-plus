@@ -60,7 +60,13 @@ class TargetCardView(context: Context, attrs: AttributeSet) : LinearLayout(conte
         val value = progress.total?.let(::amount) ?: resources.getString(
             if (skipped) R.string.focus_credit_day_excluded else R.string.focus_credit_unknown
         )
-        binding.focusValue.text = if (progress.lowerBound) "≥ $value" else value
+        val formatted = progress.total?.let { totalVal ->
+            val amt = HabitQuantityFormatter.format(totalVal / 1000.0, progress.unit, progress.lowerBound)
+            if (progress.lowerBound) "${amt.number}+ ${amt.unit}".trim() else amt.toString()
+        } ?: resources.getString(
+            if (skipped) R.string.focus_credit_day_excluded else R.string.focus_credit_unknown
+        )
+        binding.focusValue.text = formatted
         val target = "${if (progress.atMost) "≤" else "≥"} ${HabitQuantityFormatter.format(progress.target, progress.unit)}"
         binding.focusGoal.text = resources.getString(R.string.focus_credit_goal, target)
         binding.focusCoverage.visibility = if (skipped || progress.lowerBound) View.VISIBLE else View.GONE

@@ -203,9 +203,10 @@ class NumberButtonView(
                     typeface = getFontAwesome()
                 }
                 day != null && day.totalValue != null -> {
-                    val amount = HabitQuantityFormatter.format(day.totalValue!! / 1000.0, units, !day.hasCompleteCoverage, compact = true)
+                    val isLowerBound = !day.hasCompleteCoverage
+                    val amount = HabitQuantityFormatter.format(day.totalValue!! / 1000.0, units, isLowerBound, compact = true)
                     displayUnits = amount.unit
-                    label = (if (!day.hasCompleteCoverage) "≥" else "") + amount.number
+                    label = if (isLowerBound) "${amount.number}+" else amount.number
                     typeface = BOLD_TYPEFACE
                     textSize = dim(R.dimen.smallTextSize)
                 }
@@ -251,6 +252,10 @@ class NumberButtonView(
             contentDescription = when {
                 day != null && day.isSkipped -> resources.getString(R.string.focus_credit_day_excluded)
                 day != null && day.totalValue == null -> resources.getString(R.string.focus_credit_unknown)
+                day != null && !day.hasCompleteCoverage -> {
+                    val amount = HabitQuantityFormatter.format(day.totalValue!! / 1000.0, units, true, compact = true)
+                    "≥ ${amount.number} $displayUnits".trim()
+                }
                 else -> "$label $displayUnits".trim()
             }
 

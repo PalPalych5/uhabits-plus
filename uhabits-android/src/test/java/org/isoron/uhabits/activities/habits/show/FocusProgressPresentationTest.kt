@@ -76,4 +76,28 @@ class FocusProgressPresentationTest {
         assertTrue(state().atMost)
         assertEquals(HabitGoalStatus.UNKNOWN, state().status)
     }
+
+    @Test fun focusOnOneDayDoesNotReinterpretOrFabricateZerosOnUnrelatedDays() {
+        val sunday = LocalDate(2026, 10, 11)
+        val thursday = LocalDate(2026, 10, 8)
+        habit.originalEntries.add(Entry(sunday, 34500))
+        habit.originalEntries.add(Entry(thursday, Entry.UNKNOWN))
+        val creditTime = startOfLocalDay(sunday) + 1000
+        repository.record(Contribution(ContributionId("sunday-focus"), HabitRef("study"),
+            ContributionSourceType.FOCUS_SESSION, "session", 1000, creditTime, creditTime, creditTime))
+
+        val sundayDay = service.valueForDay(habit, sunday)
+        assertEquals(35500L, sundayDay.totalValue)
+        assertEquals(34500L, sundayDay.manualValue)
+        assertEquals(1000L, sundayDay.contributionValue)
+        assertTrue(sundayDay.hasCompleteCoverage)
+
+        val thursdayDay = service.valueForDay(habit, thursday)
+        assertNull(thursdayDay.manualValue)
+        assertNull(thursdayDay.totalValue)
+        assertFalse(thursdayDay.hasCompleteCoverage)
+        assertEquals(Entry.UNKNOWN, thursdayDay.manualEntry.value)
+        assertEquals(Entry.UNKNOWN, habit.computedEntries.get(thursday).value)
+        assertEquals(Entry.UNKNOWN, habit.originalEntries.get(thursday).value)
+    }
 }

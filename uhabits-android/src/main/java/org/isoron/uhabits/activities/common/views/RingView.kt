@@ -148,6 +148,22 @@ class RingView : View {
         }
         pRing!!.color = color
         rect!![0f, 0f, diameter.toFloat()] = diameter.toFloat()
+        if (percentage.isNaN()) {
+            pRing!!.color = inactiveColor!!
+            activeCanvas!!.drawArc(rect!!, 0f, 360f, true, pRing!!)
+            if (thickness > 0) {
+                if (isTransparencyEnabled) {
+                    pRing!!.xfermode = XFERMODE_CLEAR
+                } else {
+                    pRing!!.color = backgroundColor!!
+                }
+                rect!!.inset(thickness, thickness)
+                activeCanvas.drawArc(rect!!, 0f, 360f, true, pRing!!)
+                pRing!!.xfermode = null
+            }
+            if (activeCanvas !== canvas) canvas.drawBitmap(internalDrawingCache!!, 0f, 0f, null)
+            return
+        }
         val angle = 360 * (percentage / precision).roundToLong() * precision
         activeCanvas!!.drawArc(rect!!, -90f, angle, true, pRing!!)
         pRing!!.color = inactiveColor!!
