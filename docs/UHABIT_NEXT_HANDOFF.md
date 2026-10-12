@@ -1436,13 +1436,15 @@ Evidence and verification limits: local `scratch/root-review/perfetto_analysis_r
     5. In `SQLiteHabitList.removeAll()`, explicit foreign-key dependency cleanup (`HabitPlacementHistory`) precedes habit deletion.
     6. `DemoDataGenerator` and `SQLiteOrganizationStore` migrated to unified transaction primitives.
 - **Verification:**
-  - `WalSafetyAndConcurrencyAndroidTest` on disposable offline AVD (`UHabit_UI_Review_Disposable_20261011`): **OK (10 tests)** passing 100%, covering read-your-own-writes inside transactions, nested savepoints and rollbacks, concurrent readers/writers without lock starvation, transaction failure & retry, container & organization persistence, Habits/Tasks/Focus durability, and dataset switching/recovery.
+  - `WalSafetyAndConcurrencyAndroidTest` on disposable offline AVD (`UHabit_UI_Review_Disposable_20261011`): **OK (13 tests)** passing 100%, covering read-your-own-writes inside transactions, nested savepoints and rollbacks, pure SQL savepoints and rollback-inner/commit-outer, multi-token statements (`BEGIN IMMEDIATE TRANSACTION`, `COMMIT WORK`), `REPLACE INTO` with `last_insert_rowid`, concurrent readers/writers without lock starvation, transaction failure & retry, container & organization persistence, Habits/Tasks/Focus durability, dataset switching/recovery, existing v30 rollback-to-WAL migration with full entity & foreign-key parity, immediate snapshots and ZIP backups capturing uncheckpointed WAL writes, and interrupted restore reconciliation.
   - `AndroidDatabaseTest`: **OK (6 tests)** passing 100%.
   - `uhabits-core:jvmTest`: 100% PASS.
   - **Measured Concurrency & Commit Latency Benchmark (`comparison.json` on AVD):**
     - Rollback Journal (`truncate`): write p50 = 20.24 ms, p95 = 37.57 ms, p99 = 37.57 ms; concurrent reads completed = 12.
     - WAL Mode (`wal`): write p50 = 1.36 ms (**14.9x faster**), p95 = 12.81 ms (**2.9x faster**), p99 = 15.89 ms (**2.4x faster**); concurrent reads completed = 34 (**2.8x higher throughput**).
-- **Decision:**
+- **Release Safety Review & Decision:**
+  - Hardening fixes applied: removed `savepointFailed` false-positive transaction aborts on inner rollbacks, reset `savepointTxDepth` on commits/rollbacks, added `REPLACE` to `executeInsert()` rowid capture, and updated `DatabaseUtils.createDatabaseSnapshot` to validate snapshots against `db.version` (fixing v30 raw snapshot cutover validation).
   - **WAL is safely enabled for UHabit Next (schema v30)** (`enableWalForNext = true` in `DatabaseUtils.kt`).
   - **Legacy v29 unconditionally preserves rollback journal mode** (`disableWriteAheadLogging()`), guaranteeing 100% backward compatibility and zero regression risk for legacy users.
+  - **STATUS: READY FOR CONTROLLED DEVICE INSTALL.**
 

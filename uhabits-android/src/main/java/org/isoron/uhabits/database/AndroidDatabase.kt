@@ -36,23 +36,27 @@ class AndroidPreparedStatement(
 ) : PreparedStatement {
     companion object {
         private val savepointTxDepth = ThreadLocal<Int>()
-        private val savepointFailed = ThreadLocal<Boolean>()
+
+        fun resetSavepointState() {
+            savepointTxDepth.set(0)
+        }
     }
 
     private val upperWords = sql.trim().trimEnd(';').uppercase().split(Regex("\\s+"))
-    private val isTxBegin = upperWords.size in 1..2 && upperWords[0] == "BEGIN" &&
-            (upperWords.size == 1 || upperWords[1] in listOf("IMMEDIATE", "EXCLUSIVE", "TRANSACTION", "DEFERRED"))
+    private val isTxBegin = upperWords.isNotEmpty() && upperWords[0] == "BEGIN" &&
+            upperWords.drop(1).all { it in listOf("IMMEDIATE", "EXCLUSIVE", "TRANSACTION", "DEFERRED") }
     private val isTxCommit = (upperWords.size == 1 && (upperWords[0] == "COMMIT" || upperWords[0] == "END")) ||
-            (upperWords.size == 2 && upperWords[1] == "TRANSACTION" && (upperWords[0] == "COMMIT" || upperWords[0] == "END"))
-    private val isTxRollback = (upperWords.size == 1 && upperWords[0] == "ROLLBACK") ||
-            (upperWords.size == 2 && upperWords[0] == "ROLLBACK" && upperWords[1] == "TRANSACTION")
-    private val isTxControl = isTxBegin || isTxCommit || isTxRollback
+            (upperWords.size in 2..3 && (upperWords[0] == "COMMIT" || upperWords[0] == "END") && upperWords.drop(1).all { it in listOf("TRANSACTION", "WORK") })
     private val isSavepoint = upperWords.isNotEmpty() && upperWords[0] == "SAVEPOINT"
     private val isRelease = upperWords.isNotEmpty() && upperWords[0] == "RELEASE"
-    private val isRollbackTo = upperWords.size >= 3 && upperWords[0] == "ROLLBACK" && upperWords[1] == "TO"
+    private val isRollbackTo = upperWords.size >= 3 && upperWords[0] == "ROLLBACK" &&
+            (upperWords[1] == "TO" || (upperWords.size >= 4 && upperWords[1] == "TRANSACTION" && upperWords[2] == "TO"))
+    private val isTxRollback = !isRollbackTo && upperWords.isNotEmpty() && upperWords[0] == "ROLLBACK" &&
+            upperWords.drop(1).all { it in listOf("TRANSACTION", "WORK") }
+    private val isTxControl = isTxBegin || isTxCommit || isTxRollback
 
-    private val isChangesQuery = sql.trim().trimEnd(';').equals("SELECT changes()", ignoreCase = true)
-    private val isLastInsertRowIdQuery = sql.trim().trimEnd(';').equals("SELECT last_insert_rowid()", ignoreCase = true)
+    private val isChangesQuery = upperWords.size == 2 && upperWords[0] == "SELECT" && upperWords[1] == "CHANGES()"
+    private val isLastInsertRowIdQuery = upperWords.size == 2 && upperWords[0] == "SELECT" && upperWords[1] == "LAST_INSERT_ROWID()"
     private var changesRowRead = false
 
     private val isQuery = isChangesQuery || isLastInsertRowIdQuery || sql.trimStart().uppercase().let {
@@ -91,18 +95,20 @@ class AndroidPreparedStatement(
                 db.setTransactionSuccessful()
                 db.endTransaction()
             }
+            savepointTxDepth.set(0)
             return StepResult.DONE
         }
         if (isTxRollback) {
             if (db.inTransaction()) {
                 db.endTransaction()
             }
+            savepointTxDepth.set(0)
             return StepResult.DONE
         }
         if (isSavepoint) {
             if (!db.inTransaction()) {
                 db.beginTransactionNonExclusive()
-                savepointTxDepth.set((savepointTxDepth.get() ?: 0) + 1)
+                savepointTxDepth.set(1)
             } else if ((savepointTxDepth.get() ?: 0) > 0) {
                 savepointTxDepth.set((savepointTxDepth.get() ?: 0) + 1)
             }
@@ -110,9 +116,6 @@ class AndroidPreparedStatement(
             return StepResult.DONE
         }
         if (isRollbackTo) {
-            if ((savepointTxDepth.get() ?: 0) > 0) {
-                savepointFailed.set(true)
-            }
             compiledStmt!!.execute()
             return StepResult.DONE
         }
@@ -122,11 +125,7 @@ class AndroidPreparedStatement(
             if (depth > 0) {
                 savepointTxDepth.set(depth - 1)
                 if (depth == 1 && db.inTransaction()) {
-                    val failed = savepointFailed.get() == true
-                    savepointFailed.set(false)
-                    if (!failed) {
-                        db.setTransactionSuccessful()
-                    }
+                    db.setTransactionSuccessful()
                     db.endTransaction()
                 }
             }
@@ -149,7 +148,7 @@ class AndroidPreparedStatement(
         } else {
             if (isMutation) {
                 val upperSql = sql.trimStart().uppercase()
-                if (upperSql.startsWith("INSERT")) {
+                if (upperSql.startsWith("INSERT") || upperSql.startsWith("REPLACE")) {
                     val rowId = runCatching { compiledStmt!!.executeInsert() }.getOrElse {
                         compiledStmt!!.execute()
                         0L
@@ -314,7 +313,10 @@ class AndroidDatabase(
         override fun close() = db.close()
         override fun beginTransaction() = db.beginTransactionNonExclusive()
         override fun setTransactionSuccessful() = db.setTransactionSuccessful()
-        override fun endTransaction() = db.endTransaction()
+        override fun endTransaction() {
+            AndroidPreparedStatement.resetSavepointState()
+            db.endTransaction()
+        }
         override fun inTransaction(): Boolean = db.inTransaction()
     }.let { raw ->
         if (revision == null) raw else org.isoron.uhabits.core.models.projection.EffectiveReadDatabase(

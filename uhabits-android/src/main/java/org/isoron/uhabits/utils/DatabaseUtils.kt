@@ -331,7 +331,7 @@ object DatabaseUtils {
             throw IOException("Injected failure during validation")
         }
 
-        val validation = validateDatabaseBackup(tempFile)
+        val validation = validateDatabaseBackup(tempFile, targetVersion = db.version)
         if (!validation.isValid || validation.databaseVersion == null) {
             tempFile.delete()
             throw IOException(validation.errorMessage ?: "Invalid backup snapshot")

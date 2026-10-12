@@ -726,4 +726,259 @@ class WalSafetyAndConcurrencyAndroidTest {
             legacyDbFile.delete()
         }
     }
+
+    @Test
+    fun test11_pureSqlNestedSavepointsRollbackInnerAndCommitOuter() {
+        val session = qaSession!!
+        DatabaseUtils.enableWalForNext = true
+        ins.runOnMainSync { app.rebuildComponent(session) }
+        val db = HabitsApplication.component.db
+
+        val outerTaskId = "pure-outer-" + UUID.randomUUID()
+        val innerTaskId = "pure-inner-" + UUID.randomUUID()
+
+        // 1. Pure SQL savepoints without explicit db.beginTransaction()
+        db.run("SAVEPOINT sp_outer")
+        try {
+            db.run("INSERT INTO UserTasks(id, title, created_at, updated_at) VALUES ('$outerTaskId', 'Pure Outer', 1000, 1000)")
+            assertEquals(1L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$outerTaskId'"))
+
+            // Nested pure savepoint
+            db.run("SAVEPOINT sp_inner")
+            db.run("INSERT INTO UserTasks(id, title, created_at, updated_at) VALUES ('$innerTaskId', 'Pure Inner', 1000, 1000)")
+            assertEquals(1L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$innerTaskId'"))
+
+            // Rollback only inner savepoint
+            db.run("ROLLBACK TO SAVEPOINT sp_inner")
+            db.run("RELEASE SAVEPOINT sp_inner")
+
+            // Outer row remains; inner row was reverted
+            assertEquals(1L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$outerTaskId'"))
+            assertEquals(0L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$innerTaskId'"))
+
+            // Release outer savepoint commits the outer row
+            db.run("RELEASE SAVEPOINT sp_outer")
+        } catch (e: Exception) {
+            db.run("ROLLBACK")
+            throw e
+        }
+
+        // Verify committed state
+        assertEquals(1L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$outerTaskId'"))
+        assertEquals(0L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$innerTaskId'"))
+
+        // 2. Pure SQL BEGIN IMMEDIATE with REPLACE INTO and last_insert_rowid()
+        db.run("BEGIN IMMEDIATE TRANSACTION")
+        db.run("REPLACE INTO UserTasks(id, title, created_at, updated_at) VALUES ('$outerTaskId', 'Pure Outer Updated', 2000, 2000)")
+        val lastId = db.queryLong("SELECT last_insert_rowid()")
+        assertTrue("last_insert_rowid should be positive", lastId > 0L)
+        db.run("COMMIT TRANSACTION")
+
+        // 3. Rollback failure path leaves clean thread state
+        db.run("BEGIN TRANSACTION")
+        val rolledTaskId = "rolled-" + UUID.randomUUID()
+        db.run("INSERT INTO UserTasks(id, title, created_at, updated_at) VALUES ('$rolledTaskId', 'Rolled Task', 1000, 1000)")
+        assertEquals(1L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$rolledTaskId'"))
+        db.run("ROLLBACK")
+        assertEquals(0L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$rolledTaskId'"))
+
+        // Subsequent transaction on same thread operates cleanly
+        db.runInTransaction {
+            db.run("INSERT INTO UserTasks(id, title, created_at, updated_at) VALUES ('$rolledTaskId-2', 'Next Task', 1000, 1000)")
+        }
+        assertEquals(1L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$rolledTaskId-2'"))
+    }
+
+    @Test
+    fun test12_existingV30RollbackToWalMigration() {
+        val isolatedDbName = "existing_v30_rollback_upgrade.db"
+        context.deleteDatabase(isolatedDbName)
+        val dbFile = context.getDatabasePath(isolatedDbName)
+        File("${dbFile.path}-wal").delete()
+        File("${dbFile.path}-shm").delete()
+        File("${dbFile.path}-journal").delete()
+
+        // 1. Create realistic v30 database in rollback journal mode
+        val openerRollback = HabitsDatabaseOpener(context, isolatedDbName, 30, isWalRequested = false)
+        val rollbackDb = openerRollback.writableDatabase
+        try {
+            val jMode = rollbackDb.rawQuery("PRAGMA journal_mode", null).use {
+                if (it.moveToFirst()) it.getString(0).lowercase() else "unknown"
+            }
+            assertNotEquals("wal", jMode)
+
+            // Populate rich v30 entities: Habit, Repetition, Container, Task & subtask, FocusSession, Contribution, EntryOps, SyncQueue
+            val habitUuid = "habit-" + UUID.randomUUID()
+            rollbackDb.execSQL("INSERT INTO Habits(name, description, color, freq_num, freq_den, type, position, uuid) " +
+                    "VALUES ('Upgrade Habit', 'Desc', 1, 1, 1, 0, 0, '$habitUuid')")
+            val habitId = rollbackDb.rawQuery("SELECT id FROM Habits WHERE uuid = '$habitUuid'", null).use {
+                if (it.moveToFirst()) it.getLong(0) else 1L
+            }
+            rollbackDb.execSQL("INSERT INTO Repetitions(habit, timestamp, value, notes, uuid) " +
+                    "VALUES ($habitId, 1700000000000, 2, 'note', 'rep-${UUID.randomUUID()}')")
+
+            rollbackDb.execSQL("INSERT INTO OrganizationChanges(revision, op_uuid, recorded_at, operation_type, origin, command_payload) " +
+                    "VALUES (10, 'op-change-10', 1000, 'CREATE_CONTAINER', 'LOCAL', '{}')")
+            rollbackDb.execSQL("INSERT INTO Containers(id, uuid, parent_id, name, color, icon, sibling_order, is_archived, created_at, updated_at, revision) " +
+                    "VALUES (101, 'container-uuid-101', NULL, 'Upgrade Project', NULL, NULL, 0, 0, 1000, 1000, 10)")
+
+            val parentTaskId = "task-parent-" + UUID.randomUUID()
+            val childTaskId = "task-child-" + UUID.randomUUID()
+            rollbackDb.execSQL("INSERT INTO UserTasks(id, title, container_id, parent_task_id, created_at, updated_at) " +
+                    "VALUES ('$parentTaskId', 'Parent Task', 'container-uuid-101', NULL, 1000, 1000)")
+            rollbackDb.execSQL("INSERT INTO UserTasks(id, title, container_id, parent_task_id, created_at, updated_at) " +
+                    "VALUES ('$childTaskId', 'Child Subtask', 'container-uuid-101', '$parentTaskId', 1000, 1000)")
+
+            val focusId = "focus-" + UUID.randomUUID()
+            rollbackDb.execSQL("INSERT INTO FocusSessions(id, started_at, ended_at, duration_ms, source, created_at, updated_at, revision) " +
+                    "VALUES ('$focusId', 1000, 2000, 1000, 'TIMER', 1000, 1000, 1)")
+
+            val contribId = "contrib-" + UUID.randomUUID()
+            rollbackDb.execSQL("INSERT INTO Contributions(id, target_habit_uuid, source_type, source_id, contributed_value, effective_timestamp, created_at, updated_at) " +
+                    "VALUES ('$contribId', '$habitUuid', 'FOCUS_SESSION', '$focusId', 1000, 1700000000000, 1000, 1000)")
+
+            val opUuid = "op-" + UUID.randomUUID()
+            rollbackDb.execSQL("INSERT INTO EntryOps(op_uuid, habit_uuid, entry_timestamp, delta_value, op_type, device_id, created_at) " +
+                    "VALUES ('$opUuid', '$habitUuid', 1700000000000, 2, 'ADD', 'dev1', 1000)")
+
+            rollbackDb.execSQL("INSERT INTO SyncQueue(op_uuid, entity_type, entity_uuid, operation_type, payload_json, created_at, device_id) " +
+                    "VALUES ('$opUuid', 'EntryOp', '$opUuid', 'UPSERT', '{}', 1000, 'dev1')")
+        } finally {
+            rollbackDb.close()
+            openerRollback.close()
+        }
+
+        // 2. First launch: open existing v30 database with WAL enabled
+        val openerWal = HabitsDatabaseOpener(context, isolatedDbName, 30, isWalRequested = true)
+        val walDb = openerWal.writableDatabase
+        try {
+            // Verify journal mode switched to WAL
+            val walMode = walDb.rawQuery("PRAGMA journal_mode", null).use {
+                if (it.moveToFirst()) it.getString(0).lowercase() else "unknown"
+            }
+            assertEquals("wal", walMode)
+
+            // Integrity and FK checks
+            walDb.rawQuery("PRAGMA quick_check", null).use {
+                assertTrue(it.moveToFirst())
+                assertEquals("ok", it.getString(0))
+            }
+            walDb.rawQuery("PRAGMA foreign_key_check", null).use {
+                assertEquals(0, it.count)
+            }
+
+            // Verify all data intact
+            assertEquals(1, walDb.rawQuery("SELECT count(*) FROM Habits WHERE name = 'Upgrade Habit'", null).use { if (it.moveToFirst()) it.getInt(0) else 0 })
+            assertEquals(1, walDb.rawQuery("SELECT count(*) FROM Repetitions WHERE timestamp = 1700000000000", null).use { if (it.moveToFirst()) it.getInt(0) else 0 })
+            assertEquals(1, walDb.rawQuery("SELECT count(*) FROM Containers WHERE id = 101", null).use { if (it.moveToFirst()) it.getInt(0) else 0 })
+            assertEquals(2, walDb.rawQuery("SELECT count(*) FROM UserTasks WHERE container_id = 'container-uuid-101'", null).use { if (it.moveToFirst()) it.getInt(0) else 0 })
+            val subtaskParentId = walDb.rawQuery("SELECT parent_task_id FROM UserTasks WHERE title = 'Child Subtask'", null).use {
+                if (it.moveToFirst()) it.getString(0) else null
+            }
+            assertNotNull(subtaskParentId)
+            assertTrue(subtaskParentId!!.startsWith("task-parent-"))
+            assertEquals(1, walDb.rawQuery("SELECT count(*) FROM FocusSessions", null).use { if (it.moveToFirst()) it.getInt(0) else 0 })
+            assertEquals(1, walDb.rawQuery("SELECT count(*) FROM Contributions", null).use { if (it.moveToFirst()) it.getInt(0) else 0 })
+            assertEquals(1, walDb.rawQuery("SELECT count(*) FROM EntryOps", null).use { if (it.moveToFirst()) it.getInt(0) else 0 })
+            assertEquals(1, walDb.rawQuery("SELECT count(*) FROM SyncQueue", null).use { if (it.moveToFirst()) it.getInt(0) else 0 })
+
+            // Perform new write under WAL mode
+            walDb.execSQL("INSERT INTO UserTasks(id, title, created_at, updated_at) VALUES ('wal-post-task', 'Post WAL Task', 2000, 2000)")
+            val postTaskCount = walDb.rawQuery("SELECT count(*) FROM UserTasks WHERE id = 'wal-post-task'", null).use {
+                if (it.moveToFirst()) it.getInt(0) else 0
+            }
+            assertEquals(1, postTaskCount)
+        } finally {
+            walDb.close()
+            openerWal.close()
+            context.deleteDatabase(isolatedDbName)
+            File("${dbFile.path}-wal").delete()
+            File("${dbFile.path}-shm").delete()
+            File("${dbFile.path}-journal").delete()
+        }
+    }
+
+    @Test
+    fun test13_backupImmediatelyAfterWalCommitAndInterruptedRestore() {
+        val session = qaSession!!
+        DatabaseUtils.enableWalForNext = true
+        org.isoron.uhabits.core.production.cutover.ProductionCutoverGate.setExplicitCutoverAuthorizedForTesting(true)
+        ins.runOnMainSync { app.rebuildComponent(session) }
+
+        val db = DatabaseUtils.openDatabase()
+        db.execSQL("UPDATE OrganizationState SET mode = 'PRODUCTION_NEXT', runtime_authority = 'NEXT' WHERE id = 1")
+        val uniqueTag = "uncheckpointed-" + UUID.randomUUID()
+        val uniqueTimestamp = 999888777L
+
+        // Write directly to active WAL without checkpointing
+        db.beginTransaction()
+        try {
+            db.execSQL("INSERT INTO Repetitions(habit, timestamp, value, notes, uuid) VALUES ((SELECT id FROM Habits LIMIT 1), $uniqueTimestamp, 5, '$uniqueTag', '$uniqueTag')")
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+
+        // Verify WAL file is active and contains changes
+        val dbFile = context.getDatabasePath(session.databaseFilename)
+        val walFile = File("${dbFile.path}-wal")
+        assertTrue("WAL file should exist with active commits", walFile.exists() && walFile.length() > 0)
+
+        // Create backup snapshot immediately
+        val tempSnapshot = File(context.cacheDir, "wal-immediate-snapshot.db")
+        tempSnapshot.delete()
+        try {
+            DatabaseUtils.createDatabaseSnapshot(context, tempSnapshot)
+            assertTrue("Snapshot should exist", tempSnapshot.exists() && tempSnapshot.length() > 0)
+
+            // Verify snapshot captures uncheckpointed WAL commit
+            SQLiteDatabase.openDatabase(tempSnapshot.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { snapDb ->
+                val countInSnap = snapDb.rawQuery("SELECT count(*) FROM Repetitions WHERE notes = '$uniqueTag'", null).use {
+                    if (it.moveToFirst()) it.getInt(0) else 0
+                }
+                assertEquals("Snapshot must capture uncheckpointed WAL commits", 1, countInSnap)
+                snapDb.rawQuery("PRAGMA quick_check", null).use {
+                    assertTrue(it.moveToFirst())
+                    assertEquals("ok", it.getString(0))
+                }
+            }
+
+            // Create full ZIP backup
+            val tempZip = File(context.cacheDir, "wal-immediate-backup.zip")
+            tempZip.delete()
+            try {
+                val archiveResult = BackupArchiveCreator.createArchive(context, tempZip)
+                assertTrue("Backup archive should exist", archiveResult.archiveFile.exists() && archiveResult.sizeBytes > 0)
+
+                // Test interrupted restore simulation: create partial staging garbage
+                val garbageStaging = File(dbFile.parentFile, "${session.databaseFilename}-restore-staging-fake.tmp")
+                garbageStaging.writeText("garbage")
+
+                // Perform restore from valid backup archive
+                DatabaseUtils.restoreDatabaseFromBackup(context, tempZip)
+
+                // Clean reopening check
+                val reopened = DatabaseUtils.openDatabase()
+                try {
+                    val countAfterRestore = reopened.rawQuery("SELECT count(*) FROM Repetitions WHERE notes = '$uniqueTag'", null).use {
+                        if (it.moveToFirst()) it.getInt(0) else 0
+                    }
+                    assertEquals("Restored database must contain WAL commit", 1, countAfterRestore)
+                    reopened.rawQuery("PRAGMA quick_check", null).use {
+                        assertTrue(it.moveToFirst())
+                        assertEquals("ok", it.getString(0))
+                    }
+                    reopened.rawQuery("PRAGMA foreign_key_check", null).use {
+                        assertEquals(0, it.count)
+                    }
+                } finally {
+                    DatabaseUtils.closeDatabase()
+                }
+            } finally {
+                tempZip.delete()
+            }
+        } finally {
+            tempSnapshot.delete()
+        }
+    }
 }
