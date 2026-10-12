@@ -33,7 +33,7 @@ class EffectiveHabitReadController(
 ) : Preferences.Listener {
     private val provider = EffectiveHabitReadSnapshotProvider(SQLiteContributionRepository(db))
     private val handler = Handler(Looper.getMainLooper())
-    private var disposed = false
+    @Volatile private var disposed = false
     private var calendar = captureCalendar()
     private var restoreModels = false
     private data class CacheContext(
@@ -136,6 +136,13 @@ class EffectiveHabitReadController(
             for (habit in habits) {
                 val ref = habit.uuid?.let { HabitRef(it) } ?: continue
                 cachedSnapshots[ref]?.let { result[ref] = it }
+            }
+            // Cache hits need the same publication check as newly prepared reads.
+            // A writer can commit while this thread is selecting cached entries.
+            if (disposed || captured != captureCalendar() || capturedRevision != revision.value ||
+                capturedRollback != rollbackGeneration ||
+                capturedLocaleWeekday != org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale()) {
+                return@repeat
             }
             return result
         }

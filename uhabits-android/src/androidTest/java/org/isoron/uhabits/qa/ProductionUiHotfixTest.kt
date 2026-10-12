@@ -145,6 +145,36 @@ class ProductionUiHotfixTest {
             check(device.takeScreenshot(File(output, "$name.png")))
             device.dumpWindowHierarchy(File(output, "$name.xml"))
         }
+        fun visibleList(activity: MainActivity, stage: String): HabitCardListView {
+            fun describe(view: View): JSONObject = JSONObject()
+                .put("class", view.javaClass.simpleName).put("id", view.id)
+                .put("visibility", view.visibility).put("shown", view.isShown)
+                .put("attached", view.isAttachedToWindow).put("alpha", view.alpha)
+                .put("width", view.width).put("height", view.height)
+            val lists = descendants(activity.window.decorView).filterIsInstance<HabitCardListView>().toList()
+            val diagnostics = JSONObject().put("stage", stage)
+                .put("activityLifecycle", activity.lifecycle.currentState.name)
+                .put("windowFocus", activity.window.decorView.hasWindowFocus())
+                .put("navigation", runCatching {
+                    val field = MainActivity::class.java.getDeclaredField("navigationState").apply { isAccessible = true }
+                    (field.get(activity) as org.isoron.uhabits.activities.main.MainNavigationState).current.name
+                }.getOrElse { "unavailable: ${it.javaClass.simpleName}" })
+                .put("fragments", JSONArray(activity.supportFragmentManager.fragments.map { fragment ->
+                    JSONObject().put("tag", fragment.tag).put("hidden", fragment.isHidden)
+                        .put("visible", fragment.isVisible).put("lifecycle", fragment.lifecycle.currentState.name)
+                        .put("root", fragment.view?.let { describe(it) })
+                }))
+                .put("lists", JSONArray(lists.map { list ->
+                    val ancestors = mutableListOf<JSONObject>()
+                    var parent = list.parent as? View
+                    while (parent != null) { ancestors.add(describe(parent)); parent = parent.parent as? View }
+                    describe(list).put("rows", list.adapter?.itemCount).put("ancestors", JSONArray(ancestors))
+                }))
+            events.add(diagnostics)
+            File(output, "visibility-$stage.json").writeText(diagnostics.toString(2))
+            return lists.firstOrNull { it.isShown }
+                ?: error("No shown HabitCardListView at stage=$stage; navigation=${diagnostics.optString("navigation")}; diagnostic=visibility-$stage.json")
+        }
         try {
             val launchAt = SystemClock.elapsedRealtimeNanos()
             val firstDraw = CountDownLatch(1)
@@ -178,13 +208,20 @@ class ProductionUiHotfixTest {
                 scenario.onActivity { activity ->
                     activity.navigate(MainDestination.TASKS)
                     activity.navigate(MainDestination.HABITS)
-                    warmCount = descendants(activity.window.decorView).filterIsInstance<HabitCardListView>()
-                        .first { it.isShown }.adapter!!.itemCount
+                    val retainedList = descendants(activity.window.decorView).filterIsInstance<HabitCardListView>().first()
+                    warmCount = retainedList.adapter!!.itemCount
+                    events.add(JSONObject().put("stage", "navigation.sameTurn")
+                        .put("rows", warmCount).put("isShown", retainedList.isShown)
+                        .put("listVisibility", retainedList.visibility)
+                        .put("parentVisibility", (retainedList.parent as? View)?.visibility))
                 }
                 check(warmCount > 0) { "Loaded list was emptied on navigation" }
                 val interactiveMs = (SystemClock.elapsedRealtimeNanos() - navAt) / 1e6
+                // Fragment show/hide visibility is applied after this UI turn.
+                // Preserve the immediate row check, then verify actual visible UI.
+                drain()
                 scenario.onActivity { activity ->
-                    val list = descendants(activity.window.decorView).filterIsInstance<HabitCardListView>().first { it.isShown }
+                    val list = visibleList(activity, "dark-after-warm-navigation")
                     (list.layoutManager as androidx.recyclerview.widget.LinearLayoutManager).scrollToPositionWithOffset(19, 0)
                 }
                 capture("dark-focus-list")
@@ -200,7 +237,7 @@ class ProductionUiHotfixTest {
                 scenario.onActivity { it.navigate(MainDestination.HABITS) }
                 capture("light-list")
                 scenario.onActivity { activity ->
-                    val list = descendants(activity.window.decorView).filterIsInstance<HabitCardListView>().first { it.isShown }
+                    val list = visibleList(activity, "light-after-statistics-recreation")
                     (list.layoutManager as androidx.recyclerview.widget.LinearLayoutManager).scrollToPositionWithOffset(19, 0)
                 }
                 capture("light-focus-list")
@@ -212,6 +249,7 @@ class ProductionUiHotfixTest {
                     .toString(2))
             }
         } finally {
+            File(output, "startup-events-final.json").writeText(JSONArray(events.toList()).toString(2))
             component.habitCardListCache.timingObserver = null
             ins.runOnMainSync { app.rebuildComponent(fixture.session) }
         }

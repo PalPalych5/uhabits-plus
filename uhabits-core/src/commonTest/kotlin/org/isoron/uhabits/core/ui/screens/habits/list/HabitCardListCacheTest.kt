@@ -29,6 +29,8 @@ import org.isoron.uhabits.core.commands.DeleteHabitsCommand
 import org.isoron.uhabits.core.commands.EditHabitCommand
 import org.isoron.uhabits.core.models.HabitType
 import org.isoron.uhabits.core.models.Entry
+import org.isoron.uhabits.core.models.HabitMatcher
+import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.tasks.Task
 import org.isoron.uhabits.core.tasks.TaskRunner
 import kotlin.test.BeforeTest
@@ -76,9 +78,31 @@ class HabitCardListCacheTest : BaseUnitTest() {
     fun testCommandListener_single() {
         val h2 = habitList.getByPosition(2)
         commandRunner.run(CreateRepetitionCommand(habitList, h2, today, Entry.NO, ""))
-        verify { listener.onItemChanged(2) }
+        verify { listener.onEntryChanged(2) }
         verify { listener.onRefreshFinished() }
         verifyNoMoreCalls(listener)
+    }
+
+    @Test
+    fun repetitionRefreshImmediatelyReappliesEnteredFilter() {
+        val habit = modelFactory.buildHabit().apply { name = "Empty"; uuid = "empty-filter" }
+        habitList.add(habit)
+        cache.setFilter(HabitMatcher(isEnteredAllowed = false))
+        cache.refreshAllHabits()
+        val countBefore = cache.habitCount
+        commandRunner.run(CreateRepetitionCommand(habitList, habit, today, Entry.YES_MANUAL, ""))
+        assertEquals(countBefore - 1, cache.habitCount)
+        assertEquals(null, (0 until cache.habitCount).map { cache.getHabitByPosition(it) }.find { it?.id == habit.id })
+    }
+
+    @Test
+    fun repetitionRefreshImmediatelyReappliesStatusSort() {
+        habitList.toList().forEach { commandRunner.run(CreateRepetitionCommand(habitList, it, today, Entry.NO, "")) }
+        val habit = habitList.getByPosition(9)
+        commandRunner.run(CreateRepetitionCommand(habitList, habit, today, Entry.NO, ""))
+        cache.primaryOrder = HabitList.Order.BY_STATUS_DESC
+        commandRunner.run(CreateRepetitionCommand(habitList, habit, today, Entry.YES_MANUAL, ""))
+        assertEquals(habitList.toList().map { it.id }, (0 until cache.habitCount).map { cache.getHabitByPosition(it)?.id })
     }
 
     @Test

@@ -25,6 +25,11 @@ import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.tatarka.inject.annotations.Inject
 import nl.dionsegijn.konfetti.core.Party
 import nl.dionsegijn.konfetti.core.Position
@@ -119,12 +124,19 @@ class ListHabitsScreen(
     ListHabitsSelectionMenuBehavior.Screen {
 
     val activity = (context as AppCompatActivity)
+    private var attached = false
+    private var popupGeneration = 0L
+    private var popupJob: Job? = null
 
     fun onAttached() {
+        attached = true
         commandRunner.addListener(this)
     }
 
     fun onDetached() {
+        attached = false
+        popupGeneration++
+        popupJob?.cancel()
         commandRunner.removeListener(this)
     }
 
@@ -301,50 +313,78 @@ class ListHabitsScreen(
         callback: NumberPickerCallback
     ) {
         val fm = (context as AppCompatActivity).supportFragmentManager
-        val dialog = NumberDialog()
-        val args = Bundle().apply {
-            putDouble("value", value)
-            putString("notes", notes)
-            if (habit != null) {
-                putString("unit", habit.unit)
-                if (date != null) {
-                    val orig = habit.originalEntries.get(date)
-                    putBoolean("hasManualEntry", orig.value != Entry.UNKNOWN)
-                }
-            }
-        }
+        popupJob?.cancel()
+        val generation = ++popupGeneration
         val appComponent = (activity.application as HabitsApplication).component
         val focusCredit = appComponent.focusCreditController
         val effectiveReads = appComponent.effectiveHabitReads
-        if (habit != null && date != null) {
-            val cachedDay = habit.id?.let { appComponent.habitCardListCache.getEffectiveSnapshot(it) }?.dayOrNull(date)
-            val day = cachedDay ?: if (effectiveReads != null) {
-                runCatching {
-                    effectiveReads.snapshots(listOf(habit), date, date)[HabitRef(requireNotNull(habit.uuid))]?.dayOrNull(date)
-                }.getOrNull()
-            } else null
-            if (day != null) {
-                args.putDouble("focusValue", day.contributionValue / 1000.0)
-                args.putDouble("tombstonedFocusValue", day.tombstonedContributionValue / 1000.0)
-                args.putStringArrayList("activeContributionIds", ArrayList(day.contributions.map { it.id.value }))
-                args.putStringArrayList("tombstonedContributionIds", ArrayList(day.tombstonedContributions.map { it.id.value }))
-                args.putBoolean("hasManualEntry", day.manualValue != null)
-                args.putBoolean("hasCompleteCoverage", day.hasCompleteCoverage)
+        popupJob = activity.lifecycleScope.launch {
+            if (!attached || activity.isFinishing || activity.isDestroyed) return@launch
+            var args: Bundle? = null
+            while (args == null) {
+                if (!attached || generation != popupGeneration || activity.isFinishing || activity.isDestroyed ||
+                    appComponent !== HabitsApplication.component || fm.isStateSaved) return@launch
+                val capturedRevision = effectiveReads?.revision?.value
+                val capturedDataset = effectiveReads?.revision?.datasetId
+                val capturedCalendar = effectiveReads?.currentCalendar
+                val loaded = withContext(Dispatchers.IO) {
+                    val dialogArgs = Bundle().apply {
+                        putDouble("value", value)
+                        putString("notes", notes)
+                        if (habit != null) {
+                            putString("unit", habit.unit)
+                            if (date != null) {
+                                val orig = habit.originalEntries.get(date)
+                                putDouble("value", orig.value.toDouble() / 1000)
+                                putString("notes", orig.notes)
+                                putBoolean("hasManualEntry", orig.value != Entry.UNKNOWN)
+                            }
+                        }
+                    }
+                    if (habit != null && date != null) {
+                        val cachedDay = habit.id?.let { appComponent.habitCardListCache.getEffectiveSnapshot(it) }
+                            ?.takeIf { snapshot ->
+                                snapshot.revision == effectiveReads?.revision?.value &&
+                                    snapshot.datasetId == effectiveReads?.revision?.datasetId &&
+                                    snapshot.calendar == effectiveReads?.currentCalendar
+                            }?.dayOrNull(date)
+                        val day = cachedDay ?: if (effectiveReads != null) {
+                            runCatching {
+                                effectiveReads.snapshots(listOf(habit), date, date)[HabitRef(requireNotNull(habit.uuid))]?.dayOrNull(date)
+                            }.getOrNull()
+                        } else null
+                        if (day != null) {
+                            dialogArgs.putDouble("focusValue", day.contributionValue / 1000.0)
+                            dialogArgs.putDouble("tombstonedFocusValue", day.tombstonedContributionValue / 1000.0)
+                            dialogArgs.putStringArrayList("activeContributionIds", ArrayList(day.contributions.map { it.id.value }))
+                            dialogArgs.putStringArrayList("tombstonedContributionIds", ArrayList(day.tombstonedContributions.map { it.id.value }))
+                            dialogArgs.putBoolean("hasManualEntry", day.manualValue != null)
+                            dialogArgs.putBoolean("hasCompleteCoverage", day.hasCompleteCoverage)
+                        }
+                    }
+                    dialogArgs
+                }
+                if (capturedRevision == effectiveReads?.revision?.value &&
+                    capturedDataset == HabitsApplication.component.effectiveHabitReads?.revision?.datasetId &&
+                    capturedCalendar == effectiveReads?.currentCalendar) args = loaded
             }
-        }
-        dialog.arguments = args
-        dialog.onRevokeContributions = { ids ->
-            ids.forEach { id ->
-                focusCredit?.revokeContribution(ContributionId(id))
+            if (!attached || generation != popupGeneration || activity.isFinishing || activity.isDestroyed ||
+                appComponent !== HabitsApplication.component || fm.isStateSaved) return@launch
+            val dialog = NumberDialog()
+            dialog.arguments = args
+            dialog.onRevokeContributions = { ids ->
+                ids.forEach { id ->
+                    focusCredit?.revokeContribution(ContributionId(id))
+                }
             }
-        }
-        dialog.onRestoreContributions = { ids ->
-            ids.forEach { id ->
-                focusCredit?.restoreContribution(ContributionId(id))
+            dialog.onRestoreContributions = { ids ->
+                ids.forEach { id ->
+                    focusCredit?.restoreContribution(ContributionId(id))
+                }
             }
+            dialog.onToggle = { v, n -> callback.onNumberPicked(v, n) }
+            dialog.dismissCurrentAndShow(fm, "numberDialog")
         }
-        dialog.onToggle = { v, n -> callback.onNumberPicked(v, n) }
-        dialog.dismissCurrentAndShow(fm, "numberDialog")
     }
 
     override fun showCheckmarkPopup(

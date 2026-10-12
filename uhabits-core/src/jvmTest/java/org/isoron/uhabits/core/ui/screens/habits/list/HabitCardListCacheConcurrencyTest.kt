@@ -17,8 +17,78 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import org.isoron.uhabits.core.commands.CreateRepetitionCommand
+import org.isoron.uhabits.core.models.Entry
+import org.isoron.platform.time.getToday
 
 class HabitCardListCacheConcurrencyTest : BaseUnitTest() {
+    @Test
+    fun overlappingDifferentHabitRefreshesPublishIndependently() {
+        val first = fixtures.createShortHabit(); habitList.add(first)
+        val second = fixtures.createShortHabit(); habitList.add(second)
+        val captured = mutableListOf<Task>()
+        val runner = object : TaskRunner {
+            override val activeTaskCount get() = captured.size
+            override fun execute(task: Task) { captured.add(task); task.onAttached(this) }
+            override fun publishProgress(task: Task, progress: Int) {}
+            override fun addListener(listener: TaskRunner.Listener) {}
+            override fun removeListener(listener: TaskRunner.Listener) {}
+            override suspend fun await() {}
+        }
+        val cache = HabitCardListCache(habitList, commandRunner, runner, mock())
+        cache.setCheckmarkCount(10)
+        cache.refreshAllHabits()
+        runBlocking { captured.last().doInBackground() }; captured.last().onPostExecute()
+        CreateRepetitionCommand(habitList, first, getToday(), Entry.NO, "first").run()
+        cache.refreshHabit(first.id!!)
+        val firstTask = captured.last()
+        runBlocking { firstTask.doInBackground() }
+        CreateRepetitionCommand(habitList, second, getToday(), Entry.NO, "second").run()
+        cache.refreshHabit(second.id!!)
+        val secondTask = captured.last()
+        runBlocking { secondTask.doInBackground() }
+        secondTask.onPostExecute()
+        firstTask.onPostExecute()
+        assertEquals("first", cache.getNotes(first.id!!)[0])
+        assertEquals("second", cache.getNotes(second.id!!)[0])
+        assertEquals(Entry.NO, cache.getCheckmarks(first.id!!)[0])
+        assertEquals(Entry.NO, cache.getCheckmarks(second.id!!)[0])
+    }
+
+    @Test
+    fun olderFullRefreshCannotOverwriteNewCommittedTargetRefresh() {
+        val habit = fixtures.createShortHabit()
+        habitList.add(habit)
+        val captured = mutableListOf<Task>()
+        val runner = object : TaskRunner {
+            override val activeTaskCount get() = captured.size
+            override fun execute(task: Task) { captured.add(task); task.onAttached(this) }
+            override fun publishProgress(task: Task, progress: Int) {}
+            override fun addListener(listener: TaskRunner.Listener) {}
+            override fun removeListener(listener: TaskRunner.Listener) {}
+            override suspend fun await() {}
+        }
+        val cache = HabitCardListCache(habitList, commandRunner, runner, mock())
+        cache.setCheckmarkCount(10)
+        CreateRepetitionCommand(habitList, habit, getToday(), Entry.NO, "").run()
+        cache.refreshAllHabits()
+        runBlocking { captured.last().doInBackground() }
+        captured.last().onPostExecute()
+
+        cache.refreshAllHabits()
+        val oldFull = captured.last()
+        runBlocking { oldFull.doInBackground() }
+        CreateRepetitionCommand(habitList, habit, getToday(), Entry.YES_MANUAL, "latest").run()
+        cache.refreshHabit(habit.id!!)
+        val latest = captured.last()
+        runBlocking { latest.doInBackground() }
+        latest.onPostExecute()
+        assertEquals(Entry.YES_MANUAL, cache.getCheckmarks(habit.id!!)[0])
+        oldFull.onPostExecute()
+        assertEquals(Entry.YES_MANUAL, cache.getCheckmarks(habit.id!!)[0])
+        assertEquals("latest", cache.getNotes(habit.id!!)[0])
+    }
+
     @Test
     fun initialReadFailureIsReportedWithoutPublishingFakeRowsAndRetryLoadsNormally() {
         habitList.add(fixtures.createShortHabit())

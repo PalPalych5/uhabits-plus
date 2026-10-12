@@ -121,6 +121,18 @@ class HabitCardListView(
         override fun onItemRangeMoved(fromPosition: Int, toPosition: Int, itemCount: Int) {
             rootGroupKeyCache.clear()
         }
+        override fun onItemRangeChanged(positionStart: Int, itemCount: Int) {
+            rootGroupKeyCache.clear()
+        }
+        override fun onItemRangeChanged(positionStart: Int, itemCount: Int, payload: Any?) {
+            if (payload !== HabitCardListAdapter.ENTRY_ONLY) rootGroupKeyCache.clear()
+        }
+        override fun onItemRangeInserted(positionStart: Int, itemCount: Int) {
+            rootGroupKeyCache.clear()
+        }
+        override fun onItemRangeRemoved(positionStart: Int, itemCount: Int) {
+            rootGroupKeyCache.clear()
+        }
     }
 
     init {
@@ -313,9 +325,10 @@ class HabitCardListView(
         return when (order) {
             HabitList.Order.BY_SPHERE -> {
                 val key = uuid ?: id?.toString() ?: ""
-                rootGroupKeyCache.getOrPut(key) {
-                    organizationFacade?.getRootGroupKey(uuid ?: "", blockId) ?: blockId
+                if (!rootGroupKeyCache.containsKey(key)) {
+                    rootGroupKeyCache[key] = organizationFacade?.getRootGroupKey(uuid ?: "", blockId) ?: blockId
                 }
+                rootGroupKeyCache[key]
             }
             HabitList.Order.BY_DAY_TIER -> dayTier
             else -> null

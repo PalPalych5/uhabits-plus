@@ -37,6 +37,9 @@ import androidx.appcompat.app.AlertDialog
 import com.android.datetimepicker.date.DatePickerDialog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.isoron.platform.gui.toInt
@@ -96,7 +99,12 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
     private val effectiveObserver: () -> Unit = { effectiveHandler.removeCallbacks(effectiveRefresh); effectiveHandler.post(effectiveRefresh) }
     private val focusObserver: () -> Unit = { screen.refresh() }
 
-    private val scope = CoroutineScope(Dispatchers.Main)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private var readsActive = false
+    private var refreshJob: Job? = null
+    private var popupJob: Job? = null
+    private val refreshGeneration = HabitDetailReadGeneration()
+    private val popupGeneration = HabitDetailReadGeneration()
     private lateinit var presenter: ShowHabitPresenter
     private val screen = Screen()
     private var pendingTimerStart: (() -> Unit)? = null
@@ -201,6 +209,7 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
     override fun onResume() {
         super.onResume()
         if (!::presenter.isInitialized) return
+        readsActive = true
         commandRunner.addListener(this)
         habit.observable.addListener(this)
         habitList.observable.addListener(this)
@@ -215,6 +224,11 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
     }
 
     override fun onPause() {
+        readsActive = false
+        refreshGeneration.invalidate()
+        popupGeneration.invalidate()
+        refreshJob?.cancel()
+        popupJob?.cancel()
         if (!::presenter.isInitialized) {
             super.onPause()
             return
@@ -228,6 +242,12 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
         effectiveReads?.revision?.removeRollbackListener(effectiveObserver)
         effectiveHandler.removeCallbacks(effectiveRefresh)
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        scope.cancel()
+        effectiveHandler.removeCallbacksAndMessages(null)
+        super.onDestroy()
     }
 
     override fun onCommandFinished(command: Command) {
@@ -286,18 +306,28 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
         }
 
         override fun refresh() {
+            // Model observers may be called by a background command. Capture the
+            // generation and touch the View only after dispatching to Main.
             scope.launch {
+                if (!readsActive || isFinishing || isDestroyed) return@launch
+                val generation = refreshGeneration.begin()
+                refreshJob?.cancel()
+                refreshJob = kotlinx.coroutines.currentCoroutineContext()[Job]
+                val revision = effectiveReads?.revision?.value
+                val theme = themeSwitcher.currentTheme
                 val loaded = withContext(Dispatchers.IO) {
                     runCatching {
                         val snapshot = effectiveReads?.snapshot(habit)
                         ShowHabitPresenter.buildState(
                             habit = habit,
                             preferences = preferences,
-                            theme = themeSwitcher.currentTheme,
+                            theme = theme,
                             snapshot = snapshot,
                         )
                     }
                 }
+                if (!refreshGeneration.accepts(generation) || isFinishing || isDestroyed ||
+                    revision != effectiveReads?.revision?.value) return@launch
                 if (loaded.isFailure) {
                     view.setEffectiveReadUnavailable()
                     return@launch
@@ -316,6 +346,8 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
                                 FocusProgressPresentation.from(state.goalAchievement?.progress ?: controller!!.goalProgress(habit))
                             }
                         }
+                        if (!refreshGeneration.accepts(generation) || isFinishing || isDestroyed ||
+                            revision != effectiveReads?.revision?.value) return@launch
                         view.setFocusProgress(progress.getOrNull(), progress.isFailure)
                     }
                 } else view.setFocusProgress(null, state.quantityUnavailable)
@@ -351,46 +383,74 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
             callback: NumberPickerCallback
         ) {
             val targetHabit = habit ?: this@ShowHabitActivity.habit
-            val dialog = NumberDialog()
-            val args = Bundle().apply {
-                putDouble("value", value)
-                putString("notes", notes)
-                putString("unit", targetHabit.unit)
-                if (date != null) {
-                    val orig = targetHabit.originalEntries.get(date)
-                    putBoolean("hasManualEntry", orig.value != Entry.UNKNOWN)
+            popupJob?.cancel()
+            popupJob = scope.launch {
+                if (!readsActive || isFinishing || isDestroyed) return@launch
+                val generation = popupGeneration.begin()
+                var args: Bundle? = null
+                while (args == null) {
+                    if (!readsActive || isFinishing || isDestroyed ||
+                        effectiveReads !== (applicationContext as HabitsApplication).component.effectiveHabitReads) return@launch
+                    val capturedRevision = effectiveReads?.revision?.value
+                    val capturedDataset = effectiveReads?.revision?.datasetId
+                    val capturedCalendar = effectiveReads?.currentCalendar
+                    val loaded = withContext(Dispatchers.IO) {
+                        val dialogArgs = Bundle()
+                        dialogArgs.apply {
+                            putDouble("value", value)
+                            putString("notes", notes)
+                            putString("unit", targetHabit.unit)
+                            if (date != null) {
+                                val orig = targetHabit.originalEntries.get(date)
+                                putDouble("value", orig.value.toDouble() / 1000)
+                                putString("notes", orig.notes)
+                                putBoolean("hasManualEntry", orig.value != Entry.UNKNOWN)
+                            }
+                        }
+                        if (date != null) {
+                            val appComponent = (applicationContext as HabitsApplication).component
+                            val cachedDay = targetHabit.id?.let { appComponent.habitCardListCache.getEffectiveSnapshot(it) }
+                                ?.takeIf { snapshot ->
+                                    snapshot.revision == effectiveReads?.revision?.value &&
+                                        snapshot.datasetId == effectiveReads?.revision?.datasetId &&
+                                        snapshot.calendar == effectiveReads?.currentCalendar
+                                }?.dayOrNull(date)
+                            val day = cachedDay ?: if (effectiveReads != null) {
+                                runCatching {
+                                    effectiveReads?.snapshots(listOf(targetHabit), date, date)?.get(HabitRef(requireNotNull(targetHabit.uuid)))?.dayOrNull(date)
+                                }.getOrNull()
+                            } else null
+                            if (day != null) {
+                                dialogArgs.putDouble("focusValue", day.contributionValue / 1000.0)
+                                dialogArgs.putDouble("tombstonedFocusValue", day.tombstonedContributionValue / 1000.0)
+                                dialogArgs.putStringArrayList("activeContributionIds", ArrayList(day.contributions.map { it.id.value }))
+                                dialogArgs.putStringArrayList("tombstonedContributionIds", ArrayList(day.tombstonedContributions.map { it.id.value }))
+                                dialogArgs.putBoolean("hasManualEntry", day.manualValue != null)
+                                dialogArgs.putBoolean("hasCompleteCoverage", day.hasCompleteCoverage)
+                            }
+                        }
+                        dialogArgs
+                    }
+                    if (capturedRevision == effectiveReads?.revision?.value &&
+                        capturedDataset == (applicationContext as HabitsApplication).component.effectiveHabitReads?.revision?.datasetId &&
+                        capturedCalendar == effectiveReads?.currentCalendar) args = loaded
                 }
-            }
-            if (date != null) {
-                val appComponent = (applicationContext as HabitsApplication).component
-                val cachedDay = targetHabit.id?.let { appComponent.habitCardListCache.getEffectiveSnapshot(it) }?.dayOrNull(date)
-                val day = cachedDay ?: if (effectiveReads != null) {
-                    runCatching {
-                        effectiveReads?.snapshots(listOf(targetHabit), date, date)?.get(HabitRef(requireNotNull(targetHabit.uuid)))?.dayOrNull(date)
-                    }.getOrNull()
-                } else null
-                if (day != null) {
-                    args.putDouble("focusValue", day.contributionValue / 1000.0)
-                    args.putDouble("tombstonedFocusValue", day.tombstonedContributionValue / 1000.0)
-                    args.putStringArrayList("activeContributionIds", ArrayList(day.contributions.map { it.id.value }))
-                    args.putStringArrayList("tombstonedContributionIds", ArrayList(day.tombstonedContributions.map { it.id.value }))
-                    args.putBoolean("hasManualEntry", day.manualValue != null)
-                    args.putBoolean("hasCompleteCoverage", day.hasCompleteCoverage)
+                if (!popupGeneration.accepts(generation) || !readsActive || isFinishing || isDestroyed) return@launch
+                val dialog = NumberDialog()
+                dialog.arguments = args
+                dialog.onRevokeContributions = { ids ->
+                    ids.forEach { id ->
+                        focusCredit?.revokeContribution(ContributionId(id))
+                    }
                 }
-            }
-            dialog.arguments = args
-            dialog.onRevokeContributions = { ids ->
-                ids.forEach { id ->
-                    focusCredit?.revokeContribution(ContributionId(id))
+                dialog.onRestoreContributions = { ids ->
+                    ids.forEach { id ->
+                        focusCredit?.restoreContribution(ContributionId(id))
+                    }
                 }
+                dialog.onToggle = { v, n -> callback.onNumberPicked(v, n) }
+                dialog.dismissCurrentAndShow(supportFragmentManager, "numberDialog")
             }
-            dialog.onRestoreContributions = { ids ->
-                ids.forEach { id ->
-                    focusCredit?.restoreContribution(ContributionId(id))
-                }
-            }
-            dialog.onToggle = { v, n -> callback.onNumberPicked(v, n) }
-            dialog.dismissCurrentAndShow(supportFragmentManager, "numberDialog")
         }
 
         override fun showCheckmarkPopup(

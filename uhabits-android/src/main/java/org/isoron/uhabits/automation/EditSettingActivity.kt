@@ -24,21 +24,25 @@ import androidx.appcompat.app.AppCompatActivity
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
 import org.isoron.uhabits.core.models.HabitMatcher
+import org.isoron.uhabits.core.models.memory.MemoryHabitList
 import org.isoron.uhabits.utils.applyRootViewInsets
 
 class EditSettingActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = applicationContext as HabitsApplication
+        AndroidThemeSwitcher(this, app.component.preferences).apply()
         val habits = app.component.habitList.getFiltered(
             HabitMatcher(
                 isArchivedAllowed = false,
                 isCompletedAllowed = true
             )
         )
-        AndroidThemeSwitcher(this, app.component.preferences).apply()
-
-        val args = SettingUtils.parseIntent(this.intent, habits)
+        val args = try {
+            SettingUtils.parseIntent(this.intent, habits)
+        } finally {
+            (habits as? MemoryHabitList)?.detachFromParent()
+        }
         val controller = EditSettingController(this)
         val view = EditSettingRootView(
             context = this,

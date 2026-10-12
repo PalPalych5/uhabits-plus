@@ -165,6 +165,11 @@ class HabitCardListAdapter(
         observable.notifyListeners()
     }
 
+    override fun onEntryChanged(position: Int) {
+        notifyItemChanged(position, ENTRY_ONLY)
+        observable.notifyListeners()
+    }
+
     override fun onItemInserted(position: Int) {
         notifyItemInserted(position)
         observable.notifyListeners()
@@ -289,5 +294,9 @@ class HabitCardListAdapter(
         cache.secondaryOrder = preferences.defaultSecondaryOrder
         cache.primaryOrder = preferences.defaultPrimaryOrder
         setHasStableIds(true)
+    }
+
+    companion object {
+        internal val ENTRY_ONLY = Any()
     }
 }

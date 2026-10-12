@@ -91,17 +91,19 @@ open class MemoryHabitList : HabitList {
             rootKeyCache.clear()
         }
 
+        private fun rootKey(facade: HabitOrganizationFacade, habit: Habit): String? {
+            val uuid = requireNotNull(habit.uuid)
+            if (!rootKeyCache.containsKey(uuid)) {
+                rootKeyCache[uuid] = facade.getRootGroupKey(uuid, habit.blockId) as? String
+            }
+            return rootKeyCache[uuid]
+        }
+
         override fun compare(h1: Habit, h2: Habit): Int {
             val facade = organizationFacade
             if (facade != null && facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
-                val uuid1 = h1.uuid!!
-                val uuid2 = h2.uuid!!
-                val key1 = rootKeyCache.getOrPut(uuid1) {
-                    facade.getRootGroupKey(uuid1, h1.blockId) as? String
-                }
-                val key2 = rootKeyCache.getOrPut(uuid2) {
-                    facade.getRootGroupKey(uuid2, h2.blockId) as? String
-                }
+                val key1 = rootKey(facade, h1)
+                val key2 = rootKey(facade, h2)
                 if (key1 != key2) {
                     if (key1 != null && key2 != null) {
                         val indices = rootIndices ?: run {
@@ -162,10 +164,21 @@ open class MemoryHabitList : HabitList {
         loadFromParent()
     }
 
-    @Synchronized
     fun detachFromParent() {
-        parent?.observable?.removeListener(parentListener)
-        parent = null
+        val previousParent = parentForDetach() ?: return
+        // Notifications hold the parent observable while calling loadFromParent(),
+        // which acquires this list's monitor. Never wait for that observable while
+        // holding the child monitor. Removal also drains any in-flight callback.
+        previousParent.observable.removeListener(parentListener)
+        clearParentAfterDetach(previousParent)
+    }
+
+    @Synchronized
+    private fun parentForDetach(): MemoryHabitList? = parent
+
+    @Synchronized
+    private fun clearParentAfterDetach(previousParent: MemoryHabitList) {
+        if (parent === previousParent) parent = null
     }
 
     @Synchronized

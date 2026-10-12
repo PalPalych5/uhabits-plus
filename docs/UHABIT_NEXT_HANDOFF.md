@@ -185,6 +185,7 @@ PR10 реализован и зафиксирован локально. Experime
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
+| Codex root review 2026-10-12 | Independent habit interaction concurrency, lifecycle and SQLite review | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after evidence-backed corrections | 2026-10-12 | Existing offline traces, command/cache/model/detail/popup corrections and scoped disposable QA | 36 core + 2 Android JVM + 8 native PASS; original FIFO/cache/model defects reproduced before fixes; 58→30 root-key facade lookups for 30 unassigned habits. Existing trace claims qualified; Main SQL/Focus recovery/Tasks full rendering and full-history contention remain possible. Native navigation failure isolated to Pixel Launcher ANR; failed captures preserved, final route/rendering PASS. Local report scratch/root-review/perfetto_analysis_report.md; no real phone/database/cloud/WAL changes; no push; unrelated dirty artifacts preserved |
 | Codex startup 2026-10-12 | Habits first meaningful frame latency analysis | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after startup analysis | 2026-10-12 | Monotonic startup/DB/list timing, redundant recompute removal, static loading/error/retry states, focused tests | Removed redundant history recomputation in HabitsApplication, eliminating 150–222 ms (median 175.0 ms) duplicate CPU work (App init median 2684.6→2419.9 ms). Explicit localized static loading/error/retry states added to ListHabitsRootView and HabitCardListCache without fake empty states. 36 core JVM tests + native loading/retry/navigation and tap benchmark PASS. 15-iteration benchmark showed first meaningful frame acceleration NOT demonstrated on emulator (cold draw median 7089.0→7459.5 ms, warm 790.0→987.1 ms, nav 415.4→498.2 ms); physical device ~3s latency unresolved and recorded as future performance work, not as a completed fix. |
 | Codex hotfix 2026-10-12 | Production UI regression hotfix | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE; STOP after focused hotfix | 2026-10-12 | Habit card/number presentation, detail coverage/progress, hints, Statistics width, list snapshot reuse/initial empty-state gate; focused tests and disposable offline QA | 108 core + 9 Android JVM PASS; native cache/rollback/locale, direct Stopwatch/Pomodoro, separate process restart, card/hint and focused 1080×2400 / 900×2000 QA PASS; debug app/test APK PASS. Fixture migration/history parity preserved; no real phone/database/cloud. First list draw 2.90→3.02 s in harness and tap median 14.28→15.17 ms: no cold-start/phone speedup claimed; unchanged snapshot reuse below 1.2 ms. Local report scratch/regression-hotfix/REPORT.md; local commit only, no push; unrelated artifact deletions preserved |
 | Codex UX QA 2026-10-11 | Real-user blockers and automated UI review | dev / C:/Users/Pavel/source/repos/uhabits-plus | DONE | 2026-10-11 | production Settings gating; habit tap instrumentation/recovery; Task dates/Focus/details/statistics; isolated deterministic generator; disposable AVD capture/archive | Focused production UX/performance pass completed. Dates, Focus lifecycle/restart and 168 actual screenshots plus six validation/cancelled-confirmation frames passed on disposable offline API 35. Before/after ordinary habit acknowledgement 21.32/55.31 ms → 17.90/37.63 ms median/max; residual background stalls documented. ZIP: scratch/ui-review/runs/UHabit_Next_UI_Review.zip (local ignored artifact). Debug/instrumentation build and seven EffectiveReadRevision JVM tests pass. Existing dirty artifacts preserved; local commit only, no push. |
@@ -1386,3 +1387,25 @@ Human accepts PR20 and authorizes PR21 preflight and recovery implementation onl
     - **Main Thread SQLite Queries during Scroll & Layout:** Completely eliminated (**0 queries**).
     - **ShowHabitActivity Open Latency:** **8,177 ms (ANR) -> 66 ms** (123x faster, no ANR).
     - **Gfxinfo Janky Frames:** Reduced from 37.5% down to 10.0% (50th percentile: 12 ms, well below the 16.6 ms VSYNC frame budget; 0 Davey warnings).
+
+### Independent root-cause correction, 2026-10-12
+
+The metrics immediately above are historical claims, not an accepted universal
+no-lag result. Independent offline review of the available artifacts confirms
+baseline 2574 skipped frames and Davey 8177 ms; after2 still has a 980 ms startup
+Davey and 104 ms MemoryHabitList monitor contention. The three Perfetto files cover
+only 23–28 seconds and contain systrace parse errors. The 8342 ms monitor, 66 ms
+detail-open, and 37.5%→10% comparable gfxinfo improvement are not independently
+established by these artifacts. 984 skipped frames must not be converted using
+an assumed 60 Hz interval; HWUI reports about 8.25 ms here.
+
+Confirmed corrections in this review: FIFO command persistence, stale full/target
+cache publications, entry-sensitive filter/sort refreshes, filtered-list detach
+lock inversion and temporary-list cleanup, null-root caching, detail/popup
+lifecycle generations, effective cached-hit revalidation, and current manual
+popup seeds. Ordinary single-card refresh and animation improvements remain.
+
+Main SQL/cache misses, initial timer-store loading, Focus recovery/attribution,
+model sorting locks and full-history/coarse-revision refresh work still permit
+UI blocking. WAL remains disabled; actual phone/database/cloud were not modified.
+Evidence and verification limits: local `scratch/root-review/perfetto_analysis_report.md`.

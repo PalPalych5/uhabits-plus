@@ -69,6 +69,7 @@ class HabitCardListCache(
     var timingObserver: ((String, Double) -> Unit)? = null
     private var matcher = HabitMatcher()
 
+    @Synchronized
     fun getEffectiveSnapshot(habitId: Long): EffectiveHabitReadSnapshot? = data.snapshots[habitId]
 
     private var checkmarkCount = 0
@@ -224,6 +225,14 @@ class HabitCardListCache(
     @Synchronized
     fun refreshHabit(id: Long) {
         if (shutDown) return
+        val entryOrders = setOf(Order.BY_SCORE_ASC, Order.BY_SCORE_DESC, Order.BY_STATUS_ASC, Order.BY_STATUS_DESC)
+        // An entry can change membership/order. An unfinished full read can also
+        // otherwise publish its older values after this targeted read.
+        if (currentFetchTask != null || !matcher.isCompletedAllowed || !matcher.isEnteredAllowed ||
+            primaryOrder in entryOrders || secondaryOrder in entryOrders) {
+            refreshAllHabits()
+            return
+        }
         lastRefreshFailed = false
         val gen = (habitRefreshGenerations[id] ?: 0L) + 1L
         habitRefreshGenerations[id] = gen
@@ -276,6 +285,7 @@ class HabitCardListCache(
      */
     interface Listener {
         fun onItemChanged(position: Int) {}
+        fun onEntryChanged(position: Int) { onItemChanged(position) }
         fun onItemInserted(position: Int) {}
         fun onItemMoved(oldPosition: Int, newPosition: Int) {}
         fun onItemRemoved(position: Int) {}
@@ -330,16 +340,17 @@ class HabitCardListCache(
         }
 
         @Synchronized
-        fun fetchHabits(generation: Long, targetId: Long? = null) {
+        fun fetchHabits(generation: Long, targetId: Long?, previous: CacheData,
+                        requestedMatcher: HabitMatcher, load: ((List<Habit>) -> Map<HabitRef, EffectiveHabitReadSnapshot>)?,
+                        requestedPrimary: Order, requestedSecondary: Order) {
             HabitStartupTiming.mark("cache.fetch.begin", generation)
-            val load = effectiveSnapshots
             val snapshotStarted = TimeSource.Monotonic.markNow()
             val today = getToday()
 
-            if (targetId != null && data.habits.isNotEmpty()) {
-                habits.addAll(data.habits)
-                idToHabit.putAll(data.idToHabit)
-                snapshots.putAll(data.snapshots)
+            if (targetId != null && previous.habits.isNotEmpty()) {
+                habits.addAll(previous.habits)
+                idToHabit.putAll(previous.idToHabit)
+                snapshots.putAll(previous.snapshots)
 
                 val targetHabit = idToHabit[targetId]
                 if (targetHabit != null && load != null) {
@@ -354,17 +365,18 @@ class HabitCardListCache(
                 return
             }
 
-            val candidateMatcher = matcher.copy(isCompletedAllowed = true, isEnteredAllowed = true)
-            val candidates = if (load == null) filteredHabits.toList() else
-                allHabits.filter { candidateMatcher.matches(it) }
+            val candidateMatcher = if (load == null) requestedMatcher else
+                requestedMatcher.copy(isCompletedAllowed = true, isEnteredAllowed = true)
+            // Read the root list rather than a filtered list detached during navigation.
+            val candidates = allHabits.filter { candidateMatcher.matches(it) }
             HabitStartupTiming.mark("cache.effective.begin", generation)
             val batch = load?.invoke(candidates).orEmpty()
             HabitStartupTiming.mark("cache.effective.end", generation)
             timingObserver?.invoke("cache.effectiveSnapshots", snapshotStarted.elapsedNow().inWholeNanoseconds / 1e6)
             val selected = candidates.filter { h ->
                 val snapshot = batch[HabitRef(requireNotNull(h.uuid))]
-                snapshot == null || ((matcher.isCompletedAllowed || !snapshot.compatibilityCompletionOn(today).isCompleted) &&
-                    (matcher.isEnteredAllowed || if (!snapshot.hasContributions) !h.isEnteredToday() else
+                snapshot == null || ((requestedMatcher.isCompletedAllowed || !snapshot.compatibilityCompletionOn(today).isCompleted) &&
+                    (requestedMatcher.isEnteredAllowed || if (!snapshot.hasContributions) !h.isEnteredToday() else
                         (snapshot.day(today).manualEntry.value == org.isoron.uhabits.core.models.Entry.UNKNOWN &&
                             snapshot.day(today).contributions.isEmpty())))
             }.toMutableList()
@@ -396,8 +408,8 @@ class HabitCardListCache(
                         else -> originalPositions.getValue(a.id).compareTo(originalPositions.getValue(b.id))
                     }
                 }
-                val primOrder = primaryOrder
-                val secOrder = secondaryOrder
+                val primOrder = requestedPrimary
+                val secOrder = requestedSecondary
                 selected.sortWith { a, b ->
                     val first = compare(primOrder, a, b)
                     val second = if (first == 0) compare(secOrder, a, b) else first
@@ -425,6 +437,20 @@ class HabitCardListCache(
     }
 
     private inner class RefreshTask : Task {
+        // Constructed under the cache monitor; workers never traverse published maps.
+        private val previous = CacheData().apply {
+            habits.addAll(data.habits)
+            idToHabit.putAll(data.idToHabit)
+            snapshots.putAll(data.snapshots)
+            scores.putAll(data.scores)
+            checkmarks.putAll(data.checkmarks)
+            notes.putAll(data.notes)
+        }
+        private val requestedMatcher = matcher
+        private val requestedLoad = effectiveSnapshots
+        private val requestedPrimary = primaryOrder
+        private val requestedSecondary = secondaryOrder
+        private val requestedCheckmarkCount = checkmarkCount
         private val newData: CacheData
         private val targetId: Long?
         @Volatile
@@ -457,9 +483,9 @@ class HabitCardListCache(
             isCancelled = true
         }
 
-        private fun isCurrent(): Boolean {
-            if (shutDown || isCancelled) return false
-            return if (targetId == null) {
+        private fun isCurrent(): Boolean = withCacheLock {
+            if (shutDown || isCancelled) return@withCacheLock false
+            if (targetId == null) {
                 generation == refreshGeneration
             } else {
                 generation == (habitRefreshGenerations[targetId] ?: 0L) && baseFullGeneration >= refreshGeneration
@@ -489,17 +515,17 @@ class HabitCardListCache(
             HabitStartupTiming.mark("cache.worker.begin", generation)
             val started = TimeSource.Monotonic.markNow()
             try {
-                newData.fetchHabits(generation, targetId)
+                newData.fetchHabits(generation, targetId, previous, requestedMatcher, requestedLoad, requestedPrimary, requestedSecondary)
             } catch (_: org.isoron.uhabits.core.models.projection.EffectiveReadInvalidatedException) {
                 // Keep the last published generation. A concurrent revision requests a new one.
                 isCancelled = true
                 return
             }
-            newData.copyScoresFrom(data)
-            newData.copyCheckmarksFrom(data)
-            newData.copyNoteIndicatorsFrom(data)
+            newData.copyScoresFrom(previous)
+            newData.copyCheckmarksFrom(previous)
+            newData.copyNoteIndicatorsFrom(previous)
             val today = getToday()
-            val dateFrom = today.minus(checkmarkCount - 1)
+            val dateFrom = today.minus(requestedCheckmarkCount - 1)
             for (position in newData.habits.indices) {
                 if (!isCurrent()) return
                 val habit = newData.habits[position]
@@ -525,10 +551,9 @@ class HabitCardListCache(
             this.runner = runner
         }
 
-        @Synchronized
-        override fun onPostExecute() {
+        override fun onPostExecute() = withCacheLock {
             finished(this)
-            if (!isCurrent()) return
+            if (!isCurrent()) return@withCacheLock
             if (targetId == null) {
                 currentFetchTask = null
             }
@@ -541,7 +566,7 @@ class HabitCardListCache(
                     data.checkmarks[targetId] = newData.checkmarks[targetId]!!
                     data.notes[targetId] = newData.notes[targetId]!!
                     newData.snapshots[targetId]?.let { data.snapshots[targetId] = it }
-                    listener.onItemChanged(position)
+                    listener.onEntryChanged(position)
                 }
             } else {
                 // Publish only after the worker releases its reader monitor. Posting progress
@@ -555,17 +580,17 @@ class HabitCardListCache(
             timingObserver?.invoke("cache.publish", started.elapsedNow().inWholeNanoseconds / 1e6)
         }
 
-        override fun onProgressUpdate(currentPosition: Int) {
+        override fun onProgressUpdate(currentPosition: Int) = withCacheLock {
             if (currentPosition == Int.MIN_VALUE) {
                 finished(this)
-                if (!isCurrent() || fetchFailure == null) return
+                if (!isCurrent() || fetchFailure == null) return@withCacheLock
                 if (targetId == null) currentFetchTask = null
                 lastRefreshFailed = true
                 listener.onRefreshFailed()
-                return
+                return@withCacheLock
             }
-            if (!backgroundComplete || !isCurrent()) return
-            if (targetId != null) return
+            if (!backgroundComplete || !isCurrent()) return@withCacheLock
+            if (targetId != null) return@withCacheLock
             if (currentPosition < 0) processRemovedHabits() else processPosition(currentPosition)
         }
 
@@ -653,6 +678,9 @@ class HabitCardListCache(
             for (id in removed) remove(id!!)
         }
     }
+
+    @Synchronized
+    private fun <T> withCacheLock(action: () -> T): T = action()
 
     init {
         filteredHabits = allHabits

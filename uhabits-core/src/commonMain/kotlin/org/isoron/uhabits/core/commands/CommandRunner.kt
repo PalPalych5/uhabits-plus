@@ -23,6 +23,8 @@ import org.isoron.uhabits.core.AppScope
 import org.isoron.uhabits.core.tasks.Task
 import org.isoron.uhabits.core.tasks.TaskRunner
 import kotlin.time.TimeSource
+import kotlinx.coroutines.CompletableDeferred
+import org.isoron.platform.Synchronized
 
 @AppScope
 @Inject
@@ -30,19 +32,31 @@ open class CommandRunner(
     private val taskRunner: TaskRunner
 ) {
     private val listeners: MutableList<Listener> = mutableListOf()
+    private var pendingCommand: CompletableDeferred<Unit>? = null
     /** QA-only timing hook; disabled in normal operation and contains no record contents. */
     open var timingObserver: ((String, Double) -> Unit)? = null
 
+    @Synchronized
     open fun run(command: Command) {
         val requested = TimeSource.Monotonic.markNow()
+        val previous = pendingCommand
+        val completed = CompletableDeferred<Unit>()
+        pendingCommand = completed
         taskRunner.execute(
             object : Task {
                 override suspend fun doInBackground() {
-                    if (command is CreateRepetitionCommand) command.timingObserver = timingObserver
-                    timingObserver?.invoke("command.queue", requested.elapsedNow().inWholeNanoseconds / 1e6)
-                    val started = TimeSource.Monotonic.markNow()
-                    command.run()
-                    timingObserver?.invoke("command.persistence", started.elapsedNow().inWholeNanoseconds / 1e6)
+                    try {
+                        // IO dispatch is parallel. Chain submissions before dispatch so
+                        // an older absolute-value edit cannot overwrite a newer tap.
+                        previous?.await()
+                        if (command is CreateRepetitionCommand) command.timingObserver = timingObserver
+                        timingObserver?.invoke("command.queue", requested.elapsedNow().inWholeNanoseconds / 1e6)
+                        val started = TimeSource.Monotonic.markNow()
+                        command.run()
+                        timingObserver?.invoke("command.persistence", started.elapsedNow().inWholeNanoseconds / 1e6)
+                    } finally {
+                        completed.complete(Unit)
+                    }
                 }
                 override fun onPostExecute() {
                     notifyListeners(command)
