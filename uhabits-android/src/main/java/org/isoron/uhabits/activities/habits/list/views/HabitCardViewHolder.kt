@@ -19,6 +19,9 @@
 
 package org.isoron.uhabits.activities.habits.list.views
 
+import android.view.GestureDetector
 import androidx.recyclerview.widget.RecyclerView
 
-class HabitCardViewHolder(itemView: HabitCardView) : RecyclerView.ViewHolder(itemView)
+class HabitCardViewHolder(itemView: HabitCardView) : RecyclerView.ViewHolder(itemView) {
+    var gestureDetector: GestureDetector? = null
+}

@@ -18,6 +18,7 @@
  */
 package org.isoron.uhabits.core.models.memory
 
+import kotlin.concurrent.Volatile
 import org.isoron.platform.Synchronized
 import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade
@@ -27,6 +28,7 @@ import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitBlock
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.HabitMatcher
+import org.isoron.uhabits.core.models.ModelObservable
 
 /**
  * In-memory implementation of [HabitList].
@@ -55,16 +57,18 @@ open class MemoryHabitList : HabitList {
         blocksList.addAll(blocks)
     }
 
-    @get:Synchronized
+    @Volatile
     override var primaryOrder = Order.BY_POSITION
+        @Synchronized
         set(value) {
             field = value
             comparator = getComposedComparatorByOrder(primaryOrder, secondaryOrder)
             resort()
         }
 
-    @get:Synchronized
+    @Volatile
     override var secondaryOrder = Order.BY_NAME_ASC
+        @Synchronized
         set(value) {
             field = value
             comparator = getComposedComparatorByOrder(primaryOrder, secondaryOrder)
@@ -78,9 +82,68 @@ open class MemoryHabitList : HabitList {
             resort()
         }
 
+    private inner class SphereComparator : Comparator<Habit> {
+        private var rootIndices: Map<String, Int>? = null
+        private val rootKeyCache = mutableMapOf<String, String?>()
+
+        fun clearCache() {
+            rootIndices = null
+            rootKeyCache.clear()
+        }
+
+        override fun compare(h1: Habit, h2: Habit): Int {
+            val facade = organizationFacade
+            if (facade != null && facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+                val uuid1 = h1.uuid!!
+                val uuid2 = h2.uuid!!
+                val key1 = rootKeyCache.getOrPut(uuid1) {
+                    facade.getRootGroupKey(uuid1, h1.blockId) as? String
+                }
+                val key2 = rootKeyCache.getOrPut(uuid2) {
+                    facade.getRootGroupKey(uuid2, h2.blockId) as? String
+                }
+                if (key1 != key2) {
+                    if (key1 != null && key2 != null) {
+                        val indices = rootIndices ?: run {
+                            val roots = facade.rootContainers()
+                            roots.mapIndexed { idx, it -> it.key to idx }.toMap().also { rootIndices = it }
+                        }
+                        val r1 = indices[key1] ?: Int.MAX_VALUE
+                        val r2 = indices[key2] ?: Int.MAX_VALUE
+                        val c = r1.compareTo(r2)
+                        if (c != 0) return c
+                    } else if (key1 != null) {
+                        return -1
+                    } else {
+                        return 1
+                    }
+                }
+                val posCompare = h1.position.compareTo(h2.position)
+                if (posCompare != 0) return posCompare
+                return h1.name.compareTo(h2.name)
+            } else {
+                val b1 = blocksList.find { it.id == h1.blockId }
+                val b2 = blocksList.find { it.id == h2.blockId }
+                if (b1 != null && b2 != null) {
+                    val posCompare = b1.position.compareTo(b2.position)
+                    if (posCompare != 0) return posCompare
+                } else if (b1 != null && b2 == null) {
+                    return -1
+                } else if (b1 == null && b2 != null) {
+                    return 1
+                }
+                val posCompare = h1.position.compareTo(h2.position)
+                if (posCompare != 0) return posCompare
+                return h1.name.compareTo(h2.name)
+            }
+        }
+    }
+
+    private val sphereComparator = SphereComparator()
     private var comparator: Comparator<Habit>? =
         getComposedComparatorByOrder(primaryOrder, secondaryOrder)
     private var parent: MemoryHabitList? = null
+    private val parentListener = ModelObservable.Listener { loadFromParent() }
 
     constructor() : super()
     constructor(
@@ -95,8 +158,14 @@ open class MemoryHabitList : HabitList {
         secondaryOrder = parent.secondaryOrder
         dayTierSortOrder = parent.dayTierSortOrder
         setBlocks(parent.getBlocks())
-        parent.observable.addListener { loadFromParent() }
+        parent.observable.addListener(parentListener)
         loadFromParent()
+    }
+
+    @Synchronized
+    fun detachFromParent() {
+        parent?.observable?.removeListener(parentListener)
+        parent = null
     }
 
     @Synchronized
@@ -184,45 +253,6 @@ open class MemoryHabitList : HabitList {
         }
         val statusComparatorAsc =
             Comparator { h1: Habit, h2: Habit -> statusComparatorDesc.compare(h2, h1) }
-        val sphereComparator = Comparator<Habit> { h1, h2 ->
-            val facade = organizationFacade
-            if (facade != null && facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
-                val key1 = facade.getRootGroupKey(h1.uuid!!, h1.blockId) as? String
-                val key2 = facade.getRootGroupKey(h2.uuid!!, h2.blockId) as? String
-                if (key1 != key2) {
-                    if (key1 != null && key2 != null) {
-                        val roots = facade.rootContainers()
-                        val idx1 = roots.indexOfFirst { it.key == key1 }
-                        val idx2 = roots.indexOfFirst { it.key == key2 }
-                        val r1 = if (idx1 >= 0) idx1 else Int.MAX_VALUE
-                        val r2 = if (idx2 >= 0) idx2 else Int.MAX_VALUE
-                        val c = r1.compareTo(r2)
-                        if (c != 0) return@Comparator c
-                    } else if (key1 != null) {
-                        return@Comparator -1
-                    } else {
-                        return@Comparator 1
-                    }
-                }
-                val posCompare = h1.position.compareTo(h2.position)
-                if (posCompare != 0) return@Comparator posCompare
-                h1.name.compareTo(h2.name)
-            } else {
-                val b1 = blocksList.find { it.id == h1.blockId }
-                val b2 = blocksList.find { it.id == h2.blockId }
-                if (b1 != null && b2 != null) {
-                    val posCompare = b1.position.compareTo(b2.position)
-                    if (posCompare != 0) return@Comparator posCompare
-                } else if (b1 != null && b2 == null) {
-                    return@Comparator -1
-                } else if (b1 == null && b2 != null) {
-                    return@Comparator 1
-                }
-                val posCompare = h1.position.compareTo(h2.position)
-                if (posCompare != 0) return@Comparator posCompare
-                h1.name.compareTo(h2.name)
-            }
-        }
         val tierComparator = Comparator<Habit> { h1, h2 ->
             val tierCompare = dayTierSortIndex(h1.dayTier).compareTo(dayTierSortIndex(h2.dayTier))
             if (tierCompare != 0) return@Comparator tierCompare
@@ -312,6 +342,7 @@ open class MemoryHabitList : HabitList {
 
     @Synchronized
     override fun resort() {
+        sphereComparator.clearCache()
         if (comparator != null) list.sortWith(comparator!!)
         observable.notifyListeners()
     }

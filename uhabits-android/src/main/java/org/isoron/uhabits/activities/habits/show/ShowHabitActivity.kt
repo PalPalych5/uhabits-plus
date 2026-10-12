@@ -38,6 +38,7 @@ import com.android.datetimepicker.date.DatePickerDialog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.isoron.platform.gui.toInt
 import org.isoron.platform.time.DayOfWeek
 import org.isoron.platform.time.LocalDate
@@ -286,14 +287,16 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
 
         override fun refresh() {
             scope.launch {
-                val loaded = runCatching {
-                    val snapshot = effectiveReads?.snapshot(habit)
-                    ShowHabitPresenter.buildState(
-                        habit = habit,
-                        preferences = preferences,
-                        theme = themeSwitcher.currentTheme,
-                        snapshot = snapshot,
-                    )
+                val loaded = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val snapshot = effectiveReads?.snapshot(habit)
+                        ShowHabitPresenter.buildState(
+                            habit = habit,
+                            preferences = preferences,
+                            theme = themeSwitcher.currentTheme,
+                            snapshot = snapshot,
+                        )
+                    }
                 }
                 if (loaded.isFailure) {
                     view.setEffectiveReadUnavailable()
@@ -308,7 +311,11 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
                 if (eligible) {
                     if (state.goalAchievementUnavailable) view.setFocusProgress(null, true)
                     else {
-                        val progress = runCatching { FocusProgressPresentation.from(state.goalAchievement?.progress ?: controller!!.goalProgress(habit)) }
+                        val progress = withContext(Dispatchers.IO) {
+                            runCatching {
+                                FocusProgressPresentation.from(state.goalAchievement?.progress ?: controller!!.goalProgress(habit))
+                            }
+                        }
                         view.setFocusProgress(progress.getOrNull(), progress.isFailure)
                     }
                 } else view.setFocusProgress(null, state.quantityUnavailable)
@@ -354,10 +361,14 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
                     putBoolean("hasManualEntry", orig.value != Entry.UNKNOWN)
                 }
             }
-            if (date != null && effectiveReads != null) {
-                val day = runCatching {
-                    effectiveReads?.snapshots(listOf(targetHabit), date, date)?.get(HabitRef(requireNotNull(targetHabit.uuid)))?.dayOrNull(date)
-                }.getOrNull()
+            if (date != null) {
+                val appComponent = (applicationContext as HabitsApplication).component
+                val cachedDay = targetHabit.id?.let { appComponent.habitCardListCache.getEffectiveSnapshot(it) }?.dayOrNull(date)
+                val day = cachedDay ?: if (effectiveReads != null) {
+                    runCatching {
+                        effectiveReads?.snapshots(listOf(targetHabit), date, date)?.get(HabitRef(requireNotNull(targetHabit.uuid)))?.dayOrNull(date)
+                    }.getOrNull()
+                } else null
                 if (day != null) {
                     args.putDouble("focusValue", day.contributionValue / 1000.0)
                     args.putDouble("tombstonedFocusValue", day.tombstonedContributionValue / 1000.0)

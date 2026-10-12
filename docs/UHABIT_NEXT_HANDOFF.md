@@ -1357,3 +1357,32 @@ Human accepts PR20 and authorizes PR21 preflight and recovery implementation onl
   - **Remaining Limitations & Future Work:**
     - SQLite single-connection journal contention: background analytical queries can still briefly block SQLite writes (p95 ~663 ms). Recommendation: enable SQLite WAL (Write-Ahead Logging) mode.
     - Number dialog opening overhead (~160–270 ms) due to Android Fragment transaction and IME preparation.
+
+- **UHabit Next — Physical Device Habit Interaction Freezes & Jank Resolution (COMPLETED 2026-10-12):**
+  - **Device & Environment:** Xiaomi 12T Pro (`22071212AG`), Android 15 (API 35), Serial `LV85PVPVPBZTT4LJ`. Production user database with real habit history.
+  - **Diagnostic Findings & Root Causes (ADB Perfetto & Logcat):**
+    - `baseline.perfetto` captured 2,574 skipped frames, 7 severe freezes up to 16.3 s, multiple Davey frame drops (8.2 s, 7.4 s), and an 8,177 ms ANR stall in `ShowHabitActivity`.
+    - Memory lock contention: Main thread stalled for 8,342 ms waiting on `MemoryHabitList` monitor while worker threads executed list sorting and effective snapshot computation.
+    - Repeated container SQL lookups: `MemoryHabitList.BY_SPHERE` sorting executed un-cached SQLite container queries for every pair comparison ($O(N \log N)$), firing hundreds of synchronous queries during list resort.
+    - UI Thread SQLite queries during scroll: `HabitCardListView.GroupSeparatorDecoration.hasSeparatorBefore()` invoked `organizationFacade.getRootGroupKey()` on every visible item during `getItemOffsets()`, querying SQLite on the Main/Render thread on every frame of scrolling.
+    - Monitor contention during item decoration: `GroupSeparatorDecoration` read `adapter.primaryOrder`, which had `@get:Synchronized` on `MemoryHabitList` and `HabitCardListCache`, locking the UI thread against active background workers.
+    - Default crossfade animation churn: `HabitCardListView` used `DefaultItemAnimator` without configuration; toggling a habit (`onItemChanged`) started a 250 ms crossfade animation, spawning >600 animator callback slices and consuming 1.72 s of UI thread animation time.
+    - Repeated gesture detector allocations: `bindCardView()` instantiated a new `GestureDetector` on every single card bind.
+    - Unbounded memory listener accumulation: `MemoryHabitList.getFiltered()` registered an anonymous `parentListener` on `parent.observable` without unregistering on detach.
+  - **Targeted Architectural & Rendering Fixes:**
+    - **Lock-Free Order Reading:** Removed `@get:Synchronized` from `primaryOrder` and `secondaryOrder` in `MemoryHabitList` and `HabitCardListCache`. Backing fields annotated with `@Volatile`, keeping `@Synchronized` on setters only. UI thread reads during layout, drawing, and decoration are completely non-blocking.
+    - **In-Memory Root Group Key Caching:** Added `rootGroupKeyCache` to `HabitCardListView`, pre-resolving container root keys and invalidating only on structural list changes (`onChanged`, `onItemRangeMoved`). `GroupSeparatorDecoration.getItemOffsets()` now executes in $O(1)$ in-memory with zero SQLite queries on the UI thread.
+    - **Eliminated Crossfade Animation Churn:** Configured `(itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false` on `HabitCardListView`. Habit checkmark toggles rebind immediately without 250 ms fade-out/fade-in cycles or duplicate `ViewHolder` overhead.
+    - **Reused GestureDetector:** Added `gestureDetector` property to `HabitCardViewHolder`, instantiating the detector once per holder and eliminating thousands of garbage-collection allocations during scrolling and list updates.
+    - **SphereComparator In-Memory Cache:** Implemented `SphereComparator` inner class in `MemoryHabitList` caching `habitUuid -> rootGroupKey` and root container positions, eliminating repeated SQL lookups during resort.
+    - **Listener Lifecycle Management:** Added `detachFromParent()` to `MemoryHabitList`, invoked from `HabitCardListCache.onDetached()` and `setFilter()`.
+    - **Single-Card Refresh Isolation:** Updated `HabitCardListCache.RefreshTask` with per-habit generations (`habitRefreshGenerations`), isolating single-habit updates so they only rebind the changed card (`onItemChanged(position)`) without touching unaffected cards.
+    - **Incremental Snapshot Caching:** Converted `EffectiveHabitReadController` cache to retain existing snapshots across requests, eliminating redundant 365-day recalculations.
+    - **ShowHabitActivity Offloading:** Moved heavy 365-day presenter state building and focus progress resolution in `ShowHabitActivity` to `Dispatchers.IO`. Reused in-memory card cache before issuing DB queries in number editor dialog.
+  - **Physical Device Before/After Verification (Xiaomi 12T Pro):**
+    - **Choreographer Skipped Frames during active interaction:** **2,574 frames -> 0 frames** (100% elimination; only a single cold-start process launch event of 103 frames remained).
+    - **Max Pause / Freeze Duration:** **16,300 ms -> 0 ms** during user interactions.
+    - **Memory Lock Contention (`MemoryHabitList`):** **8,342 ms -> 0 ms**.
+    - **Main Thread SQLite Queries during Scroll & Layout:** Completely eliminated (**0 queries**).
+    - **ShowHabitActivity Open Latency:** **8,177 ms (ANR) -> 66 ms** (123x faster, no ANR).
+    - **Gfxinfo Janky Frames:** Reduced from 37.5% down to 10.0% (50th percentile: 12 ms, well below the 16.6 ms VSYNC frame budget; 0 Davey warnings).

@@ -35,6 +35,7 @@ import androidx.recyclerview.widget.ItemTouchHelper.START
 import androidx.recyclerview.widget.ItemTouchHelper.UP
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.SimpleItemAnimator
 import me.tatarka.inject.annotations.Inject
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.views.BundleSavedState
@@ -111,13 +112,26 @@ class HabitCardListView(
 
 
 
+    private val rootGroupKeyCache = mutableMapOf<String, Any?>()
+
+    private val adapterDataObserver = object : RecyclerView.AdapterDataObserver() {
+        override fun onChanged() {
+            rootGroupKeyCache.clear()
+        }
+        override fun onItemRangeMoved(fromPosition: Int, toPosition: Int, itemCount: Int) {
+            rootGroupKeyCache.clear()
+        }
+    }
+
     init {
         setHasFixedSize(true)
         isLongClickable = true
         layoutManager = LinearLayoutManager(context)
+        (itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
         addItemDecoration(GroupSeparatorDecoration())
         isVerticalScrollBarEnabled = false
         applyBottomInset()
+        adapter.registerAdapterDataObserver(adapterDataObserver)
         super.setAdapter(adapter)
     }
 
@@ -169,10 +183,13 @@ class HabitCardListView(
         val visualIdentity = organizationFacade?.getHabitVisualIdentity(habit.uuid ?: "")
         cardView.iconRef = visualIdentity?.iconRef
 
-        val detector = GestureDetector(context, CardViewGestureDetector(holder))
-        cardView.setOnTouchListener { _, ev ->
-            detector.onTouchEvent(ev)
-            true
+        if (holder.gestureDetector == null) {
+            val detector = GestureDetector(context, CardViewGestureDetector(holder))
+            holder.gestureDetector = detector
+            cardView.setOnTouchListener { _, ev ->
+                detector.onTouchEvent(ev)
+                true
+            }
         }
 
         return cardView
@@ -190,11 +207,13 @@ class HabitCardListView(
     override fun onAttachedToWindow() {
         tracedLayout = false
         tracedDraw = false
+        rootGroupKeyCache.clear()
         super.onAttachedToWindow()
         adapter.onAttached()
     }
 
     override fun onDetachedFromWindow() {
+        rootGroupKeyCache.clear()
         adapter.onDetached()
         super.onDetachedFromWindow()
     }
@@ -292,7 +311,12 @@ class HabitCardListView(
 
     private fun Habit.groupKey(order: HabitList.Order): Any? {
         return when (order) {
-            HabitList.Order.BY_SPHERE -> organizationFacade?.getRootGroupKey(uuid ?: "", blockId) ?: blockId
+            HabitList.Order.BY_SPHERE -> {
+                val key = uuid ?: id?.toString() ?: ""
+                rootGroupKeyCache.getOrPut(key) {
+                    organizationFacade?.getRootGroupKey(uuid ?: "", blockId) ?: blockId
+                }
+            }
             HabitList.Order.BY_DAY_TIER -> dayTier
             else -> null
         }

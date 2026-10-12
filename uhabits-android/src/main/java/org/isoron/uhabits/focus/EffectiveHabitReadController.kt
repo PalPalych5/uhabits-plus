@@ -36,17 +36,19 @@ class EffectiveHabitReadController(
     private var disposed = false
     private var calendar = captureCalendar()
     private var restoreModels = false
-    private data class SnapshotRequest(
-        val refs: List<HabitRef>, val from: org.isoron.platform.time.LocalDate,
-        val to: org.isoron.platform.time.LocalDate, val revision: Long,
-        val calendar: EffectiveReadCalendarContext, val rollbackGeneration: Long,
+    private data class CacheContext(
+        val from: org.isoron.platform.time.LocalDate,
+        val to: org.isoron.platform.time.LocalDate,
+        val revision: Long,
+        val calendar: EffectiveReadCalendarContext,
+        val rollbackGeneration: Long,
         val compatibilityFirstWeekday: Int,
     )
     @Volatile private var rollbackGeneration = 0L
-    // One dataset-owned immutable batch. Repeated attach/resume refreshes must not
+    // Dataset-owned snapshot cache. Repeated attach/resume refreshes must not
     // rebuild the entire historical projection when its durable inputs are unchanged.
-    private var cachedRequest: SnapshotRequest? = null
-    private var cachedSnapshots: Map<HabitRef, EffectiveHabitReadSnapshot> = emptyMap()
+    private var cachedContext: CacheContext? = null
+    private val cachedSnapshots = mutableMapOf<HabitRef, EffectiveHabitReadSnapshot>()
     private val refresh = Runnable {
         if (!disposed) {
             if (restoreModels) { habits.forEach { it.recompute() }; restoreModels = false }
@@ -110,18 +112,32 @@ class EffectiveHabitReadController(
             val capturedRevision = revision.value
             val capturedRollback = rollbackGeneration
             val capturedLocaleWeekday = org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale()
-            val request = SnapshotRequest(habits.map { HabitRef(requireNotNull(it.uuid)) }, from, to,
-                capturedRevision, captured, capturedRollback, capturedLocaleWeekday)
-            if (request == cachedRequest && !disposed && captured == captureCalendar() &&
-                capturedRevision == revision.value && capturedRollback == rollbackGeneration &&
-                capturedLocaleWeekday == org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale()) return cachedSnapshots
-            val result = provider.prepare(habits, from, to, revision.datasetId, capturedRevision, captured)
-            if (!disposed && captured == captureCalendar() && capturedRevision == revision.value &&
-                capturedRollback == rollbackGeneration && capturedLocaleWeekday == org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale()) {
-                cachedRequest = request
-                cachedSnapshots = result
-                return result
+            val currentContext = CacheContext(
+                from, to, capturedRevision, captured, capturedRollback, capturedLocaleWeekday
+            )
+            if (cachedContext != currentContext) {
+                cachedContext = currentContext
+                cachedSnapshots.clear()
             }
+            val missingHabits = habits.filter { habit ->
+                val ref = habit.uuid?.let { HabitRef(it) } ?: return@filter false
+                !cachedSnapshots.containsKey(ref)
+            }
+            if (missingHabits.isNotEmpty()) {
+                val prepared = provider.prepare(missingHabits, from, to, revision.datasetId, capturedRevision, captured)
+                if (!disposed && captured == captureCalendar() && capturedRevision == revision.value &&
+                    capturedRollback == rollbackGeneration && capturedLocaleWeekday == org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale()) {
+                    cachedSnapshots.putAll(prepared)
+                } else {
+                    return@repeat
+                }
+            }
+            val result = HashMap<HabitRef, EffectiveHabitReadSnapshot>(habits.size)
+            for (habit in habits) {
+                val ref = habit.uuid?.let { HabitRef(it) } ?: continue
+                cachedSnapshots[ref]?.let { result[ref] = it }
+            }
+            return result
         }
         throw EffectiveReadInvalidatedException()
     }
@@ -148,8 +164,8 @@ class EffectiveHabitReadController(
     fun dispose() {
         if (disposed) return
         disposed = true
-        cachedRequest = null
-        cachedSnapshots = emptyMap()
+        cachedContext = null
+        cachedSnapshots.clear()
         notificationTray?.effectiveSnapshotProvider = null
         handler.removeCallbacksAndMessages(null)
         cache.effectiveSnapshots = null

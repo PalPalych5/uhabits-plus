@@ -34,6 +34,7 @@ import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.HabitList.Order
 import org.isoron.uhabits.core.models.HabitMatcher
+import org.isoron.uhabits.core.models.memory.MemoryHabitList
 import org.isoron.uhabits.core.tasks.Task
 import org.isoron.uhabits.core.tasks.TaskRunner
 import org.isoron.uhabits.core.containers.HabitRef
@@ -155,7 +156,6 @@ class HabitCardListCache(
     val habitCount: Int
         get() = data.habits.size
 
-    @get:Synchronized
     @set:Synchronized
     var primaryOrder: Order
         get() = filteredHabits.primaryOrder
@@ -165,7 +165,6 @@ class HabitCardListCache(
             refreshAllHabits()
         }
 
-    @get:Synchronized
     @set:Synchronized
     var secondaryOrder: Order
         get() = filteredHabits.secondaryOrder
@@ -202,9 +201,12 @@ class HabitCardListCache(
         }
     }
 
+    private val habitRefreshGenerations = mutableMapOf<Long, Long>()
+
     @Synchronized
     fun onDetached() {
         commandRunner.removeListener(this)
+        (filteredHabits as? MemoryHabitList)?.detachFromParent()
     }
 
     @Synchronized
@@ -223,7 +225,9 @@ class HabitCardListCache(
     fun refreshHabit(id: Long) {
         if (shutDown) return
         lastRefreshFailed = false
-        val task = RefreshTask(id, ++refreshGeneration)
+        val gen = (habitRefreshGenerations[id] ?: 0L) + 1L
+        habitRefreshGenerations[id] = gen
+        val task = RefreshTask(id, gen, refreshGeneration)
         pendingRefreshTasks.add(task)
         taskRunner.execute(task)
     }
@@ -257,6 +261,7 @@ class HabitCardListCache(
     @Synchronized
     fun setFilter(matcher: HabitMatcher) {
         this.matcher = matcher
+        (filteredHabits as? MemoryHabitList)?.detachFromParent()
         filteredHabits = allHabits.getFiltered(matcher)
     }
 
@@ -349,8 +354,9 @@ class HabitCardListCache(
                 return
             }
 
+            val candidateMatcher = matcher.copy(isCompletedAllowed = true, isEnteredAllowed = true)
             val candidates = if (load == null) filteredHabits.toList() else
-                allHabits.getFiltered(matcher.copy(isCompletedAllowed = true, isEnteredAllowed = true)).toList()
+                allHabits.filter { candidateMatcher.matches(it) }
             HabitStartupTiming.mark("cache.effective.begin", generation)
             val batch = load?.invoke(candidates).orEmpty()
             HabitStartupTiming.mark("cache.effective.end", generation)
@@ -429,25 +435,36 @@ class HabitCardListCache(
         private var runner: TaskRunner? = null
 
         private val generation: Long
+        private val baseFullGeneration: Long
 
         constructor(generation: Long) {
             newData = CacheData()
             targetId = null
             this.generation = generation
+            this.baseFullGeneration = generation
             isCancelled = false
         }
 
-        constructor(targetId: Long, generation: Long) {
+        constructor(targetId: Long, generation: Long, baseFullGeneration: Long) {
             newData = CacheData()
             this.targetId = targetId
             this.generation = generation
+            this.baseFullGeneration = baseFullGeneration
+            isCancelled = false
         }
 
         override fun cancel() {
             isCancelled = true
         }
 
-        private fun isCurrent(): Boolean = !shutDown && !isCancelled && generation == refreshGeneration
+        private fun isCurrent(): Boolean {
+            if (shutDown || isCancelled) return false
+            return if (targetId == null) {
+                generation == refreshGeneration
+            } else {
+                generation == (habitRefreshGenerations[targetId] ?: 0L) && baseFullGeneration >= refreshGeneration
+            }
+        }
 
         @Synchronized
         fun awaitBackgroundCompletion() {
@@ -512,13 +529,26 @@ class HabitCardListCache(
         override fun onPostExecute() {
             finished(this)
             if (!isCurrent()) return
-            currentFetchTask = null
+            if (targetId == null) {
+                currentFetchTask = null
+            }
             HabitStartupTiming.mark("cache.publish.begin", generation)
             val started = TimeSource.Monotonic.markNow()
-            // Publish only after the worker releases its reader monitor. Posting progress
-            // while it owns that monitor made the main thread wait for all SQL/snapshots.
-            processRemovedHabits()
-            for (position in newData.habits.indices) processPosition(position)
+            if (targetId != null) {
+                val position = data.habits.indexOfFirst { it.id == targetId }
+                if (position >= 0) {
+                    data.scores[targetId] = newData.scores[targetId]!!
+                    data.checkmarks[targetId] = newData.checkmarks[targetId]!!
+                    data.notes[targetId] = newData.notes[targetId]!!
+                    newData.snapshots[targetId]?.let { data.snapshots[targetId] = it }
+                    listener.onItemChanged(position)
+                }
+            } else {
+                // Publish only after the worker releases its reader monitor. Posting progress
+                // while it owns that monitor made the main thread wait for all SQL/snapshots.
+                processRemovedHabits()
+                for (position in newData.habits.indices) processPosition(position)
+            }
             hasLoaded = true
             listener.onRefreshFinished()
             HabitStartupTiming.mark("cache.publish.end", generation)
@@ -529,12 +559,13 @@ class HabitCardListCache(
             if (currentPosition == Int.MIN_VALUE) {
                 finished(this)
                 if (!isCurrent() || fetchFailure == null) return
-                currentFetchTask = null
+                if (targetId == null) currentFetchTask = null
                 lastRefreshFailed = true
                 listener.onRefreshFailed()
                 return
             }
             if (!backgroundComplete || !isCurrent()) return
+            if (targetId != null) return
             if (currentPosition < 0) processRemovedHabits() else processPosition(currentPosition)
         }
 
