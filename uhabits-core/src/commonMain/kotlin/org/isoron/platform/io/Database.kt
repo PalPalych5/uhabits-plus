@@ -26,6 +26,29 @@ interface PreparedStatement {
 interface Database {
     fun prepareStatement(sql: String): PreparedStatement
     fun close()
+
+    fun beginTransaction() {
+        run("BEGIN IMMEDIATE")
+    }
+
+    fun setTransactionSuccessful() {}
+
+    fun endTransaction() {
+        run("COMMIT")
+    }
+
+    fun inTransaction(): Boolean = false
+}
+
+inline fun <T> Database.runInTransaction(block: () -> T): T {
+    beginTransaction()
+    try {
+        val result = block()
+        setTransactionSuccessful()
+        return result
+    } finally {
+        endTransaction()
+    }
 }
 
 interface DatabaseOpener {
@@ -78,15 +101,16 @@ fun Database.setVersion(v: Int) {
 }
 
 fun Database.begin() {
-    run("BEGIN")
+    beginTransaction()
 }
 
 fun Database.commit() {
-    run("COMMIT")
+    setTransactionSuccessful()
+    endTransaction()
 }
 
 fun Database.rollback() {
-    run("ROLLBACK")
+    endTransaction()
 }
 
 inline fun Database.query(

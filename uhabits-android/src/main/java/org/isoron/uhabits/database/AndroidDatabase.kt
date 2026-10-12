@@ -34,10 +34,28 @@ class AndroidPreparedStatement(
     private val db: SQLiteDatabase,
     private val sql: String
 ) : PreparedStatement {
+    companion object {
+        private val savepointTxDepth = ThreadLocal<Int>()
+        private val savepointFailed = ThreadLocal<Boolean>()
+    }
+
+    private val upperWords = sql.trim().trimEnd(';').uppercase().split(Regex("\\s+"))
+    private val isTxBegin = upperWords.size in 1..2 && upperWords[0] == "BEGIN" &&
+            (upperWords.size == 1 || upperWords[1] in listOf("IMMEDIATE", "EXCLUSIVE", "TRANSACTION", "DEFERRED"))
+    private val isTxCommit = (upperWords.size == 1 && (upperWords[0] == "COMMIT" || upperWords[0] == "END")) ||
+            (upperWords.size == 2 && upperWords[1] == "TRANSACTION" && (upperWords[0] == "COMMIT" || upperWords[0] == "END"))
+    private val isTxRollback = (upperWords.size == 1 && upperWords[0] == "ROLLBACK") ||
+            (upperWords.size == 2 && upperWords[0] == "ROLLBACK" && upperWords[1] == "TRANSACTION")
+    private val isTxControl = isTxBegin || isTxCommit || isTxRollback
+    private val isSavepoint = upperWords.isNotEmpty() && upperWords[0] == "SAVEPOINT"
+    private val isRelease = upperWords.isNotEmpty() && upperWords[0] == "RELEASE"
+    private val isRollbackTo = upperWords.size >= 3 && upperWords[0] == "ROLLBACK" && upperWords[1] == "TO"
+
     private val isChangesQuery = sql.trim().trimEnd(';').equals("SELECT changes()", ignoreCase = true)
+    private val isLastInsertRowIdQuery = sql.trim().trimEnd(';').equals("SELECT last_insert_rowid()", ignoreCase = true)
     private var changesRowRead = false
 
-    private val isQuery = isChangesQuery || sql.trimStart().uppercase().let {
+    private val isQuery = isChangesQuery || isLastInsertRowIdQuery || sql.trimStart().uppercase().let {
         it.startsWith("SELECT") || it.startsWith("PRAGMA")
     }
 
@@ -45,7 +63,7 @@ class AndroidPreparedStatement(
         it.startsWith("INSERT") || it.startsWith("UPDATE") || it.startsWith("DELETE") || it.startsWith("REPLACE")
     }
 
-    private val compiledStmt: SQLiteStatement? = if (!isQuery) db.compileStatement(sql) else null
+    private val compiledStmt: SQLiteStatement? = if (!isQuery && !isTxControl) db.compileStatement(sql) else null
 
     private val bindings = mutableMapOf<Int, Any?>()
     private var cursor: android.database.Cursor? = null
@@ -64,7 +82,57 @@ class AndroidPreparedStatement(
     }
 
     private fun executeStep(): StepResult {
-        if (isChangesQuery) {
+        if (isTxBegin) {
+            db.beginTransactionNonExclusive()
+            return StepResult.DONE
+        }
+        if (isTxCommit) {
+            if (db.inTransaction()) {
+                db.setTransactionSuccessful()
+                db.endTransaction()
+            }
+            return StepResult.DONE
+        }
+        if (isTxRollback) {
+            if (db.inTransaction()) {
+                db.endTransaction()
+            }
+            return StepResult.DONE
+        }
+        if (isSavepoint) {
+            if (!db.inTransaction()) {
+                db.beginTransactionNonExclusive()
+                savepointTxDepth.set((savepointTxDepth.get() ?: 0) + 1)
+            } else if ((savepointTxDepth.get() ?: 0) > 0) {
+                savepointTxDepth.set((savepointTxDepth.get() ?: 0) + 1)
+            }
+            compiledStmt!!.execute()
+            return StepResult.DONE
+        }
+        if (isRollbackTo) {
+            if ((savepointTxDepth.get() ?: 0) > 0) {
+                savepointFailed.set(true)
+            }
+            compiledStmt!!.execute()
+            return StepResult.DONE
+        }
+        if (isRelease) {
+            compiledStmt!!.execute()
+            val depth = savepointTxDepth.get() ?: 0
+            if (depth > 0) {
+                savepointTxDepth.set(depth - 1)
+                if (depth == 1 && db.inTransaction()) {
+                    val failed = savepointFailed.get() == true
+                    savepointFailed.set(false)
+                    if (!failed) {
+                        db.setTransactionSuccessful()
+                    }
+                    db.endTransaction()
+                }
+            }
+            return StepResult.DONE
+        }
+        if (isChangesQuery || isLastInsertRowIdQuery) {
             return if (!changesRowRead) {
                 changesRowRead = true
                 StepResult.ROW
@@ -80,11 +148,21 @@ class AndroidPreparedStatement(
             return if (cursor!!.moveToNext()) StepResult.ROW else StepResult.DONE
         } else {
             if (isMutation) {
-                val count = runCatching { compiledStmt!!.executeUpdateDelete().toLong() }.getOrElse {
-                    compiledStmt!!.execute()
-                    0L
+                val upperSql = sql.trimStart().uppercase()
+                if (upperSql.startsWith("INSERT")) {
+                    val rowId = runCatching { compiledStmt!!.executeInsert() }.getOrElse {
+                        compiledStmt!!.execute()
+                        0L
+                    }
+                    AndroidDatabase.lastInsertRowId = rowId
+                    AndroidDatabase.lastChanges = if (rowId > 0) 1L else 0L
+                } else {
+                    val count = runCatching { compiledStmt!!.executeUpdateDelete().toLong() }.getOrElse {
+                        compiledStmt!!.execute()
+                        0L
+                    }
+                    AndroidDatabase.lastChanges = count
                 }
-                AndroidDatabase.lastChanges = count
             } else {
                 compiledStmt!!.execute()
             }
@@ -93,21 +171,39 @@ class AndroidPreparedStatement(
     }
 
     @Synchronized
-    override fun getInt(index: Int) = if (isChangesQuery) AndroidDatabase.lastChanges.toInt() else cursor!!.getInt(index)
+    override fun getInt(index: Int) =
+        if (isChangesQuery) AndroidDatabase.lastChanges.toInt()
+        else if (isLastInsertRowIdQuery) AndroidDatabase.lastInsertRowId.toInt()
+        else cursor!!.getInt(index)
+
     @Synchronized
-    override fun getLong(index: Int) = if (isChangesQuery) AndroidDatabase.lastChanges else cursor!!.getLong(index)
+    override fun getLong(index: Int) =
+        if (isChangesQuery) AndroidDatabase.lastChanges
+        else if (isLastInsertRowIdQuery) AndroidDatabase.lastInsertRowId
+        else cursor!!.getLong(index)
+
     @Synchronized
     override fun getReal(index: Int) = cursor!!.getDouble(index)
+
     @Synchronized
-    override fun getText(index: Int) = cursor!!.getString(index)
+    override fun getText(index: Int) =
+        if (isChangesQuery) AndroidDatabase.lastChanges.toString()
+        else if (isLastInsertRowIdQuery) AndroidDatabase.lastInsertRowId.toString()
+        else cursor!!.getString(index)
 
     @Synchronized
     override fun getIntOrNull(index: Int): Int? =
-        if (isChangesQuery) AndroidDatabase.lastChanges.toInt() else if (cursor!!.isNull(index)) null else cursor!!.getInt(index)
+        if (isChangesQuery) AndroidDatabase.lastChanges.toInt()
+        else if (isLastInsertRowIdQuery) AndroidDatabase.lastInsertRowId.toInt()
+        else if (cursor!!.isNull(index)) null
+        else cursor!!.getInt(index)
 
     @Synchronized
     override fun getLongOrNull(index: Int): Long? =
-        if (cursor!!.isNull(index)) null else cursor!!.getLong(index)
+        if (isChangesQuery) AndroidDatabase.lastChanges
+        else if (isLastInsertRowIdQuery) AndroidDatabase.lastInsertRowId
+        else if (cursor!!.isNull(index)) null
+        else cursor!!.getLong(index)
 
     @Synchronized
     override fun getRealOrNull(index: Int): Double? =
@@ -115,7 +211,10 @@ class AndroidPreparedStatement(
 
     @Synchronized
     override fun getTextOrNull(index: Int): String? =
-        if (cursor!!.isNull(index)) null else cursor!!.getString(index)
+        if (isChangesQuery) AndroidDatabase.lastChanges.toString()
+        else if (isLastInsertRowIdQuery) AndroidDatabase.lastInsertRowId.toString()
+        else if (cursor!!.isNull(index)) null
+        else cursor!!.getString(index)
 
     @Synchronized
     override fun bindInt(index: Int, value: Int) {
@@ -198,6 +297,11 @@ class AndroidDatabase(
         var lastChanges: Long
             get() = lastChangesThreadLocal.get() ?: 0L
             set(value) = lastChangesThreadLocal.set(value)
+
+        private val lastInsertRowIdThreadLocal = ThreadLocal<Long>()
+        var lastInsertRowId: Long
+            get() = lastInsertRowIdThreadLocal.get() ?: 0L
+            set(value) = lastInsertRowIdThreadLocal.set(value)
     }
 
     constructor(db: SQLiteDatabase, revision: org.isoron.uhabits.core.models.projection.EffectiveReadRevision?) :
@@ -208,6 +312,10 @@ class AndroidDatabase(
     private val connection: org.isoron.platform.io.Database = object : org.isoron.platform.io.Database {
         override fun prepareStatement(sql: String): PreparedStatement = AndroidPreparedStatement(db, sql)
         override fun close() = db.close()
+        override fun beginTransaction() = db.beginTransactionNonExclusive()
+        override fun setTransactionSuccessful() = db.setTransactionSuccessful()
+        override fun endTransaction() = db.endTransaction()
+        override fun inTransaction(): Boolean = db.inTransaction()
     }.let { raw ->
         if (revision == null) raw else org.isoron.uhabits.core.models.projection.EffectiveReadDatabase(
             raw, revision, setOf("CONTRIBUTIONS", "REPETITIONS", "HABITS", "HABITGOALS", "HABITEXTENSIONS", "APPSETTINGS", "CONTAINERS", "HABITPLACEMENTS", "ORGANIZATIONSTATE", "HABITVISUALIDENTITIES")
@@ -226,4 +334,9 @@ class AndroidDatabase(
         connection.prepareStatement(sql)
 
     override fun close() = connection.close()
+
+    override fun beginTransaction() = connection.beginTransaction()
+    override fun setTransactionSuccessful() = connection.setTransactionSuccessful()
+    override fun endTransaction() = connection.endTransaction()
+    override fun inTransaction(): Boolean = connection.inTransaction()
 }

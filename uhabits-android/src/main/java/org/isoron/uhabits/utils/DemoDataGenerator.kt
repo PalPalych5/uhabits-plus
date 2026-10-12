@@ -47,12 +47,12 @@ object DemoDataGenerator {
         val db = modelFactory.database
         val store = org.isoron.uhabits.core.containers.sqlite.SQLiteOrganizationStore(db)
         val org = OrganizationServiceImpl(store, object : UnitOfWork {
-            override fun <T> executeInTransaction(block: (OrganizationTransaction) -> T): T = block(store)
+            override fun <T> executeInTransaction(block: (OrganizationTransaction) -> T): T = store.executeInTransaction(block)
         }, store, store, clock = { referenceDate.minus(181).unixTime },
             idGenerator = { error("Fixture operations require stable explicit IDs") },
             habitIdentityLookup = { ref -> modelFactory.habitRepository.findByUuid(ref.uuid) != null })
         // Reset is intentionally all-or-nothing for this disposable dataset, never prefix-delete user data.
-        db.run("SAVEPOINT demo_seed")
+        db.beginTransaction()
         try {
             listOf("Contributions", "SourceRules", "FocusSessions", "UserTasks", "HabitPlacementHistory",
                 "HabitPlacements", "LegacyBlockMap", "ContainerHistory").forEach { db.run("DELETE FROM $it") }
@@ -169,13 +169,15 @@ object DemoDataGenerator {
                     })
                 focusRepo.record(sessionFact); attribution.attributeSession(sessionFact)
             }
-            db.run("RELEASE SAVEPOINT demo_seed")
+            db.setTransactionSuccessful()
         } catch (failure: Throwable) {
-            db.run("ROLLBACK TO SAVEPOINT demo_seed"); db.run("RELEASE SAVEPOINT demo_seed")
+            // Automatic rollback on failure
             (habitList as? org.isoron.uhabits.core.models.sqlite.SQLiteHabitList)?.reload()
             component.effectiveReadRevision.changed()
             cache.refreshAllHabits()
             throw failure
+        } finally {
+            db.endTransaction()
         }
         habitList.forEach { it.originalEntries.invalidate(); it.recompute() }
         component.effectiveReadRevision.changed()

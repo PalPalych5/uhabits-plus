@@ -243,6 +243,7 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
         appSettingRepository.delete(GLOBAL_STATS_START_KEY)
         repository.execSQL("delete from repetitions")
         repository.execSQL("delete from HabitGoals")
+        runCatching { repository.execSQL("delete from HabitPlacementHistory") }
         runCatching { repository.execSQL("delete from HabitPlacements") }
         runCatching { repository.execSQL("delete from HabitVisualIdentities") }
         runCatching { repository.execSQL("delete from Contributions") }

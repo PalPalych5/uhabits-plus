@@ -637,53 +637,16 @@ class SQLiteOrganizationStore(
     // ========================================================================
 
     override fun <T> executeInTransaction(block: (OrganizationTransaction) -> T): T {
-        val isTopLevel = transactionDepth == 0
-        val savepointName = "sp_$transactionDepth"
-
-        if (isTopLevel) {
-            db.run("BEGIN IMMEDIATE")
-        } else {
-            db.run("SAVEPOINT $savepointName")
-        }
-        transactionDepth++
-
-        val result: T
+        db.beginTransaction()
         try {
-            result = block(this)
-        } catch (t: Throwable) {
-            transactionDepth--
-            if (isTopLevel) {
-                try { db.run("ROLLBACK") } catch (_: Throwable) {}
-            } else {
-                try {
-                    db.run("ROLLBACK TO $savepointName")
-                    db.run("RELEASE $savepointName")
-                } catch (_: Throwable) {}
-            }
-            throw t
-        }
-
-        if (result is OrganizationResult<*> && result.isFailure) {
-            transactionDepth--
-            if (isTopLevel) {
-                try { db.run("ROLLBACK") } catch (_: Throwable) {}
-            } else {
-                try {
-                    db.run("ROLLBACK TO $savepointName")
-                    db.run("RELEASE $savepointName")
-                } catch (_: Throwable) {}
+            val result = block(this)
+            if (result !is OrganizationResult<*> || !result.isFailure) {
+                db.setTransactionSuccessful()
             }
             return result
+        } finally {
+            db.endTransaction()
         }
-
-        transactionDepth--
-        if (isTopLevel) {
-            db.run("COMMIT")
-        } else {
-            db.run("RELEASE $savepointName")
-        }
-
-        return result
     }
 
     // ========================================================================

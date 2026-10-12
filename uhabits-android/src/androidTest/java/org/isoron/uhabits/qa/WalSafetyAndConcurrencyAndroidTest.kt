@@ -29,6 +29,22 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 import org.isoron.uhabits.core.containers.session.DatasetSession
+import org.isoron.platform.io.*
+import org.isoron.uhabits.HabitsDatabaseOpener
+import org.isoron.uhabits.core.containers.*
+import org.isoron.uhabits.core.containers.sqlite.SQLiteOrganizationStore
+import org.isoron.uhabits.core.focus.*
+import org.isoron.uhabits.core.focus.sqlite.FocusSessionSchema
+import org.isoron.uhabits.core.focus.sqlite.SQLiteFocusSessionRepository
+import org.isoron.uhabits.core.rules.*
+import org.isoron.uhabits.core.rules.sqlite.SourceRuleSchema
+import org.isoron.uhabits.core.contribution.*
+import org.isoron.uhabits.core.contribution.sqlite.ContributionSchema
+import org.isoron.uhabits.core.models.Frequency
+import org.isoron.uhabits.core.models.HabitType
+import org.isoron.uhabits.core.models.PaletteColor
+import org.isoron.uhabits.core.userTasks.TaskId
+import org.isoron.uhabits.core.userTasks.UserTask
 
 @RunWith(AndroidJUnit4::class)
 class WalSafetyAndConcurrencyAndroidTest {
@@ -41,6 +57,22 @@ class WalSafetyAndConcurrencyAndroidTest {
         fun prepareSession(context: Context): DatasetSession {
             val existing = qaSession
             if (existing != null) return existing
+            val current = HabitsApplication.component
+            if (!(current.session.isExperimental && current.habitList.size() >= 30)) {
+                val app = context.applicationContext as HabitsApplication
+                val defaultSession = org.isoron.uhabits.core.containers.session.DatasetSessionFactory.production()
+                DatabaseUtils.closeDatabase()
+                context.deleteDatabase("test.db")
+                val testDb = context.getDatabasePath("test.db")
+                File("${testDb.path}-wal").delete()
+                File("${testDb.path}-shm").delete()
+                File("${testDb.path}-journal").delete()
+                DatabaseUtils.initializeDatabase(context, "test.db")
+                InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                    app.rebuildComponent(defaultSession)
+                }
+                InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            }
             val fixture = UiReviewCaptureTest.initializeFixture()
             ProductionUiHotfixFixture.prepare(fixture)
             val session = fixture.session.copy(
@@ -82,7 +114,7 @@ class WalSafetyAndConcurrencyAndroidTest {
     @After
     fun tearDown() {
         org.isoron.uhabits.core.production.cutover.ProductionCutoverGate.setExplicitCutoverAuthorizedForTesting(false)
-        DatabaseUtils.enableWalForNext = false
+        DatabaseUtils.enableWalForNext = true
         DatabaseUtils.restoreFailureInjection = DatabaseUtils.RestoreFailureInjection.NONE
         DatabaseUtils.closeDatabase()
     }
@@ -429,5 +461,269 @@ class WalSafetyAndConcurrencyAndroidTest {
 
         assertTrue("UserTask change must invalidate workspaceReadRevision", wsRevAfterTask > wsRevBeforeTask)
         assertEquals("UserTask change must NOT invalidate effectiveReadRevision", effRevBeforeTask, effRevAfterTask)
+    }
+
+    @Test
+    fun test05_readYourOwnWritesInsideTransaction() {
+        val session = qaSession!!
+        DatabaseUtils.enableWalForNext = true
+        ins.runOnMainSync { app.rebuildComponent(session) }
+        val db = HabitsApplication.component.db
+
+        val testUuid = "ryow-cont-" + UUID.randomUUID()
+        val testTaskId = "ryow-task-" + UUID.randomUUID()
+
+        db.beginTransaction()
+        try {
+            db.run("INSERT INTO Containers(uuid, name, sibling_order, is_archived, updated_at, revision) VALUES ('$testUuid', 'RYOW Container', 0, 0, 1000, 1)")
+            db.run("INSERT INTO UserTasks(id, title, created_at, updated_at) VALUES ('$testTaskId', 'RYOW Task', 1000, 1000)")
+
+            // Crucial: query on the SAME thread while uncommitted.
+            // Under WAL without platform transaction binding, secondary reader connections cannot observe uncommitted writes.
+            val containerCount = db.queryLong("SELECT count(*) FROM Containers WHERE uuid = '$testUuid'")
+            val taskCount = db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$testTaskId'")
+
+            assertEquals("Uncommitted container must be visible to the writing thread", 1L, containerCount)
+            assertEquals("Uncommitted task must be visible to the writing thread", 1L, taskCount)
+
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+
+        // Post-commit: both rows are committed and visible to all readers
+        val committedContainer = db.queryLong("SELECT count(*) FROM Containers WHERE uuid = '$testUuid'")
+        val committedTask = db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$testTaskId'")
+        assertEquals(1L, committedContainer)
+        assertEquals(1L, committedTask)
+    }
+
+    @Test
+    fun test06_nestedSavepointsAndRollbacks() {
+        val session = qaSession!!
+        DatabaseUtils.enableWalForNext = true
+        ins.runOnMainSync { app.rebuildComponent(session) }
+        val db = HabitsApplication.component.db
+
+        val outerTaskId = "nested-outer-" + UUID.randomUUID()
+        val innerTaskId = "nested-inner-" + UUID.randomUUID()
+
+        db.beginTransaction()
+        try {
+            db.run("INSERT INTO UserTasks(id, title, created_at, updated_at) VALUES ('$outerTaskId', 'Outer Task', 1000, 1000)")
+            assertEquals(1L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$outerTaskId'"))
+
+            // Nested savepoint
+            db.run("SAVEPOINT sp_test")
+            db.run("INSERT INTO UserTasks(id, title, created_at, updated_at) VALUES ('$innerTaskId', 'Inner Task', 1000, 1000)")
+            assertEquals(1L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$innerTaskId'"))
+
+            // Rollback only inner savepoint
+            db.run("ROLLBACK TO SAVEPOINT sp_test")
+            db.run("RELEASE SAVEPOINT sp_test")
+
+            // Outer row remains; inner row was reverted
+            assertEquals(1L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$outerTaskId'"))
+            assertEquals(0L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$innerTaskId'"))
+
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+
+        // After outer commit: outer task is persisted, inner task is not
+        assertEquals(1L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$outerTaskId'"))
+        assertEquals(0L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$innerTaskId'"))
+    }
+
+    @Test
+    fun test07_transactionFailureAndRetry() {
+        val session = qaSession!!
+        DatabaseUtils.enableWalForNext = true
+        ins.runOnMainSync { app.rebuildComponent(session) }
+        val db = HabitsApplication.component.db
+
+        val failTaskId = "fail-retry-" + UUID.randomUUID()
+
+        // 1. Transaction that fails (exception / no setTransactionSuccessful)
+        try {
+            db.runInTransaction {
+                db.run("INSERT INTO UserTasks(id, title, created_at, updated_at) VALUES ('$failTaskId', 'Attempt 1', 1000, 1000)")
+                throw IllegalStateException("Simulated transient failure")
+            }
+        } catch (e: IllegalStateException) {
+            // expected
+        }
+
+        // Verify aborted attempt left no dirty state
+        assertEquals(0L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$failTaskId'"))
+
+        // 2. Retry succeeds cleanly
+        db.runInTransaction {
+            db.run("INSERT INTO UserTasks(id, title, created_at, updated_at) VALUES ('$failTaskId', 'Attempt 2 Success', 1000, 1000)")
+        }
+
+        assertEquals(1L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = '$failTaskId'"))
+    }
+
+    @Test
+    fun test08_organizationContainerCreationWithService() {
+        val session = qaSession!!
+        DatabaseUtils.enableWalForNext = true
+        ins.runOnMainSync { app.rebuildComponent(session) }
+        val component = HabitsApplication.component
+        val db = component.db
+
+        val store = SQLiteOrganizationStore(db)
+        val org = OrganizationServiceImpl(
+            store,
+            object : UnitOfWork {
+                override fun <T> executeInTransaction(block: (OrganizationTransaction) -> T): T =
+                    store.executeInTransaction(block)
+            },
+            store,
+            store,
+            clock = { 1000L },
+            idGenerator = { UUID.randomUUID().toString() },
+            habitIdentityLookup = { ref -> component.sqlModelFactory.habitRepository.findByUuid(ref.uuid) != null }
+        )
+
+        val parentId = ContainerId("wal-org-parent-" + UUID.randomUUID())
+        val childId = ContainerId("wal-org-child-" + UUID.randomUUID())
+
+        // Create parent container
+        val parentResult = org.create(CreateContainer("Parent Category", color = PaletteColor(2), explicitId = parentId, opUuid = "op-parent-" + UUID.randomUUID()))
+        assertTrue("Parent container creation must succeed under WAL: $parentResult", parentResult.isSuccess)
+
+        // Create nested child container
+        val childResult = org.create(CreateContainer("Child Category", parentId = parentId, explicitId = childId, opUuid = "op-child-" + UUID.randomUUID()))
+        assertTrue("Child container creation must succeed under WAL: $childResult", childResult.isSuccess)
+
+        // Verify hierarchy read queries
+        val childNode = org.containerQueries.find(childId)
+        assertNotNull(childNode)
+        assertEquals(parentId, childNode?.parentId)
+        assertEquals("Child Category", childNode?.name)
+
+        val path = org.containerQueries.path(childId)
+        assertEquals(2, path.nodes.size)
+        assertEquals(parentId, path.nodes[0])
+        assertEquals(childId, path.nodes[1])
+    }
+
+    @Test
+    fun test09_habitsTasksFocusPersistenceUnderWal() {
+        val session = qaSession!!
+        DatabaseUtils.enableWalForNext = true
+        ins.runOnMainSync { app.rebuildComponent(session) }
+        val component = HabitsApplication.component
+        val db = component.db
+
+        FocusSessionSchema.createSchema(db)
+        SourceRuleSchema.createSchema(db)
+        ContributionSchema.createSchema(db)
+
+        val testHabitUuid = "wal-h-" + UUID.randomUUID()
+        val habit = component.modelFactory.buildHabit().apply {
+            uuid = testHabitUuid
+            name = "WAL Habit"
+            description = "Persistence verification under WAL"
+            color = PaletteColor(3)
+            type = HabitType.YES_NO
+            frequency = Frequency.DAILY
+        }
+        component.habitList.add(habit)
+
+        val habitInDb = component.sqlModelFactory.habitRepository.findByUuid(testHabitUuid)
+        assertNotNull("Habit must be saved to database", habitInDb)
+
+        val testTaskId = TaskId("wal-task-" + UUID.randomUUID())
+        val userTask = UserTask(
+            id = testTaskId,
+            title = "WAL Task",
+            createdAt = 1000L,
+            updatedAt = 1000L
+        )
+        component.userTaskRepository.save(userTask)
+
+        val taskInDb = component.userTaskRepository.getById(testTaskId)
+        assertNotNull("UserTask must be persisted", taskInDb)
+
+        val focusRepo = SQLiteFocusSessionRepository(db)
+        val focusSessionId = FocusSessionId("wal-focus-" + UUID.randomUUID())
+        val focusFact = FocusSession(
+            id = focusSessionId,
+            startedAt = 1000L,
+            endedAt = 2000L,
+            durationMs = 1000L,
+            taskId = testTaskId,
+            source = FocusSessionSource.TIMER,
+            deviceId = "test-device",
+            createdAt = 2000L,
+            updatedAt = 2000L
+        )
+        focusRepo.record(focusFact)
+        val focusInDb = focusRepo.getById(focusSessionId)
+        assertNotNull("FocusSession must be persisted", focusInDb)
+
+        // Close and re-open to verify uncheckpointed WAL data survives
+        DatabaseUtils.closeDatabase()
+        DatabaseUtils.initializeDatabase(context, session.databaseFilename)
+        val reopenedDb = DatabaseUtils.openDatabase()
+        try {
+            val habitCount = reopenedDb.rawQuery("SELECT count(*) FROM Habits WHERE uuid = '$testHabitUuid'", null).use {
+                if (it.moveToFirst()) it.getInt(0) else 0
+            }
+            val taskCount = reopenedDb.rawQuery("SELECT count(*) FROM UserTasks WHERE id = '${testTaskId.value}'", null).use {
+                if (it.moveToFirst()) it.getInt(0) else 0
+            }
+            val focusCount = reopenedDb.rawQuery("SELECT count(*) FROM FocusSessions WHERE id = '${focusSessionId.value}'", null).use {
+                if (it.moveToFirst()) it.getInt(0) else 0
+            }
+            assertEquals(1, habitCount)
+            assertEquals(1, taskCount)
+            assertEquals(1, focusCount)
+        } finally {
+            DatabaseUtils.closeDatabase()
+        }
+    }
+
+    @Test
+    fun test10_datasetSwitchingAndRecovery() {
+        val session = qaSession!!
+        DatabaseUtils.enableWalForNext = true
+        ins.runOnMainSync { app.rebuildComponent(session) }
+
+        // Verify Next dataset is in WAL mode
+        val liveDb = DatabaseUtils.openDatabase()
+        val journalMode = liveDb.rawQuery("PRAGMA journal_mode", null).use {
+            if (it.moveToFirst()) it.getString(0).lowercase() else "unknown"
+        }
+        assertEquals("wal", journalMode)
+
+        // Verify integrity and foreign keys
+        liveDb.rawQuery("PRAGMA quick_check", null).use {
+            assertTrue(it.moveToFirst())
+            assertEquals("ok", it.getString(0))
+        }
+        liveDb.rawQuery("PRAGMA foreign_key_check", null).use {
+            assertEquals(0, it.count)
+        }
+
+        // Test legacy isolation: a database opened with version < 30 stays in rollback journal mode
+        val legacyDbFile = File(context.cacheDir, "legacy_test_v29.db")
+        legacyDbFile.delete()
+        val legacyOpener = HabitsDatabaseOpener(context, legacyDbFile.name, 29, isWalRequested = false)
+        val legacyDb = legacyOpener.writableDatabase
+        try {
+            val legacyJournalMode = legacyDb.rawQuery("PRAGMA journal_mode", null).use {
+                if (it.moveToFirst()) it.getString(0).lowercase() else "unknown"
+            }
+            assertNotEquals("wal", legacyJournalMode)
+        } finally {
+            legacyDb.close()
+            legacyOpener.close()
+            legacyDbFile.delete()
+        }
     }
 }

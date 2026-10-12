@@ -54,7 +54,7 @@ object DatabaseUtils {
     private var currentDatabaseFilename: String? = null
 
     @Volatile
-    var enableWalForNext: Boolean = false
+    var enableWalForNext: Boolean = true
 
     var restoreFailureInjection: RestoreFailureInjection = RestoreFailureInjection.NONE
 

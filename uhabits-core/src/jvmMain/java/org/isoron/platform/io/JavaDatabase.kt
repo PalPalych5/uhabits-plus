@@ -66,14 +66,51 @@ class JavaPreparedStatement(
 
 class JavaDatabase(private val conn: Connection) : Database {
     private var transactionDepth = 0
+    private var transactionFailed = false
+    private val successStack = mutableListOf<Boolean>()
+
+    override fun beginTransaction() {
+        if (transactionDepth == 0) {
+            conn.autoCommit = false
+            transactionFailed = false
+        }
+        transactionDepth++
+        successStack.add(false)
+    }
+
+    override fun setTransactionSuccessful() {
+        if (successStack.isNotEmpty()) {
+            successStack[successStack.lastIndex] = true
+        }
+    }
+
+    override fun endTransaction() {
+        if (transactionDepth > 0) {
+            val levelSuccessful = if (successStack.isNotEmpty()) successStack.removeAt(successStack.lastIndex) else false
+            if (!levelSuccessful) {
+                transactionFailed = true
+            }
+            transactionDepth--
+            if (transactionDepth == 0) {
+                if (transactionFailed) {
+                    conn.rollback()
+                } else {
+                    conn.commit()
+                }
+                conn.autoCommit = true
+                transactionFailed = false
+            }
+        }
+    }
+
+    override fun inTransaction(): Boolean = transactionDepth > 0
 
     override fun prepareStatement(sql: String): PreparedStatement {
         val trimmed = sql.trimStart().uppercase()
         if (trimmed.startsWith("BEGIN")) {
             return object : NoOpStatement() {
                 override fun step(): StepResult {
-                    if (transactionDepth == 0) conn.autoCommit = false
-                    transactionDepth++
+                    beginTransaction()
                     return StepResult.DONE
                 }
             }
@@ -81,9 +118,20 @@ class JavaDatabase(private val conn: Connection) : Database {
         if (trimmed.startsWith("COMMIT")) {
             return object : NoOpStatement() {
                 override fun step(): StepResult {
-                    transactionDepth--
-                    if (transactionDepth == 0) {
-                        conn.commit()
+                    setTransactionSuccessful()
+                    endTransaction()
+                    return StepResult.DONE
+                }
+            }
+        }
+        if (trimmed == "ROLLBACK" || trimmed == "ROLLBACK TRANSACTION") {
+            return object : NoOpStatement() {
+                override fun step(): StepResult {
+                    if (transactionDepth > 0) {
+                        transactionDepth = 0
+                        successStack.clear()
+                        transactionFailed = true
+                        conn.rollback()
                         conn.autoCommit = true
                     }
                     return StepResult.DONE

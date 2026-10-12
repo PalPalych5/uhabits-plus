@@ -38,10 +38,49 @@ class EffectiveReadDatabase(
     private val revision: EffectiveReadRevision,
     observedTables: Set<String> = setOf("CONTRIBUTIONS", "REPETITIONS", "HABITS", "HABITGOALS", "HABITEXTENSIONS", "APPSETTINGS"),
 ) : Database {
-    private data class Frame(val name: String?, var changed: Boolean = false)
+    private data class Frame(val name: String?, var changed: Boolean = false, var successful: Boolean = false)
     private val frames = mutableListOf<Frame>()
     private val mutation = Regex("^(?:INSERT(?:\\s+OR\\s+\\w+)?\\s+INTO|REPLACE\\s+INTO|UPDATE(?:\\s+OR\\s+\\w+)?|DELETE\\s+FROM)\\s+[\"`\\[]?(\\w+)", RegexOption.IGNORE_CASE)
     private val tables = observedTables.map { it.uppercase() }.toSet()
+
+    @Synchronized
+    override fun beginTransaction() {
+        frames.add(Frame(null))
+        delegate.beginTransaction()
+    }
+
+    @Synchronized
+    override fun setTransactionSuccessful() {
+        if (frames.isNotEmpty()) frames.last().successful = true
+        delegate.setTransactionSuccessful()
+    }
+
+    @Synchronized
+    override fun endTransaction() {
+        val frame = if (frames.isNotEmpty()) frames.removeAt(frames.lastIndex) else null
+        val wasSuccessful = frame?.successful == true
+        try {
+            delegate.endTransaction()
+            if (frames.isEmpty()) {
+                if (wasSuccessful && frame?.changed == true) {
+                    revision.changed()
+                } else if (!wasSuccessful && frame?.changed == true) {
+                    revision.rolledBack()
+                }
+            } else {
+                if (wasSuccessful && frame?.changed == true) {
+                    frames.last().changed = true
+                } else if (!wasSuccessful && frame?.changed == true) {
+                    revision.rolledBack()
+                }
+            }
+        } catch (t: Throwable) {
+            if (frame?.changed == true) revision.rolledBack()
+            throw t
+        }
+    }
+
+    override fun inTransaction(): Boolean = delegate.inTransaction()
 
     override fun prepareStatement(sql: String): PreparedStatement {
         val statement = delegate.prepareStatement(sql)
