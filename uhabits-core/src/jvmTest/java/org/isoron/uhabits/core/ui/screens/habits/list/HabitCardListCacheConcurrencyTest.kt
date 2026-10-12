@@ -20,6 +20,44 @@ import kotlin.test.assertTrue
 
 class HabitCardListCacheConcurrencyTest : BaseUnitTest() {
     @Test
+    fun initialReadFailureIsReportedWithoutPublishingFakeRowsAndRetryLoadsNormally() {
+        habitList.add(fixtures.createShortHabit())
+        val captured = mutableListOf<Task>()
+        val progress = mutableListOf<Pair<Task, Int>>()
+        val runner = object : TaskRunner {
+            override val activeTaskCount get() = captured.size
+            override fun execute(task: Task) { captured.add(task); task.onAttached(this) }
+            override fun publishProgress(task: Task, value: Int) { progress.add(task to value) }
+            override fun addListener(listener: TaskRunner.Listener) {}
+            override fun removeListener(listener: TaskRunner.Listener) {}
+            override suspend fun await() {}
+        }
+        val cache = HabitCardListCache(habitList, commandRunner, runner, mock())
+        val listener = mock<HabitCardListCache.Listener>()
+        cache.setListener(listener)
+        cache.setCheckmarkCount(10)
+        cache.effectiveSnapshots = { throw IllegalStateException("QA read failure") }
+        cache.refreshAllHabits()
+        assertFailsWith<IllegalStateException> { runBlocking { captured.last().doInBackground() } }
+        progress.last().let { it.first.onProgressUpdate(it.second) }
+        assertFalse(cache.hasLoaded)
+        assertTrue(cache.lastRefreshFailed)
+        assertEquals(0, cache.habitCount)
+        verify { listener.onRefreshFailed() }
+        resetCalls(listener)
+        cache.effectiveSnapshots = null
+        cache.refreshAllHabits()
+        // A delayed failure from the old generation must not overwrite the retry state.
+        progress.last().let { it.first.onProgressUpdate(it.second) }
+        assertFalse(cache.lastRefreshFailed)
+        verifyNoMoreCalls(listener)
+        runBlocking { captured.last().doInBackground() }
+        captured.last().onPostExecute()
+        assertTrue(cache.hasLoaded)
+        assertEquals(1, cache.habitCount)
+    }
+
+    @Test
     fun unstableSnapshotDoesNotPublishAndSubsequentStableRefreshSucceeds() {
         habitList.add(fixtures.createShortHabit())
         val captured = mutableListOf<Task>()

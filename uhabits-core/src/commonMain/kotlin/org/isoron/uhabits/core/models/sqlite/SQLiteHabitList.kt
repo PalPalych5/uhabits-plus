@@ -91,13 +91,16 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
 
     private fun loadRecords() {
         if (loaded) return
+        org.isoron.uhabits.core.io.HabitStartupTiming.mark("repository.load.begin")
         loaded = true
         list.removeAll()
         list.setBlocks(getBlocks())
         list.organizationFacade = organizationFacade
         globalStatisticsStartDate =
             appSettingRepository.getLong(GLOBAL_STATS_START_KEY)?.let(LocalDate::fromUnixTime)
+        org.isoron.uhabits.core.io.HabitStartupTiming.mark("repository.findAll.begin")
         val records = repository.findAll()
+        org.isoron.uhabits.core.io.HabitStartupTiming.mark("repository.findAll.end")
         var shouldRebuildOrder = false
         for ((expectedPosition, rec) in records.withIndex()) {
             if (rec.position != expectedPosition) shouldRebuildOrder = true
@@ -120,7 +123,9 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
             h.recompute()
             list.add(h)
         }
+        org.isoron.uhabits.core.io.HabitStartupTiming.mark("repository.hydrateRecompute.end")
         if (shouldRebuildOrder) rebuildOrder()
+        org.isoron.uhabits.core.io.HabitStartupTiming.mark("repository.load.end")
     }
 
     @Synchronized

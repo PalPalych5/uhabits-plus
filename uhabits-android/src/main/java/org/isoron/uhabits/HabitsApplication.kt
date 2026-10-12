@@ -55,6 +55,8 @@ class HabitsApplication : Application() {
     val sessionManager: DatasetSessionManager by lazy { DatasetSessionManager(this) }
 
     override fun onCreate() {
+        org.isoron.uhabits.utils.HabitsStartupTrace.install(this)
+        org.isoron.uhabits.utils.HabitsStartupTrace.mark("application.create.begin")
         super.onCreate()
         context = this
 
@@ -69,6 +71,7 @@ class HabitsApplication : Application() {
         // PR21 explicit preparation/recovery must inspect legacy state before normal session
         // resolution, DB opening, sync, or timer constructors can write. No migration follows it.
         org.isoron.uhabits.production.ProductionPreparationStartup.runBeforeDependencyInjection(this)
+        org.isoron.uhabits.utils.HabitsStartupTrace.mark("application.recovery.end")
 
         val sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this)
         if (!sharedPrefs.contains("pref_app_language")) {
@@ -83,7 +86,9 @@ class HabitsApplication : Application() {
             }
         }
 
-        val session = sessionManager.resolveSessionOnStartup()
+        org.isoron.uhabits.utils.HabitsStartupTrace.mark("session.resolve.begin")
+        val session = org.isoron.uhabits.utils.HabitsStartupTrace.offlineFixtureSession(this, sessionManager.resolveSessionOnStartup())
+        org.isoron.uhabits.utils.HabitsStartupTrace.mark("session.resolve.end")
 
         // Ordinary legacy tests start empty. Persisted Next datasets must survive
         // instrumentation process restarts (and must never be silently purged).
@@ -101,6 +106,7 @@ class HabitsApplication : Application() {
         }
 
         rebuildComponent(session)
+        org.isoron.uhabits.utils.HabitsStartupTrace.mark("application.create.end")
     }
 
     override fun onTerminate() {
@@ -164,6 +170,7 @@ class HabitsApplication : Application() {
     }
 
     fun rebuildComponent(session: DatasetSession = sessionManager.resolvedSession()) {
+        org.isoron.uhabits.utils.HabitsStartupTrace.mark("component.rebuild.begin")
         stopServices()
 
         if (isComponentInitialized) {
@@ -184,15 +191,24 @@ class HabitsApplication : Application() {
             dbFile = db,
             session = session
         )
+        org.isoron.uhabits.utils.HabitsStartupTrace.mark("component.construct.end")
 
         val prefs = component.preferences
         prefs.lastAppVersion = BuildConfig.VERSION_CODE
 
         setToday(computeToday(component.preferences.midnightDelayHours, 0))
+        org.isoron.uhabits.utils.HabitsStartupTrace.mark("application.calendar.ready")
 
         val habitList = component.habitList
-        for (h in habitList) h.recompute()
+        org.isoron.uhabits.utils.HabitsStartupTrace.mark("application.habits.begin")
+        // SQLiteHabitList hydrates and recomputes every model on its first read,
+        // after the session's calendar has been installed above. Force that read
+        // without immediately repeating all history/score/streak calculations.
+        habitList.size()
+        org.isoron.uhabits.utils.HabitsStartupTrace.mark("application.habits.end")
         component.effectiveHabitReads
+        component.habitCardListCache.timingObserver = if (org.isoron.uhabits.utils.HabitsStartupTrace.enabled)
+            { stage, ms -> org.isoron.uhabits.utils.HabitsStartupTrace.mark("duration.$stage", durationMs = ms) } else null
         component.focusCreditController?.startRecovery()
 
         if (session.capabilities.widgetsEnabled) {
@@ -225,6 +241,7 @@ class HabitsApplication : Application() {
                 widgetUpdater?.updateWidgets()
             }
         }
+        org.isoron.uhabits.utils.HabitsStartupTrace.mark("component.rebuild.end")
     }
 
     private fun stopServices() {

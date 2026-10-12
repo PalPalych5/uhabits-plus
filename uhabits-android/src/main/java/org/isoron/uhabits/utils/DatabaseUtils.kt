@@ -107,6 +107,7 @@ object DatabaseUtils {
         }
 
     fun initializeDatabase(context: Context?, filename: String? = null) {
+        HabitsStartupTrace.mark("database.configure.begin")
         val resolvedName = filename ?: defaultDatabaseFilename
         currentDatabaseFilename = resolvedName
         if (context != null) {
@@ -122,6 +123,7 @@ object DatabaseUtils {
             resolvedName,
             targetVersion
         )
+        HabitsStartupTrace.mark("database.configure.end")
     }
 
     fun closeDatabase() {
@@ -801,8 +803,9 @@ object DatabaseUtils {
     }
 
     fun openDatabase(): SQLiteDatabase {
+        HabitsStartupTrace.mark("database.open.begin")
         checkNotNull(opener)
-        return opener!!.writableDatabase
+        return opener!!.writableDatabase.also { HabitsStartupTrace.mark("database.open.end") }
     }
 
     /** Pre-Focus Android snapshots were raw files without a manifest; only fact-free ones can be adapted. */

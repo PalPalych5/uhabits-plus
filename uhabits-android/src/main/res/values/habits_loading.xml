@@ -1,0 +1,5 @@
+<resources>
+    <string name="habits_loading">Loading habits…</string>
+    <string name="habits_loading_error">Could not load habits</string>
+    <string name="habits_loading_retry">Retry</string>
+</resources>

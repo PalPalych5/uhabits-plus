@@ -88,6 +88,22 @@ class ListHabitsRootView(
     val header = HeaderView(context, preferences, midnightTimer)
     private val mainLayout: RelativeLayout
     private var containerHomeView: View? = null
+    private val loadingLabel = android.widget.TextView(context).apply {
+        setTextColor(palette.onSurfaceVariant)
+        gravity = android.view.Gravity.CENTER
+        setPadding(dp(16f).toInt(), dp(12f).toInt(), dp(16f).toInt(), dp(12f).toInt())
+    }
+    private val loadingRetry = android.widget.Button(context).apply {
+        setText(R.string.habits_loading_retry)
+        setOnClickListener { listAdapter.refresh(); updateEmptyView() }
+    }
+    private val loadingState = android.widget.LinearLayout(context).apply {
+        orientation = android.widget.LinearLayout.VERTICAL
+        gravity = android.view.Gravity.CENTER
+        addView(loadingLabel, MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+        addView(loadingRetry)
+    }
+    private var failureNotified = false
 
     init {
         val hints = resources.getStringArray(R.array.hints)
@@ -105,6 +121,7 @@ class ListHabitsRootView(
             addBelow(llEmpty, header, height = MATCH_PARENT) {
                 it.topMargin = dp(3f).toInt()
             }
+            addBelow(loadingState, header, height = MATCH_PARENT)
             addAtBottom(hintView)
         }
         mainLayout.setupToolbar(
@@ -133,6 +150,7 @@ class ListHabitsRootView(
             header.visibility = GONE
             listView.visibility = GONE
             llEmpty.visibility = GONE
+            loadingState.visibility = GONE
             hintView.setSuppressed(true)
             containerHomeView?.visibility = VISIBLE
         } else {
@@ -186,12 +204,16 @@ class ListHabitsRootView(
     }
 
     private fun updateEmptyView() {
+        loadingState.visibility = GONE
         if (containerHomeView?.visibility == VISIBLE) {
             llEmpty.hide()
             return
         }
         if (!listAdapter.hasLoaded) {
             llEmpty.hide()
+            loadingState.visibility = VISIBLE
+            loadingRetry.visibility = if (listAdapter.lastRefreshFailed) VISIBLE else GONE
+            loadingLabel.setText(if (listAdapter.lastRefreshFailed) R.string.habits_loading_error else R.string.habits_loading)
         } else if (listAdapter.itemCount == 0) {
             if (listAdapter.isSearching()) {
                 llEmpty.showNotFound()
@@ -202,6 +224,11 @@ class ListHabitsRootView(
             }
         } else {
             llEmpty.hide()
+        }
+        if (!listAdapter.lastRefreshFailed) failureNotified = false
+        if (listAdapter.hasLoaded && listAdapter.lastRefreshFailed && !failureNotified) {
+            failureNotified = true
+            android.widget.Toast.makeText(context, R.string.habits_loading_error, android.widget.Toast.LENGTH_LONG).show()
         }
     }
 

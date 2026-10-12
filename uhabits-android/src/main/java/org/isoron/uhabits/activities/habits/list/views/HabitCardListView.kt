@@ -77,6 +77,34 @@ class HabitCardListView(
         }
 
     private val attachedHolders = mutableListOf<HabitCardViewHolder>()
+    private var tracedLayout = false
+    private var tracedDraw = false
+
+    override fun onVisibilityChanged(changedView: android.view.View, visibility: Int) {
+        super.onVisibilityChanged(changedView, visibility)
+        if (visibility != VISIBLE) { tracedLayout = false; tracedDraw = false }
+    }
+
+    override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
+        super.onLayout(changed, l, t, r, b)
+        if (org.isoron.uhabits.utils.HabitsStartupTrace.enabled && !tracedLayout && childCount > 0 && adapter.itemCount > 0) {
+            tracedLayout = true
+            org.isoron.uhabits.utils.HabitsStartupTrace.mark("list.layout.ready")
+        }
+    }
+
+    override fun dispatchDraw(canvas: android.graphics.Canvas) {
+        super.dispatchDraw(canvas)
+        if (org.isoron.uhabits.utils.HabitsStartupTrace.enabled && !tracedDraw && isShown && childCount > 0 && adapter.itemCount > 0) {
+            tracedDraw = true
+            org.isoron.uhabits.utils.HabitsStartupTrace.mark("list.meaningful.draw")
+            if (android.os.Build.VERSION.SDK_INT >= 29 && isHardwareAccelerated) {
+                viewTreeObserver.registerFrameCommitCallback {
+                    org.isoron.uhabits.utils.HabitsStartupTrace.mark("list.frame.commit")
+                }
+            }
+        }
+    }
     private val touchHelper = ItemTouchHelper(TouchHelperCallback()).apply {
         attachToRecyclerView(this@HabitCardListView)
     }
@@ -160,6 +188,8 @@ class HabitCardListView(
     }
 
     override fun onAttachedToWindow() {
+        tracedLayout = false
+        tracedDraw = false
         super.onAttachedToWindow()
         adapter.onAttached()
     }

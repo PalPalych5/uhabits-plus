@@ -68,6 +68,7 @@ class HabitCardListAdapter(
     }
 
     val hasLoaded: Boolean get() = cache.hasLoaded
+    val lastRefreshFailed: Boolean get() = cache.lastRefreshFailed
 
     /**
      * Sets all items as not selected.
@@ -180,6 +181,10 @@ class HabitCardListAdapter(
     }
 
     override fun onRefreshFinished() {
+        observable.notifyListeners()
+    }
+
+    override fun onRefreshFailed() {
         observable.notifyListeners()
     }
 

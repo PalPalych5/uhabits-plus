@@ -41,11 +41,19 @@ class HabitTapPerformanceAndroidTest {
         if (view is ViewGroup) for (i in 0 until view.childCount) yieldAll(descendants(view.getChildAt(i)))
     }
     @Test fun measureRenderedBooleanTapsAndPersistence() {
-        val experiment = UiReviewCaptureTest.initializeFixture()
-        DemoDataGenerator.generate(ins.targetContext, experiment.sqlModelFactory, experiment.habitList, null,
+        val startupFixture = InstrumentationRegistry.getArguments().getString("startupFixture") == "true"
+        val experiment = if (startupFixture) {
+            check(InstrumentationRegistry.getArguments().getString("disposableAvd") == "UHabit_UI_Review_Disposable_20261011")
+            check(androidx.test.uiautomator.UiDevice.getInstance(ins).executeShellCommand("getprop ro.boot.qemu.avd_name").trim() == "UHabit_UI_Review_Disposable_20261011")
+            check(File(ins.targetContext.filesDir, org.isoron.uhabits.utils.HabitsStartupTrace.MARKER).exists())
+            HabitsApplication.component.also {
+                check(it.session.mode == DatasetMode.PRODUCTION_NEXT && !it.session.capabilities.remoteCallsAllowed && !it.session.capabilities.syncEnabled)
+            }
+        } else UiReviewCaptureTest.initializeFixture()
+        if (!startupFixture) DemoDataGenerator.generate(ins.targetContext, experiment.sqlModelFactory, experiment.habitList, null,
             experiment.habitCardListCache, true, LocalDate(2026, 10, 11))
         val app = ins.targetContext.applicationContext as HabitsApplication
-        check(experiment.session.isExperimental)
+        check(startupFixture || experiment.session.isExperimental)
         val qaSession = experiment.session.copy(mode = DatasetMode.PRODUCTION_NEXT,
             capabilities = DatasetCapabilities.PRODUCTION_NEXT.copy(syncEnabled = false, remoteCallsAllowed = false,
                 backgroundJobsEnabled = false))

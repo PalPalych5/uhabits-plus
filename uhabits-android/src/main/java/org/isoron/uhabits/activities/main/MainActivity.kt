@@ -81,6 +81,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        org.isoron.uhabits.utils.HabitsStartupTrace.mark("activity.create.begin")
         super.onCreate(savedInstanceState)
         val themeSwitcher = AndroidThemeSwitcher(this, prefs)
         themeSwitcher.apply()
@@ -91,6 +92,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         BaseExceptionHandler.install(this)
 
         binding = ActivityMainBinding.inflate(layoutInflater)
+        org.isoron.uhabits.utils.HabitsStartupTrace.mark("activity.inflate.end")
         binding.root.applyRootViewInsets()
         binding.bottomNavigationContainer.applyBottomInset()
         setContentView(binding.root)
@@ -140,6 +142,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         setupBackHandling()
         ensureCoreFragments()
         showDestination(navigationState.current)
+        org.isoron.uhabits.utils.HabitsStartupTrace.mark("activity.create.end")
         binding.root.post {
             // Width changes can destroy this host before its startup callback runs.
             if (isFinishing || isDestroyed || supportFragmentManager.isDestroyed) return@post
@@ -388,6 +391,15 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         }
         transaction.commitNowAllowingStateLoss()
 
+        if (destination == MainDestination.TASKS && org.isoron.uhabits.utils.HabitsStartupTrace.enabled) {
+            lateinit var draw: android.view.ViewTreeObserver.OnDrawListener
+            draw = android.view.ViewTreeObserver.OnDrawListener {
+                org.isoron.uhabits.utils.HabitsStartupTrace.mark("workspace.tasks.draw")
+                binding.root.post { if (binding.root.viewTreeObserver.isAlive) binding.root.viewTreeObserver.removeOnDrawListener(draw) }
+            }
+            binding.root.viewTreeObserver.addOnDrawListener(draw)
+        }
+
         if (target is ListHabitsFragment) {
             target.setDisplayMode(
                 if (destination == MainDestination.ARCHIVE) {
@@ -458,6 +470,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     override fun navigate(destination: MainDestination) {
+        org.isoron.uhabits.utils.HabitsStartupTrace.mark("navigation.request.${destination.name}")
         if (destination == MainDestination.TASKS && !appComponent.session.isNextArchitecture) return
         if (isBottomTabTransitionRunning) return
         val previous = navigationState.current

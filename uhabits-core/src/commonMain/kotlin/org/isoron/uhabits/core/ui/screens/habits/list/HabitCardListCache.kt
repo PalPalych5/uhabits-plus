@@ -20,6 +20,7 @@ package org.isoron.uhabits.core.ui.screens.habits.list
 
 import kotlin.concurrent.Volatile
 import kotlin.time.TimeSource
+import org.isoron.uhabits.core.io.HabitStartupTiming
 import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.Synchronized
 import org.isoron.platform.time.getToday
@@ -76,6 +77,8 @@ class HabitCardListCache(
     private var shutDown = false
     private var refreshGeneration = 0L
     var hasLoaded: Boolean = false
+        private set
+    var lastRefreshFailed: Boolean = false
         private set
     private var listener: Listener
     private val data: CacheData
@@ -207,8 +210,10 @@ class HabitCardListCache(
     @Synchronized
     fun refreshAllHabits() {
         if (shutDown) return
+        lastRefreshFailed = false
         if (currentFetchTask != null) currentFetchTask!!.cancel()
         val task = RefreshTask(++refreshGeneration)
+        HabitStartupTiming.mark("cache.refresh.request", refreshGeneration)
         pendingRefreshTasks.add(task)
         currentFetchTask = task
         taskRunner.execute(task)
@@ -217,6 +222,7 @@ class HabitCardListCache(
     @Synchronized
     fun refreshHabit(id: Long) {
         if (shutDown) return
+        lastRefreshFailed = false
         val task = RefreshTask(id, ++refreshGeneration)
         pendingRefreshTasks.add(task)
         taskRunner.execute(task)
@@ -269,6 +275,7 @@ class HabitCardListCache(
         fun onItemMoved(oldPosition: Int, newPosition: Int) {}
         fun onItemRemoved(position: Int) {}
         fun onRefreshFinished() {}
+        fun onRefreshFailed() {}
     }
 
     private inner class CacheData {
@@ -318,12 +325,15 @@ class HabitCardListCache(
         }
 
         @Synchronized
-        fun fetchHabits() {
+        fun fetchHabits(generation: Long) {
+            HabitStartupTiming.mark("cache.fetch.begin", generation)
             val load = effectiveSnapshots
             val snapshotStarted = TimeSource.Monotonic.markNow()
             val candidates = if (load == null) filteredHabits.toList() else
                 allHabits.getFiltered(matcher.copy(isCompletedAllowed = true, isEnteredAllowed = true)).toList()
+            HabitStartupTiming.mark("cache.effective.begin", generation)
             val batch = load?.invoke(candidates).orEmpty()
+            HabitStartupTiming.mark("cache.effective.end", generation)
             timingObserver?.invoke("cache.effectiveSnapshots", snapshotStarted.elapsedNow().inWholeNanoseconds / 1e6)
             val today = getToday()
             val selected = candidates.filter { h ->
@@ -375,6 +385,7 @@ class HabitCardListCache(
                 idToHabit[h.id] = h
                 batch[HabitRef(requireNotNull(h.uuid))]?.let { snapshots[h.id] = it }
             }
+            HabitStartupTiming.mark("cache.fetch.end", generation)
         }
 
         /**
@@ -395,6 +406,7 @@ class HabitCardListCache(
         private var isCancelled = false
         @Volatile
         private var backgroundComplete = false
+        @Volatile private var fetchFailure: Exception? = null
         private var runner: TaskRunner? = null
 
         private val generation: Long
@@ -425,10 +437,23 @@ class HabitCardListCache(
 
         @Synchronized
         override suspend fun doInBackground() {
+            try {
+                prepareInBackground()
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                fetchFailure = e
+                runCatching { logger.error(e) }
+                runner?.publishProgress(this, Int.MIN_VALUE)
+                throw e
+            }
+        }
+
+        private suspend fun prepareInBackground() {
             if (!isCurrent()) return
+            HabitStartupTiming.mark("cache.worker.begin", generation)
             val started = TimeSource.Monotonic.markNow()
             try {
-                newData.fetchHabits()
+                newData.fetchHabits(generation)
             } catch (_: org.isoron.uhabits.core.models.projection.EffectiveReadInvalidatedException) {
                 // Keep the last published generation. A concurrent revision requests a new one.
                 isCancelled = true
@@ -455,6 +480,7 @@ class HabitCardListCache(
                 newData.notes[habit.id] = noteList.toTypedArray()
             }
             backgroundComplete = true
+            HabitStartupTiming.mark("cache.cards.ready", generation)
             timingObserver?.invoke("cache.background", started.elapsedNow().inWholeNanoseconds / 1e6)
         }
 
@@ -468,6 +494,7 @@ class HabitCardListCache(
             finished(this)
             if (!isCurrent()) return
             currentFetchTask = null
+            HabitStartupTiming.mark("cache.publish.begin", generation)
             val started = TimeSource.Monotonic.markNow()
             // Publish only after the worker releases its reader monitor. Posting progress
             // while it owns that monitor made the main thread wait for all SQL/snapshots.
@@ -475,10 +502,19 @@ class HabitCardListCache(
             for (position in newData.habits.indices) processPosition(position)
             hasLoaded = true
             listener.onRefreshFinished()
+            HabitStartupTiming.mark("cache.publish.end", generation)
             timingObserver?.invoke("cache.publish", started.elapsedNow().inWholeNanoseconds / 1e6)
         }
 
         override fun onProgressUpdate(currentPosition: Int) {
+            if (currentPosition == Int.MIN_VALUE) {
+                finished(this)
+                if (!isCurrent() || fetchFailure == null) return
+                currentFetchTask = null
+                lastRefreshFailed = true
+                listener.onRefreshFailed()
+                return
+            }
             if (!backgroundComplete || !isCurrent()) return
             if (currentPosition < 0) processRemovedHabits() else processPosition(currentPosition)
         }

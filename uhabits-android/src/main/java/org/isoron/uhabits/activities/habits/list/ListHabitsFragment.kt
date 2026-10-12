@@ -67,6 +67,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
     }
 
     private fun initialize() {
+        org.isoron.uhabits.utils.HabitsStartupTrace.mark("fragment.initialize.begin")
         val activity = requireActivity() as AppCompatActivity
         appComponent = (requireContext().applicationContext as HabitsApplication).component
         component = HabitsActivityComponent::class.create(
@@ -118,6 +119,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
                 }
             }
         )
+        org.isoron.uhabits.utils.HabitsStartupTrace.mark("fragment.initialize.end")
     }
 
     fun handleBack(): Boolean {
