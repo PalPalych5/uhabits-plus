@@ -38,6 +38,7 @@ import org.isoron.uhabits.core.models.memory.MemoryHabitList
 import org.isoron.uhabits.core.tasks.Task
 import org.isoron.uhabits.core.tasks.TaskRunner
 import org.isoron.uhabits.core.containers.HabitRef
+import org.isoron.uhabits.core.containers.IconRef
 import org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshot
 
 /**
@@ -71,6 +72,13 @@ class HabitCardListCache(
 
     @Synchronized
     fun getEffectiveSnapshot(habitId: Long): EffectiveHabitReadSnapshot? = data.snapshots[habitId]
+
+    /** Metadata is prepared with the card generation, including absent icons/groups. */
+    data class RowMetadata(val iconRef: IconRef?, val rootGroupKey: Any?, val dayTier: DayTier)
+
+    @Synchronized
+    fun getMetadata(habitId: Long): RowMetadata =
+        data.metadata[habitId] ?: RowMetadata(null, null, DayTier.NORMAL)
 
     private var checkmarkCount = 0
     private var currentFetchTask: Task? = null
@@ -251,6 +259,7 @@ class HabitCardListCache(
         data.notes.remove(id)
         data.scores.remove(id)
         data.snapshots.remove(id)
+        data.metadata.remove(id)
         listener.onItemRemoved(position)
     }
 
@@ -294,6 +303,7 @@ class HabitCardListCache(
     }
 
     private inner class CacheData {
+        val metadata = mutableMapOf<Long?, RowMetadata>()
         val snapshots = mutableMapOf<Long?, EffectiveHabitReadSnapshot>()
         val idToHabit: MutableMap<Long?, Habit> = mutableMapOf()
         val habits: MutableList<Habit>
@@ -445,12 +455,14 @@ class HabitCardListCache(
             scores.putAll(data.scores)
             checkmarks.putAll(data.checkmarks)
             notes.putAll(data.notes)
+            metadata.putAll(data.metadata)
         }
         private val requestedMatcher = matcher
         private val requestedLoad = effectiveSnapshots
         private val requestedPrimary = primaryOrder
         private val requestedSecondary = secondaryOrder
         private val requestedCheckmarkCount = checkmarkCount
+        private val requestedOrganization = (allHabits as? MemoryHabitList)?.organizationFacade
         private val newData: CacheData
         private val targetId: Long?
         @Volatile
@@ -531,6 +543,13 @@ class HabitCardListCache(
                 val habit = newData.habits[position]
                 if (targetId != null && targetId != habit.id) continue
                 val snapshot = newData.snapshots[habit.id]
+                val facade = requestedOrganization
+                newData.metadata[habit.id] = RowMetadata(
+                    iconRef = facade?.getHabitVisualIdentity(habit.uuid ?: "")?.iconRef,
+                    rootGroupKey = if (facade == null) habit.blockId else
+                        facade.getRootGroupKey(habit.uuid ?: "", habit.blockId),
+                    dayTier = habit.dayTier,
+                )
                 newData.scores[habit.id] = if (snapshot == null) habit.scores[today].value else snapshot.scoreResult.on(today) ?: Double.NaN
                 val checkmarkList = mutableListOf<Int>()
                 val noteList = mutableListOf<String>()
@@ -562,11 +581,13 @@ class HabitCardListCache(
             if (targetId != null) {
                 val position = data.habits.indexOfFirst { it.id == targetId }
                 if (position >= 0) {
+                    val metadataChanged = data.metadata[targetId] != newData.metadata[targetId]
                     data.scores[targetId] = newData.scores[targetId]!!
                     data.checkmarks[targetId] = newData.checkmarks[targetId]!!
                     data.notes[targetId] = newData.notes[targetId]!!
                     newData.snapshots[targetId]?.let { data.snapshots[targetId] = it }
-                    listener.onEntryChanged(position)
+                    data.metadata[targetId] = requireNotNull(newData.metadata[targetId])
+                    if (metadataChanged) listener.onItemChanged(position) else listener.onEntryChanged(position)
                 }
             } else {
                 // Publish only after the worker releases its reader monitor. Posting progress
@@ -602,6 +623,7 @@ class HabitCardListCache(
             data.scores[id] = newData.scores[id]!!
             data.checkmarks[id] = newData.checkmarks[id]!!
             data.notes[id] = newData.notes[id]!!
+            data.metadata[id] = requireNotNull(newData.metadata[id])
             newData.snapshots[id]?.let { data.snapshots[id] = it }
             listener.onItemInserted(position)
         }
@@ -638,6 +660,7 @@ class HabitCardListCache(
             val newSnapshot = newData.snapshots[id]
             var unchanged = true
             if (oldSnapshot?.revision != newSnapshot?.revision || (oldSnapshot == null) != (newSnapshot == null)) unchanged = false
+            if (data.metadata[id] != newData.metadata[id]) unchanged = false
             if (oldScore != newScore) unchanged = false
             if (!oldCheckmarks.contentEquals(newCheckmarks)) unchanged = false
             if (!oldNoteIndicators.contentEquals(newNoteIndicators)) unchanged = false
@@ -645,6 +668,7 @@ class HabitCardListCache(
             data.scores[id] = newScore
             data.checkmarks[id] = newCheckmarks
             data.notes[id] = newNoteIndicators
+            data.metadata[id] = requireNotNull(newData.metadata[id])
             data.snapshots.remove(id)
             newData.snapshots[id]?.let { data.snapshots[id] = it }
             listener.onItemChanged(position)

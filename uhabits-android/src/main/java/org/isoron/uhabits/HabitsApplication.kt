@@ -234,6 +234,9 @@ class HabitsApplication : Application() {
         }
 
         component.taskRunner.execute {
+            if (session.capabilities.timerEnabled) {
+                runCatching { component.timerSessionManager }
+            }
             if (session.capabilities.remindersEnabled) {
                 reminderScheduler?.scheduleAll()
             }

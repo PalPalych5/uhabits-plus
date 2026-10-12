@@ -16,6 +16,53 @@ import org.isoron.platform.time.setToday
 import kotlin.test.*
 
 class EffectiveReadRevisionTest {
+    @Test fun independentWorkspaceAndOrganizationRevisionsHonorDurableCommitAndRollback() = runTest {
+        val raw = TestDatabaseHelper.createEmptyDatabase()
+        raw.run("CREATE TABLE UserTasks (id INTEGER PRIMARY KEY)")
+        raw.run("CREATE TABLE Containers (id INTEGER PRIMARY KEY)")
+        val habitRevision = EffectiveReadRevision("dataset-a")
+        val workspaceRevision = EffectiveReadRevision("dataset-a")
+        val organizationRevision = EffectiveReadRevision("dataset-a")
+        val habits = EffectiveReadDatabase(raw, habitRevision)
+        val workspace = EffectiveReadDatabase(habits, workspaceRevision, setOf("UserTasks", "Containers"))
+        val db = EffectiveReadDatabase(workspace, organizationRevision, setOf("Containers"))
+        var workspaceRollbacks = 0
+        workspaceRevision.addRollbackListener { workspaceRollbacks++ }
+        try {
+            db.run("BEGIN")
+            db.run("INSERT INTO UserTasks VALUES (1)")
+            assertEquals(0L, workspaceRevision.value)
+            db.run("COMMIT")
+            assertEquals(1L, workspaceRevision.value)
+            assertEquals(0L, habitRevision.value)
+            assertEquals(0L, organizationRevision.value)
+            db.run("BEGIN")
+            db.run("SAVEPOINT organization_edit")
+            db.run("INSERT INTO Containers VALUES (1)")
+            db.run("RELEASE SAVEPOINT organization_edit")
+            assertEquals(0L, organizationRevision.value)
+            db.run("ROLLBACK")
+            assertEquals(1L, workspaceRevision.value)
+            assertEquals(0L, organizationRevision.value)
+            assertEquals(1, workspaceRollbacks)
+            assertEquals(0L, db.queryLong("SELECT COUNT(*) FROM Containers"))
+            db.run("BEGIN")
+            db.run("INSERT INTO Containers VALUES (2)")
+            db.run("INSERT INTO UserTasks VALUES (2)")
+            db.run("COMMIT")
+            assertEquals(2L, workspaceRevision.value)
+            assertEquals(1L, organizationRevision.value)
+            assertEquals(0L, habitRevision.value)
+            db.run("UPDATE Containers SET id = 3 WHERE id = 99")
+            assertEquals(2L, workspaceRevision.value)
+            db.close()
+            workspaceRevision.changed()
+            organizationRevision.changed()
+            assertEquals(2L, workspaceRevision.value)
+            assertEquals(1L, organizationRevision.value)
+        } finally { runCatching { db.close() } }
+    }
+
     private fun contribution() = Contribution(
         id = ContributionId("revision-credit"), targetHabit = HabitRef("h-1"),
         sourceType = ContributionSourceType.FOCUS_SESSION, sourceId = "s-1",

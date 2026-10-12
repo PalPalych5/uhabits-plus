@@ -36,11 +36,12 @@ class EffectiveReadRevision(val datasetId: String) {
 class EffectiveReadDatabase(
     private val delegate: Database,
     private val revision: EffectiveReadRevision,
+    observedTables: Set<String> = setOf("CONTRIBUTIONS", "REPETITIONS", "HABITS", "HABITGOALS", "HABITEXTENSIONS", "APPSETTINGS"),
 ) : Database {
     private data class Frame(val name: String?, var changed: Boolean = false)
     private val frames = mutableListOf<Frame>()
     private val mutation = Regex("^(?:INSERT(?:\\s+OR\\s+\\w+)?\\s+INTO|REPLACE\\s+INTO|UPDATE(?:\\s+OR\\s+\\w+)?|DELETE\\s+FROM)\\s+[\"`\\[]?(\\w+)", RegexOption.IGNORE_CASE)
-    private val tables = setOf("CONTRIBUTIONS", "REPETITIONS", "HABITS", "HABITGOALS", "HABITEXTENSIONS", "APPSETTINGS")
+    private val tables = observedTables.map { it.uppercase() }.toSet()
 
     override fun prepareStatement(sql: String): PreparedStatement {
         val statement = delegate.prepareStatement(sql)

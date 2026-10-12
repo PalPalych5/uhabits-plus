@@ -182,6 +182,8 @@ abstract class HabitsApplicationComponent(
     }
 
     val effectiveReadRevision = org.isoron.uhabits.core.models.projection.EffectiveReadRevision(session.datasetId)
+    val workspaceReadRevision = org.isoron.uhabits.core.models.projection.EffectiveReadRevision(session.datasetId)
+    val organizationReadRevision = org.isoron.uhabits.core.models.projection.EffectiveReadRevision(session.datasetId)
     val widgetRenderer by lazy { org.isoron.uhabits.widgets.WidgetRenderCoordinator(appContext, this) }
 
     val effectiveHabitReads: org.isoron.uhabits.focus.EffectiveHabitReadController? by lazy {
@@ -198,7 +200,9 @@ abstract class HabitsApplicationComponent(
     }
 
     private val providedDb: AndroidDatabase by lazy {
-        AndroidDatabase(DatabaseUtils.openDatabase(), if (session.isNextArchitecture) effectiveReadRevision else null)
+        AndroidDatabase(DatabaseUtils.openDatabase(), if (session.isNextArchitecture) effectiveReadRevision else null,
+            if (session.isNextArchitecture) workspaceReadRevision else null,
+            if (session.isNextArchitecture) organizationReadRevision else null)
     }
 
     @AppScope

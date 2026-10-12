@@ -39,6 +39,13 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.PopupMenu
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+import org.isoron.uhabits.inject.HabitsApplicationComponent
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import org.isoron.platform.time.LocalDate
@@ -67,6 +74,16 @@ class TasksFragment : Fragment() {
     private lateinit var taskService: UserTaskService
     private lateinit var orgFacade: HabitOrganizationFacade
     private lateinit var palette: SettingsThemePalette
+    private lateinit var component: HabitsApplicationComponent
+    private var workspaceSnapshot: TasksWorkspaceSnapshot? = null
+    private var snapshotRevision = -1L
+    private var loadGeneration = 0L
+    private var loadJob: Job? = null
+    private var workspaceActive = false
+    private var refreshQuickLabels: (() -> Unit)? = null
+    private val workspaceChanged: () -> Unit = {
+        activity?.runOnUiThread { if (workspaceActive && view != null) loadTasks() }
+    }
 
     var workspaceNavigator: ((String) -> Unit)? = null
     private lateinit var shellRoot: FrameLayout
@@ -140,7 +157,12 @@ class TasksFragment : Fragment() {
             collapsedContainers.addAll(it.getStringArrayList("collapsedContainers").orEmpty())
         }
         val app = requireContext().applicationContext as HabitsApplication
-        taskRepo = app.component.userTaskRepository
+        if (::component.isInitialized && component !== app.component) {
+            workspaceSnapshot = null
+            snapshotRevision = -1L
+        }
+        component = app.component
+        taskRepo = component.userTaskRepository
         taskService = app.component.userTaskService
         orgFacade = app.component.organizationFacade
         palette = MainTabsThemeBridge.resolve(requireContext())
@@ -160,17 +182,35 @@ class TasksFragment : Fragment() {
         setupQuickAdd()
         setupAdaptiveNavigation(view)
         applyTheme(view)
-        loadTasks()
         return shellRoot
     }
 
     override fun onResume() {
         super.onResume()
+        workspaceActive = true
+        component.workspaceReadRevision.addListener(workspaceChanged)
         palette = MainTabsThemeBridge.resolve(requireContext())
         view?.let { applyTheme(it) }
         adapter.updatePalette(palette)
         (childFragmentManager.findFragmentByTag("task_detail") as? TaskDetailBottomSheet)?.onTaskUpdatedListener = { if (view != null) loadTasks() }
         loadTasks()
+    }
+
+    override fun onPause() {
+        workspaceActive = false
+        component.workspaceReadRevision.removeListener(workspaceChanged)
+        loadGeneration++
+        loadJob?.cancel()
+        loadJob = null
+        super.onPause()
+    }
+
+    override fun onDestroyView() {
+        loadGeneration++
+        loadJob?.cancel()
+        loadJob = null
+        refreshQuickLabels = null
+        super.onDestroyView()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -190,6 +230,11 @@ class TasksFragment : Fragment() {
     }
 
     fun refresh() {
+        // Sync can replace/reload data through a separate connection.
+        workspaceSnapshot = null
+        loadGeneration++
+        loadJob?.cancel()
+        loadJob = null
         if (isAdded && view != null) {
             loadTasks()
         }
@@ -306,7 +351,7 @@ class TasksFragment : Fragment() {
     }
 
     private fun updateSmartViewLabel() {
-        tvTitle.text = selectedContainerFilter?.let { orgFacade.availableContainers().find { item -> item.key == it.value }?.name } ?: activeSmartView.displayName
+        tvTitle.text = selectedContainerFilter?.let { workspaceSnapshot?.availableContainers.orEmpty().find { item -> item.key == it.value }?.name } ?: activeSmartView.displayName
     }
 
     private fun setupRecyclerView() {
@@ -350,7 +395,7 @@ class TasksFragment : Fragment() {
             quickPlan.text = planText
             quickPlan.setTextColor(if (quickPlanned != null) palette.accent else palette.onSurfaceVariant)
 
-            val containerItem = orgFacade.availableContainers().find { it.key == quickContainer?.value }
+            val containerItem = workspaceSnapshot?.availableContainers.orEmpty().find { it.key == quickContainer?.value }
             val containerText = containerItem?.let { it.name } ?: "Раздел"
             quickContainerView.text = containerText
             quickContainerView.setTextColor(if (quickContainer != null) palette.accent else palette.onSurfaceVariant)
@@ -411,7 +456,7 @@ class TasksFragment : Fragment() {
         }
 
         quickContainerView.setOnClickListener {
-            val items = orgFacade.availableContainers()
+            val items = workspaceSnapshot?.availableContainers.orEmpty()
             AlertDialog.Builder(requireContext()).setItems((listOf("Без раздела") + items.map { it.name }).toTypedArray()) { _, index ->
                 quickContainer = if (index == 0) null else ContainerId(items[index - 1].key)
                 refreshOptionLabels()
@@ -492,13 +537,50 @@ class TasksFragment : Fragment() {
         etQuickAddTitle.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) { submitQuickAdd(); true } else false
         }
+        refreshQuickLabels = ::refreshOptionLabels
         refreshOptionLabels()
     }
 
     fun loadTasks() {
+        if (!isAdded || view == null || !workspaceActive || component !== HabitsApplication.component) return
+        val revision = component.workspaceReadRevision.value
+        val cached = workspaceSnapshot
+        if (cached != null && snapshotRevision == revision) {
+            renderTasks(cached)
+            return
+        }
+        if (loadJob?.isActive == true) return
+        val generation = ++loadGeneration
+        loadJob = viewLifecycleOwner.lifecycleScope.launch {
+            val loaded = withContext(Dispatchers.IO) {
+                var stable: Pair<Long, TasksWorkspaceSnapshot>? = null
+                repeat(3) {
+                    if (stable == null) {
+                        val before = component.workspaceReadRevision.value
+                        val snapshot = TasksWorkspaceSnapshot.load(taskRepo, orgFacade.containerQueries)
+                        if (before == component.workspaceReadRevision.value) stable = before to snapshot
+                    }
+                }
+                stable
+            }
+            if (!workspaceActive || generation != loadGeneration || view == null ||
+                component !== HabitsApplication.component) return@launch
+            if (loaded == null || loaded.first != component.workspaceReadRevision.value) {
+                delay(50)
+                loadJob = null
+                loadTasks()
+                return@launch
+            }
+            snapshotRevision = loaded.first
+            workspaceSnapshot = loaded.second
+            renderTasks(loaded.second)
+        }
+    }
+
+    private fun renderTasks(snapshot: TasksWorkspaceSnapshot) {
         // A restored context may have been archived/deleted while this workspace was hidden.
         // availableContainers excludes deleted and effectively archived branches.
-        val availableContainers = orgFacade.availableContainers()
+        val availableContainers = snapshot.availableContainers
         val visibleContainerIds = availableContainers.mapTo(mutableSetOf()) { it.key }
         if (selectedContainerFilter?.value?.let { it !in visibleContainerIds } == true) {
             selectedContainerFilter = null
@@ -507,29 +589,15 @@ class TasksFragment : Fragment() {
         if (localTreeRoot?.value?.let { it !in visibleContainerIds } == true) {
             localTreeRoot = null
         }
-        val allTasks = taskRepo.getAll()
-        val allRoots = allTasks.filter { it.parentTaskId == null }
-
-        // Compute subtasks count for each root task
-        val subtaskMap = mutableMapOf<TaskId, Pair<Int, Int>>()
-        for (root in allRoots) {
-            val children = allTasks.filter { it.parentTaskId == root.id }
-            if (children.isNotEmpty()) {
-                val completed = children.count { it.isCompleted }
-                subtaskMap[root.id] = completed to children.size
-            }
-        }
+        val allRoots = snapshot.roots
+        val subtaskMap = snapshot.subtaskCounts
 
         val today = runCatching { getToday() }.getOrDefault(LocalDate(2026, 10, 4))
         val nowMillis = System.currentTimeMillis()
 
         // 1. Container filter
         val containerFiltered = if (selectedContainerFilter != null) {
-            val ids = TaskContainerScope.ids(
-                selectedContainerFilter!!,
-                orgFacade.containerQueries?.subtreeIds(selectedContainerFilter!!).orEmpty(),
-                orgFacade.availableContainers().map { ContainerId(it.key) }.toSet(),
-            )
+            val ids = snapshot.scope(selectedContainerFilter!!)
             allRoots.filter { it.containerId in ids }
         } else {
             allRoots
@@ -538,6 +606,7 @@ class TasksFragment : Fragment() {
         // 2. Smart View filter
         val viewFiltered = containerFiltered.filter { activeSmartView.matches(it, today, nowMillis) }
         updateSmartViewLabel()
+        refreshQuickLabels?.invoke()
         renderNavigation()
         renderCalendar(viewFiltered)
 
@@ -714,7 +783,7 @@ class TasksFragment : Fragment() {
         header.addView(representationButton, header.childCount - 1, LinearLayout.LayoutParams(dpInt(48f), dpInt(48f)))
         tvTitle.setOnLongClickListener {
             selectedContainerFilter?.let { id ->
-                val path = orgFacade.availableContainers().find { it.key == id.value }?.path
+                val path = workspaceSnapshot?.availableContainers.orEmpty().find { it.key == id.value }?.path
                 AlertDialog.Builder(requireContext()).setMessage(path ?: tvTitle.text).setPositiveButton("OK", null).show()
             }
             true
@@ -757,7 +826,7 @@ class TasksFragment : Fragment() {
     fun onBackPressed(): Boolean {
         if (drawerScrim != null) {
             if (localTreeRoot != null) {
-                localTreeRoot = orgFacade.containerQueries?.find(localTreeRoot!!)?.parentId
+                localTreeRoot = workspaceSnapshot?.containers?.get(localTreeRoot!!)?.parentId
                 renderNavigation()
             } else closeNavigation()
             return true
@@ -806,6 +875,7 @@ class TasksFragment : Fragment() {
     }
 
     private fun renderNavigation() {
+        val snapshot = workspaceSnapshot ?: return
         navigationColumn.removeAllViews()
         navigationColumn.setBackgroundColor(palette.background)
         navigationColumn.setPaddingRelative(dpInt(8f), dpInt(8f), dpInt(8f), dpInt(16f))
@@ -822,7 +892,7 @@ class TasksFragment : Fragment() {
             textSize = 22f; typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
             setPaddingRelative(dpInt(16f), dpInt(8f), dpInt(16f), dpInt(12f))
         })
-        val roots = taskRepo.getAll().filter { it.parentTaskId == null }
+        val roots = snapshot.roots
         val smartIcons = listOf(R.drawable.ic_cat_calendar, R.drawable.ic_cat_folder_open,
             R.drawable.ic_cat_calendar_clock, R.drawable.ic_cat_list_todo, R.drawable.ic_tasks_completed)
         TaskSmartView.entries.forEachIndexed { index, smart ->
@@ -834,18 +904,14 @@ class TasksFragment : Fragment() {
         }
         divider()
         navigationColumn.addView(navText("Разделы").apply { textSize = 12f; minHeight = dpInt(32f); setTextColor(palette.onSurfaceVariant) })
-        val queries = orgFacade.containerQueries
-        val activeContainerIds = orgFacade.availableContainers().map { ContainerId(it.key) }.toSet()
-        if (queries != null) {
+        if (snapshot.containers.isNotEmpty()) {
             localTreeRoot?.let { id ->
-                navigationColumn.addView(navigationRow(queries.find(id)?.parentId?.let { queries.find(it)?.name } ?: "Все разделы",
-                    R.drawable.ic_tasks_parent) { localTreeRoot = queries.find(id)?.parentId; renderNavigation() })
+                navigationColumn.addView(navigationRow(snapshot.containers[id]?.parentId?.let { snapshot.containers[it]?.name } ?: "Все разделы",
+                    R.drawable.ic_tasks_parent) { localTreeRoot = snapshot.containers[id]?.parentId; renderNavigation() })
             }
             fun addContainer(item: org.isoron.uhabits.core.containers.Container, depth: Int) {
-                if (item.id !in activeContainerIds) return
-                val children = queries.children(item.id).filter { it.id in activeContainerIds }
-                val subtree = TaskContainerScope.ids(item.id, queries.subtreeIds(item.id), activeContainerIds)
-                val count = roots.count { !it.isCompleted && it.containerId in subtree }
+                val children = snapshot.children[item.id].orEmpty()
+                val count = snapshot.pendingCounts[item.id] ?: 0
                 val row = LinearLayout(requireContext()).apply { orientation = LinearLayout.HORIZONTAL }
                 row.addView(navigationRow(item.name, if (depth == 0) R.drawable.ic_cat_folder else R.drawable.ic_cat_list_todo,
                     count, selectedContainerFilter == item.id, depth) {
@@ -868,8 +934,8 @@ class TasksFragment : Fragment() {
                 navigationColumn.addView(row)
                 if (depth < 2 && item.id.value !in collapsedContainers) children.forEach { addContainer(it, depth + 1) }
             }
-            val local = localTreeRoot?.let { queries.find(it) }
-            if (local != null) addContainer(local, 0) else queries.roots().forEach { addContainer(it, 0) }
+            val local = localTreeRoot?.let { snapshot.containers[it] }
+            if (local != null) addContainer(local, 0) else snapshot.children[null].orEmpty().forEach { addContainer(it, 0) }
         }
         divider()
         navigationColumn.addView(navigationRow("Настройки", R.drawable.ic_nav_settings) { closeNavigation(); workspaceNavigator?.invoke("Settings") })

@@ -33,6 +33,8 @@ import kotlin.math.min
 
 open class EntryList {
 
+    open val isLoaded: Boolean get() = true
+
     private val entriesByDate: HashMap<LocalDate, Entry> = HashMap()
 
     /**

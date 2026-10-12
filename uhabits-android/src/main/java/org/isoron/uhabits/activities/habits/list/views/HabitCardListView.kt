@@ -39,10 +39,10 @@ import androidx.recyclerview.widget.SimpleItemAnimator
 import me.tatarka.inject.annotations.Inject
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.views.BundleSavedState
-import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.preferences.Preferences
+import org.isoron.uhabits.core.ui.screens.habits.list.HabitCardListCache
 import org.isoron.uhabits.inject.ActivityContext
 
 @Inject
@@ -51,10 +51,9 @@ class HabitCardListViewFactory(
     val adapter: HabitCardListAdapter,
     val cardViewFactory: HabitCardViewFactory,
     val controller: Lazy<HabitCardListController>,
-    val preferences: Preferences,
-    val organizationFacade: HabitOrganizationFacade
+    val preferences: Preferences
 ) {
-    fun create() = HabitCardListView(context, adapter, cardViewFactory, controller, preferences, organizationFacade)
+    fun create() = HabitCardListView(context, adapter, cardViewFactory, controller, preferences)
 }
 
 class HabitCardListView(
@@ -62,8 +61,7 @@ class HabitCardListView(
     private val adapter: HabitCardListAdapter,
     private val cardViewFactory: HabitCardViewFactory,
     private val controller: Lazy<HabitCardListController>,
-    private val preferences: Preferences,
-    private val organizationFacade: HabitOrganizationFacade? = null
+    private val preferences: Preferences
 ) : RecyclerView(context, null, R.attr.scrollableRecyclerViewStyle) {
 
     var checkmarkCount: Int = 0
@@ -112,29 +110,6 @@ class HabitCardListView(
 
 
 
-    private val rootGroupKeyCache = mutableMapOf<String, Any?>()
-
-    private val adapterDataObserver = object : RecyclerView.AdapterDataObserver() {
-        override fun onChanged() {
-            rootGroupKeyCache.clear()
-        }
-        override fun onItemRangeMoved(fromPosition: Int, toPosition: Int, itemCount: Int) {
-            rootGroupKeyCache.clear()
-        }
-        override fun onItemRangeChanged(positionStart: Int, itemCount: Int) {
-            rootGroupKeyCache.clear()
-        }
-        override fun onItemRangeChanged(positionStart: Int, itemCount: Int, payload: Any?) {
-            if (payload !== HabitCardListAdapter.ENTRY_ONLY) rootGroupKeyCache.clear()
-        }
-        override fun onItemRangeInserted(positionStart: Int, itemCount: Int) {
-            rootGroupKeyCache.clear()
-        }
-        override fun onItemRangeRemoved(positionStart: Int, itemCount: Int) {
-            rootGroupKeyCache.clear()
-        }
-    }
-
     init {
         setHasFixedSize(true)
         isLongClickable = true
@@ -143,7 +118,6 @@ class HabitCardListView(
         addItemDecoration(GroupSeparatorDecoration())
         isVerticalScrollBarEnabled = false
         applyBottomInset()
-        adapter.registerAdapterDataObserver(adapterDataObserver)
         super.setAdapter(adapter)
     }
 
@@ -179,7 +153,8 @@ class HabitCardListView(
         score: Double,
         checkmarks: IntArray,
         notes: Array<String>,
-        selected: Boolean
+        selected: Boolean,
+        metadata: HabitCardListCache.RowMetadata
     ): View {
         val cardView = holder.itemView as HabitCardView
         cardView.habit = habit
@@ -192,8 +167,7 @@ class HabitCardListView(
         cardView.unit = goal.unit
         cardView.threshold = goal.targetValue / goal.frequency.denominator
         cardView.notes = notes
-        val visualIdentity = organizationFacade?.getHabitVisualIdentity(habit.uuid ?: "")
-        cardView.iconRef = visualIdentity?.iconRef
+        cardView.iconRef = metadata.iconRef
 
         if (holder.gestureDetector == null) {
             val detector = GestureDetector(context, CardViewGestureDetector(holder))
@@ -219,13 +193,11 @@ class HabitCardListView(
     override fun onAttachedToWindow() {
         tracedLayout = false
         tracedDraw = false
-        rootGroupKeyCache.clear()
         super.onAttachedToWindow()
         adapter.onAttached()
     }
 
     override fun onDetachedFromWindow() {
-        rootGroupKeyCache.clear()
         adapter.onDetached()
         super.onDetachedFromWindow()
     }
@@ -315,21 +287,15 @@ class HabitCardListView(
             if (!preferences.areHabitGroupSeparatorsEnabled) return false
             if (!adapter.primaryOrder.isGroupedOrder()) return false
             if (position <= 0 || position >= adapter.itemCount) return false
-            val previous = adapter.getItem(position - 1) ?: return false
-            val current = adapter.getItem(position) ?: return false
+            val previous = adapter.getMetadata(position - 1) ?: return false
+            val current = adapter.getMetadata(position) ?: return false
             return previous.groupKey(adapter.primaryOrder) != current.groupKey(adapter.primaryOrder)
         }
     }
 
-    private fun Habit.groupKey(order: HabitList.Order): Any? {
+    private fun HabitCardListCache.RowMetadata.groupKey(order: HabitList.Order): Any? {
         return when (order) {
-            HabitList.Order.BY_SPHERE -> {
-                val key = uuid ?: id?.toString() ?: ""
-                if (!rootGroupKeyCache.containsKey(key)) {
-                    rootGroupKeyCache[key] = organizationFacade?.getRootGroupKey(uuid ?: "", blockId) ?: blockId
-                }
-                rootGroupKeyCache[key]
-            }
+            HabitList.Order.BY_SPHERE -> rootGroupKey
             HabitList.Order.BY_DAY_TIER -> dayTier
             else -> null
         }

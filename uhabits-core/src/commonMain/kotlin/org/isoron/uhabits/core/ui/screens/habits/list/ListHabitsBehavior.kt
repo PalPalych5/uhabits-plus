@@ -24,6 +24,7 @@ import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.commands.CreateRepetitionCommand
+import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Entry.Companion.YES_MANUAL
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
@@ -54,13 +55,14 @@ open class ListHabitsBehavior(
     }
 
     open fun onEdit(habit: Habit, date: LocalDate, x: Float, y: Float) {
-        val entry = if (habit.isNumerical) habit.originalEntries.get(date)
-        else habit.computedEntries.get(date)
         if (habit.type == HabitType.NUMERICAL) {
             val goal = habit.goalAt(date)
-            val oldValue = entry.value.toDouble() / 1000
-            screen.showNumberPopup(oldValue, entry.notes, habit, date) { newValue: Double, newNotes: String ->
+            val entry = if (habit.originalEntries.isLoaded) habit.originalEntries.get(date) else null
+            val seedValue = if (entry != null && entry.value != Entry.UNKNOWN) entry.value.toDouble() / 1000.0 else 0.0
+            val seedNotes = entry?.notes ?: ""
+            screen.showNumberPopup(seedValue, seedNotes, habit, date) { newValue: Double, newNotes: String ->
                 val value = (newValue * 1000).roundToInt()
+                val oldValue = (entry?.value ?: Entry.UNKNOWN).toDouble() / 1000.0
                 if (newValue != oldValue) {
                     if (
                         (goal.targetType == AT_LEAST && newValue >= goal.targetValue) ||
@@ -72,6 +74,7 @@ open class ListHabitsBehavior(
                 commandRunner.run(CreateRepetitionCommand(habitList, habit, date, value, newNotes))
             }
         } else {
+            val entry = habit.computedEntries.get(date)
             screen.showCheckmarkPopup(
                 entry.value,
                 entry.notes,

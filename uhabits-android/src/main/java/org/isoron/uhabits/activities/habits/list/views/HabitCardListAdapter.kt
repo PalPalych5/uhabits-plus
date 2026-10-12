@@ -96,6 +96,9 @@ class HabitCardListAdapter(
         return cache.getHabitByPosition(position)
     }
 
+    fun getMetadata(position: Int): HabitCardListCache.RowMetadata? =
+        cache.getHabitByPosition(position)?.id?.let { cache.getMetadata(it) }
+
     override fun getItemCount(): Int {
         return cache.habitCount
     }
@@ -132,7 +135,7 @@ class HabitCardListAdapter(
         val checkmarks = cache.getCheckmarks(habit.id!!)
         val notes = cache.getNotes(habit.id!!)
         val selected = selected.contains(habit)
-        val card = listView!!.bindCardView(holder, habit, score, checkmarks, notes, selected) as HabitCardView
+        val card = listView!!.bindCardView(holder, habit, score, checkmarks, notes, selected, cache.getMetadata(habit.id!!)) as HabitCardView
         card.effectiveSnapshot = cache.getEffectiveSnapshot(habit.id!!)
     }
 
@@ -162,6 +165,8 @@ class HabitCardListAdapter(
 
     override fun onItemChanged(position: Int) {
         notifyItemChanged(position)
+        // A changed group's key also changes the separator on the following row.
+        listView?.invalidateItemDecorations()
         observable.notifyListeners()
     }
 

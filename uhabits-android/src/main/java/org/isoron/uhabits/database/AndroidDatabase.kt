@@ -164,13 +164,28 @@ class AndroidPreparedStatement(
 class AndroidDatabase(
     private val db: SQLiteDatabase,
     revision: org.isoron.uhabits.core.models.projection.EffectiveReadRevision? = null,
+    workspaceRevision: org.isoron.uhabits.core.models.projection.EffectiveReadRevision? = null,
+    organizationRevision: org.isoron.uhabits.core.models.projection.EffectiveReadRevision? = null,
 ) : org.isoron.platform.io.Database {
+
+    constructor(db: SQLiteDatabase, revision: org.isoron.uhabits.core.models.projection.EffectiveReadRevision?) :
+        this(db, revision, null, null)
+    constructor(db: SQLiteDatabase) :
+        this(db, null, null, null)
 
     private val connection: org.isoron.platform.io.Database = object : org.isoron.platform.io.Database {
         override fun prepareStatement(sql: String): PreparedStatement = AndroidPreparedStatement(db, sql)
         override fun close() = db.close()
     }.let { raw ->
         if (revision == null) raw else org.isoron.uhabits.core.models.projection.EffectiveReadDatabase(raw, revision)
+    }.let { effective ->
+        if (workspaceRevision == null) effective else org.isoron.uhabits.core.models.projection.EffectiveReadDatabase(
+            effective, workspaceRevision, setOf("USERTASKS", "CONTAINERS", "ORGANIZATIONSTATE", "HABITPLACEMENTS", "HABITVISUALIDENTITIES"),
+        )
+    }.let { workspace ->
+        if (organizationRevision == null) workspace else org.isoron.uhabits.core.models.projection.EffectiveReadDatabase(
+            workspace, organizationRevision, setOf("CONTAINERS", "ORGANIZATIONSTATE", "HABITPLACEMENTS", "HABITVISUALIDENTITIES"),
+        )
     }
 
     override fun prepareStatement(sql: String): PreparedStatement =

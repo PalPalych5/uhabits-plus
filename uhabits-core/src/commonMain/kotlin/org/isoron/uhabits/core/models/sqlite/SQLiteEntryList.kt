@@ -33,7 +33,8 @@ class SQLiteEntryList(
 ) : EntryList() {
     var habitId: Long? = null
     var habitUuid: String? = null
-    private var isLoaded = false
+    override var isLoaded: Boolean = false
+        private set
 
     override fun invalidate() {
         isLoaded = false

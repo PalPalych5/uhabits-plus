@@ -128,11 +128,11 @@ class HistoryCardPresenter(
     }
 
     private fun showNumberPopup(date: LocalDate) {
-        val entry = habit.originalEntries.get(date)
-        val oldValue = entry.value
+        val entry = if (habit.originalEntries.isLoaded) habit.originalEntries.get(date) else null
+        val oldValue = entry?.value ?: Entry.UNKNOWN
         screen.showNumberPopup(
-            value = oldValue / 1000.0,
-            notes = entry.notes,
+            value = if (oldValue != Entry.UNKNOWN) oldValue / 1000.0 else 0.0,
+            notes = entry?.notes ?: "",
             habit = habit,
             date = date,
         ) { newValue: Double, newNotes: String ->

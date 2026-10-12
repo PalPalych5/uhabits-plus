@@ -182,13 +182,20 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
             preferences = preferences
         )
 
-        view.initTimer(
-            habit,
-            appComponent.timerSessionManager,
-            appComponent.pomodoroCompletionNotifier,
-            ::ensureTimerNotificationPermission,
-            ::openPomodoroAlertSettings
-        )
+        scope.launch {
+            val manager = withContext(Dispatchers.IO) {
+                appComponent.timerSessionManager
+            }
+            if (!isFinishing && !isDestroyed) {
+                view.initTimer(
+                    habit,
+                    manager,
+                    appComponent.pomodoroCompletionNotifier,
+                    ::ensureTimerNotificationPermission,
+                    ::openPomodoroAlertSettings
+                )
+            }
+        }
         view.setListener(presenter)
         view.applyRootViewInsets()
         setContentView(view)
