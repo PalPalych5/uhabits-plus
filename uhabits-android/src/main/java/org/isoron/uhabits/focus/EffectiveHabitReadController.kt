@@ -56,7 +56,7 @@ class EffectiveHabitReadController(
     private val changed: () -> Unit = {
         if (!disposed) {
             handler.removeCallbacks(refresh)
-            handler.post(refresh)
+            handler.postDelayed(refresh, 200)
             notificationTray?.onEffectiveRevisionChanged()
         }
     }

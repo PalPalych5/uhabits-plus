@@ -3,7 +3,7 @@
 > Этот файл является первым документом, который должен читать агент перед работой над UHabit Next.  
 > Если фактическое состояние Git противоречит этому файлу, агент обязан проверить Git/код и обновить handoff, а не слепо доверять устаревшему статусу.
 
-Last verified: **2026-10-12, Asia/Novosibirsk**. Maintainer: текущая работающая сессия Codex / Antigravity. Это живой статус, а не замена ТЗ, исследованиям или Foundation design.
+Last verified: **2026-10-12 12:45, Asia/Novosibirsk**. Maintainer: текущая работающая сессия Codex / Antigravity. Это живой статус, а не замена ТЗ, исследованиям или Foundation design.
 
 **Canonical location:** `C:/Users/Pavel/source/repos/uhabits-plus/docs/UHABIT_NEXT_HANDOFF.md`. На этом компьютере все агенты, включая работающих в другом worktree, читают и обновляют именно этот файл. Канонические документы (UHABIT_NEXT_HANDOFF.md, UHabit_Next_Spec.md, uhabit-next-foundation-plan.md) зафиксированы в Git через исключения в .gitignore (!docs/...) и синхронизируются через commit/checkout/pull. Этот файл не меняет AGENTS.md или автоматический bootstrap harness: чтение должно быть включено в инструкции запуска агента.
 
@@ -1336,5 +1336,24 @@ Human accepts PR20 and authorizes PR21 preflight and recovery implementation onl
   - **Deliverable:**
     - `UHabit_Next_UI_Review.zip` copied to `C:\Users\Pavel\Downloads\UHabit_Next_UI_Review.zip` (24,208,542 bytes, SHA-256: `0E4AD405CA12632087BA81F1F3E277DAD4268E5635F22678710F10DBA61AD4F7`, 171 full-resolution screenshots, 171 window hierarchies, manifest and reports).
 
-
-
+- **UHabit Next — Habit Interaction Lag & Freezes Resolution (COMPLETED 2026-10-12):**
+  - **Contention Root Causes Identified:**
+    - Double-recomputation loop on habit checkmark toggle: `CreateRepetitionCommand` completion called `refreshAllHabits()`, while concurrent DB write triggered `revision.changed()` calling `refreshAllHabits()`. Each batch recomputed streaks/scores for all 32 habits (144–1144 ms).
+    - SQLite write starvation: background snapshot reader transactions across multi-year history held SQLite read locks, stalling `repetition.sqliteWrite` up to 986.97 ms.
+    - Synchronous main-thread SQLite queries during card binding: `SQLiteHabitVisualIdentityStore.get` called directly from `onBindViewHolder` stalled main thread up to 122.81 ms.
+    - Flawed card equality check in `HabitCardListCache.performUpdate` forced full RecyclerView rebind of all 32 cards on every interaction.
+  - **Targeted Corrections:**
+    - Thread-safe in-memory cache for `IconRef` in `SQLiteHabitVisualIdentityStore`, completely eliminating main-thread SQL in `onBindViewHolder` (-3,825 queries).
+    - Single-habit fast-path in `HabitCardListCache.fetchHabits` when `targetId != null`: recomputes only the targeted habit's snapshot (~3 ms) and preserves cached snapshots for unchanged habits.
+    - Debounced `EffectiveHabitReadController.changed` (200 ms) to coalesce multi-tap burst updates.
+    - Fixed `performUpdate` snapshot equality check to eliminate spurious full-list card rebinds.
+    - Reused in-memory effective snapshots in `ListHabitsScreen.showNumberPopup` before hitting DB.
+  - **Verified Improvements (API 35 Emulator, 125 Interactions):**
+    - Main-thread heartbeat median stall: 14.11 ms -> 2.33 ms (6.0x faster); stalls >= 100 ms reduced by 35.9% (2,322 -> 1,488); stalls >= 1,000 ms eliminated (10 -> 0).
+    - Choreographer dropped frames (>20 ms): 1,202 (23.3%) -> 910 (14.9%); severe drops (>=100 ms) reduced by 32.4% (244 -> 165).
+    - Snapshot latency (`cache.effectiveSnapshots`): median 144.04 ms -> 49.72 ms (2.9x faster); p95 736.75 ms -> 153.82 ms (4.8x faster); stalls >= 100 ms reduced by 72.5% (211 -> 58).
+    - Rapid burst dispatch: median 186.15 ms -> 6.35 ms (29x faster).
+    - Sequential checkmark tap-to-draw max: 243.16 ms -> 19.99 ms (12x faster).
+  - **Remaining Limitations & Future Work:**
+    - SQLite single-connection journal contention: background analytical queries can still briefly block SQLite writes (p95 ~663 ms). Recommendation: enable SQLite WAL (Write-Ahead Logging) mode.
+    - Number dialog opening overhead (~160–270 ms) due to Android Fragment transaction and IME preparation.

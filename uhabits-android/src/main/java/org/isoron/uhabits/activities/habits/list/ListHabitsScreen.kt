@@ -316,10 +316,13 @@ class ListHabitsScreen(
         val appComponent = (activity.application as HabitsApplication).component
         val focusCredit = appComponent.focusCreditController
         val effectiveReads = appComponent.effectiveHabitReads
-        if (habit != null && date != null && effectiveReads != null) {
-            val day = runCatching {
-                effectiveReads.snapshots(listOf(habit), date, date)[HabitRef(requireNotNull(habit.uuid))]?.dayOrNull(date)
-            }.getOrNull()
+        if (habit != null && date != null) {
+            val cachedDay = habit.id?.let { appComponent.habitCardListCache.getEffectiveSnapshot(it) }?.dayOrNull(date)
+            val day = cachedDay ?: if (effectiveReads != null) {
+                runCatching {
+                    effectiveReads.snapshots(listOf(habit), date, date)[HabitRef(requireNotNull(habit.uuid))]?.dayOrNull(date)
+                }.getOrNull()
+            } else null
             if (day != null) {
                 args.putDouble("focusValue", day.contributionValue / 1000.0)
                 args.putDouble("tombstonedFocusValue", day.tombstonedContributionValue / 1000.0)

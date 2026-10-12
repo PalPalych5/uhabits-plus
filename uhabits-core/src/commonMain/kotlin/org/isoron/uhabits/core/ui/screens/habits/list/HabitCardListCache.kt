@@ -195,7 +195,7 @@ class HabitCardListCache(
 
     @Synchronized
     override fun onCommandFinished(command: Command) {
-        if (command is CreateRepetitionCommand && effectiveSnapshots == null) {
+        if (command is CreateRepetitionCommand) {
             command.habit.id?.let { refreshHabit(it) }
         } else {
             refreshAllHabits()
@@ -325,17 +325,36 @@ class HabitCardListCache(
         }
 
         @Synchronized
-        fun fetchHabits(generation: Long) {
+        fun fetchHabits(generation: Long, targetId: Long? = null) {
             HabitStartupTiming.mark("cache.fetch.begin", generation)
             val load = effectiveSnapshots
             val snapshotStarted = TimeSource.Monotonic.markNow()
+            val today = getToday()
+
+            if (targetId != null && data.habits.isNotEmpty()) {
+                habits.addAll(data.habits)
+                idToHabit.putAll(data.idToHabit)
+                snapshots.putAll(data.snapshots)
+
+                val targetHabit = idToHabit[targetId]
+                if (targetHabit != null && load != null) {
+                    val singleBatch = load.invoke(listOf(targetHabit))
+                    val ref = targetHabit.uuid?.let { HabitRef(it) }
+                    if (ref != null && singleBatch.containsKey(ref)) {
+                        snapshots[targetId] = singleBatch.getValue(ref)
+                    }
+                }
+                timingObserver?.invoke("cache.effectiveSnapshots", snapshotStarted.elapsedNow().inWholeNanoseconds / 1e6)
+                HabitStartupTiming.mark("cache.fetch.end", generation)
+                return
+            }
+
             val candidates = if (load == null) filteredHabits.toList() else
                 allHabits.getFiltered(matcher.copy(isCompletedAllowed = true, isEnteredAllowed = true)).toList()
             HabitStartupTiming.mark("cache.effective.begin", generation)
             val batch = load?.invoke(candidates).orEmpty()
             HabitStartupTiming.mark("cache.effective.end", generation)
             timingObserver?.invoke("cache.effectiveSnapshots", snapshotStarted.elapsedNow().inWholeNanoseconds / 1e6)
-            val today = getToday()
             val selected = candidates.filter { h ->
                 val snapshot = batch[HabitRef(requireNotNull(h.uuid))]
                 snapshot == null || ((matcher.isCompletedAllowed || !snapshot.compatibilityCompletionOn(today).isCompleted) &&
@@ -453,7 +472,7 @@ class HabitCardListCache(
             HabitStartupTiming.mark("cache.worker.begin", generation)
             val started = TimeSource.Monotonic.markNow()
             try {
-                newData.fetchHabits(generation)
+                newData.fetchHabits(generation, targetId)
             } catch (_: org.isoron.uhabits.core.models.projection.EffectiveReadInvalidatedException) {
                 // Keep the last published generation. A concurrent revision requests a new one.
                 isCancelled = true
@@ -559,8 +578,10 @@ class HabitCardListCache(
             val newScore = newData.scores[id]!!
             val newCheckmarks = newData.checkmarks[id]!!
             val newNoteIndicators = newData.notes[id]!!
+            val oldSnapshot = data.snapshots[id]
+            val newSnapshot = newData.snapshots[id]
             var unchanged = true
-            if (data.snapshots[id]?.revision != newData.snapshots[id]?.revision || newData.snapshots[id] != null || data.snapshots[id] != null) unchanged = false
+            if (oldSnapshot?.revision != newSnapshot?.revision || (oldSnapshot == null) != (newSnapshot == null)) unchanged = false
             if (oldScore != newScore) unchanged = false
             if (!oldCheckmarks.contentEquals(newCheckmarks)) unchanged = false
             if (!oldNoteIndicators.contentEquals(newNoteIndicators)) unchanged = false

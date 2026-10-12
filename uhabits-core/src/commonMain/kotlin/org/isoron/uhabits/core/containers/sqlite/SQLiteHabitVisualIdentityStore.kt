@@ -29,11 +29,16 @@ class SQLiteHabitVisualIdentityStore(
     private val db: Database
 ) : HabitVisualIdentityStore {
 
+    private val cache = mutableMapOf<String, IconRef?>()
+
     override fun get(habitUuid: String): IconRef? {
+        synchronized(cache) {
+            if (cache.containsKey(habitUuid)) return cache[habitUuid]
+        }
         val stmt = db.prepareStatement(
             "SELECT icon_type, icon_value FROM HabitVisualIdentities WHERE habit_uuid = ?"
         )
-        return try {
+        val result = try {
             stmt.bindText(1, habitUuid)
             if (stmt.step() == StepResult.ROW) {
                 val type = stmt.getText(0)
@@ -49,6 +54,10 @@ class SQLiteHabitVisualIdentityStore(
         } finally {
             stmt.finalize()
         }
+        synchronized(cache) {
+            cache[habitUuid] = result
+        }
+        return result
     }
 
     override fun getAll(): Map<String, IconRef> {
@@ -66,6 +75,9 @@ class SQLiteHabitVisualIdentityStore(
                 }
                 result[uuid] = ref
             }
+            synchronized(cache) {
+                result.forEach { (k, v) -> cache[k] = v }
+            }
             result
         } finally {
             stmt.finalize()
@@ -76,6 +88,9 @@ class SQLiteHabitVisualIdentityStore(
         if (iconRef is IconRef.None) {
             remove(habitUuid)
             return
+        }
+        synchronized(cache) {
+            cache[habitUuid] = iconRef
         }
         val type = when (iconRef) {
             is IconRef.Vector -> "VECTOR"
@@ -128,6 +143,9 @@ class SQLiteHabitVisualIdentityStore(
     }
 
     override fun remove(habitUuid: String) {
+        synchronized(cache) {
+            cache[habitUuid] = null
+        }
         val stmt = db.prepareStatement("DELETE FROM HabitVisualIdentities WHERE habit_uuid = ?")
         try {
             stmt.bindText(1, habitUuid)
