@@ -1410,3 +1410,26 @@ Main SQL/cache misses, initial timer-store loading, Focus recovery/attribution,
 model sorting locks and full-history/coarse-revision refresh work still permit
 UI blocking. WAL remains disabled; actual phone/database/cloud were not modified.
 Evidence and verification limits: local `scratch/root-review/perfetto_analysis_report.md`.
+
+### SQLite WAL Evaluation & Concurrency Investigation, 2026-10-12
+
+- **Objective:** Evaluate SQLite Write-Ahead Logging (WAL) for UHabit Next (schema v30), measure commit latency and concurrency improvements against rollback journal mode on disposable offline AVD (`UHabit_UI_Review_Disposable_20261011`), verify backup/restore, crash recovery under process death, and decide whether to enable WAL for Next v30.
+- **Measured Benchmark Results (`wal-benchmark/comparison.json` on AVD):**
+  - **Rollback Journal Mode (`truncate`):**
+    - Commit latency: p50 = 17.80 ms, p95 = 34.18 ms, p99 = 36.36 ms, max = 36.36 ms.
+    - Concurrent reader throughput during writes: 11 background reads completed (readers blocked by writer lock).
+  - **Write-Ahead Logging (WAL) Mode (`wal`):**
+    - Commit latency: p50 = 1.34 ms (**13.3x speedup**), p95 = 2.72 ms (**12.5x speedup**), p99 = 9.46 ms (**3.8x speedup**), max = 9.46 ms.
+    - Concurrent reader throughput during writes: 31 background reads completed (**2.8x higher throughput**, zero lock starvation).
+- **Verified Safety & Recovery Under WAL (`WalSafetyAndConcurrencyAndroidTest`):**
+  - **Process Death & Uncheckpointed Data:** Simulated abrupt process crash with active uncheckpointed WAL frames. On restart, SQLite auto-recovers WAL frames; `PRAGMA quick_check == ok`, 0 FK violations, 100% tasks and repetitions preserved.
+  - **Backup & Restore:** Full versioned ZIP backup under active WAL via `VACUUM INTO` captures consistent snapshot; full restore replaces database and sidecars cleanly without corruption.
+  - **Asynchronous Numerical Editor & Dual Revisions:** Non-blocking `isLoaded == false` seeds numerical dialog without Main-thread stall; background IO resolves true committed value; container mutations bump both `effectiveReadRevision` and `workspaceRevision`; pure task mutations bump only `workspaceRevision`.
+- **Architectural Blocker Identified for Global WAL Opener:**
+  - In `uhabits-core`, database transactions and savepoints are managed via raw SQL strings (`db.run("SAVEPOINT ...")`, `db.run("BEGIN IMMEDIATE")`).
+  - Android's `SQLiteOpenHelper` in WAL mode initializes a multi-connection pool (`SQLiteConnectionPool`). Because `SQLiteDatabase.beginTransaction()` is never invoked for raw SQL strings, Android's framework considers the thread to be outside a transaction (`hasTransaction() == false`).
+  - When `rawQuery` is executed inside an uncommitted raw-SQL savepoint (such as during multi-step entity creation in `DemoDataGenerator` and `OrganizationServiceImpl.create`), Android routes `rawQuery` to a secondary read-only connection in the pool.
+  - In SQLite WAL mode, secondary reader connections cannot observe uncommitted dirty pages of the primary writer connection, leading to `NULL` reads and `IllegalStateException: Cannot record history for non-existent container`.
+- **Decision:**
+  - **Rollback journal remains enabled by default** (`enableWalForNext = false`) for both legacy v29 and Next v30 openers to protect data consistency under the current `uhabits-core` transaction dispatching architecture.
+  - WAL infrastructure and test harness (`WalSafetyAndConcurrencyAndroidTest`, `lastChanges` native thread-local tracking, target v30 backup validation) are preserved and verified for future adoption when unified transaction primitives are introduced.

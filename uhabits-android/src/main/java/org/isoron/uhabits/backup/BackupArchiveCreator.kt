@@ -280,7 +280,8 @@ object BackupArchiveCreator {
             }
 
             // Step 7: Validate complete ZIP and embedded database
-            val targetVersion = if (isExperimental) org.isoron.uhabits.core.DATABASE_VERSION else LEGACY_DATABASE_VERSION
+            val isNextArch = isExperimental || session?.isNextArchitecture == true || org.isoron.uhabits.core.production.cutover.ProductionCutoverGate.isCutoverAuthorized()
+            val targetVersion = if (isNextArch) org.isoron.uhabits.core.DATABASE_VERSION else LEGACY_DATABASE_VERSION
             val validation = BackupArchiveValidator.validate(tempZipFile, targetVersion)
             if (!validation.isValid) {
                 throw IllegalStateException("Generated backup archive failed validation: ${validation.errorMessage}")

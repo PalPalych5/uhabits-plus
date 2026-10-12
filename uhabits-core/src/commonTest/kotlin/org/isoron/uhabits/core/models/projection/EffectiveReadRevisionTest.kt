@@ -63,6 +63,49 @@ class EffectiveReadRevisionTest {
         } finally { runCatching { db.close() } }
     }
 
+    @Test
+    fun containerChangesRelevantToBothHabitsAndTasksInvalidateBothRevisions() = runTest {
+        val raw = TestDatabaseHelper.createEmptyDatabase()
+        raw.run("DROP TABLE IF EXISTS Repetitions")
+        raw.run("CREATE TABLE Repetitions (value INTEGER)")
+        raw.run("CREATE TABLE IF NOT EXISTS UserTasks (id INTEGER PRIMARY KEY)")
+        raw.run("CREATE TABLE IF NOT EXISTS Containers (id INTEGER PRIMARY KEY)")
+        raw.run("CREATE TABLE IF NOT EXISTS HabitPlacements (id INTEGER PRIMARY KEY)")
+
+        val habitsObserved = setOf("REPETITIONS", "CONTAINERS", "HABITPLACEMENTS")
+        val tasksObserved = setOf("USERTASKS", "CONTAINERS", "HABITPLACEMENTS")
+
+        val habitRevision = EffectiveReadRevision("dataset-a")
+        val workspaceRevision = EffectiveReadRevision("dataset-a")
+
+        val habitDb = EffectiveReadDatabase(raw, habitRevision, habitsObserved)
+        val combinedDb = EffectiveReadDatabase(habitDb, workspaceRevision, tasksObserved)
+
+        try {
+            // 1. Habit repetition update -> bumps only habitRevision
+            combinedDb.run("INSERT INTO Repetitions VALUES (1)")
+            assertEquals(1L, habitRevision.value)
+            assertEquals(0L, workspaceRevision.value)
+
+            // 2. Task update -> bumps only workspaceRevision
+            combinedDb.run("INSERT INTO UserTasks VALUES (10)")
+            assertEquals(1L, habitRevision.value)
+            assertEquals(1L, workspaceRevision.value)
+
+            // 3. Container change -> bumps BOTH revisions
+            combinedDb.run("INSERT INTO Containers VALUES (100)")
+            assertEquals(2L, habitRevision.value)
+            assertEquals(2L, workspaceRevision.value)
+
+            // 4. Habit placement change -> bumps BOTH revisions
+            combinedDb.run("INSERT INTO HabitPlacements VALUES (500)")
+            assertEquals(3L, habitRevision.value)
+            assertEquals(3L, workspaceRevision.value)
+        } finally {
+            combinedDb.close()
+        }
+    }
+
     private fun contribution() = Contribution(
         id = ContributionId("revision-credit"), targetHabit = HabitRef("h-1"),
         sourceType = ContributionSourceType.FOCUS_SESSION, sourceId = "s-1",

@@ -34,8 +34,15 @@ class AndroidPreparedStatement(
     private val db: SQLiteDatabase,
     private val sql: String
 ) : PreparedStatement {
-    private val isQuery = sql.trimStart().uppercase().let {
+    private val isChangesQuery = sql.trim().trimEnd(';').equals("SELECT changes()", ignoreCase = true)
+    private var changesRowRead = false
+
+    private val isQuery = isChangesQuery || sql.trimStart().uppercase().let {
         it.startsWith("SELECT") || it.startsWith("PRAGMA")
+    }
+
+    private val isMutation = sql.trimStart().uppercase().let {
+        it.startsWith("INSERT") || it.startsWith("UPDATE") || it.startsWith("DELETE") || it.startsWith("REPLACE")
     }
 
     private val compiledStmt: SQLiteStatement? = if (!isQuery) db.compileStatement(sql) else null
@@ -57,6 +64,14 @@ class AndroidPreparedStatement(
     }
 
     private fun executeStep(): StepResult {
+        if (isChangesQuery) {
+            return if (!changesRowRead) {
+                changesRowRead = true
+                StepResult.ROW
+            } else {
+                StepResult.DONE
+            }
+        }
         if (isQuery) {
             if (cursor == null) {
                 val args = buildBindArgs()
@@ -64,15 +79,23 @@ class AndroidPreparedStatement(
             }
             return if (cursor!!.moveToNext()) StepResult.ROW else StepResult.DONE
         } else {
-            compiledStmt!!.execute()
+            if (isMutation) {
+                val count = runCatching { compiledStmt!!.executeUpdateDelete().toLong() }.getOrElse {
+                    compiledStmt!!.execute()
+                    0L
+                }
+                AndroidDatabase.lastChanges = count
+            } else {
+                compiledStmt!!.execute()
+            }
             return StepResult.DONE
         }
     }
 
     @Synchronized
-    override fun getInt(index: Int) = cursor!!.getInt(index)
+    override fun getInt(index: Int) = if (isChangesQuery) AndroidDatabase.lastChanges.toInt() else cursor!!.getInt(index)
     @Synchronized
-    override fun getLong(index: Int) = cursor!!.getLong(index)
+    override fun getLong(index: Int) = if (isChangesQuery) AndroidDatabase.lastChanges else cursor!!.getLong(index)
     @Synchronized
     override fun getReal(index: Int) = cursor!!.getDouble(index)
     @Synchronized
@@ -80,7 +103,7 @@ class AndroidPreparedStatement(
 
     @Synchronized
     override fun getIntOrNull(index: Int): Int? =
-        if (cursor!!.isNull(index)) null else cursor!!.getInt(index)
+        if (isChangesQuery) AndroidDatabase.lastChanges.toInt() else if (cursor!!.isNull(index)) null else cursor!!.getInt(index)
 
     @Synchronized
     override fun getLongOrNull(index: Int): Long? =
@@ -143,6 +166,7 @@ class AndroidPreparedStatement(
     override fun reset() {
         cursor?.close()
         cursor = null
+        changesRowRead = false
         bindings.clear()
         compiledStmt?.clearBindings()
     }
@@ -151,6 +175,7 @@ class AndroidPreparedStatement(
     override fun finalize() {
         cursor?.close()
         cursor = null
+        changesRowRead = false
         compiledStmt?.close()
     }
 
@@ -168,6 +193,13 @@ class AndroidDatabase(
     organizationRevision: org.isoron.uhabits.core.models.projection.EffectiveReadRevision? = null,
 ) : org.isoron.platform.io.Database {
 
+    companion object {
+        private val lastChangesThreadLocal = ThreadLocal<Long>()
+        var lastChanges: Long
+            get() = lastChangesThreadLocal.get() ?: 0L
+            set(value) = lastChangesThreadLocal.set(value)
+    }
+
     constructor(db: SQLiteDatabase, revision: org.isoron.uhabits.core.models.projection.EffectiveReadRevision?) :
         this(db, revision, null, null)
     constructor(db: SQLiteDatabase) :
@@ -177,7 +209,9 @@ class AndroidDatabase(
         override fun prepareStatement(sql: String): PreparedStatement = AndroidPreparedStatement(db, sql)
         override fun close() = db.close()
     }.let { raw ->
-        if (revision == null) raw else org.isoron.uhabits.core.models.projection.EffectiveReadDatabase(raw, revision)
+        if (revision == null) raw else org.isoron.uhabits.core.models.projection.EffectiveReadDatabase(
+            raw, revision, setOf("CONTRIBUTIONS", "REPETITIONS", "HABITS", "HABITGOALS", "HABITEXTENSIONS", "APPSETTINGS", "CONTAINERS", "HABITPLACEMENTS", "ORGANIZATIONSTATE", "HABITVISUALIDENTITIES")
+        )
     }.let { effective ->
         if (workspaceRevision == null) effective else org.isoron.uhabits.core.models.projection.EffectiveReadDatabase(
             effective, workspaceRevision, setOf("USERTASKS", "CONTAINERS", "ORGANIZATIONSTATE", "HABITPLACEMENTS", "HABITVISUALIDENTITIES"),

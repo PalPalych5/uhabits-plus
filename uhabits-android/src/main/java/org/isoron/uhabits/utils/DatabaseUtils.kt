@@ -53,6 +53,9 @@ object DatabaseUtils {
     private var opener: HabitsDatabaseOpener? = null
     private var currentDatabaseFilename: String? = null
 
+    @Volatile
+    var enableWalForNext: Boolean = false
+
     var restoreFailureInjection: RestoreFailureInjection = RestoreFailureInjection.NONE
 
     enum class RestoreFailureInjection {
@@ -118,10 +121,12 @@ object DatabaseUtils {
         } else {
             LEGACY_DATABASE_VERSION
         }
+        val isWalRequested = enableWalForNext && (targetVersion >= 30 || ProductionCutoverGate.isCutoverAuthorized(resolvedName))
         opener = HabitsDatabaseOpener(
             context!!,
             resolvedName,
-            targetVersion
+            targetVersion,
+            isWalRequested = isWalRequested
         )
         HabitsStartupTrace.mark("database.configure.end")
     }
@@ -676,7 +681,7 @@ object DatabaseUtils {
                 }
             }
 
-            val migratedValidation = validateDatabaseBackup(restoreTemp)
+            val migratedValidation = validateDatabaseBackup(restoreTemp, targetVersion)
             require(migratedValidation.isValid && migratedValidation.databaseVersion == targetVersion) {
                 migratedValidation.errorMessage ?: "Migrated backup is invalid"
             }
@@ -1019,11 +1024,28 @@ object DatabaseUtils {
         }
     }
 
-    internal fun checkpointDatabase(db: SQLiteDatabase) {
-        db.rawQuery("PRAGMA wal_checkpoint(FULL)", null).use {
-            while (it.moveToNext()) {
-                // Drain cursor to ensure checkpoint is executed.
+    data class CheckpointResult(
+        val isBusy: Boolean,
+        val logFrames: Int,
+        val checkpointedFrames: Int
+    )
+
+    fun checkpointDatabase(db: SQLiteDatabase, mode: String = "FULL"): CheckpointResult {
+        return try {
+            db.rawQuery("PRAGMA wal_checkpoint($mode)", null).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    CheckpointResult(
+                        isBusy = cursor.getInt(0) != 0,
+                        logFrames = cursor.getInt(1),
+                        checkpointedFrames = cursor.getInt(2)
+                    )
+                } else {
+                    CheckpointResult(isBusy = false, logFrames = 0, checkpointedFrames = 0)
+                }
             }
+        } catch (e: Exception) {
+            Log.w("DatabaseUtils", "PRAGMA wal_checkpoint($mode) failed", e)
+            CheckpointResult(isBusy = true, logFrames = -1, checkpointedFrames = -1)
         }
     }
 

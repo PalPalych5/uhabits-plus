@@ -29,18 +29,33 @@ import org.isoron.platform.io.setVersion
 import org.isoron.uhabits.core.database.UnsupportedDatabaseVersionException
 import org.isoron.uhabits.database.AndroidDatabase
 
-class HabitsDatabaseOpener(
+class HabitsDatabaseOpener @JvmOverloads constructor(
     private val context: Context,
     private val databaseFilename: String,
-    private val version: Int
+    private val version: Int,
+    val isWalRequested: Boolean = defaultWalEnabled(databaseFilename, version)
 ) : SQLiteOpenHelper(context, databaseFilename, null, version) {
+
+    init {
+        if (isWalRequested) {
+            setWriteAheadLoggingEnabled(true)
+        }
+    }
 
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
         db.setForeignKeyConstraintsEnabled(true)
+        if (isWalRequested) {
+            db.enableWriteAheadLogging()
+        }
     }
 
     companion object {
+        fun defaultWalEnabled(databaseFilename: String, version: Int): Boolean {
+            val isNext = version >= 30 || org.isoron.uhabits.core.production.cutover.ProductionCutoverGate.isCutoverAuthorized(databaseFilename)
+            return isNext && org.isoron.uhabits.utils.DatabaseUtils.enableWalForNext
+        }
+
         fun hasEvidenceOfExistingDataset(context: Context, databaseFilename: String): Boolean {
             val dbFile = context.getDatabasePath(databaseFilename)
             val parent = dbFile.parentFile
@@ -71,7 +86,11 @@ class HabitsDatabaseOpener(
     }
 
     override fun onCreate(db: SQLiteDatabase) {
-        db.disableWriteAheadLogging()
+        if (isWalRequested) {
+            db.enableWriteAheadLogging()
+        } else {
+            db.disableWriteAheadLogging()
+        }
         if (hasEvidenceOfExistingDataset(context, databaseFilename)) {
             throw IllegalStateException(
                 "Refusing to create empty database for '$databaseFilename': evidence of existing dataset or interrupted restore found."
@@ -83,7 +102,11 @@ class HabitsDatabaseOpener(
 
     override fun onOpen(db: SQLiteDatabase) {
         super.onOpen(db)
-        db.disableWriteAheadLogging()
+        if (isWalRequested) {
+            db.enableWriteAheadLogging()
+        } else {
+            db.disableWriteAheadLogging()
+        }
     }
 
     override fun onUpgrade(
@@ -91,7 +114,11 @@ class HabitsDatabaseOpener(
         oldVersion: Int,
         newVersion: Int
     ) {
-        db.disableWriteAheadLogging()
+        if (isWalRequested) {
+            db.enableWriteAheadLogging()
+        } else {
+            db.disableWriteAheadLogging()
+        }
         if (db.version < 8) throw UnsupportedDatabaseVersionException()
         if (newVersion >= 30 && !org.isoron.uhabits.core.production.cutover.ProductionCutoverGate.isCutoverAuthorized(databaseFilename)) {
             throw org.isoron.uhabits.core.production.cutover.CutoverNotAuthorizedException(databaseFilename)
