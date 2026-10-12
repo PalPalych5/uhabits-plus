@@ -62,7 +62,7 @@ class TargetCardView(context: Context, attrs: AttributeSet) : LinearLayout(conte
         )
         val formatted = progress.total?.let { totalVal ->
             val amt = HabitQuantityFormatter.format(totalVal / 1000.0, progress.unit, progress.lowerBound)
-            if (progress.lowerBound) "${amt.number}+ ${amt.unit}".trim() else amt.toString()
+            amt.toString()
         } ?: resources.getString(
             if (skipped) R.string.focus_credit_day_excluded else R.string.focus_credit_unknown
         )

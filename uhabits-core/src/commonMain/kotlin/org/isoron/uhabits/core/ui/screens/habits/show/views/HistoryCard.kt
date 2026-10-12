@@ -132,7 +132,9 @@ class HistoryCardPresenter(
         val oldValue = entry.value
         screen.showNumberPopup(
             value = oldValue / 1000.0,
-            notes = entry.notes
+            notes = entry.notes,
+            habit = habit,
+            date = date,
         ) { newValue: Double, newNotes: String ->
             val thousands = (newValue * 1000).roundToInt()
             commandRunner.run(
@@ -220,6 +222,15 @@ class HistoryCardPresenter(
             notes: String,
             callback: NumberPickerCallback
         )
+        fun showNumberPopup(
+            value: Double,
+            notes: String,
+            habit: Habit?,
+            date: LocalDate?,
+            callback: NumberPickerCallback
+        ) {
+            showNumberPopup(value, notes, callback)
+        }
         fun showCheckmarkPopup(
             selectedValue: Int,
             notes: String,

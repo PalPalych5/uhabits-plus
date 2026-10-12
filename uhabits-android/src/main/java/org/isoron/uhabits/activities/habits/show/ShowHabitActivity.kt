@@ -57,6 +57,9 @@ import org.isoron.uhabits.activities.habits.show.timer.PomodoroAlertIssue
 import org.isoron.uhabits.activities.habits.show.timer.PomodoroCompletionNotifier
 import org.isoron.uhabits.core.commands.Command
 import org.isoron.uhabits.core.commands.CommandRunner
+import org.isoron.uhabits.core.containers.HabitRef
+import org.isoron.uhabits.core.contribution.ContributionId
+import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.PaletteColor
 import org.isoron.uhabits.core.preferences.Preferences
@@ -330,10 +333,50 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
             notes: String,
             callback: NumberPickerCallback
         ) {
+            showNumberPopup(value, notes, this@ShowHabitActivity.habit, null, callback)
+        }
+
+        override fun showNumberPopup(
+            value: Double,
+            notes: String,
+            habit: Habit?,
+            date: LocalDate?,
+            callback: NumberPickerCallback
+        ) {
+            val targetHabit = habit ?: this@ShowHabitActivity.habit
             val dialog = NumberDialog()
-            dialog.arguments = Bundle().apply {
+            val args = Bundle().apply {
                 putDouble("value", value)
                 putString("notes", notes)
+                putString("unit", targetHabit.unit)
+                if (date != null) {
+                    val orig = targetHabit.originalEntries.get(date)
+                    putBoolean("hasManualEntry", orig.value != Entry.UNKNOWN)
+                }
+            }
+            if (date != null && effectiveReads != null) {
+                val day = runCatching {
+                    effectiveReads?.snapshots(listOf(targetHabit), date, date)?.get(HabitRef(requireNotNull(targetHabit.uuid)))?.dayOrNull(date)
+                }.getOrNull()
+                if (day != null) {
+                    args.putDouble("focusValue", day.contributionValue / 1000.0)
+                    args.putDouble("tombstonedFocusValue", day.tombstonedContributionValue / 1000.0)
+                    args.putStringArrayList("activeContributionIds", ArrayList(day.contributions.map { it.id.value }))
+                    args.putStringArrayList("tombstonedContributionIds", ArrayList(day.tombstonedContributions.map { it.id.value }))
+                    args.putBoolean("hasManualEntry", day.manualValue != null)
+                    args.putBoolean("hasCompleteCoverage", day.hasCompleteCoverage)
+                }
+            }
+            dialog.arguments = args
+            dialog.onRevokeContributions = { ids ->
+                ids.forEach { id ->
+                    focusCredit?.revokeContribution(ContributionId(id))
+                }
+            }
+            dialog.onRestoreContributions = { ids ->
+                ids.forEach { id ->
+                    focusCredit?.restoreContribution(ContributionId(id))
+                }
             }
             dialog.onToggle = { v, n -> callback.onNumberPicked(v, n) }
             dialog.dismissCurrentAndShow(supportFragmentManager, "numberDialog")

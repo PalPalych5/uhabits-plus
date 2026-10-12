@@ -77,14 +77,14 @@ class ListHabitsBehaviorTest : BaseUnitTest() {
     fun testOnEdit() {
         val today = getToday()
         every {
-            screen.showNumberPopup(any(), any(), any())
+            screen.showNumberPopup(any(), any(), any(), any(), any())
         } calls { args ->
-            capturedPicker = args.arg<NumberPickerCallback>(2)
+            capturedPicker = args.arg<NumberPickerCallback>(4)
             Unit
         }
         behavior.onEdit(habit2, today, 0f, 0f)
         verify {
-            screen.showNumberPopup(0.1, "", any())
+            screen.showNumberPopup(0.1, "", habit2, today, any())
         }
         capturedPicker!!.onNumberPicked(100.0, "")
         assertEquals(100000, habit2.computedEntries.get(today).value)
@@ -96,12 +96,12 @@ class ListHabitsBehaviorTest : BaseUnitTest() {
         habit2.originalEntries.add(Entry(today, 30000, "manual"))
         habit2.recompute()
         habit2.computedEntries.add(Entry(today, 90000, "derived"))
-        every { screen.showNumberPopup(any(), any(), any()) } calls { args ->
-            capturedPicker = args.arg<NumberPickerCallback>(2)
+        every { screen.showNumberPopup(any(), any(), any(), any(), any()) } calls { args ->
+            capturedPicker = args.arg<NumberPickerCallback>(4)
             Unit
         }
         behavior.onEdit(habit2, today, 0f, 0f)
-        verify { screen.showNumberPopup(30.0, "manual", any()) }
+        verify { screen.showNumberPopup(30.0, "manual", habit2, today, any()) }
         capturedPicker!!.onNumberPicked(40.0, "edited")
         assertEquals(40000, habit2.originalEntries.get(today).value)
         assertEquals("edited", habit2.originalEntries.get(today).notes)

@@ -4,6 +4,8 @@ import android.app.Dialog
 import android.content.DialogInterface
 import android.os.Bundle
 import android.provider.Settings
+import android.text.Editable
+import android.text.TextWatcher
 import android.text.method.DigitsKeyListener
 import android.view.KeyEvent
 import android.view.LayoutInflater
@@ -29,19 +31,30 @@ class NumberDialog : AppCompatDialogFragment() {
 
     var onToggle: (Double, String) -> Unit = { _, _ -> }
     var onDismiss: () -> Unit = {}
+    var onRevokeContributions: ((List<String>) -> Unit)? = null
+    var onRestoreContributions: ((List<String>) -> Unit)? = null
 
     private var dismissedViaSaveAction = false
     private var originalNotes: String = ""
     private var originalValue: Double = 0.0
     private lateinit var view: CheckmarkPopupBinding
 
+    private var currentActiveFocus: Double = 0.0
+    private var currentTombstonedFocus: Double = 0.0
+    private var activeIds = mutableListOf<String>()
+    private var tombstonedIds = mutableListOf<String>()
+    private var habitUnit: String = ""
+    private var hasManualEntry: Boolean = false
+    private var hasCompleteCoverage: Boolean = true
+
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val appComponent = (requireActivity().application as HabitsApplication).component
         val prefs = appComponent.preferences
         val dialog = AppCompatDialog(requireContext(), R.style.CustomTransparentDialogTheme)
         view = CheckmarkPopupBinding.inflate(LayoutInflater.from(dialog.context))
-        arrayOf(view.yesBtn).forEach {
-            it.setTextColor(requireArguments().getInt("color"))
+
+        arguments?.getInt("color")?.let { color ->
+            if (color != 0) view.yesBtn.setTextColor(color)
         }
         arrayOf(view.noBtn, view.unknownBtnNumber).forEach {
             it.setTextColor(view.root.sres.getColor(R.attr.contrast60))
@@ -53,8 +66,55 @@ class NumberDialog : AppCompatDialogFragment() {
         if (!prefs.areQuestionMarksEnabled) view.unknownBtnNumber.visibility = View.GONE
         view.numberButtons.visibility = View.VISIBLE
         fixDecimalSeparator(view)
-        originalNotes = requireArguments().getString("notes")!!
-        originalValue = requireArguments().getDouble("value")
+
+        originalNotes = requireArguments().getString("notes", "") ?: ""
+        originalValue = requireArguments().getDouble("value", 0.0)
+
+        val focusVal = arguments?.getDouble("focusValue", 0.0) ?: 0.0
+        val tombstonedVal = arguments?.getDouble("tombstonedFocusValue", 0.0) ?: 0.0
+        activeIds = (arguments?.getStringArrayList("activeContributionIds") ?: arrayListOf()).toMutableList()
+        tombstonedIds = (arguments?.getStringArrayList("tombstonedContributionIds") ?: arrayListOf()).toMutableList()
+        currentActiveFocus = focusVal
+        currentTombstonedFocus = tombstonedVal
+        habitUnit = arguments?.getString("unit") ?: ""
+        hasManualEntry = arguments?.getBoolean("hasManualEntry", false) ?: false
+        hasCompleteCoverage = arguments?.getBoolean("hasCompleteCoverage", true) ?: true
+
+        val hasContributions = activeIds.isNotEmpty() || tombstonedIds.isNotEmpty() || currentActiveFocus > 0.0 || currentTombstonedFocus > 0.0
+        if (hasContributions) {
+            view.focusBreakdownPanel.visibility = View.VISIBLE
+            view.focusBreakdownTitle.setText(R.string.focus_edit_breakdown_title)
+            updateBreakdown()
+
+            view.focusBreakdownExcludeBtn.setOnClickListener {
+                if (currentActiveFocus > 0.0 && activeIds.isNotEmpty()) {
+                    val toRevoke = activeIds.toList()
+                    onRevokeContributions?.invoke(toRevoke)
+                    tombstonedIds.addAll(toRevoke)
+                    activeIds.clear()
+                    currentTombstonedFocus += currentActiveFocus
+                    currentActiveFocus = 0.0
+                    updateBreakdown()
+                } else if (tombstonedIds.isNotEmpty()) {
+                    val toRestore = tombstonedIds.toList()
+                    onRestoreContributions?.invoke(toRestore)
+                    activeIds.addAll(toRestore)
+                    tombstonedIds.clear()
+                    currentActiveFocus += currentTombstonedFocus
+                    currentTombstonedFocus = 0.0
+                    updateBreakdown()
+                }
+            }
+
+            view.value.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: Editable?) {
+                    updateBreakdown()
+                }
+            })
+        }
+
         view.notes.setText(originalNotes)
         view.value.setText(
             when {
@@ -83,7 +143,7 @@ class NumberDialog : AppCompatDialogFragment() {
             save()
         }
 
-        view.notes.setOnEditorActionListener { v, actionId, event ->
+        view.notes.setOnEditorActionListener { _, _, _ ->
             save()
             true
         }
@@ -95,6 +155,56 @@ class NumberDialog : AppCompatDialogFragment() {
             setBackgroundDrawableResource(android.R.color.transparent)
         }
         return dialog
+    }
+
+    private fun updateBreakdown() {
+        val exactFormat = DecimalFormat("#.##")
+        fun fmt(v: Double) = "${exactFormat.format(v)} $habitUnit".trim()
+
+        val text = view.value.text.toString().trim()
+        val parsedManual: Double? = if (text.isNotEmpty()) {
+            try {
+                NumberFormat.getInstance().parse(text)?.toDouble()
+            } catch (e: ParseException) {
+                null
+            }
+        } else {
+            if (hasManualEntry && originalValue >= 0.0) originalValue else null
+        }
+
+        if (currentActiveFocus > 0.0) {
+            view.focusBreakdownFocusText.text = getString(R.string.focus_edit_focus_label, fmt(currentActiveFocus))
+            view.focusBreakdownExcludeBtn.visibility = View.VISIBLE
+            view.focusBreakdownExcludeBtn.setText(R.string.focus_edit_exclude_action)
+        } else if (currentTombstonedFocus > 0.0) {
+            view.focusBreakdownFocusText.text = getString(R.string.focus_edit_focus_excluded_label, fmt(0.0), fmt(currentTombstonedFocus))
+            view.focusBreakdownExcludeBtn.visibility = View.VISIBLE
+            view.focusBreakdownExcludeBtn.setText(R.string.focus_edit_restore_action)
+        } else {
+            view.focusBreakdownFocusText.text = getString(R.string.focus_edit_focus_label, fmt(0.0))
+            view.focusBreakdownExcludeBtn.visibility = View.GONE
+        }
+
+        if (parsedManual != null) {
+            view.focusBreakdownManualText.text = getString(R.string.focus_edit_manual_label, fmt(parsedManual))
+        } else {
+            view.focusBreakdownManualText.text = getString(R.string.focus_edit_manual_none)
+        }
+
+        val total = (parsedManual ?: 0.0) + currentActiveFocus
+        val isMin = parsedManual == null && currentActiveFocus > 0.0 && !hasCompleteCoverage
+        view.focusBreakdownTotalText.text = if (isMin) {
+            getString(R.string.focus_edit_total_min_label, fmt(total))
+        } else {
+            getString(R.string.focus_edit_total_label, fmt(total))
+        }
+
+        view.focusBreakdownHint.setText(
+            if (currentActiveFocus == 0.0 && currentTombstonedFocus > 0.0)
+                R.string.focus_edit_hint_excluded
+            else
+                R.string.focus_edit_hint
+        )
     }
 
     override fun onDismiss(dialog: DialogInterface) {
@@ -110,7 +220,6 @@ class NumberDialog : AppCompatDialogFragment() {
     }
 
     private fun fixDecimalSeparator(view: CheckmarkPopupBinding) {
-        // https://stackoverflow.com/a/34256139
         val separator = DecimalFormatSymbols.getInstance().decimalSeparator
         view.value.keyListener = DigitsKeyListener.getInstance("0123456789$separator")
 
@@ -139,7 +248,6 @@ class NumberDialog : AppCompatDialogFragment() {
             // NOP
         }
         val notes = view.notes.text.toString().trim()
-        val location = view.saveBtn.getCenter()
         onToggle(value, notes)
         requireDialog().dismiss()
     }

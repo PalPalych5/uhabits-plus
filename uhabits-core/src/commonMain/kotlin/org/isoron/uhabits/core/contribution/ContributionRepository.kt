@@ -68,6 +68,14 @@ interface ContributionRepository {
         removedAt: Long,
     ): ContributionRemovalResult
 
+    /**
+     * Logically restores a previously removed / tombstoned contribution by ID.
+     */
+    fun restoreById(
+        id: ContributionId,
+        updatedAt: Long,
+    ): Boolean
+
     /** Retrieves a contribution by its stable ID, including tombstoned records. */
     fun getById(id: ContributionId): Contribution?
 

@@ -182,10 +182,12 @@ class NumberButtonView(
 
         fun draw(canvas: Canvas) {
             val day = effectiveDay
+            val isUnknown = (day != null && day.totalValue == null) || (day == null && value < 0.0)
+            val isSkipped = (day != null && day.isSkipped) || (day == null && value == Entry.SKIP.toDouble() / 1000)
+
             val activeColor = when {
+                isUnknown -> lowContrast
                 effectiveCompletion == org.isoron.uhabits.core.models.projection.HabitGoalStatus.SATISFIED -> color
-                day != null -> mediumContrast
-                value < 0.0 -> lowContrast
                 (targetType == AT_LEAST) && (value >= threshold) -> color
                 (targetType == AT_MOST) && (value <= threshold) -> color
                 else -> mediumContrast
@@ -197,32 +199,22 @@ class NumberButtonView(
             val textSize: Float
 
             when {
-                day != null && day.isSkipped -> {
-                    label = resources.getString(R.string.fa_skipped)
-                    textSize = dim(R.dimen.smallTextSize)
-                    typeface = getFontAwesome()
-                }
-                day != null && day.totalValue != null -> {
-                    val isLowerBound = !day.hasCompleteCoverage
-                    val amount = HabitQuantityFormatter.format(day.totalValue!! / 1000.0, units, isLowerBound, compact = true)
-                    displayUnits = amount.unit
-                    label = if (isLowerBound) "${amount.number}+" else amount.number
-                    typeface = BOLD_TYPEFACE
-                    textSize = dim(R.dimen.smallTextSize)
-                }
-                day != null -> {
-                    label = "—"
-                    displayUnits = ""
-                    typeface = NORMAL_TYPEFACE
-                    textSize = dim(R.dimen.smallTextSize)
-                }
-                value == Entry.SKIP.toDouble() / 1000 -> {
+                isSkipped -> {
                     label = resources.getString(R.string.fa_skipped)
                     textSize = dim(R.dimen.smallTextSize)
                     typeface = getFontAwesome()
                 }
 
-                value >= 0 -> {
+                day != null && day.totalValue != null -> {
+                    val isLowerBound = !day.hasCompleteCoverage
+                    val amount = HabitQuantityFormatter.format(day.totalValue!! / 1000.0, units, isLowerBound, compact = true)
+                    displayUnits = amount.unit
+                    label = amount.number
+                    typeface = BOLD_TYPEFACE
+                    textSize = dim(R.dimen.smallTextSize)
+                }
+
+                day == null && value >= 0 -> {
                     val amount = HabitQuantityFormatter.format(value, units, compact = true)
                     displayUnits = amount.unit
                     label = amount.number
@@ -230,11 +222,18 @@ class NumberButtonView(
                     textSize = dim(R.dimen.smallTextSize)
                 }
 
-                preferences.areQuestionMarksEnabled -> {
-                    label = "—"
-                    displayUnits = ""
-                    typeface = NORMAL_TYPEFACE
-                    textSize = dim(R.dimen.smallTextSize)
+                isUnknown -> {
+                    if (preferences.areQuestionMarksEnabled) {
+                        label = resources.getString(R.string.fa_question)
+                        displayUnits = ""
+                        typeface = getFontAwesome()
+                        textSize = dim(R.dimen.smallerTextSize)
+                    } else {
+                        label = "0"
+                        displayUnits = units
+                        typeface = BOLD_TYPEFACE
+                        textSize = dim(R.dimen.smallTextSize)
+                    }
                 }
 
                 else -> {
@@ -250,8 +249,8 @@ class NumberButtonView(
             pUnit.color = activeColor
 
             contentDescription = when {
-                day != null && day.isSkipped -> resources.getString(R.string.focus_credit_day_excluded)
-                day != null && day.totalValue == null -> resources.getString(R.string.focus_credit_unknown)
+                isSkipped -> resources.getString(R.string.focus_credit_day_excluded)
+                isUnknown -> resources.getString(R.string.focus_credit_unknown)
                 day != null && !day.hasCompleteCoverage -> {
                     val amount = HabitQuantityFormatter.format(day.totalValue!! / 1000.0, units, true, compact = true)
                     "≥ ${amount.number} $displayUnits".trim()

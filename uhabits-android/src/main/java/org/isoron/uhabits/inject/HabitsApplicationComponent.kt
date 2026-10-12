@@ -193,6 +193,10 @@ abstract class HabitsApplicationComponent(
     val db: AndroidDatabase
         get() = providedDb
 
+    val contributionRepository: org.isoron.uhabits.core.contribution.sqlite.SQLiteContributionRepository? by lazy {
+        if (session.isNextArchitecture) org.isoron.uhabits.core.contribution.sqlite.SQLiteContributionRepository(providedDb) else null
+    }
+
     private val providedDb: AndroidDatabase by lazy {
         AndroidDatabase(DatabaseUtils.openDatabase(), if (session.isNextArchitecture) effectiveReadRevision else null)
     }

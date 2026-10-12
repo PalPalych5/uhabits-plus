@@ -10,4 +10,15 @@
     <string name="focus_credit_excluded">Фокус за исключённые дни</string>
     <string name="focus_credit_unavailable">Прогресс фокуса недоступен</string>
     <string name="focus_credit_goal">Цель: %1$s</string>
+    <string name="focus_edit_breakdown_title">Учёт времени за этот день</string>
+    <string name="focus_edit_focus_label">Фокус: %1$s</string>
+    <string name="focus_edit_focus_excluded_label">Фокус: %1$s (%2$s исключено)</string>
+    <string name="focus_edit_manual_label">Вручную: %1$s</string>
+    <string name="focus_edit_manual_none">Вручную: не записано</string>
+    <string name="focus_edit_total_label">Итого: %1$s</string>
+    <string name="focus_edit_total_min_label">Итого: %1$s (минимум)</string>
+    <string name="focus_edit_hint">Ввод меняет только ручную часть. Время фокуса сохраняется.</string>
+    <string name="focus_edit_hint_excluded">Учёт фокуса исключён из этой привычки. Сессия фокуса сохранена.</string>
+    <string name="focus_edit_exclude_action">Исключить</string>
+    <string name="focus_edit_restore_action">Восстановить</string>
 </resources>

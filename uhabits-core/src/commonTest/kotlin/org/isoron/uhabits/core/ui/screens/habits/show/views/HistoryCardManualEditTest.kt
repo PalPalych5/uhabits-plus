@@ -24,13 +24,13 @@ class HistoryCardManualEditTest : BaseUnitTest() {
         habit.computedEntries.add(Entry(today, 90000, "derived"))
         val screen = mock<HistoryCardPresenter.Screen>()
         var picker: NumberPickerCallback? = null
-        every { screen.showNumberPopup(any(), any(), any()) } calls { args ->
-            picker = args.arg<NumberPickerCallback>(2)
+        every { screen.showNumberPopup(any(), any(), any(), any(), any()) } calls { args ->
+            picker = args.arg<NumberPickerCallback>(4)
             Unit
         }
         val presenter = HistoryCardPresenter(commandRunner, habit, habitList, mock<Preferences>(), screen)
         presenter.onDateShortPress(today)
-        verify { screen.showNumberPopup(30.0, "manual", any()) }
+        verify { screen.showNumberPopup(30.0, "manual", habit, today, any()) }
         picker!!.onNumberPicked(40.0, "edited")
         assertEquals(40000, habit.originalEntries.get(today).value)
         assertEquals("edited", habit.originalEntries.get(today).notes)

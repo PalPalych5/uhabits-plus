@@ -159,6 +159,41 @@ class SQLiteContributionRepository(private val db: Database) : ContributionRepos
         }
     }
 
+    override fun restoreById(id: ContributionId, updatedAt: Long): Boolean {
+        db.run("SAVEPOINT restore_contribution")
+        try {
+            val existing = getById(id) ?: run {
+                db.run("RELEASE SAVEPOINT restore_contribution")
+                return false
+            }
+            if (existing.isActive) {
+                db.run("RELEASE SAVEPOINT restore_contribution")
+                return false
+            }
+            val newUpdatedAt = maxOf(existing.updatedAt, updatedAt)
+            val stmt = db.prepareStatement(
+                "UPDATE Contributions SET removed_at = NULL, updated_at = ? WHERE id = ? AND removed_at IS NOT NULL"
+            )
+            try {
+                stmt.bindLong(1, newUpdatedAt)
+                stmt.bindText(2, id.value)
+                stmt.step()
+            } finally {
+                stmt.finalize()
+            }
+            val changed = db.queryLong("SELECT changes()") == 1L
+            db.run("RELEASE SAVEPOINT restore_contribution")
+            return changed
+        } catch (error: Throwable) {
+            try {
+                db.run("ROLLBACK TO SAVEPOINT restore_contribution")
+            } finally {
+                db.run("RELEASE SAVEPOINT restore_contribution")
+            }
+            throw error
+        }
+    }
+
     private fun applyRemoval(existing: Contribution, removedAt: Long): ContributionRemovalResult {
         if (!existing.isActive) {
             return ContributionRemovalResult.ALREADY_REMOVED

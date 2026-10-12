@@ -208,6 +208,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
         if (displayMode == ListHabitsDisplayMode.NORMAL) {
             menuController.behavior.onPreferencesChanged()
         }
+        adapter.notifyDataSetChanged()
     }
 
     override fun onCardCornersChanged() {

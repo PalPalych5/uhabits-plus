@@ -87,9 +87,29 @@ class FocusCreditController(
 
     fun addObserver(observer: () -> Unit) { if (!disposed) observers.add(observer) }
     fun removeObserver(observer: () -> Unit) { observers.remove(observer) }
-    private fun notifyChanged() { observers.toList().forEach { observer ->
+    fun notifyChanged() { observers.toList().forEach { observer ->
         runCatching { observer() }.onFailure { Log.w(TAG, "Focus view refresh failed", it) }
     } }
+
+    fun revokeContribution(
+        id: org.isoron.uhabits.core.contribution.ContributionId,
+        removedAt: Long = System.currentTimeMillis()
+    ): org.isoron.uhabits.core.contribution.ContributionRemovalResult {
+        check(!disposed)
+        val result = contributions.removeById(id, removedAt)
+        notifyChanged()
+        return result
+    }
+
+    fun restoreContribution(
+        id: org.isoron.uhabits.core.contribution.ContributionId,
+        updatedAt: Long = System.currentTimeMillis()
+    ): Boolean {
+        check(!disposed)
+        val result = contributions.restoreById(id, updatedAt)
+        notifyChanged()
+        return result
+    }
 
     /** Facts commit first. Credit errors never roll back or prevent timer journal advancement. */
     fun captureStore(delegate: FocusCaptureStore): FocusCaptureStore = object : FocusCaptureStore {

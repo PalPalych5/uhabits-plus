@@ -79,6 +79,13 @@ class MemoryContributionRepository : ContributionRepository {
         return applyRemoval(existing, removedAt)
     }
 
+    override fun restoreById(id: ContributionId, updatedAt: Long): Boolean {
+        val existing = contributionsById[id] ?: return false
+        if (existing.isActive) return false
+        contributionsById[id] = existing.copy(removedAt = null, updatedAt = maxOf(existing.updatedAt, updatedAt))
+        return true
+    }
+
     private fun applyRemoval(existing: Contribution, removedAt: Long): ContributionRemovalResult {
         if (!existing.isActive) {
             return ContributionRemovalResult.ALREADY_REMOVED

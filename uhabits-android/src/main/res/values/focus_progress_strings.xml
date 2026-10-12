@@ -10,4 +10,15 @@
     <string name="focus_credit_excluded">Focus on excluded days</string>
     <string name="focus_credit_unavailable">Focus progress is unavailable</string>
     <string name="focus_credit_goal">Goal: %1$s</string>
+    <string name="focus_edit_breakdown_title">Time tracked for this day</string>
+    <string name="focus_edit_focus_label">Focus: %1$s</string>
+    <string name="focus_edit_focus_excluded_label">Focus: %1$s (%2$s excluded)</string>
+    <string name="focus_edit_manual_label">Manual: %1$s</string>
+    <string name="focus_edit_manual_none">Manual: not recorded</string>
+    <string name="focus_edit_total_label">Total: %1$s</string>
+    <string name="focus_edit_total_min_label">Total: %1$s (minimum)</string>
+    <string name="focus_edit_hint">Input edits manual component; focus time is preserved.</string>
+    <string name="focus_edit_hint_excluded">Focus credit is excluded from this habit. Focus session is preserved.</string>
+    <string name="focus_edit_exclude_action">Exclude</string>
+    <string name="focus_edit_restore_action">Restore</string>
 </resources>

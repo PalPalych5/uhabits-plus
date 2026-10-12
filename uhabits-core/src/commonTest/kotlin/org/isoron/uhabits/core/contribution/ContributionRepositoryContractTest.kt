@@ -204,6 +204,17 @@ abstract class ContributionRepositoryContractTest {
             assertNotNull(stored)
             assertFalse(stored.isActive)
             assertEquals(8000L, stored.removedAt)
+
+            // Restore
+            assertTrue(repo.restoreById(c.id, updatedAt = 9000L))
+            assertFalse(repo.restoreById(c.id, updatedAt = 9000L)) // already active
+            assertFalse(repo.restoreById(ContributionId("nonexistent"), updatedAt = 9000L))
+
+            val restored = repo.getById(c.id)
+            assertNotNull(restored)
+            assertTrue(restored.isActive)
+            assertNull(restored.removedAt)
+            assertEquals(9000L, restored.updatedAt)
         } finally {
             cleanup()
         }
