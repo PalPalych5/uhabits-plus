@@ -14,6 +14,7 @@ import org.isoron.platform.time.setToday
 import org.isoron.uhabits.core.containers.HabitRef
 import org.isoron.uhabits.core.contribution.sqlite.SQLiteContributionRepository
 import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.commands.HabitEditTrace
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.projection.*
 import org.isoron.uhabits.core.preferences.Preferences
@@ -104,12 +105,16 @@ class EffectiveHabitReadController(
     fun snapshots(
         habits: List<Habit>,
         from: org.isoron.platform.time.LocalDate,
-        to: org.isoron.platform.time.LocalDate
+        to: org.isoron.platform.time.LocalDate,
+        traces: List<HabitEditTrace> = emptyList(),
+        generation: Long? = null,
+        batch: Long? = null,
     ): Map<HabitRef, EffectiveHabitReadSnapshot> {
         if (disposed) throw EffectiveReadInvalidatedException()
         repeat(3) {
             val captured = captureCalendar()
             val capturedRevision = revision.value
+            traces.forEach { it.event("snapshot.begin", capturedRevision, generation, batch) }
             val capturedRollback = rollbackGeneration
             val capturedLocaleWeekday = org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale()
             val currentContext = CacheContext(
@@ -129,6 +134,7 @@ class EffectiveHabitReadController(
                     capturedRollback == rollbackGeneration && capturedLocaleWeekday == org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale()) {
                     cachedSnapshots.putAll(prepared)
                 } else {
+                    traces.forEach { it.event("snapshot.retry", capturedRevision, generation, batch) }
                     return@repeat
                 }
             }
@@ -142,8 +148,10 @@ class EffectiveHabitReadController(
             if (disposed || captured != captureCalendar() || capturedRevision != revision.value ||
                 capturedRollback != rollbackGeneration ||
                 capturedLocaleWeekday != org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale()) {
+                traces.forEach { it.event("snapshot.retry", capturedRevision, generation, batch) }
                 return@repeat
             }
+            traces.forEach { it.event("snapshot.end", capturedRevision, generation, batch) }
             return result
         }
         throw EffectiveReadInvalidatedException()
@@ -152,6 +160,20 @@ class EffectiveHabitReadController(
     fun snapshots(habits: List<Habit>): Map<HabitRef, EffectiveHabitReadSnapshot> {
         val today = getToday()
         return snapshots(habits, today.minus(365), today)
+    }
+    /** Disabled unless QA installs this loader; monitor and publication semantics stay unchanged. */
+    fun snapshotsTraced(habits: List<Habit>, traces: List<HabitEditTrace>, generation: Long, batch: Long): Map<HabitRef, EffectiveHabitReadSnapshot> {
+        traces.forEach { it.event("snapshot.lock.wait.begin", generation = generation, batch = batch) }
+        return synchronized(this) {
+            traces.forEach { it.event("snapshot.lock.acquired", generation = generation, batch = batch) }
+            val today = getToday()
+            try {
+                snapshots(habits, today.minus(365), today, traces, generation, batch)
+            } catch (t: Throwable) {
+                traces.forEach { it.event("snapshot.failed", generation = generation, batch = batch) }
+                throw t
+            }
+        }
     }
     fun snapshot(habit: Habit): EffectiveHabitReadSnapshot = snapshots(listOf(habit)).getValue(HabitRef(requireNotNull(habit.uuid)))
 

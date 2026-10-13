@@ -217,6 +217,11 @@ class HabitCardView(
         }
 
         checkmarkPanel = checkmarkPanelFactory.create().apply {
+            onToggleTraced = { date, value, notes, trace ->
+                triggerRipple(date)
+                val location = getAbsoluteButtonLocation(date)
+                habit?.let { behavior.onToggleTraced(it, date, value, notes, location.x, location.y, trace) }
+            }
             onToggle = { date, value, notes ->
                 triggerRipple(date)
                 val location = getAbsoluteButtonLocation(date)

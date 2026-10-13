@@ -37,33 +37,60 @@ open class CommandRunner(
     open var timingObserver: ((String, Double) -> Unit)? = null
 
     @Synchronized
-    open fun run(command: Command) {
+    open fun run(command: Command, trace: HabitEditTrace? = null) {
+        trace?.event("command.accepted")
         val requested = TimeSource.Monotonic.markNow()
         val previous = pendingCommand
         val completed = CompletableDeferred<Unit>()
         pendingCommand = completed
-        taskRunner.execute(
+        trace?.event("command.enqueued")
+        try { taskRunner.execute(
             object : Task {
                 override suspend fun doInBackground() {
+                    trace?.event("command.worker")
                     try {
                         // IO dispatch is parallel. Chain submissions before dispatch so
                         // an older absolute-value edit cannot overwrite a newer tap.
                         previous?.await()
-                        if (command is CreateRepetitionCommand) command.timingObserver = timingObserver
+                        trace?.event("command.fifoStart")
+                        if (command is CreateRepetitionCommand) {
+                            command.timingObserver = timingObserver
+                            command.trace = trace
+                        }
                         timingObserver?.invoke("command.queue", requested.elapsedNow().inWholeNanoseconds / 1e6)
                         val started = TimeSource.Monotonic.markNow()
                         command.run()
+                        trace?.event("command.executed")
                         timingObserver?.invoke("command.persistence", started.elapsedNow().inWholeNanoseconds / 1e6)
+                    } catch (t: Throwable) {
+                        trace?.finish(if (t is kotlinx.coroutines.CancellationException) "command.cancelled" else "command.failed")
+                        throw t
                     } finally {
                         completed.complete(Unit)
                     }
                 }
                 override fun onPostExecute() {
-                    notifyListeners(command)
-                    timingObserver?.invoke("command.finished", requested.elapsedNow().inWholeNanoseconds / 1e6)
+                    try {
+                        notifyListeners(command)
+                        timingObserver?.invoke("command.finished", requested.elapsedNow().inWholeNanoseconds / 1e6)
+                        trace?.finish("command.finished")
+                    } catch (t: Throwable) {
+                        trace?.finish(if (t is kotlinx.coroutines.CancellationException) "command.cancelled" else "command.failed")
+                        throw t
+                    }
+                }
+                override fun onCompletion(cause: Throwable?) {
+                    trace?.finish(when (cause) {
+                        is kotlinx.coroutines.CancellationException -> "command.cancelled"
+                        null -> "command.finished"
+                        else -> "command.failed"
+                    })
                 }
             }
-        )
+        ) } catch (t: Throwable) {
+            trace?.finish(if (t is kotlinx.coroutines.CancellationException) "command.cancelled" else "command.failed")
+            throw t
+        }
     }
 
     open fun addListener(l: Listener) {

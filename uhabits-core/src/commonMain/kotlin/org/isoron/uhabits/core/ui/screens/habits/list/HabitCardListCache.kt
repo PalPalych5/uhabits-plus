@@ -26,6 +26,7 @@ import org.isoron.platform.Synchronized
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.core.AppScope
 import org.isoron.uhabits.core.commands.Command
+import org.isoron.uhabits.core.commands.HabitEditTrace
 import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.commands.CreateRepetitionCommand
 import org.isoron.uhabits.core.io.Logging
@@ -77,6 +78,20 @@ class HabitCardListCache(
     var effectiveSnapshots: ((List<Habit>) -> Map<HabitRef, EffectiveHabitReadSnapshot>)? = null
     /** QA-only stage timings. Disabled unless the capture test explicitly installs a listener. */
     var timingObserver: ((String, Double) -> Unit)? = null
+    /** QA-only lineage captured at request time; IDs remain internal and are never exported. */
+    var operationTraces: ((Long?) -> List<HabitEditTrace>)? = null
+        @Synchronized set(value) {
+            field = value
+            if (value == null) publishedOperationTraces.clear()
+        }
+    var effectiveSnapshotsTraced: ((List<Habit>, List<HabitEditTrace>, Long, Long) -> Map<HabitRef, EffectiveHabitReadSnapshot>)? = null
+    private var nextTraceBatch = 0L
+    private val publishedOperationTraces = mutableMapOf<Long, List<HabitEditTrace>>()
+
+    @Synchronized
+    fun getPublishedOperationTraces(habitId: Long): List<HabitEditTrace> =
+        publishedOperationTraces[habitId].orEmpty()
+
     private var matcher = HabitMatcher()
 
     @Synchronized
@@ -488,7 +503,40 @@ class HabitCardListCache(
             effectiveBindings.putAll(data.effectiveBindings)
         }
         private val requestedMatcher = matcher
-        private val requestedLoad = effectiveSnapshots
+        private val baseLoad = effectiveSnapshots
+        private var traceBatch: Long? = null
+        private var traces: List<HabitEditTrace> = emptyList()
+        private var tracesByHabit: Map<Long, List<HabitEditTrace>> = emptyMap()
+        private val tracedLoad = effectiveSnapshotsTraced
+        private val requestedLoad: ((List<Habit>) -> Map<HabitRef, EffectiveHabitReadSnapshot>)?
+            get() = if (traces.isNotEmpty() && tracedLoad != null) {
+                { habits -> tracedLoad.invoke(habits, traces, generation, requireNotNull(traceBatch)) }
+            } else baseLoad
+
+        private fun trace(stage: String) {
+            traces.forEach { it.event(stage, generation = generation, batch = traceBatch) }
+        }
+
+        private fun captureTraces() {
+            val select = operationTraces ?: return
+            traceBatch = ++nextTraceBatch
+            traces = runCatching { select(targetId).toList() }.getOrDefault(emptyList())
+            tracesByHabit = if (targetId != null) mapOf(targetId!! to traces) else
+                allHabits.mapNotNull { habit -> habit.id?.let { id ->
+                    val rowTraces = runCatching { select(id).filter { it in traces }.toList() }.getOrDefault(emptyList())
+                    id to rowTraces
+                } }.toMap()
+            trace("cache.request")
+        }
+
+        private fun publishTrace(id: Long?) {
+            if (id == null || traces.isEmpty() || operationTraces == null) return
+            // Refresh lineage is candidate provenance, never proof of the expected cell state.
+            val rowTraces = tracesByHabit[id].orEmpty()
+            publishedOperationTraces[id] = rowTraces
+            val revision = newData.snapshots[id]?.revision
+            rowTraces.forEach { it.event("cache.row.published", revision, generation, traceBatch) }
+        }
         private val requestedPrimary = primaryOrder
         private val requestedSecondary = secondaryOrder
         private val requestedCheckmarkCount = checkmarkCount
@@ -511,6 +559,7 @@ class HabitCardListCache(
             this.generation = generation
             this.baseFullGeneration = generation
             isCancelled = false
+            captureTraces()
         }
 
         constructor(targetId: Long, generation: Long, baseFullGeneration: Long) {
@@ -519,10 +568,12 @@ class HabitCardListCache(
             this.generation = generation
             this.baseFullGeneration = baseFullGeneration
             isCancelled = false
+            captureTraces()
         }
 
         override fun cancel() {
             isCancelled = true
+            trace("cache.cancelled")
         }
 
         private fun isCurrent(): Boolean = withCacheLock {
@@ -545,6 +596,7 @@ class HabitCardListCache(
                 prepareInBackground()
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
+                trace("cache.failed")
                 fetchFailure = e
                 runCatching { logger.error(e) }
                 runner?.publishProgress(this, Int.MIN_VALUE)
@@ -553,7 +605,8 @@ class HabitCardListCache(
         }
 
         private suspend fun prepareInBackground() {
-            if (!isCurrent()) return
+            if (!isCurrent()) { trace("cache.superseded"); return }
+            trace("cache.background.begin")
             HabitStartupTiming.mark("cache.worker.begin", generation)
             val started = TimeSource.Monotonic.markNow()
             try {
@@ -561,6 +614,7 @@ class HabitCardListCache(
             } catch (_: org.isoron.uhabits.core.models.projection.EffectiveReadInvalidatedException) {
                 // Keep the last published generation. A concurrent revision requests a new one.
                 isCancelled = true
+                trace("cache.snapshot.invalidated")
                 return
             }
             newData.copyScoresFrom(previous)
@@ -569,7 +623,7 @@ class HabitCardListCache(
             val today = getToday()
             val dateFrom = today.minus(requestedCheckmarkCount - 1)
             for (position in newData.habits.indices) {
-                if (!isCurrent()) return
+                if (!isCurrent()) { trace("cache.superseded"); return }
                 val habit = newData.habits[position]
                 if (targetId != null && targetId != habit.id) continue
                 val snapshot = newData.snapshots[habit.id]
@@ -605,6 +659,7 @@ class HabitCardListCache(
                 newData.notes[habit.id] = noteList.toTypedArray()
             }
             backgroundComplete = true
+            trace("cache.background.end")
             HabitStartupTiming.mark("cache.cards.ready", generation)
             timingObserver?.invoke("cache.background", started.elapsedNow().inWholeNanoseconds / 1e6)
         }
@@ -616,7 +671,8 @@ class HabitCardListCache(
 
         override fun onPostExecute() = withCacheLock {
             finished(this)
-            if (!isCurrent()) return@withCacheLock
+            if (!isCurrent()) { trace("cache.superseded"); return@withCacheLock }
+            trace("cache.publish.begin")
             if (targetId == null) {
                 currentFetchTask = null
             }
@@ -634,6 +690,7 @@ class HabitCardListCache(
                 for (position in newData.habits.indices) processPosition(position)
             }
             hasLoaded = true
+            trace("cache.publish.end")
             listener.onRefreshFinished()
             HabitStartupTiming.mark("cache.publish.end", generation)
             timingObserver?.invoke("cache.publish", started.elapsedNow().inWholeNanoseconds / 1e6)
@@ -665,6 +722,7 @@ class HabitCardListCache(
             data.bindingStyles[id] = requireNotNull(newData.bindingStyles[id])
             data.effectiveBindings[id] = newData.effectiveBindings[id]
             newData.snapshots[id]?.let { data.snapshots[id] = it }
+            publishTrace(id)
             listener.onItemInserted(position)
         }
 
@@ -712,6 +770,7 @@ class HabitCardListCache(
             // including rows whose visible values did not change.
             data.snapshots.remove(id)
             newData.snapshots[id]?.let { data.snapshots[id] = it }
+            publishTrace(id)
             if (styleChanged) listener.onItemChanged(position)
             else if (entriesChanged) listener.onEntryChanged(position)
         }

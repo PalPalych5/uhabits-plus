@@ -6,6 +6,8 @@ import org.isoron.platform.io.StepResult
 import org.isoron.platform.io.queryInt
 import org.isoron.platform.io.queryLong
 import org.isoron.platform.io.run
+import org.isoron.platform.io.PreparedStatement
+import org.isoron.uhabits.core.commands.HabitEditTrace
 
 data class EntryData(
     var id: Long? = null,
@@ -96,7 +98,7 @@ class EntryRepository(private val db: Database) {
     }
 
     @Synchronized
-    fun upsert(data: EntryData): Long {
+    fun upsert(data: EntryData, trace: HabitEditTrace? = null): Long {
         if (data.uuid.isBlank()) data.uuid = "${data.habitId}:${data.timestamp}"
 
         // 1. Try update first by habit and timestamp
@@ -108,9 +110,11 @@ class EntryRepository(private val db: Database) {
         if (data.deletedAt != null) updateByHabitAndTimestampStmt.bindLong(5, data.deletedAt!!) else updateByHabitAndTimestampStmt.bindNull(5)
         updateByHabitAndTimestampStmt.bindLong(6, data.habitId!!)
         updateByHabitAndTimestampStmt.bindLong(7, data.timestamp)
-        updateByHabitAndTimestampStmt.step()
+        mutationStep(updateByHabitAndTimestampStmt, trace)
 
-        if (db.queryInt("SELECT changes()") == 0) {
+        val updated = db.queryInt("SELECT changes()")
+        mutationOutcome(updated, trace)
+        if (updated == 0) {
             // 2. Row does not exist yet: try insert or ignore
             insertOrIgnoreStmt.reset()
             insertOrIgnoreStmt.bindLong(1, data.habitId!!)
@@ -120,9 +124,11 @@ class EntryRepository(private val db: Database) {
             insertOrIgnoreStmt.bindText(5, data.notes)
             insertOrIgnoreStmt.bindLong(6, data.updatedAt)
             if (data.deletedAt != null) insertOrIgnoreStmt.bindLong(7, data.deletedAt!!) else insertOrIgnoreStmt.bindNull(7)
-            insertOrIgnoreStmt.step()
+            mutationStep(insertOrIgnoreStmt, trace)
 
-            if (db.queryInt("SELECT changes()") == 0) {
+            val inserted = db.queryInt("SELECT changes()")
+            mutationOutcome(inserted, trace)
+            if (inserted == 0) {
                 // Another connection inserted concurrently: update the existing row
                 updateByHabitAndTimestampStmt.reset()
                 updateByHabitAndTimestampStmt.bindText(1, data.uuid)
@@ -132,7 +138,8 @@ class EntryRepository(private val db: Database) {
                 if (data.deletedAt != null) updateByHabitAndTimestampStmt.bindLong(5, data.deletedAt!!) else updateByHabitAndTimestampStmt.bindNull(5)
                 updateByHabitAndTimestampStmt.bindLong(6, data.habitId!!)
                 updateByHabitAndTimestampStmt.bindLong(7, data.timestamp)
-                updateByHabitAndTimestampStmt.step()
+                mutationStep(updateByHabitAndTimestampStmt, trace)
+                if (trace != null) mutationOutcome(db.queryInt("SELECT changes()"), trace)
             }
         }
 
@@ -144,6 +151,22 @@ class EntryRepository(private val db: Database) {
         } else {
             -1L
         }
+    }
+
+    private fun mutationStep(statement: PreparedStatement, trace: HabitEditTrace?) {
+        trace?.event("sqlite.begin")
+        try {
+            statement.step()
+        } catch (t: Throwable) {
+            trace?.event("sqlite.failed")
+            throw t
+        } finally { trace?.event("sqlite.end") }
+    }
+
+    private fun mutationOutcome(changes: Int, trace: HabitEditTrace?) {
+        if (trace == null) return
+        if (changes == 0) trace.event("sqlite.unchanged")
+        else trace.event(if (db.inTransaction()) "sqlite.pendingTransaction" else "sqlite.durable")
     }
 
     @Synchronized

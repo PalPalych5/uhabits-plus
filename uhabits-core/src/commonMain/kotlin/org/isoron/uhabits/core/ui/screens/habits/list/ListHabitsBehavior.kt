@@ -24,6 +24,7 @@ import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.commands.CreateRepetitionCommand
+import org.isoron.uhabits.core.commands.HabitEditTrace
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Entry.Companion.YES_MANUAL
 import org.isoron.uhabits.core.models.Habit
@@ -140,8 +141,16 @@ open class ListHabitsBehavior(
     }
 
     open fun onToggle(habit: Habit, date: LocalDate, value: Int, notes: String, x: Float, y: Float) {
+        submitToggle(habit, date, value, notes, x, y, null)
+    }
+
+    open fun onToggleTraced(habit: Habit, date: LocalDate, value: Int, notes: String, x: Float, y: Float, trace: HabitEditTrace) {
+        submitToggle(habit, date, value, notes, x, y, trace)
+    }
+
+    private fun submitToggle(habit: Habit, date: LocalDate, value: Int, notes: String, x: Float, y: Float, trace: HabitEditTrace?) {
         commandRunner.run(
-            CreateRepetitionCommand(habitList, habit, date, value, notes)
+            CreateRepetitionCommand(habitList, habit, date, value, notes), trace
         )
         if (value == YES_MANUAL) screen.showConfetti(habit.color, x, y)
     }

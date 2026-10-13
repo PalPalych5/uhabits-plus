@@ -24,6 +24,8 @@ fun interface Task {
     suspend fun doInBackground()
     fun onAttached(runner: TaskRunner) {}
     fun onPostExecute() {}
+    /** Completion diagnostic, including cancellation before execution. */
+    fun onCompletion(cause: Throwable?) {}
     fun onPreExecute() {}
     fun onProgressUpdate(currentPosition: Int) {}
 }

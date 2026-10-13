@@ -37,6 +37,7 @@ import org.isoron.uhabits.core.models.Entry.Companion.SKIP
 import org.isoron.uhabits.core.models.Entry.Companion.UNKNOWN
 import org.isoron.uhabits.core.models.Entry.Companion.YES_AUTO
 import org.isoron.uhabits.core.models.Entry.Companion.YES_MANUAL
+import org.isoron.uhabits.core.commands.HabitEditTrace
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.inject.ActivityContext
 import org.isoron.uhabits.utils.drawNotesIndicator
@@ -80,6 +81,16 @@ class CheckmarkButtonView(
 
     var onToggle: (Int, String) -> Unit = { _, _ -> }
 
+    /** Per-view disposable-QA seam. No run-global current operation. */
+    var operationTraceFactory: ((CheckmarkButtonView) -> HabitEditTrace)? = null
+        set(value) {
+            field = value
+            if (value == null) { inputTrace = null; queuedInputTraces = null }
+        }
+    var onToggleTraced: ((Int, String, HabitEditTrace) -> Unit)? = null
+    private var inputTrace: HabitEditTrace? = null
+    private var queuedInputTraces: java.util.ArrayDeque<HabitEditTrace>? = null
+
     var onEdit: () -> Unit = { }
 
     private var drawer = Drawer()
@@ -90,12 +101,21 @@ class CheckmarkButtonView(
     }
 
     fun performToggle() {
+        // View may post performClick until after several UP events. Preserve each pointer's
+        // context in this view's FIFO instead of reusing the last pointer or a global sample.
+        val trace = queuedInputTraces?.pollFirst() ?: inputTrace.also { inputTrace = null } ?: newOperationTrace()
+        toggleWithTrace(trace)
+    }
+
+    private fun toggleWithTrace(trace: HabitEditTrace?) {
         value = Entry.nextToggleValue(
             value = value,
             isSkipEnabled = preferences.isSkipEnabled,
             areQuestionMarksEnabled = preferences.areQuestionMarksEnabled
         )
-        onToggle(value, notes)
+        trace?.event("input.accepted")
+        if (trace != null && onToggleTraced != null) onToggleTraced?.invoke(value, notes, trace)
+        else onToggle(value, notes)
         performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
         invalidate()
     }
@@ -104,15 +124,20 @@ class CheckmarkButtonView(
         if (preferences.isShortToggleEnabled) {
             performToggle()
         } else {
+            queuedInputTraces?.pollFirst()?.event("input.rejected")
             onEdit()
         }
     }
 
     override fun onLongClick(v: View): Boolean {
         if (preferences.isShortToggleEnabled) {
+            inputTrace?.event("input.rejected")
+            inputTrace = null
             onEdit()
         } else {
-            performToggle()
+            val trace = inputTrace
+            inputTrace = null
+            if (trace == null) performToggle() else toggleWithTrace(trace)
         }
         return true
     }
@@ -126,11 +151,40 @@ class CheckmarkButtonView(
 
     override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
         when (event.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> {
+                inputTrace = newOperationTrace()
+                inputTrace?.event("input.down")
+            }
+            android.view.MotionEvent.ACTION_MOVE -> {
+                if (inputTrace != null) {
+                    val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+                    if (event.x < -slop || event.y < -slop || event.x >= width + slop || event.y >= height + slop) {
+                        inputTrace?.event("input.rejected")
+                        inputTrace = null
+                    }
+                }
+            }
+            android.view.MotionEvent.ACTION_UP -> {
+                inputTrace?.let { trace ->
+                    trace.event("input.up")
+                    val queue = queuedInputTraces ?: java.util.ArrayDeque<HabitEditTrace>().also { queuedInputTraces = it }
+                    queue.addLast(trace)
+                }
+                inputTrace = null
+            }
+            android.view.MotionEvent.ACTION_CANCEL -> {
+                inputTrace?.event("input.cancelled")
+                inputTrace = null
+            }
+        }
+        when (event.actionMasked) {
             android.view.MotionEvent.ACTION_DOWN -> HabitFrameTiming.mark("habit.input.down", this)
             android.view.MotionEvent.ACTION_UP -> HabitFrameTiming.mark("habit.input.up", this)
         }
         return HabitFrameTiming.measure("habit.checkmark.touch", this) { super.onTouchEvent(event) }
     }
+
+    private fun newOperationTrace(): HabitEditTrace? = try { operationTraceFactory?.invoke(this) } catch (_: Throwable) { null }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val height = resources.getDimensionPixelSize(R.dimen.checkmarkHeight)

@@ -66,6 +66,8 @@ class CheckmarkPanelView(
             setupButtons()
         }
 
+    var onToggleTraced: ((LocalDate, Int, String, org.isoron.uhabits.core.commands.HabitEditTrace) -> Unit)? = null
+
     var onEdit: (LocalDate) -> Unit = { _ -> }
         set(value) {
             field = value
@@ -90,6 +92,10 @@ class CheckmarkPanelView(
             }
             button.color = color
             button.onToggle = { value, notes -> onToggle(date, value, notes) }
+            button.onToggleTraced = { value, notes, trace ->
+                val callback = onToggleTraced
+                if (callback == null) onToggle(date, value, notes) else callback(date, value, notes, trace)
+            }
             button.onEdit = { onEdit(date) }
         }
     }

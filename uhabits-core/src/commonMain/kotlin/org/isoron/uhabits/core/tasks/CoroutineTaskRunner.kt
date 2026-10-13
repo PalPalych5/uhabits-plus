@@ -94,13 +94,16 @@ class CoroutineTaskRunner(
                 }
                 task.onPostExecute()
             } catch (t: Throwable) {
+                task.onCompletion(t)
                 if (t is kotlinx.coroutines.CancellationException) throw t
             } finally {
                 val finishListeners = decrementActive()
                 finishListeners.forEach { it.onTaskFinished(task) }
             }
         }
-        job.invokeOnCompletion { removeJob(job) }
+        job.invokeOnCompletion { cause ->
+            try { task.onCompletion(cause) } finally { removeJob(job) }
+        }
         addJob(job)
     }
 

@@ -23,6 +23,7 @@ import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
+import org.isoron.uhabits.core.models.sqlite.SQLiteEntryList
 import kotlin.time.TimeSource
 
 data class CreateRepetitionCommand(
@@ -33,18 +34,28 @@ data class CreateRepetitionCommand(
     val notes: String
 ) : Command {
     var timingObserver: ((String, Double) -> Unit)? = null
+    var trace: HabitEditTrace? = null
     private inline fun timed(stage: String, action: () -> Unit) {
-        val observer = timingObserver
-        if (observer == null) { action(); return }
-        val started = TimeSource.Monotonic.markNow()
-        action()
-        observer(stage, started.elapsedNow().inWholeNanoseconds / 1e6)
+        trace?.event("$stage.begin")
+        try {
+            val observer = timingObserver
+            if (observer == null) { action(); return }
+            val started = TimeSource.Monotonic.markNow()
+            action()
+            observer(stage, started.elapsedNow().inWholeNanoseconds / 1e6)
+        } finally { trace?.event("$stage.end") }
     }
     override fun run() {
         val entries = habit.originalEntries
         val previous = entries.get(date)
-        if (previous.value == value && previous.notes == notes) return
-        timed("repetition.sqliteWrite") { entries.add(Entry(date, value, notes)) }
+        if (previous.value == value && previous.notes == notes) {
+            trace?.event("repetition.noop")
+            return
+        }
+        timed("repetition.sqliteWrite") {
+            val entry = Entry(date, value, notes)
+            if (entries is SQLiteEntryList) entries.addTraced(entry, trace) else entries.add(entry)
+        }
         timed("repetition.modelRecompute") { habit.recompute() }
         timed("repetition.modelRefresh") {
             habit.id?.let { habitList.refreshHabitFromDatabase(it, habit) }

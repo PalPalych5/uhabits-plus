@@ -42,6 +42,16 @@ class CreateRepetitionCommandTest : BaseUnitTest() {
     }
 
     @Test
+    fun testNoopTraceDoesNotClaimPersistence() {
+        val events = mutableListOf<String>()
+        val existing = habit.originalEntries.get(today)
+        val noOp = CreateRepetitionCommand(habitList, habit, today, existing.value, existing.notes)
+        noOp.trace = HabitEditTrace(1) { _, stage, _, _, _ -> events.add(stage) }
+        noOp.run()
+        assertEquals(listOf("repetition.noop"), events)
+    }
+
+    @Test
     fun testExecute() {
         val entries = habit.originalEntries
         var entry = entries.get(today)

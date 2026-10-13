@@ -26,6 +26,7 @@ import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.EntryList
 import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.sync.SyncManager
+import org.isoron.uhabits.core.commands.HabitEditTrace
 
 class SQLiteEntryList(
     val repository: EntryRepository,
@@ -62,6 +63,10 @@ class SQLiteEntryList(
     }
 
     override fun add(entry: Entry) {
+        addTraced(entry, null)
+    }
+
+    fun addTraced(entry: Entry, trace: HabitEditTrace?) {
         loadRecords()
         val previous = super.get(entry.date)
         if (previous.value == entry.value && previous.notes == entry.notes) return
@@ -79,7 +84,7 @@ class SQLiteEntryList(
                 notes = entry.notes,
                 updatedAt = updatedAt,
                 deletedAt = deletedAt
-            )
+            ), trace
         )
 
         if (entry.value == Entry.UNKNOWN) {

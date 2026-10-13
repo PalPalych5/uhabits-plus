@@ -7,8 +7,51 @@ import org.isoron.platform.io.run
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.test.assertFails
+import org.isoron.uhabits.core.commands.HabitEditTrace
 
 class EntryRepositoryTest {
+    @Test
+    fun testTraceDoesNotClaimDurabilityForFailedMutation() = runTest {
+        val db = TestDatabaseHelper.createEmptyDatabase()
+        try {
+            val habitId = insertTestHabit(db)
+            db.run("CREATE TRIGGER controlled_failure BEFORE INSERT ON Repetitions BEGIN SELECT RAISE(ABORT, 'controlled'); END")
+            val events = mutableListOf<String>()
+            val trace = HabitEditTrace(1) { _, stage, _, _, _ -> events.add(stage) }
+            val repo = EntryRepository(db)
+            assertFails { repo.upsert(EntryData(habitId = habitId, timestamp = 1000, value = 2), trace) }
+            assertEquals(0, events.count { it == "sqlite.durable" })
+            assertEquals(1, events.count { it == "sqlite.failed" })
+            assertEquals(events.count { it == "sqlite.begin" }, events.count { it == "sqlite.end" })
+            assertTrue(repo.findAllByHabitId(habitId).isEmpty())
+        } finally { db.close() }
+    }
+
+    @Test
+    fun testTraceSeparatesAutocommitFromPendingTransaction() = runTest {
+        val db = TestDatabaseHelper.createEmptyDatabase()
+        try {
+            val repo = EntryRepository(db)
+            val habitId = insertTestHabit(db)
+            val events = mutableListOf<String>()
+            val trace = HabitEditTrace(1) { _, stage, _, _, _ -> events.add(stage) }
+            repo.upsert(EntryData(habitId = habitId, timestamp = 1000, value = 2), trace)
+            assertEquals(1, events.count { it == "sqlite.durable" })
+            assertEquals(2, events.count { it == "sqlite.begin" })
+            assertEquals(2, events.count { it == "sqlite.end" })
+            assertEquals(2, repo.findAllByHabitId(habitId).single().value)
+            events.clear()
+            db.beginTransaction()
+            try {
+                repo.upsert(EntryData(habitId = habitId, timestamp = 1000, value = 1), trace)
+                assertEquals(0, events.count { it == "sqlite.durable" })
+                assertEquals(1, events.count { it == "sqlite.pendingTransaction" })
+            } finally { db.endTransaction() }
+            assertEquals(2, repo.findAllByHabitId(habitId).single().value)
+        } finally { db.close() }
+    }
+
     private fun insertTestHabit(db: org.isoron.platform.io.Database): Long {
         db.run(
             """

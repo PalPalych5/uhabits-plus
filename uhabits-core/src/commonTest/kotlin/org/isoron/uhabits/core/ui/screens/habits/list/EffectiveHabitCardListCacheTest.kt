@@ -99,4 +99,59 @@ class EffectiveHabitCardListCacheTest : BaseUnitTest() {
         assertEquals(ids(legacy), ids(effective))
         assertEquals(0, effective.habitCount)
     }
+    @Test fun tracedFullBatchRetainsRowLineageAndActualSnapshotRevision() {
+        val a = numerical("A", 30000); val b = numerical("B", 50000)
+        val repo = MemoryContributionRepository()
+        val effective = cache(repo)
+        val events = mutableListOf<Triple<Long, String, Long?>>()
+        val requestedBatches = mutableListOf<Long>()
+        val first = org.isoron.uhabits.core.commands.HabitEditTrace(1) { trace, stage, revision, _, batch ->
+            if (stage == "cache.request") requestedBatches.add(requireNotNull(batch))
+            events.add(Triple(trace.ordinal, stage, revision))
+        }
+        val second = org.isoron.uhabits.core.commands.HabitEditTrace(2) { trace, stage, revision, _, _ ->
+            events.add(Triple(trace.ordinal, stage, revision))
+        }
+        effective.operationTraces = { id -> when (id) {
+            a.id -> listOf(first)
+            b.id -> listOf(second)
+            else -> listOf(first, second)
+        } }
+        var loadedLineage: List<Long>? = null
+        effective.effectiveSnapshotsTraced = { habits, traces, _, _ ->
+            loadedLineage = traces.map { it.ordinal }
+            effective.effectiveSnapshots!!.invoke(habits)
+        }
+        effective.refreshAllHabits()
+        assertEquals(listOf(1L, 2L), loadedLineage)
+        assertEquals(listOf(first), effective.getPublishedOperationTraces(a.id!!))
+        assertEquals(listOf(second), effective.getPublishedOperationTraces(b.id!!))
+        assertTrue(events.contains(Triple(1L, "cache.row.published", 1L)))
+        assertTrue(events.contains(Triple(2L, "cache.row.published", 1L)))
+        assertEquals(1L, effective.getEffectiveSnapshot(a.id!!)!!.revision)
+        effective.refreshHabit(a.id!!)
+        assertEquals(2, requestedBatches.size)
+        assertEquals(2, requestedBatches.toSet().size)
+        // Turning diagnostic providers off leaves the existing effective read path in use.
+        effective.operationTraces = null
+        effective.effectiveSnapshotsTraced = null
+        loadedLineage = null
+        effective.refreshAllHabits()
+        assertNull(loadedLineage)
+        assertTrue(effective.getPublishedOperationTraces(a.id!!).isEmpty())
+        assertEquals(1L, effective.getEffectiveSnapshot(a.id!!)!!.revision)
+    }
+
+    @Test fun throwingDiagnosticSupplierPreservesNormalSnapshotPublication() {
+        val h = numerical("supplier-failure", 30000)
+        val effective = cache(MemoryContributionRepository())
+        effective.operationTraces = { error("diagnostic fixture failure") }
+        effective.effectiveSnapshotsTraced = { _, _, _, _ -> error("must use normal loader") }
+        effective.refreshAllHabits()
+        assertTrue(effective.hasLoaded)
+        assertEquals(1L, effective.getEffectiveSnapshot(h.id!!)!!.revision)
+        assertTrue(effective.getPublishedOperationTraces(h.id!!).isEmpty())
+        assertEquals(h.scores[getToday()].value, effective.getScore(h.id!!))
+    }
+
 }
