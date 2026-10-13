@@ -141,6 +141,23 @@ class HabitCardView(
         get() = numberPanel.effectiveSnapshot
         set(value) { numberPanel.effectiveSnapshot = value?.takeIf { it.hasContributions } }
 
+    /** Entry-only publication leaves card identity, grouping, goals and styling intact. */
+    fun bindEntryData(
+        score: Double,
+        values: IntArray,
+        notes: Array<String>,
+        snapshot: org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshot?
+    ) {
+        this.score = score
+        checkmarkPanel.values = values
+        checkmarkPanel.notes = notes
+        if (habit?.isNumerical == true) {
+            numberPanel.values = values.map { it / 1000.0 }.toDoubleArray()
+            numberPanel.notes = notes
+            effectiveSnapshot = snapshot
+        }
+    }
+
     var checkmarkPanel: CheckmarkPanelView
     private var numberPanel: NumberPanelView
     private var innerFrame: LinearLayout
@@ -254,6 +271,12 @@ class HabitCardView(
         setPadding(margin, 0, margin, margin)
         addView(innerFrame)
         updateBackground(false)
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        HabitFrameTiming.measure("habit.card.measure", this) {
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        }
     }
 
     override fun onModelChange() {

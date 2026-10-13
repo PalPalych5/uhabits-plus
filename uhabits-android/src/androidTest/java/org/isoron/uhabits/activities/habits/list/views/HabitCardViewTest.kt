@@ -105,6 +105,37 @@ class HabitCardViewTest : BaseViewTest() {
     }
 
     @Test
+    fun entryBindingPreservesCardIdentityAndUpdatesVisibleValues() {
+        for (habit in listOf(habit1, habit2)) {
+            view.habit = habit
+            view.isSelected = true
+            view.dataOffset = 1
+            val content = view.getChildAt(0) as LinearLayout
+            val background = content.background
+            val numberPanel = (0 until content.childCount).map { content.getChildAt(it) }
+                .filterIsInstance<NumberPanelView>().single()
+            val unit = view.unit
+            val threshold = view.threshold
+            view.bindEntryData(0.75, intArrayOf(1000, 2500, 3500), arrayOf("first", "second", "third"), null)
+            org.junit.Assert.assertSame(habit, view.habit)
+            org.junit.Assert.assertSame(background, content.background)
+            org.junit.Assert.assertTrue(view.isSelected)
+            assertEquals(5, view.buttonCount)
+            assertEquals(1, view.dataOffset)
+            assertEquals(unit, view.unit)
+            assertEquals(threshold, view.threshold, 0.0)
+            assertEquals(0.75, view.score, 0.0001)
+            assertEquals(2500, view.checkmarkPanel.buttons[0].value)
+            assertEquals("second", view.checkmarkPanel.buttons[0].notes)
+            if (habit.isNumerical) {
+                assertEquals(2.5, numberPanel.buttons[0].value, 0.0)
+                assertEquals("second", numberPanel.buttons[0].notes)
+                org.junit.Assert.assertNull(view.effectiveSnapshot)
+            }
+        }
+    }
+
+    @Test
     fun unknownScorePreservesTitleAndNumericColumns() {
         for (width in listOf(360, 400)) {
             for (habit in listOf(habit1, habit2)) {
@@ -128,5 +159,67 @@ class HabitCardViewTest : BaseViewTest() {
                 assertEquals(originalLeft, title.left)
                 }
         }
+    }
+
+    @Test
+    fun entryBindingPublishesFocusSnapshotAndClearsFinalTombstoneOverlay() {
+        val repository = org.isoron.uhabits.core.contribution.memory.MemoryContributionRepository()
+        val provider = org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshotProvider(repository)
+        habit2.unit = "min"
+        habit2.originalEntries.add(org.isoron.uhabits.core.models.Entry(today, 30000))
+        habit2.recompute()
+        val ref = org.isoron.uhabits.core.containers.HabitRef(requireNotNull(habit2.uuid))
+        val timestamp = org.isoron.platform.time.startOfLocalDay(today) + 1000
+        val credit = org.isoron.uhabits.core.contribution.Contribution(
+            org.isoron.uhabits.core.contribution.ContributionId("card-focus-credit"), ref,
+            org.isoron.uhabits.core.contribution.ContributionSourceType.FOCUS_SESSION,
+            "card-focus-source", 60000L, timestamp, timestamp, timestamp
+        )
+        repository.record(credit)
+        val calendar = org.isoron.uhabits.core.models.projection.EffectiveReadCalendarContext(
+            java.util.TimeZone.getDefault().id, org.isoron.platform.time.DayOfWeek.MONDAY, 0, 0
+        )
+        fun snapshot(revision: Long) = provider.prepare(
+            listOf(habit2), today.minus(4), today, "disposable-card-test", revision, calendar
+        ).getValue(ref)
+        view.habit = habit2
+        view.dataOffset = 0
+        view.isSelected = true
+        measureView(view, dpToPixels(400), dpToPixels(50))
+        val content = view.getChildAt(0) as LinearLayout
+        val panel = (0 until content.childCount).map { content.getChildAt(it) }
+            .filterIsInstance<NumberPanelView>().single()
+        val background = content.background
+        val left = panel.left
+        val width = panel.width
+        val units = view.unit
+        val values = intArrayOf(30000, 0, 0, 0, 0)
+        val notes = arrayOf("manual", "", "", "", "")
+        val credited = snapshot(1)
+        view.bindEntryData(0.5, values, notes, credited)
+        org.junit.Assert.assertSame(credited, panel.effectiveSnapshot)
+        assertEquals(90000L, panel.buttons[0].effectiveDay!!.totalValue)
+        org.junit.Assert.assertTrue(panel.buttons[0].effectiveDay!!.hasCompleteCoverage)
+        org.junit.Assert.assertSame(habit2, view.habit)
+        org.junit.Assert.assertSame(background, content.background)
+        assertEquals(units, view.unit)
+        measureView(view, dpToPixels(400), dpToPixels(50))
+        assertEquals(left, panel.left)
+        assertEquals(width, panel.width)
+
+        repository.removeById(credit.id, timestamp + 1)
+        val tombstoned = snapshot(2)
+        org.junit.Assert.assertFalse(tombstoned.hasContributions)
+        org.junit.Assert.assertTrue(tombstoned.hasHistoricalContributions)
+        view.bindEntryData(0.5, values, notes, tombstoned)
+        org.junit.Assert.assertNull(view.effectiveSnapshot)
+        org.junit.Assert.assertNull(panel.buttons[0].effectiveDay)
+        org.junit.Assert.assertNull(panel.buttons[0].effectiveCompletion)
+        assertEquals(30.0, panel.buttons[0].value, 0.0)
+        assertEquals("manual", panel.buttons[0].notes)
+        assertEquals(30000, habit2.originalEntries.get(today).value)
+        org.junit.Assert.assertSame(habit2, view.habit)
+        org.junit.Assert.assertSame(background, content.background)
+        assertEquals(units, view.unit)
     }
 }

@@ -279,8 +279,10 @@ class HabitCardListView(
             parent: RecyclerView,
             state: State
         ) {
-            val position = parent.getChildAdapterPosition(view)
-            if (hasSeparatorBefore(position)) outRect.top = topGap
+            HabitFrameTiming.measure("habit.separator.offset", view) {
+                val position = parent.getChildAdapterPosition(view)
+                if (hasSeparatorBefore(position)) outRect.top = topGap
+            }
         }
 
         private fun hasSeparatorBefore(position: Int): Boolean {

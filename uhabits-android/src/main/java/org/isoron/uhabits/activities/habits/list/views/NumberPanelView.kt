@@ -98,31 +98,33 @@ class NumberPanelView(
 
     @Synchronized
     override fun setupButtons() {
-        val today = getToday()
-        val h = habit
+        HabitFrameTiming.measure("habit.number.setup", this) {
+            val today = getToday()
+            val h = habit
 
-        buttons.forEachIndexed { index, button ->
-            val date = today.minus(index + dataOffset)
-            button.effectiveDay = effectiveSnapshot?.let { snapshot ->
-                if (date < snapshot.from || date > snapshot.to) null else snapshot.day(date)
+            buttons.forEachIndexed { index, button ->
+                val date = today.minus(index + dataOffset)
+                button.effectiveDay = effectiveSnapshot?.let { snapshot ->
+                    if (date < snapshot.from || date > snapshot.to) null else snapshot.day(date)
+                }
+                button.effectiveCompletion = effectiveSnapshot?.let { snapshot ->
+                    if (date < snapshot.from || date > snapshot.to) null else snapshot.compatibilityCompletionOn(date).status
+                }
+                button.value = when {
+                    index + dataOffset < values.size -> values[index + dataOffset]
+                    else -> 0.0
+                }
+                button.notes = when {
+                    index + dataOffset < notes.size -> notes[index + dataOffset]
+                    else -> ""
+                }
+                button.color = color
+                val goal = h?.goalAt(date)
+                button.targetType = goal?.targetType ?: targetType
+                button.threshold = if (goal != null) goal.targetValue / goal.frequency.denominator else threshold
+                button.units = goal?.unit ?: units
+                button.onEdit = { onEdit(date) }
             }
-            button.effectiveCompletion = effectiveSnapshot?.let { snapshot ->
-                if (date < snapshot.from || date > snapshot.to) null else snapshot.compatibilityCompletionOn(date).status
-            }
-            button.value = when {
-                index + dataOffset < values.size -> values[index + dataOffset]
-                else -> 0.0
-            }
-            button.notes = when {
-                index + dataOffset < notes.size -> notes[index + dataOffset]
-                else -> ""
-            }
-            button.color = color
-            val goal = h?.goalAt(date)
-            button.targetType = goal?.targetType ?: targetType
-            button.threshold = if (goal != null) goal.targetValue / goal.frequency.denominator else threshold
-            button.units = goal?.unit ?: units
-            button.onEdit = { onEdit(date) }
         }
     }
 }

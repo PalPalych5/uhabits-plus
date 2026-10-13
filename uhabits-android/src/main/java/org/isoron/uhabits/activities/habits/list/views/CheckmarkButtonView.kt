@@ -118,8 +118,18 @@ class CheckmarkButtonView(
     }
 
     override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        drawer.draw(canvas)
+        HabitFrameTiming.measure("habit.checkmark.draw", this) {
+            super.onDraw(canvas)
+            drawer.draw(canvas)
+        }
+    }
+
+    override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
+        when (event.actionMasked) {
+            android.view.MotionEvent.ACTION_DOWN -> HabitFrameTiming.mark("habit.input.down", this)
+            android.view.MotionEvent.ACTION_UP -> HabitFrameTiming.mark("habit.input.up", this)
+        }
+        return HabitFrameTiming.measure("habit.checkmark.touch", this) { super.onTouchEvent(event) }
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {

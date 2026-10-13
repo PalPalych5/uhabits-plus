@@ -40,6 +40,15 @@ import org.isoron.uhabits.core.tasks.TaskRunner
 import org.isoron.uhabits.core.containers.HabitRef
 import org.isoron.uhabits.core.containers.IconRef
 import org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshot
+import org.isoron.uhabits.core.models.projection.EffectiveReadCalendarContext
+import org.isoron.uhabits.core.models.projection.EffectiveHabitDay
+import org.isoron.uhabits.core.models.projection.CompatibilityCompletion
+import org.isoron.uhabits.core.models.HabitGoal
+import org.isoron.uhabits.core.models.HabitType
+import org.isoron.uhabits.core.models.PaletteColor
+import org.isoron.uhabits.core.models.Frequency
+import org.isoron.uhabits.core.models.NumericalHabitType
+import org.isoron.platform.time.LocalDate
 
 /**
  * A HabitCardListCache fetches and keeps a cache of all the data necessary to
@@ -75,6 +84,21 @@ class HabitCardListCache(
 
     /** Metadata is prepared with the card generation, including absent icons/groups. */
     data class RowMetadata(val iconRef: IconRef?, val rootGroupKey: Any?, val dayTier: DayTier)
+
+    // Capture mutable Habit attributes on the worker. Comparing live Habit
+    // references cannot detect a title/color/goal edit after the model changes.
+    private data class BindingStyle(
+        val name: String, val color: PaletteColor, val type: HabitType,
+        val frequency: Frequency, val targetType: NumericalHabitType,
+        val targetValue: Double, val unit: String, val goals: List<HabitGoal>,
+        val today: LocalDate,
+    )
+    private data class EffectiveCellBinding(
+        val day: EffectiveHabitDay?, val completion: CompatibilityCompletion?,
+    )
+    private data class EffectiveBinding(
+        val calendar: EffectiveReadCalendarContext, val cells: List<EffectiveCellBinding>,
+    )
 
     @Synchronized
     fun getMetadata(habitId: Long): RowMetadata =
@@ -260,6 +284,8 @@ class HabitCardListCache(
         data.scores.remove(id)
         data.snapshots.remove(id)
         data.metadata.remove(id)
+        data.bindingStyles.remove(id)
+        data.effectiveBindings.remove(id)
         listener.onItemRemoved(position)
     }
 
@@ -305,6 +331,8 @@ class HabitCardListCache(
     private inner class CacheData {
         val metadata = mutableMapOf<Long?, RowMetadata>()
         val snapshots = mutableMapOf<Long?, EffectiveHabitReadSnapshot>()
+        val bindingStyles = mutableMapOf<Long?, BindingStyle>()
+        val effectiveBindings = mutableMapOf<Long?, EffectiveBinding?>()
         val idToHabit: MutableMap<Long?, Habit> = mutableMapOf()
         val habits: MutableList<Habit>
         val checkmarks: MutableMap<Long?, IntArray>
@@ -456,6 +484,8 @@ class HabitCardListCache(
             checkmarks.putAll(data.checkmarks)
             notes.putAll(data.notes)
             metadata.putAll(data.metadata)
+            bindingStyles.putAll(data.bindingStyles)
+            effectiveBindings.putAll(data.effectiveBindings)
         }
         private val requestedMatcher = matcher
         private val requestedLoad = effectiveSnapshots
@@ -550,6 +580,20 @@ class HabitCardListCache(
                         facade.getRootGroupKey(habit.uuid ?: "", habit.blockId),
                     dayTier = habit.dayTier,
                 )
+                newData.bindingStyles[habit.id] = BindingStyle(
+                    habit.name, habit.color, habit.type, habit.frequency, habit.targetType,
+                    habit.targetValue, habit.unit, habit.goalHistory.toList(), today,
+                )
+                // The number panel uses canonical day/coverage/completion data.
+                // Prepare its equality key off Main, for every horizontally
+                // accessible date, without making revision freshness a repaint.
+                newData.effectiveBindings[habit.id] = snapshot?.takeIf { it.hasContributions }?.let { current ->
+                    EffectiveBinding(current.calendar, List(requestedCheckmarkCount) { index ->
+                        val date = today.minus(index)
+                        if (date < current.from || date > current.to) EffectiveCellBinding(null, null)
+                        else EffectiveCellBinding(current.day(date), current.compatibilityCompletionOn(date))
+                    })
+                }
                 newData.scores[habit.id] = if (snapshot == null) habit.scores[today].value else snapshot.scoreResult.on(today) ?: Double.NaN
                 val checkmarkList = mutableListOf<Int>()
                 val noteList = mutableListOf<String>()
@@ -581,13 +625,7 @@ class HabitCardListCache(
             if (targetId != null) {
                 val position = data.habits.indexOfFirst { it.id == targetId }
                 if (position >= 0) {
-                    val metadataChanged = data.metadata[targetId] != newData.metadata[targetId]
-                    data.scores[targetId] = newData.scores[targetId]!!
-                    data.checkmarks[targetId] = newData.checkmarks[targetId]!!
-                    data.notes[targetId] = newData.notes[targetId]!!
-                    newData.snapshots[targetId]?.let { data.snapshots[targetId] = it }
-                    data.metadata[targetId] = requireNotNull(newData.metadata[targetId])
-                    if (metadataChanged) listener.onItemChanged(position) else listener.onEntryChanged(position)
+                    performUpdate(targetId, position)
                 }
             } else {
                 // Publish only after the worker releases its reader monitor. Posting progress
@@ -624,6 +662,8 @@ class HabitCardListCache(
             data.checkmarks[id] = newData.checkmarks[id]!!
             data.notes[id] = newData.notes[id]!!
             data.metadata[id] = requireNotNull(newData.metadata[id])
+            data.bindingStyles[id] = requireNotNull(newData.bindingStyles[id])
+            data.effectiveBindings[id] = newData.effectiveBindings[id]
             newData.snapshots[id]?.let { data.snapshots[id] = it }
             listener.onItemInserted(position)
         }
@@ -656,22 +696,24 @@ class HabitCardListCache(
             val newScore = newData.scores[id]!!
             val newCheckmarks = newData.checkmarks[id]!!
             val newNoteIndicators = newData.notes[id]!!
-            val oldSnapshot = data.snapshots[id]
-            val newSnapshot = newData.snapshots[id]
-            var unchanged = true
-            if (oldSnapshot?.revision != newSnapshot?.revision || (oldSnapshot == null) != (newSnapshot == null)) unchanged = false
-            if (data.metadata[id] != newData.metadata[id]) unchanged = false
-            if (oldScore != newScore) unchanged = false
-            if (!oldCheckmarks.contentEquals(newCheckmarks)) unchanged = false
-            if (!oldNoteIndicators.contentEquals(newNoteIndicators)) unchanged = false
-            if (unchanged) return
+            val styleChanged = data.metadata[id] != newData.metadata[id] ||
+                data.bindingStyles[id] != newData.bindingStyles[id]
+            val scoreChanged = oldScore != newScore && !(oldScore.isNaN() && newScore.isNaN())
+            val entriesChanged = scoreChanged || !oldCheckmarks.contentEquals(newCheckmarks) ||
+                !oldNoteIndicators.contentEquals(newNoteIndicators) ||
+                data.effectiveBindings[id] != newData.effectiveBindings[id]
             data.scores[id] = newScore
             data.checkmarks[id] = newCheckmarks
             data.notes[id] = newNoteIndicators
             data.metadata[id] = requireNotNull(newData.metadata[id])
+            data.bindingStyles[id] = requireNotNull(newData.bindingStyles[id])
+            data.effectiveBindings[id] = newData.effectiveBindings[id]
+            // Publication always advances to the latest verified revision,
+            // including rows whose visible values did not change.
             data.snapshots.remove(id)
             newData.snapshots[id]?.let { data.snapshots[id] = it }
-            listener.onItemChanged(position)
+            if (styleChanged) listener.onItemChanged(position)
+            else if (entriesChanged) listener.onEntryChanged(position)
         }
 
         @Synchronized

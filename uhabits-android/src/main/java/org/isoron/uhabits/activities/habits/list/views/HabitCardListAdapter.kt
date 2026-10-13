@@ -129,14 +129,38 @@ class HabitCardListAdapter(
         holder: HabitCardViewHolder,
         position: Int
     ) {
-        if (listView == null) return
-        val habit = cache.getHabitByPosition(position)
-        val score = cache.getScore(habit!!.id!!)
-        val checkmarks = cache.getCheckmarks(habit.id!!)
-        val notes = cache.getNotes(habit.id!!)
-        val selected = selected.contains(habit)
-        val card = listView!!.bindCardView(holder, habit, score, checkmarks, notes, selected, cache.getMetadata(habit.id!!)) as HabitCardView
-        card.effectiveSnapshot = cache.getEffectiveSnapshot(habit.id!!)
+        HabitFrameTiming.measure("habit.card.bind", holder.itemView) {
+            if (listView == null) return
+            val habit = cache.getHabitByPosition(position)
+            val score = cache.getScore(habit!!.id!!)
+            val checkmarks = cache.getCheckmarks(habit.id!!)
+            val notes = cache.getNotes(habit.id!!)
+            val selected = selected.contains(habit)
+            val card = listView!!.bindCardView(holder, habit, score, checkmarks, notes, selected, cache.getMetadata(habit.id!!)) as HabitCardView
+            card.effectiveSnapshot = cache.getEffectiveSnapshot(habit.id!!)
+        }
+    }
+
+    override fun onBindViewHolder(holder: HabitCardViewHolder, position: Int, payloads: MutableList<Any>) {
+        HabitFrameTiming.measure("habit.card.payload.bind", holder.itemView) {
+            val habit = cache.getHabitByPosition(position)
+            val card = holder.itemView as HabitCardView
+            if (payloads.isNotEmpty() && payloads.all { it === ENTRY_ONLY } &&
+                habit != null && card.habit === habit && listView != null
+            ) {
+                val id = requireNotNull(habit.id)
+                HabitFrameTiming.measure("habit.card.entry.bind", card) {
+                    card.bindEntryData(
+                        cache.getScore(id),
+                        cache.getCheckmarks(id),
+                        cache.getNotes(id),
+                        cache.getEffectiveSnapshot(id)
+                    )
+                }
+            } else {
+                super.onBindViewHolder(holder, position, payloads)
+            }
+        }
     }
 
     override fun onViewAttachedToWindow(holder: HabitCardViewHolder) {
