@@ -21,6 +21,8 @@ import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.ui.screens.habits.list.HabitCardListCache
 import org.isoron.uhabits.database.AndroidDatabase
 import java.util.TimeZone
+import kotlin.time.DurationUnit
+import kotlin.time.TimeSource
 
 /** Read capability only: never constructs Focus capture, rules, schema or automatic writers. */
 class EffectiveHabitReadController(
@@ -32,7 +34,7 @@ class EffectiveHabitReadController(
     private val habits: HabitList,
     private val notificationTray: org.isoron.uhabits.core.ui.NotificationTray? = null,
 ) : Preferences.Listener {
-    private val provider = EffectiveHabitReadSnapshotProvider(SQLiteContributionRepository(db))
+    internal val provider = EffectiveHabitReadSnapshotProvider(SQLiteContributionRepository(db))
     private val handler = Handler(Looper.getMainLooper())
     @Volatile private var disposed = false
     private var calendar = captureCalendar()
@@ -157,6 +159,21 @@ class EffectiveHabitReadController(
         throw EffectiveReadInvalidatedException()
     }
 
+    data class ControllerLockMetrics(
+        val lockWaitDurationMs: Double,
+        val lockHeldDurationMs: Double,
+        val habitCount: Int,
+        val cacheHitCount: Int,
+        val preparedCount: Int,
+        val retriesCount: Int,
+    )
+
+    var lockMetricsObserver: ((ControllerLockMetrics) -> Unit)? = null
+
+    var snapshotMetricsObserver: ((SnapshotPreparationMetrics) -> Unit)?
+        get() = provider.preparationMetricsObserver
+        set(value) { provider.preparationMetricsObserver = value }
+
     fun snapshots(habits: List<Habit>): Map<HabitRef, EffectiveHabitReadSnapshot> {
         val today = getToday()
         return snapshots(habits, today.minus(365), today)
@@ -164,11 +181,25 @@ class EffectiveHabitReadController(
     /** Disabled unless QA installs this loader; monitor and publication semantics stay unchanged. */
     fun snapshotsTraced(habits: List<Habit>, traces: List<HabitEditTrace>, generation: Long, batch: Long): Map<HabitRef, EffectiveHabitReadSnapshot> {
         traces.forEach { it.event("snapshot.lock.wait.begin", generation = generation, batch = batch) }
+        val waitStart = TimeSource.Monotonic.markNow()
         return synchronized(this) {
+            val waitDuration = waitStart.elapsedNow()
+            val heldStart = TimeSource.Monotonic.markNow()
             traces.forEach { it.event("snapshot.lock.acquired", generation = generation, batch = batch) }
             val today = getToday()
             try {
-                snapshots(habits, today.minus(365), today, traces, generation, batch)
+                val initialCached = cachedSnapshots.size
+                val res = snapshots(habits, today.minus(365), today, traces, generation, batch)
+                val heldDuration = heldStart.elapsedNow()
+                lockMetricsObserver?.invoke(ControllerLockMetrics(
+                    lockWaitDurationMs = waitDuration.toDouble(DurationUnit.MILLISECONDS),
+                    lockHeldDurationMs = heldDuration.toDouble(DurationUnit.MILLISECONDS),
+                    habitCount = habits.size,
+                    cacheHitCount = habits.count { habit -> habit.uuid?.let { cachedSnapshots.containsKey(HabitRef(it)) } == true },
+                    preparedCount = (cachedSnapshots.size - initialCached).coerceAtLeast(0),
+                    retriesCount = 0,
+                ))
+                res
             } catch (t: Throwable) {
                 traces.forEach { it.event("snapshot.failed", generation = generation, batch = batch) }
                 throw t

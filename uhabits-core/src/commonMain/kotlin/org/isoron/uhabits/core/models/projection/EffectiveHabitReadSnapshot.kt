@@ -9,6 +9,8 @@ import org.isoron.platform.time.getToday
 import org.isoron.uhabits.core.containers.HabitRef
 import org.isoron.uhabits.core.contribution.ContributionRepository
 import org.isoron.uhabits.core.models.*
+import kotlin.time.DurationUnit
+import kotlin.time.TimeSource
 
 /** Calendar identity is captured by the platform caller together with its live preferences. */
 data class EffectiveReadCalendarContext(
@@ -61,8 +63,10 @@ class EffectiveHabitReadSnapshot internal constructor(
     private val streakIncomplete = hasContributions && representable && hasIncompleteAlgorithmInputs(compatibilityTo, false)
     val scoreResult: EffectiveScoreResult
     val streakResult: EffectiveStreakResult
+    val scoreStreakComputeDurationMs: Double
 
     init {
+        val scoreStreakStart = TimeSource.Monotonic.markNow()
         val baseExactness = when {
             !hasContributions -> EffectiveReadExactness.LEGACY_COMPATIBILITY
             !representable -> EffectiveReadExactness.UNREPRESENTABLE
@@ -87,6 +91,7 @@ class EffectiveHabitReadSnapshot internal constructor(
             streakResult = if (streakIncomplete) EffectiveStreakResult(null, EffectiveReadExactness.INCOMPLETE)
             else EffectiveStreakResult(buildStreaks(minOf(start, compatibilityTo), compatibilityTo), baseExactness)
         }
+        scoreStreakComputeDurationMs = scoreStreakStart.elapsedNow().toDouble(DurationUnit.MILLISECONDS)
     }
     fun day(date: LocalDate): EffectiveHabitDay = requireNotNull(byDate[date]) { "Date outside snapshot" }
     fun dayOrNull(date: LocalDate): EffectiveHabitDay? = byDate[date]
@@ -197,7 +202,27 @@ class EffectiveHabitReadSnapshot internal constructor(
     }
 }
 
+data class SnapshotPreparationMetrics(
+    val habitCount: Int,
+    val requestedDays: Int,
+    val processedDays: Int,
+    val loadFrom: LocalDate,
+    val loadTo: LocalDate,
+    val copyDetachedDurationMs: Double,
+    val contributionsFetchDurationMs: Double,
+    val domainDiscoveryDurationMs: Double,
+    val daysForRangeDurationMs: Double,
+    val snapshotInitDurationMs: Double,
+    val scoresAndStreaksDurationMs: Double,
+    val totalPrepareDurationMs: Double,
+    val copiedOriginalEntriesCount: Int,
+    val copiedComputedEntriesCount: Int,
+    val materializedContributionCount: Int,
+)
+
 class EffectiveHabitReadSnapshotProvider(private val repository: ContributionRepository) {
+    var preparationMetricsObserver: ((SnapshotPreparationMetrics) -> Unit)? = null
+
     /**
      * Domain discovery is one indexed batched Habit range fetch, never a Habit x day loop.
      * The second batch loads the union of history, rolling windows, and complete calendar periods.
@@ -208,11 +233,22 @@ class EffectiveHabitReadSnapshotProvider(private val repository: ContributionRep
     ): Map<HabitRef, EffectiveHabitReadSnapshot> {
         require(from <= to)
         if (habits.isEmpty()) return emptyMap()
+        val prepareStart = TimeSource.Monotonic.markNow()
+        val copyStart = TimeSource.Monotonic.markNow()
         val frozen = habits.map(::copyDetached)
+        val copyDuration = copyStart.elapsedNow()
+        val copiedOriginal = frozen.sumOf { it.originalEntries.getKnown().size }
+        val copiedComputed = frozen.sumOf { it.computedEntries.getKnown().size }
+
         val refs = frozen.map { HabitRef(requireNotNull(it.uuid)) }.toSet()
         require(refs.size == frozen.size) { "Duplicate Habit identities" }
-        val contributions = repository.getByHabitsInRange(refs, Long.MIN_VALUE, Long.MAX_VALUE, includeRemoved = true)
-            .groupBy { it.targetHabit }
+
+        val contribStart = TimeSource.Monotonic.markNow()
+        val rawContributions = repository.getByHabitsInRange(refs, Long.MIN_VALUE, Long.MAX_VALUE, includeRemoved = true)
+        val contribDuration = contribStart.elapsedNow()
+        val contributions = rawContributions.groupBy { it.targetHabit }
+
+        val domainStart = TimeSource.Monotonic.markNow()
         val domains = frozen.associate { habit ->
             val ref = HabitRef(requireNotNull(habit.uuid))
             val dates = habit.originalEntries.getKnown().map { it.date } + contributions[ref].orEmpty().map {
@@ -235,17 +271,49 @@ class EffectiveHabitReadSnapshotProvider(private val repository: ContributionRep
         val loadFrom = minOf(earliest.startOfMonth(), earliest.minus(maxOf(6, maximumWindow - 1)))
         val month = latest.startOfMonth()
         val loadTo = maxOf(month.plus(month.monthLength - 1), latest.plus(6))
+        val domainDuration = domainStart.elapsedNow()
+
         val service = EffectiveHabitValueService(repository, calendar.hourOffset, calendar.minuteOffset, calendar.firstWeekday)
         val compatibilityService = EffectiveHabitValueService(repository, calendar.hourOffset, calendar.minuteOffset,
             DayOfWeek.entries[getFirstWeekdayNumberAccordingToLocale() - 1])
+
+        val daysStart = TimeSource.Monotonic.markNow()
         val values = service.daysForRange(frozen, loadFrom, loadTo)
-        return frozen.associate { habit ->
+        val daysDuration = daysStart.elapsedNow()
+
+        val snapshotInitStart = TimeSource.Monotonic.markNow()
+        var totalScoresStreaksDuration = 0.0
+        val result = frozen.associate { habit ->
             val ref = HabitRef(requireNotNull(habit.uuid))
             val raw = values.getValue(ref)
             val days = raw.map { it.copy(contributions = it.contributions.toList(), tombstonedContributions = it.tombstonedContributions.toList()) }.toList()
-            ref to EffectiveHabitReadSnapshot(datasetId, revision, calendar, ref, loadFrom, loadTo,
+            val snapshot = EffectiveHabitReadSnapshot(datasetId, revision, calendar, ref, loadFrom, loadTo,
                 domains.getValue(ref).minOrNull(), domains.getValue(ref).maxOrNull(), to, compatibilityTo, habit, days, service, compatibilityService)
+            totalScoresStreaksDuration += snapshot.scoreStreakComputeDurationMs
+            ref to snapshot
         }
+        val snapshotInitDuration = snapshotInitStart.elapsedNow()
+        val totalPrepareDuration = prepareStart.elapsedNow()
+
+        preparationMetricsObserver?.invoke(SnapshotPreparationMetrics(
+            habitCount = habits.size,
+            requestedDays = to.daysSince2000 - from.daysSince2000 + 1,
+            processedDays = loadTo.daysSince2000 - loadFrom.daysSince2000 + 1,
+            loadFrom = loadFrom,
+            loadTo = loadTo,
+            copyDetachedDurationMs = copyDuration.toDouble(DurationUnit.MILLISECONDS),
+            contributionsFetchDurationMs = contribDuration.toDouble(DurationUnit.MILLISECONDS),
+            domainDiscoveryDurationMs = domainDuration.toDouble(DurationUnit.MILLISECONDS),
+            daysForRangeDurationMs = daysDuration.toDouble(DurationUnit.MILLISECONDS),
+            snapshotInitDurationMs = snapshotInitDuration.toDouble(DurationUnit.MILLISECONDS),
+            scoresAndStreaksDurationMs = totalScoresStreaksDuration,
+            totalPrepareDurationMs = totalPrepareDuration.toDouble(DurationUnit.MILLISECONDS),
+            copiedOriginalEntriesCount = copiedOriginal,
+            copiedComputedEntriesCount = copiedComputed,
+            materializedContributionCount = rawContributions.size,
+        ))
+
+        return result
     }
 }
 

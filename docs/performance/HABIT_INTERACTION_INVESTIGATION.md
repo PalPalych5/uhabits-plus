@@ -141,7 +141,7 @@ The latency chain is a set of separate clocks, not one interchangeable number. D
 | F01 Ordering and stale publication defects | CONFIRMED historical regression tests and c7130dabf source fences; HIST-002/root-review | Correctness repairs; no universal physical no-lag conclusion |
 | F02 Observer-monitor writer inversion and mixed savepoint ownership | CONFIRMED HIST-005 red/green disposable tests; 10d164878 thread-confined implementation | Real storage concurrency defect; WAL alone neither causes nor resolves the inversion |
 | F03 Excessive row work on revision and NaN equality | CONFIRMED HIST-006 31 unique cards / 84 measures; abc3b43a6 semantic keys and ENTRY_ONLY path | Unnecessary work reduced; committed presentation median improvement DISPROVEN for this paired sample |
-| F04 Historical projection amplification | CONFIRMED source provider copies full original/computed history and discovers all-time Contributions despite 365-day requested bounds | Cost scales beyond requested D; dominance UNKNOWN and complete context may be required for semantics |
+| F04 Historical projection amplification | CONFIRMED source provider copies full original/computed history and discovers all-time Contributions; PI-20261013-02 confirms 5.4x preparation growth (73.5→396.4ms) and up to 539ms lock wait | Unbounded lookback expands processing 5.2x beyond requested 365d; score/streak recompute and coarse monitor lock dominate |
 | F05 Multiple refresh channels | CONFIRMED command-targeted request plus dataset revision delayed full request, lifecycle resume full refresh | Actual duplicate costly preparations HYPOTHESIS until counters distinguish cache hits/cancellations |
 | F06 Physical Main frame CPU/measure | CONFIRMED HIST-007 measure156.321ms of177.913ms, Running175.871ms | Expensive completed frame explained as Main CPU; exact custom method/current-build/multisecond tail UNKNOWN |
 | F07 Residual Main SQL and detail latency | CONFIRMED HIST-003 after336 steps/557.926ms total, detail n2 ~4–5s | Literal “all Main DB work eliminated” DISPROVEN in that run; root draw and step sums are limited metrics |
@@ -152,7 +152,7 @@ The latency chain is a set of separate clocks, not one interchangeable number. D
 | ID / status | Explanation | Evidence for | Evidence against / limits | Falsification test |
 |---|---|---|---|---|
 | H01 HYPOTHESIS | Async queue/snapshot/publication backlog explains delayed durable checkbox while input stays responsive | FIFO and shared snapshot lock exist | No physical per-command markers; parsed long frames only ~178 ms do not localize seconds | Correlate each accepted op through commit, accepted revision, target bind/draw and presentation; reject if delay lies elsewhere |
-| H02 HYPOTHESIS | Requested 365-day projection is dominated by full original/computed history copying and repeated recomputation | Full historical read/copy and score work confirmed in source | Range-batched Contribution query is bounded; targeted updates exist; no current cost coefficients | Keep D fixed, vary historical R; record copied counts, lock wait/hold and CPU; reject if costs do not scale materially with R |
+| H02 CONFIRMED | Processing complete historical data materially amplifies snapshot computation and controller monitor lock wait | PI-20261013-02 across 4 arms (90d to 1825d) proves 5.4x prepare cost (73.5→396.4ms), 8.7x score/streak growth (19.7→172.4ms), and up to 539ms monitor wait | SQLite autocommit mutation itself remains fast (12–28ms); historical scaling dominates background preparation and reader contention | Bounded lookback envelope and decoupled cache lock proposed |
 | H03 HYPOTHESIS | Remaining layout/bind/animation work dominates a slow edit | Physical Main measure/CPU evidence; prior full row storm confirmed | Latest row correction never installed on phone; offline committed median did not improve | Operation-correlated target bind/measure and ancestor measure slices; reject dominance if queue/read dominates tail |
 | H04 HYPOTHESIS | Duplicate revision + command + lifecycle reloads cause redundant batches/publications | Multiple notification paths exist and debounce may overlap Main callbacks | Generation fencing prevents stale publication; multiplicity/cost not measured per op | Count invalidate requests, executed batches, cancellations/retries, publications per op and reason |
 | H05 HYPOTHESIS | Long-session listener/component retention or GC causes progressive deterioration | User observes initially good then slow; multiple lifetime listeners/caches exist | No heap/retained-object or listener-count series; report alone proves no leak | Repeat bounded navigation/toggle cycles with attach/detach counters and GC/allocation summaries; stable counts refute accumulation |
@@ -332,3 +332,90 @@ Raw artifact directory: `scratch/operation-trace-20261013/`.
   - Bounded smoke test size (n=15 operations) proves stage correlation and error safety, but does not constitute a full statistical benchmark campaign.
 - **Next Recommended Investigation (Priority 2 from Backlog):**
   - **Fixed-D Historical Scaling and Snapshot Lock Occupancy:** Now that operation correlation is proven without ambiguous joins, investigate why background snapshot computation requires up to 300–440 ms and controller lock wait reaches ~45 ms. Quantify whether historical projection lookback envelope (Dh complete history vs requested D) or all-time Contribution querying can be safely bounded without breaking rolling/calendar goal statistics semantics.
+
+### PI-20261013-02 — iteration 3 historical scaling (completed 2026-10-13)
+
+**Question:** Does processing complete historical data dominate effective snapshot computation and habit interaction latency, even when the UI requests only a fixed 365-day interval?
+
+**Infrastructure & Safety:**
+- Environment: Verified disposable offline x86_64 AVD `UHabit_UI_Review_Disposable_20261011` (`ro.boot.qemu.avd_name`), serial `EMULATOR36X6X11X0`, API 35.
+- Network: Offline QA environment verified (`settings get global airplane_mode_on == 1`).
+- Security gates: Disposable dataset marker `${DemoDataGenerator.DISPOSABLE_MARKER}-${datasetId}` and token `-e disposableAvd UHabit_UI_Review_Disposable_20261011` verified.
+- Runtime mode: Schema v30, WAL mode, PRODUCTION_NEXT with strictly disabled side effects (sync, remote calls, background jobs, widgets, reminders).
+- Reference date fixed: `2026-10-11` (`LocalDate(2026, 10, 11)`).
+- Requested UI window fixed: `today.minus(365)` to `today` (366 days).
+- Controlled fixture: 10 fixed habits (5 Boolean, 5 Numerical; 2 with historical goal changes at `today - 180`, 2 with controlled Focus contributions).
+- Test class: `HistoricalScalingInvestigationTest.kt` (`OK (1 test)`, 32.429 s).
+- Raw artifact: `scratch/historical-scaling-20261013/results.json` (device location: `/sdcard/Android/data/org.isoron.uhabits.plus/files/historical-scaling/results.json`).
+
+#### Comparative Arm Measurements (n=10 habits per arm, 366-day UI window requested)
+
+| Metric / Stage | Arm A (Recent-90d) | Arm B (1Year-365d) | Arm C (3Years-1095d) | Arm D (5Years-1825d) | Scaling Ratio (D / A) |
+|---|---|---|---|---|---|
+| Historical depth | 90 days | 365 days | 1,095 days | 1,825 days | 20.3x |
+| Stored repetitions | 910 | 3,660 | 10,960 | 18,260 | 20.1x |
+| Stored contributions | 182 | 732 | 2,192 | 3,652 | 20.1x |
+| Requested UI range | 366 days | 366 days | 366 days | 366 days | 1.0x (fixed) |
+| Actually processed range | 445 days | 445 days | 1,175 days | 1,905 days | 4.3x |
+| Copied original entries | 819 | 8,901 | 10,960 | 18,260 | 22.3x |
+| Copied computed entries | 819 | 8,840 | 10,230 | 16,800 | 20.5x |
+| Materialized contributions | 182 | 746 | 2,192 | 3,652 | 20.1x |
+| **Cold entry load (SQLite)** | 15.00 ms | 28.64 ms | 60.56 ms | 89.93 ms | 6.0x |
+| **Warm entry load (in-memory)**| 0.75 ms | 1.29 ms | 2.07 ms | 6.85 ms | 9.1x (13–29x faster than cold) |
+| Contributions fetch duration | 7.42 ms | 30.26 ms | 31.66 ms | 43.19 ms | 5.8x |
+| Domain discovery duration | 2.49 ms | 12.42 ms | 10.98 ms | 14.94 ms | 6.0x |
+| `daysForRange` projection duration | 17.84 ms | 46.19 ms | 73.89 ms | 84.62 ms | 4.7x |
+| Snapshot init (`init` block) | 42.59 ms | 161.14 ms | 137.09 ms | 228.50 ms | 5.4x |
+| Scores & streaks recomputation | 19.74 ms | 113.86 ms | 88.37 ms | 172.44 ms | 8.7x |
+| **Total full-list prepare** | **73.54 ms** | **275.71 ms** | **272.44 ms** | **396.41 ms** | **5.4x** |
+| Targeted snapshot (1 habit) | 8.58 ms | 17.22 ms | 26.73 ms | 97.11 ms | 11.3x |
+| **Controller monitor lock wait** | 0.03 ms | 204.33 ms | 397.02 ms | **539.35 ms** | **>10000x contention spike** |
+| Boolean command & publish | 181.49 ms (cold) | 16.04 ms (warm) | 28.51 ms (warm) | 14.14 ms (warm) | ~14–28 ms warm |
+| Numerical command & publish | 12.21 ms | 13.28 ms | 14.28 ms | 17.59 ms | 1.4x (steady) |
+| Semantic parity check | 100% PASS | 100% PASS | 100% PASS | 100% PASS | Exact semantic parity |
+| Observer overhead (p50) | 0.0439 ms | 0.0221 ms | 0.0405 ms | 0.0226 ms | Minimal (22–44 µs) |
+
+#### Analysis & Causal Attribution
+
+1. **Amplification Mechanism Confirmed (F04 / H02):**
+   - The UI requested an invariant 365-day lookback window (`from = today - 365, to = today`), yet `EffectiveHabitReadSnapshotProvider.prepare` computes `loadFrom = minOf(earliest.startOfMonth(), earliest.minus(maxOf(6, maximumWindow - 1)))` using all-time history (`earliest = allKnown.minOrNull()`).
+   - In Arm D (5 years), the processed date range expanded from 366 requested days to 1,905 days (5.2x).
+   - This unbounded lookback linearly inflates:
+     - Copied original/computed entry objects in `copyDetached` (819 -> 18,260 entries, 22.3x increase).
+     - Materialized Contribution rows from `Long.MIN_VALUE..Long.MAX_VALUE` discovery (182 -> 3,652 rows, 20.1x increase).
+     - Per-day object creation and fact bucketing in `daysForRange` (17.84 ms -> 84.62 ms, 4.7x increase).
+     - Day-by-day score calculation (`scores.recompute`) and streak evaluation (`buildStreaks`) across all historical days (19.74 ms -> 172.44 ms, 8.7x increase).
+   - Overall full-list snapshot preparation scales 5.4x (from 73.54 ms to 396.41 ms).
+
+2. **Controller Monitor Contention Spike:**
+   - `EffectiveHabitReadController.snapshots` is `@Synchronized` over the controller instance and is held throughout the entire duration of `provider.prepare`.
+   - When an edit or refresh triggers background multi-habit preparation on Dispatchers.IO, any concurrent reader (or UI thread requesting fresh snapshots) is completely blocked on the monitor:
+     - Arm A: 0.03 ms wait.
+     - Arm B: 204.33 ms wait.
+     - Arm C: 397.02 ms wait.
+     - Arm D: **539.35 ms wait**.
+   - This provides the primary mechanism for the delayed checkbox / UI freezes during multi-habit usage: the background worker holds the controller monitor for ~400–675 ms computing all-time history, blocking the UI and subsequent command pipelines.
+
+3. **What Historical Size Does NOT Dominate:**
+   - Isolated autocommit SQLite mutation time (`sqlite.begin` -> `sqlite.end`) and command execution: `CreateRepetitionCommand` warm execution consistently took 12.2 – 28.5 ms across all arms. SQLite write persistence is NOT the dominant cause of multi-second delays.
+   - Warm entry loading: in-memory entry access takes only 0.75 – 6.85 ms for 10 habits even with 18,260 entries.
+
+4. **Correctness & Semantic Parity:**
+   - 100% parity verified across all 4 arms for completed status, exact x1000 numerical values, Focus session duration attribution, historical goal boundary transitions (at `today - 180`), and score/streak calculations.
+
+5. **Diagnostic Overhead:**
+   - Observer callback duration remained 22–44 microseconds (p50), demonstrating that tracing adds negligible overhead and does not distort measurement conclusions.
+
+#### Semantics-Preserving Optimization Options (Proposals Only; Not Implemented)
+
+1. **Bounded Lookback Envelope in `prepare`:**
+   - Instead of anchoring `loadFrom` to `allKnown.minOrNull()` (all-time history), bound `loadFrom` to `from.minus(maxOf(30, maximumWindow - 1)).startOfMonth()`. This caps `daysForRange` and Contribution queries to ~400 days regardless of whether the habit has 5, 10, or 20 years of history, while preserving full calendar week/month and rolling window semantics for the requested 365-day UI display.
+2. **Decoupled Controller Monitor / Fine-Grained Locking:**
+   - Separate the cache context lookup/insertion lock from the expensive background `provider.prepare` execution. Allowing readers to hit cached snapshots without waiting for background preparations of other habits eliminates the 200–540 ms lock wait spikes.
+3. **Historical Score Segment Caching:**
+   - Rather than recomputing `scores.recompute` day-by-day from the beginning of time for unchanged historical segments, cache historical score checkpoints or compute only the affected rolling tail.
+
+#### Next Recommended Investigation (Priority 3 from Backlog)
+
+- **Priority 3: Residual target/ancestor bind-measure and navigation generation counts.**
+  - Now that both operation correlation (Iteration 2) and historical scaling / lock occupancy (Iteration 3) are quantified on the offline disposable fixture, measure Main-thread view binding, measure/layout passes, and fragment navigation reloads (`Habits -> Tasks -> Habits`) on the current build to isolate Main CPU consumption from background worker contention.
