@@ -35,10 +35,20 @@ class AndroidPreparedStatement(
     private val sql: String
 ) : PreparedStatement {
     companion object {
-        private val savepointTxDepth = ThreadLocal<Int>()
+        private class SavepointState {
+            val names = mutableListOf<String>()
+            var ownsTransaction = false
+        }
+        private val savepointStates = ThreadLocal<java.util.WeakHashMap<SQLiteDatabase, SavepointState>>()
 
-        fun resetSavepointState() {
-            savepointTxDepth.set(0)
+        private fun savepointState(db: SQLiteDatabase): SavepointState {
+            val states = savepointStates.get() ?: java.util.WeakHashMap<SQLiteDatabase, SavepointState>()
+                .also { savepointStates.set(it) }
+            return states.getOrPut(db) { SavepointState() }
+        }
+
+        fun resetSavepointState(db: SQLiteDatabase) {
+            savepointStates.get()?.remove(db)
         }
     }
 
@@ -95,39 +105,51 @@ class AndroidPreparedStatement(
                 db.setTransactionSuccessful()
                 db.endTransaction()
             }
-            savepointTxDepth.set(0)
+            resetSavepointState(db)
             return StepResult.DONE
         }
         if (isTxRollback) {
             if (db.inTransaction()) {
                 db.endTransaction()
             }
-            savepointTxDepth.set(0)
+            resetSavepointState(db)
             return StepResult.DONE
         }
         if (isSavepoint) {
-            if (!db.inTransaction()) {
+            val state = savepointState(db)
+            val startedTransaction = !db.inTransaction()
+            if (startedTransaction) {
                 db.beginTransactionNonExclusive()
-                savepointTxDepth.set(1)
-            } else if ((savepointTxDepth.get() ?: 0) > 0) {
-                savepointTxDepth.set((savepointTxDepth.get() ?: 0) + 1)
+                state.ownsTransaction = true
             }
-            compiledStmt!!.execute()
+            try {
+                compiledStmt!!.execute()
+                state.names.add(upperWords.last().trim('"', '`', '[', ']'))
+            } catch (t: Throwable) {
+                if (startedTransaction) {
+                    try { db.endTransaction() } finally { resetSavepointState(db) }
+                }
+                throw t
+            }
             return StepResult.DONE
         }
         if (isRollbackTo) {
             compiledStmt!!.execute()
+            val names = savepointState(db).names
+            val index = names.indexOfLast { it == upperWords.last().trim('"', '`', '[', ']') }
+            if (index >= 0) while (names.size > index + 1) names.removeAt(names.lastIndex)
             return StepResult.DONE
         }
         if (isRelease) {
             compiledStmt!!.execute()
-            val depth = savepointTxDepth.get() ?: 0
-            if (depth > 0) {
-                savepointTxDepth.set(depth - 1)
-                if (depth == 1 && db.inTransaction()) {
+            val state = savepointState(db)
+            val index = state.names.indexOfLast { it == upperWords.last().trim('"', '`', '[', ']') }
+            if (index >= 0) while (state.names.size > index) state.names.removeAt(state.names.lastIndex)
+            if (state.ownsTransaction && state.names.isEmpty() && db.inTransaction()) {
+                try {
                     db.setTransactionSuccessful()
                     db.endTransaction()
-                }
+                } finally { resetSavepointState(db) }
             }
             return StepResult.DONE
         }
@@ -310,12 +332,18 @@ class AndroidDatabase(
 
     private val connection: org.isoron.platform.io.Database = object : org.isoron.platform.io.Database {
         override fun prepareStatement(sql: String): PreparedStatement = AndroidPreparedStatement(db, sql)
-        override fun close() = db.close()
+        override fun close() {
+            AndroidPreparedStatement.resetSavepointState(db)
+            db.close()
+        }
         override fun beginTransaction() = db.beginTransactionNonExclusive()
         override fun setTransactionSuccessful() = db.setTransactionSuccessful()
         override fun endTransaction() {
-            AndroidPreparedStatement.resetSavepointState()
-            db.endTransaction()
+            try {
+                db.endTransaction()
+            } finally {
+                if (!db.inTransaction()) AndroidPreparedStatement.resetSavepointState(db)
+            }
         }
         override fun inTransaction(): Boolean = db.inTransaction()
     }.let { raw ->

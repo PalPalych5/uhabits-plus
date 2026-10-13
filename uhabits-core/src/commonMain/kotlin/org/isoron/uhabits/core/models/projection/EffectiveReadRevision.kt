@@ -3,6 +3,7 @@ package org.isoron.uhabits.core.models.projection
 
 import org.isoron.platform.io.Database
 import org.isoron.platform.Synchronized
+import org.isoron.platform.ThreadLocalState
 import org.isoron.platform.io.PreparedStatement
 import org.isoron.platform.io.queryLong
 
@@ -38,27 +39,27 @@ class EffectiveReadDatabase(
     private val revision: EffectiveReadRevision,
     observedTables: Set<String> = setOf("CONTRIBUTIONS", "REPETITIONS", "HABITS", "HABITGOALS", "HABITEXTENSIONS", "APPSETTINGS"),
 ) : Database {
-    private data class Frame(val name: String?, var changed: Boolean = false, var successful: Boolean = false)
-    private val frames = mutableListOf<Frame>()
+    private data class Frame(val name: String?, var changed: Boolean = false, var successful: Boolean = false, var failed: Boolean = false)
+    private val transactionFrames = ThreadLocalState { mutableListOf<Frame>() }
+    private val frames get() = transactionFrames.get()
     private val mutation = Regex("^(?:INSERT(?:\\s+OR\\s+\\w+)?\\s+INTO|REPLACE\\s+INTO|UPDATE(?:\\s+OR\\s+\\w+)?|DELETE\\s+FROM)\\s+[\"`\\[]?(\\w+)", RegexOption.IGNORE_CASE)
     private val tables = observedTables.map { it.uppercase() }.toSet()
 
-    @Synchronized
     override fun beginTransaction() {
-        frames.add(Frame(null))
+        // SQLite may wait for another thread's writer. Never hold an observer
+        // monitor here: that writer needs this adapter to finish its transaction.
         delegate.beginTransaction()
+        frames.add(Frame(null))
     }
 
-    @Synchronized
     override fun setTransactionSuccessful() {
-        if (frames.isNotEmpty()) frames.last().successful = true
         delegate.setTransactionSuccessful()
+        if (frames.isNotEmpty()) frames.last().successful = true
     }
 
-    @Synchronized
     override fun endTransaction() {
         val frame = if (frames.isNotEmpty()) frames.removeAt(frames.lastIndex) else null
-        val wasSuccessful = frame?.successful == true
+        val wasSuccessful = frame?.successful == true && !frame.failed
         try {
             delegate.endTransaction()
             if (frames.isEmpty()) {
@@ -68,11 +69,10 @@ class EffectiveReadDatabase(
                     revision.rolledBack()
                 }
             } else {
-                if (wasSuccessful && frame?.changed == true) {
-                    frames.last().changed = true
-                } else if (!wasSuccessful && frame?.changed == true) {
-                    revision.rolledBack()
-                }
+                // An unsuccessful nested platform transaction poisons the outer
+                // transaction; Android rolls all writes back at the outer end.
+                if (frame?.changed == true) frames.last().changed = true
+                if (!wasSuccessful) frames.last().failed = true
             }
         } catch (t: Throwable) {
             if (frame?.changed == true) revision.rolledBack()
@@ -95,7 +95,6 @@ class EffectiveReadDatabase(
         }
     }
 
-    @Synchronized
     private fun observedStep(sql: String, statement: PreparedStatement): org.isoron.platform.io.StepResult {
         check(!sql.trimStart().uppercase().startsWith("BEGIN") || frames.isEmpty()) {
             "Nested BEGIN is unsupported; use SAVEPOINT on the shared connection"
@@ -117,8 +116,12 @@ class EffectiveReadDatabase(
                     val index = frames.indexOfLast { it.name == name }
                     check(index >= 0) { "Unobserved savepoint rollback" }
                     val discardedChanges = frames.drop(index).any { it.changed }
+                    val platformFailed = frames.drop(index).any { it.failed }
                     while (frames.size > index + 1) frames.removeAt(frames.lastIndex)
                     frames[index].changed = false
+                    // SQL rollback-to cannot undo SQLiteSession's rollback-only
+                    // state after an unsuccessful nested platform transaction.
+                    if (platformFailed) frames[index].failed = true
                     if (discardedChanges) revision.rolledBack()
                 } else {
                     val discardedChanges = frames.any { it.changed }
@@ -131,13 +134,24 @@ class EffectiveReadDatabase(
                 val index = frames.indexOfLast { it.name == name }
                 check(index >= 0) { "Unobserved savepoint release" }
                 val changed = frames.drop(index).any { it.changed }
+                val failed = frames.drop(index).any { it.failed }
                 while (frames.size > index) frames.removeAt(frames.lastIndex)
-                if (changed) markChanged()
+                if (frames.isEmpty()) {
+                    if (changed) {
+                        if (failed) revision.rolledBack() else revision.changed()
+                    }
+                } else {
+                    if (changed) frames.last().changed = true
+                    if (failed) frames.last().failed = true
+                }
             }
             "COMMIT", "END" -> {
                 val changed = frames.any { it.changed }
+                val failed = frames.any { it.failed }
                 frames.clear()
-                if (changed) revision.changed()
+                if (changed) {
+                    if (failed) revision.rolledBack() else revision.changed()
+                }
             }
             else -> {
                 val table = mutation.find(normalized)?.groupValues?.get(1)
@@ -149,5 +163,5 @@ class EffectiveReadDatabase(
     private fun markChanged() {
         if (frames.isEmpty()) revision.changed() else frames.last().changed = true
     }
-    override fun close() { frames.clear(); revision.dispose(); delegate.close() }
+    override fun close() { transactionFrames.clear(); revision.dispose(); delegate.close() }
 }
