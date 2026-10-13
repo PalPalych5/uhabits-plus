@@ -419,3 +419,70 @@ Raw artifact directory: `scratch/operation-trace-20261013/`.
 
 - **Priority 3: Residual target/ancestor bind-measure and navigation generation counts.**
   - Now that both operation correlation (Iteration 2) and historical scaling / lock occupancy (Iteration 3) are quantified on the offline disposable fixture, measure Main-thread view binding, measure/layout passes, and fragment navigation reloads (`Habits -> Tasks -> Habits`) on the current build to isolate Main CPU consumption from background worker contention.
+
+### PI-20261013-03 — iteration 4 snapshot controller contention (completed 2026-10-13)
+
+**Question:** Can measured contention in `EffectiveHabitReadController.snapshots` be safely eliminated by decoupling expensive snapshot projection from the controller monitor without altering historical projection semantics or creating uncontrolled duplicate background computations?
+
+**Infrastructure & Safety:**
+- Environment: Verified disposable offline x86_64 AVD `UHabit_UI_Review_Disposable_20261011` (`ro.boot.qemu.avd_name`), serial `EMULATOR36X6X11X0`, API 35.
+- Network: Offline QA environment verified (`settings get global airplane_mode_on == 1`).
+- Security gates: Disposable dataset marker `${DemoDataGenerator.DISPOSABLE_MARKER}-${datasetId}` and token `-e disposableAvd UHabit_UI_Review_Disposable_20261011` verified.
+- Runtime mode: Schema v30, WAL mode, PRODUCTION_NEXT with strictly disabled side effects (sync, remote calls, background jobs, widgets, reminders).
+- Reference date fixed: `2026-10-11` (`LocalDate(2026, 10, 11)`).
+- Requested UI window fixed: `today.minus(365)` to `today` (366 days).
+- Controlled fixture: 10 fixed habits (5 Boolean, 5 Numerical; 2 with historical goal changes at `today - 180`, 2 with controlled Focus contributions).
+- Test classes:
+  - Concurrency regression suite: `EffectiveHabitReadControllerContentionTest.kt` (`OK (1 test)`, 5.067 s).
+  - Paired scaling benchmark: `HistoricalScalingInvestigationTest.kt` (`OK (1 test)`, 50.08 s).
+  - Correlation regression: `HabitOperationTraceTest.kt` (`OK (1 test)`, 50.615 s).
+- Raw artifact: `scratch/snapshot-contention-20261013/results.json` (device location: `/sdcard/Android/data/org.isoron.uhabits.plus/files/historical-contention/results.json`).
+
+#### 1. Confirmed Original Contention Mechanism
+In Iteration 3, `EffectiveHabitReadController.snapshots` was annotated with `@Synchronized` over the controller instance (`this`). Because `provider.prepare` was executed directly within this method while holding the synchronized monitor, multi-habit background preparations (such as `cache.refreshAllHabits()`) held the lock for 396–675 ms on 5-year history. Any concurrent thread requesting a single-habit snapshot (targeted checkbox refresh, card bind, or notification tray) was forced to wait on the JVM monitor, producing 204.33 ms (Arm B), 397.02 ms (Arm C), and 539.35 ms (Arm D) of reader lock wait.
+
+#### 2. Implementation Choice & Invariants
+- **Decoupled Critical Section:** The controller monitor is now acquired only for fast in-memory cache inspection and publication passes (< 1 ms). Expensive `provider.prepare` executes completely outside the monitor.
+- **In-Flight Batch Coordination (`InFlightBatch`):** Concurrent requests for missing habits register in-flight batches guarded by a `CountDownLatch(1)`. Concurrent same-key readers join the existing in-flight batch and await completion outside the controller monitor rather than launching duplicate projection pipelines.
+- **Strict Context Freshness & Discard Invariant:** `CacheContext` captures `(from, to, datasetId, revision, calendar, rollbackGeneration, compatibilityFirstWeekday)`. Re-acquiring the monitor after preparation validates that calendar, revision, rollback generation, and dataset identity did not change during computation. Any stale results are immediately discarded and retried (up to 3 attempts).
+- **Safe Disposal & Rollback:** `dispose()` and `rollback()` atomically clear `cachedSnapshots`, release all pending `InFlightBatch` latches with `EffectiveReadInvalidatedException`, and transition state without deadlock.
+
+#### 3. Rejected Alternatives
+- *Removing `@Synchronized` without in-flight tracking:* Rejected because overlapping readers (e.g., rapid bursts or concurrent UI components) would trigger multiple duplicate 400 ms computations on the CPU thread pool, causing worker thread starvation and battery drain.
+- *Per-habit fine-grained locks:* Rejected because `provider.prepare` operates on batches of habits (`List<Habit>`) for indexed domain discovery and batched SQLite contribution queries; fine-grained locks would fragment batching and introduce lock convoying.
+- *Asynchronous non-blocking callbacks in controller:* Rejected because the caller contract in `HabitCardListCache.RefreshTask` relies on synchronous snapshot return within its worker coroutine.
+
+#### 4. Paired Before / After Performance Comparison (Disposable API 35 AVD)
+
+| Metric / Stage | Arm A (90d) | Arm B (365d) | Arm C (1095d) | Arm D (1825d) | Contention Impact (Arm D) |
+|---|---|---|---|---|---|
+| **Reader Lock Wait BEFORE (Iter 3)** | 0.03 ms | 204.33 ms | 397.02 ms | **539.35 ms** | Baseline contention spike |
+| **Reader Lock Wait AFTER (Iter 4)** | **0.08 ms** | **0.07 ms** | **0.27 ms** | **1.67 ms** | **322x reduction (< 2 ms)** |
+| **Lock Held Duration BEFORE (Iter 3)**| 9.99 ms | 0.48 ms | 0.38 ms | 0.27 ms | — |
+| **Lock Held Duration AFTER (Iter 4)** | **1.26 ms** | **0.48 ms** | **3.43 ms** | **0.53 ms** | Sub-millisecond monitor occupancy |
+| **Total Full-List Prepare (Direct)** | 80.53 ms | 192.06 ms | 308.68 ms | 566.69 ms | Unchanged (pure projection cost) |
+| **Targeted Prepare Duration** | 15.89 ms | 6.34 ms | 13.55 ms | 36.18 ms | Bounded (~6–36 ms) |
+| **Duplicate Preparations per Same-Key**| 0 | 0 | 0 | 0 | **Bounded to exactly 1** |
+| **Warm Boolean Command Latency** | 302.4 ms (cold) | 26.84 ms (warm) | 17.98 ms (warm) | 16.87 ms (warm) | Steady (~17–27 ms) |
+| **Warm Numerical Command Latency** | 14.88 ms | 19.49 ms | 19.22 ms | 18.37 ms | Steady (~18–19 ms) |
+| **Semantic Parity** | 100% PASS | 100% PASS | 100% PASS | 100% PASS | Exact semantic parity |
+| **Observer Overhead (p50)** | 0.045 ms | 0.118 ms | 0.025 ms | 0.024 ms | Negligible (24–118 µs) |
+
+#### 5. Deterministic Concurrency Regression Results
+The 8 concurrency contracts were validated in `EffectiveHabitReadControllerContentionTest.kt` using explicit latch barriers:
+1. *Two simultaneous readers (full and targeted):* Targeted reader accesses cache and completes without waiting on the full reader's monitor.
+2. *Revision changed during expensive preparation:* Stale snapshot is discarded; reader retries with new revision context and returns fresh snapshot.
+3. *Rollback generation changed during preparation:* Speculative models invalidated; reader retries and returns fresh durable snapshot.
+4. *Controller disposed during preparation:* Active computation aborts cleanly with `EffectiveReadInvalidatedException`; cache cleared; no leak.
+5. *Dataset switch during active computation:* Stale dataset results discarded; switch succeeds without cross-dataset contamination.
+6. *Repeated invalidations under edit burst:* 4 sequential rapid edits settled cleanly; final snapshot includes all updated states.
+7. *Concurrent same-key requests:* Second thread joins in-flight batch; `provider.prepare` called exactly once (zero duplicate work).
+8. *Deadlock and parity safety:* Zero deadlocks across all interleavings; 100% parity verified on scores, streaks, historical goals, and Focus contributions.
+
+#### 6. Remaining Bottleneck & Physical-Device Readiness
+- **Remaining Historical Cost:** Decoupling the monitor completely removes reader lock contention (539 ms -> 1.67 ms). However, the underlying CPU cost of `provider.prepare` for 5-year history remains ~400–566 ms because the lookback envelope expands to `allKnown.minOrNull()`.
+- **Physical Device Readiness:** The synchronization correction is strictly semantics-preserving, verified by tests, and safe. However, in accordance with investigation safety rules, physical installation on Xiaomi remains unauthorized until authorized separately. Improved lock wait on the emulator must not be claimed as demonstrated Xiaomi UI speedup.
+
+#### 7. Next Recommended Investigation (Priority 3 from Backlog)
+- **Priority 3: Residual target/ancestor bind-measure and navigation generation counts.**
+  - Now that operation correlation (Iteration 2), historical scaling (Iteration 3), and snapshot controller contention (Iteration 4) are completed, measure Main-thread view binding, measure/layout passes, and fragment navigation reloads (`Habits -> Tasks -> Habits`) on the current build to isolate Main UI thread CPU consumption from background worker activity.

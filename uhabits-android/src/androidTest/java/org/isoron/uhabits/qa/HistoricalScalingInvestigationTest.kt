@@ -420,7 +420,7 @@ class HistoricalScalingInvestigationTest {
 
         // 6. Save structured results to file on device
         val report = JSONObject()
-            .put("experimentId", "PI-20261013-02")
+            .put("experimentId", "PI-20261013-03")
             .put("timestamp", System.currentTimeMillis())
             .put("avd", avd)
             .put("serial", serial)
@@ -429,10 +429,10 @@ class HistoricalScalingInvestigationTest {
             .put("habitCount", 10)
             .put("arms", resultsArray)
 
-        val outDir = File(ins.targetContext.getExternalFilesDir(null), "historical-scaling")
+        val outDir = File(ins.targetContext.getExternalFilesDir(null), "historical-contention")
         outDir.mkdirs()
         val outFile = File(outDir, "results.json")
         outFile.writeText(report.toString(2))
-        println("HISTORICAL_SCALING_RESULTS_PATH: ${outFile.absolutePath}")
+        println("HISTORICAL_CONTENTION_RESULTS_PATH: ${outFile.absolutePath}")
     }
 }
