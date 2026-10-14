@@ -2,6 +2,7 @@ package org.isoron.uhabits.qa
 
 import android.content.Intent
 import android.os.Build
+import android.os.Debug
 import android.os.Looper
 import android.os.Process
 import android.os.SystemClock
@@ -77,6 +78,8 @@ class RemainingLatencyInvestigationTest {
         val enabled = args.getString("tracingEnabled", "true").toBooleanStrict()
         val label = args.getString("buildLabel", "unspecified")
         check(label.matches(Regex("[A-Za-z0-9_-]+")))
+        val sortConfiguration = args.getString("sortConfiguration", "grouped")
+        check(sortConfiguration in listOf("grouped", "entrySensitive"))
         val fixture = UiReviewCaptureTest.initializeFixture()
         val marker = File(ins.targetContext.filesDir, "${DemoDataGenerator.DISPOSABLE_MARKER}-${fixture.session.datasetId}")
         check(marker.exists() && marker.readText() == fixture.session.databaseFilename)
@@ -108,6 +111,15 @@ class RemainingLatencyInvestigationTest {
         val expected = Collections.synchronizedMap(mutableMapOf<Long, Int>())
         val drawn = Collections.synchronizedSet(mutableSetOf<Long>())
         val publications = Collections.synchronizedMap(mutableMapOf<Long, Triple<Long?, Long?, Long?>>())
+        fun memorySample(): JSONObject {
+            val info = Debug.MemoryInfo()
+            Debug.getMemoryInfo(info)
+            val runtime = Runtime.getRuntime()
+            return JSONObject().put("timestampNanos", System.nanoTime()).put("totalPssKb", info.totalPss)
+                .put("runtimeUsedBytes", runtime.totalMemory() - runtime.freeMemory())
+                .put("runtimeAllocatedBytes", runtime.totalMemory())
+        }
+        val memoryBeginning = memorySample()
         var phase = "fixture"
         var ordinal = 0L
         var activeOperation = 0L
@@ -148,7 +160,8 @@ class RemainingLatencyInvestigationTest {
             component.preferences.isShortToggleEnabled = true
             component.preferences.areHabitGroupSeparatorsEnabled = true
             component.preferences.isDayTiersEnabled = true
-            component.preferences.defaultPrimaryOrder = HabitList.Order.BY_DAY_TIER
+            component.preferences.defaultPrimaryOrder = if (sortConfiguration == "grouped")
+                HabitList.Order.BY_DAY_TIER else HabitList.Order.BY_STATUS_DESC
             component.preferences.defaultSecondaryOrder = HabitList.Order.BY_POSITION
             drain()
             if (enabled) {
@@ -437,6 +450,9 @@ class RemainingLatencyInvestigationTest {
             val out = File(ins.targetContext.getExternalFilesDir(null), "remaining-latency").apply { mkdirs() }
             File(out, "$label-$depth-$enabled.json").writeText(JSONObject().put("pid", Process.myPid())
                 .put("experimentId", "PI-20261013-04").put("buildLabel", label).put("historyDays", depth)
+                .put("sortConfiguration", sortConfiguration)
+                .put("memoryBeginning", memoryBeginning).put("memoryEnd", memorySample())
+                .put("memoryDefinition", "Process PSS and runtime heap samples around the whole workload; not per-operation allocation or CPU")
                 .put("tracingEnabled", enabled).put("referenceDate", today.toString()).put("schemaVersion", 30)
                 .put("fixtureControlledHabits", 10).put("fixtureControlledRepetitions", 10 * depth)
                 .put("totalHabits", component.habitList.size()).put("journalMode", component.db.queryString("PRAGMA journal_mode"))
@@ -452,6 +468,8 @@ class RemainingLatencyInvestigationTest {
             val out = File(ins.targetContext.getExternalFilesDir(null), "remaining-latency").apply { mkdirs() }
             File(out, "$label-$depth-$enabled-failure.json").writeText(JSONObject()
                 .put("pid", Process.myPid()).put("buildLabel", label).put("historyDays", depth).put("tracingEnabled", enabled)
+                .put("sortConfiguration", sortConfiguration)
+                .put("memoryBeginning", memoryBeginning).put("memoryEnd", memorySample())
                 .put("failure", failure.toString()).put("phase", phase).put("operations", JSONArray(operations))
                 .put("viewportDiagnostics", viewportDiagnostics)
                 .put("controlledReaderFailureCount", controlledFailures.size)
