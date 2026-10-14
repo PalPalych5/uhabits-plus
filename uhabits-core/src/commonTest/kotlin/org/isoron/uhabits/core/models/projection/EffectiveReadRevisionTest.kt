@@ -390,5 +390,74 @@ class EffectiveReadRevisionTest {
             db.close()
         }
     }
+
+    @Test
+    fun databaseMutationOnHabitVisualIdentitiesPoisonsScope() = runTest {
+        val raw = TestDatabaseHelper.createEmptyDatabase()
+        raw.run("DROP TABLE IF EXISTS HabitVisualIdentities")
+        raw.run("CREATE TABLE HabitVisualIdentities (habit_id INTEGER PRIMARY KEY, color INTEGER)")
+        val rev = EffectiveReadRevision("dataset-test")
+        val db = EffectiveReadDatabase(raw, rev, setOf("HABITVISUALIDENTITIES"))
+        val h1 = HabitRef("h-uuid-1")
+
+        try {
+            EffectiveReadRevision.withMutationScope(setOf(h1)) {
+                db.run("INSERT INTO HabitVisualIdentities VALUES (1, 123)")
+            }
+            assertEquals(1L, rev.value)
+            // HabitVisualIdentities is not in habitScopedTables, so scope must be poisoned
+            assertNull(rev.affectedHabitsBetween(0, 1))
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun multiHabitTransactionUnionsAffectedHabits() = runTest {
+        val raw = TestDatabaseHelper.createEmptyDatabase()
+        raw.run("DROP TABLE IF EXISTS Repetitions")
+        raw.run("CREATE TABLE Repetitions (habit INTEGER, value INTEGER)")
+        val rev = EffectiveReadRevision("dataset-test")
+        val db = EffectiveReadDatabase(raw, rev, setOf("REPETITIONS"))
+        val h1 = HabitRef("h-uuid-1")
+        val h2 = HabitRef("h-uuid-2")
+
+        try {
+            db.run("BEGIN")
+            EffectiveReadRevision.withMutationScope(setOf(h1)) {
+                db.run("INSERT INTO Repetitions VALUES (1, 1)")
+            }
+            EffectiveReadRevision.withMutationScope(setOf(h2)) {
+                db.run("INSERT INTO Repetitions VALUES (2, 1)")
+            }
+            db.run("COMMIT")
+
+            assertEquals(1L, rev.value)
+            assertEquals(setOf(h1, h2), rev.affectedHabitsBetween(0, 1))
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun historyEvictionAfterMaxEntriesForcesFullFallback() {
+        val rev = EffectiveReadRevision("dataset-test")
+        val habits = (1..300).map { HabitRef("h-$it") }
+
+        for (i in 1..300) {
+            rev.changed(setOf(habits[i - 1]))
+        }
+        assertEquals(300L, rev.value)
+
+        // Recent window (last 10 revisions) is available
+        val recent = rev.affectedHabitsBetween(290, 300)
+        assertNotNull(recent)
+        assertEquals(10, recent.size)
+
+        // Revisions beyond 256 entries must return null (evicted)
+        assertNull(rev.affectedHabitsBetween(0, 300))
+        assertNull(rev.affectedHabitsBetween(10, 300))
+        assertNull(rev.affectedHabitsBetween(43, 300))
+    }
 }
 

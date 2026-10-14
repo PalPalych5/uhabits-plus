@@ -113,7 +113,7 @@ class EffectiveReadDatabase(
     private val frames get() = transactionFrames.get()
     private val mutation = Regex("^(?:INSERT(?:\\s+OR\\s+\\w+)?\\s+INTO|REPLACE\\s+INTO|UPDATE(?:\\s+OR\\s+\\w+)?|DELETE\\s+FROM)\\s+[\"`\\[]?(\\w+)", RegexOption.IGNORE_CASE)
     private val tables = observedTables.map { it.uppercase() }.toSet()
-    private val globalInvalidationTables = setOf("APPSETTINGS", "CONTAINERS", "ORGANIZATIONSTATE", "HABITPLACEMENTS")
+    private val habitScopedTables = setOf("REPETITIONS", "CONTRIBUTIONS", "HABITS", "HABITGOALS", "HABITEXTENSIONS")
 
     override fun beginTransaction() {
         // SQLite may wait for another thread's writer. Never hold an observer
@@ -277,7 +277,7 @@ class EffectiveReadDatabase(
     }
 
     private fun markChanged(table: String?) {
-        val isGlobal = table in globalInvalidationTables
+        val isGlobal = table !in habitScopedTables
         val active = if (isGlobal) null else EffectiveReadRevision.activeScope()
         if (frames.isEmpty()) {
             revision.changed(active)

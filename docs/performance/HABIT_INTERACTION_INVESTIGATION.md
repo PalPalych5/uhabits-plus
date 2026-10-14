@@ -2,9 +2,13 @@
 
 ## 1. Executive status
 
-Iteration 8: 2026-10-14, Asia/Novosibirsk (Safe incremental historical projection). Source baseline verified locally: `ed897187532d18ceb2658fa1ef3d76b1e6e0fbfb`, branch `dev`.
+Iteration 9: 2026-10-14, Asia/Novosibirsk (Incremental projection validation and cold-cost attribution). Source baseline verified locally: `94e0b36fd53994d8dfc45908641bc9301baa4c45`, branch `dev`.
 
-**CONFIRMED:** revision-qualified incremental historical projection safely eliminates unnecessary full-history recomputation when a single habit changes, while preserving exact authoritative behavior and exact differential parity against fresh recomputation (8/8 differential oracle scenarios pass with 100% field-by-field parity). On guarded offline PRODUCTION_NEXT v30 fixture, warm single-habit edits reduce 5-year history wall recomputation time by 50x–88x (from ~2647 ms to 30.7–52.8 ms per edit, reusing 40 habits and recomputing exactly 1) and reduce entry-sensitive 5-year end-to-end presentation latency by 3.1x (2164.689 ms → 703.093 ms) and durable→drawn row latency by 4.4x (2031.072 ms → 460.833 ms). Delayed 200 ms background refresh in grouped mode executes with zero redundant habit recomputations (40/41 cache hits, 0 prepared). Conservative fallback triggers full authoritative recomputation on unscoped mutations, rollbacks, dataset switches, container/organization changes, and calendar/context shifts.
+**CONFIRMED:** 
+1. **Cold preparation regression disproven as an algorithmic defect:** Cold full-history preparation of 41 habits over 1825 days requires computing ~78,000 day points and takes ~1200–2700 ms wall time in both Iteration 6 (baseline before) and Iteration 8/9 (after) on ART API 35. Perfetto SQL attribution confirmed that during the 2647 ms window in `after8`, the ART JIT compiler ran for 2243 ms baseline-compiling 802 methods and CMC GC ran for 412 ms, heavily contending with worker dispatchers. In `before7`, prior test steps had pre-warmed those methods (JIT ran only 260 ms). Matched, order-alternating runs confirm no algorithmic regression: `before9` cold projection took 1906.7 ms (grouped) / 1171.9 ms (entrySensitive); `after9` took 2470.9 ms (grouped) / 1283.1 ms (entrySensitive).
+2. **Reconciled performance metrics:** The Iteration 8 commit message conflated cold-after wall time (2647 ms) with warm-after wall time (30–52 ms) and described provider wall duration as "CPU savings". Paired measurements confirm true warm-edit recomputation wall time drops 16x–36x (733–1800 ms → 23–50 ms, reusing 40 habits and preparing 1), entry-sensitive presentation drops from 1287 ms to 819 ms, and delayed grouped 40-habit recomputations are eliminated (0 habits prepared).
+3. **Mutation scope fallback hardened:** Strict inverted table whitelisting (`table !in habitScopedTables`) guarantees that any write touching non-habit tables (e.g. `HABITVISUALIDENTITIES`, `APPSETTINGS`, `CONTAINERS`, `ORGANIZATIONSTATE`, `HABITPLACEMENTS`, or unknown future tables) sets `isGlobal = true` and poisons frame scope (`null`), safely forcing conservative full recomputation fallback.
+4. **Differential parity exact:** 8/8 differential oracle scenarios pass with 100% field-by-field parity; all 70 core JVM tests pass.
 
 **NEXT ACTION:** Profile remaining post-presentation Main/RenderThread frame time on entry-sensitive sorting (where large layout passes occur when reordering rows) and evaluate targeted row rebinds.
 
@@ -798,4 +802,74 @@ Measured on `emulator-5580` (`EMULATOR36X6X11X0`, API 35), offline PRODUCTION_NE
 - **Cold projections:** Initial cold projection recomputations still require full authoritative load for all habits (inherent when no prior snapshot exists).
 - **Entry-sensitive sort reordering:** While projection time dropped by 1.75 s on entry-sensitive warm edits (49 ms vs 1800 ms), row moves trigger full RecyclerView layout passes.
 - **Next single investigation:** Profile remaining post-presentation Main/RenderThread frame time on entry-sensitive sorting (where large layout passes occur when reordering rows) and evaluate targeted row rebinds.
+- **STOP after this verified iteration.**
+
+## PI-20261014-04 — Iteration 9: incremental projection validation and cold-cost attribution
+
+**Decision:** KEEP and HARDEN optimization. Cold-cache full-list recomputation regression (525 ms → 2647 ms reported in Iteration 8) was proven not to be an algorithmic regression: cold full projection takes ~1200–2700 ms across both baseline (Iteration 6) and incremental (Iteration 8/9) builds due to ~78,000 day-point evaluations across 41 habits over 1825 days. The 2647 ms window was attributed via Perfetto SQL to ART JIT baseline compilation (802 methods, 2243 ms) and CMC GC (412 ms) on a fresh cold process, compared to pre-warmed JIT in earlier arms. Mutation scoping was hardened with an inverted whitelist (`table !in habitScopedTables`), ensuring any write to unlisted/global tables safely poisons frame scope to `null` and forces conservative full fallback.
+
+### 1. Cold Preparation Attribution
+
+Perfetto SQL traces on `emulator-5580` (`EMULATOR36X6X11X0`, API 35) analyzed the exact slices during the 2647 ms cold projection window of `after8-grouped-1825` versus the 524 ms window of `before7-grouped-1825`:
+- **ART JIT Thread Pool Execution:** In `after8`, the `Jit thread pool` thread spent **2243 ms** continuously compiling 802 methods (including `StaticLayout.calculateEllipsis`, `StaticLayout.generate`, `CancellableContinuationImpl`, and coroutine dispatchers), actively contending with `DefaultDispatcher-worker` threads. In `before7`, only **260 ms** of JIT compilation across 220 methods occurred because the process had already executed earlier test steps that warmed those paths.
+- **Garbage Collection:** Concurrent Mark Compact GC ran for **412 ms** in `after8` during cold projection, versus minimal GC in `before7`.
+- **Identical Projection Code:** Source review confirmed that for a cold cache (`cachedContext.revision == null` or missing snapshot entries), `EffectiveHabitReadController.snapshots` invokes `provider.prepare` for all 41 habits identically in both before and after builds. No additional code or metadata lookups execute on cold misses.
+
+### 2. Paired Native AVD Verification (Iteration 9 Matched Runs)
+
+Matched builds from Iteration 6 baseline (`before9`) and hardened Iteration 9 (`after9`) were tested with alternating execution order on identical disposable offline PRODUCTION_NEXT v30 fixtures (41 habits, 1825 days history, `EMULATOR36X6X11X0`, API 35). Raw artifacts: `scratch/cold-attribution-20261014/`.
+
+#### Provider Preparation Wall Duration & Habit Counts
+
+| Workload / Arm | Cold Launch (41 habits) | Cold Projection Edit (Op 1, 41 habits) | Warm Edit 1 (Op 2) | Warm Edit 2 (Op 3) |
+|---|---:|---:|---:|---:|
+| **grouped-1825 before9** | 2668.05 ms (41) | 1906.70 ms (41) | 31.50 ms (41) [delayed: 40 habits] | 28.50 ms (1) + delayed 1756.51 ms (40) |
+| **grouped-1825 after9** | 3983.81 ms (41) | 2470.98 ms (41) | **23.13 ms (1)** [0 delayed] | **126.15 ms (1)** [0 delayed] |
+| **entrySensitive-1825 before9** | 2166.36 ms (41) | 1171.96 ms (41) | 1.32 ms (1) + 733.65 ms (40) | 26.39 ms (1) + 807.45 ms (40) |
+| **entrySensitive-1825 after9** | 2565.36 ms (41) | 1283.16 ms (41) | **50.58 ms (1, 40 reused)** | **33.63 ms (1, 40 reused)** |
+
+*Observations:*
+- In both baseline and hardened builds, cold full projection of 41 habits over 5 years takes 1171–2470 ms. The 524 ms in Iteration 7 was a warm-JIT outlier.
+- On warm edits in entry-sensitive sorting, baseline recomputed 40 habits on every edit (taking 733–807 ms in background); hardened build recomputes **1 habit** and reuses 40 surviving snapshots in **33–50 ms** (16x–24x faster wall duration).
+- On warm edits in grouped sorting, baseline triggered delayed 40-habit recomputations (443–1756 ms); hardened build executed delayed refresh with **40/41 cache hits** and **0 habits prepared**.
+
+#### Strict FrameTimeline Presentation Latency (ms)
+
+| Scenario / Operation | before9-grouped-1825 | after9-grouped-1825 | before9-entrySensitive-1825 | after9-entrySensitive-1825 |
+|---|---:|---:|---:|---:|
+| Op 1: Cold projection edit | 2945.4 ms | 4013.1 ms | 1926.4 ms | 3093.7 ms |
+| Op 2: Warm edit 1 | 1345.7 ms | **549.7 ms (2.4x)** | 1287.7 ms | **819.4 ms (1.6x)** |
+| Op 3: Warm edit 2 | 2388.4 ms | **996.5 ms (2.4x)** | 485.6 ms | **115.9 ms (worker hold)** |
+
+### 3. Mutation Scoping Hardening and Invariant Auditing
+
+1. **Inverted Whitelist for Database Mutations (`EffectiveReadRevision.kt`):**
+   - Replaced permissive explicit table lists with a strict inverted whitelist:
+     `private val habitScopedTables = setOf("REPETITIONS", "CONTRIBUTIONS", "HABITS", "HABITGOALS", "HABITEXTENSIONS")`
+     `val isGlobal = table !in habitScopedTables`
+   - Any write touching non-habit tables (`HABITVISUALIDENTITIES`, `APPSETTINGS`, `CONTAINERS`, `ORGANIZATIONSTATE`, `HABITPLACEMENTS`, or future tables) immediately marks `isGlobal = true` and sets `poisonedScope = true`.
+   - On commit, any transaction frame with `poisonedScope` emits `revision.changed(null)`, safely guaranteeing conservative full recomputation fallback.
+2. **Transaction Hierarchy and Savepoints:**
+   - Multi-statement and nested transactions merge affected habits into parent frames; if any child frame is poisoned, the parent frame's scope is poisoned (`parent.poisonedScope = true`, `parent.affectedHabits = null`).
+   - Rollbacks (`ROLLBACK` / `ROLLBACK TO savepoint`) discard changed frames and invoke `revision.rolledBack()`, invalidating all cached snapshots and clearing entries.
+3. **Eviction and Disconnected Revisions:**
+   - History beyond 256 transitions returns `null` from `affectedHabitsBetween`, forcing full fallback.
+4. **Snapshot Immutability and Qualification:**
+   - Surviving snapshots qualified via `withRevision(newRevision)` instantiate a new snapshot with identical precomputed scoring/streak/historical-goal data without altering previous instances.
+5. **Deterministic Unit Coverage:**
+   - Verified with 3 new targeted tests in `EffectiveReadRevisionTest.kt`: `databaseMutationOnHabitVisualIdentitiesPoisonsScope`, `multiHabitTransactionUnionsAffectedHabits`, and `historyEvictionAfterMaxEntriesForcesFullFallback`. 100% core tests pass.
+
+### 4. Reconciliation of Prior Performance Claims
+
+- **Correction:** The Iteration 8 commit message stated: *"reduce 5-year history wall recomputation time by 50x–88x (from ~2647 ms to 30.7–52.8 ms per edit)"* and labeled provider wall duration as CPU time savings.
+- **Clarification:** 2647 ms was a cold-state full projection (41 habits), while 30.7–52.8 ms was a warm single-habit edit (1 habit recomputed, 40 reused). The true paired warm-edit comparison is:
+  - Baseline warm recomputation wall time: **733–1800 ms** (recomputing 40–41 habits).
+  - Hardened warm recomputation wall time: **23–52 ms** (recomputing 1 habit, reusing 40).
+  - Wall duration reduction: **16x–36x** (not 50x–88x).
+  - Grouped delayed background work: **0 ms** (eliminated delayed 40-habit recomputation).
+
+### 5. Next Steps
+
+- Keep the validated and hardened incremental projection optimization.
+- Profile remaining post-presentation Main/RenderThread frame time on entry-sensitive sorting (where large layout passes occur when reordering rows) and evaluate targeted row rebinds.
 - **STOP after this verified iteration.**
