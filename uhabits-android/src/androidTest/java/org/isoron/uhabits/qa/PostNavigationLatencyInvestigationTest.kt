@@ -2,13 +2,17 @@ package org.isoron.uhabits.qa
 
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
 import android.os.Process
 import android.os.SystemClock
 import android.os.Trace
+import android.view.FrameMetrics
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -28,6 +32,7 @@ import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.activities.statistics.StatisticsFragment
 import org.isoron.uhabits.core.commands.Command
+import org.isoron.uhabits.core.commands.CreateRepetitionCommand
 import org.isoron.uhabits.core.commands.HabitEditTrace
 import org.isoron.uhabits.core.containers.session.DatasetCapabilities
 import org.isoron.uhabits.core.containers.session.DatasetMode
@@ -50,14 +55,17 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * UHabit Next — Iteration 10:
- * Investigates post-navigation habit latency degradation across:
+ * UHabit Next — Iteration 11:
+ * End-to-end verification of post-navigation habit latency across:
  * A: Baseline Habits-only edits.
  * B: Habits -> Tasks -> Habits -> edit.
  * C: Habits -> Statistics -> Habits -> edit.
  * D: Habits -> Tasks (task modified) -> Habits -> edit.
  * E: Habits -> Statistics (tab/filter changed) -> Habits -> edit.
  * F: Repeated 1, 3, 10 cycles of Habits -> Tasks -> Statistics -> Habits.
+ *
+ * Strict measurement: input -> durable SQLite -> snapshot publish -> target cell draw -> FrameMetrics presentation.
+ * Also verifies lifecycle correctness (observer attachment, CPU work cancellation, fresh return, rapid transitions).
  */
 @RunWith(AndroidJUnit4::class)
 class PostNavigationLatencyInvestigationTest {
@@ -243,11 +251,17 @@ class PostNavigationLatencyInvestigationTest {
                 val refreshEventsBefore = refreshEvents.size
 
                 val durableLatch = CountDownLatch(1)
+                val snapshotLatch = CountDownLatch(1)
                 val drawLatch = CountDownLatch(1)
                 var durableTime = 0L
+                var snapshotTime = 0L
                 var drawTime = 0L
 
-                val expectedValue = if (button.value == Entry.YES_MANUAL) Entry.NO else Entry.YES_MANUAL
+                val expectedValue = Entry.nextToggleValue(
+                    button.value,
+                    component.preferences.isSkipEnabled,
+                    component.preferences.areQuestionMarksEnabled
+                )
 
                 button.operationTraceFactory = {
                     HabitEditTrace(1L) { _, stage, _, _, _ ->
@@ -258,22 +272,53 @@ class PostNavigationLatencyInvestigationTest {
                     }
                 }
 
-                HabitFrameTiming.observer = { stage, view, _ ->
-                    if (stage == "habit.checkmark.draw" && view === button && button.value == expectedValue) {
-                        drawTime = System.nanoTime()
-                        drawLatch.countDown()
+                component.habitCardListCache.timingObserver = { stage, _ ->
+                    if (stage == "cache.publish") {
+                        snapshotTime = System.nanoTime()
+                        snapshotLatch.countDown()
                     }
+                }
+
+                HabitFrameTiming.observer = { stage, view, _ ->
+                    if (stage == "habit.checkmark.draw" && view is CheckmarkButtonView &&
+                        card(view)?.habit?.id == targetHabitId && view.value == expectedValue) {
+                        if (drawTime == 0L) {
+                            drawTime = System.nanoTime()
+                            drawLatch.countDown()
+                        }
+                    }
+                }
+
+                val frameMetricsList = Collections.synchronizedList(mutableListOf<JSONObject>())
+                val metricThread = HandlerThread("fm-$sampleIndex").apply { start() }
+                val metricListener = Window.OnFrameMetricsAvailableListener { _, frameMetrics, _ ->
+                    frameMetricsList.add(JSONObject()
+                        .put("totalDurationMs", frameMetrics.getMetric(FrameMetrics.TOTAL_DURATION) / 1e6)
+                        .put("layoutMeasureMs", frameMetrics.getMetric(FrameMetrics.LAYOUT_MEASURE_DURATION) / 1e6)
+                        .put("drawMs", frameMetrics.getMetric(FrameMetrics.DRAW_DURATION) / 1e6)
+                        .put("intendedVsyncNanos", frameMetrics.getMetric(FrameMetrics.INTENDED_VSYNC_TIMESTAMP))
+                        .put("vsyncNanos", frameMetrics.getMetric(FrameMetrics.VSYNC_TIMESTAMP))
+                    )
+                }
+                scenario.onActivity { a ->
+                    a.window.addOnFrameMetricsAvailableListener(metricListener, Handler(metricThread.looper))
                 }
 
                 injectClick(button)
 
                 val durableOk = durableLatch.await(5, TimeUnit.SECONDS)
                 val drawOk = drawLatch.await(5, TimeUnit.SECONDS)
+                val snapshotOk = snapshotLatch.await(5, TimeUnit.SECONDS)
                 val endNanos = System.nanoTime()
 
                 // Clean up hooks
                 button.operationTraceFactory = null
                 HabitFrameTiming.observer = null
+                component.habitCardListCache.timingObserver = null
+                scenario.onActivity { a ->
+                    a.window.removeOnFrameMetricsAvailableListener(metricListener)
+                }
+                metricThread.quitSafely()
 
                 drain()
 
@@ -286,17 +331,32 @@ class PostNavigationLatencyInvestigationTest {
                 val totalPrepared = newLockEvents.sumOf { it.getInt("preparedCount") }
                 val maxCacheHits = newLockEvents.maxOfOrNull { it.getInt("cacheHitCount") } ?: 0
 
+                val storedValue = component.db.queryLong(
+                    "SELECT value FROM Repetitions WHERE habit=$targetHabitId AND timestamp=${getToday().unixTime}"
+                )
+                val parityMatches = storedValue == expectedValue.toLong()
+
+                val lastFrame = frameMetricsList.lastOrNull()
+                val frameTotal = lastFrame?.getDouble("totalDurationMs") ?: -1.0
+                val frameLayout = lastFrame?.getDouble("layoutMeasureMs") ?: -1.0
+                val frameDraw = lastFrame?.getDouble("drawMs") ?: -1.0
+
                 return JSONObject()
                     .put("scenario", scenarioName)
                     .put("sample", sampleIndex)
                     .put("wallDurationMs", (endNanos - startNanos) / 1e6)
                     .put("inputToDurableMs", if (durableOk && durableTime > 0) (durableTime - startNanos) / 1e6 else -1.0)
+                    .put("inputToSnapshotPublishMs", if (snapshotOk && snapshotTime > 0) (snapshotTime - startNanos) / 1e6 else -1.0)
                     .put("inputToDrawMs", if (drawOk && drawTime > 0) (drawTime - startNanos) / 1e6 else -1.0)
+                    .put("frameTotalDurationMs", frameTotal)
+                    .put("frameLayoutMeasureMs", frameLayout)
+                    .put("frameDrawMs", frameDraw)
                     .put("controllerLockWaitMs", totalLockWait)
                     .put("controllerLockHeldMs", totalLockHeld)
                     .put("preparedHabitsCount", totalPrepared)
                     .put("maxPreparedInBatch", maxPrepared)
                     .put("cacheHitsCount", maxCacheHits)
+                    .put("parityMatches", parityMatches)
                     .put("refreshEvents", JSONArray(newRefreshEvents.map { it.getString("type") }))
             }
 
@@ -397,7 +457,7 @@ class PostNavigationLatencyInvestigationTest {
             drain(); SystemClock.sleep(300); drain()
             scenario.onActivity { a ->
                 val statsFrag = a.supportFragmentManager.findFragmentByTag("reports") as? StatisticsFragment
-                // Switch tab or let it render
+                // Tab rendered
             }
             drain(); SystemClock.sleep(500); drain()
             scenario.onActivity { it.navigate(MainDestination.HABITS) }
@@ -456,5 +516,111 @@ class PostNavigationLatencyInvestigationTest {
         val reportFile = File(outDir, "post-navigation-latency.json")
         reportFile.writeText(finalReport.toString(2))
         android.util.Log.i("PostNavInvestigation", "Saved report to ${reportFile.absolutePath}:\n${finalReport.toString(2)}")
+    }
+
+    @Test
+    fun testStatisticsLifecycleCorrectness() {
+        val ins = InstrumentationRegistry.getInstrumentation()
+        val device = UiDevice.getInstance(ins)
+
+        check(Build.MODEL.contains("sdk") || Build.MODEL.contains("Emulator")) { "Physical devices strictly forbidden" }
+        check(device.executeShellCommand("getprop ro.boot.qemu.avd_name").trim() == "UHabit_UI_Review_Disposable_20261011") { "Must use verified disposable AVD" }
+        check(device.executeShellCommand("getprop ro.serialno").trim() == "EMULATOR36X6X11X0") { "Must match EMULATOR36X6X11X0" }
+
+        val fixture = UiReviewCaptureTest.initializeFixture()
+        setToday(LocalDate(2026, 10, 11))
+        ProductionUiHotfixFixture.prepare(fixture)
+
+        val app = ins.targetContext.applicationContext as HabitsApplication
+        val qaSession = fixture.session.copy(
+            mode = DatasetMode.PRODUCTION_NEXT,
+            capabilities = DatasetCapabilities.PRODUCTION_NEXT.copy(
+                syncEnabled = false, remoteCallsAllowed = false,
+                backgroundJobsEnabled = false, widgetsEnabled = false, remindersEnabled = false
+            )
+        )
+        ins.runOnMainSync { app.rebuildComponent(qaSession) }
+        val component = HabitsApplication.component
+
+        fun drain() {
+            repeat(3) {
+                runBlocking { component.taskRunner.await() }
+                ins.waitForIdleSync()
+            }
+        }
+        drain()
+
+        ActivityScenario.launch<MainActivity>(Intent(ins.targetContext, MainActivity::class.java)).use { scenario ->
+            fun getStatsFragment(): StatisticsFragment? {
+                var frag: StatisticsFragment? = null
+                scenario.onActivity { a ->
+                    frag = a.supportFragmentManager.fragments.filterIsInstance<StatisticsFragment>().firstOrNull()
+                }
+                return frag
+            }
+
+            // 1. Initial Habits: Statistics is not even loaded or hidden
+            scenario.onActivity { it.navigate(MainDestination.HABITS) }
+            drain()
+            assertEquals("Revision listeners on Habits", 1, component.effectiveReadRevision.listenerCount)
+            assertEquals("Observable listeners on Habits", 0, component.habitList.observable.listenerCount)
+
+            // 2. Navigate to Statistics: observers attached, fresh report rendered
+            scenario.onActivity { it.navigate(MainDestination.STATISTICS) }
+            drain(); SystemClock.sleep(300); drain()
+            val stats1 = checkNotNull(getStatsFragment())
+            assertTrue("Statistics must observe data when visible", stats1.isObservingDataState)
+            assertFalse("Statistics must not be hidden", stats1.isHidden)
+            assertEquals("Revision listeners when Statistics visible", 2, component.effectiveReadRevision.listenerCount)
+            assertEquals("Observable listeners when Statistics visible", 1, component.habitList.observable.listenerCount)
+            assertTrue("Report must have rendered at least once", stats1.lastRenderedKey != null)
+
+            // 3. Navigate away to Habits: observers cleanly detached, no report generation while hidden
+            scenario.onActivity { it.navigate(MainDestination.HABITS) }
+            drain(); SystemClock.sleep(200); drain()
+            assertFalse("Statistics must detach observers when hidden", stats1.isObservingDataState)
+            assertTrue("Statistics must be hidden", stats1.isHidden)
+            assertEquals("Revision listeners after leaving Statistics", 1, component.effectiveReadRevision.listenerCount)
+            assertEquals("Observable listeners after leaving Statistics", 0, component.habitList.observable.listenerCount)
+            val genAfterLeaving = stats1.activeGeneration
+
+            // 4. Perform habit edit on Habits: verify hidden Statistics does NOT launch any background snapshot queries or bump generation
+            val habit = component.habitList.first()
+            val repCmd = CreateRepetitionCommand(component.habitList, habit, getToday(), Entry.YES_MANUAL, "")
+            component.commandRunner.run(repCmd)
+            drain(); SystemClock.sleep(200); drain()
+
+            assertEquals("Hidden Statistics must NOT advance generation on habit edit", genAfterLeaving, stats1.activeGeneration)
+            assertEquals("Revision listeners must remain 1 after habit edit", 1, component.effectiveReadRevision.listenerCount)
+            assertEquals("Observable listeners must remain 0 after habit edit", 0, component.habitList.observable.listenerCount)
+
+            // 5. Return to Statistics: produces fresh, correct data reflecting the habit edit
+            scenario.onActivity { it.navigate(MainDestination.STATISTICS) }
+            drain(); SystemClock.sleep(400); drain()
+            assertTrue("Statistics must re-observe data upon return", stats1.isObservingDataState)
+            assertFalse("Statistics must not be hidden upon return", stats1.isHidden)
+            assertTrue("Statistics must advance generation upon return", stats1.activeGeneration > genAfterLeaving)
+            assertEquals("Report key must reflect latest effective revision", component.effectiveReadRevision.value, stats1.lastRenderedKey?.effectiveRevision)
+
+            // 6. Rapid hide/show transitions (50 cycles): must NOT leak listeners
+            for (i in 1..50) {
+                scenario.onActivity { it.navigate(MainDestination.HABITS) }
+                drain()
+                scenario.onActivity { it.navigate(MainDestination.STATISTICS) }
+                drain()
+            }
+            scenario.onActivity { it.navigate(MainDestination.HABITS) }
+            drain(); SystemClock.sleep(200); drain()
+            assertEquals("Revision listeners after 50 rapid transitions", 1, component.effectiveReadRevision.listenerCount)
+            assertEquals("Observable listeners after 50 rapid transitions", 0, component.habitList.observable.listenerCount)
+
+            // 7. Activity recreation: must preserve clean detachment
+            scenario.recreate()
+            drain(); SystemClock.sleep(300); drain()
+            scenario.onActivity { it.navigate(MainDestination.HABITS) }
+            drain()
+            assertEquals("Revision listeners after recreation", 1, component.effectiveReadRevision.listenerCount)
+            assertEquals("Observable listeners after recreation", 0, component.habitList.observable.listenerCount)
+        }
     }
 }

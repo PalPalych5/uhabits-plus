@@ -95,6 +95,9 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     private var pendingTransitionDirection = 0
     private var loadingIndicatorRunnable: Runnable? = null
     private var isObservingData = false
+    internal val isObservingDataState: Boolean get() = isObservingData
+    internal val activeGeneration: Int get() = activeReportGeneration
+    internal val lastRenderedKey: ReportKey? get() = lastRenderedReportKey
 
     private var currentFilters = StatisticsFilterState()
 
@@ -690,6 +693,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
 
             override suspend fun doInBackground() {
                 try {
+                    if (taskGeneration != activeReportGeneration) return
                     if (component.session.isNextArchitecture) {
                         fun midnight(date: LocalDate) = java.util.Calendar.getInstance().apply {
                             clear()
@@ -697,13 +701,16 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
                         }.timeInMillis
                         val sessions = org.isoron.uhabits.core.focus.sqlite.SQLiteFocusSessionRepository(component.db)
                             .getByTimeRange(midnight(start), midnight(end.plus(1)))
+                        if (taskGeneration != activeReportGeneration) return
                         calculatedFocusTotals = sessions.groupBy { it.containerId }.map { (id, facts) ->
                             val name = id?.let { component.organizationFacade.containerQueries?.find(it, includeDeleted = true)?.name }
                                 ?: if (id == null) "Без раздела" else "Удалённый раздел"
                             FocusTotal(id, name, facts.sumOf { it.durationMs })
                         }.sortedByDescending { it.durationMs }
                     }
+                    if (taskGeneration != activeReportGeneration) return
                     val snapshots = component.effectiveHabitReads?.snapshots(habits, start, end)
+                    if (taskGeneration != activeReportGeneration) return
                     calculatedData = StatisticsReportStateBuilder.build(
                         habits = habits,
                         period = reportKey.tab.toStatisticsPeriod(),
@@ -715,6 +722,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
                         snapshots = snapshots,
                         shouldCancel = { taskGeneration != activeReportGeneration }
                     )
+                    if (taskGeneration != activeReportGeneration) return
                     if (reportKey.tab == ReportTab.WEEK || reportKey.tab == ReportTab.MONTH) {
                         val previousPeriodEnd = start.minus(1)
                         val previousStart = if (reportKey.tab == ReportTab.WEEK) start.minus(7)
@@ -724,7 +732,9 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
                         val previousEnd = previousStart.plus(
                             (comparableDays - 1).coerceAtLeast(0).coerceAtMost(previousStart.daysUntil(previousPeriodEnd))
                         )
+                        if (taskGeneration != activeReportGeneration) return
                         val prevSnapshots = component.effectiveHabitReads?.snapshots(habits, previousStart, previousEnd)
+                        if (taskGeneration != activeReportGeneration) return
                         previousData = StatisticsReportStateBuilder.build(
                             habits = habits,
                             period = reportKey.tab.toStatisticsPeriod(),
@@ -745,7 +755,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
 
             override fun onPostExecute() {
                 val currentKey = buildReportKey()
-                if (viewBinding == null || !isAdded || taskGeneration != activeReportGeneration) return
+                if (viewBinding == null || !isAdded || !isResumed || isHidden || taskGeneration != activeReportGeneration) return
                 if (reportKey != currentKey) return
                 val result = calculatedData ?: return
                 focusTotals = calculatedFocusTotals
