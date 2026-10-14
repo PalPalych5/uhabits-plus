@@ -2,19 +2,15 @@
 
 ## 1. Executive status
 
-Iteration 11: 2026-10-14, Asia/Novosibirsk (Validate Post-Navigation Fix End-to-End). Source baseline verified locally: `6b4da659`, branch `dev`. Target: disposable offline PRODUCTION_NEXT v30 AVD (`emulator-5580`, `EMULATOR36X6X11X0`, API 35).
+Iteration 12: 2026-10-14, Asia/Novosibirsk. Verified starting HEAD `53c52dbb944ed4beb54ff455247e2535d437df7a`, branch `dev`; isolated comparison `ffd39c6a` versus `53c52dbb`. Disposable offline PRODUCTION_NEXT v30 only: `emulator-5580`, `EMULATOR36X6X11X0`, API 35.
 
-**CONFIRMED:** 
-1. **End-to-End Resolution of Post-Navigation Degradation:** Verified across Scenarios A, B, C, D, E, F (including 1, 3, and 10 navigation cycles) using `PostNavigationLatencyInvestigationTest`. Leaked listeners are completely eliminated: `revisionListenerCount` is strictly 1 and `observableListenerCount` is strictly 0 on the Habits screen across all scenarios (previously 2 rev, 1 obs permanent leak).
-2. **Warm Incremental Projection Restored Across All Scenarios:** In all post-navigation scenarios (C, D, E, F1, F3, F10), subsequent habit edits prepare **strictly 1 habit** with **32–33 cache hits** (previously 34–68 habits recomputed with 0–1 hits due to diverging bounds cache eviction).
-3. **Background CPU Work Cancellation:** Verified early aborts in `StatisticsFragment.updateReport()` via `taskGeneration != activeReportGeneration` checks before focus queries, before `effectiveHabitReads.snapshots`, before `StatisticsReportStateBuilder.build()`, and before comparison queries. Background CPU execution terminates without computing snapshots or polluting controller cache contexts.
-4. **Lifecycle and Rapid-Transition Invariants Proven:** Automated lifecycle testing (`testStatisticsLifecycleCorrectness`) verified: (a) initial Habits state rev=1, obs=0; (b) visible Statistics rev=2, obs=1; (c) hidden Statistics cleanly detaches; (d) habit edits on Habits do not wake or advance hidden Statistics report generation; (e) returning to Statistics renders fresh data reflecting intervening edits; (f) 50 rapid hide/show transitions produce zero listener accumulation; (g) activity recreation preserves clean detachment.
-5. **Exact Data and UI Parity:** 100% of tested edits across all scenarios verified `parityMatches == true` (SQLite committed repetition entry matches snapshot value and drawn toggle state).
-6. **Retained Memory and Frame Metrics Stability:** Heap used remained stable at 13.7–24.0 MB and PSS at 107–119 MB after 10 navigation cycles (previously growing to 50.4 MB heap / 151 MB PSS). FrameMetrics total frame duration remained 36–100 ms with no cumulative degradation.
+**CONFIRMED:** 40/40 primary edits have exact accepted-input -> qualified committed today-cell glyph -> containing doFrame -> presented app-surface FrameTimeline joins. Full semantic habit/repetition fixture hashes match. Hidden Statistics observer/report-generation correction reproduces; visible reports remain fresh. Pooled accepted-to-presentation median is 267.467 -> 212.031 ms (20 samples per side), a descriptive 20.7% reduction. Effects differ by scenario and edit position; universal removal of latency degradation is not established.
 
-**DECISION:** Post-navigation habit latency degradation marked as **FIXED on verified disposable AVD**.
+**CORRECTION TO ITERATION 11:** Its 730–1170 ms values start before harness setup and UIAutomator checks, not at input acceptance. Global cache callbacks and optimistic/unqualified checkmark draws do not establish committed target presentation. The last arbitrary FrameMetrics TOTAL_DURATION is frame work, not target-cell presentation latency. Its filtered Statistics scenario never changed a date/filter. Prior parity sampling proves a final stored value, not the drawn snapshot lineage. Runtime heap samples are not retained-heap measurements; generation fences do not preempt an already executing query/projection.
 
-**NEXT ACTION:** Profile remaining post-presentation Main/RenderThread frame time on entry-sensitive sorting (where large layout passes occur when reordering rows) and evaluate targeted row rebinds.
+**DECISION:** Keep the lifecycle correction; no new product optimization or separately confirmed repairable correctness defect. Residual time is predominantly after durability and before qualified row publication, with material frame/presentation time; FIFO and SQLite are not the dominant sustained delay. See PI-20261014-07 for per-scenario samples, critical paths and limits.
+
+**NEXT ACTION:** Ready for a separately authorized, controlled physical-device comparison using the corrected metrics and fixed fixture. First post-date-change edits remain a specific follow-up question, not an attributed correctness defect. No physical device was accessed. STOP after this attribution; do not begin another optimization automatically.
 
 ### Evidence discipline and shared workflow
 
@@ -935,6 +931,8 @@ Measured on identical disposable offline v30 database on `emulator-5580` (`EMULA
 
 ## PI-20261014-06 — Iteration 11: End-to-end and lifecycle verification of post-navigation fix
 
+> Superseded timing interpretation: Iteration 12 (PI-20261014-07) audits the harness and corrects the presentation/durability claims below. Historical samples are preserved; they are not a strict before/after presentation comparison. Lifecycle correctness remains separately supported.
+
 **Decision:** VERIFIED AND CONFIRMED FIXED ON DISPOSABLE AVD. Post-navigation habit latency degradation and cross-screen snapshot cache trashing are completely eliminated across Scenarios A through F. Strict FrameMetrics presentation timelines, exact SQLite and UI parity (100%), and complete background CPU work cancellation verified on `emulator-5580` (`EMULATOR36X6X11X0`, API 35).
 
 ### 1. Scope and Verification Objectives
@@ -1022,3 +1020,109 @@ In `StatisticsActivity.kt` (`StatisticsFragment.updateReport`):
 - Keep validated lifecycle detachment and background CPU cancellation in `StatisticsActivity.kt`.
 - Profile remaining post-presentation Main/RenderThread frame time on entry-sensitive sorting (where large layout passes occur when reordering rows) and evaluate targeted row rebinds.
 - **STOP after this verified iteration.**
+
+## PI-20261014-07 — Iteration 12: actual post-navigation committed presentation
+
+### Question, scope and acceptance
+
+Does the Statistics lifecycle correction improve actual committed target-cell presentation, and what produced Iteration 11's 730–1170 ms input-to-durable values? Accept an endpoint only when input, successful changing SQL return, revision-qualified published row, exact today-cell glyph and presented frame are joined. Missing, repeated, superseded or ambiguous endpoints remain unknown; no nearest-frame fallback. Compare exact product revisions before attributing a new optimization. Starting HEAD matched `53c52dbb944ed4beb54ff455247e2535d437df7a`; unrelated tracked artifact deletions and untracked files were preserved.
+
+### Audit of Iteration 11 definitions
+
+| Old metric | Exact start/end | Interpretation and correction |
+|---|---|---|
+| inputToDurableMs | `startNanos = System.nanoTime()` after target lookup, before observer setup; callback for operation's `sqlite.durable` | Includes observer installation, HandlerThread creation, FrameMetrics registration, UIAutomator system-dialog lookup, Activity callbacks/coordinate lookup and input injection. The endpoint is a real operation event, but occurs after successful `statement.step()`, `SELECT changes()` and the autocommit check. It is neither accepted-input latency nor exact step-return time. |
+| inputToSnapshotPublishMs | Same harness start; last global `cache.publish` callback | Unqualified global publication observation, overwritten by subsequent callbacks. Does not identify the edited row, revision, generation or batch. |
+| inputToDrawMs | Same harness start; first matching habit/value checkmark draw | Does not require today offset 0, durable revision, published operation lineage or committed snapshot value; an optimistic or another-day glyph can qualify. |
+| frameTotalDurationMs | Last collected OnFrameMetrics callback's TOTAL_DURATION | An arbitrary frame's work duration. Neither input-to-presentation nor proof that the target glyph belongs to that frame. |
+| wallDurationMs | Same harness start; completion of sequential latch waits | Harness/latch barrier; later drain is separate. Neither durability nor presentation. |
+
+`System.nanoTime()` timestamps the old endpoints; MotionEvent uses `uptimeMillis()`. The old code never joined stored FrameMetrics vsync timestamps to the target. Callback timestamps can be overwritten after latches open; there is no per-operation ordering validation. This explains why its apparent draw could precede durable and snapshot publication. Its parity assertion checks the final SQLite value, not the full snapshot-to-glyph lineage. The date/filter scenario contains an empty fragment lookup, so no date/filter was changed.
+
+The legacy harness now uses `harnessSetupToDurableCallbackMs`, `harnessSetupToUnqualifiedCacheCallbackMs`, `harnessSetupToUnqualifiedDrawCallbackMs` and `lastUncorrelatedFrameWorkDurationMs`. Its existing lifecycle correctness test is retained. Historical JSON is preserved and interpreted with the original source audit; values are not silently rewritten.
+
+### Isolated experiment and provenance
+
+Product builds are exact `ffd39c6a` and `53c52dbb`; before source was exported with `git archive` to `scratch/iteration12/before` without checkout/reset of the dirty working tree. The same new test source was overlaid on both. QA listener inspection uses private-field reflection because the old product lacks the newer count getters; no product code was patched for comparison. Product-source diff in the current checkout is empty.
+
+Device identity was checked before fixture writes: disposable AVD `UHabit_UI_Review_Disposable_20261011`, serial `EMULATOR36X6X11X0`, `emulator-5580`, API 35, airplane mode 1, Wi-Fi/data disabled. Each arm resets only this disposable app state and uses the established guarded generator/fixture initialization, including its existing synthetic v30 setup. Production data, physical devices, Xiaomi, Supabase and migration code were untouched. PRODUCTION_NEXT capabilities explicitly disable sync, remote calls, background jobs, widgets and reminders.
+
+Reference date 2026-10-11; stable BY_POSITION sorting; 10 controlled Boolean habits with 90 days each, 42 total habits. All four primary semantic fixture hashes are `eb1810a38355daa39d43eebacb5bd46c035091ac15f6a7d893d2368961e098dc`: positional habit name/type/frequency plus all persisted repetition dates/values. Random UUIDs/IDs and creation timestamps are intentionally excluded; this is semantic parity, not byte-identical database files. The common production fixture also asserts its two Focus facts and attribution consistency.
+
+Primary order is before1 / after1 / after2clean / before2 (ABBA), each with two sequential edits per scenario. The second pair reverses scenario order. Ten mixed cycles means ten returns, alternating five Statistics and five Tasks visits. Date-change scenario actually clicks Statistics Previous and asserts its anchor changed. Target viewport lookup/scroll, drain and any empty-button recovery happen before measured input and are retained in `viewportDiagnostics`; they are not presented as user latency. First/subsequent labels refer to scenario preparation, not cold process or disk. Scenarios share process/cache/JIT history; reverse-order warm edits occur after prior navigation. This is a small descriptive sample, not an inferential benchmark.
+
+`afterA` is the earlier pilot before final full-fixture hash/lifecycle probes. Extra `after2` overlapped host trace analysis; all ten samples remain separately reported and that condition was repeated as `after2clean` with trace analysis stopped. No unusually slow sample was removed. Main pair analysis was performed after operation recording; full raw artifacts and earlier analysis versions are preserved.
+
+### Strict critical-path definitions and ordering
+
+New events are operation-local. View `input.down` and `input.accepted` are distinct; the latter fires after computing the toggle and before forwarding the command. FIFO stages are command acceptance, enqueue, IO worker receipt and predecessor completion. `sqlite.end` fires immediately after statement return; it is accepted retrospectively only with one successful changing `sqlite.durable` autocommit qualification and no failed/pending-transaction event. The qualification lag from SELECT changes is excluded. An outer transaction would need its actual completion; pending/ambiguous cases remain unmatched. No command.finished, polling observation or drain qualifies durability.
+
+The target row requires its durable revision and exact revision/generation/batch publication lineage. The exact today button must have offset 0, the published operation, matching manual snapshot value and expected committed value before `glyph.draw`. Bind uses the same lineage. Retained historical traces can receive later publications: only the publication used by the exact glyph is eligible. Provider metrics without batch identity remain temporal context, not a guessed causal join. Repeated snapshot starts/retries keep ambiguous endpoint durations unknown.
+
+**40/40 primary edits** have monotonic input -> command scheduling -> SQL return -> qualification ordering and SQL return -> recompute end -> qualified publication -> glyph ordering. All 40 have unique qualified bind joins. Both DOWN and accepted-input trace markers join 40/40 to their committed glyph's containing doFrame token and same-process actual app-surface FrameTimeline with On-time/Early/Late Present; zero unmatched or ambiguous presentations. No FrameMetrics substitution is used.
+
+All stage deltas stay in System.nanoTime's monotonic domain. Paired `nanoTime`, `elapsedRealtimeNanos` and `uptimeMillis` anchors are saved at beginning/end of every arm to diagnose offset/suspend; no clock domains are subtracted. Frame/input/presentation arithmetic uses Perfetto timestamps only. Lifecycle and parity polling timestamps remain observation/barrier times. CPU/runnable attribution intersects exact Perfetto accepted-to-present windows. The first pair reports `sorter_push_event_out_of_order=8` in each trace; reverse traces report no nonzero error/data-loss stats. Exact token/ordering joins still succeed, but the first traces are not declared error-free.
+
+### Actual presented samples
+
+Milliseconds; each cell lists forward / reverse values. Sample 0 is first after the scenario preparation; sample 1 is subsequent. Every primary sample is included.
+
+| Scenario | Before first | After first | Before subsequent | After subsequent |
+|---|---:|---:|---:|---:|
+| Warm repeated Habits edits | 538.405 / 159.651 | 636.755 / 209.905 | 311.725 / 229.698 | 188.399 / 198.249 |
+| Habits -> Statistics -> Habits | 296.892 / 141.903 | 214.369 / 203.321 | 268.478 / 311.057 | 191.853 / 109.686 |
+| Statistics date change -> Habits | 171.983 / 159.115 | 254.077 / 212.250 | 263.655 / 194.363 | 291.171 / 158.423 |
+| Habits -> Tasks -> Habits | 245.546 / 273.027 | 352.812 / 151.098 | 266.456 / 285.673 | 241.379 / 211.811 |
+| Ten mixed navigation cycles | 430.237 / 692.187 | 291.045 / 395.370 | 292.652 / 211.044 | 259.510 / 158.370 |
+
+Pooled accepted-to-presentation arithmetic median **267.467 -> 212.031 ms**, maximum **692.187 -> 636.755 ms**, 20 edits per side; descriptive median reduction 20.7%. This does not establish a universal improvement: first Statistics edits have opposite directions across pairs; first date-change edits are slower in both corrected runs. Subsequent Statistics edits and first edits after ten cycles improve in both pairs. Cold/JIT exposure, scenario carryover and small n limit generalization. Pilot afterA is 10/10 linked; extra after2 is 10/10 linked, median 214.023 ms and max 521.064 ms; every extra sample remains in `scratch/iteration12/SUMMARY.md` and its raw JSON.
+
+### Independent stage measurements
+
+Arithmetic median / maximum milliseconds over 20 edits per side unless stated. Rows are overlapping or different clock domains and must not be summed as an exclusive partition.
+
+| Stage | Before | Corrected |
+|---|---:|---:|
+| Accepted input -> actual changing autocommit return | 11.374 / 69.714 | 7.612 / 76.481 |
+| Actual statement execution/return wall time | 3.201 / 21.825 | 2.662 / 21.175 |
+| Command accepted -> enqueue | 0.119 / 18.117 | 0.099 / 3.657 |
+| Enqueue -> IO worker receipt | 4.278 / 35.057 | 3.024 / 38.642 |
+| FIFO predecessor wait | 0.104 / 0.586 | 0.065 / 2.463 |
+| Historical command model recompute | 1.811 / 50.212 | 1.310 / 20.434 |
+| Model refresh | 0.060 / 0.162 | 0.061 / 8.659 |
+| Resort and synchronous observers | 1.019 / 18.722 | 1.374 / 17.693 |
+| Offline sync-queue command stage | 3.607 / 16.440 | 2.477 / 10.840 |
+| Actual durable -> exact drawn-row publication | 134.159 / 568.805 | 107.568 / 461.810 |
+| Qualified publication -> exact glyph | 41.141 / 56.068 | 39.386 / 62.335 |
+| Qualified publication -> target bind endpoint | 32.451 / 50.561 | 30.168 / 54.819 |
+| Qualified target bind -> glyph endpoint | 6.532 / 21.251 | 6.403 / 17.177 |
+| Exact glyph -> actual surface presentation (Perfetto) | 68.796 / 168.485 | 58.696 / 91.698 |
+| Harness injection entry -> accepted input | 645.979 / 761.439 | 650.541 / 727.030 |
+| UIAutomator system-dialog lookup alone | 595.098 / 685.058 | 603.815 / 672.146 |
+
+Thus the old 730–1170 ms scale mostly reflects pre-input harness/idle/UIAutomator work, not slow SQLite. New harness setup-to-accepted additionally includes viewport preparation: median 837.579 -> 867.790 ms; it is explicitly excluded from input latency. Exact original overhead cannot be retroactively partitioned from its old JSON; source audit plus directly measured new system-check/injection intervals explain the scale without assigning old individual samples invented accepted timestamps.
+
+For the exact drawn cache batch, request -> background start is 21.659/56.144 -> 6.054/30.067 ms; background execution 41.812/351.939 -> 41.231/61.453 ms; ready -> Main row publication 12.502/74.111 -> 12.098/38.692 ms. Actual durable -> cache request also contributes (40.426/297.431 -> 21.500/380.024 ms). These are separate measured wall stages, not proof that all elapsed waiting is dispatcher runnable time. Target batch controller requests and preparation counts are retained per edit; cache hits and unbatched provider timings remain temporal context rather than a guessed causal join. Qualified bind/draw endpoints are recorded in final analysis. Row-level view-work durations are contextual because their recorded frame samples do not distinguish every today button from the other days; exact today-button draw CPU is not separately established.
+
+Main CPU in exact accepted-to-present windows is 58.324/88.094 -> 50.059/93.016 ms; Main runnable scheduling is 35.586/132.236 -> 27.909/102.341 ms. JIT-thread CPU overlap is 26.801/416.603 -> 18.400/481.089 ms. JIT CPU is concurrent context, not an additive latency stage. GC slices overlap after1 operations 1/7 (27.444/247.308 ms) and before2 operations 1/1/3/7/8 (144.878/100.591/167.388/44.474/96.858 ms); no GC-named slices overlap before1 or after2clean windows. These are concurrent HeapTaskDaemon collection spans, not proven stop-the-world pauses. Zero GC-named thread CPU is not zero GC: thread names do not identify HeapTaskDaemon work. Nested runtime spans are not summed. Large first-operation JIT/GC exposure is recorded, not sufficient by itself to prove a specific blocking cause.
+
+Remaining latency is chiefly in the post-durable cache/publication path and frame work/presentation, rather than sustained SQL, FIFO predecessor wait or command historical recomputation. In the slow before2 ten-cycle first edit, target background work is 351.939 ms with 250 ambient prepared habits before the committed glyph, versus corrected reverse 40.550 ms and 1 ambient prepared habit. Ambient work is not all the target's own preparation; exact batch identity remains the causal boundary. Existing hidden Statistics work often continues after the first target presentation, so large reductions in total projection work do not translate one-for-one into target latency.
+
+### Lifecycle, workload and memory
+
+Hidden Statistics keeps 2 revision / 1 model-observable listeners before, versus 1 / 0 corrected. Hidden report generation advances across edits in old arms (for example Statistics 4->10 and 42->49) and stays constant corrected (3->3 and 29->29). Visible reports match current effective revision at all 14 sampled revisits per implementation. These are after-settle freshness observations, not proof of zero transient loading. Whole-workload provider calls fall 148->52 and prepared-habit counts 5004->1348; totals include startup and visible Statistics work and are not labeled per-edit costs. Corrected hidden screens launch no new report generations in these windows; existing generation fences act between stages and cannot preempt a query/projection already executing.
+
+After the ten cycles and two edits: forward/reverse PSS KiB before 143294/152663 versus corrected 134585/142801; runtime-used bytes 40216144/48683536 versus 28788304/35488560. Active task counts are zero and pending report runnable is false at all corresponding after-settle states. These are sampled process/runtime memory, not retained heap, peak allocations or a leak slope; no forced-GC comparison. All before/after state samples are preserved in SUMMARY. Lifecycle test `PostNavigationLatencyInvestigationTest#testStatisticsLifecycleCorrectness` freshly PASS, OK (1 test), 34.111 s: hidden detachment, edit suppression, fresh return, 50 transitions and activity recreation.
+
+### Evidence, reproducibility and decision gate
+
+Raw artifacts: `scratch/iteration12/{before1,after1,after2clean,before2}.{json,perfetto,txt}`; separate pilot `afterA` and extra `after2`; APK hashes `apk-hashes.json`. `*-analysis-final.json` contains final qualified bind/cache path/order joins, `*-accepted-presentation.json` / `*-down-presentation.json` the exact FrameTimeline joins, and `*-cpu.json` the literal rerunnable CPU/runtime SQL. Earlier analysis versions are retained. Detailed local report: `scratch/iteration12/SUMMARY.md`.
+
+Reproduce with `tools/qa/run_post_navigation_attribution.py --apk-root <isolated outputs/apk> --label <newLabel> --reverse <false|true> --output <new directory> --config tools/qa/post-navigation-capture.config`; the runner validates the sole permitted AVD before reset/install. Then use `analyze_post_navigation_attribution.py --source <arm.json> --processor C:/Users/Pavel/.codex/skills/perfetto/bin/trace_processor --analysis-name <newVersion>` and `attribute_post_navigation_cpu.py` with the same source/processor. The scripts reuse exact presentation joins, retain ambiguous events and preserve existing outputs. CPU query materializes filtered windows/tables to avoid the initial slow unmaterialized query; that initial analysis was stopped and no result is claimed from it. Schemas were inspected before querying. No closest-frame heuristic is used.
+
+Fresh checks: isolated before app/test builds PASS; corrected app/test builds PASS; four primary native attribution tests PASS (78.730 / 83.880 / 61.178 / 63.706 s); extra/pilot native tests PASS and preserved; retained lifecycle native test PASS; analyzer suites 17/17 PASS; QA Python compile and scoped diff whitespace checks PASS. No instrumentation test ran on a physical device. All measured primary SQLite/snapshot/view parity checks pass. Product optimization changes: none.
+
+1. **Presentation benefit:** pooled descriptive benefit and repeatable improvement for subsequent Statistics edits / first ten-cycle edits; first ordinary Statistics and date-change results do not support a universal speedup.
+2. **730–1170 ms:** misnamed pre-input harness measurement, especially UIAutomator lookup; actual accepted-to-SQLite return is millisecond-scale. The SQL endpoint itself was operation-specific but slightly late; the start definition was the major error.
+3. **Residual path:** post-durability cache dispatch/preparation/Main publication and rendering/presentation dominate the measured windows; SQL/FIFO/command recompute do not dominate typical edits. Concurrent JIT/GC and Main runnable time are recorded with bounded attribution.
+4. **Next action:** no separate narrowly repairable correctness defect was confirmed. Keep the lifecycle correction and proceed only with a separately authorized controlled physical-device test using these metrics and disposable data. First date-change edits merit targeted remeasurement, not an unproven optimization. STOP; no further optimization, phone access or push in this iteration.

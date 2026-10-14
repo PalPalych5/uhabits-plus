@@ -71,12 +71,27 @@ def stage_metrics(events):
                               ("acceptedToEnqueuedMs", "command.accepted", "command.enqueued"),
                               ("workerDispatchMs", "command.enqueued", "command.worker"),
                               ("fifoPredecessorWaitMs", "command.worker", "command.fifoStart"),
-                              ("inputReceiptToAcceptedMs", "input.down", "command.accepted"),
-                              ("acceptedToDurableMs", "command.accepted", "sqlite.durable"),
+                              ("inputReceiptToCommandAcceptedMs", "input.down", "command.accepted"),
+                              ("commandAcceptedToDurableQualificationMs", "command.accepted", "sqlite.durable"),
                               ("inputReceiptToGlyphDrawMs", "input.down", "glyph.draw")):
         if len(timestamps.get(first, [])) == len(timestamps.get(last, [])) == 1:
             result[name] = (timestamps[last][0] - timestamps[first][0]) / 1e6
     durable = [e for e in events if e["stage"] == "sqlite.durable"]
+    # sqlite.durable qualifies a successful changing autocommit. Its callback
+    # follows SELECT changes(); use the preceding step-return endpoint itself.
+    result["actualDurability"] = {"status": "unmatched"}
+    if len(durable) == 1:
+        qualification = durable[0]["timestampNanos"]
+        steps = [e for e in events if e["stage"] == "sqlite.end" and e["timestampNanos"] <= qualification]
+        failures = [e for e in events if e["stage"] in ("sqlite.failed", "sqlite.pendingTransaction")]
+        if len(steps) == 1 and not failures:
+            endpoint = steps[0]["timestampNanos"]
+            result["actualDurability"] = {"status": "qualifiedAutocommitStepReturn",
+                "timestampNanos": endpoint, "qualificationLagMs": (qualification - endpoint) / 1e6}
+            for name, stage in (("inputToActualDurableMs", "input.accepted"),
+                                ("downToActualDurableMs", "input.down")):
+                if len(timestamps.get(stage, [])) == 1 and timestamps[stage][0] <= endpoint:
+                    result[name] = (endpoint - timestamps[stage][0]) / 1e6
     publications = [e for e in events if e["stage"] == "cache.row.published"]
     if len(durable) == 1 and durable[0].get("revision") is not None:
         committed = durable[0]

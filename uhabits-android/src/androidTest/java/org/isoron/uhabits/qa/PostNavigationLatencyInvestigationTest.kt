@@ -64,7 +64,9 @@ import java.util.concurrent.atomic.AtomicReference
  * E: Habits -> Statistics (tab/filter changed) -> Habits -> edit.
  * F: Repeated 1, 3, 10 cycles of Habits -> Tasks -> Statistics -> Habits.
  *
- * Strict measurement: input -> durable SQLite -> snapshot publish -> target cell draw -> FrameMetrics presentation.
+ * Legacy exploratory timing starts before harness setup. Cache/draw callbacks are
+ * unqualified observations and FrameMetrics reports frame work, not presentation.
+ * Use PostNavigationPresentationAttributionTest for operation-qualified latency.
  * Also verifies lifecycle correctness (observer attachment, CPU work cancellation, fresh return, rapid transitions).
  */
 @RunWith(AndroidJUnit4::class)
@@ -345,10 +347,10 @@ class PostNavigationLatencyInvestigationTest {
                     .put("scenario", scenarioName)
                     .put("sample", sampleIndex)
                     .put("wallDurationMs", (endNanos - startNanos) / 1e6)
-                    .put("inputToDurableMs", if (durableOk && durableTime > 0) (durableTime - startNanos) / 1e6 else -1.0)
-                    .put("inputToSnapshotPublishMs", if (snapshotOk && snapshotTime > 0) (snapshotTime - startNanos) / 1e6 else -1.0)
-                    .put("inputToDrawMs", if (drawOk && drawTime > 0) (drawTime - startNanos) / 1e6 else -1.0)
-                    .put("frameTotalDurationMs", frameTotal)
+                    .put("harnessSetupToDurableCallbackMs", if (durableOk && durableTime > 0) (durableTime - startNanos) / 1e6 else -1.0)
+                    .put("harnessSetupToUnqualifiedCacheCallbackMs", if (snapshotOk && snapshotTime > 0) (snapshotTime - startNanos) / 1e6 else -1.0)
+                    .put("harnessSetupToUnqualifiedDrawCallbackMs", if (drawOk && drawTime > 0) (drawTime - startNanos) / 1e6 else -1.0)
+                    .put("lastUncorrelatedFrameWorkDurationMs", frameTotal)
                     .put("frameLayoutMeasureMs", frameLayout)
                     .put("frameDrawMs", frameDraw)
                     .put("controllerLockWaitMs", totalLockWait)

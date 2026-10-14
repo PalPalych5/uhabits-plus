@@ -9,6 +9,21 @@ spec.loader.exec_module(trace)
 
 
 class PresentationJoinTest(unittest.TestCase):
+    def test_durability_uses_qualified_step_return_not_later_callback(self):
+        events = [dict(stage="input.accepted", timestampNanos=10),
+                  dict(stage="sqlite.end", timestampNanos=30),
+                  dict(stage="sqlite.durable", timestampNanos=50),
+                  dict(stage="command.finished", timestampNanos=1000)]
+        result = trace.stage_metrics(events)
+        self.assertEqual(result["actualDurability"]["timestampNanos"], 30)
+        self.assertEqual(result["inputToActualDurableMs"], 20e-6)
+        for extra in (dict(stage="sqlite.failed", timestampNanos=29),
+                      dict(stage="sqlite.pendingTransaction", timestampNanos=31),
+                      dict(stage="sqlite.end", timestampNanos=20)):
+            result = trace.stage_metrics(events + [extra])
+            self.assertEqual(result["actualDurability"]["status"], "unmatched")
+            self.assertNotIn("inputToActualDurableMs", result)
+
     def setUp(self):
         self.row = dict(input_ns="100", draw_id="1", draw_ns="120", dur="20", present_ns="150",
                         present_type="On-time Present", marker_upid="1", frame_upid="1",
