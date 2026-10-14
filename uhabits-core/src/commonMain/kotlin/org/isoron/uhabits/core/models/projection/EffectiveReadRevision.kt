@@ -3,15 +3,18 @@ package org.isoron.uhabits.core.models.projection
 
 import org.isoron.platform.io.Database
 import org.isoron.platform.Synchronized
+import kotlin.concurrent.Volatile
 import org.isoron.platform.ThreadLocalState
 import org.isoron.platform.io.PreparedStatement
 import org.isoron.platform.io.queryLong
 
 /** Dataset-owned revision. Disposal makes old callbacks inert. Consumers schedule their own refresh. */
 class EffectiveReadRevision(val datasetId: String) {
-    private var currentValue: Long = 0
+    @Volatile private var currentValue: Long = 0
     val value: Long
         @Synchronized get() = currentValue
+    /** Version-only observation; not a listener-completion barrier. */
+    val observedValue: Long get() = currentValue
     private val listeners = linkedSetOf<() -> Unit>()
     private val rollbackListeners = linkedSetOf<() -> Unit>()
     private var disposed = false

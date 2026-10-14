@@ -68,6 +68,8 @@ class EffectiveHabitReadController(
 
     private val inFlightByHabit = mutableMapOf<HabitRef, InFlightBatch>()
     internal var prepareHook: ((List<Habit>) -> Unit)? = null
+    internal var beforePublicationHook: (() -> Unit)? = null
+    internal var batchAwaitHook: (() -> Unit)? = null
 
     private data class SnapshotPlan(
         val context: CacheContext,
@@ -162,7 +164,7 @@ class EffectiveHabitReadController(
                 metrics.monitorHeldMs, metrics.latchMs, metrics.latchCount, metrics.prepareMs,
                 metrics.prepareCount, metrics.retries, metrics.publicationMs, metrics.joins,
                 metrics.creates, metrics.maxActive, Looper.myLooper() == Looper.getMainLooper(),
-                Thread.currentThread().name, outcome, habits.size, generation, batch,
+                Thread.currentThread().name, outcome, habits.size, generation, batch, metrics.cachePublicationMs,
             )
             runCatching { observer(result) }
         }
@@ -195,7 +197,7 @@ class EffectiveHabitReadController(
                     if (disposed) throw EffectiveReadInvalidatedException()
 
                     val captured = captureCalendar()
-                    val capturedRevision = revision.value
+                    val capturedRevision = revision.observedValue
                     traces.forEach { it.event("snapshot.begin", capturedRevision, generation, batch) }
                     val capturedRollback = rollbackGeneration
                     val capturedLocaleWeekday = org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale()
@@ -296,15 +298,60 @@ class EffectiveHabitReadController(
                         it.prepareMs += requireNotNull(preparationStart).elapsedNow().toDouble(DurationUnit.MILLISECONDS)
                         activeMeasuredPreparations.decrementAndGet()
                     }
-                    plan.myBatch.results = preparedMap
-                    plan.myBatch.failure = computeError
-                    plan.myBatch.latch.countDown()
+                }
+
+                // Publish this batch's owned subset before awaiting dependencies. A waiter
+                // must never observe successful completion while its cache entries are absent.
+                try {
+                    beforePublicationHook?.invoke()
+                } catch (t: Throwable) {
+                    if (computeError == null) computeError = t
+                }
+                val completionWaitStart = TimeSource.Monotonic.markNow()
+                synchronized(this) {
+                    val completionHeldStart = TimeSource.Monotonic.markNow()
+                    val waitMs = completionWaitStart.elapsedNow().toDouble(DurationUnit.MILLISECONDS)
+                    totalWaitMs += waitMs
+                    metrics?.let { it.monitorWaitMs += waitMs }
+                    try {
+                        // Rollback/context replacement/disposal may already have completed
+                        // this batch with invalidation. Its terminal outcome is immutable.
+                        if (plan.myBatch.latch.count > 0L) {
+                            if (computeError != null) {
+                                plan.myBatch.failure = computeError
+                            } else if (isContextCurrent(plan.context)) {
+                                val ready = requireNotNull(preparedMap)
+                                cachedSnapshots.putAll(ready)
+                                totalPrepared += ready.size
+                                plan.myBatch.results = ready
+                            } else {
+                                plan.myBatch.failure = EffectiveReadInvalidatedException()
+                            }
+                        }
+                    } catch (t: Throwable) {
+                        computeError = t
+                        plan.myBatch.failure = t
+                    } finally {
+                        plan.myBatch.habits.forEach { ref ->
+                            if (inFlightByHabit[ref] === plan.myBatch) inFlightByHabit.remove(ref)
+                        }
+                        // Cache publication/terminal failure precedes notification under
+                        // the same short monitor; provider and latch waits stay outside it.
+                        plan.myBatch.latch.countDown()
+                        val heldMs = completionHeldStart.elapsedNow().toDouble(DurationUnit.MILLISECONDS)
+                        totalHeldMs += heldMs
+                        metrics?.let {
+                            it.monitorHeldMs += heldMs
+                            it.cachePublicationMs += heldMs
+                        }
+                    }
                 }
             }
 
             // Await any concurrent in-flight batches outside controller monitor
             var awaitError: Throwable? = null
             for (b in plan.toAwait) {
+                batchAwaitHook?.invoke()
                 val latchStart = metrics?.let { TimeSource.Monotonic.markNow() }
                 val completed = try {
                     b.latch.await(10, TimeUnit.SECONDS)
@@ -336,26 +383,7 @@ class EffectiveHabitReadController(
                 metrics?.let { it.monitorWaitMs += publishWaitStart.elapsedNow().toDouble(DurationUnit.MILLISECONDS) }
                 val publishHeldStart = TimeSource.Monotonic.markNow()
                 try {
-                    if (plan.myBatch != null) {
-                        plan.myBatch.habits.forEach { ref ->
-                            if (inFlightByHabit[ref] === plan.myBatch) {
-                                inFlightByHabit.remove(ref)
-                            }
-                        }
-                    }
-
-                    val isValid = !disposed &&
-                        plan.context.calendar == captureCalendar() &&
-                        plan.context.revision == revision.value &&
-                        plan.context.rollbackGeneration == rollbackGeneration &&
-                        plan.context.compatibilityFirstWeekday == org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale() &&
-                        cachedContext == plan.context
-
-                    if (isValid && computeError == null && awaitError == null) {
-                        if (preparedMap != null) {
-                            cachedSnapshots.putAll(preparedMap)
-                            totalPrepared += preparedMap.size
-                        }
+                    if (isContextCurrent(plan.context) && computeError == null && awaitError == null) {
                         val allReady = habits.all { h ->
                             val ref = h.uuid?.let { HabitRef(it) } ?: return@all true
                             cachedSnapshots.containsKey(ref)
@@ -373,7 +401,11 @@ class EffectiveHabitReadController(
                     } else null
                 } finally {
                     totalHeldMs += publishHeldStart.elapsedNow().toDouble(DurationUnit.MILLISECONDS)
-                    metrics?.let { it.monitorHeldMs += publishHeldStart.elapsedNow().toDouble(DurationUnit.MILLISECONDS) }
+                    metrics?.let {
+                        val heldMs = publishHeldStart.elapsedNow().toDouble(DurationUnit.MILLISECONDS)
+                        it.monitorHeldMs += heldMs
+                        it.cachePublicationMs += heldMs
+                    }
                 }
             }
 
@@ -396,6 +428,15 @@ class EffectiveHabitReadController(
         throw EffectiveReadInvalidatedException()
     }
 
+    /** Caller holds the controller monitor; used at completion and final cache read. */
+    private fun isContextCurrent(expected: CacheContext) = !disposed &&
+        expected.datasetId == revision.datasetId &&
+        expected.calendar == captureCalendar() &&
+        expected.revision == revision.observedValue &&
+        expected.rollbackGeneration == rollbackGeneration &&
+        expected.compatibilityFirstWeekday == org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale() &&
+        cachedContext == expected
+
     data class ControllerLockMetrics(
         val lockWaitDurationMs: Double,
         val lockHeldDurationMs: Double,
@@ -417,7 +458,7 @@ class EffectiveHabitReadController(
         val retries: Int, val validatedPublicationMs: Double?, val joinedHabits: Int,
         val createdBatches: Int, val maxConcurrentPreparations: Int, val onMain: Boolean,
         val thread: String, val outcome: String, val habitCount: Int,
-        val generation: Long?, val batch: Long?,
+        val generation: Long?, val batch: Long?, val cachePublicationDurationMs: Double = 0.0,
     )
 
     private class RequestMeasurement {
@@ -430,6 +471,7 @@ class EffectiveHabitReadController(
         var prepareCount = 0
         var retries = 0
         var publicationMs: Double? = null
+        var cachePublicationMs = 0.0
         var joins = 0
         var creates = 0
         var maxActive = 0
