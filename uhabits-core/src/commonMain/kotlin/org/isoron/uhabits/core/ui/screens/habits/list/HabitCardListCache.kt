@@ -257,9 +257,12 @@ class HabitCardListCache(
         (filteredHabits as? MemoryHabitList)?.detachFromParent()
     }
 
+    var refreshObserver: ((type: String, habitId: Long?, reason: String?) -> Unit)? = null
+
     @Synchronized
     fun refreshAllHabits() {
         if (shutDown) return
+        refreshObserver?.invoke("full", null, null)
         lastRefreshFailed = false
         if (currentFetchTask != null) currentFetchTask!!.cancel()
         val task = RefreshTask(++refreshGeneration)
@@ -277,9 +280,12 @@ class HabitCardListCache(
         // otherwise publish its older values after this targeted read.
         if (currentFetchTask != null || !matcher.isCompletedAllowed || !matcher.isEnteredAllowed ||
             primaryOrder in entryOrders || secondaryOrder in entryOrders) {
+            val reason = if (currentFetchTask != null) "task_in_flight" else "filter_or_order"
+            refreshObserver?.invoke("targeted_fallback", id, reason)
             refreshAllHabits()
             return
         }
+        refreshObserver?.invoke("targeted", id, null)
         lastRefreshFailed = false
         val gen = (habitRefreshGenerations[id] ?: 0L) + 1L
         habitRefreshGenerations[id] = gen

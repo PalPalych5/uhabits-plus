@@ -94,6 +94,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     private var dbVersion = 0
     private var pendingTransitionDirection = 0
     private var loadingIndicatorRunnable: Runnable? = null
+    private var isObservingData = false
 
     private var currentFilters = StatisticsFilterState()
 
@@ -199,19 +200,33 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         setupListeners()
         setupScopeSelector()
         setupFilters()
-        requestReportUpdate("create_view", delayMs = 0L)
         return binding.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        component.habitList.observable.addListener(this)
-        component.effectiveReadRevision.addListener(effectiveRevisionListener)
+        updateObserverRegistration()
+    }
+
+    private fun updateObserverRegistration() {
+        val shouldObserve = isResumed && !isHidden && viewBinding != null
+        if (shouldObserve == isObservingData) return
+        isObservingData = shouldObserve
+        if (shouldObserve) {
+            component.habitList.observable.addListener(this)
+            component.effectiveReadRevision.addListener(effectiveRevisionListener)
+        } else {
+            component.effectiveReadRevision.removeListener(effectiveRevisionListener)
+            component.habitList.observable.removeListener(this)
+            activeReportGeneration++
+            cancelPendingReportUpdate()
+            cancelRefreshingIndicator()
+        }
     }
 
     private val effectiveRevisionListener: () -> Unit = {
         activity?.runOnUiThread {
-            if (viewBinding != null && isAdded) {
+            if (isResumed && !isHidden && viewBinding != null) {
                 requestReportUpdate("effective_revision_change", delayMs = 0L, forceRender = true)
             }
         }
@@ -219,6 +234,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
 
     override fun onResume() {
         super.onResume()
+        updateObserverRegistration()
         viewBinding?.let {
             currentFilters = currentFilters.copy(
                 dayTiersEnabled = component.preferences.isDayTiersEnabled,
@@ -232,6 +248,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
 
     override fun onHiddenChanged(hidden: Boolean) {
         super.onHiddenChanged(hidden)
+        updateObserverRegistration()
         if (!hidden && viewBinding != null) {
             currentFilters = currentFilters.copy(
                 dayTiersEnabled = component.preferences.isDayTiersEnabled,
@@ -243,17 +260,21 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     }
 
     override fun onPause() {
-        cancelPendingReportUpdate()
+        updateObserverRegistration()
         super.onPause()
     }
 
     override fun onModelChange() {
         dbVersion++
-        requestReportUpdate("db_change", delayMs = 0L, forceRender = true)
+        activity?.runOnUiThread {
+            if (isResumed && !isHidden && viewBinding != null) {
+                requestReportUpdate("db_change", delayMs = 0L, forceRender = true)
+            }
+        }
     }
 
     fun refresh() {
-        if (viewBinding != null && isAdded) {
+        if (viewBinding != null && isAdded && isResumed && !isHidden) {
             requestReportUpdate("external_refresh", delayMs = 0L, forceRender = true)
         }
     }
@@ -271,8 +292,11 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     }
 
     override fun onDestroyView() {
-        component.effectiveReadRevision.removeListener(effectiveRevisionListener)
-        component.habitList.observable.removeListener(this)
+        if (isObservingData) {
+            isObservingData = false
+            component.effectiveReadRevision.removeListener(effectiveRevisionListener)
+            component.habitList.observable.removeListener(this)
+        }
         activeReportGeneration++
         cancelPendingReportUpdate()
         cancelRefreshingIndicator()
@@ -572,7 +596,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         delayMs: Long = REPORT_UPDATE_COALESCE_MS,
         forceRender: Boolean = false
     ) {
-        if (viewBinding == null || !isAdded) return
+        if (viewBinding == null || !isAdded || !isResumed || isHidden) return
         activeReportGeneration++
         if (!hasRenderedStatisticsOnce && binding.pageTransitionHost.getCurrentPage() == null) {
             showInitialLoading()
@@ -583,7 +607,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
             pendingReportRunnable = null
             val shouldForceRender = pendingReportForceRender
             pendingReportForceRender = false
-            if (viewBinding == null || !isAdded) return@Runnable
+            if (viewBinding == null || !isAdded || !isResumed || isHidden) return@Runnable
             val key = buildReportKey() ?: return@Runnable
             if (!shouldForceRender && hasRenderedStatisticsOnce && key == lastRenderedReportKey) {
                 cancelRefreshingIndicator()
@@ -641,7 +665,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     }
 
     private fun renderReport(result: StatisticsReportState, previous: StatisticsReportState?, generation: Int) {
-        if (viewBinding == null || !isAdded || generation != activeReportGeneration) return
+        if (viewBinding == null || !isAdded || !isResumed || isHidden || generation != activeReportGeneration) return
         cancelRefreshingIndicator()
         performViewUpdate(result, previous)
     }

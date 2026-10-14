@@ -62,6 +62,8 @@ class ModelObservable {
         listeners.remove(l)
     }
 
+    val listenerCount: Int get() = synchronized(this) { listeners.size }
+
     /**
      * Interface implemented by objects that want to be notified when the model
      * changes.

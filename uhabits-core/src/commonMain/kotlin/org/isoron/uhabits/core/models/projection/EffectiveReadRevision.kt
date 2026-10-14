@@ -27,6 +27,8 @@ class EffectiveReadRevision(val datasetId: String) {
     @Synchronized fun removeListener(listener: () -> Unit) { listeners.remove(listener) }
     @Synchronized fun addRollbackListener(listener: () -> Unit) { if (!disposed) rollbackListeners.add(listener) }
     @Synchronized fun removeRollbackListener(listener: () -> Unit) { rollbackListeners.remove(listener) }
+    val listenerCount: Int get() = synchronized(this) { listeners.size }
+    val rollbackListenerCount: Int get() = synchronized(this) { rollbackListeners.size }
 
     /** Restore speculative model caches after rollback without inventing a durable revision. */
     @Synchronized fun rolledBack() {

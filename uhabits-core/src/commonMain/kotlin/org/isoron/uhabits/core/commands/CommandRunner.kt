@@ -109,6 +109,8 @@ open class CommandRunner(
         listeners.remove(l)
     }
 
+    val listenerCount: Int get() = synchronized(listeners) { listeners.size }
+
     interface Listener {
         fun onCommandFinished(command: Command)
     }

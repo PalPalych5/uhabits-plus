@@ -2,13 +2,14 @@
 
 ## 1. Executive status
 
-Iteration 9: 2026-10-14, Asia/Novosibirsk (Incremental projection validation and cold-cost attribution). Source baseline verified locally: `94e0b36fd53994d8dfc45908641bc9301baa4c45`, branch `dev`.
+Iteration 10: 2026-10-14, Asia/Novosibirsk (Post-Navigation Habit Latency Degradation). Source baseline verified locally: `ffd39c6a`, branch `dev`.
 
 **CONFIRMED:** 
-1. **Cold preparation regression disproven as an algorithmic defect:** Cold full-history preparation of 41 habits over 1825 days requires computing ~78,000 day points and takes ~1200–2700 ms wall time in both Iteration 6 (baseline before) and Iteration 8/9 (after) on ART API 35. Perfetto SQL attribution confirmed that during the 2647 ms window in `after8`, the ART JIT compiler ran for 2243 ms baseline-compiling 802 methods and CMC GC ran for 412 ms, heavily contending with worker dispatchers. In `before7`, prior test steps had pre-warmed those methods (JIT ran only 260 ms). Matched, order-alternating runs confirm no algorithmic regression: `before9` cold projection took 1906.7 ms (grouped) / 1171.9 ms (entrySensitive); `after9` took 2470.9 ms (grouped) / 1283.1 ms (entrySensitive).
-2. **Reconciled performance metrics:** The Iteration 8 commit message conflated cold-after wall time (2647 ms) with warm-after wall time (30–52 ms) and described provider wall duration as "CPU savings". Paired measurements confirm true warm-edit recomputation wall time drops 16x–36x (733–1800 ms → 23–50 ms, reusing 40 habits and preparing 1), entry-sensitive presentation drops from 1287 ms to 819 ms, and delayed grouped 40-habit recomputations are eliminated (0 habits prepared).
-3. **Mutation scope fallback hardened:** Strict inverted table whitelisting (`table !in habitScopedTables`) guarantees that any write touching non-habit tables (e.g. `HABITVISUALIDENTITIES`, `APPSETTINGS`, `CONTAINERS`, `ORGANIZATIONSTATE`, `HABITPLACEMENTS`, or unknown future tables) sets `isGlobal = true` and poisons frame scope (`null`), safely forcing conservative full recomputation fallback.
-4. **Differential parity exact:** 8/8 differential oracle scenarios pass with 100% field-by-field parity; all 70 core JVM tests pass.
+1. **Root cause of post-navigation latency degradation identified:** `StatisticsFragment` registered as a permanent listener to `component.habitList.observable` and `component.effectiveReadRevision` during `onViewCreated` and only canceled pending timers in `onPause`. Because MainActivity manages bottom workspaces via `FragmentTransaction.hide()` and `setMaxLifecycle(..., STARTED)`, fragment views are never destroyed (`onDestroyView` is not called). Consequently, `StatisticsFragment` remained active as a background listener whenever the user returned to Habits.
+2. **Cross-screen cache trashing and recomputation explosion:** While hidden, every habit toggle on the Habits screen triggered `effectiveRevisionListener` and `onModelChange` in `StatisticsFragment`, posting background snapshot computations with Statistics' date bounds (e.g. DAY `[anchorDate, anchorDate]` or WEEK). Because these bounds diverged from the Habits list bounds (`[today - 365, today]`), `EffectiveHabitReadController` marked `canIncrementallyUpdate = false` and called `cachedSnapshots.clear()`. This completely wiped out the warm snapshot cache on every edit, collapsing cache hits from 33 down to 0 and forcing 34–68 habits to be recomputed from SQLite on every tap.
+3. **Main-thread view hierarchy inflation during active interaction:** When the leaked background statistics update finished, `renderReport` executed `performViewUpdate` on the Main UI thread, inflating dozens of report views and triggering deep layout passes while the user was interacting with Habits. Memory grew from 13.9 MB to 50.4 MB heap used and 151 MB PSS after 10 navigation cycles.
+4. **Validated narrow lifecycle decoupling:** In `StatisticsActivity.kt`, observers are attached strictly when `isResumed && !isHidden && viewBinding != null` and cleanly removed in `onPause`, `onHiddenChanged(true)`, and `onDestroyView`. Any in-flight background report task is discarded via `activeReportGeneration++`, and report requests and rendering are guarded against paused/hidden state.
+5. **Native verification on disposable AVD (`emulator-5580`):** Tested Scenarios A through F (including 1, 3, and 10 navigation cycles). Leaked listener counts dropped from 2/1 to 1/0 permanently across all scenarios; post-navigation habit edits restored warm incremental projection (strictly 1 habit prepared, 32–33 cache hits); retained heap dropped by ~70% (50.4 MB → 14.5 MB), and PSS dropped from 151 MB to 116 MB.
 
 **NEXT ACTION:** Profile remaining post-presentation Main/RenderThread frame time on entry-sensitive sorting (where large layout passes occur when reordering rows) and evaluate targeted row rebinds.
 
@@ -873,3 +874,59 @@ Matched builds from Iteration 6 baseline (`before9`) and hardened Iteration 9 (`
 - Keep the validated and hardened incremental projection optimization.
 - Profile remaining post-presentation Main/RenderThread frame time on entry-sensitive sorting (where large layout passes occur when reordering rows) and evaluate targeted row rebinds.
 - **STOP after this verified iteration.**
+
+## PI-20261014-05 — Iteration 10: post-navigation habit latency degradation investigation and observer detachment fix
+
+**Decision:** IMPLEMENTED AND VERIFIED FIX. Post-navigation habit latency degradation was directly caused by `StatisticsFragment` remaining registered as an active observer of `EffectiveReadRevision` and `ModelObservable` after the user navigated away from Statistics. Because `MainActivity` uses `FragmentTransaction.hide()` with `setMaxLifecycle(..., STARTED)`, view destruction (`onDestroyView`) is never invoked during tab navigation. Every subsequent habit toggle on the Habits screen triggered hidden background statistics report recomputations with date bounds (e.g. `[anchorDate, anchorDate]`) that diverged from the Habits list bounds (`[today - 365, today]`). This continuously cleared `EffectiveHabitReadController`'s cached snapshots (`canIncrementallyUpdate = false`), destroying warm incremental projection (forcing 34–68 habits recomputed on every tap with 0 cache hits) and posting Main-thread view hierarchy inflations during interaction. Observers are now strictly attached only when `isResumed && !isHidden && viewBinding != null` and detached on pause/hide/view destruction. Post-navigation warm edits now prepare strictly 1 habit with 32–33 cache hits, and retained heap usage drops from 50.4 MB to 14.5 MB.
+
+### 1. Controlled Native Reproduction Across Scenarios A–F
+
+Investigated on disposable offline PRODUCTION_NEXT v30 AVD (`emulator-5580`, `UHabit_UI_Review_Disposable_20261011`, API 35) using `PostNavigationLatencyInvestigationTest`:
+- **Scenario A (Baseline Habits):** Repeated Boolean edits without leaving Habits. Observers: rev=1, obs=0, cmd=2. Prepared habits: strictly 1, cache hits: 32–33.
+- **Scenario B (Habits -> Tasks -> Habits):** Return from unmodified Tasks. Observers: rev=1, obs=0, cmd=2. Prepared habits: strictly 1, cache hits: 33. `TasksFragment` cleanly removed its workspace observer in `onPause()`.
+- **Scenario C (Habits -> Statistics -> Habits):** Return from unmodified Statistics. Observers leaked: rev=2 (+1), obs=1 (+1). On edit 1: **67 habits prepared, 0 cache hits** (100% cache eviction). On edit 2: **34 habits prepared, 1 cache hit**.
+- **Scenario D (Habits -> Tasks modified -> Habits):** Tasks modified, then return. With leaked Statistics observers, edit 1 prepared **34 habits**, edit 2 prepared **34 habits**.
+- **Scenario E (Habits -> Statistics filtered -> Habits):** Filter/tab changed on Statistics, then return. Edit 1 prepared **34 habits, 0 cache hits**; edit 2 prepared **34 habits, 1 cache hit**. Heap used jumped from 18.3 MB to 47.3 MB.
+- **Scenario F (Repeated cycles 1, 3, 10):** Repeated cycles of Habits -> Tasks -> Statistics -> Habits. Every post-return edit suffered **34–68 habits recomputed** and **0–1 cache hits**. After 10 cycles, PSS reached 151 MB and heap used reached 50.4 MB.
+
+### 2. Attribution of Degradation Timeline
+
+1. **Listener Retention:** In `StatisticsActivity.kt`, `component.habitList.observable.addListener(this)` and `component.effectiveReadRevision.addListener(effectiveRevisionListener)` were registered in `onViewCreated` and only deregistered in `onDestroyView`. Because `MainActivity` hides tabs without destroying views, the listeners remained permanently active.
+2. **Cache Annihilation:** In `EffectiveHabitReadController.kt`, `cachedContext` records `from` and `to`. Habits list requests `[today - 365, today]`. When a habit was toggled on Habits, the mutation triggered `effectiveRevisionListener` in the hidden `StatisticsFragment`. `StatisticsFragment` immediately posted a background task requesting `[anchorDate, anchorDate]`. Because `prevContext.from != currentContext.from`, `canIncrementallyUpdate` evaluated to `false`, calling `cachedSnapshots.clear()`. The warm snapshot cache for all 33 habits was completely destroyed.
+3. **UI Thread Layout Pollution:** When the background statistics calculation completed, `renderReport` ran `performViewUpdate` on the Main UI thread, creating scrollviews, containers, and card views for all habits while the user was interacting with Habits.
+
+### 3. Validated Implementation
+
+In `StatisticsActivity.kt` (`StatisticsFragment`):
+- Added `updateObserverRegistration()` helper that dynamically registers listeners only when `isResumed && !isHidden && viewBinding != null`, and cleanly removes both listeners when `!shouldObserve`.
+- Invoked `updateObserverRegistration()` in `onResume()`, `onPause()`, `onHiddenChanged(Boolean)`, and `onDestroyView()`.
+- Guarded `requestReportUpdate()` and `renderReport()` with `if (viewBinding == null || !isAdded || !isResumed || isHidden) return`.
+- Incremented `activeReportGeneration++` on observer detachment and paused/hidden transitions so any running background task is immediately discarded and cannot post UI updates to the Main thread.
+- Kept `onResume()` and `onHiddenChanged(false)` report update triggers so Statistics refreshes cleanly as soon as the user navigates back to it.
+
+### 4. Paired Native AVD Verification (Before vs After)
+
+Measured on identical disposable offline v30 database on `emulator-5580` (`EMULATOR36X6X11X0`, API 35). Raw reports: `scratch/post-navigation-20261014/post-navigation-latency.json` (before) vs `scratch/post-navigation-20261014/post-navigation-latency-after.json` (after).
+
+| Scenario / Metric | Before Fix (Leaked Observers) | After Fix (Clean Detachment) | Impact |
+|---|---|---|---|
+| **Active Observers (rev / obs)** | 2 rev, 1 obs (permanent leak) | **1 rev, 0 obs** (in all scenarios) | Zero leaked observers |
+| **Scenario C (Habits -> Stats -> Habits):** | | | |
+| - Edit 1 Prepared Habits / Hits | 67 prepared, 0 hits (100% eviction) | **1 prepared, 33 hits** | 67x reduction in recomputation |
+| - Edit 2 Prepared Habits / Hits | 34 prepared, 1 hit | **1 prepared, 32 hits** | 34x reduction in recomputation |
+| **Scenario E (Stats Filtered -> Habits):** | | | |
+| - Edit 1 Prepared Habits / Hits | 34 prepared, 0 hits | **1 prepared, 33 hits** | Full incremental cache hit restored |
+| - Edit 2 Prepared Habits / Hits | 34 prepared, 1 hit | **1 prepared, 33 hits** | Full incremental cache hit restored |
+| - Retained Heap Used | 47.3 MB | **15.4 MB** | **67.4% heap reduction** |
+| **Scenario F (10 Navigation Cycles):** | | | |
+| - Edit 1 Prepared Habits / Hits | 34 prepared, 1 hit | **1 prepared, 0 hits (context switch)** | Only changed habit recomputed |
+| - Edit 2 Prepared Habits / Hits | 34 prepared, 0 hits | **1 prepared, 33 hits** | Full warm incremental projection |
+| - Retained Heap Used | 50.4 MB | **14.5 MB** | **71.2% heap reduction** |
+| - Total PSS | 151,306 KiB | **116,812 KiB** | **34.5 MB PSS reduction** |
+
+### 5. Next Steps
+
+- Keep validated observer detachment in `StatisticsActivity.kt`.
+- Profile remaining post-presentation Main/RenderThread frame time on entry-sensitive sorting (where large layout passes occur when reordering rows) and evaluate targeted row rebinds.
+- **STOP after this verified iteration.**
+
