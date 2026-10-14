@@ -182,6 +182,8 @@ Production sync: unchanged (disabled in CONTAINER_LOCAL mode)
 PR10 реализован и зафиксирован локально. Experimental phone: `Привычки | Задачи | Статистика`, Settings secondary; Tasks drawer; от 600dp persistent sidebar. List/Calendar используют один navigation context. Habits сохраняет классический UI. [Native QA report](../pr10_artifacts/REPORT.md), [gallery/video](../pr10_artifacts/index.html), [evidence](../pr10_artifacts/evidence.json). PR10.1 Compact принят как visual V1; phone calendar labels и tablet detail pane отложены и не блокируют следующую функциональную разработку. No push / GitHub PR publication. Pre-existing root A/B spike, pr91/pr92 files and local QA backups preserved; backups/preferences excluded from Git.
 
 ## 6. Active work
+
+Iteration 13 claim (Codex, 2026-10-14): DONE / candidate rejected and reverted on dev, C:/Users/Pavel/source/repos/uhabits-plus, starting HEAD 46c0f0497. Bounded emulator-only source audit, open-database WAL verification, one measured optimization with regression coverage and ABBA presentation comparison. Expected areas: effective reads/list cache or selected source bottleneck, scoped QA tests/tools, canonical performance record. No physical devices, real data, cloud, push; preserve unrelated dirty artifacts. Read-only source-audit subagent owns Tasks/list binding/lifecycle inspection only.
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |
 |---|---|---|---|---|---|---|
@@ -1460,3 +1462,12 @@ Evidence and verification limits: local `scratch/root-review/perfetto_analysis_r
   - **Legacy v29 unconditionally preserves rollback journal mode** (`disableWriteAheadLogging()`), guaranteeing 100% backward compatibility and zero regression risk for legacy users.
   - **STATUS: READY FOR CONTROLLED DEVICE INSTALL.**
 
+
+
+### Iteration 13 closure — 2026-10-14
+
+Starting HEAD46c0f0497 verified. One bounded previous-range reuse candidate tested on guarded offline emulator-5580 only:120 genuine UI edits,42 habits,90-day grouped and five-year entry-sensitive ABBA fixtures. Open v30 journal_mode=wal through actual production opener; no fixture mode override or journal/transaction rewrite. Canonical legacy v29 without cutover disables WAL, but noncanonical v29 staging/test filenames can authorize WAL; earlier unconditional v29 statement is too broad.
+
+Candidate eliminates provider preparations1358→366 per workload and improves long presented median1364.65→879.04ms, but short median236.76→279.78ms regresses in both pairs. Rejected and reverted production controller plus candidate-only regression test exactly to starting HEAD. No shipped production performance improvement. Retain guarded hydration/visibility/nav attribution harness, actual open-WAL savepoint/writer test, and canonical PI-20261014-08 evidence. All120 SQLite/effective parity checks pass; exact presentation joins60/60 short,56/60 long; incomplete navigation endpoints explicitly unknown. Restored baseline passes6 native WAL/InFlight checks; core38 and analyzer17 pass. Raw attempts/traces under scratch/iteration13 preserved; unrelated dirty work preserved; no push/real data/physical/cloud access.
+
+Performance remains unfinished. Recommended next emulator-only target: durable-to-qualified-row revision retagging/copying; separately Tasks Main navigation rebuild after a valid visible endpoint. Known pre-existing strictly-newer revision-history/controller lock-order risk remains unresolved and not reproduced here. STOP after this one evaluated candidate, no automatic physical-device testing.

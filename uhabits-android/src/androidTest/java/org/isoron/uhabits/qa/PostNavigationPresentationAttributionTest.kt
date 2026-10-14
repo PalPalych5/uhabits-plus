@@ -73,8 +73,10 @@ class PostNavigationPresentationAttributionTest {
         check(device.executeShellCommand("getprop ro.boot.qemu.avd_name").trim() == "UHabit_UI_Review_Disposable_20261011")
         check(device.executeShellCommand("getprop ro.serialno").trim() == "EMULATOR36X6X11X0")
         check(device.executeShellCommand("settings get global airplane_mode_on").trim() == "1")
-        val depth = 90
-        check(args.getString("historyDays", "90") == "90")
+        val depth = args.getString("historyDays", "90").toInt()
+        check(depth in listOf(90, 1825))
+        val sampleCount = args.getString("sampleCount", "6").toInt()
+        check(sampleCount in 2..8)
         val reverseOrder = args.getString("reverseOrder", "false").toBooleanStrict()
         val enabled = args.getString("tracingEnabled", "true").toBooleanStrict()
         val label = args.getString("buildLabel", "unspecified")
@@ -98,6 +100,15 @@ class PostNavigationPresentationAttributionTest {
             !component.session.capabilities.backgroundJobsEnabled && !component.session.capabilities.widgetsEnabled &&
             !component.session.capabilities.remindersEnabled)
         val controller = requireNotNull(component.effectiveHabitReads)
+        val journalMode = component.db.queryString("PRAGMA journal_mode")
+        assertEquals("wal", journalMode.lowercase())
+        val openerField = org.isoron.uhabits.utils.DatabaseUtils::class.java.getDeclaredField("opener").apply { isAccessible = true }
+        val openHelper = requireNotNull(openerField.get(org.isoron.uhabits.utils.DatabaseUtils) as? org.isoron.uhabits.HabitsDatabaseOpener)
+        check(openHelper.isWalRequested)
+        val walProvenance = JSONObject().put("openHelperWalRequested", openHelper.isWalRequested)
+            .put("productionWalEnabled", org.isoron.uhabits.utils.DatabaseUtils.enableWalForNext)
+            .put("defaultWalRequested", org.isoron.uhabits.HabitsDatabaseOpener.defaultWalEnabled(component.session.databaseFilename, 30))
+            .put("fixtureJournalOverride", false)
         val today = LocalDate(2026, 10, 11)
         setToday(today)
         fun drain() { repeat(5) { runBlocking { component.taskRunner.await() }; ins.waitForIdleSync() } }
@@ -105,12 +116,15 @@ class PostNavigationPresentationAttributionTest {
         val frames = Collections.synchronizedList(mutableListOf<JSONObject>())
         val costs = Collections.synchronizedList(mutableListOf<Long>())
         val operations = mutableListOf<JSONObject>()
+        val navigationOperations = mutableListOf<JSONObject>()
         val viewportDiagnostics = JSONArray()
+        val rangeSwitchProbe = JSONArray()
         val controlledFailures = Collections.synchronizedList(mutableListOf<JSONObject>())
         val traces = Collections.synchronizedList(mutableListOf<HabitEditTrace>())
         val targets = mutableListOf<CheckmarkButtonView>()
         val expected = Collections.synchronizedMap(mutableMapOf<Long, Int>())
         val drawn = Collections.synchronizedSet(mutableSetOf<Long>())
+        val navigationDrawn = Collections.synchronizedSet(mutableSetOf<Long>())
         val publications = Collections.synchronizedMap(mutableMapOf<Long, Triple<Long?, Long?, Long?>>())
         fun memorySample(): JSONObject {
             val info = Debug.MemoryInfo()
@@ -130,6 +144,8 @@ class PostNavigationPresentationAttributionTest {
         var activeOperation = 0L
         var navigationDrawOperation = 0L
         var navigationRevision = -1L
+        var navigationExpectedValue = Entry.UNKNOWN
+        var navigationOrdinal = 0L
         fun event(stage: String, fields: JSONObject = JSONObject()) {
             val start = System.nanoTime()
             if (!fields.has("operation")) fields.put("operation", activeOperation)
@@ -140,6 +156,11 @@ class PostNavigationPresentationAttributionTest {
             costs.add(System.nanoTime() - start)
         }
         try {
+            val fixtureListLoader = component.habitCardListCache.effectiveSnapshots
+            component.habitCardListCache.effectiveSnapshots = null
+            // Fixture SQL must finish and models must be hydrated before an
+            // implicit WAL reader can cache the pre-commit, empty history.
+            drain(); SystemClock.sleep(250); drain()
             val block = component.habitList.getByPosition(0).blockId
             val habits = (0 until 10).map { index ->
                 component.sqlModelFactory.buildHabit().apply {
@@ -160,6 +181,21 @@ class PostNavigationPresentationAttributionTest {
                 }
                 component.db.setTransactionSuccessful()
             } finally { component.db.endTransaction() }
+            // Direct fixture SQL bypasses the command's model rebuild. Hydrate the
+            // historical computed entries/scores/streaks before measuring app reads.
+            habits.forEach { habit ->
+                // A WAL reader can have populated the old model while the seed
+                // transaction was still open. Invalidate after the actual commit.
+                habit.originalEntries.invalidate()
+                habit.recompute()
+                assertEquals("SQLite seed rows for ${habit.id}", depth.toLong(),
+                    component.db.queryLong("SELECT count(*) FROM Repetitions WHERE habit=${habit.id}"))
+                assertEquals("Loaded original rows for ${habit.id}", depth, habit.originalEntries.getKnown().size)
+                assertEquals(Entry.NO, habit.computedEntries.get(today).value)
+                assertEquals(Entry.YES_MANUAL, habit.computedEntries.get(today.minus(1)).value)
+                assertTrue(habit.scores[today].value > 0.0)
+                assertTrue(habit.streaks.getBest(1).isNotEmpty())
+            }
             component.habitList.reorder(habits.first(), component.habitList.getByPosition(0))
             val logicalFixture = (0 until component.habitList.size()).joinToString("\n") { index ->
                 val habit = component.habitList.getByPosition(index)
@@ -180,9 +216,10 @@ class PostNavigationPresentationAttributionTest {
             component.preferences.isShortToggleEnabled = true
             component.preferences.areHabitGroupSeparatorsEnabled = true
             component.preferences.isDayTiersEnabled = true
-            component.preferences.defaultPrimaryOrder = HabitList.Order.BY_POSITION
+            component.preferences.defaultPrimaryOrder = if (sortConfiguration == "entrySensitive") HabitList.Order.BY_STATUS_ASC else HabitList.Order.BY_POSITION
             component.preferences.defaultSecondaryOrder = HabitList.Order.BY_POSITION
             drain()
+            component.habitCardListCache.effectiveSnapshots = fixtureListLoader
             if (enabled) {
                 HabitStartupTiming.observer = { stage, generation -> event(stage,
                     JSONObject().put("generation", generation ?: JSONObject.NULL)) }
@@ -226,15 +263,22 @@ class PostNavigationPresentationAttributionTest {
                     }
                     if (stage == "habit.checkmark.draw" && view is CheckmarkButtonView && card(view)?.habit?.id == habits.first().id &&
                         view === card(view)?.checkmarkPanel?.buttons?.firstOrNull() && card(view)?.dataOffset == 0) {
+                        val glyphRect = android.graphics.Rect()
+                        val glyphVisible = view.isShown && view.getGlobalVisibleRect(glyphRect) &&
+                            glyphRect.width() > 0 && glyphRect.height() > 0
                         val snapshot = component.habitCardListCache.getEffectiveSnapshot(habits.first().id!!)
                         val row = component.habitCardListCache.getPublishedOperationTraces(habits.first().id!!)
                         val latest = synchronized(traces) { traces.lastOrNull { it.durableRevision != null } }
                         val lineage = latest?.let { publications[it.ordinal] }
-                        if (navigationDrawOperation > 0 && snapshot?.revision == navigationRevision && drawn.add(navigationDrawOperation)) {
-                            event("navigation.habits.draw", JSONObject().put("operation", navigationDrawOperation))
+                        if (navigationDrawOperation > 0 && glyphVisible && snapshot != null &&
+                            snapshot.revision == navigationRevision && snapshot.revision == component.effectiveReadRevision.value &&
+                            snapshot.day(today).manualEntry.value == navigationExpectedValue && view.value == navigationExpectedValue &&
+                            navigationDrawn.add(navigationDrawOperation)) {
+                            event("navigation.habits.draw", JSONObject().put("operation", 0L).put("navigationOperation", navigationDrawOperation)
+                                .put("revision", snapshot.revision).put("manualValue", navigationExpectedValue))
                             Trace.beginSection("habit.nav.habitsDraw.$navigationDrawOperation"); Trace.endSection()
                         }
-                        if (snapshot != null && latest != null && latest in row &&
+                        if (glyphVisible && snapshot != null && latest != null && latest in row &&
                             lineage?.first == snapshot.revision &&
                             snapshot.revision >= latest.durableRevision!! &&
                             snapshot.day(today).manualEntry.value == expected[latest.ordinal] &&
@@ -245,6 +289,29 @@ class PostNavigationPresentationAttributionTest {
                     }
                 }
             }
+            // Operation-independent controlled range alternation, before any Activity exists.
+            // Provider/lock callbacks retain this phase and operation=0; none qualify edit latency.
+            val probeHabits = (0 until component.habitList.size()).map(component.habitList::getByPosition)
+            val liveListLoader = component.habitCardListCache.effectiveSnapshots
+            // This preparation probe owns explicit ranges. Drain the revision's
+            // implicit default-range refresh without allowing it to race this probe.
+            // The normal app loader is restored before any Activity/UI workload.
+            component.habitCardListCache.effectiveSnapshots = null
+            component.effectiveReadRevision.changed()
+            drain(); SystemClock.sleep(250); drain()
+            try { repeat(3) { cycle ->
+                listOf("listRange" to today.minus(365), "todayRange" to today, "listRangeReturn" to today.minus(365)).forEach { (range, from) ->
+                    phase = "rangeSwitch_${cycle}_$range"
+                    val revision = component.effectiveReadRevision.value
+                    val start = System.nanoTime()
+                    val snapshots = controller.snapshots(probeHabits, from, today)
+                    rangeSwitchProbe.put(JSONObject().put("cycle", cycle).put("range", range)
+                        .put("phase", phase).put("durationNanos", System.nanoTime() - start)
+                        .put("from", from.toString()).put("to", today.toString()).put("revision", revision)
+                        .put("habitCount", snapshots.size).put("allRevisionQualified", snapshots.values.all { it.revision == revision }))
+                    check(snapshots.size == probeHabits.size && snapshots.values.all { it.revision == revision })
+                }
+            } } finally { component.habitCardListCache.effectiveSnapshots = liveListLoader }
             phase = "coldLaunch"
             // Cold labels concern fresh controller projection and invalidated entry caches;
             // APK process, SQLite connection, JIT and OS page cache are already warm.
@@ -253,7 +320,6 @@ class PostNavigationPresentationAttributionTest {
             QaEmulatorUi.clearSystemUiError()
             val launchStart = System.nanoTime()
             ActivityScenario.launch<MainActivity>(Intent(ins.targetContext, MainActivity::class.java)).use { activity ->
-                activity.onActivity { it.navigate(MainDestination.HABITS) }
                 drain(); SystemClock.sleep(250); drain()
                 operations.add(JSONObject().put("scenario", "coldLaunch").put("durationToDrainNanos", System.nanoTime() - launchStart))
                 fun target(): CheckmarkButtonView {
@@ -326,7 +392,7 @@ class PostNavigationPresentationAttributionTest {
                     }
                     return requireNotNull(button) { "Target has no visible laid-out checkmark after bounded viewport preparation" }
                 }
-                fun input(button: CheckmarkButtonView) {
+                fun input(button: View) {
                     val systemCheck = System.nanoTime()
                     QaEmulatorUi.clearSystemUiError()
                     event("harness.systemCheck.end", JSONObject().put("durationNanos", System.nanoTime() - systemCheck))
@@ -368,7 +434,55 @@ class PostNavigationPresentationAttributionTest {
                         .put("activeTaskCount", component.taskRunner.activeTaskCount))
                 }
                 fun navigate(destination: MainDestination) {
-                    activity.onActivity { it.navigate(destination) }; drain(); SystemClock.sleep(250); drain()
+                    val navigationOp = ++navigationOrdinal
+                    val navigationResult = JSONObject().put("navigationOperation", navigationOp).put("destination", destination.name)
+                        .put("scenario", phase).put("target", habits.first().name).put("targetHabitId", habits.first().id)
+                    navigationOperations.add(navigationResult)
+                    val id = when (destination) {
+                        MainDestination.HABITS -> org.isoron.uhabits.R.id.btnNavHabits
+                        MainDestination.TASKS -> org.isoron.uhabits.R.id.btnNavTasks
+                        MainDestination.STATISTICS -> org.isoron.uhabits.R.id.btnNavReports
+                        else -> error("Unsupported measured destination $destination")
+                    }
+                    var navigationButton: View? = null
+                    val returningToHabits = destination == MainDestination.HABITS
+                    navigationExpectedValue = component.db.queryLong("SELECT value FROM Repetitions WHERE habit=${habits.first().id} AND timestamp=${today.unixTime}").toInt()
+                    navigationRevision = component.effectiveReadRevision.value
+                    activity.onActivity { a ->
+                        navigationButton = a.findViewById<View>(id).also { button ->
+                            check(button.isShown)
+                            if (returningToHabits) button.setOnTouchListener { v, motion ->
+                                // Match MainActivity.setupScaleOnPress while the measurement listener is installed.
+                                when (motion.action) {
+                                    MotionEvent.ACTION_DOWN -> v.animate().scaleX(0.98f).scaleY(0.98f).setDuration(80).start()
+                                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().scaleX(1f).scaleY(1f).setDuration(150).start()
+                                }
+                                if (motion.action == MotionEvent.ACTION_UP) {
+                                    val acceptedAt = System.nanoTime()
+                                    navigationDrawOperation = navigationOp
+                                    navigationResult.put("acceptedInputNanos", acceptedAt).put("revision", navigationRevision)
+                                        .put("expectedManualValue", navigationExpectedValue)
+                                    event("navigation.input.up", JSONObject().put("operation", 0L).put("navigationOperation", navigationOp)
+                                        .put("timestampNanos", acceptedAt))
+                                    Trace.beginSection("habit.nav.input.$navigationOp"); Trace.endSection()
+                                }
+                                false
+                            }
+                        }
+                    }
+                    val start = System.nanoTime()
+                    try { input(requireNotNull(navigationButton)) } finally {
+                        if (returningToHabits) activity.onActivity { a ->
+                            requireNotNull(navigationButton).setOnTouchListener(null)
+                            a.javaClass.getDeclaredMethod("setupScaleOnPress", View::class.java).apply { isAccessible = true }
+                                .invoke(a, requireNotNull(navigationButton))
+                        }
+                    }
+                    drain(); SystemClock.sleep(250); drain()
+                    navigationResult.put("durationToDrainNanos", System.nanoTime() - start)
+                        .put("drainDefinition", "Injection through queue/idle/settle barrier; not presentation")
+                        .put("drawDisposition", if (!enabled) "unobserved" else if (navigationOp in navigationDrawn) "drawn" else "unmatched")
+                    navigationDrawOperation = 0L
                     state("navigation_${destination}")
                 }
                 val scenarios = listOf("warmRepeated", "afterStatistics", "afterStatisticsDateChange", "afterTasks", "afterTenMixedCycles")
@@ -378,12 +492,19 @@ class PostNavigationPresentationAttributionTest {
                         "afterStatistics" -> { navigate(MainDestination.STATISTICS); navigate(MainDestination.HABITS) }
                         "afterStatisticsDateChange" -> {
                             navigate(MainDestination.STATISTICS)
+                            var previousButton: View? = null
+                            var previousDate: Any? = null
                             activity.onActivity { a ->
                                 val statistics = a.supportFragmentManager.fragments.filterIsInstance<org.isoron.uhabits.activities.statistics.StatisticsFragment>().first()
                                 val date = statistics.javaClass.getDeclaredField("currentAnchorDate").apply { isAccessible = true }
-                                val before = date.get(statistics)
-                                requireNotNull(statistics.requireView().findViewById<View>(org.isoron.uhabits.R.id.btnPrev)).performClick()
-                                check(date.get(statistics) != before) { "Statistics date did not change" }
+                                previousDate = date.get(statistics)
+                                previousButton = requireNotNull(statistics.requireView().findViewById<View>(org.isoron.uhabits.R.id.btnPrev))
+                            }
+                            input(requireNotNull(previousButton))
+                            activity.onActivity { a ->
+                                val statistics = a.supportFragmentManager.fragments.filterIsInstance<org.isoron.uhabits.activities.statistics.StatisticsFragment>().first()
+                                val date = statistics.javaClass.getDeclaredField("currentAnchorDate").apply { isAccessible = true }
+                                check(date.get(statistics) != previousDate) { "Statistics date did not change" }
                                 event("statistics.date.changed")
                             }
                             drain(); SystemClock.sleep(250); drain(); navigate(MainDestination.HABITS)
@@ -395,7 +516,7 @@ class PostNavigationPresentationAttributionTest {
                         }
                     }
                     state("${case}_before")
-                    for (sample in 0..1) {
+                    for (sample in 0 until sampleCount) {
                     val setupStart = System.nanoTime()
                     phase = "viewportSetup"; activeOperation = 0L
                     val button = target(); targets.add(button)
@@ -486,7 +607,8 @@ class PostNavigationPresentationAttributionTest {
             val out = File(ins.targetContext.getExternalFilesDir(null), "remaining-latency").apply { mkdirs() }
             File(out, "$label-$depth-$enabled.json").writeText(JSONObject().put("pid", Process.myPid())
                 .put("experimentId", "PI-20261014-12").put("buildLabel", label).put("historyDays", depth)
-                .put("sortConfiguration", "position").put("reverseOrder", reverseOrder)
+                .put("sortConfiguration", sortConfiguration).put("sampleCount", sampleCount).put("reverseOrder", reverseOrder)
+                .put("rangeSwitchProbe", rangeSwitchProbe).put("walProvenance", walProvenance)
                 .put("memoryBeginning", memoryBeginning).put("memoryEnd", memorySample())
                 .put("clockBeginning", clockBeginning).put("clockEnd", clocks())
                 .put("clockDefinition", "Within-domain monotonic differences only; paired anchors diagnose suspend and clock offsets")
@@ -495,7 +617,7 @@ class PostNavigationPresentationAttributionTest {
                 .put("tracingEnabled", enabled).put("referenceDate", today.toString()).put("schemaVersion", 30)
                 .put("fixtureControlledHabits", 10).put("fixtureControlledRepetitions", 10 * depth)
                 .put("totalHabits", component.habitList.size()).put("journalMode", component.db.queryString("PRAGMA journal_mode"))
-                .put("operations", JSONArray(operations)).put("events", JSONArray(events.toList()))
+                .put("operations", JSONArray(operations)).put("navigationOperations", JSONArray(navigationOperations)).put("events", JSONArray(events.toList()))
                 .put("viewportDiagnostics", viewportDiagnostics)
                 .put("controlledReaderFailureCount", controlledFailures.size)
                 .put("controlledReaderFailures", JSONArray(controlledFailures.toList()))
@@ -507,12 +629,13 @@ class PostNavigationPresentationAttributionTest {
             val out = File(ins.targetContext.getExternalFilesDir(null), "remaining-latency").apply { mkdirs() }
             File(out, "$label-$depth-$enabled-failure.json").writeText(JSONObject()
                 .put("pid", Process.myPid()).put("buildLabel", label).put("historyDays", depth).put("tracingEnabled", enabled)
-                .put("sortConfiguration", "position").put("reverseOrder", reverseOrder)
+                .put("sortConfiguration", sortConfiguration).put("sampleCount", sampleCount).put("reverseOrder", reverseOrder)
+                .put("rangeSwitchProbe", rangeSwitchProbe).put("walProvenance", walProvenance)
                 .put("memoryBeginning", memoryBeginning).put("memoryEnd", memorySample())
                 .put("clockBeginning", clockBeginning).put("clockEnd", clocks())
                 .put("clockDefinition", "Within-domain monotonic differences only; paired anchors diagnose suspend and clock offsets")
                 .put("fixtureLogicalSha256", fixtureFingerprint)
-                .put("failure", failure.toString()).put("phase", phase).put("operations", JSONArray(operations))
+                .put("failure", failure.toString()).put("phase", phase).put("operations", JSONArray(operations)).put("navigationOperations", JSONArray(navigationOperations))
                 .put("viewportDiagnostics", viewportDiagnostics)
                 .put("controlledReaderFailureCount", controlledFailures.size)
                 .put("controlledReaderFailures", JSONArray(controlledFailures.toList()))

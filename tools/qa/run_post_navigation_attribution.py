@@ -11,7 +11,12 @@ def main():
     parser.add_argument('--reverse', choices=['true', 'false'], required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--config', type=Path, required=True)
+    parser.add_argument('--history-days', choices=['90', '1825'], default='90')
+    parser.add_argument('--sort', choices=['grouped', 'entrySensitive'], default='grouped')
+    parser.add_argument('--samples', type=int, default=2)
     args = parser.parse_args()
+    if not 2 <= args.samples <= 8:
+        parser.error('Use 2..8 samples per scenario')
     if not args.label.replace('-', '').isalnum():
         parser.error('Use an alphanumeric arm label')
     args.output.mkdir(parents=True, exist_ok=True)
@@ -38,13 +43,14 @@ def main():
         stdout=stem.with_suffix('.capture.txt').open('w'), stderr=stem.with_suffix('.capture-error.txt').open('w'))
     result = adb('shell', 'am', 'instrument', '-w', '-r', '-e', 'disposableAvd',
         'UHabit_UI_Review_Disposable_20261011', '-e', 'buildLabel', args.label,
-        '-e', 'reverseOrder', args.reverse, '-e', 'class',
+        '-e', 'reverseOrder', args.reverse, '-e', 'historyDays', args.history_days,
+        '-e', 'sortConfiguration', args.sort, '-e', 'sampleCount', str(args.samples), '-e', 'class',
         'org.isoron.uhabits.qa.PostNavigationPresentationAttributionTest',
         'org.isoron.uhabits.plus.test/androidx.test.runner.AndroidJUnitRunner')
     stem.with_suffix('.txt').write_text(result, encoding='utf-8')
     print(result, flush=True)
     folder = '/sdcard/Android/data/org.isoron.uhabits.plus/files/remaining-latency/'
-    suffix = '-90-true.json' if 'OK (1 test)' in result else '-90-true-failure.json'
+    suffix = '-' + args.history_days + '-true' + ('.json' if 'OK (1 test)' in result else '-failure.json')
     print(adb('pull', folder + args.label + suffix, str(stem.with_suffix('.json'))), flush=True)
     # Stop only this capture on the guarded disposable device once input work ends.
     pid = adb('shell', 'pidof perfetto').strip() if capture.poll() is None else ''

@@ -16,6 +16,8 @@ def main():
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--processor', type=Path, required=True)
     parser.add_argument('--analysis-name', default='analysis')
+    parser.add_argument('--skip-context-trace', action='store_true',
+        help='Use companion exact-window CPU/layout reports instead of expensive whole-capture stdlib context')
     args = parser.parse_args()
     stem = args.source.with_suffix('')
     source = json.loads(args.source.read_text(encoding='utf-8-sig'))
@@ -38,8 +40,24 @@ def main():
         presentations.append(json.loads(output.read_text(encoding='utf-8')))
     output = remaining.summarize(source, presentations[0])
     output['acceptedPresentation'] = presentations[1]
-    output['traceAttribution'] = remaining.trace_attribution(Path(str(stem) + '.perfetto'), args.processor, source['pid'])
-    remaining.attach_trace_operations(output['operations'], output['traceAttribution'])
+    if 'navigationOperations' in source:
+        navigation = save('-navigation-events.json', {
+            'pid': source['pid'], 'operations': [
+                dict(n, ordinal=n['navigationOperation'], events=[])
+                for n in source['navigationOperations'] if n['destination'] == 'HABITS'
+            ]})
+        path = Path(str(stem) + '-navigation-presentation.json')
+        if not path.exists():
+            subprocess.run([sys.executable, str(ROOT / 'analyze-operation-trace.py'),
+                '--trace', str(stem) + '.perfetto', '--processor', str(args.processor),
+                '--events', str(navigation), '--input-prefix', 'habit.nav.input.',
+                '--draw-prefix', 'habit.nav.habitsDraw.', '--output', str(path)], check=True)
+        output['navigationPresentation'] = json.loads(path.read_text(encoding='utf-8'))
+    if args.skip_context_trace:
+        output['traceAttribution'] = {'records': {}, 'scope': 'Not collected by this invocation; see companion exact-window CPU/layout reports'}
+    else:
+        output['traceAttribution'] = remaining.trace_attribution(Path(str(stem) + '.perfetto'), args.processor, source['pid'])
+        remaining.attach_trace_operations(output['operations'], output['traceAttribution'])
     for op in output['operations']:
         if 'operation' not in op:
             continue

@@ -25,6 +25,110 @@ import java.util.concurrent.atomic.AtomicReference
  */
 @RunWith(AndroidJUnit4::class)
 class TransactionWriterContentionAndroidTest {
+    @Test fun openProductionNextWalPreservesReadersWritersAndSavepoints() {
+        val ins = InstrumentationRegistry.getInstrumentation()
+        requireDisposableEmulator()
+        val device = androidx.test.uiautomator.UiDevice.getInstance(ins)
+        check(android.os.Build.MODEL.contains("sdk") || android.os.Build.MODEL.contains("Emulator"))
+        check(device.executeShellCommand("getprop ro.serialno").trim() == "EMULATOR36X6X11X0")
+        check(device.executeShellCommand("settings get global airplane_mode_on").trim() == "1")
+        val app = ins.targetContext.applicationContext as org.isoron.uhabits.HabitsApplication
+        val fixture = org.isoron.uhabits.HabitsApplication.component
+        val marker = File(ins.targetContext.filesDir,
+            "${org.isoron.uhabits.utils.DemoDataGenerator.DISPOSABLE_MARKER}-${fixture.session.datasetId}")
+        check(marker.exists() && marker.readText() == fixture.session.databaseFilename)
+        check(fixture.db.queryLong("PRAGMA user_version") == 30L)
+        val session = fixture.session.copy(mode = org.isoron.uhabits.core.containers.session.DatasetMode.PRODUCTION_NEXT,
+            capabilities = org.isoron.uhabits.core.containers.session.DatasetCapabilities.PRODUCTION_NEXT.copy(
+                syncEnabled = false, remoteCallsAllowed = false, backgroundJobsEnabled = false,
+                widgetsEnabled = false, remindersEnabled = false))
+        ins.runOnMainSync { app.rebuildComponent(session) }
+        val component = org.isoron.uhabits.HabitsApplication.component
+        component.habitCardListCache.shutdown()
+        val db = component.db
+        val revision = component.effectiveReadRevision
+        val prefix = "qa_iteration13_wal_${System.currentTimeMillis()}_${UUID.randomUUID()}"
+        val held = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val secondStarted = CountDownLatch(1)
+        val secondFinished = CountDownLatch(1)
+        val mainFinished = CountDownLatch(1)
+        val error = AtomicReference<Throwable?>()
+        fun put(suffix: String, value: Long) = db.run("INSERT INTO AppSettings(key,long_value) VALUES ('$prefix$suffix',$value)")
+        val writer = Thread {
+            try {
+                db.beginTransaction()
+                try { put("_writer1", 11); held.countDown(); check(release.await(5, TimeUnit.SECONDS)); db.setTransactionSuccessful() }
+                finally { db.endTransaction() }
+            } catch (t: Throwable) { error.compareAndSet(null, t); held.countDown() }
+        }
+        val contender = Thread {
+            try {
+                secondStarted.countDown()
+                db.beginTransaction()
+                try { put("_writer2", 22); db.setTransactionSuccessful() }
+                finally { db.endTransaction() }
+            } catch (t: Throwable) { error.compareAndSet(null, t) }
+            finally { secondFinished.countDown() }
+        }
+        val rollbacks = java.util.concurrent.atomic.AtomicInteger()
+        val rollbackListener: () -> Unit = { rollbacks.incrementAndGet(); Unit }
+        var outerSavepointOpen = false
+        try {
+            assertEquals("wal", db.queryString("PRAGMA journal_mode").lowercase())
+            assertTrue(org.isoron.uhabits.HabitsDatabaseOpener.defaultWalEnabled(session.databaseFilename, 30))
+            put("_committed", 7)
+            val before = revision.value
+            var mainLive = false
+            try {
+                writer.start(); check(held.await(2, TimeUnit.SECONDS))
+                contender.start(); check(secondStarted.await(2, TimeUnit.SECONDS))
+                assertFalse("Second writer must wait for the outer writer", secondFinished.await(100, TimeUnit.MILLISECONDS))
+                assertEquals("No revision before outer commit", before, revision.value)
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    try {
+                        assertEquals(7L, db.queryLong("SELECT long_value FROM AppSettings WHERE key='${prefix}_committed'"))
+                    } catch (t: Throwable) { error.compareAndSet(null, t) }
+                    finally { mainFinished.countDown() }
+                }
+                mainLive = mainFinished.await(2, TimeUnit.SECONDS)
+            } finally {
+                release.countDown(); writer.join(5000)
+                if (contender.state != Thread.State.NEW) contender.join(5000)
+            }
+            assertFalse(writer.isAlive); assertFalse(contender.isAlive)
+            assertTrue("Main-thread WAL read liveness bound (not a benchmark)", mainLive)
+            if (error.get() != null) throw AssertionError("Open-database contention failure", error.get())
+            assertEquals(before + 2, revision.value)
+            assertEquals(11L, db.queryLong("SELECT long_value FROM AppSettings WHERE key='${prefix}_writer1'"))
+            assertEquals(22L, db.queryLong("SELECT long_value FROM AppSettings WHERE key='${prefix}_writer2'"))
+            revision.addRollbackListener(rollbackListener)
+            val savepointRevision = revision.value
+            db.run("SAVEPOINT qa_iteration13_outer")
+            outerSavepointOpen = true
+            put("_outer", 33)
+            db.run("SAVEPOINT qa_iteration13_inner"); put("_rolled_back", 44)
+            db.run("ROLLBACK TO qa_iteration13_inner"); db.run("RELEASE qa_iteration13_inner")
+            assertEquals(savepointRevision, revision.value)
+            assertEquals(0L, db.queryLong("SELECT count(*) FROM AppSettings WHERE key='${prefix}_rolled_back'"))
+            assertTrue("Child rollback must publish rollback notification", rollbacks.get() > 0)
+            db.run("RELEASE qa_iteration13_outer")
+            outerSavepointOpen = false
+            assertEquals(savepointRevision + 1, revision.value)
+            assertEquals(33L, db.queryLong("SELECT long_value FROM AppSettings WHERE key='${prefix}_outer'"))
+            assertEquals("wal", db.queryString("PRAGMA journal_mode").lowercase())
+        } finally {
+            release.countDown()
+            if (outerSavepointOpen) {
+                db.run("ROLLBACK TO qa_iteration13_outer")
+                db.run("RELEASE qa_iteration13_outer")
+            }
+            revision.removeRollbackListener(rollbackListener)
+            // Synthetic keys remain as evidence; never delete or replace the open database.
+            ins.runOnMainSync { app.rebuildComponent(fixture.session) }
+        }
+    }
+
     @Test fun twoWritersCompleteWithWal() = checkTwoWriters("wal")
     @Test fun twoWritersCompleteWithRollbackJournal() = checkTwoWriters("delete")
 
