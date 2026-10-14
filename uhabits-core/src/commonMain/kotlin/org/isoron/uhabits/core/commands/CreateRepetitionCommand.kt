@@ -54,7 +54,16 @@ data class CreateRepetitionCommand(
         }
         timed("repetition.sqliteWrite") {
             val entry = Entry(date, value, notes)
-            if (entries is SQLiteEntryList) entries.addTraced(entry, trace) else entries.add(entry)
+            val habitUuid = habit.uuid
+            val scope = habitUuid?.let { setOf(org.isoron.uhabits.core.containers.HabitRef(it)) }
+            val write = {
+                if (entries is SQLiteEntryList) entries.addTraced(entry, trace) else entries.add(entry)
+            }
+            if (scope != null) {
+                org.isoron.uhabits.core.models.projection.EffectiveReadRevision.withMutationScope(scope, write)
+            } else {
+                write()
+            }
         }
         timed("repetition.modelRecompute") { habit.recompute() }
         timed("repetition.modelRefresh") {

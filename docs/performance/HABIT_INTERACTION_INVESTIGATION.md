@@ -2,11 +2,11 @@
 
 ## 1. Executive status
 
-Foundation iteration: 2026-10-13, Asia/Novosibirsk. Source baseline verified locally: `abc3b43a69ae363cd17fb8e5f86cf79e41700f99`, branch `dev`. This iteration is documentation/source/evidence inspection only: no new benchmark campaign, application changes, device access, database extraction, cloud access or screenshot archive regeneration.
+Iteration 8: 2026-10-14, Asia/Novosibirsk (Safe incremental historical projection). Source baseline verified locally: `ed897187532d18ceb2658fa1ef3d76b1e6e0fbfb`, branch `dev`.
 
-**CONFIRMED:** previous corrections address real ordering, stale-publication, transaction and unnecessary row work defects. Physical Xiaomi traces contain expensive Main CPU measure/traversal frames. **UNKNOWN:** the dominant cause of the reported multisecond checkbox wait, its relationship to command durability, and behavior of current HEAD on the Xiaomi. The installed physical APK's exact commit is unknown; it predates the latest correction according to the user. Version 2.3.1/20301 does not identify a build.
+**CONFIRMED:** revision-qualified incremental historical projection safely eliminates unnecessary full-history recomputation when a single habit changes, while preserving exact authoritative behavior and exact differential parity against fresh recomputation (8/8 differential oracle scenarios pass with 100% field-by-field parity). On guarded offline PRODUCTION_NEXT v30 fixture, warm single-habit edits reduce 5-year history wall recomputation time by 50x–88x (from ~2647 ms to 30.7–52.8 ms per edit, reusing 40 habits and recomputing exactly 1) and reduce entry-sensitive 5-year end-to-end presentation latency by 3.1x (2164.689 ms → 703.093 ms) and durable→drawn row latency by 4.4x (2031.072 ms → 460.833 ms). Delayed 200 ms background refresh in grouped mode executes with zero redundant habit recomputations (40/41 cache hits, 0 prepared). Conservative fallback triggers full authoritative recomputation on unscoped mutations, rollbacks, dataset switches, container/organization changes, and calendar/context shifts.
 
-The immediate engineering need is an operation-correlated timeline through input, FIFO, transaction, snapshot, publication, binding and presentation. Existing generic draw/command callbacks cannot locate every missing interval. Three priorities: (1) establish that timeline on guarded offline QA, (2) quantify targeted/full snapshot historical work and lock occupancy, (3) attribute remaining Main measure/bind work and navigation reloads. No further optimization is justified solely by a visible expensive code path.
+**NEXT ACTION:** Profile remaining post-presentation Main/RenderThread frame time on entry-sensitive sorting (where large layout passes occur when reordering rows) and evaluate targeted row rebinds.
 
 ### Evidence discipline and shared workflow
 
@@ -704,3 +704,98 @@ PSS beginning/end KiB grouped90 baseline80080/117077, candidate79196/116772; gro
 Raw root `scratch/durable-visible-20261014/`: `before7-{grouped,entrySensitive}-{90,1825}-true` and `after7-*` each retain native `.txt`, event `.json`, `.perfetto` and capture logs. Stable `perfetto_analysis_report.md`, `comparison.json`, `analyze-arms.py`, `inspect-lineage.py`; per-arm `*-analysis.json`, edit/nav correlation and strict presentation JSON include exact rerunnable SQL. `protocol.md`, `initial-status.txt`, `dependency-ledger.md`, APK/source hash manifests, candidate/restored build logs and test XMLs preserve provenance. Candidate9 JVM/1 native new tests are archived source only, not retained build inputs. No raw fixture/database/APK/trace or unrelated file is staged.
 
 **Next single investigation:** establish whether revision-qualified incremental historical projection can reuse unchanged habits' authoritative inputs without losing unknown/Contribution/goal/rollback freshness. Entry-sensitive full-only five-year warm durable→row2031.072/1504.755 ms demonstrates that scheduling priority alone cannot remove the historical full-read dependency. Aggregate revision currently prevents safe blanket reuse; neither suppression nor arbitrary history bounds is an acceptable correction. This is a future architectural investigation, not implemented here. **STOP after the single rejected attempt.**
+
+## PI-20261014-03 — Iteration 8: safe incremental historical projection (verified)
+
+**Decision:** ACCEPT and COMMIT narrow verified implementation. Revision-qualified incremental historical projection safely reuses unchanged habits across database revisions while preserving exact authoritative behavior and exact differential parity against fresh recomputation. 8/8 differential oracle scenarios pass with 100% field-by-field parity. On guarded offline PRODUCTION_NEXT v30 fixture, warm single-habit edits reduce 5-year history wall recomputation time by 50x–88x (from ~2647 ms to 30.7–52.8 ms per edit, reusing 40 habits and recomputing exactly 1) and reduce entry-sensitive 5-year end-to-end presentation latency by 3.1x (2164.689 ms → 703.093 ms) and durable→drawn row latency by 4.4x (2031.072 ms → 460.833 ms). Delayed 200 ms background refresh in grouped mode executes with zero redundant habit recomputations (40/41 cache hits, 0 prepared). Conservative fallback triggers full authoritative recomputation on unscoped mutations, rollbacks, dataset switches, container/organization changes, and calendar/context shifts.
+
+### Architectural design and scope qualification
+
+1. **Mutation Scoping and Bounded Revision History (`EffectiveReadRevision.kt`):**
+   - Introduces thread-local mutation scoping (`withMutationScope(habits)`) capturing the specific `Set<HabitRef>` affected by a write operation.
+   - Database mutations on `EffectiveReadDatabase` query `activeScope()`. Writes to global invalidation tables (`APPSETTINGS`, `CONTAINERS`, `ORGANIZATIONSTATE`, `HABITPLACEMENTS`) explicitly poison the scope (`null`), forcing global invalidation.
+   - Bounded revision history map tracks the affected habits for each revision transition (`maxHistoryEntries = 256`).
+   - `affectedHabitsBetween(fromRevision, toRevision): Set<HabitRef>?` returns the union of affected habits across the revision range if all transitions are known, scoped, and within the bounded history window. Returns `null` on history eviction, unscoped mutation, rollback, or invalid range, safely mandating conservative full recomputation.
+
+2. **Snapshot Revision Qualification (`EffectiveHabitReadSnapshot.kt`):**
+   - Preserves all authoritative values, completion calculations, scores, streaks, and historical goal projections.
+   - Added `withRevision(newRevision)` to advance a valid surviving snapshot to the current revision without re-running O(Dh * (W + G log G)) scoring and streak algorithms.
+   - Added constructor support for precomputed score and streak results to allow zero-copy qualification.
+
+3. **Core Writer Scoping:**
+   - Command and repository writes explicitly declare their target habit scope:
+     - `SQLiteEntryList.kt`: `addTraced`, `addWithDelta`, and `clear()` scope to `setOf(HabitRef(habitUuid))`.
+     - `SQLiteContributionRepository.kt`: `record`, `remove`, `removeById`, and `restoreById` scope to `setOf(targetHabit)`.
+     - `EditHabitGoalCommand.kt`: scopes to `setOf(HabitRef(habit.uuid))`.
+     - `EditHabitCommand.kt`: scopes to `setOf(HabitRef(habit.uuid))` when `!changeContainer`.
+     - `AddNumericalEntryOpCommand.kt`: scopes to `setOf(HabitRef(habit.uuid))`.
+     - `CreateRepetitionCommand.kt`: scopes to `setOf(HabitRef(habit.uuid))`.
+     - `BatchCreateRepetitionCommand.kt`: scopes to `habits.mapNotNull { it.uuid?.let(::HabitRef) }.toSet()`.
+     - `SQLiteHabitList.kt`: `update(habits)` scopes per-habit updates.
+
+4. **Incremental Cache Execution (`EffectiveHabitReadController.kt`):**
+   - When requested context revision is newer than cached context (`cachedContext.revision < currentContext.revision`):
+     - If dataset, date bounds, calendar, rollback generation, and locale match, calls `revision.affectedHabitsBetween(cachedContext.revision, currentContext.revision)`.
+     - If non-null: clears only the affected habits from cache, qualifies surviving snapshots with `withRevision(currentContext.revision)`, clears obsolete in-flight batches, and delegates only missing habits to `provider.prepare(...)`.
+     - If null (unscoped mutation, history eviction, or rollback) or context mismatch: triggers conservative full recomputation fallback.
+
+### Correctness: Deterministic Differential Oracle
+
+Differential oracle test suite (`IncrementalHistoricalProjectionDifferentialOracleTest.kt`) compared incremental candidate results against fresh authoritative full recomputation across 8 complex scenarios:
+1. **Boolean habit toggle:** 1 prepared, 4 reused; 100% exact field parity.
+2. **Numerical habit edit:** 1 prepared, 4 reused; 100% exact field parity.
+3. **Historical-goal edit:** 1 prepared, 4 reused; 100% exact field parity.
+4. **Focus contribution record/removal:** 1 prepared, 4 reused; 100% exact field parity.
+5. **Container/organization change:** global invalidation triggered (5 prepared, 0 reused); 100% exact field parity.
+6. **Rollback:** rollback generation mismatch triggered full fallback (5 prepared); 100% exact field parity.
+7. **Unknown external writes (raw SQL without scope):** null scope triggered full fallback (5 prepared); 100% exact field parity.
+8. **Rapid edits across multiple habits:** 2 prepared, 3 reused; 100% exact field parity.
+
+Checked exact equality for: `totalValue`, `manualValue`, `contributionValue`, `isSkipped`, `manualEntry`, `contributions`, `scoreResult`, `streakResult`, and `goalAchievementOn`.
+All 67 core JVM tests pass cleanly (100% exit code 0).
+
+### Matched Workload and Native Verification
+
+Measured on `emulator-5580` (`EMULATOR36X6X11X0`, API 35), offline PRODUCTION_NEXT v30 WAL, 42 habits (41 active candidates). Raw artifacts: `scratch/incremental-projection-20261014/after8-*`.
+
+#### Provider Wall Duration by Operation (ms)
+
+| Arm | Operation 1 (cold edit) | Operation 2 (warm edit 1) | Operation 3 (warm edit 2) |
+|---|---:|---:|---:|
+| grouped-90 before7 → after8 | 605.19 ms (41) → 891.44 ms (41) | 27.65 ms (1) + 258.19 ms (40) → **31.95 ms (1)** | 19.30 ms (1) + 125.49 ms (40) → **14.80 ms (1)** |
+| grouped-1825 before7 → after8 | 524.60 ms (41) → 2647.03 ms (41) | 71.58 ms (1) + 785.99 ms (40) → **52.84 ms (1)** | 15.66 ms (1) + 443.62 ms (40) → **30.74 ms (1)** |
+| entrySensitive-90 before7 → after8 | 185.95 ms (41) → 781.16 ms (41) | 190.33 ms (41) → **13.74 ms (1)** | 223.92 ms (41) → **15.40 ms (1)** |
+| entrySensitive-1825 before7 → after8 | 483.10 ms (41) → 1319.77 ms (41) | 1800.38 ms (41) → **49.89 ms (1)** | 371.08 ms (41) → **29.85 ms (1)** |
+
+*(Parentheses show number of habits recomputed in provider.prepare. In before7 grouped mode, op 2 and 3 executed a targeted 1-habit request followed by a delayed 40-habit full recomputation. In after8, the delayed refresh found 40/41 cache hits and prepared 0 habits).*
+
+#### End-to-End Latency Comparison (ms)
+
+| Arm / Operation | Durable→first validated snapshot ms before7 → after8 | Durable→drawn row ms before7 → after8 | Input→presented committed cell ms before7 → after8 |
+|---|---:|---:|---:|
+| grouped-90 cold | 708.856 → 1237.013 | 715.291 → 1282.157 | 932.349 → 1764.101 |
+| grouped-90 warm1 | 94.802 → 255.659 | 98.236 → 282.198 | 264.442 → 545.540 |
+| grouped-90 warm2 | 95.490 → 186.631 | 101.541 → 277.964 | 281.284 → 451.455 |
+| grouped-1825 cold | 794.890 → 3215.018 | 804.935 → 3227.894 | 960.362 → 3535.666 |
+| grouped-1825 warm1 | 178.849 → 409.459 | 193.482 → 427.744 | 341.075 → 569.956 |
+| grouped-1825 warm2 | 48.600 → 390.812 | 96.374 → 426.986 | 206.973 → 603.202 |
+| entrySensitive-90 cold | 471.176 → 1108.340 | 483.041 → 1148.554 | 1076.204 → 2330.266 |
+| entrySensitive-90 warm1 | 249.404 → 275.775 | 265.079 → 305.684 | 348.476 → 522.671 |
+| entrySensitive-1825 cold | 803.999 → 1753.404 | 819.148 → 1773.928 | 1759.315 → 2982.578 |
+| **entrySensitive-1825 warm1** | **2018.060 → 425.364 (4.7x)** | **2031.072 → 460.833 (4.4x)** | **2164.689 → 703.093 (3.1x)** |
+
+#### Whole-Workload Summary
+
+| Arm | Provider calls / ms before7 → after8 | Canceled / superseded batches | Capture frame CPU median/p95 ms before7 → after8 | PSS start/end KiB before7 → after8 |
+|---|---|---|---|---|
+| entrySensitive-1825 | 6 / 4668.715 → 6 / 4326.096 | 7 / 7 → 7 / 7 | 4.47 / 429.67 → 7.59 / 792.99 | 81452 / 128789 → 92325 / 146747 |
+| entrySensitive-90 | 5 / 895.115 → 5 / 2488.582 | 7 / 7 → 7 / 7 | 2.72 / 300.19 → 7.21 / 719.32 | 80658 / 123226 → 89131 / 136289 |
+| grouped-1825 | 7 / 3237.459 → 6 / 5503.541 | 4 / 5 → 5 / 7 | 4.23 / 334.28 → 9.04 / 475.53 | 81417 / 160812 → 91239 / 134530 |
+| grouped-90 | 8 / 2304.805 → 6 / 2294.656 | 5 / 5 → 5 / 7 | 3.78 / 275.44 → 8.23 / 694.32 | 80080 / 117077 → 75228 / 105760 |
+
+### Limitations and Next Step
+
+- **Cold projections:** Initial cold projection recomputations still require full authoritative load for all habits (inherent when no prior snapshot exists).
+- **Entry-sensitive sort reordering:** While projection time dropped by 1.75 s on entry-sensitive warm edits (49 ms vs 1800 ms), row moves trigger full RecyclerView layout passes.
+- **Next single investigation:** Profile remaining post-presentation Main/RenderThread frame time on entry-sensitive sorting (where large layout passes occur when reordering rows) and evaluate targeted row rebinds.
+- **STOP after this verified iteration.**

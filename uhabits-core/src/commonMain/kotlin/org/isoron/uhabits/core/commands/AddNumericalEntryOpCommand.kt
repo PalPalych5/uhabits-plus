@@ -21,7 +21,15 @@ data class AddNumericalEntryOpCommand(
         val current = habit.originalEntries.get(date)
         val oldValue = if (current.value == Entry.UNKNOWN || current.value == Entry.SKIP) 0 else current.value
         val newValue = oldValue + deltaValue
-        entries.addWithDelta(date, deltaValue, newValue, notes)
+        val habitUuid = habit.uuid
+        val scope = habitUuid?.let { setOf(org.isoron.uhabits.core.containers.HabitRef(it)) }
+        if (scope != null) {
+            org.isoron.uhabits.core.models.projection.EffectiveReadRevision.withMutationScope(scope) {
+                entries.addWithDelta(date, deltaValue, newValue, notes)
+            }
+        } else {
+            entries.addWithDelta(date, deltaValue, newValue, notes)
+        }
         habit.recompute()
         habit.observable.notifyListeners()
         habit.id?.let {

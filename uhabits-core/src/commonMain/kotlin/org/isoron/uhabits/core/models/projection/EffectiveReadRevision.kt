@@ -7,6 +7,7 @@ import kotlin.concurrent.Volatile
 import org.isoron.platform.ThreadLocalState
 import org.isoron.platform.io.PreparedStatement
 import org.isoron.platform.io.queryLong
+import org.isoron.uhabits.core.containers.HabitRef
 
 /** Dataset-owned revision. Disposal makes old callbacks inert. Consumers schedule their own refresh. */
 class EffectiveReadRevision(val datasetId: String) {
@@ -18,18 +19,76 @@ class EffectiveReadRevision(val datasetId: String) {
     private val listeners = linkedSetOf<() -> Unit>()
     private val rollbackListeners = linkedSetOf<() -> Unit>()
     private var disposed = false
+
+    private val revisionHistory = mutableMapOf<Long, Set<HabitRef>?>()
+    private val maxHistoryEntries = 256
+
     @Synchronized fun addListener(listener: () -> Unit) { if (!disposed) listeners.add(listener) }
     @Synchronized fun removeListener(listener: () -> Unit) { listeners.remove(listener) }
     @Synchronized fun addRollbackListener(listener: () -> Unit) { if (!disposed) rollbackListeners.add(listener) }
     @Synchronized fun removeRollbackListener(listener: () -> Unit) { rollbackListeners.remove(listener) }
+
     /** Restore speculative model caches after rollback without inventing a durable revision. */
-    @Synchronized fun rolledBack() { if (!disposed) rollbackListeners.toList().forEach { runCatching { it() } } }
-    @Synchronized fun changed() {
+    @Synchronized fun rolledBack() {
+        if (!disposed) {
+            revisionHistory.clear()
+            rollbackListeners.toList().forEach { runCatching { it() } }
+        }
+    }
+
+    @Synchronized fun changed(affectedHabits: Set<HabitRef>? = null) {
         if (disposed) return
         currentValue++
+        revisionHistory[currentValue] = affectedHabits?.toSet()
+        if (revisionHistory.size > maxHistoryEntries) {
+            val minKey = revisionHistory.keys.minOrNull()
+            if (minKey != null) revisionHistory.remove(minKey)
+        }
         listeners.toList().forEach { runCatching { it() } }
     }
-    @Synchronized fun dispose() { disposed = true; listeners.clear(); rollbackListeners.clear() }
+
+    /**
+     * Returns the complete set of habits affected between [fromRevision] and [toRevision].
+     * Returns an empty set if [fromRevision] == [toRevision].
+     * Returns null (unknown scope / conservative fallback) if:
+     * - Any revision in (fromRevision..toRevision] was an unscoped/global change (null affectedHabits)
+     * - Any revision in (fromRevision..toRevision] has been evicted or is missing from history
+     * - fromRevision > toRevision or fromRevision < 0
+     */
+    @Synchronized fun affectedHabitsBetween(fromRevision: Long, toRevision: Long): Set<HabitRef>? {
+        if (fromRevision == toRevision) return emptySet()
+        if (fromRevision > toRevision || fromRevision < 0L) return null
+        val result = mutableSetOf<HabitRef>()
+        for (r in (fromRevision + 1)..toRevision) {
+            if (!revisionHistory.containsKey(r)) return null
+            val affected = revisionHistory[r] ?: return null
+            result.addAll(affected)
+        }
+        return result
+    }
+
+    @Synchronized fun dispose() {
+        disposed = true
+        revisionHistory.clear()
+        listeners.clear()
+        rollbackListeners.clear()
+    }
+
+    companion object {
+        private val mutationScopeStack = ThreadLocalState { mutableListOf<Set<HabitRef>>() }
+
+        fun <T> withMutationScope(habits: Set<HabitRef>, block: () -> T): T {
+            val stack = mutationScopeStack.get()
+            stack.add(habits)
+            try {
+                return block()
+            } finally {
+                if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex)
+            }
+        }
+
+        fun activeScope(): Set<HabitRef>? = mutationScopeStack.get().lastOrNull()
+    }
 }
 
 /**
@@ -42,11 +101,19 @@ class EffectiveReadDatabase(
     private val revision: EffectiveReadRevision,
     observedTables: Set<String> = setOf("CONTRIBUTIONS", "REPETITIONS", "HABITS", "HABITGOALS", "HABITEXTENSIONS", "APPSETTINGS"),
 ) : Database {
-    private data class Frame(val name: String?, var changed: Boolean = false, var successful: Boolean = false, var failed: Boolean = false)
+    private data class Frame(
+        val name: String?,
+        var changed: Boolean = false,
+        var successful: Boolean = false,
+        var failed: Boolean = false,
+        var poisonedScope: Boolean = false,
+        var affectedHabits: MutableSet<HabitRef>? = null
+    )
     private val transactionFrames = ThreadLocalState { mutableListOf<Frame>() }
     private val frames get() = transactionFrames.get()
     private val mutation = Regex("^(?:INSERT(?:\\s+OR\\s+\\w+)?\\s+INTO|REPLACE\\s+INTO|UPDATE(?:\\s+OR\\s+\\w+)?|DELETE\\s+FROM)\\s+[\"`\\[]?(\\w+)", RegexOption.IGNORE_CASE)
     private val tables = observedTables.map { it.uppercase() }.toSet()
+    private val globalInvalidationTables = setOf("APPSETTINGS", "CONTAINERS", "ORGANIZATIONSTATE", "HABITPLACEMENTS")
 
     override fun beginTransaction() {
         // SQLite may wait for another thread's writer. Never hold an observer
@@ -67,14 +134,23 @@ class EffectiveReadDatabase(
             delegate.endTransaction()
             if (frames.isEmpty()) {
                 if (wasSuccessful && frame?.changed == true) {
-                    revision.changed()
+                    val scope = if (frame.poisonedScope) null else frame.affectedHabits
+                    revision.changed(scope)
                 } else if (!wasSuccessful && frame?.changed == true) {
                     revision.rolledBack()
                 }
             } else {
-                // An unsuccessful nested platform transaction poisons the outer
-                // transaction; Android rolls all writes back at the outer end.
-                if (frame?.changed == true) frames.last().changed = true
+                if (frame?.changed == true) {
+                    val parent = frames.last()
+                    parent.changed = true
+                    if (frame.poisonedScope) {
+                        parent.poisonedScope = true
+                        parent.affectedHabits = null
+                    } else if (!parent.poisonedScope && frame.affectedHabits != null) {
+                        if (parent.affectedHabits == null) parent.affectedHabits = mutableSetOf()
+                        parent.affectedHabits!!.addAll(frame.affectedHabits!!)
+                    }
+                }
                 if (!wasSuccessful) frames.last().failed = true
             }
         } catch (t: Throwable) {
@@ -122,6 +198,8 @@ class EffectiveReadDatabase(
                     val platformFailed = frames.drop(index).any { it.failed }
                     while (frames.size > index + 1) frames.removeAt(frames.lastIndex)
                     frames[index].changed = false
+                    frames[index].affectedHabits = null
+                    frames[index].poisonedScope = false
                     // SQL rollback-to cannot undo SQLiteSession's rollback-only
                     // state after an unsuccessful nested platform transaction.
                     if (platformFailed) frames[index].failed = true
@@ -138,33 +216,82 @@ class EffectiveReadDatabase(
                 check(index >= 0) { "Unobserved savepoint release" }
                 val changed = frames.drop(index).any { it.changed }
                 val failed = frames.drop(index).any { it.failed }
+                val poisoned = frames.drop(index).any { it.poisonedScope }
+                val affected = if (poisoned) null else {
+                    val set = mutableSetOf<HabitRef>()
+                    var hasScope = false
+                    for (i in index until frames.size) {
+                        val f = frames[i]
+                        if (f.affectedHabits != null) {
+                            set.addAll(f.affectedHabits!!)
+                            hasScope = true
+                        }
+                    }
+                    if (hasScope) set else null
+                }
                 while (frames.size > index) frames.removeAt(frames.lastIndex)
                 if (frames.isEmpty()) {
                     if (changed) {
-                        if (failed) revision.rolledBack() else revision.changed()
+                        if (failed) revision.rolledBack() else revision.changed(affected)
                     }
                 } else {
-                    if (changed) frames.last().changed = true
+                    if (changed) {
+                        val parent = frames.last()
+                        parent.changed = true
+                        if (poisoned) {
+                            parent.poisonedScope = true
+                            parent.affectedHabits = null
+                        } else if (!parent.poisonedScope && affected != null) {
+                            if (parent.affectedHabits == null) parent.affectedHabits = mutableSetOf()
+                            parent.affectedHabits!!.addAll(affected)
+                        }
+                    }
                     if (failed) frames.last().failed = true
                 }
             }
             "COMMIT", "END" -> {
                 val changed = frames.any { it.changed }
                 val failed = frames.any { it.failed }
+                val poisoned = frames.any { it.poisonedScope }
+                val affected = if (poisoned) null else {
+                    val set = mutableSetOf<HabitRef>()
+                    var hasScope = false
+                    for (f in frames) {
+                        if (f.affectedHabits != null) {
+                            set.addAll(f.affectedHabits!!)
+                            hasScope = true
+                        }
+                    }
+                    if (hasScope) set else null
+                }
                 frames.clear()
                 if (changed) {
-                    if (failed) revision.rolledBack() else revision.changed()
+                    if (failed) revision.rolledBack() else revision.changed(affected)
                 }
             }
             else -> {
-                val table = mutation.find(normalized)?.groupValues?.get(1)
-                if (table in tables && delegate.queryLong("SELECT changes()") > 0L) markChanged()
+                val table = mutation.find(normalized)?.groupValues?.get(1)?.uppercase()
+                if (table in tables && delegate.queryLong("SELECT changes()") > 0L) markChanged(table)
             }
         }
     }
 
-    private fun markChanged() {
-        if (frames.isEmpty()) revision.changed() else frames.last().changed = true
+    private fun markChanged(table: String?) {
+        val isGlobal = table in globalInvalidationTables
+        val active = if (isGlobal) null else EffectiveReadRevision.activeScope()
+        if (frames.isEmpty()) {
+            revision.changed(active)
+        } else {
+            val frame = frames.last()
+            frame.changed = true
+            if (active == null) {
+                frame.poisonedScope = true
+                frame.affectedHabits = null
+            } else if (!frame.poisonedScope) {
+                if (frame.affectedHabits == null) frame.affectedHabits = mutableSetOf()
+                frame.affectedHabits!!.addAll(active)
+            }
+        }
     }
     override fun close() { transactionFrames.clear(); revision.dispose(); delegate.close() }
 }

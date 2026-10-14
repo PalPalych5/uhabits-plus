@@ -43,7 +43,14 @@ data class EditHabitGoalCommand(
 
         habit.copyFrom(modified)
         habit.goalHistory = newHistory.sortedBy { it.effectiveDate }.toMutableList()
-        habitList.update(habit)
+        val habitUuid = habit.uuid
+        if (habitUuid != null) {
+            org.isoron.uhabits.core.models.projection.EffectiveReadRevision.withMutationScope(setOf(org.isoron.uhabits.core.containers.HabitRef(habitUuid))) {
+                habitList.update(habit)
+            }
+        } else {
+            habitList.update(habit)
+        }
         habit.recompute()
         habit.observable.notifyListeners()
         habitList.resort()

@@ -205,8 +205,35 @@ class EffectiveHabitReadController(
                         from, to, revision.datasetId, capturedRevision, captured, capturedRollback, capturedLocaleWeekday
                     )
                     if (cachedContext != currentContext) {
+                        val prevContext = cachedContext
+                        val canIncrementallyUpdate = prevContext != null &&
+                            prevContext.from == currentContext.from &&
+                            prevContext.to == currentContext.to &&
+                            prevContext.datasetId == currentContext.datasetId &&
+                            prevContext.calendar == currentContext.calendar &&
+                            prevContext.rollbackGeneration == currentContext.rollbackGeneration &&
+                            prevContext.compatibilityFirstWeekday == currentContext.compatibilityFirstWeekday &&
+                            prevContext.revision < currentContext.revision
+
+                        val affectedHabits = if (canIncrementallyUpdate) {
+                            revision.affectedHabitsBetween(prevContext!!.revision, currentContext.revision)
+                        } else null
+
+                        if (affectedHabits != null) {
+                            for (ref in affectedHabits) {
+                                cachedSnapshots.remove(ref)
+                            }
+                            val survivingKeys = cachedSnapshots.keys.toList()
+                            for (ref in survivingKeys) {
+                                val s = cachedSnapshots[ref]
+                                if (s != null && s.revision != currentContext.revision) {
+                                    cachedSnapshots[ref] = s.withRevision(currentContext.revision)
+                                }
+                            }
+                        } else {
+                            cachedSnapshots.clear()
+                        }
                         cachedContext = currentContext
-                        cachedSnapshots.clear()
                         inFlightByHabit.values.toSet().forEach {
                             it.failure = EffectiveReadInvalidatedException()
                             it.latch.countDown()

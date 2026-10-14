@@ -37,78 +37,80 @@ import org.isoron.uhabits.core.rules.SourceRuleId
 class SQLiteContributionRepository(private val db: Database) : ContributionRepository {
 
     override fun record(contribution: Contribution): ContributionRecordResult {
-        db.run("SAVEPOINT record_contribution")
-        try {
-            val stmt = db.prepareStatement(
-                "INSERT OR IGNORE INTO Contributions ($COLUMNS) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-            )
+        return org.isoron.uhabits.core.models.projection.EffectiveReadRevision.withMutationScope(setOf(contribution.targetHabit)) {
+            db.run("SAVEPOINT record_contribution")
             try {
-                stmt.bindText(1, contribution.id.value)
-                stmt.bindText(2, contribution.targetHabit.uuid)
-                stmt.bindText(3, contribution.sourceType.name)
-                stmt.bindText(4, contribution.sourceId)
-                stmt.bindLong(5, contribution.contributedValue)
-                stmt.bindLong(6, contribution.effectiveTimestamp)
-                stmt.bindLong(7, contribution.createdAt)
-                stmt.bindLong(8, contribution.updatedAt)
-                if (contribution.removedAt != null) {
-                    stmt.bindLong(9, contribution.removedAt)
-                } else {
-                    stmt.bindNull(9)
+                val stmt = db.prepareStatement(
+                    "INSERT OR IGNORE INTO Contributions ($COLUMNS) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                )
+                try {
+                    stmt.bindText(1, contribution.id.value)
+                    stmt.bindText(2, contribution.targetHabit.uuid)
+                    stmt.bindText(3, contribution.sourceType.name)
+                    stmt.bindText(4, contribution.sourceId)
+                    stmt.bindLong(5, contribution.contributedValue)
+                    stmt.bindLong(6, contribution.effectiveTimestamp)
+                    stmt.bindLong(7, contribution.createdAt)
+                    stmt.bindLong(8, contribution.updatedAt)
+                    if (contribution.removedAt != null) {
+                        stmt.bindLong(9, contribution.removedAt)
+                    } else {
+                        stmt.bindNull(9)
+                    }
+                    if (contribution.sourceRuleId != null) {
+                        stmt.bindText(10, contribution.sourceRuleId.value)
+                    } else {
+                        stmt.bindNull(10)
+                    }
+                    stmt.step()
+                } finally {
+                    stmt.finalize()
                 }
-                if (contribution.sourceRuleId != null) {
-                    stmt.bindText(10, contribution.sourceRuleId.value)
-                } else {
-                    stmt.bindNull(10)
+
+                val inserted = db.queryLong("SELECT changes()") == 1L
+                if (inserted) {
+                    db.run("RELEASE SAVEPOINT record_contribution")
+                    return@withMutationScope ContributionRecordResult.INSERTED
                 }
-                stmt.step()
-            } finally {
-                stmt.finalize()
-            }
 
-            val inserted = db.queryLong("SELECT changes()") == 1L
-            if (inserted) {
-                db.run("RELEASE SAVEPOINT record_contribution")
-                return ContributionRecordResult.INSERTED
-            }
+                // Not inserted: check whether it's an identical retry or a conflicting entry
+                val byId = getById(contribution.id)
+                if (byId != null) {
+                    if (byId != contribution) {
+                        throw ContributionConflictException(
+                            "A different Contribution is already recorded for id ${contribution.id}",
+                            contribution.id,
+                        )
+                    }
+                    db.run("RELEASE SAVEPOINT record_contribution")
+                    return@withMutationScope ContributionRecordResult.ALREADY_RECORDED
+                }
 
-            // Not inserted: check whether it's an identical retry or a conflicting entry
-            val byId = getById(contribution.id)
-            if (byId != null) {
-                if (byId != contribution) {
+                val byProvenance = getBySourceAndTarget(
+                    contribution.sourceType,
+                    contribution.sourceId,
+                    contribution.targetHabit,
+                )
+                if (byProvenance != null) {
+                    if (byProvenance.id == contribution.id && byProvenance == contribution) {
+                        db.run("RELEASE SAVEPOINT record_contribution")
+                        return@withMutationScope ContributionRecordResult.ALREADY_RECORDED
+                    }
                     throw ContributionConflictException(
-                        "A different Contribution is already recorded for id ${contribution.id}",
+                        "A contribution for source ${contribution.sourceType}:${contribution.sourceId} to habit ${contribution.targetHabit.uuid} already exists with id ${byProvenance.id}",
                         contribution.id,
                     )
                 }
-                db.run("RELEASE SAVEPOINT record_contribution")
-                return ContributionRecordResult.ALREADY_RECORDED
-            }
 
-            val byProvenance = getBySourceAndTarget(
-                contribution.sourceType,
-                contribution.sourceId,
-                contribution.targetHabit,
-            )
-            if (byProvenance != null) {
-                if (byProvenance.id == contribution.id && byProvenance == contribution) {
+                throw IllegalStateException("Contribution insert rejected by database constraints")
+            } catch (error: Throwable) {
+                try {
+                    db.run("ROLLBACK TO SAVEPOINT record_contribution")
+                } finally {
                     db.run("RELEASE SAVEPOINT record_contribution")
-                    return ContributionRecordResult.ALREADY_RECORDED
                 }
-                throw ContributionConflictException(
-                    "A contribution for source ${contribution.sourceType}:${contribution.sourceId} to habit ${contribution.targetHabit.uuid} already exists with id ${byProvenance.id}",
-                    contribution.id,
-                )
+                throw error
             }
-
-            throw IllegalStateException("Contribution insert rejected by database constraints")
-        } catch (error: Throwable) {
-            try {
-                db.run("ROLLBACK TO SAVEPOINT record_contribution")
-            } finally {
-                db.run("RELEASE SAVEPOINT record_contribution")
-            }
-            throw error
         }
     }
 
@@ -118,23 +120,25 @@ class SQLiteContributionRepository(private val db: Database) : ContributionRepos
         targetHabit: HabitRef,
         removedAt: Long,
     ): ContributionRemovalResult {
-        db.run("SAVEPOINT remove_contribution")
-        try {
-            val existing = getBySourceAndTarget(sourceType, sourceId, targetHabit)
-            if (existing == null) {
-                db.run("RELEASE SAVEPOINT remove_contribution")
-                return ContributionRemovalResult.NOT_FOUND
-            }
-            val result = applyRemoval(existing, removedAt)
-            db.run("RELEASE SAVEPOINT remove_contribution")
-            return result
-        } catch (error: Throwable) {
+        return org.isoron.uhabits.core.models.projection.EffectiveReadRevision.withMutationScope(setOf(targetHabit)) {
+            db.run("SAVEPOINT remove_contribution")
             try {
-                db.run("ROLLBACK TO SAVEPOINT remove_contribution")
-            } finally {
+                val existing = getBySourceAndTarget(sourceType, sourceId, targetHabit)
+                if (existing == null) {
+                    db.run("RELEASE SAVEPOINT remove_contribution")
+                    return@withMutationScope ContributionRemovalResult.NOT_FOUND
+                }
+                val result = applyRemoval(existing, removedAt)
                 db.run("RELEASE SAVEPOINT remove_contribution")
+                result
+            } catch (error: Throwable) {
+                try {
+                    db.run("ROLLBACK TO SAVEPOINT remove_contribution")
+                } finally {
+                    db.run("RELEASE SAVEPOINT remove_contribution")
+                }
+                throw error
             }
-            throw error
         }
     }
 
@@ -146,7 +150,9 @@ class SQLiteContributionRepository(private val db: Database) : ContributionRepos
                 db.run("RELEASE SAVEPOINT remove_contribution")
                 return ContributionRemovalResult.NOT_FOUND
             }
-            val result = applyRemoval(existing, removedAt)
+            val result = org.isoron.uhabits.core.models.projection.EffectiveReadRevision.withMutationScope(setOf(existing.targetHabit)) {
+                applyRemoval(existing, removedAt)
+            }
             db.run("RELEASE SAVEPOINT remove_contribution")
             return result
         } catch (error: Throwable) {
@@ -170,18 +176,20 @@ class SQLiteContributionRepository(private val db: Database) : ContributionRepos
                 db.run("RELEASE SAVEPOINT restore_contribution")
                 return false
             }
-            val newUpdatedAt = maxOf(existing.updatedAt, updatedAt)
-            val stmt = db.prepareStatement(
-                "UPDATE Contributions SET removed_at = NULL, updated_at = ? WHERE id = ? AND removed_at IS NOT NULL"
-            )
-            try {
-                stmt.bindLong(1, newUpdatedAt)
-                stmt.bindText(2, id.value)
-                stmt.step()
-            } finally {
-                stmt.finalize()
+            val changed = org.isoron.uhabits.core.models.projection.EffectiveReadRevision.withMutationScope(setOf(existing.targetHabit)) {
+                val newUpdatedAt = maxOf(existing.updatedAt, updatedAt)
+                val stmt = db.prepareStatement(
+                    "UPDATE Contributions SET removed_at = NULL, updated_at = ? WHERE id = ? AND removed_at IS NOT NULL"
+                )
+                try {
+                    stmt.bindLong(1, newUpdatedAt)
+                    stmt.bindText(2, id.value)
+                    stmt.step()
+                } finally {
+                    stmt.finalize()
+                }
+                db.queryLong("SELECT changes()") == 1L
             }
-            val changed = db.queryLong("SELECT changes()") == 1L
             db.run("RELEASE SAVEPOINT restore_contribution")
             return changed
         } catch (error: Throwable) {

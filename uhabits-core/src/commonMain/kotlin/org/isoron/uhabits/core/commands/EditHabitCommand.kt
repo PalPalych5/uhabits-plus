@@ -43,7 +43,14 @@ data class EditHabitCommand(
         if (organizationFacade?.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
             habit.blockId = originalBlockId
         }
-        habitList.update(habit)
+        val habitUuid = habit.uuid ?: modified.uuid
+        if (habitUuid != null && !changeContainer) {
+            org.isoron.uhabits.core.models.projection.EffectiveReadRevision.withMutationScope(setOf(org.isoron.uhabits.core.containers.HabitRef(habitUuid))) {
+                habitList.update(habit)
+            }
+        } else {
+            habitList.update(habit)
+        }
         habit.recompute()
         habit.observable.notifyListeners()
         habitList.resort()

@@ -50,6 +50,9 @@ class EffectiveHabitReadSnapshot internal constructor(
     val days: List<EffectiveHabitDay>,
     private val service: EffectiveHabitValueService,
     private val compatibilityService: EffectiveHabitValueService,
+    precomputedScoreResult: EffectiveScoreResult? = null,
+    precomputedStreakResult: EffectiveStreakResult? = null,
+    precomputedScoreStreakComputeDurationMs: Double? = null,
 ) {
     private val byDate = days.associateBy { it.manualEntry.date }
     val hasContributions: Boolean = days.any { it.contributions.isNotEmpty() }
@@ -66,32 +69,61 @@ class EffectiveHabitReadSnapshot internal constructor(
     val scoreStreakComputeDurationMs: Double
 
     init {
-        val scoreStreakStart = TimeSource.Monotonic.markNow()
-        val baseExactness = when {
-            !hasContributions -> EffectiveReadExactness.LEGACY_COMPATIBILITY
-            !representable -> EffectiveReadExactness.UNREPRESENTABLE
-            else -> EffectiveReadExactness.EXACT
-        }
-        if (!representable) {
-            scoreResult = EffectiveScoreResult(null, baseExactness)
-            streakResult = EffectiveStreakResult(null, baseExactness)
+        if (precomputedScoreResult != null && precomputedStreakResult != null) {
+            scoreResult = precomputedScoreResult
+            streakResult = precomputedStreakResult
+            scoreStreakComputeDurationMs = precomputedScoreStreakComputeDurationMs ?: 0.0
         } else {
-            val projected = detachedPresentation()
-            val start = projected.effectiveStatisticsStartDate()
-                ?: projected.computedEntries.getKnown().lastOrNull()?.date ?: from
-            val safe = !hasContributions || rollingWindowsRepresentable(projected, start, resultTo)
-            scoreResult = when {
-                !safe -> EffectiveScoreResult(null, EffectiveReadExactness.UNREPRESENTABLE)
-                scoreIncomplete -> EffectiveScoreResult(null, EffectiveReadExactness.INCOMPLETE)
-                else -> {
-                    projected.scores.recompute(projected, projected.computedEntries, start, resultTo)
-                    EffectiveScoreResult(projected.scores.getByInterval(from, resultTo).toList(), baseExactness)
-                }
+            val scoreStreakStart = TimeSource.Monotonic.markNow()
+            val baseExactness = when {
+                !hasContributions -> EffectiveReadExactness.LEGACY_COMPATIBILITY
+                !representable -> EffectiveReadExactness.UNREPRESENTABLE
+                else -> EffectiveReadExactness.EXACT
             }
-            streakResult = if (streakIncomplete) EffectiveStreakResult(null, EffectiveReadExactness.INCOMPLETE)
-            else EffectiveStreakResult(buildStreaks(minOf(start, compatibilityTo), compatibilityTo), baseExactness)
+            if (!representable) {
+                scoreResult = EffectiveScoreResult(null, baseExactness)
+                streakResult = EffectiveStreakResult(null, baseExactness)
+            } else {
+                val projected = detachedPresentation()
+                val start = projected.effectiveStatisticsStartDate()
+                    ?: projected.computedEntries.getKnown().lastOrNull()?.date ?: from
+                val safe = !hasContributions || rollingWindowsRepresentable(projected, start, resultTo)
+                scoreResult = when {
+                    !safe -> EffectiveScoreResult(null, EffectiveReadExactness.UNREPRESENTABLE)
+                    scoreIncomplete -> EffectiveScoreResult(null, EffectiveReadExactness.INCOMPLETE)
+                    else -> {
+                        projected.scores.recompute(projected, projected.computedEntries, start, resultTo)
+                        EffectiveScoreResult(projected.scores.getByInterval(from, resultTo).toList(), baseExactness)
+                    }
+                }
+                streakResult = if (streakIncomplete) EffectiveStreakResult(null, EffectiveReadExactness.INCOMPLETE)
+                else EffectiveStreakResult(buildStreaks(minOf(start, compatibilityTo), compatibilityTo), baseExactness)
+            }
+            scoreStreakComputeDurationMs = scoreStreakStart.elapsedNow().toDouble(DurationUnit.MILLISECONDS)
         }
-        scoreStreakComputeDurationMs = scoreStreakStart.elapsedNow().toDouble(DurationUnit.MILLISECONDS)
+    }
+
+    fun withRevision(newRevision: Long): EffectiveHabitReadSnapshot {
+        if (this.revision == newRevision) return this
+        return EffectiveHabitReadSnapshot(
+            datasetId = datasetId,
+            revision = newRevision,
+            calendar = calendar,
+            habitRef = habitRef,
+            from = from,
+            to = to,
+            observedFrom = observedFrom,
+            observedTo = observedTo,
+            resultTo = resultTo,
+            compatibilityTo = compatibilityTo,
+            captured = captured,
+            days = days,
+            service = service,
+            compatibilityService = compatibilityService,
+            precomputedScoreResult = scoreResult,
+            precomputedStreakResult = streakResult,
+            precomputedScoreStreakComputeDurationMs = scoreStreakComputeDurationMs,
+        )
     }
     fun day(date: LocalDate): EffectiveHabitDay = requireNotNull(byDate[date]) { "Date outside snapshot" }
     fun dayOrNull(date: LocalDate): EffectiveHabitDay? = byDate[date]

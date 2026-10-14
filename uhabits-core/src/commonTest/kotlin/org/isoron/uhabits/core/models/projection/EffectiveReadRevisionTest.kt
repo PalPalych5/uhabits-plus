@@ -294,4 +294,101 @@ class EffectiveReadRevisionTest {
         assertEquals(1L, fresh.value)
         assertEquals(2, calls)
     }
+
+    @Test
+    fun revisionRecordsScopedMutationsAndQueriesBetween() {
+        val rev = EffectiveReadRevision("dataset-test")
+        val h1 = HabitRef("h-1")
+        val h2 = HabitRef("h-2")
+
+        rev.changed(setOf(h1)) // rev 1
+        rev.changed(setOf(h2)) // rev 2
+
+        assertEquals(emptySet(), rev.affectedHabitsBetween(1, 1))
+        assertEquals(setOf(h1), rev.affectedHabitsBetween(0, 1))
+        assertEquals(setOf(h2), rev.affectedHabitsBetween(1, 2))
+        assertEquals(setOf(h1, h2), rev.affectedHabitsBetween(0, 2))
+        assertNull(rev.affectedHabitsBetween(2, 1))
+        assertNull(rev.affectedHabitsBetween(-1, 2))
+    }
+
+    @Test
+    fun unscopedMutationReturnsNullForAffectedHabits() {
+        val rev = EffectiveReadRevision("dataset-test")
+        val h1 = HabitRef("h-1")
+
+        rev.changed(setOf(h1)) // rev 1: scoped
+        rev.changed(null) // rev 2: unscoped / unknown
+
+        assertEquals(setOf(h1), rev.affectedHabitsBetween(0, 1))
+        assertNull(rev.affectedHabitsBetween(0, 2))
+        assertNull(rev.affectedHabitsBetween(1, 2))
+    }
+
+    @Test
+    fun rollbackClearsRevisionHistory() {
+        val rev = EffectiveReadRevision("dataset-test")
+        val h1 = HabitRef("h-1")
+
+        rev.changed(setOf(h1))
+        assertEquals(setOf(h1), rev.affectedHabitsBetween(0, 1))
+
+        rev.rolledBack()
+        assertNull(rev.affectedHabitsBetween(0, 1))
+    }
+
+    @Test
+    fun databaseMutationWithScopeTracksHabit() = runTest {
+        val raw = TestDatabaseHelper.createEmptyDatabase()
+        raw.run("DROP TABLE IF EXISTS Repetitions")
+        raw.run("CREATE TABLE Repetitions (habit INTEGER, value INTEGER)")
+        val rev = EffectiveReadRevision("dataset-test")
+        val db = EffectiveReadDatabase(raw, rev, setOf("REPETITIONS"))
+        val h1 = HabitRef("h-uuid-1")
+
+        try {
+            EffectiveReadRevision.withMutationScope(setOf(h1)) {
+                db.run("INSERT INTO Repetitions VALUES (1, 1)")
+            }
+            assertEquals(1L, rev.value)
+            assertEquals(setOf(h1), rev.affectedHabitsBetween(0, 1))
+
+            // Unscoped mutation
+            db.run("INSERT INTO Repetitions VALUES (2, 1)")
+            assertEquals(2L, rev.value)
+            assertNull(rev.affectedHabitsBetween(1, 2))
+            assertNull(rev.affectedHabitsBetween(0, 2))
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun databaseMutationOnGlobalTablePoisonsScope() = runTest {
+        val raw = TestDatabaseHelper.createEmptyDatabase()
+        raw.run("DROP TABLE IF EXISTS Repetitions")
+        raw.run("CREATE TABLE Repetitions (habit INTEGER, value INTEGER)")
+        raw.run("DROP TABLE IF EXISTS Containers")
+        raw.run("CREATE TABLE Containers (id INTEGER PRIMARY KEY)")
+        val rev = EffectiveReadRevision("dataset-test")
+        val db = EffectiveReadDatabase(raw, rev, setOf("REPETITIONS", "CONTAINERS"))
+        val h1 = HabitRef("h-uuid-1")
+
+        try {
+            // Transaction modifies Repetitions with scope, but ALSO modifies Containers
+            db.run("BEGIN")
+            EffectiveReadRevision.withMutationScope(setOf(h1)) {
+                db.run("INSERT INTO Repetitions VALUES (1, 1)")
+                db.run("INSERT INTO Containers VALUES (10)")
+            }
+            db.run("COMMIT")
+
+            assertEquals(1L, rev.value)
+            // Containers is a global invalidation table, so scope must be poisoned to null
+            assertNull(rev.affectedHabitsBetween(0, 1))
+        } finally {
+            db.close()
+        }
+    }
 }
+

@@ -35,33 +35,39 @@ data class BatchCreateRepetitionCommand(
     override fun run() {
         val firstSQLiteEntryList = habits.firstOrNull()?.originalEntries as? SQLiteEntryList
         val repository = firstSQLiteEntryList?.repository
-        
-        try {
-            repository?.execSQL("BEGIN")
-            for (habit in habits) {
-                val previous = habit.originalEntries.get(date)
-                habit.originalEntries.add(Entry(date, value, notes))
-                habit.recompute()
-                val syncManager = (habitList as? SQLiteHabitList)?.syncManager
-                if (previous.value != value || previous.notes != notes) {
-                    if (value == Entry.UNKNOWN) {
-                        syncManager?.enqueueEntryDelete(habit, date)
-                    } else {
-                        syncManager?.enqueueEntrySet(habit, date, value, notes)
+        val scope = habits.mapNotNull { it.uuid?.let { u -> org.isoron.uhabits.core.containers.HabitRef(u) } }.toSet()
+        val runBlock = {
+            try {
+                repository?.execSQL("BEGIN")
+                for (habit in habits) {
+                    val previous = habit.originalEntries.get(date)
+                    habit.originalEntries.add(Entry(date, value, notes))
+                    habit.recompute()
+                    val syncManager = (habitList as? SQLiteHabitList)?.syncManager
+                    if (previous.value != value || previous.notes != notes) {
+                        if (value == Entry.UNKNOWN) {
+                            syncManager?.enqueueEntryDelete(habit, date)
+                        } else {
+                            syncManager?.enqueueEntrySet(habit, date, value, notes)
+                        }
                     }
                 }
-            }
-            repository?.execSQL("COMMIT")
-            for (habit in habits) {
-                habit.id?.let {
-                    habitList.refreshHabitFromDatabase(it, habit)
+                repository?.execSQL("COMMIT")
+                for (habit in habits) {
+                    habit.id?.let {
+                        habitList.refreshHabitFromDatabase(it, habit)
+                    }
                 }
+            } catch (e: Exception) {
+                repository?.execSQL("ROLLBACK")
+                throw e
             }
-        } catch (e: Exception) {
-            repository?.execSQL("ROLLBACK")
-            throw e
+            habitList.resort()
         }
-        
-        habitList.resort()
+        if (scope.isNotEmpty()) {
+            org.isoron.uhabits.core.models.projection.EffectiveReadRevision.withMutationScope(scope, runBlock)
+        } else {
+            runBlock()
+        }
     }
 }

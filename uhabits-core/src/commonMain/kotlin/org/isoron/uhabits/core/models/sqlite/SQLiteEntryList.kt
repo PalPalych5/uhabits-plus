@@ -75,17 +75,25 @@ class SQLiteEntryList(
         val updatedAt = syncManager.now()
         val deletedAt = if (entry.value == Entry.UNKNOWN) updatedAt else null
 
-        repository.upsert(
-            EntryData(
-                habitId = habitId,
-                uuid = uuid,
-                timestamp = entry.date.unixTime,
-                value = entry.value,
-                notes = entry.notes,
-                updatedAt = updatedAt,
-                deletedAt = deletedAt
-            ), trace
-        )
+        val scope = habitUuid?.let { setOf(org.isoron.uhabits.core.containers.HabitRef(it)) }
+        val upsertAction = {
+            repository.upsert(
+                EntryData(
+                    habitId = habitId,
+                    uuid = uuid,
+                    timestamp = entry.date.unixTime,
+                    value = entry.value,
+                    notes = entry.notes,
+                    updatedAt = updatedAt,
+                    deletedAt = deletedAt
+                ), trace
+            )
+        }
+        if (scope != null) {
+            org.isoron.uhabits.core.models.projection.EffectiveReadRevision.withMutationScope(scope, upsertAction)
+        } else {
+            upsertAction()
+        }
 
         if (entry.value == Entry.UNKNOWN) {
             super.remove(entry.date)
@@ -110,22 +118,38 @@ class SQLiteEntryList(
 
     override fun clear() {
         super.clear()
-        repository.softDeleteByHabitId(habitId!!, syncManager.now())
+        val scope = habitUuid?.let { setOf(org.isoron.uhabits.core.containers.HabitRef(it)) }
+        val clearAction = {
+            repository.softDeleteByHabitId(habitId!!, syncManager.now())
+        }
+        if (scope != null) {
+            org.isoron.uhabits.core.models.projection.EffectiveReadRevision.withMutationScope(scope, clearAction)
+        } else {
+            clearAction()
+        }
     }
 
     fun addWithDelta(date: LocalDate, deltaValue: Int, resultingValue: Int, notes: String) {
         val habitId = habitId ?: throw IllegalStateException("habitId must be set")
-        repository.upsert(
-            EntryData(
-                habitId = habitId,
-                uuid = entryUuid(date),
-                timestamp = date.unixTime,
-                value = resultingValue,
-                notes = notes,
-                updatedAt = syncManager.now(),
-                deletedAt = null
+        val scope = habitUuid?.let { setOf(org.isoron.uhabits.core.containers.HabitRef(it)) }
+        val deltaAction = {
+            repository.upsert(
+                EntryData(
+                    habitId = habitId,
+                    uuid = entryUuid(date),
+                    timestamp = date.unixTime,
+                    value = resultingValue,
+                    notes = notes,
+                    updatedAt = syncManager.now(),
+                    deletedAt = null
+                )
             )
-        )
+        }
+        if (scope != null) {
+            org.isoron.uhabits.core.models.projection.EffectiveReadRevision.withMutationScope(scope, deltaAction)
+        } else {
+            deltaAction()
+        }
         super.add(Entry(date, resultingValue, notes))
     }
 

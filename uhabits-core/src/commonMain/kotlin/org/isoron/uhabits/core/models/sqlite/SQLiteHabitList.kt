@@ -293,13 +293,21 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
         loadRecords()
         list.update(habits)
         for (h in habits) {
-            val data = copyFrom(h)
-            data.updatedAt = syncManager.now()
-            data.deletedAt = null
-            repository.update(data)
-            extensionRepository.upsert(h.toExtensionData())
-            goalRepository.replaceAll(h.id!!, h.normalizedGoalHistory().map { it.toGoalData(h.id!!, h.uuid!!) }, data.updatedAt)
-            h.globalStatisticsStartDate = globalStatisticsStartDate
+            val scope = h.uuid?.let { setOf(org.isoron.uhabits.core.containers.HabitRef(it)) }
+            val updateBlock = {
+                val data = copyFrom(h)
+                data.updatedAt = syncManager.now()
+                data.deletedAt = null
+                repository.update(data)
+                extensionRepository.upsert(h.toExtensionData())
+                goalRepository.replaceAll(h.id!!, h.normalizedGoalHistory().map { it.toGoalData(h.id!!, h.uuid!!) }, data.updatedAt)
+                h.globalStatisticsStartDate = globalStatisticsStartDate
+            }
+            if (scope != null) {
+                org.isoron.uhabits.core.models.projection.EffectiveReadRevision.withMutationScope(scope, updateBlock)
+            } else {
+                updateBlock()
+            }
         }
         observable.notifyListeners()
     }
