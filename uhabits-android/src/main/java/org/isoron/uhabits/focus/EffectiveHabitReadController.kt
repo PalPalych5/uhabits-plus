@@ -23,6 +23,7 @@ import org.isoron.uhabits.database.AndroidDatabase
 import java.util.TimeZone
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.DurationUnit
 import kotlin.time.TimeSource
 
@@ -144,6 +145,38 @@ class EffectiveHabitReadController(
         generation: Long? = null,
         batch: Long? = null,
     ): Map<HabitRef, EffectiveHabitReadSnapshot> {
+        val observer = requestMetricsObserver
+        if (observer == null) return snapshotsMeasured(habits, from, to, traces, generation, batch, null)
+        val metrics = RequestMeasurement()
+        var outcome = "failed"
+        try {
+            val result = snapshotsMeasured(habits, from, to, traces, generation, batch, metrics)
+            outcome = "success"
+            return result
+        } catch (t: Throwable) {
+            outcome = t.javaClass.simpleName
+            throw t
+        } finally {
+            val result = RequestMetrics(
+                metrics.started.elapsedNow().toDouble(DurationUnit.MILLISECONDS), metrics.monitorWaitMs,
+                metrics.monitorHeldMs, metrics.latchMs, metrics.latchCount, metrics.prepareMs,
+                metrics.prepareCount, metrics.retries, metrics.publicationMs, metrics.joins,
+                metrics.creates, metrics.maxActive, Looper.myLooper() == Looper.getMainLooper(),
+                Thread.currentThread().name, outcome, habits.size, generation, batch,
+            )
+            runCatching { observer(result) }
+        }
+    }
+
+    private fun snapshotsMeasured(
+        habits: List<Habit>,
+        from: org.isoron.platform.time.LocalDate,
+        to: org.isoron.platform.time.LocalDate,
+        traces: List<HabitEditTrace>,
+        generation: Long?,
+        batch: Long?,
+        metrics: RequestMeasurement?,
+    ): Map<HabitRef, EffectiveHabitReadSnapshot> {
         var totalWaitMs = 0.0
         var totalHeldMs = 0.0
         var totalPrepared = 0
@@ -155,6 +188,7 @@ class EffectiveHabitReadController(
             val plan = synchronized(this) {
                 val waitDuration = waitStart.elapsedNow()
                 totalWaitMs += waitDuration.toDouble(DurationUnit.MILLISECONDS)
+                metrics?.let { it.monitorWaitMs += waitDuration.toDouble(DurationUnit.MILLISECONDS) }
                 traces.forEach { it.event("snapshot.lock.acquired", generation = generation, batch = batch) }
                 val heldStart = TimeSource.Monotonic.markNow()
                 try {
@@ -188,6 +222,7 @@ class EffectiveHabitReadController(
                             cachedSnapshots[ref]?.let { result[ref] = it }
                         }
                         initialCacheHits = habits.size
+                        metrics?.let { it.publicationMs = it.started.elapsedNow().toDouble(DurationUnit.MILLISECONDS) }
                         traces.forEach { it.event("snapshot.end", capturedRevision, generation, batch) }
                         val heldDuration = heldStart.elapsedNow()
                         totalHeldMs += heldDuration.toDouble(DurationUnit.MILLISECONDS)
@@ -209,6 +244,7 @@ class EffectiveHabitReadController(
                         val inFlight = inFlightByHabit[ref]
                         if (inFlight != null && inFlight.context == currentContext) {
                             toAwait.add(inFlight)
+                            metrics?.let { it.joins++ }
                         } else {
                             toCompute.add(habit)
                         }
@@ -218,6 +254,7 @@ class EffectiveHabitReadController(
                     if (toCompute.isNotEmpty()) {
                         val refs = toCompute.mapNotNull { it.uuid?.let { u -> HabitRef(u) } }.toSet()
                         myBatch = InFlightBatch(currentContext, refs)
+                        metrics?.let { it.creates++ }
                         refs.forEach { inFlightByHabit[it] = myBatch }
                     }
 
@@ -230,6 +267,7 @@ class EffectiveHabitReadController(
                     )
                 } finally {
                     totalHeldMs += heldStart.elapsedNow().toDouble(DurationUnit.MILLISECONDS)
+                    metrics?.let { it.monitorHeldMs += heldStart.elapsedNow().toDouble(DurationUnit.MILLISECONDS) }
                 }
             }
 
@@ -241,6 +279,11 @@ class EffectiveHabitReadController(
             var preparedMap: Map<HabitRef, EffectiveHabitReadSnapshot>? = null
             var computeError: Throwable? = null
             if (plan.myBatch != null) {
+                val preparationStart = metrics?.let { TimeSource.Monotonic.markNow() }
+                metrics?.let {
+                    it.prepareCount++
+                    it.maxActive = maxOf(it.maxActive, activeMeasuredPreparations.incrementAndGet())
+                }
                 try {
                     prepareHook?.invoke(plan.toCompute)
                     preparedMap = provider.prepare(
@@ -249,6 +292,10 @@ class EffectiveHabitReadController(
                 } catch (t: Throwable) {
                     computeError = t
                 } finally {
+                    metrics?.let {
+                        it.prepareMs += requireNotNull(preparationStart).elapsedNow().toDouble(DurationUnit.MILLISECONDS)
+                        activeMeasuredPreparations.decrementAndGet()
+                    }
                     plan.myBatch.results = preparedMap
                     plan.myBatch.failure = computeError
                     plan.myBatch.latch.countDown()
@@ -258,7 +305,15 @@ class EffectiveHabitReadController(
             // Await any concurrent in-flight batches outside controller monitor
             var awaitError: Throwable? = null
             for (b in plan.toAwait) {
-                val completed = b.latch.await(10, TimeUnit.SECONDS)
+                val latchStart = metrics?.let { TimeSource.Monotonic.markNow() }
+                val completed = try {
+                    b.latch.await(10, TimeUnit.SECONDS)
+                } finally {
+                    metrics?.let {
+                        it.latchCount++
+                        it.latchMs += requireNotNull(latchStart).elapsedNow().toDouble(DurationUnit.MILLISECONDS)
+                    }
+                }
                 if (!completed) {
                     awaitError = EffectiveReadInvalidatedException()
                 } else if (b.failure != null) {
@@ -278,6 +333,7 @@ class EffectiveHabitReadController(
             val publishWaitStart = TimeSource.Monotonic.markNow()
             val publishedResult = synchronized(this) {
                 totalWaitMs += publishWaitStart.elapsedNow().toDouble(DurationUnit.MILLISECONDS)
+                metrics?.let { it.monitorWaitMs += publishWaitStart.elapsedNow().toDouble(DurationUnit.MILLISECONDS) }
                 val publishHeldStart = TimeSource.Monotonic.markNow()
                 try {
                     if (plan.myBatch != null) {
@@ -305,6 +361,7 @@ class EffectiveHabitReadController(
                             cachedSnapshots.containsKey(ref)
                         }
                         if (allReady) {
+                            metrics?.let { it.publicationMs = it.started.elapsedNow().toDouble(DurationUnit.MILLISECONDS) }
                             val result = HashMap<HabitRef, EffectiveHabitReadSnapshot>(habits.size)
                             for (habit in habits) {
                                 val ref = habit.uuid?.let { HabitRef(it) } ?: continue
@@ -316,6 +373,7 @@ class EffectiveHabitReadController(
                     } else null
                 } finally {
                     totalHeldMs += publishHeldStart.elapsedNow().toDouble(DurationUnit.MILLISECONDS)
+                    metrics?.let { it.monitorHeldMs += publishHeldStart.elapsedNow().toDouble(DurationUnit.MILLISECONDS) }
                 }
             }
 
@@ -332,6 +390,7 @@ class EffectiveHabitReadController(
             }
 
             traces.forEach { it.event("snapshot.retry", plan.context.revision, generation, batch) }
+            metrics?.let { it.retries++ }
         }
 
         throw EffectiveReadInvalidatedException()
@@ -347,6 +406,34 @@ class EffectiveHabitReadController(
     )
 
     var lockMetricsObserver: ((ControllerLockMetrics) -> Unit)? = null
+
+    /** Disabled by default; diagnostic callbacks cannot affect snapshot success or failure. */
+    var requestMetricsObserver: ((RequestMetrics) -> Unit)? = null
+    private val activeMeasuredPreparations = AtomicInteger()
+
+    data class RequestMetrics(
+        val totalMs: Double, val monitorWaitMs: Double, val monitorHeldMs: Double,
+        val latchMs: Double, val latchCount: Int, val prepareMs: Double, val prepareCount: Int,
+        val retries: Int, val validatedPublicationMs: Double?, val joinedHabits: Int,
+        val createdBatches: Int, val maxConcurrentPreparations: Int, val onMain: Boolean,
+        val thread: String, val outcome: String, val habitCount: Int,
+        val generation: Long?, val batch: Long?,
+    )
+
+    private class RequestMeasurement {
+        val started = TimeSource.Monotonic.markNow()
+        var monitorWaitMs = 0.0
+        var monitorHeldMs = 0.0
+        var latchMs = 0.0
+        var latchCount = 0
+        var prepareMs = 0.0
+        var prepareCount = 0
+        var retries = 0
+        var publicationMs: Double? = null
+        var joins = 0
+        var creates = 0
+        var maxActive = 0
+    }
 
     var snapshotMetricsObserver: ((SnapshotPreparationMetrics) -> Unit)?
         get() = provider.preparationMetricsObserver

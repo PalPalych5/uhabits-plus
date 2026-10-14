@@ -454,6 +454,9 @@ In Iteration 3, `EffectiveHabitReadController.snapshots` was annotated with `@Sy
 
 #### 4. Paired Before / After Performance Comparison (Disposable API 35 AVD)
 
+**SUPERSEDED comparison qualification (Iteration 5):** This historical table is not a controlled same-request total-wait comparison. Its BEFORE wait row mixes targeted calls with Arm B full-reader wait; its BEFORE hold row also includes AFTER values. Arm D BEFORE `0.2678 ms` is the targeted reader's cache-hit body after `539.3526 ms` acquisition wait (`preparedCount=0`), not the full preparation owner's monitor occupancy. The separately measured direct provider preparation was `396.4066 ms` (`396.6977 ms` external wall). BEFORE targeted hold A/B/C/D was `9.9898/20.0524/0.9050/0.2678 ms`; Arm B targeted wait was `0.0171 ms`, while the published `204.3335 ms` came from fullSnapshot.controllerLock. Arm B `0.48` and Arm C `0.38` BEFORE hold cells are actually AFTER values. Source: `scratch/historical-scaling-20261013/results.json`, `scratch/snapshot-contention-20261013/results.json`, `HistoricalScalingInvestigationTest.kt`. Retain original table for provenance; the “322x” and “completely removes reader contention” statements below establish neither total request improvement nor a matched cache-state comparison. PI-20261013-04 below supplies fresh separate monitor/latch/request measurements.
+
+
 | Metric / Stage | Arm A (90d) | Arm B (365d) | Arm C (1095d) | Arm D (1825d) | Contention Impact (Arm D) |
 |---|---|---|---|---|---|
 | **Reader Lock Wait BEFORE (Iter 3)** | 0.03 ms | 204.33 ms | 397.02 ms | **539.35 ms** | Baseline contention spike |
@@ -486,3 +489,102 @@ The 8 concurrency contracts were validated in `EffectiveHabitReadControllerConte
 #### 7. Next Recommended Investigation (Priority 3 from Backlog)
 - **Priority 3: Residual target/ancestor bind-measure and navigation generation counts.**
   - Now that operation correlation (Iteration 2), historical scaling (Iteration 3), and snapshot controller contention (Iteration 4) are completed, measure Main-thread view binding, measure/layout passes, and fragment navigation reloads (`Habits -> Tasks -> Habits`) on the current build to isolate Main UI thread CPU consumption from background worker activity.
+
+### PI-20261013-04 — iteration 5 remaining end-to-end latency (completed 2026-10-14, Asia/Novosibirsk; started 2026-10-13)
+
+**Authorized scope:** attribution only; no correction. Expected `30931b5e3428966be76e9dc67a02b18d22fdb517` verified before work and before the local instrumentation/documentation commit. Previous controller: `7da542cb`. Existing unrelated dirty handoff, artifact deletions and untracked files preserved. Baseline built from isolated `git archive` export under `scratch/remaining-latency-20261013/before`; current build used verified HEAD plus only owned disabled instrumentation. Identical final test source was copied to both exports; only the baseline synchronization implementation and equivalent measurement wrapper differ. APK/source hashes: `scratch/remaining-latency-20261013/identities.json`. No push, Xiaomi/physical-device access, production extraction, Supabase, migration, transaction/FIFO/Tasks/Focus/Contribution change or optimization.
+
+**Declared question/acceptance:** separate controller acquisition/hold, batch creation/join, latch await, preparation/retries and validated readiness; discriminate wait transfer from reduced request wall time. Attribute grouped Boolean edits and unchanged Habits→Tasks→Habits through durable value, qualified row publication, exact today-cell draw and actual app-surface FrameTimeline. Preserve failures, cancellation and unmatched events; never replace presentation with `drain`, nearest frames or an optimistic glyph. Pre-capture protocol: `scratch/remaining-latency-20261013/protocol.md`.
+
+**Fixture and limits:** verified `emulator-5580`, `UHabit_UI_Review_Disposable_20261011`, serial `EMULATOR36X6X11X0`, API35 x86_64, airplane mode1, 1080×2400/density420. Marker and v30/WAL checked by native guards; offline PRODUCTION_NEXT disables sync, remote calls, background jobs, widgets and reminders. Fixed date2026-10-11 and existing deterministic generator seed,42 total habits/41 active candidates, with10 additional daily Boolean habits holding900 or18250 controlled repetitions. Remaining generated habits, Tasks and Focus/Contribution fixture facts are the same logical fixture; UUIDs are run-local, so databases are not claimed byte-identical. Grouped BY_DAY_TIER list; requested366-day bounds unchanged. Per arm: one projection/entry-cold edit, two warm edits, two unchanged navigation roundtrips; two concurrent full/targeted control readers. Cold readers invalidate controller projection only; cold launch/first edit additionally invalidate manual/computed caches. Process/JIT/connection/OS page cache remain warm. Process-cold startup was not benchmarked. Navigation is a scripted request→Tasks idle barrier→Habits presentation roundtrip, not human tap latency.
+
+**Metric boundaries:** request starts before controller monitor entry and ends at synchronous return/throw; validatedPublicationMs is controller cache readiness, not Main row publication. Await timing wraps the actual timed CountDownLatch.await, including interrupted/failed outcomes. Successful and thrown requests retain outcomes; creation/join and measured active preparation counts are disabled by default, observer exceptions contained. Legacy monitor timings are retained unchanged. Traced planning acquisition begins before the diagnostic lock-begin callback, and hold starts after the acquired callback: these probes include/exclude that diagnostic self-time respectively and are not submicrosecond JVM lock estimates. Controlled reader traces are empty, making their acquisition comparison free of edit callback contamination. Old-controller hold includes preparation, so hold+prepare must not be summed. IO scheduling remains CoroutineTaskRunner/Dispatchers.IO; controller itself creates no workers. Cache request broadcasts are counted once by batch/generation; stale older-operation broadcasts and subsequent viewport setup are excluded from the actual input→glyph bind window.
+
+#### Corrected Iteration 4 comparison and actual waiting
+
+The correction inserted above PI-03's historical table supersedes its mixed BEFORE/AFTER, full/targeted and warmed/missing-context comparison.396.4066ms was direct provider preparation;0.2678ms was another targeted caller's warmed-cache hold after539.3526ms acquisition wait, with zero preparation. The historical322x statement does not establish total latency reduction. Fresh strict short-history controls provide a matched preparation-cost comparison:
+
+| 90d control metric ms | Previous7da542cb | Current30931b5e |
+|---|---:|---:|
+| Full owner preparation | 62.932 | 62.945 |
+| Full owner monitor hold | 66.955 | 3.108 |
+| Full owner total request | 76.159 | 75.790 |
+| Joined targeted reader monitor wait | 67.276 | 0.154 |
+| Joined targeted reader latch wait | 0 | 64.745 |
+| Joined targeted reader total request | 76.249 | 75.673 |
+
+**CONFIRMED:** almost unchanged total request time while waiting transfers to the latch. The short pair supports reduced monitor occupancy, not a general end-to-end speedup. Five-year controls had different winners: previous full owner517.012ms (prepare499.321,hold504.579) and joined target517.735ms (monitor505.366); current target entered first and prepared one habit45.798ms (total56.110), while full reader prepared the remaining nine393.454ms (total402.317), with two concurrent preparations. Comparing517.735→56.110 as same-key waiting improvement would be invalid. Warm control readers make no new preparation, but may still wait behind ambient work (previous five-year control~268–275ms). Current cold-launch same-key wait reaches2559.043ms, total3025.813ms, with one retry and459.261ms own preparation after awaiting; owner total2593.454ms. These intervals retain their actual context/attempt boundaries rather than a falsely additive exclusive breakdown.
+
+#### Actual committed-target presentation and critical path
+
+Strict endpoint authority is `before6`/`after6`: view identity equals the target row's first/today button at dataOffset0, manual expected value matches the durable qualified snapshot and published batch/revision, then marker→containing doFrame token→same-process presented app surface. Initial optimistic acknowledgment and digitizer/system-delivery time are outside this endpoint. No physical-panel claim.
+
+| Scenario | Before90d ms | After90d ms | Before1825d ms | After1825d ms |
+|---|---:|---:|---:|---:|
+| Cold projection Boolean | 1992.02 | 1310.25 | 3644.70 | 2679.18 |
+| Warm Boolean1 | 722.05 | 749.81 | 1287.96 | 1816.92 |
+| Warm Boolean2 | 1020.48 | 402.67 | 1775.83 | 1379.51 |
+| Habits→Tasks→Habits1 | 2981.84 | 2218.79 | 2745.36 | 2206.65 |
+| Habits→Tasks→Habits2 | 904.70 | 731.70 | 900.13 | 713.71 |
+
+Warm edits are mixed, and these n=1/2 pairs do not establish a uniform latency improvement or tail percentile. The large historical projection interval survives the controller change.
+
+Per-stage edit measurements (ms; publication is the exact batch drawn, not a later redundant full refresh):
+| Build/history/edit | Queue | SQLite step | Accepted→durable | Durable→drawn row publication | Main publication | Publication→glyph | Glyph→presentation |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| before6/90/1 | 58.26 | 2.50 | 67.87 | 1553.52 | 13.07 | 128.36 | 119.90 |
+| before6/90/2 | 8.25 | 46.46 | 61.53 | 540.73 | 3.03 | 28.90 | 70.58 |
+| before6/90/3 | 11.36 | 50.79 | 101.96 | 700.00 | 6.45 | 54.82 | 102.43 |
+| before6/1825/1 | 131.02 | 30.27 | 202.85 | 3169.38 | 15.92 | 67.17 | 103.01 |
+| before6/1825/2 | 63.74 | 2.24 | 69.65 | 1018.47 | 5.55 | 47.49 | 109.06 |
+| before6/1825/3 | 1.57 | 2.90 | 37.69 | 1518.87 | 5.22 | 57.75 | 142.89 |
+| after6/90/1 | 72.14 | 2.67 | 78.27 | 1023.09 | 12.68 | 77.19 | 93.75 |
+| after6/90/2 | 17.18 | 12.06 | 29.63 | 553.56 | 14.86 | 52.96 | 70.35 |
+| after6/90/3 | 3.07 | 5.34 | 9.13 | 203.22 | 2.72 | 47.61 | 103.46 |
+| after6/1825/1 | 124.80 | 11.59 | 195.49 | 2244.99 | 11.26 | 70.65 | 96.29 |
+| after6/1825/2 | 33.38 | 1.51 | 35.39 | 1647.70 | 4.67 | 37.22 | 79.40 |
+| after6/1825/3 | 2.36 | 1.39 | 4.86 | 1218.94 | 8.47 | 43.49 | 75.31 |
+
+Current five-year warm SQLite steps are1.507/1.394ms, but durable→drawn publication is1647.704/1218.944ms (94.8%/93.5% of input→glyph wall time). Thus fast commit does not imply durable screen readiness. Current warm full preparation handles40 unchanged-other candidates after the targeted habit, taking1331.2/947.8ms; snapshot initialization1054.6/698.4ms and nested scores/streaks611.3/371.3ms dominate. Short equivalents full prepare256.0/329.3ms, initialization178.8/136.8ms. Nested scores are part of init and are not added to it. Copying/projection/GC/scheduling remain included in wall durations; contributions fetch is only~2ms in these long full batches because controlled history varies Boolean entries, while fixture Focus facts stay constant. Source mechanism and fixed-workload measurements establish the historical work delaying publication; they do not prove a safe bounded-history replacement.
+
+The 200ms effective-revision full refresh and command-completion targeted refresh are distinct channels (`EffectiveHabitReadController.changed`, `HabitCardListCache.onCommandFinished`). Some targets are superseded by a full generation and only that full batch publishes. Current short warm edit2 instead publishes the target at203.219ms after durability before the later full batch566.537ms; the later publication must not be charged as its first visible latency. Redundant full work is confirmed, but arbitrary suppression could transfer work to navigation or violate unknown/Focus/external-change freshness.
+
+#### Counts, concurrent computation and scheduling
+
+| Whole capture counter | Before90d | After90d | Before1825d | After1825d |
+|---|---:|---:|---:|---:|
+| Controller requests | 15 | 15 | 16 | 16 |
+| Executed successful provider preparations | 8 | 7 | 7 | 10 |
+| Controller retries | 1 | 0 | 0 | 2 |
+| Maximum measured concurrent preparation | 1 | 1 | 1 | 2 |
+| Unique traced cache requests | 12 | 12 | 12 | 12 |
+| Unique traced worker batches begun | 7 | 7 | 6 | 7 |
+| Unique cache canceled batches | 5 | 5 | 5 | 5 |
+| Unique superseded batch markers | 7 | 6 | 7 | 7 |
+| Unique completed Main publications | 5 | 6 | 5 | 5 |
+
+These counts have different scopes: provider counts include controls/startup/setup; traced batches begin only once durable operation membership exists. Cancellation and supersession can describe the same batch and are not summed as disjoint work. Canceled workers may finish preparation before their generation fence discards publication. Each unchanged navigation makes3 refresh requests, executes1 worker/cache-hit request and0 provider preparations, with2 canceled/superseded batch requests. Two navigations therefore produce6 requests/2 workers/4 cancellations/0 prepares in every arm. The actual input→glyph interval has exactly1 full bind,1 entry bind and1 card measure per edit in all four arms. Broader phase totals included the next unmeasured viewport preparation and falsely suggested a global rebind storm. Full/entry/payload spans overlap. Ancestor framework measurement counts and frame lineage are retained in traceAttribution.records, not confused with card measures.
+
+DefaultDispatcher runnable intervals≥1ms (whole process capture, not exclusive per operation) p95/max: previous90d21.840/108.374ms, current90d22.330/253.521ms, previous1825d28.834/293.001ms, current1825d17.423/137.159ms. Actual task dispatch/FIFO predecessor waits are separately preserved in operation stageMetrics; large queue intervals cannot all be assigned to FIFO. No worker-pool saturation limit was proved. Maximum measured active prepare is1 previous, up to2 current; the five-year control's two preparations are disjoint missing subsets, not same-key duplicate work. All four strict captures observed zero controller requests on Main.
+
+#### Remaining expensive Main frames and synchronous readers
+
+Current five-year warm edit Main maxima95.445/70.956ms have only3.358/2.997ms Main CPU; long draw/postAndWait spans are render/software-emulator scheduling waits, not a card CPU storm. Cold current Main frames408.568ms(long)/344.405ms(short) similarly spend little CPU. Navigation is different: current first roundtrip Main frame894.237ms(long)/907.680ms(short), CPU448.919/471.857ms. Ancestor measure792.484ms/396.714ms CPU (long slice124791,parent124790) and809.029ms/418.619ms CPU (short119913,parent119911) contains RecyclerView create/bind/inflate traversal. Previous equivalents950.597ms/520.173ms CPU and1240.174ms/631.066ms CPU. Later navigation animation includes SearchView inflation/JIT-code-cache contention and further measure work; other frames wait in rendering. MainActivity navigation/source and exact request windows support Tasks shell/row construction attribution, but no dedicated Tasks row hook identifies each generic RecyclerView child. Source/data does not justify blaming historical projection for unchanged-data navigation: no provider prepares executed there.
+
+Known numerical dialog calls in ListHabitsScreen:330–353 and ShowHabitActivity:404–427 execute inside Dispatchers.IO; they can await/prep synchronously on that worker, not Main. CompareHabitsActivity.rebuildComparison:425 directly calls snapshots while constructing Views on Main and can synchronously prepare or latch-wait. This path was source-verified, not exercised by the two scenario workloads; zero observed Main requests is not a universal no-Main-wait guarantee. Notifications use TaskRunner workers. Snapshot/cache preparation can retain model/repository contention outside the optimized controller monitor.
+
+#### Confirmed completion gap and one recommended correction
+
+`InFlightBatch.latch.countDown()` occurs in the preparation finally before validated cache publication. Joined requests subsequently consult cachedSnapshots, not completed batch.results. Diagnostic `after4-1825-true-failure.json` records owner success339.153ms, readiness337.665ms; joiner total337.531ms, monitor16.018ms,latch311.604ms,three retries then EffectiveReadInvalidatedException. Both requested one stable context before any UI operation. Released latch plus not-yet-published cache permits rapid retries; the historical concurrency suite passing once did not cover this scheduling outcome. Strict UI captures retain zero control failures, so this diagnostic is not misrepresented as a failed user edit or data corruption. A prior stale snapshot observation (`after2-90-true.txt`) lacked final revision/value diagnostics and remains UNKNOWN between delayed refresh and speculative stale-model capture; final strict edits converged with SQLite/snapshot parity.
+
+**Single next correction:** make successful in-flight completion mean freshness-validated, published immutable batch results, with publication before successful latch release/consumption. Preserve outside-monitor preparation/waiting, all failure/invalidation/disposal/rollback wakeups, dataset/calendar/revision fences, FIFO and data semantics. This is the strongest concrete correction evidence because a reader contract failure was observed; ordinary UI presentation improvement is still HYPOTHESIS and must be remeasured after that correction. It will not itself eliminate full-history work or Tasks ancestor layout. Refresh coalescing and historical projection reuse remain hypotheses beyond this iteration, not additional implemented/recommended changes. **STOP: no correction started.**
+
+#### Overhead, endpoint coverage, artifacts and verification
+
+20 expected strict endpoints=12 edits+8 navigations across4 arms:20 linked,0 genuinely unmatched,0 ambiguous. Four cold-launch control windows have no target/input marker and remain unmeasured/unmatched by design. Raw edit parser outputs also retain2 navigation ordinals per capture as unmatched edit-marker records; the separate navigation parser resolves them, so they must not be counted twice. All unmatched raw records remain preserved. One discarded after2 input has no committed draw; other failed viewport/control preparations did not reach an edit. Prior after3/before4/after5 endpoints were same-row candidates, not exact today-cell proof; retain them as provisional and exclude from strict endpoint tables. No nearest-frame fallback, no fabricated presentation and no JSON/Perfetto cross-clock subtraction. Each90d strict trace has8 sorter_push_event_out_of_order errors; five-year traces have no nonzero error/data-loss counters in saved queries. Exact frame identity remains available, but CPU/scheduling quality limitations remain disclosed.
+
+Event-helper probe wall-time p50/p95/max ms: previous90d0.0416/2.6270/60.2912; current90d0.0351/2.1335/12.9096; previous1825d0.0421/2.8867/86.3465; current1825d0.0399/1.8594/22.4711. This times the event helper, excludes some argument/JSON construction, View observer work and system tracing, and includes preemption/GC; it is neither whole observer CPU nor total overhead. Null-hook controls `before4-{90,1825}-false.json`, `after3-{90,1825}-false.json` measure instrumented harness request→drain (not presentation). Enabled/disabled observations fluctuate in both directions under ordered runs/JIT/idle barriers; small controls do not establish a causal overhead percentage or negligible tracing. This qualifies previous 'negligible overhead' claims. All reported presentation latencies include tracing; no probe durations were subtracted.
+
+Raw directory: `scratch/remaining-latency-20261013/`. Strict stems `before6-90-true`, `after6-90-true`, `before6-1825-true`, `after6-1825-true`, each `.json`, `.perfetto`, `.txt`, `-capture*.txt`. Per-arm exact results `*-{edit,nav}-presentation.json`, `*-qualified-analysis.json`/`*-final-analysis.json` include stage spans, publication lineage, unique counts, framework ancestor/frame/scheduling records and exact rerunnable SQL. Reports `perfetto_analysis_report.md`, `provisional-attribution-report.md`, `historical-metric-correction.md`; source/APK identity manifest `identities.json`; predeclared protocol/capture config and runner; all failed native logs and available failure JSON/traces retained. One-shot batched trace query used after local sandbox socket session limitations; pinned Perfetto wrapper/schema/stdlib inspected. No trace/fixture/database/APK/raw log staged in Git.
+
+Verification: debug app and instrumentation APK builds succeeded for both isolated controller versions; final identical exact-cell harness4/4 native scenario tests PASS (current49.281/73.223s,previous61.754/77.028s), with guarded v30/WAL/quick_check and durable parity. Four null-hook controls PASS. Existing EffectiveHabitReadControllerContentionTest PASS(4.406s) reused for unchanged controller instrumentation; its result does not erase the later diagnostic failure. Analyzer9 targeted tests and existing exact-presentation parser7 tests PASS; scoped diff/whitespace review. Production behavior change: none. AVD evidence does not establish Xiaomi performance or physical panel latency.
