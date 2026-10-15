@@ -313,10 +313,10 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
     }
 
     override fun resort() {
-        list.setBlocks(getBlocks())
-        list.organizationFacade = organizationFacade
-        list.resort()
-        observable.notifyListeners()
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.measure("sqlite.blocks", this) { list.setBlocks(getBlocks()) }
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.measure("sqlite.facadeAssignment", this) { list.organizationFacade = organizationFacade }
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.measure("sqlite.explicitResort", this) { list.resort() }
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.measure("sqlite.notify", this) { observable.notifyListeners() }
     }
 
     @Synchronized

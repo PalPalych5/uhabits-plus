@@ -2,7 +2,11 @@
 
 ## 1. Executive status
 
-Iteration 14: 2026-10-14–15, Asia/Novosibirsk. Starting HEAD `98b752d4195459ae759e10f8f9ba31b2084bfd84`, branch `dev`. Only verified offline disposable emulator-5580, v30 WAL.
+**Iteration 15 COMPLETE — candidate REJECTED (2026-10-15, dev, starting HEAD8962ec91).** Grouped resort is dominated by repeated root/path SQL work amplified by synchronous filtered-list rebuilds:166 root misses,166 unused OrganizationState reads and178 full ancestor reads per fixture edit. Root-only traversal removes those166 state reads and lowers grouped CPU/median presentation, but paired Tasks-edit tails regress in1825/grouped and90/global;90/global warm tails also regress. Archive and revert only this candidate. Retain disabled attribution, deterministic semantic tests and evidence-retaining QA improvements. Iteration14 lock-order repair remains; snapshot-sharing/range-cache candidates remain absent.
+
+**Current evidence:**240 primary edits,239 exact presentation joins;96 primary Habits returns,94 exact joins. Full ledger retains280 accepted inputs (278 linked,2 unmatched) and102 navigation returns (100 linked,2 unmatched), including the interrupted wrong-fixture-date attempt. All primary SQLite/effective/visible parity checks pass. Final retained97 core +9 native +24 Python checks and both Android APK builds pass; actual disposable open-v30 remains WAL. No performance improvement is accepted/shipped. Next emulator-only investigation: eliminate measured grouped lookup/rebuild fan-out while preserving live observer semantics, with explicit Tasks/warm-tail attribution before another candidate. STOP after this evaluation. See PI-20261015-02; prior Iteration14 results below are historical.
+
+Prior Iteration 14: 2026-10-14–15, Asia/Novosibirsk. Starting HEAD `98b752d4195459ae759e10f8f9ba31b2084bfd84`, branch `dev`. Only verified offline disposable emulator-5580, v30 WAL.
 
 **CONFIRMED:** Iteration13's26.35s maximum crosses later navigation/viewport preparation; first same-revision row is ~311ms. Preserve all physical joins, but qualify late endpoints as unmatched for their original edits. A bounded native regression proves controller→revision / rollback revision→controller lock inversion; its repair passes final liveness/freshness tests.
 
@@ -1368,3 +1372,149 @@ Required lock inversion is repaired as a correctness blocker, not blamed for the
 Retained source/files: EffectiveHabitReadController (lock repair + optional diagnostics), its bounded Android regression, existing snapshot semantic test, existing post-navigation QA fixture/scope controls, QA runner/analyzer + focused scope tests, core test-mocking configuration, this record and handoff. The production snapshot candidate and candidate-only performance assertion are absent. Independent review confirms gate arithmetic, revert, retained locking and semantic-test applicability.
 
 **Next:** emulator-only attribution of grouped resort/root-path/observer work before choosing a correction. Also retain Statistics navigation and exact-presentation tail coverage. No physical-device release direction, cloud/private database access, journal-mode redesign, push or additional optimization. STOP after this rejected candidate evaluation and verified correctness repair.
+
+
+## PI-20261015-02 — Iteration 15: grouped resort and synchronous observers
+
+Status: COMPLETE / root-only candidate REJECTED and reverted. Branch dev, verified starting HEAD8962ec91c6c22cce93fe20c993b14ceca4567109. Question: which in-scope work causes the grouped resortAndObservers stage, separating history depth from grouping? Initial source evidence: SQLiteHabitList.resort assigns the facade (whose MemoryHabitList setter sorts/notifies), then explicitly sorts/notifies again. Inner synchronous filtered-list observers are absent from the old wrapper-only listener count. Neither finding alone proves latency attribution.
+
+Pre-registration: add disabled command-scoped probes, then a small controlled 2x2 (90/1825 days x sphere/position or global status/position), identical42-habit organization/Tasks/Focus fixture and visible demo target. Measure sort/comparator/root/SQL/callback work and scheduled CPU, not unrelated elapsed background activity. Select only one proven correction; keep all required observer semantics. Baseline and candidate use identical probes/fixture, isolated APKs, counterbalanced order. Acceptance requires deterministic ordering/invalidation/concurrency checks, exact SQL/effective/visible parity, strict original-operation FrameTimeline joins, reduced real work and end-to-end grouped benefit without reproducible material short/global/navigation regression. Preserve every slow/unmatched attempt. No uncommitted optimistic state, new persistent cache, history truncation, WAL changes or restoration of rejected candidates.
+
+### Retained interrupted attempt and QA amendment
+
+Original b1825sa (baseline1825/global) hit the600s host runner timeout after a large host/tool clock discontinuity. Native monotonic duration was117.207s, so the host gap is NOT assigned to application latency. One input was accepted and a changing autocommit return occurred, but no committed target glyph was captured and the native test failed before appending its operation result. Read-only synthetic SQLite evidence shows target habit97 written for2026-10-15 while the fixture2026-10-11 value remained0; the publication check expected2 for the fixture day and failed. The exact triggering calendar event was not logged; existing controller calendar receivers can legitimately reset getToday to the real day. This is retained as a timeout/date-mismatched, unmatched attempt, not discarded as an outlier or included as a valid presentation sample. RawJSON,35MBtrace, original full host log and synthetic-only readback are preserved under scratch/iteration15/b1825sa*.
+
+QA amendment before further measurements: restore the fixture day only during unmeasured viewport preparation when drift is detected, signal revision and settle; assert/log the day immediately before measured pointer events and the post-drain SQLite query. Never restore during a measured edit. Production APK hashes remain unchanged. Keep the completed90/grouped ABBA cohort; repeat the entire1825/global cell with matched guarded test APKs/new labels. Original successful c1825sa and failed b1825sa remain separate supplemental records. primary-protocol-v2.json records both QA artifact generations and the amendment. The runner now preserves partial stdout/timeout metadata immediately and attempts native/trace recovery before failing; capture signaling requires exact ownership. Four deterministic mocked runner checks pass. A temporary SYSTEM_REQUIRED request on the orchestrator thread reduces idle-sleep risk and is released in finally, without changing the power plan.
+
+
+### Final decision and experiment identity
+
+Evaluate ONE correction, then stop: root-only parent traversal was implemented, passed candidate correctness checks and reduced real grouped work, but failed the preregistered end-to-end tail gate. It is **not retained**. No event suppression, persistent organization cache, snapshot-sharing/date-range-cache restoration or unrelated performance change was substituted. The archive is `scratch/iteration15/rejected-root-only-with-probes.patch`, plus `candidate.patch`, isolated candidate source/APKs and `SQLiteRootGroupingTest-candidate.kt`. `candidate-decision.json` records rejection. Retained production behavior uses the original `ContainerQueries.path()` and original root selection; contracts/facade have no net diff.
+
+Verified branch/source/dirty identity before work: dev,8962ec91c6c22cce93fe20c993b14ceca4567109; `initial-state.json` and `source-identity.json`. Preserve132 pre-existing artifact deletions, unrelated untracked files and byte-identical snapshot stat noise. Only emulator-5580 / UHabit_UI_Review_Disposable_20261011 / EMULATOR36X6X11X0, airplane mode1, guarded synthetic offline PRODUCTION_NEXT v30. The open native connection reports `journalMode=wal` (e.g. diag1825g.json); the production opener requests WAL, not just QA setup. Final retained open-WAL reader/writer/savepoint test passes. No WAL/transaction/migration code change, real database, physical-device, sync or cloud action. Prior v29 source finding remains unchanged; this iteration does not claim a fresh v29 runtime measurement.
+
+### Controlled design and source attribution
+
+The pilot is3 genuine visible Boolean toggles in each90/1825-day × grouped/global cell. Same42 habits, organization hierarchy and date,10 history-controlled habits, Tasks, historical goals and Focus Contributions; demo target is visible and stable. Grouped is sphere/position; global is completion-sensitive status/position, so it tests real movement. History width and sort configuration are explicit separate cells. Pilot ordering90g,1825global,1825g,90global is bounded attribution, not a randomized production benchmark.
+
+CreateRepetitionCommand's measured worker stage calls SQLiteHabitList.resort: facade assignment sorts/notifies its inner MemoryHabitList; explicit resort sorts/notifies again; outer observable then notifies. Synchronous listeners rebuild filtered MemoryHabitLists, each sorting again. SphereComparator resolves placements and root paths after its per-sort caches reset. The old path reads OrganizationState to attach currentRevision, although getRootGroupKey consumes only the first root ID; every ancestor is materialized as a full Container. Root indices and placement reads are separate work. A command-scoped thread-local collector excludes unrelated background SQL from these counts; nested postorder spans identify subjects and callback downstream work. A callback span is entered after acquiring ModelObservable's monitor, so it does not measure monitor acquisition wait. Elapsed minus owner scheduled CPU is not automatically a repository lock wait. Retained owner thread states/blocked-function records provide that distinction; no deterministic repository-monitor bottleneck was demonstrated here.
+
+Per grouped edit in BOTH history cells:6 Memory resorts,7 observable notifications,4 synchronous callbacks,166 root misses/lookups,178 full-container ancestor reads,166 OrganizationState reads and547 SELECT step calls. Global has the same6/7/4 events but no sphere/root traversal and1 SELECT step call. SELECT steps count ROW/DONE invocations, **not distinct SQL queries**. Composed comparator construction is1/edit; selectors162 grouped, global median362 (comparisons207), so repeated comparator construction is not the dominant source. Detailed grouped root-lookup inclusive spans consume approximately89–90% of measured stage wall. Callback self work is small; inclusive callback time largely contains filtered rebuild/root queries. Do not add nested callback, sort and lookup times together or label sort self as pure TimSort CPU.
+
+Baseline detailed-probe medians (wall / Debug owner CPU ms):90g1101.82/958.76;1825g841.18/695.80;90global95.93/47.38;1825global65.77/50.87. Work counts agree across histories: grouping, rather than history depth, drives this stage in the fixed fixture. Detailed probes are expensive, especially relative to global sorting. These absolute values are **not** low-probe latency estimates. Primary confirmation disables detailed counters/spans in both builds and retains only one outer-stage Trace span and independent Debug CPU duration. `resort-detail-analysis.json` preserves24 valid span trees, raw counters, nested/self calculations and source identities. Candidate detailed cohort has an added observable.notify span and calendar guard, so its absolute detailed latency is contextual only; primary arms establish the comparison.
+
+### One selected correction and invariants
+
+Candidate adds ContainerQueries.rootId with path fallback, changes the facade to consume it, and implements a fresh SQLite parent-UUID walk using one locally reused statement, visited-node guard and finally-finalize. It avoids the unused path revision and full Container/path metadata. No cross-operation cache, retained statement, lock, transaction or listener registration is added. Traversal deliberately matches TreePolicy's add-before-read semantics for missing/deleted nodes, archived ancestors and cycles; placement/ancestor reads remain fresh on every call. It preserves all6 sorts/7 notifications/4 callbacks. Candidate detailed runtime confirms166 OrganizationState reads→0,178 full Container reads→178 parent-only reads,547→381 SELECT steps. Parent/placement lookup fan-out remains, so this is a bounded reduction rather than an architectural cure.
+
+Candidate red/green: four SQLiteRootGrouping tests include query budget, path differential parity, placement/reparent/real rollback/same-local-ID dataset freshness, and injected statement failure cleanup. On baseline, two candidate-only assertions fail (query budget and failed-traversal statement cleanup); corrected baseline fixture avoids the repository's deliberately cached insert statement, preserving active-handle assertions. Candidate all4 pass. Initial incorrect fixture failure and corrected red/green logs remain archived. Failure cleanup improvement is part of this candidate's local statement design, not a separately retained production fix. On rejection archive/remove the2 candidate-only assertions; retain the2 valid semantic tests. No speculative committed values, history truncation or revision bypass.
+
+### Matched low-probe end-to-end results
+
+16 isolated arms, ABBA or BAAB within EACH cell,2 arms/product/cell,3 edits in each of5 scenarios: warm repeated, Statistics return, Statistics date-change return, Tasks return,3 mixed navigation cycles. Total240 edits and96 Habits-return endpoints. Each arm starts fresh projection/entries but process/JIT/OS caches are already warm; do not call this process-cold. No build/trace processing overlapped capture. `primary-protocol-v2.json` records arm order, fixture/APK hashes and the explicitly retained QA amendment above. Baseline app SHA256 d8e8007772f5bb87aa706260f1dda4aebb548c61daccd3a3a41c3464c1384356; candidate c0efbd949b584a43e59c9c602e5784424c9c4f802f0091903d6c6a78b2f359a0. Only the3 root-only source files differ in production behavior; shared probes/QA are matched. All primary native sqlParity, viewParity and visible checks are true240/240; fixture hashes match. Raw native SQLite changing-autocommit return is distinct from command completion. Qualified row must match original operation/date/revision, then exact committed glyph and its containing app-surface FrameTimeline frame. Missing frames stay null.
+
+The following independently audited tables are the rejected candidate comparison. All240 per-operation stage distributions, scenario/first/later partitions and matched-arm gates are in `primary-summary.json`; complete rows in `primary-operations.csv` and `primary-navigation.csv`. Names are recorded by the summarizer; accepted-operation-ledger-v2.csv is the all-attempt ledger.456 distributions and all240 source presentation/parity records were independently recalculated. Do not pool four cells, add medians, or infer end-to-end improvement from a microbenchmark.
+
+## Exact presented outcomes
+
+Each cell is `n; median / p95 / maximum`.
+
+| Cell | Edit baseline | Edit candidate | Navigation baseline | Navigation candidate |
+|---|---:|---:|---:|---:|
+| 90-grouped | 30; 1041.91 / 2295.64 / 2521.32 | 30; 835.92 / 1335.07 / 1839.09 | 12; 604.21 / 843.40 / 843.40 | 12; 488.01 / 932.51 / 932.51 |
+| 1825-grouped | 30; 837.24 / 1197.88 / 3042.19 | 30; 717.51 / 1235.18 / 1410.00 | 12; 425.86 / 808.23 / 808.23 | 11; 331.27 / 480.12 / 480.12 |
+| 90-entrySensitive | 30; 381.41 / 695.75 / 1048.22 | 30; 440.55 / 957.32 / 1311.01 | 11; 299.81 / 362.40 / 362.40 | 12; 335.49 / 1231.27 / 1231.27 |
+| 1825-entrySensitive | 29; 527.91 / 1025.53 / 1229.30 | 30; 456.96 / 917.26 / 1262.29 | 12; 328.26 / 528.35 / 528.35 | 12; 271.84 / 401.63 / 401.63 |
+
+#### Stage medians
+
+Each stage is `n/median` baseline → candidate. Different denominators are deliberate; adding medians does not reconstruct the end-to-end median. Resort is a parallel nested interval, not an additive pipeline stage.
+
+| Cell | Accepted→durable | Durable→row | Row→glyph | Glyph→present | Resort native wall | Resort Debug CPU |
+|---|---:|---:|---:|---:|---:|---:|
+| 90-grouped | 30/28.97 → 30/21.91 | 30/869.12 → 30/649.01 | 30/45.88 → 30/53.25 | 30/101.39 → 30/100.45 | 30/761.66 → 30/540.23 | 30/596.75 → 30/411.53 |
+| 1825-grouped | 30/24.92 → 30/16.96 | 30/709.05 → 30/566.24 | 30/37.86 → 30/43.07 | 30/60.82 → 30/67.93 | 30/552.86 → 30/415.55 | 30/453.19 → 30/327.82 |
+| 90-entrySensitive | 30/16.24 → 30/19.74 | 30/244.93 → 30/284.06 | 30/53.20 → 30/48.77 | 30/80.34 → 30/85.34 | 30/8.75 → 30/15.04 | 30/5.04 → 30/7.68 |
+| 1825-entrySensitive | 30/32.80 → 30/28.14 | 30/354.59 → 30/333.05 | 30/36.34 → 30/36.54 | 29/65.67 → 30/64.84 | 30/10.24 → 30/12.56 | 30/8.07 → 30/9.06 |
+
+#### CPU and layout medians
+
+CPU/layout use exact accepted→presented windows; missing presentation has no invented context. App CPU sums concurrent threads and can exceed elapsed wall. Layout is union wall overlap, not CPU.
+
+| Cell | Main CPU | App CPU | Main runnable | Main sleeping | Card measure union | Resort owner sched CPU |
+|---|---:|---:|---:|---:|---:|---:|
+| 90-grouped | 30/89.60 → 30/88.43 | 30/1308.43 → 30/957.29 | 30/83.25 → 30/74.56 | 30/895.62 → 30/684.05 | 30/0.31 → 30/0.37 | 30/596.00 → 30/416.20 |
+| 1825-grouped | 30/74.45 → 30/73.67 | 30/1087.95 → 30/854.87 | 30/46.87 → 30/46.17 | 30/697.91 → 30/603.31 | 30/0.23 → 30/0.25 | 30/454.46 → 30/328.76 |
+| 90-entrySensitive | 30/85.63 → 30/72.27 | 30/479.11 → 30/520.90 | 30/57.30 → 30/74.98 | 30/240.87 → 30/305.06 | 30/0.18 → 30/0.28 | 30/6.93 → 30/10.39 |
+| 1825-entrySensitive | 29/89.08 → 30/78.47 | 29/675.78 → 30/614.26 | 29/79.33 → 30/63.59 | 29/346.59 → 30/333.31 | 29/0.22 → 30/0.26 | 30/8.99 → 30/9.26 |
+
+#### Provider work, memory and delayed observations
+
+Provider totals cover all recorded non-fixture/non-range-switch UI phases, including cold launch. These are per two-arm/product cohorts, not per-edit medians. Processed days are sum of provider batch horizons; processedHabitDays multiplies each horizon by its prepared habit count. PSS is two end-of-arm samples, not retained heap/leak evidence.
+
+| Cell | Prepared snapshots B→C | Provider ms B→C | Batch days B→C | Habit-days B→C | End PSS KiB B→C | Observed post-retirement events B→C |
+|---|---:|---:|---:|---:|---|---:|
+| 90-grouped | 860 → 860 | 15010.96 → 11735.47 | 19830 → 19830 | 304430 → 304430 | 126774, 122345 → 146004, 134334 | 0 → 0 |
+| 1825-grouped | 860 → 860 | 20128.93 → 17600.04 | 94690 → 94690 | 1636930 → 1636930 | 158595, 144395 → 150277, 159047 | 0 → 0 |
+| 90-entrySensitive | 860 → 860 | 8257.10 → 12481.90 | 19830 → 19830 | 304430 → 304430 | 126316, 131416 → 124894, 119522 | 0 → 0 |
+| 1825-entrySensitive | 860 → 860 | 24881.13 → 20422.92 | 94690 → 94690 | 1636930 → 1636930 | 142018, 146813 → 144978, 145984 | 0 → 0 |
+
+Delayed observations count only recorded provider/controller/publication/move events after final retirement until artifact emission. They do not measure post-present CPU, exclude other callback types, and do not prove no later work. Full event records are retained in arms[].delayedAfterLastRetirement.
+
+#### Rejection gates
+
+Each value is per-arm scenario p95; edit scenarios n3/arm (p95=max), standalone navigation often n1/arm. Rejection condition: >10% AND >20ms worsening in BOTH matched order pairs.
+
+| Cell / endpoint / scenario | Forward pair B→C | Reverse pair B→C | Coverage caveat |
+|---|---:|---:|---|
+| 1825-grouped / edit / afterTasks | 3:839.6896 → 3:1410.0045 | 3:881.1869 → 3:997.7279 | Small scenario sample; all observed records retained |
+| 90-entrySensitive / edit / afterTasks | 3:440.6357 → 3:762.2441 | 3:422.0910 → 3:553.4524 | Small scenario sample; all observed records retained |
+| 90-entrySensitive / edit / warmRepeated | 3:695.7475 → 3:957.3153 | 3:378.6542 → 3:420.1889 | Small scenario sample; all observed records retained |
+| 90-entrySensitive / navigation / afterMixedCycles | 2:334.5001 → 3:1231.2695 | 3:362.4049 → 3:409.5145 | Forward baseline navigation missing one endpoint; complete tail UNKNOWN |
+
+#### Missing endpoints and health
+
+- b1825sb2 edit 8 (afterStatisticsDateChange): no_presented_frame_for_containing_doFrame.
+- c1825ga2 nav 6 (afterTasks): no_presented_frame_for_containing_doFrame.
+- b90sa2 nav 10 (afterMixedCycles): no_presented_frame_for_containing_doFrame.
+
+Nonempty per-arm trace health: `{"b90ga": [{"name": "sorter_push_event_out_of_order", "severity": "error", "value": 8}], "c90ga": [{"name": "sorter_push_event_out_of_order", "severity": "error", "value": 8}], "c90gb": [{"name": "sorter_push_event_out_of_order", "severity": "error", "value": 8}], "b90gb": [{"name": "sorter_push_event_out_of_order", "severity": "error", "value": 8}], "b1825sa2": [{"name": "sorter_push_event_out_of_order", "severity": "error", "value": 8}], "b1825sb2": [{"name": "sorter_push_event_out_of_order", "severity": "error", "value": 8}], "c1825sb2": [{"name": "sorter_push_event_out_of_order", "severity": "error", "value": 16}], "c1825ga2": [{"name": "sorter_push_event_out_of_order", "severity": "error", "value": 8}], "b1825ga2": [{"name": "sorter_push_event_out_of_order", "severity": "error", "value": 8}], "b1825gb2": [{"name": "sorter_push_event_out_of_order", "severity": "error", "value": 20}], "b90sa2": [{"name": "sorter_push_event_out_of_order", "severity": "error", "value": 16}], "c90sa2": [{"name": "sorter_push_event_out_of_order", "severity": "error", "value": 8}], "c90sb2": [{"name": "sorter_push_event_out_of_order", "severity": "error", "value": 8}], "b90sb2": [{"name": "sorter_push_event_out_of_order", "severity": "error", "value": 8}]}`. Strict joins do not establish trace-wide error freedom.
+
+
+#### First versus later edits and cache reuse
+
+Each presentation value is n; median/p95/max ms. First is sample0 of each scenario (including warmRepeated), later samples1/2. Exact per-navigation scenario breakdown remains in primary-summary.json; this table does not isolate JIT or collapse five different returns into a causal claim.
+
+| Cell | First edit B → C | Later edits B → C | Native cache hits B → C | Prepared B → C |
+|---|---|---|---|---|
+| 90-grouped | 10; 1112.11/2295.64/2295.64 → 10; 867.39/1839.09/1839.09 | 20; 1035.30/1712.43/2521.32 → 20; 828.15/1076.11/1335.07 | 2331 → 2211 | 860 → 860 |
+| 1825-grouped | 10; 911.00/1128.41/1128.41 → 10; 703.45/1158.58/1158.58 | 20; 802.64/1197.88/3042.19 → 20; 729.73/1235.18/1410.00 | 2370 → 2530 | 860 → 860 |
+| 90-entrySensitive | 10; 408.49/1048.22/1048.22 → 10; 398.90/957.32/957.32 | 20; 381.41/593.46/695.75 → 20; 458.20/762.24/1311.01 | 2750 → 2585 | 860 → 860 |
+| 1825-entrySensitive | 10; 474.01/817.66/817.66 → 10; 456.96/806.76/806.76 | 19; 530.27/1229.30/1229.30 → 20; 469.42/917.26/1262.29 | 2611 → 2570 | 860 → 860 |
+
+Each arm has25 provider calls and430 prepared snapshots across non-fixture/non-range-switch UI phases, including fresh coldLaunch; two-arm totals are860/product/cell. Cold preparation and range switches were explicitly captured in the detailed pilot, while primary disables repeated9 standalone range alternations to bound the navigation campaign. Prepared work/habit-days remain equal; cache-hit counts are recorded controller.lock events, not inferred avoided work. No cache-architecture win is claimed. All recorded frames except one1825-global baseline outcome include App Deadline Missed (mixed SurfaceFlinger/prediction/buffering causes); source frame records preserve exact jank strings. The selected-name framework layout/measure median is0 because no matching slices were observed, not because layout is free. Card-measure union and Main CPU medians are above. No allocation profiler, forced-GC retained heap or complete post-presentation CPU campaign was collected; PSS and0 recorded delayed events cannot prove a memory win, absence of leaks or absence of later CPU. Rejection does not depend on inventing such a claim.
+
+### Tail attribution, limitations and rejection
+
+Worst linked primary operation b1825gb2/op8: accepted→present3042.193ms; exact worker resort2754.881ms, owner scheduled CPU2273.154ms, runnable481.727ms; independent Debug CPU2282.066ms. Main CPU58.982ms, Main sleeping2878.449ms; no overlapping GC-named slice. This localizes substantial necessary/removable work to grouped resort, rather than Main layout or an assumed emulator stall. It does not identify every slow query as monitor blocking. First cold pilot90g stage2437ms has1623ms scheduled CPU and353ms sleeping; long1318/864/155ms similarly contains non-CPU intervals. No unexplained remainder is assigned to GC, JIT, withRevision or the emulator.
+
+Global candidate c1825sb2/op12 tail1262.293ms overlaps GC-named slice union1004.142ms/JIT-named384.077ms and Main runnable280.995ms; event-local retag485.746ms. These overlaps are contextual, not proof of a stop-the-world cause. Short global candidate Tasks op12/6 tails762.24/553.45ms include resort30.36/89.94ms; warm op1/14 tails957.32/420.19ms include resort30.39/4.16ms. Main sleeping/runnable and JIT context exist, with no GC-named overlap in those4, but sleeping reason remains UNKNOWN. The source global path does not invoke rootId, so candidate-dependent tail mechanism is unproved. This cannot excuse or remove slow operations. Both matched pairs breach the preregistered >10% AND >20ms p95 gate for90/global warm/Tasks and1825/grouped Tasks. At n3 per scenario, p95=max; bounded samples are evidence for conservative rejection, not a universal statistical causal estimate. Mixed navigation additionally worsens in both pairs, with an incomplete forward baseline endpoint explicitly UNKNOWN. Grouped aggregate medians/CPU improve, but no general performance win is certified.
+
+Exact overall ledger:280 accepted =240 primary +12 baseline pilot +12 candidate detailed +15 original successful supplemental +1 failed interrupted input.278 linked,2 unmatched,0 ambiguous. Primary239/240; missing b1825sb2/op8 afterStatisticsDateChange has committed glyph but no presented frame for its containing doFrame. Failed original b1825sa/op1 is forensic-unmatched with actual-write636.9213ms, wrong fixture date, raw unqualified row interval9328.975ms, and NULL qualified-row/glyph/presentation/total.102 navigation attempts (96 primary+6 supplemental):100 linked,2 unmatched; missing c1825ga2/nav6 afterTasks and b90sa2/nav10 mixed cycles. Never substitute a nearby frame or discard the timeout. `accepted-operation-ledger-v2.json/.csv` and navigation CSV retain every operation, source lineage, reason and classification; v1 outputs also preserved.
+
+Trace health retains sorter_push_event_out_of_order errors in14/16 primary traces (8–20 events); no additional data-loss rows returned by retained queries. Strict unique joins do not establish trace-wide health. Owner scheduler versus independent Debug CPU in long arms differs median2.270ms/max38.819ms; retain that limit. Literal executed SQL, exact PID/UTID windows, all thread states/blocked-function fields, layout unions, GC/JIT records and health are in each *-primary-context.json; no native-to-trace timestamp subtraction or guessed clock mapping. The selected root traversal adds no persistent cache/new background task, but unmeasured late work remains a limit; the candidate is reverted regardless.
+
+### Retained files, final checks and ranked next work
+
+Retained source: optional HabitResortDiagnostics; command scope and SQLite/Memory resort, comparator/cache, repository-path and live ModelObservable probes; native PostNavigationPresentationAttributionTest controls/outer CPU/guarded calendar; evidence-preserving runner plus deterministic runner tests;2 SQLite root-order/invalidation semantic tests and4 diagnostic isolation/exception tests; this report/handoff. Disabled diagnostics return before per-call clock, collector allocation or thread-local lookup; no production hook assignments. QA installs hooks only explicitly and clears finally. Listener order, duplicate notifications, exceptions, monitors, comparator tie-breaking, placement semantics and FIFO remain unchanged. Root-only API/facade/algorithm is absent; snapshot byte-identical to starting HEAD. Independent retained-source review found no actionable blocker; custom intermittently failing diagnostic clocks could invalidate duration origin, not business outcomes, and actual QA uses stable System.nanoTime/Debug clocks.
+
+Final retained checks:97 core tests (7 facade,15 store contracts,5 store specific,2 root semantics,4 diagnostics,3 Memory concurrency,13 SQLiteHabitList,2 effective DB concurrency,20 snapshot,17 revision,9 widgets),0 failures/errors/skips; assembleDebug and assembleDebugAndroidTest exit0. Candidate99 core passed before rejection.24 Python QA tests pass, including4 new runner checks (timeout evidence, missing alternate pull, capture ownership/reused label). Final retained APK reruns9 native tests: controller/revision lock regression1, contention/invalidation1, InFlightBatch6, actual open-v30 WAL readers/writers/savepoints1; all pass. See final-retained-checks.txt, final-retained-core-results.json, python-tests-final.txt, retained-native-*.txt and candidate red/green archives. All build/test results refer to observed exit/status, not planned checks. Required Iteration14 liveness repair is retained and freshly tested.
+
+| Rank | Confirmed cost / next bounded question | Confidence / risk |
+|---|---|---|
+|1|Grouped SQL root/placement fan-out across6 sorts and4 callbacks; original166 unused revision reads remain because this candidate failed E2E acceptance. Can repeated data work be removed while preserving live/reentrant observer semantics and both paired Tasks tails?|Mechanism/work CONFIRMED; safe accepted correction UNKNOWN; medium/high risk|
+|2|After-Tasks and global warm durable→row/scheduling tails persist, often outside the tiny global resort. Reconstruct sleeping/runnable/revision/retag intervals for these exact operations before another candidate.|Intervals CONFIRMED, precise blocker UNKNOWN; medium risk|
+|3|Remaining immutable revision-only history rebuild and cold/cross-range projection work; prepared counts unchanged. Do not restore rejected sharing/two-range designs.|Work CONFIRMED; accepted strategy UNKNOWN; high semantic risk|
+|4|Row→glyph ~36–53ms medians and glyph→actual frame ~61–101ms, navigation rendering/presentation; recorded layout names do not prove dominance.|Intervals CONFIRMED, exclusive cause UNKNOWN; medium risk|
+
+Recommended next direction remains **emulator-only grouped lookup/rebuild fan-out attribution with Tasks/warm-tail controls**. This iteration stops after rejecting the ONE tested optimization and retaining verified investigation infrastructure. No physical-device release redirection, second candidate, push, private/cloud operation or WAL redesign.

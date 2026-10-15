@@ -127,6 +127,7 @@ class SQLiteOrganizationStore(
     // ========================================================================
 
     override fun readState(): OrganizationStateSnapshot {
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.count("repository.organizationStateReads")
         val stmt = db.prepareStatement(
             "SELECT cutover_revision, current_revision, cutover_at FROM OrganizationState WHERE id = 1"
         )
@@ -155,6 +156,7 @@ class SQLiteOrganizationStore(
     }
 
     override fun getContainer(id: ContainerId, includeDeleted: Boolean): Container? {
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.count("repository.containerReads")
         val sql = """
             SELECT c.uuid, p.uuid AS parent_uuid, c.name, c.color, c.icon,
                    c.sibling_order, c.is_archived, c.created_at, c.updated_at, c.deleted_at, c.revision
@@ -188,6 +190,7 @@ class SQLiteOrganizationStore(
     }
 
     override fun getHabitPlacement(habit: HabitRef): HabitPlacement? {
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.count("repository.placementReads")
         val stmt = db.prepareStatement(
             """
             SELECT h.uuid, c.uuid, hp.local_order, hp.placement_origin, hp.revision
@@ -472,6 +475,7 @@ class SQLiteOrganizationStore(
         getContainer(id, includeDeleted)
 
     override fun roots(includeArchived: Boolean): List<Container> {
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.count("repository.rootsReads")
         val sql = """
             SELECT c.uuid, p.uuid AS parent_uuid, c.name, c.color, c.icon,
                    c.sibling_order, c.is_archived, c.created_at, c.updated_at, c.deleted_at, c.revision
@@ -511,7 +515,10 @@ class SQLiteOrganizationStore(
     }
 
     override fun path(id: ContainerId): ContainerPath =
-        TreePolicy.buildPath(id, readState().currentRevision) { getContainer(it) }
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.measure("repository.path") {
+            org.isoron.uhabits.core.io.HabitResortDiagnostics.count("repository.pathReads")
+            TreePolicy.buildPath(id, readState().currentRevision) { getContainer(it) }
+        }
 
     override fun subtreeIds(id: ContainerId): Set<ContainerId> =
         TreePolicy.collectSubtreeIds(id) { parentId ->

@@ -69,7 +69,9 @@ data class CreateRepetitionCommand(
         timed("repetition.modelRefresh") {
             habit.id?.let { habitList.refreshHabitFromDatabase(it, habit) }
         }
-        timed("repetition.resortAndObservers") { habitList.resort() }
+        timed("repetition.resortAndObservers") {
+            org.isoron.uhabits.core.io.HabitResortDiagnostics.collect(trace?.ordinal) { habitList.resort() }
+        }
         val syncManager = (habitList as? SQLiteHabitList)?.syncManager ?: return
         timed("repetition.syncQueue") {
             if (value == Entry.UNKNOWN) {

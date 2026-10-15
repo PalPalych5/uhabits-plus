@@ -19,6 +19,7 @@ import org.isoron.platform.io.queryLong
 import org.isoron.platform.io.queryString
 import org.isoron.platform.io.run
 import org.isoron.platform.time.LocalDate
+import org.isoron.platform.time.getToday
 import org.isoron.platform.time.setToday
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.activities.habits.list.views.CheckmarkButtonView
@@ -29,6 +30,8 @@ import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.core.commands.HabitEditTrace
 import org.isoron.uhabits.core.io.HabitStartupTiming
+import org.isoron.uhabits.core.io.HabitResortDiagnostics
+import org.isoron.uhabits.database.AndroidSqlTiming
 import org.isoron.uhabits.core.containers.session.DatasetCapabilities
 import org.isoron.uhabits.core.containers.session.DatasetMode
 import org.isoron.uhabits.core.models.Entry
@@ -80,6 +83,11 @@ class PostNavigationPresentationAttributionTest {
         val mixedCycleCount = args.getString("mixedCycleCount", "10").toInt()
         check(mixedCycleCount in 1..10)
         val statisticsOnlyCycles = args.getString("statisticsOnlyCycles", "false").toBooleanStrict()
+        val workload = args.getString("workload", "full")
+        check(workload in listOf("full", "warmOnly"))
+        val resortDiagnosticsEnabled = args.getString("resortDiagnosticsEnabled", "true").toBooleanStrict()
+        val rangeProbeCycles = args.getString("rangeProbeCycles", "3").toInt()
+        check(rangeProbeCycles in 0..3)
         val reverseOrder = args.getString("reverseOrder", "false").toBooleanStrict()
         val enabled = args.getString("tracingEnabled", "true").toBooleanStrict()
         val label = args.getString("buildLabel", "unspecified")
@@ -274,6 +282,37 @@ class PostNavigationPresentationAttributionTest {
             drain()
             component.habitCardListCache.effectiveSnapshots = fixtureListLoader
             if (enabled) {
+                if (resortDiagnosticsEnabled) {
+                    HabitResortDiagnostics.wallClockNanos = System::nanoTime
+                    HabitResortDiagnostics.threadCpuClockNanos = Debug::threadCpuTimeNanos
+                    HabitResortDiagnostics.subjectIdentity = { subject ->
+                        "${subject.javaClass.name}@${System.identityHashCode(subject)}"
+                    }
+                    HabitResortDiagnostics.spanBoundary = { stage, subject, begin ->
+                        if (begin) Trace.beginSection(
+                            "habit.resort.${HabitResortDiagnostics.currentOperation}.$stage.${subject?.substringAfterLast('.')?.takeLast(60) ?: "_"}".take(127))
+                        else Trace.endSection()
+                    }
+                    HabitResortDiagnostics.observer = { report ->
+                        event("resort.detail.report", JSONObject().put("operation", report.operation ?: JSONObject.NULL)
+                            .put("counters", JSONObject(report.counters))
+                            .put("threadId", Process.myTid())
+                            .put("durationDefinition", "Nested inclusive wall/thread CPU spans; do not sum overlapping spans"))
+                        report.spans.forEach { span ->
+                            event("resort.detail.${span.stage}", JSONObject().put("operation", report.operation ?: JSONObject.NULL)
+                                .put("subject", span.subject ?: JSONObject.NULL).put("depth", span.depth)
+                                .put("wallNanos", span.wallNanos).put("threadCpuNanos", span.threadCpuNanos ?: JSONObject.NULL)
+                                .put("threadId", Process.myTid()))
+                        }
+                    }
+                    AndroidSqlTiming.observer = { stage, durationMs ->
+                        // The core collector is thread-local: ambient UI/background SQL is excluded.
+                        if (HabitResortDiagnostics.isCollecting) {
+                            HabitResortDiagnostics.count("sql.$stage.count")
+                            HabitResortDiagnostics.count("sql.$stage.wallNanos", (durationMs * 1_000_000).toLong())
+                        }
+                    }
+                }
                 HabitStartupTiming.observer = { stage, generation -> event(stage,
                     JSONObject().put("generation", generation ?: JSONObject.NULL)) }
                 controller.requestMetricsObserver = { m -> event("controller.request", JSONObject()
@@ -356,7 +395,7 @@ class PostNavigationPresentationAttributionTest {
             component.habitCardListCache.effectiveSnapshots = null
             component.effectiveReadRevision.changed()
             drain(); SystemClock.sleep(250); drain()
-            try { repeat(3) { cycle ->
+            try { repeat(rangeProbeCycles) { cycle ->
                 listOf("listRange" to today.minus(365), "todayRange" to today, "listRangeReturn" to today.minus(365)).forEach { (range, from) ->
                     phase = "rangeSwitch_${cycle}_$range"
                     val revision = component.effectiveReadRevision.value
@@ -465,7 +504,7 @@ class PostNavigationPresentationAttributionTest {
                     }
                     return requireNotNull(button) { "Target has no visible laid-out checkmark after bounded viewport preparation" }
                 }
-                fun input(button: View) {
+                fun input(button: View, requireFixtureCalendar: Boolean = false) {
                     val systemCheck = System.nanoTime()
                     QaEmulatorUi.clearSystemUiError()
                     event("harness.systemCheck.end", JSONObject().put("durationNanos", System.nanoTime() - systemCheck))
@@ -478,6 +517,12 @@ class PostNavigationPresentationAttributionTest {
                     }
                     val down = SystemClock.uptimeMillis()
                     for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+                        if (requireFixtureCalendar) {
+                            val actualToday = getToday()
+                            event("fixtureCalendar.input", JSONObject().put("fixtureDay", today.toString())
+                                .put("actualDay", actualToday.toString()).put("motionAction", action))
+                            check(actualToday == today) { "Fixture calendar drift immediately before input: $actualToday != $today" }
+                        }
                         val motion = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, xy[0].toFloat(), xy[1].toFloat(), 0)
                         try { ins.sendPointerSync(motion) } finally { motion.recycle() }
                     }
@@ -565,7 +610,8 @@ class PostNavigationPresentationAttributionTest {
                     currentUiDestination = destination
                     state("navigation_${destination}")
                 }
-                val scenarios = listOf("warmRepeated", "afterStatistics", "afterStatisticsDateChange", "afterTasks", "afterMixedCycles")
+                val scenarios = if (workload == "warmOnly") listOf("warmRepeated")
+                    else listOf("warmRepeated", "afterStatistics", "afterStatisticsDateChange", "afterTasks", "afterMixedCycles")
                 for (case in if (reverseOrder) scenarios.reversed() else scenarios) {
                     phase = case; activeOperation = 0L
                     when (case) {
@@ -599,6 +645,16 @@ class PostNavigationPresentationAttributionTest {
                     for (sample in 0 until sampleCount) {
                     val setupStart = System.nanoTime()
                     phase = "viewportSetup"; activeOperation = 0L
+                    val previousToday = getToday()
+                    if (previousToday != today) {
+                        event("calendarDrift", JSONObject().put("previousDay", previousToday.toString())
+                            .put("fixtureDay", today.toString()).put("restorationScope", "unmeasured viewport setup"))
+                        setToday(today)
+                        component.effectiveReadRevision.changed()
+                        // Revision refresh is debounced; settle it before retrieving a dated button.
+                        drain(); SystemClock.sleep(250); drain()
+                    }
+                    check(getToday() == today) { "Fixture calendar drift during viewport setup" }
                     val button = target(); targets.add(button)
                     activeOperation = ++ordinal
                     phase = case
@@ -610,9 +666,27 @@ class PostNavigationPresentationAttributionTest {
                     val before = component.db.queryLong("SELECT value FROM Repetitions WHERE habit=${habits.first().id} AND timestamp=${today.unixTime}")
                     val op = activeOperation
                     var latestStatementReturn = 0L
+                    // This single native span remains enabled without detailed probes.
+                    // Command trace callbacks bracket resort synchronously on its worker.
+                    val resortStageStart = ThreadLocal<Triple<Long, Long, Int>>()
                     if (enabled) button.operationTraceFactory = {
                         HabitEditTrace(op) traceCallback@ { trace, stage, revision, generation, batch ->
                             if (op in retiredOperations) return@traceCallback
+                            if (stage == "repetition.resortAndObservers.begin") {
+                                Trace.beginSection("habit.resortStage.$op")
+                                resortStageStart.set(Triple(System.nanoTime(), Debug.threadCpuTimeNanos(), Process.myTid()))
+                            }
+                            if (stage == "repetition.resortAndObservers.end") {
+                                resortStageStart.get()?.let { started ->
+                                    val cpuEnd = Debug.threadCpuTimeNanos()
+                                    val wallEnd = System.nanoTime()
+                                    Trace.endSection()
+                                    resortStageStart.remove()
+                                    event("resort.stage.cpu", JSONObject().put("operation", op)
+                                        .put("wallNanos", wallEnd - started.first)
+                                        .put("cpuNanos", cpuEnd - started.second).put("threadId", started.third))
+                                }
+                            }
                             if (stage == "input.accepted") {
                                 expected[op] = button.value
                                 Trace.beginSection("habit.op.accepted.$op"); Trace.endSection()
@@ -641,9 +715,13 @@ class PostNavigationPresentationAttributionTest {
                                 .put("generation", generation ?: JSONObject.NULL).put("batch", batch ?: JSONObject.NULL))
                         }.also { traces.add(it) }
                     }
-                    val start = System.nanoTime(); event("harness.input.injection.start"); input(button); drain()
+                    val start = System.nanoTime(); event("harness.input.injection.start"); input(button, requireFixtureCalendar = true); drain()
                     val drained = System.nanoTime()
                     SystemClock.sleep(250); drain()
+                    val queryToday = getToday()
+                    event("fixtureCalendar.afterDrain", JSONObject().put("fixtureDay", today.toString())
+                        .put("actualDay", queryToday.toString()))
+                    check(queryToday == today) { "Fixture calendar drift during measured operation: $queryToday != $today" }
                     val stored = component.db.queryLong("SELECT value FROM Repetitions WHERE habit=${habits.first().id} AND timestamp=${today.unixTime}")
                     assertNotEquals(before, stored)
                     assertEquals(stored, habits.first().originalEntries.get(today).value.toLong())
@@ -718,6 +796,7 @@ class PostNavigationPresentationAttributionTest {
                 .put("statisticsOnlyCycles", statisticsOnlyCycles)
                 .put("controlledFirstRootKey", firstRoot.value).put("controlledOtherRootKey", secondRoot.value)
                 .put("controlledVisibleRootHabitCount", 4).put("sampleCount", sampleCount).put("reverseOrder", reverseOrder)
+                .put("workload", workload).put("resortDiagnosticsEnabled", resortDiagnosticsEnabled).put("rangeProbeCycles", rangeProbeCycles)
                 .put("rangeSwitchProbe", rangeSwitchProbe).put("walProvenance", walProvenance)
                 .put("syntheticCurrentGoalAdjustmentCount", syntheticCurrentGoalAdjustments.length())
                 .put("syntheticCurrentGoalAdjustments", syntheticCurrentGoalAdjustments)
@@ -739,12 +818,15 @@ class PostNavigationPresentationAttributionTest {
                 .put("presentation", "Draw callbacks are candidates only; actual presentation and all unmatched draws must be joined from FrameTimeline externally")
                 .toString(2))
         } catch (failure: Throwable) {
+            event("fixtureCalendar.failure", JSONObject().put("fixtureDay", today.toString())
+                .put("actualDay", getToday().toString()))
             val out = File(ins.targetContext.getExternalFilesDir(null), "remaining-latency").apply { mkdirs() }
             File(out, "$label-$depth-$enabled-failure.json").writeText(JSONObject()
                 .put("pid", Process.myPid()).put("buildLabel", label).put("historyDays", depth).put("tracingEnabled", enabled)
                 .put("sortConfiguration", sortConfiguration).put("primaryOrder", if (sortConfiguration == "entrySensitive") "BY_STATUS_ASC" else "BY_SPHERE")
                 .put("secondaryOrder", "BY_POSITION").put("mixedCycleCount", mixedCycleCount)
                 .put("controlledVisibleRootHabitCount", 4).put("sampleCount", sampleCount).put("reverseOrder", reverseOrder)
+                .put("workload", workload).put("resortDiagnosticsEnabled", resortDiagnosticsEnabled).put("rangeProbeCycles", rangeProbeCycles)
                 .put("rangeSwitchProbe", rangeSwitchProbe).put("walProvenance", walProvenance)
                 .put("syntheticCurrentGoalAdjustmentCount", syntheticCurrentGoalAdjustments.length())
                 .put("syntheticCurrentGoalAdjustments", syntheticCurrentGoalAdjustments)
@@ -760,6 +842,12 @@ class PostNavigationPresentationAttributionTest {
                 .put("events", JSONArray(events.toList())).put("frames", JSONArray(frames.toList())).toString(2))
             throw failure
         } finally {
+            AndroidSqlTiming.observer = null
+            HabitResortDiagnostics.observer = null
+            HabitResortDiagnostics.spanBoundary = null
+            HabitResortDiagnostics.wallClockNanos = null
+            HabitResortDiagnostics.threadCpuClockNanos = null
+            HabitResortDiagnostics.subjectIdentity = null
             originalCacheListener?.let(component.habitCardListCache::setListener)
             targets.forEach { it.operationTraceFactory = null }
             HabitFrameTiming.observer = null

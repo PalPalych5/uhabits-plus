@@ -45,7 +45,13 @@ class ModelObservable {
      */
     @Synchronized
     fun notifyListeners() {
-        for (l in listeners) l.onModelChange()
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.measure("observable.notify", this) {
+            org.isoron.uhabits.core.io.HabitResortDiagnostics.count("observable.notifications")
+            for (l in listeners) {
+                org.isoron.uhabits.core.io.HabitResortDiagnostics.count("observable.callbacks")
+                org.isoron.uhabits.core.io.HabitResortDiagnostics.measure("observable.callback", l) { l.onModelChange() }
+            }
+        }
     }
 
     /**

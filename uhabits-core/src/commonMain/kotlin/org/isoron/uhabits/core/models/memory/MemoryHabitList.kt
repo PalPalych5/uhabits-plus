@@ -87,6 +87,7 @@ open class MemoryHabitList : HabitList {
         private val rootKeyCache = mutableMapOf<String, String?>()
 
         fun clearCache() {
+            org.isoron.uhabits.core.io.HabitResortDiagnostics.count("sphere.cacheResets")
             rootIndices = null
             rootKeyCache.clear()
         }
@@ -94,12 +95,16 @@ open class MemoryHabitList : HabitList {
         private fun rootKey(facade: HabitOrganizationFacade, habit: Habit): String? {
             val uuid = requireNotNull(habit.uuid)
             if (!rootKeyCache.containsKey(uuid)) {
-                rootKeyCache[uuid] = facade.getRootGroupKey(uuid, habit.blockId) as? String
-            }
+                org.isoron.uhabits.core.io.HabitResortDiagnostics.count("sphere.rootCacheMisses")
+                rootKeyCache[uuid] = org.isoron.uhabits.core.io.HabitResortDiagnostics.measure("sphere.rootLookup") {
+                    facade.getRootGroupKey(uuid, habit.blockId) as? String
+                }
+            } else org.isoron.uhabits.core.io.HabitResortDiagnostics.count("sphere.rootCacheHits")
             return rootKeyCache[uuid]
         }
 
         override fun compare(h1: Habit, h2: Habit): Int {
+            org.isoron.uhabits.core.io.HabitResortDiagnostics.count("sphere.comparisons")
             val facade = organizationFacade
             if (facade != null && facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
                 val key1 = rootKey(facade, h1)
@@ -107,7 +112,7 @@ open class MemoryHabitList : HabitList {
                 if (key1 != key2) {
                     if (key1 != null && key2 != null) {
                         val indices = rootIndices ?: run {
-                            val roots = facade.rootContainers()
+                            val roots = org.isoron.uhabits.core.io.HabitResortDiagnostics.measure("sphere.rootIndices") { facade.rootContainers() }
                             roots.mapIndexed { idx, it -> it.key to idx }.toMap().also { rootIndices = it }
                         }
                         val r1 = indices[key1] ?: Int.MAX_VALUE
@@ -223,7 +228,9 @@ open class MemoryHabitList : HabitList {
         firstOrder: Order,
         secondOrder: Order?
     ): Comparator<Habit> {
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.count("composed.constructions")
         return Comparator { h1: Habit, h2: Habit ->
+            org.isoron.uhabits.core.io.HabitResortDiagnostics.count("composed.comparisons")
             val firstResult = getComparatorByOrder(firstOrder).compare(h1, h2)
             if (firstResult != 0 || secondOrder == null) {
                 return@Comparator firstResult
@@ -233,6 +240,7 @@ open class MemoryHabitList : HabitList {
     }
 
     private fun getComparatorByOrder(order: Order): Comparator<Habit> {
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.count("comparator.selections")
         val nameComparatorAsc = Comparator<Habit> { habit1, habit2 ->
             habit1.name.compareTo(habit2.name)
         }
@@ -344,19 +352,26 @@ open class MemoryHabitList : HabitList {
 
     @Synchronized
     private fun loadFromParent() {
-        checkNotNull(parent)
-        list.clear()
-        for (h in parent!!) if (filter.matches(h)) {
-            h.globalStatisticsStartDate = parent!!.globalStatisticsStartDate
-            list.add(h)
-        }
-        resort()
+        val diagnostic = org.isoron.uhabits.core.io.HabitResortDiagnostics.begin("memory.filteredRebuild", this)
+        try {
+            checkNotNull(parent)
+            list.clear()
+            for (h in parent!!) if (filter.matches(h)) {
+                h.globalStatisticsStartDate = parent!!.globalStatisticsStartDate
+                list.add(h)
+            }
+            resort()
+        } finally { org.isoron.uhabits.core.io.HabitResortDiagnostics.end(diagnostic) }
     }
 
     @Synchronized
     override fun resort() {
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.count("memory.resortCalls")
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.count("memory.sortedHabitVisits", list.size.toLong())
         sphereComparator.clearCache()
-        if (comparator != null) list.sortWith(comparator!!)
-        observable.notifyListeners()
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.measure("memory.sort", this) {
+            if (comparator != null) list.sortWith(comparator!!)
+        }
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.measure("memory.notify", this) { observable.notifyListeners() }
     }
 }
