@@ -1529,153 +1529,169 @@ Recommended next direction remains **emulator-only grouped lookup/rebuild fan-ou
 
 ---
 
-## 7. PI-20261015-03: Iteration 16 — Benchmark Reliability, A/A Calibration and Calibrated Decision Protocol
+## 7. PI-20261015-03: Iteration 16 — Benchmark Reliability, A/A Calibration and Decision Protocol Validation
 
 ### Experiment identity and environmental baseline
 - **Record ID**: `PI-20261015-03`
-- **Date**: 2026-10-15, Asia/Novosibirsk (HEAD `c2e531de0e7048f1e59533b27bb2a7de5665ae35`, branch `dev`).
+- **Date**: 2026-10-15, Asia/Novosibirsk (HEAD `cfc3ed2ea539c15eab7e430ee3d123deb6b4adcd`, branch `dev`).
 - **Target build**: Debug APK (SHA-256: `2225FF8606305B17CEC88DC626AA2F0A2824EABA100D77B3059109546EFE9037`), AndroidTest APK (SHA-256: `A8A747DC3AF54C8F9C157B856CF041EF91CEBD43756FEF0D5B0B2DFD582BDC5C`). Both built locally from clean HEAD.
 - **Device & Environment**: Dedicated offline disposable emulator `emulator-5580` (`EMULATOR36X6X11X0`), API 35 x86_64 swiftshader software rasterizer, 4 vCPUs, 2.5 GB RAM, airplane mode `1`, journal mode `WAL`, schema v30, fixture seed `20261011` (`8cd176051129ae4414d7aeab218910552a442b4271118ec614abccb5b133831c`).
-- **Preregistered objective**: Quantify measurement uncertainty on our emulator harness before using small tail differences to accept or reject optimizations. Determine the empirical false-positive rate of the legacy `>10% and >20 ms p95 in both pairs` rule under identical builds (A/A). Measure the observer/probe overhead of `HabitResortDiagnostics`. Formulate a practical 3-outcome benchmark decision protocol (`ACCEPT`, `REJECT`, `INCONCLUSIVE`). Zero production code changes.
+- **Preregistered objective**: Quantify measurement uncertainty on our emulator harness before using small tail differences to accept or reject future optimizations. Audit historical A/A analysis claims, establish clean baseline variability on byte-identical APKs, measure matched diagnostic probe overhead in a healthy guest environment, and calibrate a practical 3-outcome benchmark decision protocol (`ACCEPT`, `REJECT`, `INCONCLUSIVE`). Zero production code changes.
 
-### Methodology audit: deterministic vs descriptive vs uncertain
-The existing performance harness combines deterministic software assertions with physical trace joins. Classifying existing findings:
+### 1. Audit of historical A/A analysis and previous claims
+An audit of `analyze_aa_calibration.py` and raw Iteration 15/16 artifacts distinguishes genuine physical replications from Monte Carlo resampling and identifies environmental confounding:
 
-| Aspect | Methodology component | Evidence classification | Methodological limit |
-|---|---|---|---|
-| **Deterministic** | SQLite/Memory data parity, autocommit return timestamp, lock order, schema invariants, SQL query count, row visit counts | DETERMINISTIC | Verifies exact state convergence; does not predict physical rendering latency. |
-| **Deterministic** | Work elimination: query removal, cache hits, listener counts, batch creation counts | DETERMINISTIC | Proves algorithmic reduction; does not prove presentation speedup if work is off critical path. |
-| **Descriptive** | Measured trace spans: worker resort CPU, SQLite write duration, model recompute duration, view bind durations | DESCRIPTIVE | Accurately describes what happened in a given trace window; subject to host and guest scheduling noise. |
-| **Statistically Uncertain** | Small-sample scenario tails: $n=3$ nearest-rank p95, $n=1$ standalone navigation return | STATISTICALLY UNCERTAIN | Mathematically equals $\max(x_1, x_2, x_3)$ ($n=3$) or single sample ($n=1$). Extreme value distribution variance (CV > 40%) renders small differences indistinguishable from noise. |
-| **Physical Join** | FrameTimeline token join: input DOWN → containing Choreographer `doFrame` → same-process SurfaceFlinger actual present | PHYSICAL JOIN | Rigorous presentation endpoint; essential for user-perceived latency. Must not be replaced by synthetic idle loops or FrameMetrics. |
-
-### Dedicated A/A calibration on identical builds
-To test baseline variability, byte-identical APKs were evaluated under identical conditions:
-
-#### 1. Evaluation of legacy rejection gate on historical identical runs
-Using the 16 primary baseline-vs-baseline and candidate-vs-candidate runs from Iteration 15 (8 identical pairs, 80 individual scenario comparisons), we evaluated how often comparing two identical runs breaches the legacy rejection gate (`>10% and >20 ms worsening`):
-- **Total scenario evaluations**: 80
-- **False-positive scenario breaches**: **31 / 80 (38.8%)**
-- **Unidirectional arm pairs with ≥1 false rejection**: **15 / 16 (93.8%)**
-
-Under the legacy gate, **93.8% of identical-build comparisons would be falsely rejected as regressed**!
-
-#### 2. Run-level hierarchical variance decomposition
-Between-run variance substantially exceeds within-run variance across identical builds:
-
-| Cohort | Run 1 Median (ms) | Run 2 Median (ms) | Median Diff (ms) | Rel Diff (%) | Run 1 p95 (ms) | Run 2 p95 (ms) | p95 Diff (ms) |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| 90g-baseline | 1395.2 | 835.5 | -559.7 | -40.1% | 2521.3 | 1185.7 | -1335.6 |
-| 1825g-baseline | 834.8 | 865.9 | +31.1 | +3.7% | 1197.9 | 3042.2 | +1844.3 |
-| 90s-baseline | 397.4 | 376.7 | -20.7 | -5.2% | 695.7 | 1048.2 | +352.5 |
-| 1825s-baseline | 530.3 | 501.1 | -29.1 | -5.5% | 1229.3 | 704.5 | -524.8 |
-| 90g-candidate | 842.8 | 784.4 | -58.4 | -6.9% | 1839.1 | 1335.1 | -504.0 |
-| 1825g-candidate | 657.8 | 745.9 | +88.1 | +13.4% | 1410.0 | 1158.6 | -251.4 |
-| 90s-candidate | 435.0 | 446.2 | +11.2 | +2.6% | 1311.0 | 750.9 | -560.1 |
-| 1825s-candidate | 429.7 | 523.3 | +93.6 | +21.8% | 806.2 | 1262.3 | +456.1 |
-
-#### 3. Dedicated Iteration 16 A/A test (Arm 1 vs Arm 2, probes disabled, n=4 per scenario)
-Evaluating two identical runs of the current production code (`pilot-probe-off` vs `aa-90g-arm2`, 20 linked edits and 6 linked navigation returns each, 100% exact FrameTimeline joins):
-
-| Scenario (n=4) | Arm 1 Median (ms) | Arm 2 Median (ms) | Med Diff (ms) | Arm 1 p95 (ms) | Arm 2 p95 (ms) | p95 Diff (ms) | Breaches Legacy Gate? |
-|---|---:|---:|---:|---:|---:|---:|---|
-| warmRepeated | 1968.2 | 597.5 | -1370.6 | 2969.1 | 929.3 | -2039.8 | **YES (FALSE REJECTION)** |
-| afterStatistics | 2126.3 | 577.8 | -1548.5 | 3263.9 | 617.1 | -2646.8 | **YES (FALSE REJECTION)** |
-| afterStatisticsDateChange | 1299.9 | 536.8 | -763.1 | 2001.3 | 657.3 | -1344.0 | **YES (FALSE REJECTION)** |
-| afterTasks | 1197.4 | 604.2 | -593.3 | 1626.3 | 661.1 | -965.2 | **YES (FALSE REJECTION)** |
-| afterMixedCycles | 1289.7 | 512.1 | -777.6 | 1760.3 | 522.2 | -1238.1 | **YES (FALSE REJECTION)** |
-| **All Edits (n=20)** | **1466.5** | **555.0** | **-911.5** | **2969.1** | **661.1** | **-2308.0** | **YES (FALSE REJECTION)** |
-| Navigation Returns (n=6) | 827.6 | 293.7 | -533.9 | 1315.3 | 319.9 | -995.4 | **YES (FALSE REJECTION)** |
-
-### Environment contention and guest daemon discovery
-1. **Windows Host Monitoring**: Implemented zero-dependency host monitor (`scratch/iteration16/host_monitor.py`) polling `GetSystemTimes` and `GlobalMemoryStatusEx` at 1.0s intervals. Recorded host CPU mean 38.2%–70.7%, peak 89.1%–99.8%, memory load 84.9%–86.2%.
-2. **Rogue Guest Android Daemon Discovery**: During early runs, app startup repeatedly suffered background ANRs from ActivityManager (`Reason: Process failed to complete startup`). Inspection of guest processes via `top` revealed that `android.hardware.sensors-service.multihal` was spinning at **116% CPU continuously inside the emulator guest**, consuming an entire vCPU and starving main-thread ART bytecode class verification (which took >17s). Once the spinning service was killed/reset, guest background CPU dropped from 116% sys to 7% sys (393% idle), startup latency dropped from >17s to **2.8s**, and clean presentation median dropped from 1466.5 ms to **555.0 ms** (-62.2%).
-3. **Trace TTL Limit**: Discovered that `post-navigation-capture.config` had a hardcoded `duration_ms: 360000` (6 minutes). When sample count was increased from $n=3$ to $n=4$ (arm duration ~436s), Perfetto silently stopped tracing at 360s, truncating trailing operations. Created `scratch/iteration16/post-navigation-capture-600s.config` (10 minutes TTL), restoring 100% join coverage (20/20 edits, 6/6 navigation returns).
-
-### Tail stability vs sample size (Monte Carlo resampling)
-Resampling 3,000 bootstrap draws from the empirical 60-operation baseline pool shows how tail percentile stability degrades at small $n$:
-
-| Sample Size n | Median Mean (ms) | Median CV% | p95 Mean (ms) | p95 CV% | p95 Interquartile Range [IQR] (ms) |
-|---|---:|---:|---:|---:|---|
-| **n = 3** | 975.2 | 25.2% | 1405.8 | **41.6%** | [1025 – 1542] |
-| **n = 4** | 970.5 | 18.5% | 1524.4 | **40.3%** | [1044 – 1712] |
-| **n = 6** | 946.5 | 13.8% | 1715.0 | **37.4%** | [1186 – 2296] |
-| **n = 10** | 933.8 | 10.3% | 1955.7 | **32.6%** | [1459 – 2521] |
-| **n = 15** | 924.3 | 8.6% | 2165.4 | **28.9%** | [1542 – 2521] |
-| **n = 30** | 920.4 | 6.4% | 2038.2 | **24.6%** | [1542 – 2521] |
-
-**Conclusion**: At $n=3$, p95 has a 41.6% coefficient of variation and its interquartile range spans over 500 ms. At $n \ge 15$, median CV drops to 8.6% and pooled p95 stabilizes. Single-scenario $n=3$ p95 cannot be used as an acceptance or rejection gate.
-
-### Measurement overhead of diagnostic probes
-Comparing identical 90-day grouped workloads with `HabitResortDiagnostics` enabled (`pilot-probe-on`) versus disabled (`pilot-probe-off`):
-
-| Metric | Probe ON (Diagnostics Enabled) | Probe OFF (Diagnostics Disabled) | Overhead Delta | Rel Overhead (%) |
-|---|---:|---:|---:|---:|
-| Presentation Latency (Common Edits Median) | 4158.4 ms | 1848.2 ms | +2310.2 ms | **+125.0%** |
-| Op 1 `resortAndObservers` Span | 6294.4 ms | 2147.4 ms | +4147.0 ms | **+193.1%** |
-| Op 1 `sqliteWrite` Span | 169.6 ms | 81.5 ms | +88.1 ms | +108.1% |
-| Total Arm Duration | 469.5 s | 399.6 s | +69.9 s | +17.5% |
-| Host CPU Utilization (Mean) | 58.0% | 61.2% | -3.2% | - |
-
-**Causal Mechanism**: When `HabitResortDiagnostics` is enabled, every item comparison and observer notification invokes `Debug.threadCpuTimeNanos()` (a kernel system call `clock_gettime(CLOCK_THREAD_CPUTIME_ID)`), performs thread-local lookups, and creates diagnostic objects. In lists with 32+ habits and hundreds of entry checks, repeated kernel transitions in tight inner loops inflate resort latency by over 4 seconds per operation.
-**Rule**: Benchmarking comparisons MUST run with diagnostic probes OFF by default. Probes should be enabled exclusively during targeted diagnostic attribution.
+1. **Origin of the 93.8% False Rejection Rate and 31/80 Scenario Breaches**:
+   - The reported 80 scenario evaluations came from taking 8 pairs of nominal identical runs from Iteration 15 (4 baseline pairs and 4 candidate pairs) and testing each pair in both forward ($A \to B$) and reverse ($B \to A$) directions across 5 scenarios ($8 \times 2 \times 5 = 80$).
+   - Forward and reverse evaluations on the same pair are mathematically dependent mirror comparisons, not 16 independent physical experiments.
+   - Crucially, **all 8 pairs from Iteration 15 were captured with heavy diagnostic instrumentation (`HabitResortDiagnostics`) enabled**, which actively altered thread scheduling and CPU time.
+   - At $n=3$ or $n=4$ per scenario, nearest-rank p95 $\lceil 0.95 \times n \rceil = n$ is mathematically the sample maximum $\max(x_1, \dots, x_n)$. The 31/80 breaches simply reflect that small-sample maxima frequently fluctuate by >20 ms and >10% under probe-polluted execution.
+2. **Nature of the 41.6% Coefficient of Variation (CV)**:
+   - The 41.6% CV was calculated via Monte Carlo resampling ($B=3000$ draws with replacement) of sample size $n=3$ from a single empirical pool of 60 baseline operations.
+   - This measures the statistical variance of the sample maximum under small-sample drawing from a right-skewed empirical distribution; it is not an empirical standard deviation across 3,000 independent benchmark sessions.
+3. **Confounding in Iteration 16's Initial A/A Capture**:
+   - In Iteration 16's initial evaluation, `pilot-probe-off` (Arm 1) was captured while `android.hardware.sensors-service.multihal` was spinning at **116% CPU inside the emulator guest**, saturating a vCPU and inflating presentation median to 1466.5 ms.
+   - In contrast, `aa-90g-arm2` (Arm 2) was captured after killing the rogue service, when guest background CPU dropped to 7% sys (393% idle) and presentation median dropped to 555.0 ms.
+   - Comparing Arm 1 to Arm 2 in Iteration 16 was therefore an environmental comparison of "guest CPU starvation" versus "idle guest", containing zero clean, matched A/A comparisons.
 
 ---
 
-### Calibrated Benchmark Protocol for Future Iterations
+### 2. Clean baseline A/A validation (Follow-up empirical captures)
+To establish true baseline variability, the emulator was cleanly rebooted, verified stable with all system services idle (guest idle >380% of 400%, sensors daemon verified sleeping at 0% CPU), and evaluated with detailed resort probes disabled across byte-identical builds:
 
-To prevent false rejections of valid algorithmic optimizations while preserving rigorous protection against regressions:
+#### A/A Pair 1: 90-Day Grouped Edits (Probes OFF, n=4 per scenario, 6 nav returns)
+Comparing two genuinely independent, matched clean sessions (`clean-aa-90g-run1` vs `clean-aa-90g-run2`):
+
+| Metric | Run 1 (`clean-aa-90g-run1`) | Run 2 (`clean-aa-90g-run2`) | Delta | Relative Delta (%) |
+|---|---:|---:|---:|---:|
+| **All Edits Median (n=20)** | **546.8 ms** | **562.2 ms** | **+15.4 ms** | **+2.8%** |
+| All Edits Mean (n=20) | 629.1 ms | 601.0 ms | -28.1 ms | -4.5% |
+| All Edits p95(nr) (n=20) | 745.5 ms | 820.3 ms | +74.7 ms | +10.0% |
+| All Edits Max (n=20) | 1936.9 ms | 979.4 ms | -957.5 ms | -49.4% |
+| **Navigation Median (n=6)** | **289.1 ms** | **291.4 ms** | **+2.4 ms** | **+0.8%** |
+| Navigation p95(nr) (n=6) | 355.5 ms | 354.7 ms | -0.8 ms | -0.2% |
+| Arm Duration (s) | 134.2 s | 119.2 s | -15.0 s | -11.2% |
+| Host CPU Mean / Peak (%) | 41.1% / 97.1% | 37.7% / 94.9% | -3.4% / -2.2% | — |
+
+**Per-Scenario $n=4$ Breakdown (Grouped Edits):**
+
+| Scenario (n=4) | Run 1 Med (ms) | Run 2 Med (ms) | Med Diff (ms) | Run 1 p95 (ms) | Run 2 p95 (ms) | p95 Diff (ms) | Legacy Gate Outcome |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `warmRepeated` | 560.7 | 638.2 | +77.5 | 1936.9 | 979.4 | -957.5 | **FALSE REJECTION (REV)** |
+| `afterStatistics` | 577.3 | 549.7 | -27.6 | 647.1 | 576.4 | -70.7 | **FALSE REJECTION (REV)** |
+| `afterStatisticsDateChange` | 528.1 | 579.0 | +50.9 | 549.0 | 668.6 | +119.6 | **FALSE REJECTION (FWD)** |
+| `afterTasks` | 557.3 | 577.1 | +19.8 | 614.2 | 820.3 | +206.0 | **FALSE REJECTION (FWD)** |
+| `afterMixedCycles` | 530.0 | 561.6 | +31.6 | 745.5 | 670.8 | -74.7 | **FALSE REJECTION (REV)** |
+
+#### A/A Pair 2: 90-Day Status / Entry-Sensitive Edits (Probes OFF, n=4 per scenario, 6 nav returns)
+Comparing two clean independent sessions on global/status edits (`clean-aa-90s-run1` vs `clean-aa-90s-run2`):
+
+| Metric | Run 1 (`clean-aa-90s-run1`) | Run 2 (`clean-aa-90s-run2`) | Delta | Relative Delta (%) |
+|---|---:|---:|---:|---:|
+| **All Edits Median (n=20)** | **280.6 ms** | **296.7 ms** | **+16.1 ms** | **+5.7%** |
+| All Edits Mean (n=20) | 296.4 ms | 312.7 ms | +16.2 ms | +5.5% |
+| All Edits p95(nr) (n=20) | 340.0 ms | 438.6 ms | +98.6 ms | +29.0% |
+| All Edits Max (n=20) | 632.7 ms | 624.9 ms | -7.7 ms | -1.2% |
+| **Navigation Median (n=6)** | **277.2 ms** | **234.4 ms** | **-42.8 ms** | **-15.4%** |
+| Navigation p95(nr) (n=6) | 315.8 ms | 298.9 ms | -16.9 ms | -5.3% |
+| Arm Duration (s) | 118.2 s | 115.2 s | -3.0 s | -2.5% |
+| Host CPU Mean / Peak (%) | 45.7% / 95.5% | 40.8% / 99.4% | -4.9% / +3.9% | — |
+
+**Per-Scenario $n=4$ Breakdown (Status Edits):**
+
+| Scenario (n=4) | Run 1 Med (ms) | Run 2 Med (ms) | Med Diff (ms) | Run 1 p95 (ms) | Run 2 p95 (ms) | p95 Diff (ms) | Legacy Gate Outcome |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `warmRepeated` | 294.8 | 347.8 | +53.0 | 632.7 | 624.9 | -7.7 | Pass |
+| `afterStatistics` | 300.1 | 321.7 | +21.5 | 315.2 | 438.6 | +123.4 | **FALSE REJECTION (FWD)** |
+| `afterStatisticsDateChange` | 279.7 | 286.8 | +7.1 | 290.8 | 333.3 | +42.5 | **FALSE REJECTION (FWD)** |
+| `afterTasks` | 272.8 | 290.7 | +17.9 | 292.8 | 328.5 | +35.7 | **FALSE REJECTION (FWD)** |
+| `afterMixedCycles` | 280.0 | 265.1 | -14.8 | 340.0 | 294.6 | -45.4 | **FALSE REJECTION (REV)** |
+
+#### Key Calibration Discoveries
+1. **Run-Level Medians Are Highly Stable**: Across independent process lifecycles in a clean guest environment, baseline run-level medians vary by only **+2.8%** (+15.4 ms) for grouped edits and **+5.7%** (+16.1 ms) for status edits. Navigation returns vary by only **+0.8%** (+2.4 ms).
+2. **Scenario-Level Tails Are Inherently Unstable at Small $n$**: Even under pristine conditions on byte-identical code, the legacy $n=4$ p95 rule falsely rejects **100% of grouped scenarios** and **80% of status scenarios** across forward/reverse pairs. At $n=4$, nearest-rank p95 is mathematically $\max(x_1, \dots, x_4)$, making it a detector of transient scheduling/ART jitters rather than software regressions. Small-sample p95 cannot serve as an automatic rejection gate.
+
+---
+
+### 3. Matched diagnostic probe overhead in clean environment
+To isolate the true cost of detailed diagnostic instrumentation without confounding from background CPU starvation, `clean-probe-on-90g` (probes ON) was compared directly against `clean-aa-90g-run1` (probes OFF) under identical clean baseline conditions:
+
+| Metric | Probe OFF (`clean-aa-90g-run1`) | Probe ON (`clean-probe-on-90g`) | Delta | Relative Overhead (%) |
+|---|---:|---:|---:|---:|
+| **Committed Presentation Median** | **546.8 ms** | **701.4 ms** | **+154.6 ms** | **+28.3%** |
+| Committed Presentation p95(nr) | 745.5 ms | 789.5 ms | +44.0 ms | +5.9% |
+| **`repetition.resortAndObservers` Median** | **397.9 ms** | **588.7 ms** | **+190.8 ms** | **+48.0%** |
+| `repetition.resortAndObservers` Mean | 466.1 ms | 593.3 ms | +127.2 ms | +27.3% |
+| `repetition.sqliteWrite` Median | 6.7 ms | 7.6 ms | +0.9 ms | +13.4% |
+| `repetition.modelRecompute` Median | 1.0 ms | 1.0 ms | 0.0 ms | 0.0% |
+| Navigation Return Median | 289.1 ms | 305.9 ms | +16.8 ms | +5.8% |
+| Arm Duration (s) | 134.2 s | 125.2 s | -9.0 s | -6.7% |
+| Host CPU Mean (%) | 41.1% | 38.5% | -2.6% | — |
+
+#### Causal Source/Trace Breakdown of Probe Overhead
+The +190.8 ms added to `repetition.resortAndObservers` accounts for the entirety of the +154.6 ms presentation latency shift. Tracing the source implementation (`HabitResortDiagnostics.kt` and `PostNavigationPresentationAttributionTest.kt`) reveals that this overhead stems from multiple compound factors, not `Debug.threadCpuTimeNanos()` alone:
+1. **Kernel Syscall Transitions**: Calling `Debug.threadCpuTimeNanos()` (`clock_gettime(CLOCK_THREAD_CPUTIME_ID)`) and `System.nanoTime()` on the begin and end of every resort stage and comparator invocation.
+2. **Atrace / Ftrace Logging**: `spanBoundary` executes `Trace.beginSection()` and `Trace.endSection()` on every stage boundary, performing repeated writes to `/sys/kernel/debug/tracing/trace_marker`.
+3. **Identity & String Manipulations**: `subjectIdentity` formats reflection strings (`"${subject.javaClass.name}@${System.identityHashCode(subject)}"`) and slices strings on every item comparison.
+4. **Memory Allocation**: Allocating `Token` and `Span` objects inside tight comparator loops and appending to `ArrayList` instances.
+5. **JSON Event Generation**: Iterating and serializing hundreds of detailed span records in `report.spans.forEach`.
+
+**Correction to Previous Claims**: The previously reported +125% (+2,310 ms) overhead was magnified by the 116% guest sensor daemon contention (kernel context switches under vCPU saturation). In a healthy clean environment, diagnostic probe overhead is **+28.3% (+154.6 ms)**.
+**Rule**: Benchmarking comparisons MUST run with detailed resort probes OFF. Lightweight FrameTimeline and operation token joins remain active and add zero discernible overhead.
+
+---
+
+### 4. Calibrated Practical Decision Protocol for Future Iterations
 
 ```mermaid
 flowchart TD
-    Start["Candidate Evaluation"] --> G1["Gate 1: Correctness & Parity<br/>(100% Core/Native tests, SQLite/Memory parity, 0 lock inversions)"]
+    Start["Candidate Evaluation"] --> G1["Gate 1: Correctness & Data Parity<br/>(100% Core/Native tests, SQLite/Memory parity, 0 lock inversions)"]
     G1 -- Fail --> Reject1["REJECT: Semantic or Parity Failure"]
-    G1 -- Pass --> G2["Gate 2: Algorithmic Work Reduction<br/>(Proven query/row/allocation reduction via counters)"]
+    G1 -- Pass --> G2["Gate 2: Algorithmic Work Elimination<br/>(Proven query/row/allocation reduction via counters)"]
     G2 -- Fail --> Reject2["REJECT: No Proven Work Elimination"]
-    G2 -- Pass --> G3["Gate 3: Meaningful Median Speedup<br/>(Pooled Median Δ ≥ 15% and ≥ 30ms, Bootstrap CI excludes 0)"]
-    G3 -- Fail --> Inconclusive1["INCONCLUSIVE: Work reduced but no E2E speedup"]
-    G3 -- Pass --> G4{"Gate 4: Uncertainty-Aware Non-Regression<br/>(Pooled n ≥ 10 per scenario cohort)"}
-    G4 -- "Tail Regressed > 25% and > 50ms<br/>+ Causal Software Trace Mechanism Identified" --> Reject3["REJECT: Confirmed Causal Regression"]
-    G4 -- "Tail Difference < 25% OR<br/>Environmental Overlap (GC/JIT/Guest) Without Code Cause" --> Inconclusive2["INCONCLUSIVE: Tail within noise floor;<br/>Targeted Replay Required"]
-    G4 -- "No Replicated Tail Regression" --> Accept["ACCEPT: Candidate Passed All Gates"]
+    G2 -- Pass --> G3["Gate 3: Run-Level Median Improvement<br/>(Replicated across independent clean runs, Δ ≥ 15% and ≥ 30ms)"]
+    G3 -- Fail --> Inconclusive1["INCONCLUSIVE: Work eliminated, but median speedup<br/>within run noise (≤ 5-10%); targeted investigation"]
+    G3 -- Pass --> G4{"Gate 4: Uncertainty-Aware Non-Regression<br/>(Evaluated on pooled n ≥ 10, NOT n ≤ 4 scenario maxima)"}
+    G4 -- "Replicated Tail Regression > 25% and > 50ms<br/>WITH Causal Trace Software Bottleneck" --> Reject3["REJECT: Confirmed Causal Regression"]
+    G4 -- "Tail Difference < 25% OR Transient Jitter<br/>Without Code Cause (GC/JIT/Rendering)" --> Inconclusive2["INCONCLUSIVE: Tail within noise floor;<br/>Targeted Replay Required"]
+    G4 -- "No Replicated Causal Tail Regression" --> Accept["ACCEPT: Candidate Passed All Gates"]
 ```
 
-#### Protocol Gates
+#### Protocol Gates and Decision Rules
 1. **Gate 1: Correctness & Parity (Deterministic)**
-   - 100% pass rate across core test suite, native lock-order regression tests, and InFlightBatch concurrency tests.
-   - Exact row parity between SQLite storage, in-memory models, and published snapshots across all mutated records.
-   - Zero lock inversions, zero data corruption.
-2. **Gate 2: Algorithmic Work Reduction (Deterministic / High Confidence)**
-   - Must prove substantial reduction in actual work performed (e.g., query count, row visits, resort CPU time, snapshot allocations, or observer dispatches).
+   - 100% pass rate across core test suite, native lock-order regression tests, and `InFlightBatch` concurrency tests.
+   - Exact row and value parity between SQLite storage, in-memory models, and published snapshots across all mutated records.
+2. **Gate 2: Algorithmic Work Reduction (Deterministic)**
+   - Must prove substantial reduction in actual work performed (e.g., eliminated SQL queries, reduced row visit traversals, fewer snapshot allocations, or reduced observer dispatches).
    - Verified via deterministic counters or trace slice durations.
-3. **Gate 3: Meaningful Median Improvement (Primary E2E Gate)**
-   - Pooled or scenario median improvement must exceed the measurement noise floor ($\ge 15\%$ reduction AND $\ge 30\text{ ms}$).
-   - Cluster-bootstrap 95% confidence interval of the median difference must exclude zero in the positive direction.
+3. **Gate 3: Run-Level Median Improvement (Primary E2E Gate)**
+   - Replicated across independent clean runs with probes disabled.
+   - Run-level presentation median reduction must exceed measurement uncertainty ($\ge 15\%$ reduction AND $\ge 30\text{ ms}$).
 4. **Gate 4: Uncertainty-Aware Non-Regression (Secondary Tail Gate)**
-   - DO NOT evaluate p95 on $n < 6$ (minimum $n \ge 10$ pooled per scenario cohort).
-   - Noise threshold calibrated to empirical A/A variance: regression confirmed only if $>25\%$ AND $>50$ ms across replicated runs with an identified causal mechanism in the trace.
-   - Three Decision Outcomes:
-     - **ACCEPT**: Passes Gates 1–3, no confirmed causal regression in Gate 4.
-     - **REJECT**: Fails Gate 1 or Gate 2, OR exhibits a replicated tail regression $>25\%$ and $>50$ ms with an identified software bottleneck (e.g., lock contention, main thread measure storm).
-     - **INCONCLUSIVE**: Passes Gates 1–2, but tail differences are within noise bounds ($<25\%$) or unconfirmed across runs or lack an identified causal mechanism; requires bounded follow-up profiling rather than automatic rejection.
+   - **DO NOT** use $n \le 4$ scenario-level nearest-rank p95/maxima to declare a regression.
+   - Tail evaluation requires pooled cohorts ($n \ge 10$) across replicated runs.
+   - Regression confirmed only if tail worsens by $>25\%$ AND $>50$ ms across replicated runs **AND** exhibits a demonstrable software bottleneck in the trace (e.g., lock contention, main thread measure storm).
+5. **Decision Outcomes**:
+   - **ACCEPT**: Passes Gates 1–3, no replicated causal regression in Gate 4.
+   - **REJECT**: Fails Gate 1 or Gate 2, OR exhibits a replicated tail regression with an identified software bottleneck.
+   - **INCONCLUSIVE**: Passes Gates 1–2, but median speedup is within noise bounds ($\le 5–10\%$) or tail fluctuations lack an identified software cause; requires targeted profiling on the specific scenario rather than automatic rejection.
 
 ---
 
-### Executed attempts ledger and exclusions
-All attempts from Iteration 16 are preserved in `scratch/iteration16/`:
+### Executed attempts ledger (Follow-up validation)
+All attempts from this follow-up validation are preserved in `scratch/calibration_followup/`:
 
-| Label | Purpose | Status | Outcome / Reason |
-|---|---|---|---|
-| `pilot-probe-on-failed-anr` | Probe ON pilot attempt 1 | EXCLUDED | System UI / Messaging ANR popups stole window focus during startup; preserved with artifacts. |
-| `pilot-probe-on` | Probe ON pilot attempt 2 | COMPLETED (PARTIAL) | 11/11 linked ops before 360s trace TTL; trailing 9 ops unlinked due to config TTL expiration. Proved +125% probe overhead. |
-| `pilot-probe-off` | Probe OFF pilot (Arm 1) | COMPLETED | 20/20 linked edits, 6/6 linked navigation returns (100% coverage); ran during guest sensor service contention (median 1466.5ms). |
-| `aa-arm2-90g-failed-startup-anr` | Reverse A/A attempt 1 | EXCLUDED | ActivityManager startup ANR due to 116% CPU guest sensor service contention; preserved. |
-| `aa-arm2-90g-failed-reverse-startup-anr2` | Reverse A/A attempt 2 | EXCLUDED | ActivityManager startup ANR due to reverse order starting with heavy `afterMixedCycles` during ART verification; preserved. |
-| `aa-90g-arm2-failed-startup-anr` | Arm 2 attempt 1 | EXCLUDED | ActivityManager startup ANR due to guest sensor daemon contention; preserved. |
-| `aa-90g-arm2` | Arm 2 identical A/A | COMPLETED | 20/20 linked edits, 6/6 linked navigation returns (100% coverage); ran with guest sensor fixed (median 555.0ms, duration 117.2s). |
+| Label | History / Sort | Probes | Status | Outcome / Metrics |
+|---|---|---|---|---|
+| `clean-aa-90g-run1` | 90d / grouped | OFF | COMPLETED | 20/20 linked edits, 6/6 nav returns. Median: 546.8 ms, p95: 745.5 ms. Nav Median: 289.1 ms. Duration: 134.2s. |
+| `clean-aa-90g-run2` | 90d / grouped | OFF | COMPLETED | 20/20 linked edits, 6/6 nav returns. Median: 562.2 ms, p95: 820.3 ms. Nav Median: 291.4 ms. Duration: 119.2s. |
+| `clean-probe-on-90g` | 90d / grouped | ON | COMPLETED | 20/20 linked edits, 6/6 nav returns. Median: 701.4 ms, p95: 789.5 ms. Nav Median: 305.9 ms. Duration: 125.2s. |
+| `clean-aa-90s-run1` | 90d / status | OFF | COMPLETED | 20/20 linked edits, 6/6 nav returns. Median: 280.6 ms, p95: 340.0 ms. Nav Median: 277.2 ms. Duration: 118.2s. |
+| `clean-aa-90s-run2` | 90d / status | OFF | COMPLETED | 20/20 linked edits, 6/6 nav returns. Median: 296.7 ms, p95: 438.6 ms. Nav Median: 234.4 ms. Duration: 115.2s. |
 
 ### Ranked next work
-1. **Re-evaluate Grouped Fan-Out Optimization under Calibrated Protocol**: Grouped resort fan-out (166 unused reads, 178 full ancestor reads per edit) remains confirmed necessary work to eliminate. In Iteration 15, root-only traversal eliminated these reads and reduced resort CPU from 596ms to 411ms, but was rejected due to small $n=3$ `afterTasks` differences (839→1410ms) that fell entirely within the 41.6% CV noise band. Re-evaluate grouped resort work elimination under the new calibrated protocol with $n \ge 10$ and probes disabled.
-2. **Tasks & Statistics Navigation Viewport Settling**: Investigate post-navigation looper settling and avoid running navigation cycles immediately during cold startup.
-3. **Guest Environment Pre-Flight Health Check**: Add an automated pre-flight assertion in QA harness to verify guest CPU is <10% and sensors service is not spinning before initiating benchmark captures.
+1. **Re-evaluate Grouped Fan-Out Work Elimination under Calibrated Protocol**: Grouped resort fan-out (166 unused reads, 178 full ancestor reads per edit) remains confirmed necessary work to eliminate. In Iteration 15, root-only traversal eliminated these reads and reduced resort CPU from 596 ms to 411 ms, but was rejected due to small $n=3$ `afterTasks` differences (839→1410 ms) that our calibration has now proven fall entirely within sample-maximum noise. Re-evaluate grouped resort work elimination under the calibrated protocol with $n \ge 10$ and probes disabled.
+2. **Tasks & Statistics Navigation Settling**: Investigate post-navigation looper settling to prevent navigation animations from contaminating initial subsequent edits.
+3. **Automated Pre-Flight Health Assertion in QA Harness**: Ensure `run_post_navigation_attribution.py` automatically checks guest CPU <10% and verifies sensor daemon is sleeping before initiating captures.
+
 
