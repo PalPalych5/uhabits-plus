@@ -1,0 +1,364 @@
+{
+  "90g-c1": {
+    "n": 20,
+    "metrics": {
+      "wall_ms": {
+        "median": 161.21175,
+        "total": 3666.0063,
+        "max": 355.1779
+      },
+      "cpu_ms": {
+        "median": 102.36975000000001,
+        "total": 2058.888,
+        "max": 146.8331
+      },
+      "runnable_ms": {
+        "median": 63.086850000000005,
+        "total": 1460.5057000000002,
+        "max": 169.8407
+      },
+      "sleep_ms": {
+        "median": 0.0,
+        "total": 146.6126,
+        "max": 79.5779
+      },
+      "other_ms": {
+        "median": 0.0,
+        "total": 0,
+        "max": 0
+      }
+    },
+    "coverage_max_error_ms": 5.684341886080802e-14,
+    "jit_lock_inclusive_ms": 369.0371,
+    "jit_lock_count": 363,
+    "stages": {
+      "habit.resortStage.1": {
+        "wall_ms": 355.1779,
+        "cpu_ms": 139.4044,
+        "runnable_ms": 136.1956,
+        "sleep_ms": 79.5779,
+        "other_ms": 0
+      },
+      "habit.resortStage.2": {
+        "wall_ms": 316.6738,
+        "cpu_ms": 146.8331,
+        "runnable_ms": 169.8407,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.3": {
+        "wall_ms": 162.4376,
+        "cpu_ms": 104.2583,
+        "runnable_ms": 36.0916,
+        "sleep_ms": 22.0877,
+        "other_ms": 0
+      },
+      "habit.resortStage.4": {
+        "wall_ms": 269.2243,
+        "cpu_ms": 126.9673,
+        "runnable_ms": 119.2948,
+        "sleep_ms": 22.9622,
+        "other_ms": 0
+      },
+      "habit.resortStage.5": {
+        "wall_ms": 198.4461,
+        "cpu_ms": 112.5135,
+        "runnable_ms": 85.93260000000001,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.6": {
+        "wall_ms": 159.9859,
+        "cpu_ms": 104.2816,
+        "runnable_ms": 55.7043,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.7": {
+        "wall_ms": 117.3892,
+        "cpu_ms": 84.6846,
+        "runnable_ms": 32.7046,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.8": {
+        "wall_ms": 103.896,
+        "cpu_ms": 79.4043,
+        "runnable_ms": 24.4917,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.9": {
+        "wall_ms": 107.8331,
+        "cpu_ms": 91.1011,
+        "runnable_ms": 16.6281,
+        "sleep_ms": 0.1039,
+        "other_ms": 0
+      },
+      "habit.resortStage.10": {
+        "wall_ms": 171.7887,
+        "cpu_ms": 83.8655,
+        "runnable_ms": 87.9232,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.11": {
+        "wall_ms": 104.9289,
+        "cpu_ms": 80.0772,
+        "runnable_ms": 24.8517,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.12": {
+        "wall_ms": 275.285,
+        "cpu_ms": 113.5058,
+        "runnable_ms": 143.52460000000002,
+        "sleep_ms": 18.2546,
+        "other_ms": 0
+      },
+      "habit.resortStage.13": {
+        "wall_ms": 209.9935,
+        "cpu_ms": 100.9925,
+        "runnable_ms": 109.001,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.14": {
+        "wall_ms": 202.6886,
+        "cpu_ms": 103.715,
+        "runnable_ms": 98.9736,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.15": {
+        "wall_ms": 137.0007,
+        "cpu_ms": 101.0245,
+        "runnable_ms": 35.9762,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.16": {
+        "wall_ms": 258.116,
+        "cpu_ms": 111.2603,
+        "runnable_ms": 144.3684,
+        "sleep_ms": 2.4873,
+        "other_ms": 0
+      },
+      "habit.resortStage.17": {
+        "wall_ms": 129.9778,
+        "cpu_ms": 111.6467,
+        "runnable_ms": 17.283900000000003,
+        "sleep_ms": 1.0472,
+        "other_ms": 0
+      },
+      "habit.resortStage.18": {
+        "wall_ms": 109.6268,
+        "cpu_ms": 84.0376,
+        "runnable_ms": 25.4974,
+        "sleep_ms": 0.0918,
+        "other_ms": 0
+      },
+      "habit.resortStage.19": {
+        "wall_ms": 116.6197,
+        "cpu_ms": 90.8674,
+        "runnable_ms": 25.752299999999998,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.20": {
+        "wall_ms": 158.9167,
+        "cpu_ms": 88.4473,
+        "runnable_ms": 70.46940000000001,
+        "sleep_ms": 0,
+        "other_ms": 0
+      }
+    },
+    "ordinals_6_20_medians": {
+      "wall_ms": 137.0007,
+      "cpu_ms": 91.1011,
+      "runnable_ms": 35.9762,
+      "sleep_ms": 0
+    }
+  },
+  "1825g-c1": {
+    "n": 20,
+    "metrics": {
+      "wall_ms": {
+        "median": 156.3681,
+        "total": 3534.7904,
+        "max": 400.7442
+      },
+      "cpu_ms": {
+        "median": 111.4207,
+        "total": 2232.152,
+        "max": 178.7965
+      },
+      "runnable_ms": {
+        "median": 52.760999999999996,
+        "total": 1180.8298,
+        "max": 200.061
+      },
+      "sleep_ms": {
+        "median": 0.0,
+        "total": 121.8086,
+        "max": 72.9001
+      },
+      "other_ms": {
+        "median": 0.0,
+        "total": 0,
+        "max": 0
+      }
+    },
+    "coverage_max_error_ms": 2.842170943040401e-14,
+    "jit_lock_inclusive_ms": 321.90360000000004,
+    "jit_lock_count": 306,
+    "stages": {
+      "habit.resortStage.1": {
+        "wall_ms": 400.7442,
+        "cpu_ms": 127.7831,
+        "runnable_ms": 200.061,
+        "sleep_ms": 72.9001,
+        "other_ms": 0
+      },
+      "habit.resortStage.2": {
+        "wall_ms": 176.7477,
+        "cpu_ms": 112.3213,
+        "runnable_ms": 64.4264,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.3": {
+        "wall_ms": 121.6984,
+        "cpu_ms": 86.7797,
+        "runnable_ms": 34.9187,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.4": {
+        "wall_ms": 243.6424,
+        "cpu_ms": 149.2221,
+        "runnable_ms": 71.45930000000001,
+        "sleep_ms": 22.961,
+        "other_ms": 0
+      },
+      "habit.resortStage.5": {
+        "wall_ms": 127.2194,
+        "cpu_ms": 98.2408,
+        "runnable_ms": 28.947400000000002,
+        "sleep_ms": 0.0312,
+        "other_ms": 0
+      },
+      "habit.resortStage.6": {
+        "wall_ms": 79.3882,
+        "cpu_ms": 68.5342,
+        "runnable_ms": 10.6054,
+        "sleep_ms": 0.2486,
+        "other_ms": 0
+      },
+      "habit.resortStage.7": {
+        "wall_ms": 190.0016,
+        "cpu_ms": 117.6607,
+        "runnable_ms": 72.3409,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.8": {
+        "wall_ms": 227.1261,
+        "cpu_ms": 117.2363,
+        "runnable_ms": 84.7083,
+        "sleep_ms": 25.1815,
+        "other_ms": 0
+      },
+      "habit.resortStage.9": {
+        "wall_ms": 111.6224,
+        "cpu_ms": 95.0525,
+        "runnable_ms": 16.5699,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.10": {
+        "wall_ms": 255.3183,
+        "cpu_ms": 113.7196,
+        "runnable_ms": 141.22390000000001,
+        "sleep_ms": 0.3748,
+        "other_ms": 0
+      },
+      "habit.resortStage.11": {
+        "wall_ms": 144.4449,
+        "cpu_ms": 127.9107,
+        "runnable_ms": 16.5342,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.12": {
+        "wall_ms": 162.2402,
+        "cpu_ms": 105.405,
+        "runnable_ms": 56.8352,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.13": {
+        "wall_ms": 153.5293,
+        "cpu_ms": 94.0584,
+        "runnable_ms": 59.4709,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.14": {
+        "wall_ms": 225.4931,
+        "cpu_ms": 120.3232,
+        "runnable_ms": 105.05850000000001,
+        "sleep_ms": 0.1114,
+        "other_ms": 0
+      },
+      "habit.resortStage.15": {
+        "wall_ms": 159.2069,
+        "cpu_ms": 110.5201,
+        "runnable_ms": 48.6868,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.16": {
+        "wall_ms": 129.4229,
+        "cpu_ms": 91.7253,
+        "runnable_ms": 37.6976,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.17": {
+        "wall_ms": 118.888,
+        "cpu_ms": 103.014,
+        "runnable_ms": 15.874,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.18": {
+        "wall_ms": 111.8145,
+        "cpu_ms": 99.3731,
+        "runnable_ms": 12.4414,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.19": {
+        "wall_ms": 249.7112,
+        "cpu_ms": 178.7965,
+        "runnable_ms": 70.9147,
+        "sleep_ms": 0,
+        "other_ms": 0
+      },
+      "habit.resortStage.20": {
+        "wall_ms": 146.5307,
+        "cpu_ms": 114.4754,
+        "runnable_ms": 32.0553,
+        "sleep_ms": 0,
+        "other_ms": 0
+      }
+    },
+    "ordinals_6_20_medians": {
+      "wall_ms": 153.5293,
+      "cpu_ms": 110.5201,
+      "runnable_ms": 48.6868,
+      "sleep_ms": 0
+    }
+  }
+}

@@ -29,4 +29,8 @@ kotlin-js-store
 .kotlin
 docs/design/*
 .tmp_visual/
-repomix-output.xml
+repomix-output.xml
+
+# Local emulator fixtures, benchmark evidence and isolated build copies.
+/scratch/
+/tools/qa/__pycache__/

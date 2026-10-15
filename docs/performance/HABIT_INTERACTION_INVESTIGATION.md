@@ -1938,6 +1938,94 @@ All raw traces, final JSON summaries, attempt manifests, and host monitoring log
 | `iter18-1825g-c2` | 1825d / grouped | Campaign 3 (C2) | 20 / 20 | 449.68 ms | 183.55 ms | 272.85 ms | COMPLETED |
 | `iter18-1825g-b2` | 1825d / grouped | Campaign 3 (B2) | 20 / 20 | 614.13 ms | 363.29 ms | 334.61 ms | COMPLETED |
 
+---
+
+## 10. PI-20261015-06: Iteration 19 — entry-only resort candidate, INCONCLUSIVE
+
+- Starting branch/HEAD: `dev`, `69eaef49efc5e677d64546bb3c5c04f732c41440` (verified).
+- Decision: **INCONCLUSIVE**. One candidate evaluated at source/test/build gates;
+  no production correction retained. All seven production/harness files restored
+  byte-for-byte to starting HEAD; accepted Iterations 17–18 preserved.
+- Archive: [candidate, tests, scripts and detailed evidence](../../tools/iteration19/README.md).
+  Full raw measurements/APKs/XML/logs remain in `scratch/iteration19/`.
+- Scope: disposable offline API35 `emulator-5580` only. No physical device,
+  private DB, external sync, Supabase, push or transaction changes.
+
+### Dependencies and candidate
+
+`CreateRepetitionCommand` unconditionally sorts after entry persistence/recompute.
+Position/name/color/day-tier/group keys do not depend on entries; both primary
+and secondary score/status keys do. Completion/entered filters must rebuild,
+independently ordered children must sort, synchronous memory/wrapper listeners
+must fire, and command completion must refresh affected view models.
+See the archived event matrix for metadata, nested organization, ties, reentrancy,
+reload and dataset boundaries. Unchanged settings alone do not establish unchanged order.
+
+The candidate introduces a conservative entry-change operation and skips only
+the stable root sort, retaining existing child rebuild/sort/listener propagation.
+General resort and grouping-cache invalidation remain unchanged. No cache,
+transaction or optimistic committed-UI change was introduced.
+
+### Correctness, work evidence and attribution
+
+- Candidate: **42 focused JVM tests passed**, zero failures/errors; Android app
+  and instrumentation APK builds passed; independent source review found no
+  actionable defect. APK hashes and exact restored-source hashes are archived.
+- Tests precede correction, including an observed failing zero-sort test followed
+  by passing candidate. Coverage includes numerical status quantity changes,
+  historical score, sensitive secondary ties, completion/entered descendants,
+  independent children, reentrancy, SQLite delivery/parity, actual rollback with
+  explicit reload, dataset identity/detach, existing organization/session suites,
+  and coarse exception balancing. This is not native cutover or automatic rollback-cache proof.
+- Source dependencies and deterministic work counters demonstrate redundant
+  stable-parent sorting. The candidate's zero-sort fixture has two habits;
+  it is not a fresh measured 42-habit SQL reduction.
+- Historical Iter18 probes-OFF traces (20 stages each): 90g-c1 wall161.212ms /
+  scheduled CPU102.370ms / runnable63.087ms / sleep0 median; 1825g-c1 wall156.368ms /
+  CPU111.421ms / runnable52.761ms / sleep0 median. Independent medians are not additive.
+  Nested JIT code-cache contention overlaps that scheduling accounting. Separate
+  comparator/SQLite/observer cost remains UNKNOWN; no model-lock or SQLite-wait
+  inference follows from wall minus CPU. Both loaders report eight out-of-order events.
+
+### Fresh attempt ledger and environment limitations
+
+| Attempt | Work performed | Outcome |
+|---|---|---|
+| readiness-1 | Ordinary sensor HAL, no benchmark | Sensor23% CPU; approximately0.9GiB host free; not ready |
+| iter19-coarse-b | Wrapper preflight only; no APK install | Evidence-preservation check rejected wrapper health/log filenames; moved these into subdirectories |
+| iter19-coarse2-b | Baseline90g, detailed probes OFF, coarse spans ON | Failed window-focus check before valid edit input; System has crashed; native JSON unavailable; raw trace retained |
+
+Before the executed coarse2 baseline, a temporary stop of the runaway sensor HAL
+yielded393% idle but made the environment confounded. The failed arm had host
+CPUmean52.32%/max100%, memorymean94.76%/max96%, minimum available608.3MiB (102 samples).
+Native JSON pulls returned I/O error; guest storage still had4.1GiB available.
+Crash cause is undetermined: no attribution to the candidate, memory or HAL is made.
+Sensor HAL was restored (`running`) before reboot; boot completion was observed,
+but guest remained heavily loaded. The disposable emulator was shut down normally.
+
+Capture returned0 and the21,306,172-byte trace was pulled. Strict analysis found
+**zero resort-operation windows**; coarse startup slices cannot establish edit cost.
+No valid fresh native fixture fingerprint, SQLite/effective/UI parity result or
+input-to-committed FrameTimeline endpoint exists for this attempt.
+
+No candidate arm ran. The planned18-arm B-C-C-B-B-C campaign across90g/1825g/90s
+did not start. Warm edits, Statistics/Tasks navigation, tails, independent run
+variation, matched endpoints and low-overhead substage attribution remain unverified.
+There is **no demonstrated presentation benefit or regression**, so neither
+ACCEPT nor a performance REJECT is justified. Candidate archived; STOP after this evaluation.
+
+### Repository cleanup
+
+Initial scratch size25.740GiB /65,972 files; expanded Git status21,128 untracked
+files plus132 pre-existing tracked deletions. Removed only validated reproducible
+scratch build/.gradle/.kotlin/__pycache__ outputs:1,728,260,568 bytes /44,634 files.
+Preserved raw measurements, source snapshots, databases and APK evidence.
+Moved both inactive AVD homes intact (16.25GiB) into
+`C:/Users/Pavel/.android/uhabit-disposable-qa/` and updated their top-level `.ini`
+paths. No virtual disk/snapshot deletion; API35 boot from the new location succeeded.
+Relocation reduces repository size, not total disk usage. Ignored `/scratch/`
+and `/tools/qa/__pycache__/`; preserved all132 unrelated tracked deletions and IA/v29 untracked files.
+
 
 
 
