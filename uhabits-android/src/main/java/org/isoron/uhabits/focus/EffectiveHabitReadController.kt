@@ -165,6 +165,7 @@ class EffectiveHabitReadController(
                 metrics.prepareCount, metrics.retries, metrics.publicationMs, metrics.joins,
                 metrics.creates, metrics.maxActive, Looper.myLooper() == Looper.getMainLooper(),
                 Thread.currentThread().name, outcome, habits.size, generation, batch, metrics.cachePublicationMs,
+                metrics.retagMs, metrics.retagSnapshots, metrics.retagDays, metrics.historyLookupMs,
             )
             runCatching { observer(result) }
         }
@@ -185,6 +186,22 @@ class EffectiveHabitReadController(
         var initialCacheHits = 0
 
         repeat(3) { attempt ->
+            // Rollback listeners own revision -> controller. Read history without
+            // owning controller, then use it only for the exact context/version
+            // inspected here; concurrent replacement conservatively clears instead.
+            val historyContext = synchronized(this) { cachedContext }
+            val historyRevision = revision.observedValue
+            val historyChanges = if (historyContext != null &&
+                historyContext.from == from && historyContext.to == to &&
+                historyContext.revision < historyRevision
+            ) {
+                traces.forEach { it.event("snapshot.history.begin", historyRevision, generation, batch) }
+                val historyStarted = metrics?.let { TimeSource.Monotonic.markNow() }
+                val affected = revision.affectedHabitsBetween(historyContext.revision, historyRevision)
+                metrics?.let { it.historyLookupMs += requireNotNull(historyStarted).elapsedNow().toDouble(DurationUnit.MILLISECONDS) }
+                traces.forEach { it.event("snapshot.history.end", historyRevision, generation, batch) }
+                affected
+            } else null
             val waitStart = TimeSource.Monotonic.markNow()
             traces.forEach { it.event("snapshot.lock.wait.begin", generation = generation, batch = batch) }
             val plan = synchronized(this) {
@@ -215,8 +232,10 @@ class EffectiveHabitReadController(
                             prevContext.compatibilityFirstWeekday == currentContext.compatibilityFirstWeekday &&
                             prevContext.revision < currentContext.revision
 
-                        val affectedHabits = if (canIncrementallyUpdate) {
-                            revision.affectedHabitsBetween(prevContext!!.revision, currentContext.revision)
+                        val affectedHabits = if (canIncrementallyUpdate &&
+                            prevContext === historyContext && currentContext.revision == historyRevision
+                        ) {
+                            historyChanges
                         } else null
 
                         if (affectedHabits != null) {
@@ -224,12 +243,17 @@ class EffectiveHabitReadController(
                                 cachedSnapshots.remove(ref)
                             }
                             val survivingKeys = cachedSnapshots.keys.toList()
+                            val retagStarted = metrics?.let { TimeSource.Monotonic.markNow() }
+                            traces.forEach { it.event("snapshot.retag.begin", currentContext.revision, generation, batch) }
                             for (ref in survivingKeys) {
                                 val s = cachedSnapshots[ref]
                                 if (s != null && s.revision != currentContext.revision) {
+                                    metrics?.let { it.retagSnapshots++; it.retagDays += s.days.size }
                                     cachedSnapshots[ref] = s.withRevision(currentContext.revision)
                                 }
                             }
+                            metrics?.let { it.retagMs += requireNotNull(retagStarted).elapsedNow().toDouble(DurationUnit.MILLISECONDS) }
+                            traces.forEach { it.event("snapshot.retag.end", currentContext.revision, generation, batch) }
                         } else {
                             cachedSnapshots.clear()
                         }
@@ -486,6 +510,8 @@ class EffectiveHabitReadController(
         val createdBatches: Int, val maxConcurrentPreparations: Int, val onMain: Boolean,
         val thread: String, val outcome: String, val habitCount: Int,
         val generation: Long?, val batch: Long?, val cachePublicationDurationMs: Double = 0.0,
+        val retagMs: Double = 0.0, val retagSnapshots: Int = 0, val retagDays: Int = 0,
+        val historyLookupMs: Double = 0.0,
     )
 
     private class RequestMeasurement {
@@ -502,6 +528,10 @@ class EffectiveHabitReadController(
         var joins = 0
         var creates = 0
         var maxActive = 0
+        var retagMs = 0.0
+        var retagSnapshots = 0
+        var retagDays = 0
+        var historyLookupMs = 0.0
     }
 
     var snapshotMetricsObserver: ((SnapshotPreparationMetrics) -> Unit)?

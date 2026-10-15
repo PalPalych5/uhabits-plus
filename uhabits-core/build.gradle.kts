@@ -95,6 +95,9 @@ kotlin {
 
 mokkery {
     defaultMockMode.set(dev.mokkery.MockMode.autofill)
+    // CommandRunner exposes a final read-only listener diagnostic. Widget mocks
+    // exercise its open commands, never that diagnostic or other final members.
+    ignoreFinalMembers.set(true)
     stubs.allowConcreteClassInstantiation.set(true)
 }
 

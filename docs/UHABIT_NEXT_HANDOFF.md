@@ -183,6 +183,8 @@ PR10 реализован и зафиксирован локально. Experime
 
 ## 6. Active work
 
+Iteration 14 claim (Codex, 2026-10-14–15): DONE / snapshot-sharing candidate rejected and reverted on dev, starting HEAD98b752d41. Corrected old26.35s cross-scenario endpoint attribution; required controller/revision lock-order repair retained. Primary ABBA + one bounded Statistics BAAB follow-up:180/180 edit and99/100 return joins, all attempts/raw evidence preserved; Statistics repeated p95 gate505→758 and340→378ms fails. Snapshot production source equals starting HEAD; Iteration13 two-range cache remains rejected. Final retained48 core +9 native +20 Python checks pass, open disposable v30 WAL verified. Canonical record PI-20261015-01 and local scratch/iteration14 evidence. Next emulator-only attribution: grouped resortAndObservers (~388ms median); STOP before another optimization. No physical/private/cloud/push actions; unrelated dirty work preserved.
+
 Iteration 13 claim (Codex, 2026-10-14): DONE / candidate rejected and reverted on dev, C:/Users/Pavel/source/repos/uhabits-plus, starting HEAD 46c0f0497. Bounded emulator-only source audit, open-database WAL verification, one measured optimization with regression coverage and ABBA presentation comparison. Expected areas: effective reads/list cache or selected source bottleneck, scoped QA tests/tools, canonical performance record. No physical devices, real data, cloud, push; preserve unrelated dirty artifacts. Read-only source-audit subagent owns Tasks/list binding/lifecycle inspection only.
  
 | Agent | Work item | Branch/worktree | Status | Started | Expected touched areas | Last commit/result |

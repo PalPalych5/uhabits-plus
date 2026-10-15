@@ -77,6 +77,9 @@ class PostNavigationPresentationAttributionTest {
         check(depth in listOf(90, 1825))
         val sampleCount = args.getString("sampleCount", "6").toInt()
         check(sampleCount in 2..8)
+        val mixedCycleCount = args.getString("mixedCycleCount", "10").toInt()
+        check(mixedCycleCount in 1..10)
+        val statisticsOnlyCycles = args.getString("statisticsOnlyCycles", "false").toBooleanStrict()
         val reverseOrder = args.getString("reverseOrder", "false").toBooleanStrict()
         val enabled = args.getString("tracingEnabled", "true").toBooleanStrict()
         val label = args.getString("buildLabel", "unspecified")
@@ -119,6 +122,7 @@ class PostNavigationPresentationAttributionTest {
         val navigationOperations = mutableListOf<JSONObject>()
         val viewportDiagnostics = JSONArray()
         val rangeSwitchProbe = JSONArray()
+        val syntheticCurrentGoalAdjustments = JSONArray()
         val controlledFailures = Collections.synchronizedList(mutableListOf<JSONObject>())
         val traces = Collections.synchronizedList(mutableListOf<HabitEditTrace>())
         val targets = mutableListOf<CheckmarkButtonView>()
@@ -126,6 +130,9 @@ class PostNavigationPresentationAttributionTest {
         val drawn = Collections.synchronizedSet(mutableSetOf<Long>())
         val navigationDrawn = Collections.synchronizedSet(mutableSetOf<Long>())
         val publications = Collections.synchronizedMap(mutableMapOf<Long, Triple<Long?, Long?, Long?>>())
+        val operationPhases = Collections.synchronizedMap(mutableMapOf<Long, String>())
+        val retiredOperations = Collections.synchronizedSet(mutableSetOf<Long>())
+        var originalCacheListener: org.isoron.uhabits.core.ui.screens.habits.list.HabitCardListCache.Listener? = null
         fun memorySample(): JSONObject {
             val info = Debug.MemoryInfo()
             Debug.getMemoryInfo(info)
@@ -168,13 +175,29 @@ class PostNavigationPresentationAttributionTest {
                     frequency = Frequency.DAILY; blockId = block
                 }.also { component.habitList.add(it) }
             }
+            val facade = component.organizationFacade
+            check(facade.mode == org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode.CONTAINER_LOCAL)
+            val roots = facade.rootContainers()
+            check(roots.size >= 2)
+            val firstRoot = org.isoron.uhabits.core.containers.ContainerId(roots[0].key)
+            val secondRoot = org.isoron.uhabits.core.containers.ContainerId(roots[1].key)
+            // Retain all surrounding data, but keep only four controlled rows in the
+            // first canonical root so both committed status positions fit on screen.
+            component.habitList.toList().filter { it !in habits && facade.getRootGroupKey(it.uuid!!, it.blockId) == firstRoot.value }
+                .forEach { facade.placeHabit(it.uuid!!, secondRoot).getOrThrow() }
+            habits.forEachIndexed { index, habit ->
+                facade.placeNewHabit(habit.uuid!!, if (index < 4) firstRoot else secondRoot).getOrThrow()
+            }
+            check(facade.getHabitUuidsForContainer(firstRoot.value) == habits.take(4).map { it.uuid!! }.toSet())
+            check(component.habitList.size() == 42)
             component.db.beginTransaction()
             try {
                 val stmt = component.db.prepareStatement("INSERT OR REPLACE INTO Repetitions (habit,timestamp,value) VALUES (?,?,?)")
-                habits.forEach { habit ->
+                habits.forEachIndexed { index, habit ->
                     for (d in 0 until depth) {
                         stmt.bindLong(1, habit.id!!); stmt.bindLong(2, today.minus(d).unixTime)
-                        stmt.bindLong(3, (if (d == 0 || d % 7 == 0) Entry.NO else Entry.YES_MANUAL).toLong())
+                        stmt.bindLong(3, (if (d == 0) { if (index < 4) Entry.NO else Entry.SKIP }
+                            else if (d % 7 == 0) Entry.NO else Entry.YES_MANUAL).toLong())
                         stmt.step(); stmt.reset()
                     }
                     habit.originalEntries.invalidate(); habit.computedEntries.invalidate()
@@ -183,7 +206,7 @@ class PostNavigationPresentationAttributionTest {
             } finally { component.db.endTransaction() }
             // Direct fixture SQL bypasses the command's model rebuild. Hydrate the
             // historical computed entries/scores/streaks before measuring app reads.
-            habits.forEach { habit ->
+            habits.forEachIndexed { index, habit ->
                 // A WAL reader can have populated the old model while the seed
                 // transaction was still open. Invalidate after the actual commit.
                 habit.originalEntries.invalidate()
@@ -191,12 +214,39 @@ class PostNavigationPresentationAttributionTest {
                 assertEquals("SQLite seed rows for ${habit.id}", depth.toLong(),
                     component.db.queryLong("SELECT count(*) FROM Repetitions WHERE habit=${habit.id}"))
                 assertEquals("Loaded original rows for ${habit.id}", depth, habit.originalEntries.getKnown().size)
-                assertEquals(Entry.NO, habit.computedEntries.get(today).value)
+                assertEquals(if (index < 4) Entry.NO else Entry.SKIP, habit.computedEntries.get(today).value)
                 assertEquals(Entry.YES_MANUAL, habit.computedEntries.get(today.minus(1)).value)
                 assertTrue(habit.scores[today].value > 0.0)
                 assertTrue(habit.streaks.getBest(1).isNotEmpty())
             }
+            component.habitList.toList().filter { it !in habits }.forEach { habit ->
+                val goal = habit.goalAt(today)
+                val value = if (!habit.isNumerical) Entry.SKIP else
+                    if (goal.targetType == org.isoron.uhabits.core.models.NumericalHabitType.AT_MOST) 0
+                    else kotlin.math.ceil(goal.targetValue * 1000.0).toInt()
+                habit.originalEntries.add(Entry(today, value))
+                habit.recompute()
+                if (!habit.isCompletedToday() && habit.isNumerical &&
+                    goal.targetType == org.isoron.uhabits.core.models.NumericalHabitType.AT_MOST) {
+                    val actual = requireNotNull(habit.periodActualOn(today))
+                    val adjustedTarget = maxOf(goal.targetValue, actual)
+                    habit.goalHistory.add(goal.copy(effectiveDate = today, targetValue = adjustedTarget))
+                    habit.targetValue = adjustedTarget
+                    component.habitList.update(habit)
+                    habit.recompute()
+                    syntheticCurrentGoalAdjustments.put(JSONObject().put("habitName", habit.name)
+                        .put("effectiveDate", today.toString()).put("previousTarget", goal.targetValue)
+                        .put("newTarget", adjustedTarget).put("periodActual", actual)
+                        .put("frequencyNumerator", goal.frequency.numerator).put("frequencyDenominator", goal.frequency.denominator)
+                        .put("rationale", "Retain past monthly history while keeping interaction viewport"))
+                }
+                assertTrue("Background habit must be complete: ${habit.name}", habit.isCompletedToday())
+            }
             component.habitList.reorder(habits.first(), component.habitList.getByPosition(0))
+            // Keep an unchanged incomplete row before the moving target. RecyclerView
+            // preserves its visible anchor when another row is inserted above it;
+            // moving the target back to position zero would otherwise scroll it offscreen.
+            component.habitList.reorder(habits[1], component.habitList.getByPosition(0))
             val logicalFixture = (0 until component.habitList.size()).joinToString("\n") { index ->
                 val habit = component.habitList.getByPosition(index)
                 val entries = JSONArray()
@@ -208,7 +258,9 @@ class PostNavigationPresentationAttributionTest {
                     }
                 } finally { statement.finalize() }
                 JSONArray().put(index).put(habit.name).put(habit.type)
-                    .put(habit.frequency.numerator).put(habit.frequency.denominator).put(entries).toString()
+                    .put(habit.frequency.numerator).put(habit.frequency.denominator)
+                    .put(habit.targetType.name).put(habit.targetValue).put(habit.goalHistory.toString())
+                    .put(facade.getRootGroupKey(habit.uuid!!, habit.blockId)).put(entries).toString()
             }
             fixtureFingerprint = java.security.MessageDigest.getInstance("SHA-256")
                 .digest(logicalFixture.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
@@ -216,7 +268,8 @@ class PostNavigationPresentationAttributionTest {
             component.preferences.isShortToggleEnabled = true
             component.preferences.areHabitGroupSeparatorsEnabled = true
             component.preferences.isDayTiersEnabled = true
-            component.preferences.defaultPrimaryOrder = if (sortConfiguration == "entrySensitive") HabitList.Order.BY_STATUS_ASC else HabitList.Order.BY_POSITION
+            component.preferences.isHabitSpheresEnabled = true
+            component.preferences.defaultPrimaryOrder = if (sortConfiguration == "entrySensitive") HabitList.Order.BY_STATUS_ASC else HabitList.Order.BY_SPHERE
             component.preferences.defaultSecondaryOrder = HabitList.Order.BY_POSITION
             drain()
             component.habitCardListCache.effectiveSnapshots = fixtureListLoader
@@ -227,6 +280,8 @@ class PostNavigationPresentationAttributionTest {
                     .put("totalMs", m.totalMs).put("monitorWaitMs", m.monitorWaitMs).put("monitorHeldMs", m.monitorHeldMs)
                     .put("latchMs", m.latchMs).put("latchCount", m.latchCount).put("prepareMs", m.prepareMs)
                     .put("prepareCount", m.prepareCount).put("retries", m.retries)
+                    .put("retagMs", m.retagMs).put("retagSnapshots", m.retagSnapshots).put("retagDays", m.retagDays)
+                    .put("historyLookupMs", m.historyLookupMs)
                     .put("validatedPublicationMs", m.validatedPublicationMs ?: JSONObject.NULL)
                     .put("joinedHabits", m.joinedHabits).put("createdBatches", m.createdBatches)
                     .put("maxConcurrentPreparations", m.maxConcurrentPreparations).put("onMain", m.onMain)
@@ -242,7 +297,7 @@ class PostNavigationPresentationAttributionTest {
                     .put("daysMs", m.daysForRangeDurationMs).put("initMs", m.snapshotInitDurationMs)
                     .put("scoresMs", m.scoresAndStreaksDurationMs)) }
                 component.habitCardListCache.operationTraces = { id -> synchronized(traces) {
-                    traces.filter { t -> t.durableRevision != null && (id == null || id == habits.first().id) }
+                    traces.filter { t -> t.ordinal == activeOperation && t.durableRevision != null && (id == null || id == habits.first().id) }
                 } }
                 component.habitCardListCache.effectiveSnapshotsTraced = { selected, row, generation, batch ->
                     controller.snapshots(selected, today.minus(365), today, row, generation, batch)
@@ -257,7 +312,8 @@ class PostNavigationPresentationAttributionTest {
                             val snapshot = component.habitCardListCache.getEffectiveSnapshot(id!!)
                             if (snapshot != null) component.habitCardListCache.getPublishedOperationTraces(id).forEach {
                                 val lineage = publications[it.ordinal]
-                                if (lineage?.first == snapshot.revision) it.event("glyph.bind", snapshot.revision, lineage?.second, lineage?.third)
+                                if (it.ordinal == activeOperation && operationPhases[it.ordinal] == phase && lineage?.first == snapshot.revision)
+                                    it.event("glyph.bind", snapshot.revision, lineage?.second, lineage?.third)
                             }
                         }
                     }
@@ -278,7 +334,8 @@ class PostNavigationPresentationAttributionTest {
                                 .put("revision", snapshot.revision).put("manualValue", navigationExpectedValue))
                             Trace.beginSection("habit.nav.habitsDraw.$navigationDrawOperation"); Trace.endSection()
                         }
-                        if (glyphVisible && snapshot != null && latest != null && latest in row &&
+                        if (glyphVisible && snapshot != null && latest != null && latest.ordinal == activeOperation &&
+                            operationPhases[latest.ordinal] == phase && latest in row &&
                             lineage?.first == snapshot.revision &&
                             snapshot.revision >= latest.durableRevision!! &&
                             snapshot.day(today).manualEntry.value == expected[latest.ordinal] &&
@@ -321,16 +378,32 @@ class PostNavigationPresentationAttributionTest {
             val launchStart = System.nanoTime()
             ActivityScenario.launch<MainActivity>(Intent(ins.targetContext, MainActivity::class.java)).use { activity ->
                 drain(); SystemClock.sleep(250); drain()
+                val listenerField = component.habitCardListCache.javaClass.getDeclaredField("listener").apply { isAccessible = true }
+                val delegate = listenerField.get(component.habitCardListCache) as org.isoron.uhabits.core.ui.screens.habits.list.HabitCardListCache.Listener
+                originalCacheListener = delegate
+                component.habitCardListCache.setListener(object : org.isoron.uhabits.core.ui.screens.habits.list.HabitCardListCache.Listener by delegate {
+                    override fun onItemMoved(oldPosition: Int, newPosition: Int) {
+                        val started = System.nanoTime()
+                        delegate.onItemMoved(oldPosition, newPosition)
+                        event("cache.listener.move", JSONObject().put("oldPosition", oldPosition).put("newPosition", newPosition)
+                            .put("callbackDurationNanos", System.nanoTime() - started)
+                            .put("targetPositionAfterMove", (0 until component.habitCardListCache.habitCount).firstOrNull {
+                                component.habitCardListCache.getHabitByPosition(it)?.id == habits.first().id } ?: -1))
+                    }
+                })
                 operations.add(JSONObject().put("scenario", "coldLaunch").put("durationToDrainNanos", System.nanoTime() - launchStart))
                 fun target(): CheckmarkButtonView {
                     var button: CheckmarkButtonView? = null
                     var viewportReady = false
                     var needsRebind = false
                     activity.onActivity { a ->
-                        val position = (0 until component.habitCardListCache.habitCount).first {
-                            component.habitCardListCache.getHabitByPosition(it)?.id == habits.first().id }
                         descendants(a.window.decorView).filterIsInstance<HabitCardListView>().first().apply {
-                            dataOffset = 0; scrollToPosition(position)
+                            dataOffset = 0
+                            // Keep the whole 0..3 movement corridor visible. Anchoring the
+                            // current target at the top hides it when status sorting moves
+                            // it back to zero on the third (SKIP -> NO) genuine toggle.
+                            (layoutManager as androidx.recyclerview.widget.LinearLayoutManager)
+                                .scrollToPositionWithOffset(0, 0)
                         }
                     }
                     drain()
@@ -433,7 +506,13 @@ class PostNavigationPresentationAttributionTest {
                         .put("commandListenerCount", listeners(component.commandRunner))
                         .put("activeTaskCount", component.taskRunner.activeTaskCount))
                 }
+                var currentUiDestination = MainDestination.HABITS
                 fun navigate(destination: MainDestination) {
+                    if (currentUiDestination == MainDestination.HABITS && destination != MainDestination.HABITS) {
+                        // Prepare the native viewport before leaving; never repair it after return input.
+                        val anchor = target()
+                        check(anchor.isShown)
+                    }
                     val navigationOp = ++navigationOrdinal
                     val navigationResult = JSONObject().put("navigationOperation", navigationOp).put("destination", destination.name)
                         .put("scenario", phase).put("target", habits.first().name).put("targetHabitId", habits.first().id)
@@ -483,9 +562,10 @@ class PostNavigationPresentationAttributionTest {
                         .put("drainDefinition", "Injection through queue/idle/settle barrier; not presentation")
                         .put("drawDisposition", if (!enabled) "unobserved" else if (navigationOp in navigationDrawn) "drawn" else "unmatched")
                     navigationDrawOperation = 0L
+                    currentUiDestination = destination
                     state("navigation_${destination}")
                 }
-                val scenarios = listOf("warmRepeated", "afterStatistics", "afterStatisticsDateChange", "afterTasks", "afterTenMixedCycles")
+                val scenarios = listOf("warmRepeated", "afterStatistics", "afterStatisticsDateChange", "afterTasks", "afterMixedCycles")
                 for (case in if (reverseOrder) scenarios.reversed() else scenarios) {
                     phase = case; activeOperation = 0L
                     when (case) {
@@ -510,8 +590,8 @@ class PostNavigationPresentationAttributionTest {
                             drain(); SystemClock.sleep(250); drain(); navigate(MainDestination.HABITS)
                         }
                         "afterTasks" -> { navigate(MainDestination.TASKS); navigate(MainDestination.HABITS) }
-                        "afterTenMixedCycles" -> repeat(10) {
-                            navigate(if (it % 2 == 0) MainDestination.STATISTICS else MainDestination.TASKS)
+                        "afterMixedCycles" -> repeat(mixedCycleCount) {
+                            navigate(if (statisticsOnlyCycles || it % 2 == 0) MainDestination.STATISTICS else MainDestination.TASKS)
                             navigate(MainDestination.HABITS)
                         }
                     }
@@ -522,12 +602,17 @@ class PostNavigationPresentationAttributionTest {
                     val button = target(); targets.add(button)
                     activeOperation = ++ordinal
                     phase = case
+                    operationPhases[activeOperation] = case
+                    val targetPositionBeforeInput = (0 until component.habitCardListCache.habitCount).first {
+                        component.habitCardListCache.getHabitByPosition(it)?.id == habits.first().id }
+                    check(targetPositionBeforeInput in 0..3)
                     event("harness.setup.start", JSONObject().put("timestampNanos", setupStart))
                     val before = component.db.queryLong("SELECT value FROM Repetitions WHERE habit=${habits.first().id} AND timestamp=${today.unixTime}")
                     val op = activeOperation
                     var latestStatementReturn = 0L
                     if (enabled) button.operationTraceFactory = {
-                        HabitEditTrace(op) { trace, stage, revision, generation, batch ->
+                        HabitEditTrace(op) traceCallback@ { trace, stage, revision, generation, batch ->
+                            if (op in retiredOperations) return@traceCallback
                             if (stage == "input.accepted") {
                                 expected[op] = button.value
                                 Trace.beginSection("habit.op.accepted.$op"); Trace.endSection()
@@ -539,7 +624,16 @@ class PostNavigationPresentationAttributionTest {
                                 event("sqlite.changingAutocommitReturn", JSONObject().put("operation", op)
                                     .put("timestampNanos", latestStatementReturn).put("retrospectivelyQualified", true))
                             }
-                            if (stage == "cache.row.published") publications[op] = Triple(revision, generation, batch)
+                            if (stage == "cache.row.published") {
+                                publications[op] = Triple(revision, generation, batch)
+                                val published = component.habitCardListCache.getEffectiveSnapshot(habits.first().id!!)
+                                event("cache.row.parity", JSONObject().put("operation", op).put("revision", published?.revision ?: JSONObject.NULL)
+                                    .put("currentRevision", component.effectiveReadRevision.value)
+                                    .put("manualValue", published?.day(today)?.manualEntry?.value ?: JSONObject.NULL)
+                                    .put("expectedValue", expected[op] ?: JSONObject.NULL)
+                                    .put("qualifiedParity", published != null && published.revision == revision &&
+                                        published.revision >= (trace.durableRevision ?: Long.MAX_VALUE) && published.day(today).manualEntry.value == expected[op]))
+                            }
                             if (stage == "input.down") {
                                 Trace.beginSection("habit.op.input.$op"); Trace.endSection()
                             }
@@ -571,8 +665,11 @@ class PostNavigationPresentationAttributionTest {
                         activity.onActivity { a ->
                             val row = descendants(a.window.decorView).filterIsInstance<HabitCardView>()
                                 .firstOrNull { it.isShown && it.habit?.id == habits.first().id && it.dataOffset == 0 }
-                            viewAvailable = row?.checkmarkPanel?.buttons?.firstOrNull() != null
-                            viewParity = row?.checkmarkPanel?.buttons?.firstOrNull()?.value?.toLong() == stored
+                            val currentButton = row?.checkmarkPanel?.buttons?.firstOrNull()
+                            val visibleRect = android.graphics.Rect()
+                            viewAvailable = currentButton != null && currentButton.isShown && currentButton.getGlobalVisibleRect(visibleRect) &&
+                                visibleRect.width() > 0 && visibleRect.height() > 0
+                            viewParity = currentButton?.value?.toLong() == stored
                         }
                         val observedAt = System.nanoTime()
                         if (snapshotParity && snapshotReadyNanos == null) snapshotReadyNanos = observedAt
@@ -581,12 +678,15 @@ class PostNavigationPresentationAttributionTest {
                             .put("viewParity", viewParity).put("viewAvailable", viewAvailable)
                             .put("snapshotRevision", snapshot?.revision ?: JSONObject.NULL)
                             .put("durableRevision", component.effectiveReadRevision.value))
-                        if (!snapshotParity) {
+                        if (!snapshotParity || !viewAvailable || !viewParity) {
                             staleObservations++
                             if (System.nanoTime() < deadline) { SystemClock.sleep(50); drain() }
                         }
-                    } while (!snapshotParity && System.nanoTime() < deadline)
+                    } while ((!snapshotParity || !viewAvailable || !viewParity) && System.nanoTime() < deadline)
                     val result = JSONObject().put("operation", op).put("scenario", phase).put("sample", sample)
+                        .put("targetPositionBeforeInput", targetPositionBeforeInput)
+                        .put("targetPositionAfterInput", (0 until component.habitCardListCache.habitCount).firstOrNull {
+                            component.habitCardListCache.getHabitByPosition(it)?.id == habits.first().id } ?: -1)
                         .put("setupStartNanos", setupStart).put("startNanos", start).put("drainNanos", drained).put("durationToDrainNanos", drained - start)
                         .put("settleWaitNanos", System.nanoTime() - settleStart).put("staleObservations", staleObservations)
                         .put("snapshotReadyNanos", snapshotReadyNanos ?: JSONObject.NULL)
@@ -594,7 +694,13 @@ class PostNavigationPresentationAttributionTest {
                         .put("sqliteSnapshotParity", snapshotParity).put("viewParity", viewParity).put("viewAvailable", viewAvailable)
                         .put("viewStatus", if (!viewAvailable) "unavailableUnmatched" else if (viewParity) "matching" else "staleUnmatched")
                     operations.add(result)
+                    check(result.getInt("targetPositionAfterInput") in 0..3)
+                    retiredOperations.add(op)
+                    activeOperation = 0L
+                    result.put("finishedNanos", System.nanoTime())
                     assertTrue("Published snapshot failed to converge to durable revision/value within 10 seconds", snapshotParity)
+                    assertTrue("Controlled target left the visible viewport after committed input", viewAvailable)
+                    assertTrue("Controlled target has a stale displayed value", viewParity)
                     button.operationTraceFactory = null
                     }
                     phase = case; activeOperation = 0L; state("${case}_after")
@@ -607,8 +713,15 @@ class PostNavigationPresentationAttributionTest {
             val out = File(ins.targetContext.getExternalFilesDir(null), "remaining-latency").apply { mkdirs() }
             File(out, "$label-$depth-$enabled.json").writeText(JSONObject().put("pid", Process.myPid())
                 .put("experimentId", "PI-20261014-12").put("buildLabel", label).put("historyDays", depth)
-                .put("sortConfiguration", sortConfiguration).put("sampleCount", sampleCount).put("reverseOrder", reverseOrder)
+                .put("sortConfiguration", sortConfiguration).put("primaryOrder", if (sortConfiguration == "entrySensitive") "BY_STATUS_ASC" else "BY_SPHERE")
+                .put("secondaryOrder", "BY_POSITION").put("mixedCycleCount", mixedCycleCount)
+                .put("statisticsOnlyCycles", statisticsOnlyCycles)
+                .put("controlledFirstRootKey", firstRoot.value).put("controlledOtherRootKey", secondRoot.value)
+                .put("controlledVisibleRootHabitCount", 4).put("sampleCount", sampleCount).put("reverseOrder", reverseOrder)
                 .put("rangeSwitchProbe", rangeSwitchProbe).put("walProvenance", walProvenance)
+                .put("syntheticCurrentGoalAdjustmentCount", syntheticCurrentGoalAdjustments.length())
+                .put("syntheticCurrentGoalAdjustments", syntheticCurrentGoalAdjustments)
+                .put("booleanFixturePolicy", "Synthetic Sunday rest-day SKIP preserves all three toggle sort ranks")
                 .put("memoryBeginning", memoryBeginning).put("memoryEnd", memorySample())
                 .put("clockBeginning", clockBeginning).put("clockEnd", clocks())
                 .put("clockDefinition", "Within-domain monotonic differences only; paired anchors diagnose suspend and clock offsets")
@@ -629,8 +742,13 @@ class PostNavigationPresentationAttributionTest {
             val out = File(ins.targetContext.getExternalFilesDir(null), "remaining-latency").apply { mkdirs() }
             File(out, "$label-$depth-$enabled-failure.json").writeText(JSONObject()
                 .put("pid", Process.myPid()).put("buildLabel", label).put("historyDays", depth).put("tracingEnabled", enabled)
-                .put("sortConfiguration", sortConfiguration).put("sampleCount", sampleCount).put("reverseOrder", reverseOrder)
+                .put("sortConfiguration", sortConfiguration).put("primaryOrder", if (sortConfiguration == "entrySensitive") "BY_STATUS_ASC" else "BY_SPHERE")
+                .put("secondaryOrder", "BY_POSITION").put("mixedCycleCount", mixedCycleCount)
+                .put("controlledVisibleRootHabitCount", 4).put("sampleCount", sampleCount).put("reverseOrder", reverseOrder)
                 .put("rangeSwitchProbe", rangeSwitchProbe).put("walProvenance", walProvenance)
+                .put("syntheticCurrentGoalAdjustmentCount", syntheticCurrentGoalAdjustments.length())
+                .put("syntheticCurrentGoalAdjustments", syntheticCurrentGoalAdjustments)
+                .put("booleanFixturePolicy", "Synthetic Sunday rest-day SKIP preserves all three toggle sort ranks")
                 .put("memoryBeginning", memoryBeginning).put("memoryEnd", memorySample())
                 .put("clockBeginning", clockBeginning).put("clockEnd", clocks())
                 .put("clockDefinition", "Within-domain monotonic differences only; paired anchors diagnose suspend and clock offsets")
@@ -642,6 +760,7 @@ class PostNavigationPresentationAttributionTest {
                 .put("events", JSONArray(events.toList())).put("frames", JSONArray(frames.toList())).toString(2))
             throw failure
         } finally {
+            originalCacheListener?.let(component.habitCardListCache::setListener)
             targets.forEach { it.operationTraceFactory = null }
             HabitFrameTiming.observer = null
             HabitStartupTiming.observer = null

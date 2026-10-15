@@ -14,9 +14,13 @@ def main():
     parser.add_argument('--history-days', choices=['90', '1825'], default='90')
     parser.add_argument('--sort', choices=['grouped', 'entrySensitive'], default='grouped')
     parser.add_argument('--samples', type=int, default=2)
+    parser.add_argument('--mixed-cycles', type=int, default=10)
+    parser.add_argument('--statistics-only-cycles', choices=['true', 'false'], default='false')
     args = parser.parse_args()
     if not 2 <= args.samples <= 8:
         parser.error('Use 2..8 samples per scenario')
+    if not 1 <= args.mixed_cycles <= 10:
+        parser.error('Use 1..10 mixed navigation cycles')
     if not args.label.replace('-', '').isalnum():
         parser.error('Use an alphanumeric arm label')
     args.output.mkdir(parents=True, exist_ok=True)
@@ -44,7 +48,9 @@ def main():
     result = adb('shell', 'am', 'instrument', '-w', '-r', '-e', 'disposableAvd',
         'UHabit_UI_Review_Disposable_20261011', '-e', 'buildLabel', args.label,
         '-e', 'reverseOrder', args.reverse, '-e', 'historyDays', args.history_days,
-        '-e', 'sortConfiguration', args.sort, '-e', 'sampleCount', str(args.samples), '-e', 'class',
+        '-e', 'sortConfiguration', args.sort, '-e', 'sampleCount', str(args.samples),
+        '-e', 'mixedCycleCount', str(args.mixed_cycles),
+        '-e', 'statisticsOnlyCycles', args.statistics_only_cycles, '-e', 'class',
         'org.isoron.uhabits.qa.PostNavigationPresentationAttributionTest',
         'org.isoron.uhabits.plus.test/androidx.test.runner.AndroidJUnitRunner')
     stem.with_suffix('.txt').write_text(result, encoding='utf-8')

@@ -2,13 +2,13 @@
 
 ## 1. Executive status
 
-Iteration 13: 2026-10-14, Asia/Novosibirsk. Starting HEAD verified `46c0f0497a8a73c625ce8ac15569cdce701a7933`, branch `dev`. Only offline disposable `emulator-5580`, AVD `UHabit_UI_Review_Disposable_20261011`, serial `EMULATOR36X6X11X0`, API35.
+Iteration 14: 2026-10-14–15, Asia/Novosibirsk. Starting HEAD `98b752d4195459ae759e10f8f9ba31b2084bfd84`, branch `dev`. Only verified offline disposable emulator-5580, v30 WAL.
 
-**CONFIRMED:** Open PRODUCTION_NEXT schema30 reports `journal_mode=wal`; actual production opener requests WAL without a fixture journal override. One bounded previous-range cache candidate eliminates redundant provider work and preserves tested semantics, but fails the performance acceptance gate: 90-day grouped presented median/p95 is 236.76/491.95 -> 279.78/485.54 ms, with median regression in both counterbalanced pairs. Five-year entry-sensitive median improves 1364.65 -> 879.04 ms (28/30 exact joins each side); slow operations are retained.
+**CONFIRMED:** Iteration13's26.35s maximum crosses later navigation/viewport preparation; first same-revision row is ~311ms. Preserve all physical joins, but qualify late endpoints as unmatched for their original edits. A bounded native regression proves controller→revision / rollback revision→controller lock inversion; its repair passes final liveness/freshness tests.
 
-**DECISION:** Reject and revert only that production candidate and its candidate-only regression method. The production controller is byte-identical to starting HEAD. Retain verified disposable workload/hydration, strict visibility/FrameTimeline diagnostics, guarded open-WAL regression coverage and evidence. No production speedup is shipped; optimization remains unfinished. See PI-20261014-08.
+**DECISION:** Reject and revert the one snapshot-sharing performance candidate. It removes historical traversal (long retag median82.41→0.26ms; primary presented320.06→252.03ms) but repeated Statistics return p95 regresses in both focused pairs505→758 and340→378ms. Production snapshot is byte-identical to starting HEAD; the rejected Iteration13 range cache remains absent. Retain required lock repair, validated attribution/viewport safeguards and semantic tests. No broad performance win is shipped.
 
-**NEXT ACTION:** Emulator-only investigation of durable-to-row publication and `withRevision` historical copying, with Tasks Main rendering as a separate ranked candidate. First correct the remaining viewport limitation for navigation endpoints. No physical-device comparison is required. STOP after evaluating this one candidate; do not start another optimization in this iteration.
+**EVIDENCE / NEXT:**180/180 exact edit presentation joins;99/100 Habits-return joins with missing attempt retained. Final retained48 core +9 native +20 Python tests pass; actual open-v30 WAL remains verified. Next emulator-only target is grouped `resortAndObservers` (~388ms median/674ms p95), with internal attribution before changing it. See PI-20261015-01. STOP; do not start a second optimization or redirect to physical-device release testing.
 
 ### Evidence discipline and shared workflow
 
@@ -1226,3 +1226,145 @@ Checks: isolated baseline/candidate app and test APK builds PASS (last committed
 Raw/native traces, probes, rejected patches, all attempt logs and pinned-query SQL/context records remain under `scratch/iteration13`; final report sources `committed-summary.json`, `*-final.json`, `*-accepted-presentation.json`, `*-context-fast.json`. No raw databases/APKs/traces are committed. `perfetto_analysis_report.md` points to the exact source SQL and health caveats. Preserve all unrelated pre-existing artifact deletions/untracked files.
 
 **Next bounded optimization:** on the same emulator, attribute the existing durable→row interval to revision-retagging work and cache scheduling, especially historical lookup/coverage rebuilding in `withRevision`, then compare a narrowly proven correction. For Tasks, add a visible task-row workspace endpoint before claiming an exact Tasks-open improvement. A physical-device release/test step is not required. STOP after this rejected candidate; do not implement either follow-up here.
+
+
+## PI-20261015-01 — Iteration 14: revision retagging and operation lifetime
+
+**IN_PROGRESS, primary comparison preregistration (2026-10-14–15).** Starting HEAD98b752d41/dev verified; unrelated dirty artifacts preserved. Investigated Iteration13 raw evidence before any new campaign. Its extreme accepted-to-present windows often terminate in a later viewportSetup: baseline before1825j operation12 has same-revision row publication311.093ms after input, edit drain1139.985ms and offscreen target, then exact glyph26272.04ms during setup following mixed navigation. The old26.349s presented marker is real but its interval contains subsequent harness/navigation work; it is not attributed as one continuous blocked edit. All old records remain preserved. Both long baseline arms have only5/15 target draws within their original scenario,9 later viewport draws and1 missing. Correct the lifetime/visibility boundary before any optimization claim.
+
+Required correctness repair precedes performance work: bounded native regression proves snapshot planning owns controller while waiting for revision history, and genuine rollback callbacks own revision before controller. Baseline assertion fails after safe latch release (6.612s); moving history lookup outside controller with identity/version/environment revalidation passes (3.006s). This repair is shared by both performance arms; no permanently deadlocked AVD is created. The rejected two-range cache remains absent.
+
+Selected one performance candidate only after direct attribution: in the completed preparatory long probe, revision-only retag of40 snapshots/76160 referenced days takes38.44–205.20ms inside controller, while changed-habit provider work is23.78–113.58ms. withRevision rebuilds the private date map and immutable contribution/representation/coverage flags despite forwarding the same frozen inputs and precomputed scores/streaks. Candidate shares only these immutable structures through a private revision-copy constructor; it does not store the previous wrapper or add a cache. Core red observes14992 historical list reads for two retags, expected0; candidate green includes all21 snapshot tests plus17 revision,2 database concurrency and9 widget checks. Compiled fields have no revisionSource field. A test-only Mokkery compatibility setting is necessary for the pre-existing final listener diagnostic on mocked CommandRunner; no production final member is opened.
+
+Primary protocol is fixed in scratch/iteration14/primary-protocol.json before launch: two ABBA workloads, before90a/after90a/after90b/before90b then before1825a/after1825a/after1825b/before1825b; reverse scenario order in b arms;3 edits per scenario,3 mixed cycles,30 edits per side per depth. Before/after isolated from HEAD98b752d41 plus identical required lock repair, retag diagnostics and QA; only snapshot structural sharing differs between production arms. No concurrent builds/analysis during captures. Exact APK identities are written by the runner before capture.
+
+Fixture validation: retain42 habits,10 controlled histories, Tasks, Focus and old goals/rows. Short grouping uses sphere/position. Long must use actual GLOBAL status/position sorting: sphere primary already applies a position tie-break, so merely putting status secondary does not exercise ordering. Keep four incomplete Boolean interaction rows and complete surrounding synthetic rows so both target positions stay visible without post-input scroll; any current-day synthetic AT_MOST goal adjustment needed to cover preserved period history is recorded/hashed, with older goals untouched. Viewport anchored before leaving Habits; retire each trace at final observation; no later setup/navigation draw can qualify it. The earlier sphere/status probe is supporting attribution/viewport evidence, not the final long configuration.
+
+Acceptance: every operation retained with exact SQL/snapshot/visible parity, current revision/dataset/calendar/rollback guards, no new listener leak/deadlock/unbounded cache, unique actual app-surface FrameTimeline joins or explicit unmatched/ambiguous status. Require deterministic elimination of historical traversal and measured retag/critical-path or CPU benefit, meaningful improvement in that path, and no reproducible short-history or navigation regression across counterbalanced arms. Do not pool unlike workloads or drop cold/JIT/slow operations. Compare first versus later edits and related navigation, total provider work, Main CPU/layout and delayed work. Revert the performance candidate if it fails; retain the required independently proven lock repair. STOP after evaluating this one optimization; emulator-only remains the next direction.
+
+Final matched results and rejection decision follow below.
+
+
+Iteration14 secondary-regression follow-up preregistration (before capture): primary edits all120/120 exact joins and fixtures match, but short ordinary Statistics returns worsen280.98->349.98 and236.90->639.03ms; Tasks improves, date changes mixed. The639ms endpoint includes332ms draw-to-presentation, not all app computation. One bounded BAAB follow-up after90c/before90c/before90d/after90d uses the SAME production APK hashes, optional QA-only Statistics-only cycle mode,90-day grouped fixture,3 edits/scenario and10 Statistics cycles (44 ordinary Statistics returns total). Evaluate standalone and repeated Statistics strata separately, never dilute with Tasks/date. A>=10% median or p95 worsening in both matched follow-up pairs in either Statistics stratum rejects the candidate; parity/new CPU work/reproducible short-edit regression also reject. Preserve primary adverse evidence and every missing/tail operation. Protocol and APK hashes are fixed in statistics-followup-protocol.json before launch; no additional benchmark after this follow-up.
+
+
+### Final evidence and decision — Iteration 14
+
+**REJECTED / REVERTED:** revision-only snapshot structural sharing removes real historical work and improves five-year edits, but fails the preregistered Statistics-return tail gate. Keep the required controller lock-order repair, disabled-by-default attribution, viewport/scope safeguards and semantic tests. `EffectiveHabitReadSnapshot.kt` is byte-identical to starting HEAD98b752d41; its candidate-only zero-traversal test is removed. The rejected two-range cache from Iteration13 also remains absent. Candidate source/test patch is preserved as `scratch/iteration14/snapshot-candidate.patch`; no second optimization is attempted.
+
+Source identity: branch dev, starting HEAD98b752d4195459ae759e10f8f9ba31b2084bfd84. Before/after APKs are isolated archive builds from that HEAD with the SAME required lock repair, diagnostics and fixture. Only snapshot sharing differs in production code. The follow-up uses byte-identical production APK hashes; only the test APK gains an optional Statistics-only cycle argument. `primary-protocol.json`, `statistics-followup-protocol.json` and source-identity manifests preserve hashes. Original unrelated artifact deletions, untracked files and all raw evidence remain untouched. Raw JSON retains the existing harness experimentId PI-20261014-12; run labels/manifests identify this PI-20261015-01 campaign.
+
+#### Correction to Iteration13 extreme-tail attribution
+
+The26.349s physical join is real, but it is NOT a continuously blocked habit edit. In before1825j operation12 (afterTasks), actual autocommit return is about10ms after accepted input, first same-revision row about311ms, native drain1139.98ms, and final observation reports the target unavailable. The old selected lineage publishes again around25653ms and draws around26272ms in **viewportSetup of the following scenario**, after mixed navigation and harness waiting. The26.349s Main window contains4329.62ms Running,1169.10ms runnable,20843.76ms S and6.71ms D. S does not by itself distinguish idle from monitor waiting; native scenario chronology proves the endpoint crosses later work. Do not assign that elapsed time to withRevision, GC, an emulator stall or deadlock.
+
+The same issue affects36 late joins across four old long-history arms. Original physical matches and complete records remain preserved; the new scoped files retain invalid endpoint records under `outOfScopePresentedCandidate` and label them unmatched for the original edit. They are not discarded as slow outliers. Original long-history latency/CPU aggregates in PI-20261014-08 must not be used as valid edit-response comparisons; its cache rejection and provider-work observations remain historical evidence. Five valid joins per old arm do not establish latency for the ten unmatched operations.
+
+| Old arm | original physical joins | qualified original-scenario joins | qualified median/p95/max ms |
+|---|---|---|---|
+| before1825j | 14/15 | 5/15 | 484.58/1056.73/1056.73 |
+| before1825k | 14/15 | 5/15 | 910.80/1795.73/1795.73 |
+| after1825j | 14/15 | 5/15 | 491.96/785.11/785.11 |
+| after1825k | 14/15 | 5/15 | 638.71/745.92/745.92 |
+
+For original valid baseline draws, row→glyph ranges115.96–201.86ms in j and130.59–408.27ms in k; these are genuine remaining UI intervals, not proof that all time is historical copying. The previously quoted627ms late row→glyph interval belongs to later viewport preparation. `old-tail-attribution.json` reconstructs every baseline operation, native revision/publication lineage, supersession/retry events and exact Main intervals for the slowest physical joins. Full SQL and schema checks are retained.
+
+#### Mandatory lock-order blocker and selected performance mechanism
+
+The baseline planning monitor called synchronized revision history, while genuine SQL rollback invokes controller rollback listeners under the revision monitor. A bounded deterministic native test holds revision on a releasable latch, observes the reader blocked on history, and probes controller availability; baseline fails6.612s. It separately confirms the genuine failed modified-transaction reverse edge, without permanently deadlocking the disposable process. Move history lookup outside controller, then accept it only for the identical cached-context object and observed revision; calendar/dataset/rollback/weekday/range guards and publication freshness remain unchanged. Green3.006s and final retained native check pass. This proves/removes lock inversion; it does not establish that the old26s endpoint was a deadlock.
+
+Direct preparatory retag attribution:40 snapshots/76160 referenced days take38.44–205.20ms inside the controller; changed-habit provider23.78–113.58ms. withRevision forwards unchanged frozen inputs and precomputed score/streak results, but rebuilds the private date map and immutable contribution/representation/incomplete-input flags. The candidate shared only these structures through a private revision constructor, retaining no previous-wrapper field or lazy/deferred work. Red test observes14992 historical list reads for two retags, expected0; candidate green49 tests. Compiled-field inspection confirms no revisionSource field. The mechanism is proven even though the candidate fails end-to-end acceptance.
+
+#### Fixture and measurement validity
+
+Only existing offline AVD emulator-5580/UHabit_UI_Review_Disposable_20261011, serial EMULATOR36X6X11X0/API35. All12 final arms report open schema30 `journal_mode=wal`, actual helper WAL requested/default predicate true and no fixture journal override; controlled reader failures0. Production DatabaseUtils/HabitsDatabaseOpener enable WAL through the intended default path. v29 separately: unapproved canonical legacy databases do not request WAL; authorized/noncanonical staging v29 can. No real v29 database is opened. Final open-v30-WAL native test verifies concurrent reader/Main liveness, two writers, transaction revision boundaries, nested savepoints and rollback notifications without changing journal mode.
+
+Retain42 habits,10 controlled90/1825-day histories, Tasks, historical goals and Focus Contributions. Fixed app reference date2026-10-11. Short uses sphere/position grouping; long GLOBAL status/position (sphere primary already has a position tie-break). Synthetic surrounding Boolean Sunday values are SKIP; numerical rows complete their current period, with any today-effective AT_MOST goal adjustment explicitly recorded/hashed and older goals/entries preserved. Four incomplete controlled rows include an unchanged leading anchor; target moves1↔3 through genuine NO→YES→SKIP→NO. Before-input viewport setup keeps that corridor visible; no post-input scrolling, animation suppression, optimistic committed endpoint, history truncation or speculative state publication.
+
+Preserved failed viewport probes: visibleGlobal1825 (SKIP moves to25), visibleTriState1825 and visibleCorridor1825 (return to0 scrolls above RecyclerView's preserved anchor;10s unavailable wait retained). Their raw failures are not accepted performance samples. visibleAnchor1825 validates15/15 edits and4/4 Habits returns with SQL/snapshot/visible parity before primary capture. Scope guard rejects later-phase or post-retirement glyphs while retaining physical evidence; three focused tests cover it.
+
+Primary: ABBA90 then ABBA1825, reverse scenario order in b arms,3 edits×5 scenarios per arm,3 mixed cycles.30 edits/side/depth. Follow-up: one preregistered BAAB90,10 Statistics-only cycles and the same five edit scenarios;30 additional edits/side and22 ordinary Statistics returns/side. No builds/trace analysis during capture. No further benchmark after follow-up. Process/JIT/SQLite/page-cache are warm; explicit fresh-projection probes are not process-cold launches.
+
+All180 final edits retain exact SQL/effective/visible parity, revision-qualified publication and target visibility, with180/180 strict containing-doFrame→same-process actual app-surface presentation joins. Primary Habits returns47/48; before1825b afterTasks has no presented frame for its containing doFrame, retained unmatched. Follow-up52/52, including44 ordinary Statistics returns. Combined99/100 returns; no nearest-frame substitution. Tasks-open presentation is UNKNOWN; return-to-Habits is measured.
+
+#### Primary per-stage results (median/p95/max ms)
+
+Arithmetic median; nearest-rank p95;30 edits per row. Statistics of stages are separate, not additive medians. Native stages use one native clock; actual presentation uses Perfetto only. Complete120 operation rows: `primary-operations.csv` and `primary-summary.json`; complete60 follow-up rows: `statistics-followup-operations.csv` and `statistics-followup-summary.json`; all100 nav attempts: `all-navigation-operations.csv`. All raw JSON/traces and missing/slow records are retained.
+
+| Workload/version | accepted→actual SQLite return | durable→qualified row | row→exact glyph | glyph→present | accepted→present |
+|---|---|---|---|---|---|
+| 90-before | 11.73/91.19/136.53 | 431.74/835.56/978.09 | 28.56/42.69/48.22 | 45.28/57.05/64.10 | 518.22/922.70/1191.56 |
+| 90-after | 14.26/38.58/76.96 | 419.85/776.94/852.04 | 28.24/47.80/50.44 | 46.45/68.70/91.10 | 506.68/891.42/987.02 |
+| 1825-before | 11.19/82.61/103.85 | 227.37/335.46/411.60 | 35.20/61.12/76.24 | 50.50/79.44/83.69 | 320.06/498.20/542.23 |
+| 1825-after | 11.32/48.82/57.29 | 140.07/354.69/374.19 | 40.93/62.71/83.01 | 61.86/83.49/100.66 | 252.03/473.38/516.79 |
+
+| Workload/version | retag | controller-held (sum/request consumers per edit) | Main CPU | app CPU (all threads) | Main runnable | named framework layout union | card measure union |
+|---|---|---|---|---|---|---|---|
+| 90-before | 11.58/32.69/42.21 | 14.46/38.30/47.97 | 53.18/85.32/114.22 | 659.37/1147.04/1772.16 | 34.05/109.22/134.06 | 0.00/0.00/0.00 | 0.18/0.80/0.90 |
+| 90-after | 0.20/2.44/3.29 | 3.31/11.21/11.77 | 49.38/87.87/92.82 | 636.03/1217.80/1251.02 | 36.34/76.66/83.99 | 0.00/0.00/0.00 | 0.21/1.03/3.65 |
+| 1825-before | 82.41/115.77/121.65 | 85.35/121.22/129.52 | 63.06/88.84/97.03 | 444.97/779.96/991.22 | 39.59/71.99/104.06 | 0.00/0.00/0.00 | 0.23/0.63/2.45 |
+| 1825-after | 0.26/2.94/4.08 | 5.47/12.70/14.71 | 61.38/92.67/101.82 | 351.55/787.07/1012.40 | 38.66/80.05/93.43 | 0.00/0.00/0.00 | 0.22/2.07/2.38 |
+
+| Scenario (6 edits/side/depth) |90 before→after presented median/p95 |1825 before→after presented median/p95 |
+|---|---|---|
+| afterMixedCycles | 501.68/690.70 → 467.86/747.10 | 354.49/498.20 → 287.66/467.16 |
+| afterStatistics | 541.62/611.45 → 526.08/646.37 | 328.65/378.47 → 243.61/473.38 |
+| afterStatisticsDateChange | 514.02/732.42 → 497.96/987.02 | 302.38/403.21 → 249.46/289.90 |
+| afterTasks | 512.20/646.45 → 496.63/538.43 | 302.66/349.26 → 246.26/323.97 |
+| warmRepeated | 556.20/1191.56 → 786.46/891.42 | 339.48/542.23 → 289.27/516.79 |
+
+| Arm | edit median/p95/max | edit joins | Habits-return joins | UI provider ms / prepared snapshots / processed days | end PSS KiB |
+|---|---|---|---|---|---|
+| before90a | 566.17/1191.56/1191.56 | 15/15 | 6/6 | 3864.03 / 430 / 9915 | 128793 |
+| after90a | 521.01/987.02/987.02 | 15/15 | 6/6 | 2485.57 / 430 / 9915 | 149044 |
+| after90b | 486.21/891.42/891.42 | 15/15 | 6/6 | 2875.38 / 430 / 9915 | 143542 |
+| before90b | 502.39/690.70/690.70 | 15/15 | 6/6 | 2499.70 / 430 / 9915 | 131680 |
+| before1825a | 313.30/542.23/542.23 | 15/15 | 6/6 | 6304.82 / 430 / 47345 | 147416 |
+| after1825a | 251.15/516.79/516.79 | 15/15 | 6/6 | 5886.55 / 430 / 47345 | 153603 |
+| after1825b | 255.43/467.16/467.16 | 15/15 | 6/6 | 5581.92 / 430 / 47345 | 139758 |
+| before1825b | 329.77/498.20/498.20 | 15/15 | 5/6 | 5924.79 / 430 / 47345 | 142230 |
+
+Both primary edit-median pairs improve at each depth, but do not hide scenario regressions: short warmRepeated pooled median556.20→786.46ms; direct pair improves (baseline1191.56/589.15/922.70 vs candidate810.21/511.47/439.02), reverse pair worsens (480.21/523.26/483.54 vs786.09/891.42/786.83). Exact values/per-operation ordering remain in CSV. First-per-scenario and later samples are separately summarized in JSON; neither first/JIT effects nor cumulative navigation are discarded.
+
+Same UI preparation counts before/after:860 snapshots per side per depth,19830 processed days short and94690 long. Cross-range A→B→A still rebuilds with the single-range cache; explicit probes and all controller hit/retry/latch/retag counters are retained. No new cold algorithm or cache-reuse benefit is claimed. Short UI provider totals6363.73→5360.96ms; long12229.61→11468.46ms are descriptive elapsed totals, not CPU or proof of cold-constructor speedup. Candidate retag benefits remain explicit, not substituted for acceptance.
+
+Actual post-durable work is strongly configuration-dependent: repetition.resortAndObservers median/p95/max387.52/674.27/809.68ms grouped90 versus4.02/30.74/45.65ms global1825; model recompute1.04/16.86/47.03 versus18.55/43.60/46.57ms. These are named command envelopes, not exclusive comparator CPU. Source SQLiteHabitList.resort→MemoryHabitList.resort clears SphereComparator root caches, resolves facade placements/root paths and notifies observers; getComposedComparator also obtains comparators during comparisons. Resolving the envelope into sort/root lookup/observer contributions is the next bounded investigation, not a change in this iteration.
+
+For the drawn batch, ready→Main row publication median1.46→1.66ms short and3.35→10.22ms long; candidate long p9526.21→44.25ms, max58.22→74.97ms is adverse, retained. Provider/scheduler and superseded full/targeted batches are separately reconstructed in each operation's qualifiedCachePath; no entire durable interval is assigned to withRevision. Latch max long31.78→114.80ms is retained, not hidden. Maximum controller monitor wait long32.38→9.36ms does not explain multi-second old endpoints.
+
+Row→glyph long35.20/61.12/76.24→40.93/62.71/83.01ms; publication→bind-end medians28.38→33.10ms and bind-end→draw6.76→6.44ms. Native post-row union wall medians across visible rows: full-card bind4.21→5.14ms, payload bind5.15→6.17ms, numerical setup1.84→1.99ms. Nested scopes are not summed as CPU. Global status emits30 move callbacks/side versus0 grouped; source processPosition may emit neighbor moves, but callback counts are identical before/after. Main publication/scheduling/view traversal remains separate from background historical retag. The earlier120–408ms valid old UI intervals and viewport-era full work do not establish a current five-year payload-bind algorithm cost. Zero overlap of selected framework measure/layout names is not zero lifetime layout.
+
+#### Secondary regression: fixed follow-up rejects candidate
+
+Primary ordinary Statistics returns worsen280.98→349.98ms and236.90→639.03ms; Tasks improves263.18→247.04 and243.31→238.76ms; date-change results mixed. Primary Statistics Main CPU169.87→222.80 and150.94→329.67ms, while the639.03ms endpoint includes332.23ms glyph→present. This is more than a blanket compositor explanation. Whole-window CPU is contextual and can include other work; no unmeasured interval is assigned to GC/JIT.
+
+| BAAB arm | standalone Statistics return ms | repeated Statistics n | repeated median/p95/max ms | repeated Main CPU median/p95/max ms |
+|---|---|---|---|---|
+| after90c | 365.23 | 10 | 249.31/758.43/758.43 | 158.41/521.64/521.64 |
+| before90c | 293.52 | 10 | 271.34/505.16/505.16 | 167.37/325.85/325.85 |
+| before90d | 227.62 | 10 | 280.56/340.01/340.01 | 174.77/210.09/210.09 |
+| after90d | 239.08 | 10 | 289.85/378.17/378.17 | 171.05/222.21/222.21 |
+
+Repeated Statistics p95 grows505.1573→758.4253ms (+50.1%) and340.0054→378.1749ms (+11.2%). Both exceed the preregistered10% gate. At n10 p95 is the maximum; every record remains available. Candidate repeat median improves in c and worsens in d; that does not cancel tail rejection. Standalone Statistics also remains slower365.23 vs293.52 and239.08 vs227.62. Follow-up short edit median555.73→556.15, p951143.52→1043.88, max1366.89→1095.11ms; the slow1094.44ms baseline Tasks return is retained separately and does not dilute Statistics. The exact cause of candidate-dependent navigation tails is unresolved; fresh constructor semantics/work counts are unchanged and larger JIT/Main work overlaps exist, but no source/GC attribution is proved. Conservatively revert rather than certify a broad improvement.
+
+#### CPU, GC/JIT, memory and uncertainty
+
+`*-context-fast.json` and `*-nav-context-fast.json` contain executed SQL, exact trace-clock windows, scheduled CPU, all Main state intervals/blocked-function fields, layout unions and contextual GC/JIT slices. `context-mechanisms.json` separates named JIT-thread CPU from named GC-pause wall overlap. In primary maxima, baseline90 op1 is1191.56ms with Main85.32ms Running/109.22ms runnable and651.00ms summed CPU on JIT-named threads; baseline1825 op1 is542.23ms with Main72.24ms Running/38.07ms runnable and473.50ms JIT-thread CPU. Candidate maxima90 op7/1825 op1 have Main92.82/92.67ms and JIT-thread CPU50.46/475.19ms. None overlaps the recorded named Mutator-threads-suspended-for-ScopedPause slice. This bounds that named pause explanation; concurrent GC/JIT markers do not prove whole elapsed-time causation. Full state intervals, native span chronology and provider/retag metrics remain necessary. No allocation profiler/retained-heap dump was collected; traversal/map construction reduction is deterministic source/test evidence, not an invented allocation count.
+
+Health: sorter_push_event_out_of_order8 in after90a/after90b/after1825b and16 in before1825a; other final edit contexts have no nonzero error/data_loss stat. Actual unique app-frame joins remain verified; scheduler/CPU interpretation has this trace-health limitation. All180 final target frames report App Deadline Missed (mixed app/SurfaceFlinger/prediction/buffering causes); no jank cure is claimed. Raw listener counts stay phase-bounded (revision1/2, observable0/1, command1/2), activeTaskCount0 at boundaries, without cumulative listener growth. Cache architecture remains one active range. Candidate compiled fields show no wrapper chain, but candidate short end PSS149044/143542 versus baseline128793/131680KiB is adverse. Heap samples have no forced GC and cannot establish retained size or a memory win; long PSS is mixed. Preserve this uncertainty.
+
+#### Ranked remaining work and verification
+
+| Rank | Measured/source-supported cause | Confidence / implementation risk |
+|---|---|---|
+|1|Grouped command resortAndObservers ~388ms median,674ms p95; root/placement lookup, sort and observer envelope|Envelope CONFIRMED; exact internal dominance UNKNOWN; medium risk, preserve ordering/containers|
+|2|Revision-only historical rebuilding ~82ms median long,122ms max primary; unnecessary immutable index/flag work|CONFIRMED; tested sharing variant REJECTED for navigation tails; do not restore it as accepted|
+|3|Statistics/Habits Main rendering and presentation tails; repeated candidate p95758/378ms, baseline505/340|Measured; candidate causal CPU/JIT mechanism UNKNOWN; medium risk, lifecycle correctness required|
+|4|Cold/range-switch projection work and single-range cross-screen churn|CONFIRMED preparation counts; prior two-range candidate still rejected; architecture change high risk|
+|5|Row publication→bind/draw ~28–41ms median plus actual frame presentation; neighbor moves and hidden numerical panel setup are concrete source paths|Intervals CONFIRMED, exclusive dominance unproved; optimize only after narrower attribution|
+
+Required lock inversion is repaired as a correctness blocker, not blamed for the old26s artifact. Final retained checks:48 core tests (20 snapshot,17 revision,2 database concurrency,9 widget),9 native tests (lock regression, contention/invalidation,6 InFlightBatch, open-WAL),20 Python attribution tests. Candidate red/green and compiled-field evidence remain archived. Native wrapper initially expected5 InFlight tests although all6 passed; corrected expected count and reused those passing logs before completing WAL, preserving the wrapper failure log. A test-only Mokkery ignoreFinalMembers setting is retained because its compiler otherwise rejects the existing final CommandRunner listener diagnostic in widget mocks; production CommandRunner is unchanged (official Mokkery guide: https://github.com/lupuuss/mokkery/blob/master/website/docs/Guides/Mocking.mdx).
+
+Retained source/files: EffectiveHabitReadController (lock repair + optional diagnostics), its bounded Android regression, existing snapshot semantic test, existing post-navigation QA fixture/scope controls, QA runner/analyzer + focused scope tests, core test-mocking configuration, this record and handoff. The production snapshot candidate and candidate-only performance assertion are absent. Independent review confirms gate arithmetic, revert, retained locking and semantic-test applicability.
+
+**Next:** emulator-only attribution of grouped resort/root-path/observer work before choosing a correction. Also retain Statistics navigation and exact-presentation tail coverage. No physical-device release direction, cloud/private database access, journal-mode redesign, push or additional optimization. STOP after this rejected candidate evaluation and verified correctness repair.

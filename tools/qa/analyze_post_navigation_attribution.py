@@ -1,5 +1,6 @@
 """Strict post-navigation attribution; monotonic domains remain separate."""
 import argparse
+import copy
 import importlib.util
 import json
 import subprocess
@@ -10,6 +11,36 @@ ROOT = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location('remaining', ROOT / 'analyze_remaining_latency.py')
 remaining = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(remaining)
+
+def qualify_operation_scope(source, presentation):
+    """Preserve physical joins while excluding later scenario draws from edit latency."""
+    result = copy.deepcopy(presentation)
+    native = {o['operation']: o for o in source['operations'] if 'operation' in o}
+    for op in result['operations']:
+        if op['status'] != 'linked':
+            continue
+        original = native.get(op['ordinal'], {})
+        draws = [e for e in source['events'] if e.get('operation') == op['ordinal']
+                 and e['stage'] == 'glyph.draw']
+        valid = (original.get('scenario') is not None and len(draws) == 1
+                 and draws[0].get('phase') == original['scenario']
+                 and ('finishedNanos' not in original
+                      or draws[0]['timestampNanos'] <= original['finishedNanos']))
+        if not valid:
+            op['outOfScopePresentedCandidate'] = copy.deepcopy(op)
+            op['status'] = 'unmatched'
+            op['reason'] = 'Committed glyph is missing, ambiguous, or outside original operation scope'
+            for key in ('inputToCommittedPresentationMs', 'committedDrawToPresentationMs'):
+                op.pop(key, None)
+        else:
+            op['operationScope'] = ('finishedBoundary' if 'finishedNanos' in original
+                                    else 'legacyScenarioBoundary')
+    result['coverage'] = {s: sum(o['status'] == s for o in result['operations'])
+                          for s in ('linked', 'unmatched', 'ambiguous', 'notApplicable')}
+    values = sorted(o['inputToCommittedPresentationMs'] for o in result['operations'] if o['status'] == 'linked')
+    result['inputToCommittedPresentation'] = remaining.distribution(values)
+    return result
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -37,7 +68,9 @@ def main():
             subprocess.run([sys.executable, str(ROOT / 'analyze-operation-trace.py'),
                 '--trace', str(stem) + '.perfetto', '--processor', str(args.processor),
                 '--events', str(correlation), '--input-prefix', prefix, '--output', str(output)], check=True)
-        presentations.append(json.loads(output.read_text(encoding='utf-8')))
+        qualified = qualify_operation_scope(source, json.loads(output.read_text(encoding='utf-8')))
+        save('-' + label + '-scoped-presentation.json', qualified)
+        presentations.append(qualified)
     output = remaining.summarize(source, presentations[0])
     output['acceptedPresentation'] = presentations[1]
     if 'navigationOperations' in source:

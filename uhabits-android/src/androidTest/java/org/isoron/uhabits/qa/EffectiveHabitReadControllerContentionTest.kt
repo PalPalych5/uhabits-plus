@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
 import kotlinx.coroutines.runBlocking
 import org.isoron.platform.io.queryLong
+import org.isoron.platform.io.run
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.setToday
 import org.isoron.uhabits.HabitsApplication
@@ -33,6 +34,104 @@ import java.util.concurrent.atomic.AtomicReference
  */
 @RunWith(AndroidJUnit4::class)
 class EffectiveHabitReadControllerContentionTest {
+
+    @Test fun testScopedRevisionWaitDoesNotOwnControllerMonitor() {
+        val ins = InstrumentationRegistry.getInstrumentation()
+        val device = UiDevice.getInstance(ins)
+        check(Build.MODEL.contains("sdk") || Build.MODEL.contains("Emulator"))
+        check(InstrumentationRegistry.getArguments().getString("disposableAvd") == "UHabit_UI_Review_Disposable_20261011")
+        check(device.executeShellCommand("getprop ro.boot.qemu.avd_name").trim() == "UHabit_UI_Review_Disposable_20261011")
+        check(device.executeShellCommand("getprop ro.serialno").trim() == "EMULATOR36X6X11X0")
+        check(device.executeShellCommand("settings get global airplane_mode_on").trim() == "1")
+        val fixture = HabitsApplication.component
+        val marker = File(ins.targetContext.filesDir, "${DemoDataGenerator.DISPOSABLE_MARKER}-${fixture.session.datasetId}")
+        check(marker.exists() && marker.readText() == fixture.session.databaseFilename)
+        check(fixture.db.queryLong("PRAGMA user_version") == 30L)
+        val qaSession = fixture.session.copy(mode = DatasetMode.PRODUCTION_NEXT,
+            capabilities = DatasetCapabilities.PRODUCTION_NEXT.copy(syncEnabled = false, remoteCallsAllowed = false,
+                backgroundJobsEnabled = false, widgetsEnabled = false, remindersEnabled = false))
+        val app = ins.targetContext.applicationContext as HabitsApplication
+        ins.runOnMainSync { app.rebuildComponent(qaSession) }
+        val component = HabitsApplication.component
+        component.habitCardListCache.shutdown()
+        runBlocking { component.taskRunner.await() }
+        ins.waitForIdleSync()
+        val controller = requireNotNull(component.effectiveHabitReads)
+        val revision = component.effectiveReadRevision
+        val habit = component.habitList.getByPosition(0)
+        val to = LocalDate(2026, 10, 11)
+        setToday(to)
+        val from = to.minus(7)
+        val release = CountDownLatch(1)
+        val held = CountDownLatch(1)
+        val probeFinished = CountDownLatch(1)
+        val failure = AtomicReference<Throwable?>()
+        val holder = Thread {
+            try { synchronized(revision) { held.countDown(); check(release.await(5, TimeUnit.SECONDS)) } }
+            catch (t: Throwable) { failure.compareAndSet(null, t) }
+        }
+        val reader = Thread {
+            try { controller.snapshots(listOf(habit), from, to) }
+            catch (t: Throwable) { failure.compareAndSet(null, t) }
+        }
+        val probe = Thread { synchronized(controller) { probeFinished.countDown() } }
+        var sawRevisionWait = false
+        var controllerAvailable = false
+        try {
+            controller.snapshots(listOf(habit), from, to)
+            revision.changed(setOf(HabitRef(habit.uuid!!)))
+            try {
+                holder.start(); check(held.await(2, TimeUnit.SECONDS)); reader.start()
+                val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+                while (System.nanoTime() < deadline) {
+                    if (reader.state == Thread.State.BLOCKED && reader.stackTrace.any {
+                            it.methodName == "affectedHabitsBetween" }) {
+                        sawRevisionWait = true
+                        break
+                    }
+                    Thread.sleep(10)
+                }
+                if (sawRevisionWait) {
+                    probe.start()
+                    controllerAvailable = probeFinished.await(1, TimeUnit.SECONDS)
+                }
+            } finally {
+                // The holder never invokes rollback while owned: release first so
+                // the baseline can fail its probe without a permanent lock cycle.
+                release.countDown(); holder.join(5000)
+                if (reader.state != Thread.State.NEW) reader.join(5000)
+                if (probe.state != Thread.State.NEW) probe.join(5000)
+            }
+            assertFalse(holder.isAlive); assertFalse(reader.isAlive); assertFalse(probe.isAlive)
+            if (failure.get() != null) throw AssertionError("Revision wait thread failure", failure.get())
+            assertTrue("Reader must encounter the strictly-newer revision history monitor", sawRevisionWait)
+
+            // Demonstrate the opposite ownership edge using a genuine rollback,
+            // with every deliberately held monitor already released.
+            val callbackOwnedRevision = AtomicBoolean(false)
+            val callbackSeen = AtomicBoolean(false)
+            val listener: () -> Unit = {
+                callbackSeen.set(true)
+                callbackOwnedRevision.set(Thread.holdsLock(revision))
+            }
+            revision.addRollbackListener(listener)
+            try {
+                val before = revision.value
+                component.db.beginTransaction()
+                try {
+                    component.db.run(
+                        "INSERT INTO AppSettings(key,long_value) VALUES ('qa_iteration14_rollback_${java.util.UUID.randomUUID()}',14)")
+                } finally { component.db.endTransaction() }
+                assertEquals("Rollback must not invent a durable revision", before, revision.value)
+                assertTrue("Genuine SQL rollback callback required", callbackSeen.get())
+                assertTrue("Rollback listener owns the revision monitor", callbackOwnedRevision.get())
+            } finally { revision.removeRollbackListener(listener) }
+            assertTrue("Controller monitor must remain available while its reader waits for revision history", controllerAvailable)
+        } finally {
+            release.countDown()
+            ins.runOnMainSync { app.rebuildComponent(fixture.session) }
+        }
+    }
 
     @Test
     fun testContentionAndInvalidationContracts() {

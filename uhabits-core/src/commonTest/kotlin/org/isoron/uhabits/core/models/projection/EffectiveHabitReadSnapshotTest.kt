@@ -28,6 +28,93 @@ class EffectiveHabitReadSnapshotTest : BaseUnitTest() {
     private fun read(h: Habit, to: LocalDate = monday.plus(6), revision: Long = 1): EffectiveHabitReadSnapshot =
         EffectiveHabitReadSnapshotProvider(repository).prepare(listOf(h), monday, to, "test", revision, calendar).getValue(HabitRef(h.uuid!!))
 
+    @Test fun revisionChainsPreserveFrozenSemanticsAcrossManualAndDerivedStates() {
+        val snapshots = mutableListOf<EffectiveHabitReadSnapshot>()
+        for (boolean in listOf(true, false)) {
+            val h = habit().apply {
+                if (boolean) type = HabitType.YES_NO
+                goalHistory = mutableListOf(HabitGoal(monday, Frequency.DAILY, NumericalHabitType.AT_LEAST,
+                    if (boolean) 1.0 else 45.0, if (boolean) "" else "min"))
+                for ((offset, value) in listOf(Entry.UNKNOWN, Entry.SKIP, 0,
+                    if (boolean) Entry.YES_MANUAL else 45000).withIndex()) {
+                    originalEntries.add(Entry(monday.plus(offset), value, "manual-$offset"))
+                }
+                recompute()
+            }
+            snapshots.add(read(h))
+        }
+        val derived = habit(Frequency(1, 7)).apply {
+            originalEntries.add(Entry(monday, 30000)); recompute()
+        }
+        val fact = credit(derived, monday, 60000)
+        val incomplete = read(derived)
+        assertEquals(EffectiveReadExactness.INCOMPLETE, incomplete.scoreResult.exactness)
+        snapshots.add(incomplete)
+        repository.removeById(fact.id, fact.createdAt + 1)
+        val tombstoned = read(derived, revision = 2)
+        assertTrue(tombstoned.hasHistoricalContributions)
+        assertFalse(tombstoned.hasContributions)
+        snapshots.add(tombstoned)
+        val exactHabit = habit().apply {
+            statisticsStartDate = monday
+            for (offset in 0..70) originalEntries.add(Entry(monday.plus(offset), 0))
+            recompute()
+        }
+        credit(exactHabit, monday.plus(1), 45000)
+        val exact = EffectiveHabitReadSnapshotProvider(repository).prepare(listOf(exactHabit), monday, monday.plus(6),
+            "revision-qualified-dataset", 4, calendar.copy(timezoneId = "Asia/Novosibirsk", firstWeekday = DayOfWeek.SUNDAY))
+            .getValue(HabitRef(exactHabit.uuid!!))
+        assertEquals(EffectiveReadExactness.EXACT, exact.scoreResult.exactness)
+        snapshots.add(exact)
+        val overflow = habit().apply { originalEntries.add(Entry(monday, 0)); recompute() }
+        credit(overflow, monday, Int.MAX_VALUE.toLong() + 1)
+        val unavailable = read(overflow)
+        assertEquals(EffectiveReadExactness.UNREPRESENTABLE, unavailable.scoreResult.exactness)
+        snapshots.add(unavailable)
+
+        for (original in snapshots) {
+            val version = original.revision
+            assertSame(original, original.withRevision(version))
+            val retagged = original.withRevision(10).withRevision(11)
+            assertEquals(version, original.revision)
+            assertEquals(11L, retagged.revision)
+            assertEquals(original.datasetId, retagged.datasetId)
+            assertEquals(original.calendar, retagged.calendar)
+            assertEquals(original.habitRef, retagged.habitRef)
+            assertEquals(original.from, retagged.from); assertEquals(original.to, retagged.to)
+            assertEquals(original.observedFrom, retagged.observedFrom); assertEquals(original.observedTo, retagged.observedTo)
+            assertSame(original.days, retagged.days)
+            assertSame(original.scoreResult, retagged.scoreResult)
+            assertSame(original.streakResult, retagged.streakResult)
+            assertEquals(original.hasContributions, retagged.hasContributions)
+            assertEquals(original.hasHistoricalContributions, retagged.hasHistoricalContributions)
+            assertEquals(original.canUseLegacyEntryAdapter, retagged.canUseLegacyEntryAdapter)
+            for (offset in 0..6) {
+                val date = monday.plus(offset)
+                assertEquals(original.day(date), retagged.day(date))
+                assertEquals(original.goalAchievementOn(date), retagged.goalAchievementOn(date))
+                assertEquals(original.compatibilityCompletionOn(date), retagged.compatibilityCompletionOn(date))
+            }
+        }
+
+        val oldDay = incomplete.day(monday)
+        val oldGoal = incomplete.goalAchievementOn(monday)
+        derived.originalEntries.add(Entry(monday, 120000)); derived.targetValue = 900.0; derived.recompute()
+        credit(derived, monday, 45000)
+        val retaggedOld = incomplete.withRevision(12)
+        assertEquals(oldDay, retaggedOld.day(monday))
+        assertEquals(oldGoal, retaggedOld.goalAchievementOn(monday))
+        val fresh = read(derived, revision = 12)
+        assertNotEquals(oldDay, fresh.day(monday))
+        assertEquals(165000L, fresh.day(monday).totalValue)
+        assertEquals(oldDay, incomplete.day(monday))
+        val freshUnaffected = EffectiveHabitReadSnapshotProvider(repository).prepare(listOf(exactHabit), monday, monday.plus(6),
+            exact.datasetId, 12, exact.calendar).getValue(exact.habitRef)
+        assertEquals(exact.days, freshUnaffected.days)
+        assertEquals(exact.scoreResult, freshUnaffected.scoreResult)
+        assertEquals(exact.streakResult, freshUnaffected.streakResult)
+    }
+
     @Test fun manualOnlyScoreStreakAndCompletionParityAcrossTypesAndGoals() {
         for (boolean in listOf(false, true)) for (denominator in listOf(1, 7, 30))
             for (target in NumericalHabitType.entries) {
