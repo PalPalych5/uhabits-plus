@@ -2,13 +2,17 @@
 
 ## 1. Executive status
 
-**Iteration 16 COMPLETE — benchmark calibrated & decision protocol established (2026-10-15, dev, c2e531de).** No production code changes; focused strictly on benchmark reliability, A/A baseline variability, uncertainty quantification, and measurement overhead. Confirmed that the legacy rejection gate (`>10% and >20 ms p95 in both pairs`) has an unacceptable **93.8% false rejection rate** (15/16 arm pairs breached on byte-identical APKs) because $n=3$ nearest-rank p95 mathematically selects the single maximum $\max(x_1, x_2, x_3)$ subject to 41.6% coefficient of variation. Established a calibrated 4-stage, 3-outcome benchmark protocol (`ACCEPT`, `REJECT`, `INCONCLUSIVE`).
+**Iteration 17 COMPLETE — Grouped Habit Resort Optimization ACCEPTED (2026-10-15, dev, PI-20261015-04).**
+Production performance optimization applied to grouped habit resort. Eliminated redundant SQL work: eliminated 166 `OrganizationState` table reads per edit and replaced 178 full `Container` deserializations with a single-statement parent traversal (`rootId`) in `SQLiteOrganizationStore`. Evaluated under the calibrated benchmark protocol across 16 runs (280+ native benchmark edits) with diagnostic probes OFF on clean disposable offline PRODUCTION_NEXT v30 WAL emulator.
+- **Gate 1 (Correctness & Parity)**: PASS. 100% core JVM tests, 4/4 `SQLiteRootGroupingTest` tests, 100% SQLite durability and view parity across all 280+ benchmark edits. 0 lock inversions, 0 statement leaks.
+- **Gate 2 (Algorithmic Work Reduction)**: PASS. Eliminated 166 SQL state queries/edit; replaced 178 full metadata reads with parent-only traversal.
+- **Gate 3 (Run-Level Median Improvement)**: PASS.
+  - 90g Grouped Edits (pooled n=59): presentation median improved from 564.8 ms to 489.8 ms (-75.0 ms / -13.3%); `resortAndObservers` median improved from 420.2 ms to 345.0 ms (-75.2 ms / -17.9%).
+  - 1825g 5-Year History Grouped Edits (pooled n=40): presentation median improved from 608.3 ms to 552.8 ms (-55.5 ms / -9.1%); `resortAndObservers` median improved from 419.4 ms to 340.9 ms (-78.5 ms / -18.7%); navigation median improved from 337.7 ms to 283.2 ms (-54.5 ms / -16.1%).
+- **Gate 4 (Uncertainty-Aware Non-Regression)**: PASS. Negative control (90s status edits, pooled n=40) showed rock-solid parity: presentation 248.0 ms vs 253.9 ms (+5.98 ms / +2.4%, well within noise floor); `resortAndObservers` 4.57 ms vs 4.69 ms (+0.12 ms). No causal software tail regression observed on any scenario.
+- **Decision**: **ACCEPT**. Optimization retained in production codebase.
 
-**Key Findings:**
-1. **A/A False Positive Rate**: 31 of 80 (38.8%) individual scenario evaluations and 15 of 16 (93.8%) arm pairs falsely breached the legacy tail gate when comparing byte-identical APKs against themselves on the identical fixture.
-2. **Guest Environment Contention**: Discovered that a rogue guest Android daemon (`android.hardware.sensors-service.multihal`) was spinning at 116% CPU inside the emulator guest, starving main-thread ART class verification and extending startup time from <3s to >17s (causing startup ANRs from ActivityManager). Once killed, startup latency dropped by 80% and clean presentation median dropped from 1448.2 ms to 538.6 ms (-62.8%).
-3. **Trace TTL Limit**: Standard 360s Perfetto TTL silently truncated trailing operations when sample count exceeded $n=3$; authored and verified a 600s configuration (`post-navigation-capture-600s.config`) achieving 100% frame joins (20/20 edits, 6/6 navigation returns).
-4. **Diagnostic Probe Overhead**: Enabling `HabitResortDiagnostics` inflated presentation latency median by **+125.0%** (1848.2 → 4158.4 ms) and `resortAndObservers` by **+4.1s** (2147.4 → 6294.4 ms) due to repeated `Debug.threadCpuTimeNanos()` kernel system calls in comparator loops; probes must remain OFF during baseline benchmarking.
+Prior Iteration 16: 2026-10-15, dev, starting HEAD `c2e531de`. Benchmark calibrated & decision protocol established. Canonical record PI-20261015-03.
 
 Prior Iteration 15: 2026-10-15, dev, starting HEAD `8962ec91`. Grouped resort dominated by repeated root/path SQL work. Root-only candidate rejected/reverted after small scenario tails breached legacy gate. Canonical record PI-20261015-02.
 
@@ -160,6 +164,7 @@ The latency chain is a set of separate clocks, not one interchangeable number. D
 | F08 Durability differs from completion/UI | CONFIRMED source: autocommit entry precedes model recompute; Main observer finish comes later, optimistic View changes earlier | Exact successful commit outcome must be instrumented; revision→memory race is HYPOTHESIS, not a new proven defect |
 | F09 Extreme-value instability and high false-positive rate of n=3 tail gates | CONFIRMED empirical A/A calibration (PI-20261015-03): 31/80 (38.8%) scenario evaluations and 15/16 (93.8%) arm pairs falsely breached legacy >10% & >20ms p95 gate on byte-identical builds; Monte Carlo n=3 p95 CV is 41.6% | Nearest-rank p95 at n=3 is max(x1, x2, x3); single scheduling hiccup acts as false regression. Rejection cannot rely on n=3 p95 |
 | F10 Diagnostic probe measurement overhead | CONFIRMED PI-20261015-03: detailed resort probes inflate presentation median by +125% (1848.2→4158.4ms) and resortAndObservers by +4.1s (2147.4→6294.4ms) | Repeated threadCpuTimeNanos syscalls and trace allocations in tight comparator loops distort baseline; benchmark comparisons must run probes-off |
+| F11 Redundant root-grouping SQL lookups eliminated via single-statement parent traversal | CONFIRMED PI-20261015-04: eliminated 166 OrganizationState reads and replaced 178 full container deserializations with local rootId parent-pointer traversal in SQLiteOrganizationStore; resortAndObservers dropped by ~75–78 ms (-18%), presented median dropped by 55–75 ms across 90d and 1825d fixtures with 0 lock regressions and exact data parity | ACCEPTED in production code; preserves all container hierarchy, cycle protection, deleted ancestor and placement semantics |
 
 ## 5. Open hypotheses
 
@@ -1690,8 +1695,117 @@ All attempts from this follow-up validation are preserved in `scratch/calibratio
 | `clean-aa-90s-run2` | 90d / status | OFF | COMPLETED | 20/20 linked edits, 6/6 nav returns. Median: 296.7 ms, p95: 438.6 ms. Nav Median: 234.4 ms. Duration: 115.2s. |
 
 ### Ranked next work
-1. **Re-evaluate Grouped Fan-Out Work Elimination under Calibrated Protocol**: Grouped resort fan-out (166 unused reads, 178 full ancestor reads per edit) remains confirmed necessary work to eliminate. In Iteration 15, root-only traversal eliminated these reads and reduced resort CPU from 596 ms to 411 ms, but was rejected due to small $n=3$ `afterTasks` differences (839→1410 ms) that our calibration has now proven fall entirely within sample-maximum noise. Re-evaluate grouped resort work elimination under the calibrated protocol with $n \ge 10$ and probes disabled.
-2. **Tasks & Statistics Navigation Settling**: Investigate post-navigation looper settling to prevent navigation animations from contaminating initial subsequent edits.
-3. **Automated Pre-Flight Health Assertion in QA Harness**: Ensure `run_post_navigation_attribution.py` automatically checks guest CPU <10% and verifies sensor daemon is sleeping before initiating captures.
+1. **Tasks & Statistics Navigation Settling**: Investigate post-navigation looper settling to prevent navigation animations from contaminating initial subsequent edits.
+2. **Automated Pre-Flight Health Assertion in QA Harness**: Ensure `run_post_navigation_attribution.py` automatically checks guest CPU <10% and verifies sensor daemon is sleeping before initiating captures.
+
+---
+
+## 8. PI-20261015-04: Iteration 17 — Grouped Habit Resort Optimization (rootId Traversal) Under Calibrated Protocol
+
+- **Record ID**: `PI-20261015-04`
+- **Date**: 2026-10-15
+- **Branch / Starting HEAD**: `dev` / `5d1e4982`
+- **Environment**: Verified disposable offline `PRODUCTION_NEXT` v30 WAL emulator (`emulator-5580`, API 35 x86_64, `UHabit_UI_Review_Disposable_20261011`), airplane mode 1, software renderer, background jobs/sync/reminders disabled.
+- **Environmental Controls**: Verified guest sensor daemon (`android.hardware.sensors-service.multihal`) sleeping with guest idle >380%; host CPU continuously monitored and bounded (baseline mean ~42–45%, candidate mean ~43–46%); diagnostic resort probes OFF during all benchmark measurements; 600s Perfetto capture TTL (`post-navigation-capture-600s.config`); 100% operation-to-FrameTimeline frame joins achieved.
+- **Decision**: **ACCEPT** (Passes all 4 gates of the calibrated decision protocol; retained in production code).
+
+### 1. Source-Level Bottleneck and Sound Correction
+- **Problem Identification**: During grouped habit resort (`SQLiteHabitList.resort`), `SphereComparator` resolves root containers for grouping. In the legacy implementation, `getRootGroupKey` invoked `ContainerQueries.path(id)`, which queried the `OrganizationState` table to attach the current dataset revision and traversed up the hierarchy by deserializing each ancestor into a full `Container` entity. In the controlled 42-habit fixture, this resulted in **166 redundant `OrganizationState` SQL reads** and **178 full `Container` deserializations** per single habit edit, executed repeatedly across 6 sorting passes and 4 synchronous callbacks.
+- **Implementation**:
+  - `uhabits-core/src/commonMain/kotlin/org/isoron/uhabits/core/containers/OrganizationContracts.kt`: Added `rootId(id: ContainerId): ContainerId? = path(id).nodes.firstOrNull()` to `ContainerQueries` interface with default fallback.
+  - `uhabits-core/src/commonMain/kotlin/org/isoron/uhabits/core/containers/facade/HabitOrganizationFacadeImpl.kt`: Updated `getRootGroupKey` to call `cQueries.rootId(containerId)?.value`, bypassing path creation and unused `OrganizationState` retrieval.
+  - `uhabits-core/src/commonMain/kotlin/org/isoron/uhabits/core/containers/sqlite/SQLiteOrganizationStore.kt`: Implemented optimized `rootId` in `SQLiteOrganizationStore` using a single locally prepared and reused statement (`SELECT parent_id FROM containers WHERE id = ?`), a parent-only iterative loop, visited-node cycle protection, and rigorous `finally { statement.finalize() }` statement leak protection.
+  - Correctness preservation: Strictly preserves parent resolution semantics, missing/deleted ancestor handling (matches `TreePolicy` add-before-read), cycle safety, multi-pass sorting, dataset revision freshness, rollback isolation, and all observer contracts.
+
+### 2. Correctness & Parity Evidence (Gate 1 & Gate 2)
+- **Unit & Concurrency Tests**:
+  - `SQLiteRootGroupingTest`: 4/4 tests pass (100%), including:
+    - `rootLookupOmitsStateAndMaterializedMetadataWhileReusingParentStatement`: Asserts 0 `OrganizationState` reads, 0 container metadata queries, and 0 statement leaks.
+    - `traversalStatementFailureIsPropagatedAndFinalizedWithoutPoisoningNextRead`: Verifies statement finalization on failure without statement pool corruption.
+  - Core JVM Test Suite (`:uhabits-core:jvmTest`): 100% pass across all model, container, database, and repository tests.
+- **Data & Visual Parity**:
+  - 100% exact SQLite durability parity across all 280+ benchmark edits.
+  - 100% exact view and qualification parity on every presented frame.
+  - Zero lock inversions, zero statement leaks, zero deadlocks.
+- **Algorithmic Work Reduction**:
+  - **166 `OrganizationState` SQL reads completely eliminated** per grouped edit.
+  - **178 full Container entity deserializations replaced** with lightweight parent ID lookups.
+
+### 3. Matched Benchmark Campaign Results (Gate 3 & Gate 4)
+All runs executed with diagnostic probes OFF under the 600s Perfetto FrameTimeline join protocol.
+
+#### Pilot Campaign (90g, 1 Baseline Arm, 1 Candidate Arm, 20 Edits Each)
+- **Committed Presentation Median**: 633.2 ms (Baseline) → 482.2 ms (Candidate) (**-151.0 ms / -23.8% speedup**)
+- **`repetition.resortAndObservers` Median**: 474.3 ms (Baseline) → 344.4 ms (Candidate) (**-129.9 ms / -27.4% speedup**)
+- **Navigation Return Median**: 376.1 ms (Baseline) → 286.8 ms (Candidate) (**-89.3 ms / -23.7% speedup**)
+
+#### Campaign 1: 90g Grouped Edits (6 Arms, Counterbalanced B-C-C-B-B-C, Pooled n=59)
+- **Committed Presentation Median**: 564.8 ms (Baseline) → 489.8 ms (Candidate) (**-75.0 ms / -13.3% speedup**)
+  - Mean: 575.8 ms → 515.5 ms (-60.3 ms)
+  - Subsequent edits median: 556.1 ms → 482.4 ms (**-73.6 ms**)
+- **`repetition.resortAndObservers` Median**: 420.2 ms (Baseline) → 345.0 ms (Candidate) (**-75.2 ms / -17.9% speedup**)
+  - Mean: 448.5 ms → 364.1 ms (-84.5 ms)
+- **Per-Scenario Presentation Medians (Baseline vs Candidate)**:
+  - `afterStatistics`: 552.80 ms → 434.04 ms (**-118.76 ms / -21.5%**)
+  - `afterTasks`: 583.60 ms → 481.79 ms (**-101.81 ms / -17.4%**)
+  - `warmRepeated`: 568.43 ms → 503.28 ms (**-65.15 ms / -11.5%**)
+  - `afterStatisticsDateChange`: 531.49 ms → 491.21 ms (**-40.28 ms / -7.6%**)
+  - `afterMixedCycles`: 564.80 ms → 529.39 ms (**-35.41 ms / -6.3%**)
+- *Result*: Every single evaluated scenario showed consistent, reproducible speedup.
+
+#### Campaign 2: 90s Status Negative Control (4 Arms, Counterbalanced B-C-C-B, Pooled n=40)
+- **Committed Presentation Median**: 248.0 ms (Baseline) → 253.9 ms (Candidate) (**+5.98 ms / +2.4%**, well within noise floor)
+- **`repetition.resortAndObservers` Median**: 4.57 ms (Baseline) → 4.69 ms (Candidate) (**+0.12 ms / +2.6%**, identical)
+- **Navigation Return Median**: 175.1 ms (Baseline) → 176.8 ms (Candidate) (**+1.70 ms / +1.0%**, identical)
+- *Result*: Confirms zero adverse performance impact or unintended side-effects when root-grouping is inactive.
+
+#### Campaign 3: 1825g 5-Year History Grouped Edits (4 Arms, Counterbalanced B-C-C-B, Pooled n=40)
+- **Committed Presentation Median**: 608.3 ms (Baseline) → 552.8 ms (Candidate) (**-55.5 ms / -9.1% speedup**)
+  - Mean: 623.9 ms → 581.3 ms (-42.6 ms)
+  - Subsequent edits median: 606.6 ms → 542.7 ms (**-63.9 ms**)
+- **`repetition.resortAndObservers` Median**: 419.4 ms (Baseline) → 340.9 ms (Candidate) (**-78.5 ms / -18.7% speedup**)
+  - Mean: 432.5 ms → 364.1 ms (-68.4 ms)
+- **Navigation Return Median**: 337.7 ms (Baseline) → 283.2 ms (Candidate) (**-54.5 ms / -16.1% speedup**)
+- **Per-Scenario Presentation Medians (Baseline vs Candidate)**:
+  - `afterStatistics`: 618.16 ms → 496.48 ms (**-121.68 ms / -19.7%**)
+  - `warmRepeated`: 608.06 ms → 508.16 ms (**-99.90 ms / -16.4%**)
+  - `afterTasks`: 605.09 ms → 565.06 ms (**-40.03 ms / -6.6%**)
+  - `afterStatisticsDateChange`: 612.27 ms → 572.28 ms (**-39.99 ms / -6.5%**)
+  - `afterMixedCycles`: 597.18 ms → 573.72 ms (**-23.46 ms / -3.9%**)
+- *Result*: Demonstrated that work reduction benefits persist and scale cleanly under 5-year historical datasets.
+
+### 4. Gate Evaluation & Final Decision
+
+| Gate | Criterion | Status | Evidence |
+|---|---|---|---|
+| **Gate 1: Correctness & Parity** | 100% tests pass, exact SQLite & View parity, 0 leaks/inversions | **PASS** | 4/4 `SQLiteRootGroupingTest`, 100% `:uhabits-core:jvmTest`, 280+ native benchmark edits with 100% parity. |
+| **Gate 2: Algorithmic Work Reduction** | Proven query/allocation reduction | **PASS** | Eliminated 166 `OrganizationState` SQL reads/edit; replaced 178 full entity deserializations with single prepared statement traversal. |
+| **Gate 3: Run-Level Median Improvement** | Replicated median reduction $\ge 15\%$ or $\ge 30$ ms | **PASS** | Replicated median reduction of ~75–78 ms (-18%) in `resortAndObservers` and 55–75 ms in presentation latency across both 90d and 1825d fixtures. |
+| **Gate 4: Non-Regression** | No replicated causal tail regression ($>25\%$ and $>50$ ms) on pooled $n \ge 10$ | **PASS** | Negative control (90s) showed +0.12 ms resort parity; all 90g and 1825g scenarios improved; no software bottleneck identified. |
+
+**Final Decision: ACCEPT.** The candidate satisfies all criteria of the calibrated decision protocol. Optimization retained in production code.
+
+### 5. Executed Attempts Ledger (Iteration 17)
+All raw traces, final JSON summaries, attempt manifests, and host monitoring logs are preserved in `scratch/iteration17/runs/`:
+
+| Label | History / Sort | Role | Edits (Linked) | Pres Median | Resort Median | Nav Median | Outcome |
+|---|---|---|---|---:|---:|---:|---|
+| `iter17-pilot-b-90g-fwd` | 90d / grouped | Baseline Pilot | 20 / 20 | 633.2 ms | 474.3 ms | 376.1 ms | COMPLETED |
+| `iter17-pilot-c-90g-fwd` | 90d / grouped | Candidate Pilot | 20 / 20 | 482.2 ms | 344.4 ms | 286.8 ms | COMPLETED |
+| `iter17-90g-b1` | 90d / grouped | Campaign 1 (B1) | 20 / 20 | 606.2 ms | 427.8 ms | 287.4 ms | COMPLETED |
+| `iter17-90g-c1` | 90d / grouped | Campaign 1 (C1) | 20 / 19 | 500.9 ms | 361.7 ms | 281.8 ms | COMPLETED |
+| `iter17-90g-c2` | 90d / grouped | Campaign 1 (C2) | 20 / 20 | 528.4 ms | 368.0 ms | 289.4 ms | COMPLETED |
+| `iter17-90g-b2` | 90d / grouped | Campaign 1 (B2) | 20 / 20 | 497.6 ms | 414.5 ms | 258.9 ms | COMPLETED |
+| `iter17-90g-b3` | 90d / grouped | Campaign 1 (B3) | 20 / 19 | 538.2 ms | 413.0 ms | 258.2 ms | COMPLETED |
+| `iter17-90g-c3` | 90d / grouped | Campaign 1 (C3) | 20 / 20 | 397.1 ms | 285.6 ms | 240.7 ms | COMPLETED |
+| `iter17-90s-b1` | 90d / status | Campaign 2 (B1) | 20 / 20 | 231.4 ms | 3.8 ms | 175.8 ms | COMPLETED |
+| `iter17-90s-c1` | 90d / status | Campaign 2 (C1) | 20 / 20 | 267.5 ms | 4.9 ms | 185.3 ms | COMPLETED |
+| `iter17-90s-c2` | 90d / status | Campaign 2 (C2) | 20 / 20 | 240.6 ms | 4.7 ms | 170.1 ms | COMPLETED |
+| `iter17-90s-b2` | 90d / status | Campaign 2 (B2) | 20 / 20 | 249.2 ms | 7.2 ms | 174.4 ms | COMPLETED |
+| `iter17-1825g-b1` | 1825d / grouped | Campaign 3 (B1) | 20 / 20 | 595.7 ms | 433.8 ms | 244.5 ms | COMPLETED |
+| `iter17-1825g-c1` | 1825d / grouped | Campaign 3 (C1) | 20 / 20 | 515.7 ms | 347.0 ms | 272.6 ms | COMPLETED |
+| `iter17-1825g-c2` | 1825d / grouped | Campaign 3 (C2) | 20 / 20 | 565.2 ms | 340.9 ms | 296.5 ms | COMPLETED |
+| `iter17-1825g-b2` | 1825d / grouped | Campaign 3 (B2) | 20 / 20 | 613.4 ms | 404.3 ms | 344.4 ms | COMPLETED |
+
 
 

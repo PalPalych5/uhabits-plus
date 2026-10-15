@@ -3,6 +3,7 @@ package org.isoron.uhabits.core.containers
 import kotlinx.coroutines.test.runTest
 import org.isoron.platform.io.Database
 import org.isoron.platform.io.PreparedStatement
+import org.isoron.platform.io.StepResult
 import org.isoron.platform.io.TestDatabaseHelper
 import org.isoron.platform.io.run
 import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacadeImpl
@@ -15,12 +16,20 @@ class SQLiteRootGroupingTest {
     private class TrackedDatabase(private val delegate: Database) : Database by delegate {
         val sql = mutableListOf<String>()
         var active = 0
+        var failContainerRead = false
         override fun prepareStatement(query: String): PreparedStatement {
             sql.add(query)
             val statement = delegate.prepareStatement(query)
             active++
             return object : PreparedStatement by statement {
                 private var finalized = false
+                override fun step(): StepResult {
+                    if (failContainerRead && query.contains("FROM Containers", ignoreCase = true)) {
+                        failContainerRead = false
+                        throw IllegalStateException("Injected root traversal read failure")
+                    }
+                    return statement.step()
+                }
                 override fun finalize() {
                     try { statement.finalize() } finally {
                         if (!finalized) { finalized = true; active-- }
@@ -65,6 +74,22 @@ class SQLiteRootGroupingTest {
             OrganizationSchema.createSchema(raw)
             action(Rig(TrackedDatabase(raw), prefix))
         } finally { raw.close() }
+    }
+
+    @Test fun rootLookupOmitsStateAndMaterializedMetadataWhileReusingParentStatement() = runTest {
+        rig { r ->
+            r.assertPathParity(103)
+            r.db.sql.clear()
+            assertEquals("dataset-101", r.key())
+            assertFalse(r.db.sql.any { it.contains("OrganizationState", ignoreCase = true) },
+                "Root grouping must not load an unused path revision: ${r.db.sql}")
+            assertFalse(r.db.sql.any { query -> listOf("c.name", "c.color", "c.icon", "c.updated_at").any {
+                query.contains(it, ignoreCase = true)
+            } }, "Root-only traversal must not materialize container metadata: ${r.db.sql}")
+            assertEquals(1, r.db.sql.count { it.contains("FROM Containers", ignoreCase = true) },
+                "A nested root traversal must reuse one prepared parent statement")
+            assertEquals(0, r.db.active)
+        }
     }
 
     @Test fun rootGroupingMatchesPathAcrossNestedArchivedDeletedAndCyclicTrees() = runTest {
@@ -124,4 +149,13 @@ class SQLiteRootGroupingTest {
         }
     }
 
+    @Test fun traversalStatementFailureIsPropagatedAndFinalizedWithoutPoisoningNextRead() = runTest {
+        rig { r ->
+            r.db.failContainerRead = true
+            val failure = assertFailsWith<IllegalStateException> { r.key() }
+            assertEquals("Injected root traversal read failure", failure.message)
+            assertEquals(0, r.db.active, "Failed root traversal must finalize its statement")
+            r.assertPathParity(103)
+        }
+    }
 }

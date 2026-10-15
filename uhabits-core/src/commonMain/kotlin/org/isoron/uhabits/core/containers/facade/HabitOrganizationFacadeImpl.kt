@@ -97,8 +97,7 @@ class HabitOrganizationFacadeImpl(
             val placement = queries.current(HabitRef(habitUuid)) ?: return null
             val containerId = placement.containerId ?: return null
             val cQueries = containerQueries ?: return null
-            val pathNodes = cQueries.path(containerId).nodes
-            return pathNodes.firstOrNull()?.value
+            return cQueries.rootId(containerId)?.value
         } else {
             return legacyBlockId
         }

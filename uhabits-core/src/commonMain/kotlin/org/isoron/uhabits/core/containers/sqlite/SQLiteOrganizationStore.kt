@@ -520,6 +520,32 @@ class SQLiteOrganizationStore(
             TreePolicy.buildPath(id, readState().currentRevision) { getContainer(it) }
         }
 
+    override fun rootId(id: ContainerId): ContainerId =
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.measure("repository.rootId") {
+            org.isoron.uhabits.core.io.HabitResortDiagnostics.count("repository.rootIdReads")
+            val statement = db.prepareStatement(
+                "SELECT p.uuid FROM Containers c LEFT JOIN Containers p ON c.parent_id = p.id " +
+                    "WHERE c.uuid = ? AND c.deleted_at IS NULL"
+            )
+            try {
+                var current: ContainerId? = id
+                var result = id
+                val visited = mutableSetOf<ContainerId>()
+                while (current != null && visited.add(current)) {
+                    // Match TreePolicy.buildPath: include the requested node before
+                    // reading it, including missing/deleted nodes and cycle terminals.
+                    result = current
+                    statement.reset()
+                    statement.bindText(1, current.value)
+                    org.isoron.uhabits.core.io.HabitResortDiagnostics.count("repository.rootParentReads")
+                    current = if (statement.step() == StepResult.ROW) {
+                        statement.getTextOrNull(0)?.let(::ContainerId)
+                    } else null
+                }
+                result
+            } finally { statement.finalize() }
+        }
+
     override fun subtreeIds(id: ContainerId): Set<ContainerId> =
         TreePolicy.collectSubtreeIds(id) { parentId ->
             children(parentId, includeArchived = true)

@@ -165,6 +165,8 @@ interface ContainerQueries {
     fun roots(includeArchived: Boolean = false): List<Container>
     fun children(parent: ContainerId, includeArchived: Boolean = false): List<Container>
     fun path(id: ContainerId): ContainerPath
+    /** Same terminal ancestor as path(id).nodes.firstOrNull(), without requiring path metadata. */
+    fun rootId(id: ContainerId): ContainerId? = path(id).nodes.firstOrNull()
     fun subtreeIds(id: ContainerId): Set<ContainerId>
     fun isEffectivelyArchived(id: ContainerId): Boolean
     fun search(query: String): List<ContainerSearchHit>
