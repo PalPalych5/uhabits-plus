@@ -39,6 +39,7 @@ open class MemoryHabitList : HabitList {
 
     var organizationFacade: HabitOrganizationFacade? = null
         set(value) {
+            if (field === value) return
             field = value
             comparator = getComposedComparatorByOrder(primaryOrder, secondaryOrder)
             resort()
@@ -61,6 +62,7 @@ open class MemoryHabitList : HabitList {
     override var primaryOrder = Order.BY_POSITION
         @Synchronized
         set(value) {
+            if (field == value) return
             field = value
             comparator = getComposedComparatorByOrder(primaryOrder, secondaryOrder)
             resort()
@@ -70,6 +72,7 @@ open class MemoryHabitList : HabitList {
     override var secondaryOrder = Order.BY_NAME_ASC
         @Synchronized
         set(value) {
+            if (field == value) return
             field = value
             comparator = getComposedComparatorByOrder(primaryOrder, secondaryOrder)
             resort()
@@ -77,7 +80,9 @@ open class MemoryHabitList : HabitList {
 
     override var dayTierSortOrder: List<DayTier> = DayTier.entries
         set(value) {
-            field = value.ifEmpty { DayTier.entries }
+            val normalized = value.ifEmpty { DayTier.entries }
+            if (field == normalized) return
+            field = normalized
             comparator = getComposedComparatorByOrder(primaryOrder, secondaryOrder)
             resort()
         }
@@ -350,6 +355,14 @@ open class MemoryHabitList : HabitList {
         }
     }
 
+    private fun sharesOrderWithParent(): Boolean {
+        val p = parent ?: return false
+        return primaryOrder == p.primaryOrder &&
+            secondaryOrder == p.secondaryOrder &&
+            organizationFacade === p.organizationFacade &&
+            dayTierSortOrder == p.dayTierSortOrder
+    }
+
     @Synchronized
     private fun loadFromParent() {
         val diagnostic = org.isoron.uhabits.core.io.HabitResortDiagnostics.begin("memory.filteredRebuild", this)
@@ -360,7 +373,11 @@ open class MemoryHabitList : HabitList {
                 h.globalStatisticsStartDate = parent!!.globalStatisticsStartDate
                 list.add(h)
             }
-            resort()
+            if (sharesOrderWithParent()) {
+                org.isoron.uhabits.core.io.HabitResortDiagnostics.measure("memory.notify", this) { observable.notifyListeners() }
+            } else {
+                resort()
+            }
         } finally { org.isoron.uhabits.core.io.HabitResortDiagnostics.end(diagnostic) }
     }
 
