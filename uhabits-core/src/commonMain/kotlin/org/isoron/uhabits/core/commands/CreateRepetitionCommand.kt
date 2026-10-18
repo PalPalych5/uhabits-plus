@@ -70,7 +70,7 @@ data class CreateRepetitionCommand(
             habit.id?.let { habitList.refreshHabitFromDatabase(it, habit) }
         }
         timed("repetition.resortAndObservers") {
-            org.isoron.uhabits.core.io.HabitResortDiagnostics.collect(trace?.ordinal) { habitList.resort() }
+            org.isoron.uhabits.core.io.HabitResortDiagnostics.collect(trace?.ordinal) { habitList.onEntriesChanged() }
         }
         val syncManager = (habitList as? SQLiteHabitList)?.syncManager ?: return
         timed("repetition.syncQueue") {

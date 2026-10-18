@@ -49,13 +49,7 @@ class UserTaskServiceImpl(
         val now = clock()
         val taskId = explicitId ?: TaskId(idGenerator())
 
-        val effectiveSortOrder = sortOrder ?: if (parentTaskId != null) {
-            val existing = repository.getSubtasks(parentTaskId)
-            (existing.maxOfOrNull { it.sortOrder } ?: -1) + 1
-        } else {
-            val roots = repository.getRoots()
-            (roots.maxOfOrNull { it.sortOrder } ?: -1) + 1
-        }
+        val effectiveSortOrder = sortOrder ?: ((repository.getMaxSortOrder(parentTaskId) ?: -1) + 1)
 
         val task = UserTask(
             id = taskId,
@@ -198,12 +192,22 @@ class UserTaskServiceImpl(
 
     override fun reorderTasks(orderedIds: List<TaskId>) {
         val now = clock()
+        val toUpdate = mutableListOf<UserTask>()
+        val pendingById = mutableMapOf<TaskId, UserTask>()
         orderedIds.forEachIndexed { index, taskId ->
-            val task = repository.getById(taskId)
+            val task = pendingById[taskId] ?: repository.getById(taskId)
             if (task != null && task.sortOrder != index) {
                 val updated = task.copy(sortOrder = index, updatedAt = now)
-                repository.save(updated)
-                syncManager?.enqueueUserTask(updated, "upsert")
+                toUpdate.add(updated)
+                pendingById[taskId] = updated
+            }
+        }
+        if (toUpdate.isNotEmpty()) {
+            repository.saveAll(toUpdate)
+            if (syncManager != null) {
+                for (updated in toUpdate) {
+                    syncManager.enqueueUserTask(updated, "upsert")
+                }
             }
         }
     }

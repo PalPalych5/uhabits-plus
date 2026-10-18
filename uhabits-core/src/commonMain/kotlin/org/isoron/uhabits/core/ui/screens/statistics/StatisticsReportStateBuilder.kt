@@ -190,7 +190,8 @@ object StatisticsReportStateBuilder {
             filteredHabits.filter { filters.tierScope.includes(it.dayTier) }
         }
 
-        val earliestStart = filteredHabits.map { getHabitStartDate(it, today, snapshots?.get(it.ref)) }.minOrNull() ?: today
+        val habitStartDates = filteredHabits.associate { it.refKey to getHabitStartDate(it, today, snapshots?.get(it.ref)) }
+        val earliestStart = filteredHabits.mapNotNull { habitStartDates[it.refKey] }.minOrNull() ?: today
         val actualStart = if (period == StatisticsPeriod.ALL) earliestStart else start
 
         // 1. Per-habit evaluation over period (equal weight macro-average)
@@ -198,7 +199,7 @@ object StatisticsReportStateBuilder {
             if (shouldCancel()) return@mapNotNull null
             val snapshot = snapshots?.get(habit.ref)
             val presentation = snapshot?.presentationHabit() ?: habit
-            val relevantPeriods = getPeriodsForReport(habit, actualStart, end, today, firstWeekday, snapshot)
+            val relevantPeriods = getPeriodsForReport(habit, actualStart, end, today, firstWeekday, snapshot, habitStartDates[habit.refKey])
             val evaluated = relevantPeriods.map { evaluatePeriod(habit, it, today, snapshot) }
             val valid = evaluated.filter { it.progress != null }
             if (valid.isEmpty() && evaluated.none { it.status == StatisticsResultStatus.SKIPPED || it.actual > 0.0 }) {
@@ -259,6 +260,11 @@ object StatisticsReportStateBuilder {
         // 3. Daily progress & fully closed days over active scope
         val dailyList = mutableListOf<StatisticsDailyProgress>()
         var hasAnyDailyMinimumGoals = false
+        val dailyEligibleScopeHabits = scopeHabits.filter { habit ->
+            val hStart = habitStartDates[habit.refKey] ?: getHabitStartDate(habit, today, snapshots?.get(habit.ref))
+            hStart <= end && (habit.frequency.denominator == 1 || habit.goalHistory.any { it.frequency.denominator == 1 })
+        }
+
         var d = actualStart
         while (d <= end && !shouldCancel()) {
             val isFuture = d > today
@@ -276,23 +282,44 @@ object StatisticsReportStateBuilder {
                     )
                 )
             } else {
-                val dailyScopeHabits = scopeHabits.filter { habit ->
-                    getHabitStartDate(habit, today, snapshots?.get(habit.ref)) <= d &&
-                        habit.goalAt(d).frequency.denominator == 1
+                var dailyCount = 0
+                var nonSkippedCount = 0
+                var progressSum = 0.0
+                var validCount = 0
+                var isAllClosed = true
+
+                for (habit in dailyEligibleScopeHabits) {
+                    val habitStart = habitStartDates[habit.refKey] ?: today
+                    if (habitStart > d) continue
+                    val goal = habit.goalAt(d)
+                    if (goal.frequency.denominator != 1) continue
+                    dailyCount++
+
+                    val snapshot = snapshots?.get(habit.ref)
+                    val p = GoalPeriod(d, d, goal.frequency, goal.targetType, goal.targetValue, goal.unit)
+                    val eval = evaluatePeriod(habit, p, today, snapshot)
+
+                    if (eval.status != StatisticsResultStatus.SKIPPED) {
+                        nonSkippedCount++
+                        val prog = eval.progress
+                        if (prog != null) {
+                            progressSum += prog
+                            validCount++
+                        }
+                        val closed = ((prog != null && prog >= 0.9999) || eval.status == StatisticsResultStatus.COMPLETED) &&
+                            eval.status != StatisticsResultStatus.PENDING
+                        if (!closed) {
+                            isAllClosed = false
+                        }
+                    }
                 }
-                if (dailyScopeHabits.isNotEmpty()) {
+
+                if (dailyCount > 0) {
                     hasAnyDailyMinimumGoals = true
                 }
-                val evals = dailyScopeHabits.map { habit ->
-                    val snapshot = snapshots?.get(habit.ref)
-                    val goal = habit.goalAt(d)
-                    val p = GoalPeriod(d, d, goal.frequency, goal.targetType, goal.targetValue, goal.unit)
-                    evaluatePeriod(habit, p, today, snapshot)
-                }
-                val nonSkipped = evals.filter { it.status != StatisticsResultStatus.SKIPPED }
-                val isSkipped = evals.isNotEmpty() && nonSkipped.isEmpty()
 
-                if (nonSkipped.isEmpty()) {
+                if (nonSkippedCount == 0) {
+                    val isSkipped = dailyCount > 0
                     dailyList.add(
                         StatisticsDailyProgress(
                             date = d,
@@ -305,13 +332,9 @@ object StatisticsReportStateBuilder {
                         )
                     )
                 } else {
-                    val valid = nonSkipped.mapNotNull { it.progress }
-                    val dayProgress = if (valid.isNotEmpty()) valid.average() else null
+                    val dayProgress = if (validCount > 0) progressSum / validCount else null
                     val isEligible = !isToday
-                    val isFullyClosed = isEligible && nonSkipped.all {
-                        ((it.progress != null && it.progress >= 0.9999) || it.status == StatisticsResultStatus.COMPLETED) &&
-                            it.status != StatisticsResultStatus.PENDING
-                    }
+                    val isFullyClosed = isEligible && isAllClosed
                     dailyList.add(
                         StatisticsDailyProgress(
                             date = d,
@@ -343,7 +366,7 @@ object StatisticsReportStateBuilder {
         val remainingMinimumHabits: List<StatisticsHabitResult>
         if (period == StatisticsPeriod.DAY) {
             val dayScopeHabits = scopeHabits.filter { habit ->
-                getHabitStartDate(habit, today, snapshots?.get(habit.ref)) <= start &&
+                (habitStartDates[habit.refKey] ?: getHabitStartDate(habit, today, snapshots?.get(habit.ref))) <= start &&
                     habit.goalAt(start).frequency.denominator == 1
             }
             val dayEvals = dayScopeHabits.map { habit ->
@@ -381,24 +404,39 @@ object StatisticsReportStateBuilder {
 
         // 5. Comparison delta (percentage points) & Habit Changes over scope
         val comparisonWindow = getComparisonWindow(actualStart, end, period, today)
-        val comparisonDelta = if (comparisonWindow == null) {
-            null
-        } else {
-            val currProg = calculateOverallProgressForRange(scopeHabits, comparisonWindow.currentStart, comparisonWindow.currentEnd, today, firstWeekday, snapshots)
-            val prevProg = calculateOverallProgressForRange(scopeHabits, comparisonWindow.previousStart, comparisonWindow.previousEnd, today, firstWeekday, snapshots)
-            if (currProg != null && prevProg != null) {
-                currProg - prevProg
-            } else null
-        }
+        val comparisonDelta: Double?
+        val habitChanges: List<StatisticsHabitChange>
 
-        val habitChanges = if (comparisonWindow == null) {
-            emptyList()
+        if (comparisonWindow == null) {
+            comparisonDelta = null
+            habitChanges = emptyList()
         } else {
             val sliceDays = comparisonWindow.currentStart.daysUntil(comparisonWindow.currentEnd) + 1
-            scopeHabits.mapNotNull { habit ->
+            val currEvals = scopeHabits.associate { habit ->
+                val snapshot = snapshots?.get(habit.ref)
+                val habitStart = habitStartDates[habit.refKey] ?: getHabitStartDate(habit, today, snapshot)
+                val eval = if (habitStart > comparisonWindow.currentEnd) null
+                else evaluateHabitSlice(habit, maxOf(comparisonWindow.currentStart, habitStart), comparisonWindow.currentEnd, snapshot)
+                habit.refKey to eval
+            }
+            val prevEvals = scopeHabits.associate { habit ->
+                val snapshot = snapshots?.get(habit.ref)
+                val habitStart = habitStartDates[habit.refKey] ?: getHabitStartDate(habit, today, snapshot)
+                val eval = if (habitStart > comparisonWindow.previousEnd) null
+                else evaluateHabitSlice(habit, maxOf(comparisonWindow.previousStart, habitStart), comparisonWindow.previousEnd, snapshot)
+                habit.refKey to eval
+            }
+
+            val currProgresses = currEvals.values.mapNotNull { it?.progress }
+            val prevProgresses = prevEvals.values.mapNotNull { it?.progress }
+            comparisonDelta = if (currProgresses.isNotEmpty() && prevProgresses.isNotEmpty()) {
+                currProgresses.average() - prevProgresses.average()
+            } else null
+
+            habitChanges = scopeHabits.mapNotNull { habit ->
                 val snapshot = snapshots?.get(habit.ref)
                 val presentation = snapshot?.presentationHabit() ?: habit
-                val habitStart = getHabitStartDate(habit, today, snapshot)
+                val habitStart = habitStartDates[habit.refKey] ?: getHabitStartDate(habit, today, snapshot)
                 if (habitStart.isNewerThan(comparisonWindow.previousStart) || habit.isArchived) {
                     return@mapNotNull null
                 }
@@ -406,8 +444,8 @@ object StatisticsReportStateBuilder {
                 if (goal.frequency.denominator > 1 && sliceDays < 4) {
                     return@mapNotNull null
                 }
-                val currEval = evaluateHabitSlice(habit, comparisonWindow.currentStart, comparisonWindow.currentEnd, snapshot)
-                val prevEval = evaluateHabitSlice(habit, comparisonWindow.previousStart, comparisonWindow.previousEnd, snapshot)
+                val currEval = currEvals[habit.refKey]
+                val prevEval = prevEvals[habit.refKey]
                 if (currEval?.progress == null || prevEval?.progress == null) {
                     return@mapNotNull null
                 }
@@ -443,7 +481,7 @@ object StatisticsReportStateBuilder {
                     val mStart = LocalDate(actualStart.year, month, 1)
                     val mEnd = mStart.plus(mStart.monthLength - 1)
                     val prog = if (mStart <= today) {
-                        calculateOverallProgressForRange(scopeHabits, mStart, mEnd, today, firstWeekday, snapshots)
+                        calculateOverallProgressForRange(scopeHabits, mStart, mEnd, today, firstWeekday, snapshots, habitStartDates)
                     } else null
                     StatisticsBucket(mStart, mEnd, prog)
                 }
@@ -456,7 +494,7 @@ object StatisticsReportStateBuilder {
                     var currMonth = actualStart.startOfMonth()
                     while (currMonth <= end) {
                         val mEnd = currMonth.plus(currMonth.monthLength - 1)
-                        val prog = calculateOverallProgressForRange(scopeHabits, currMonth, mEnd, today, firstWeekday, snapshots)
+                        val prog = calculateOverallProgressForRange(scopeHabits, currMonth, mEnd, today, firstWeekday, snapshots, habitStartDates)
                         buckets.add(StatisticsBucket(currMonth, mEnd, prog))
                         currMonth = currMonth.plus(currMonth.monthLength)
                     }
@@ -465,7 +503,7 @@ object StatisticsReportStateBuilder {
                     (actualStart.year..end.year).map { y ->
                         val yStart = LocalDate(y, 1, 1)
                         val yEnd = LocalDate(y, 12, 31)
-                        val prog = calculateOverallProgressForRange(scopeHabits, yStart, yEnd, today, firstWeekday, snapshots)
+                        val prog = calculateOverallProgressForRange(scopeHabits, yStart, yEnd, today, firstWeekday, snapshots, habitStartDates)
                         StatisticsBucket(yStart, yEnd, prog)
                     }
                 }
@@ -548,7 +586,7 @@ object StatisticsReportStateBuilder {
     ): LocalDate {
         val startAttr = habit.effectiveStatisticsStartDate()
         if (startAttr != null) return startAttr
-        val firstEntry = habit.originalEntries.getKnown().minByOrNull { it.date }?.date
+        val firstEntry = habit.originalEntries.getEarliestDate()
         val observedFrom = snapshot?.observedFrom
         val earliest = listOfNotNull(firstEntry, observedFrom).minOrNull()
         if (earliest != null) return earliest
@@ -561,9 +599,10 @@ object StatisticsReportStateBuilder {
         end: LocalDate,
         today: LocalDate,
         firstWeekday: DayOfWeek,
-        snapshot: EffectiveHabitReadSnapshot? = null
+        snapshot: EffectiveHabitReadSnapshot? = null,
+        precomputedHabitStart: LocalDate? = null
     ): List<GoalPeriod> {
-        val habitStart = getHabitStartDate(habit, today, snapshot)
+        val habitStart = precomputedHabitStart ?: getHabitStartDate(habit, today, snapshot)
         if (end < habitStart) return emptyList()
 
         val limitDate = if (end.isNewerThan(today)) end else today
@@ -1020,12 +1059,22 @@ object StatisticsReportStateBuilder {
         today: LocalDate,
         firstWeekday: DayOfWeek,
         snapshots: Map<HabitRef, EffectiveHabitReadSnapshot>? = null
+    ): Double? = calculateOverallProgressForRange(habits, start, end, today, firstWeekday, snapshots, null)
+
+    private fun calculateOverallProgressForRange(
+        habits: List<Habit>,
+        start: LocalDate,
+        end: LocalDate,
+        today: LocalDate,
+        firstWeekday: DayOfWeek,
+        snapshots: Map<HabitRef, EffectiveHabitReadSnapshot>? = null,
+        precomputedStartDates: Map<HabitIdentity, LocalDate>?
     ): Double? {
         val effectiveEnd = if (end.isNewerThan(today)) today else end
         if (start.isNewerThan(effectiveEnd)) return null
         val progresses = habits.mapNotNull { habit ->
             val snapshot = snapshots?.get(habit.ref)
-            val habitStart = getHabitStartDate(habit, today, snapshot)
+            val habitStart = precomputedStartDates?.get(habit.refKey) ?: getHabitStartDate(habit, today, snapshot)
             if (habitStart > effectiveEnd) null
             else evaluateHabitSlice(habit, maxOf(start, habitStart), effectiveEnd, snapshot)?.progress
         }
@@ -1036,3 +1085,12 @@ object StatisticsReportStateBuilder {
 private val Habit.ref: HabitRef?
     get() = uuid?.let { HabitRef(it) }
 
+// Memoization follows model identity, including unsaved habits with no UUID or ID.
+// EntryList retains its identity hash as entries change; only equality decides identity.
+private class HabitIdentity(private val habit: Habit) {
+    override fun equals(other: Any?): Boolean = other is HabitIdentity && habit === other.habit
+    override fun hashCode(): Int = habit.originalEntries.hashCode()
+}
+
+private val Habit.refKey: HabitIdentity
+    get() = HabitIdentity(this)

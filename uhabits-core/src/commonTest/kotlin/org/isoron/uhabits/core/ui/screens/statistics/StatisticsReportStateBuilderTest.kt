@@ -1146,6 +1146,84 @@ class StatisticsReportStateBuilderTest : BaseUnitTest() {
         assertTrue(state.sphereProgress.isEmpty())
     }
 
+    @Test
+    fun testMutableHabitKeyStabilityWithEmptyAndMutatingGoalHistory() {
+        val today = LocalDate(2026, 9, 29)
+        val startDate = today.minus(14)
+
+        // Habit 1: explicitly empty goalHistory (will mutate inside normalizedGoalHistory)
+        val habitEmptyGoals = fixtures.createEmptyHabit().apply {
+            dayTier = DayTier.MINIMUM
+            frequency = Frequency.DAILY
+            for (i in 0..14) {
+                originalEntries.add(Entry(startDate.plus(i), Entry.YES_MANUAL))
+            }
+            recompute()
+            goalHistory = mutableListOf()
+        }
+        assertEquals(0, habitEmptyGoals.goalHistory.size)
+
+        // Habit 2: stale single goal (targetValue mismatch will mutate inside normalizedGoalHistory)
+        val habitStaleGoal = fixtures.createEmptyHabit().apply {
+            dayTier = DayTier.MINIMUM
+            type = HabitType.NUMERICAL
+            frequency = Frequency.DAILY
+            targetType = NumericalHabitType.AT_LEAST
+            targetValue = 10.0
+            unit = "km"
+            for (i in 0..14) {
+                originalEntries.add(Entry(startDate.plus(i), 10000)) // 10.0 km
+            }
+            recompute()
+            goalHistory = mutableListOf(
+                HabitGoal(
+                    effectiveDate = LocalDate(2000, 1, 1),
+                    frequency = Frequency.DAILY,
+                    targetType = NumericalHabitType.AT_LEAST,
+                    targetValue = 5.0, // Stale!
+                    unit = "km"
+                )
+            )
+        }
+
+        val allHabits = listOf(habitEmptyGoals, habitStaleGoal)
+
+        // Month report covering dates before today
+        val monthReport = StatisticsReportStateBuilder.build(
+            habits = allHabits,
+            period = StatisticsPeriod.MONTH,
+            start = LocalDate(2026, 9, 1),
+            end = LocalDate(2026, 9, 30),
+            today = today,
+            firstWeekday = DayOfWeek.MONDAY,
+            filters = StatisticsFilterState(habitStatus = StatisticsHabitStatusFilter.ALL)
+        )
+
+        // Confirm both habits mutated in place during report build
+        assertEquals(1, habitEmptyGoals.goalHistory.size)
+        assertEquals(10.0, habitStaleGoal.goalHistory[0].targetValue)
+
+        // Verify daily progress before today correctly evaluated both habits despite hashCode mutations
+        val samplePastDay = monthReport.dailyProgress.first { it.date == startDate }
+        assertTrue(samplePastDay.isEligible)
+        assertTrue(samplePastDay.isFullyClosed)
+        assertEquals(1.0, samplePastDay.progress)
+
+        // All-time report
+        val allReport = StatisticsReportStateBuilder.build(
+            habits = allHabits,
+            period = StatisticsPeriod.ALL,
+            start = LocalDate(2026, 1, 1),
+            end = today,
+            today = today,
+            firstWeekday = DayOfWeek.MONDAY,
+            filters = StatisticsFilterState(habitStatus = StatisticsHabitStatusFilter.ALL)
+        )
+        assertEquals(startDate, allReport.start)
+        assertEquals(1.0, allReport.overallProgress)
+        assertEquals(2, allReport.matchingHabits)
+    }
+
     private fun numericalHabit(
         targetType: NumericalHabitType,
         frequency: Frequency,

@@ -157,4 +157,102 @@ class UserTaskDomainTest {
         assertNull(repo.getById(child.id))
         assertNull(repo.getById(grandChild.id))
     }
+
+    @Test
+    fun testParserMatchesOriginalIncludingMalformedPersistedValues() {
+        fun original(value: String?): LocalDate? {
+            if (value.isNullOrBlank()) return null
+            val parts = value.split("-")
+            if (parts.size != 3) return null
+            val year = parts[0].toIntOrNull() ?: return null
+            val month = parts[1].toIntOrNull() ?: return null
+            val day = parts[2].toIntOrNull() ?: return null
+            return LocalDate(year, month, day)
+        }
+        val values = mutableListOf<String?>(null, "", " ", "1-1-1", "+1-+1-+1", "-1-01-01",
+            "2026-01--1", "2026-01-01-", "2026-01-01 ", "2026-4294967297-01",
+            "4294969322-01-01", "2026-01-4294967297", "2147483647-01-01",
+            "2147483648-01-01", "2026-01-2147483647", "0000000001-01-01")
+        for (year in listOf("0", "1", "1900", "2000", "2024", "2026", "9999")) {
+            for (month in listOf("0", "1", "2", "12", "13", "+2")) {
+                for (day in listOf("0", "1", "28", "29", "30", "31", "32", "+1")) {
+                    values.add("$year-$month-$day")
+                }
+            }
+        }
+        for (value in values) {
+            val expected = runCatching { original(value) }
+            val actual = runCatching { parseIsoDateString(value) }
+            assertEquals(expected.getOrNull(), actual.getOrNull(), value)
+            assertEquals(expected.exceptionOrNull()?.let { it::class }, actual.exceptionOrNull()?.let { it::class }, value)
+        }
+    }
+
+    @Test
+    fun testParseIsoDateString() {
+        // Valid ISO strings
+        val d1 = parseIsoDateString("2026-10-04")
+        assertEquals(LocalDate(2026, 10, 4), d1)
+        assertEquals("2026-10-04", d1?.toIsoDateString())
+
+        val d2 = parseIsoDateString("2024-02-29") // Leap year
+        assertEquals(LocalDate(2024, 2, 29), d2)
+
+        val d3 = parseIsoDateString("0001-01-01")
+        assertEquals(LocalDate(1, 1, 1), d3)
+
+        // Invalid or edge case strings
+        assertNull(parseIsoDateString(null))
+        assertNull(parseIsoDateString(""))
+        assertNull(parseIsoDateString("20261004"))
+        assertNull(parseIsoDateString("2026-10"))
+        assertNull(parseIsoDateString("-2026-10-04"))
+        assertNull(parseIsoDateString("2026--04"))
+        assertNull(parseIsoDateString("2026-10-"))
+        assertNull(parseIsoDateString("abcd-ef-gh"))
+        assertNull(parseIsoDateString("2026-10-0a"))
+        assertNull(parseIsoDateString("2026-0a-04"))
+    }
+
+    @Test
+    fun testReorderDuplicateIdsMatchesSequentialUpdates() {
+        val repo = MemoryUserTaskRepository()
+        var id = 0
+        val service = UserTaskServiceImpl(repo, clock = { 1000L }, idGenerator = { "${id++}" })
+        service.createTask(title = "First")
+        val second = service.createTask(title = "Second")
+        service.reorderTasks(listOf(second.id, second.id))
+        assertEquals(1, repo.getById(second.id)?.sortOrder)
+    }
+
+    @Test
+    fun testTaskService_reorderTasks() {
+        val repo = MemoryUserTaskRepository()
+        var idCounter = 1
+        val service = UserTaskServiceImpl(repo, clock = { 1000L }, idGenerator = { "t-${idCounter++}" })
+
+        val t1 = service.createTask(title = "Task 1")
+        val t2 = service.createTask(title = "Task 2")
+        val t3 = service.createTask(title = "Task 3")
+
+        assertEquals(0, repo.getById(t1.id)?.sortOrder)
+        assertEquals(1, repo.getById(t2.id)?.sortOrder)
+        assertEquals(2, repo.getById(t3.id)?.sortOrder)
+
+        // Reverse order
+        service.reorderTasks(listOf(t3.id, t2.id, t1.id))
+        assertEquals(0, repo.getById(t3.id)?.sortOrder)
+        assertEquals(1, repo.getById(t2.id)?.sortOrder)
+        assertEquals(2, repo.getById(t1.id)?.sortOrder)
+
+        // Subtasks reordering
+        val s1 = service.createTask(title = "Sub 1", parentTaskId = t1.id)
+        val s2 = service.createTask(title = "Sub 2", parentTaskId = t1.id)
+        assertEquals(0, repo.getById(s1.id)?.sortOrder)
+        assertEquals(1, repo.getById(s2.id)?.sortOrder)
+
+        service.reorderTasks(listOf(s2.id, s1.id))
+        assertEquals(0, repo.getById(s2.id)?.sortOrder)
+        assertEquals(1, repo.getById(s1.id)?.sortOrder)
+    }
 }

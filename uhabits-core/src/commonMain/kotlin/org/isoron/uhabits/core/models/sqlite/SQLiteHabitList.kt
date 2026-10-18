@@ -102,7 +102,7 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
         val records = repository.findAll()
         org.isoron.uhabits.core.io.HabitStartupTiming.mark("repository.findAll.end")
         var shouldRebuildOrder = false
-        for ((expectedPosition, rec) in records.withIndex()) {
+        val hydrated = records.asSequence().mapIndexed { expectedPosition, rec ->
             if (rec.position != expectedPosition) shouldRebuildOrder = true
             val h = modelFactory.buildHabit()
             copyTo(rec, h)
@@ -121,8 +121,9 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
             // Without this call, any sync or DB reload would leave computedEntries empty,
             // causing all habits to show 0 / UNKNOWN in the UI.
             h.recompute()
-            list.add(h)
+            h
         }
+        list.addAllForHydration(hydrated)
         org.isoron.uhabits.core.io.HabitStartupTiming.mark("repository.hydrateRecompute.end")
         if (shouldRebuildOrder) rebuildOrder()
         org.isoron.uhabits.core.io.HabitStartupTiming.mark("repository.load.end")
@@ -310,6 +311,11 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
             }
         }
         observable.notifyListeners()
+    }
+
+    override fun onEntriesChanged() {
+        list.onEntriesChanged()
+        org.isoron.uhabits.core.io.HabitResortDiagnostics.measure("sqlite.notify", this) { observable.notifyListeners() }
     }
 
     override fun resort() {

@@ -97,4 +97,42 @@ class SQLiteEntryListTest {
         assertEquals(1, all2.size)
         assertEquals(90, all2[0].value)
     }
+
+    @Test
+    fun testEarliestDateUnloadedAndInvalidated() = runTest {
+        initTest()
+        val habitId = entries.habitId!!
+        val today = LocalDate(2015, 1, 25)
+        val early = today.minus(10)
+        factory.entryRepository.insert(
+            EntryData(
+                habitId = habitId,
+                timestamp = today.unixTime,
+                value = 500
+            )
+        )
+        factory.entryRepository.insert(
+            EntryData(
+                habitId = habitId,
+                timestamp = early.unixTime,
+                value = 300
+            )
+        )
+        assertEquals(false, entries.isLoaded)
+        assertEquals(early, entries.getEarliestDate())
+        assertEquals(true, entries.isLoaded)
+
+        entries.invalidate()
+        assertEquals(false, entries.isLoaded)
+        val evenEarlier = today.minus(20)
+        factory.entryRepository.insert(
+            EntryData(
+                habitId = habitId,
+                timestamp = evenEarlier.unixTime,
+                value = 100
+            )
+        )
+        assertEquals(evenEarlier, entries.getEarliestDate())
+        assertEquals(true, entries.isLoaded)
+    }
 }

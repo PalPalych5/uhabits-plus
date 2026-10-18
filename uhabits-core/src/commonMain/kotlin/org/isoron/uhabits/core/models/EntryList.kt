@@ -87,6 +87,15 @@ open class EntryList {
     }
 
     /**
+     * Returns the earliest date among all entries in this list, or null if empty.
+     * Avoids allocating and sorting a full list of entries.
+     */
+    @Synchronized
+    open fun getEarliestDate(): LocalDate? {
+        return entriesByDate.keys.minOrNull()
+    }
+
+    /**
      * Invalidate any in-memory caching or database status. Subclasses should override.
      */
     open fun invalidate() {}
