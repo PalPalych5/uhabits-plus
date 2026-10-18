@@ -28,4 +28,4 @@ dependencyResolutionManagement {
     }
 }
 
-include(":uhabits-android", ":uhabits-core")
+include(":uhabits-android", ":uhabits-core", ":benchmark")

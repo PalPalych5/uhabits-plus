@@ -74,6 +74,7 @@ security-crypto = { group = "androidx.security", name = "security-crypto", versi
 
 [plugins]
 agp = { id = "com.android.application", version.ref = "agp" }
+agp-test = { id = "com.android.test", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 ktlint-plugin = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint-plugin" }
