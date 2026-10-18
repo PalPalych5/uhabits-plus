@@ -36,7 +36,7 @@
 * **Optimized Computation Engine**: Fast, memoized evaluation for multi-year histories without UI stutter.
 
 ### 5. Privacy-First & Offline Architecture
-* **100% Offline by Design**: Operates entirely on your device without mandatory accounts, external trackers, or third-party telemetry.
+* **Works offline**: Core habit and task tracking work without an internet connection; optional online features may require connectivity.
 * **Data Ownership**: Full export and import support for spreadsheets (CSV) and raw database backups (SQLite).
 
 ---
@@ -70,7 +70,7 @@
 * **Language**: Kotlin 2.3.20
 * **Build System**: Gradle 8.13 with Gradle Wrapper
 * **Android Gradle Plugin (AGP)**: 8.13.2
-* **Compilation Target**: `compileSdk 36`, `minSdk 21`
+* **Compilation Target**: `compileSdk 36`, `minSdk 28`
 * **Java Development Kit (JDK)**: JDK 17 (e.g., Eclipse Temurin 17)
 * **Code Shrinking & Optimization**: R8 8.13.19 (bundled with AGP)
 * **Database**: SQLite (via native KMP IO abstractions)
