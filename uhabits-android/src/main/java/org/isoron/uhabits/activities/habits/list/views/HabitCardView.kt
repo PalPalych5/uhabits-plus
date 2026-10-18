@@ -176,6 +176,7 @@ class HabitCardView(
     private var currentToggleTaskId = 0
 
     init {
+        id = R.id.habitCard
         scoreRing = RingView(context).apply {
             val thickness = dp(3f)
             val margin = dp(8f).toInt()

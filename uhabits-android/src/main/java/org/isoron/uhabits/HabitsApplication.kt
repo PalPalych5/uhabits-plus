@@ -45,7 +45,7 @@ import java.io.File
 /**
  * The Android application for Loop Habit Tracker.
  */
-class HabitsApplication : Application() {
+open class HabitsApplication : Application() {
 
     private val datasetListeners = java.util.concurrent.CopyOnWriteArraySet<() -> Unit>()
     @Volatile var isDatasetRebuilding = false
@@ -208,7 +208,7 @@ class HabitsApplication : Application() {
         val prefs = component.preferences
         prefs.lastAppVersion = BuildConfig.VERSION_CODE
 
-        setToday(computeToday(component.preferences.midnightDelayHours, 0))
+        setToday(currentHabitDate(component.preferences.midnightDelayHours, 0))
         org.isoron.uhabits.utils.HabitsStartupTrace.mark("application.calendar.ready")
 
         val habitList = component.habitList
@@ -260,6 +260,9 @@ class HabitsApplication : Application() {
         isDatasetRebuilding = false
         notifyDatasetListeners()
     }
+
+    /** Variant seam; ordinary builds retain the live local calendar and offset behavior. */
+    internal open fun currentHabitDate(hourOffset: Int, minuteOffset: Int) = computeToday(hourOffset, minuteOffset)
 
     private fun stopServices() {
         reminderScheduler?.stopListening()

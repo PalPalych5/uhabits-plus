@@ -559,7 +559,9 @@ class EffectiveHabitReadController(
         val current = captureCalendar()
         if (force || current != calendar) {
             calendar = current
-            setToday(computeToday(current.hourOffset, current.minuteOffset))
+            val app = context.applicationContext as? org.isoron.uhabits.HabitsApplication
+            setToday(app?.currentHabitDate(current.hourOffset, current.minuteOffset)
+                ?: computeToday(current.hourOffset, current.minuteOffset))
             revision.changed()
         }
     }

@@ -12,6 +12,8 @@ android {
     compileSdk = 36
 
     targetProjectPath = ":uhabits-android"
+    // The test process must survive force-stop / compilation of the measured app.
+    experimentalProperties["android.experimental.self-instrumenting"] = true
 
     defaultConfig {
         minSdk = 28
@@ -21,9 +23,13 @@ android {
 
     buildTypes {
         create("benchmark") {
-            isMinifyEnabled = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android.txt")
+            signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = !providers.gradleProperty("benchmarkProfileGeneration")
+                .map { it.toBooleanStrict() }.getOrElse(false)
+            // AGP TestCreationConfig gathers ProguardFileType.TEST, even in com.android.test.
+            testProguardFiles(
+                getDefaultProguardFile("proguard-android.txt"),
+                "proguard-rules.pro"
             )
             matchingFallbacks += listOf("release")
         }
@@ -42,9 +48,19 @@ android {
     }
 }
 
+// com.android.test otherwise also creates a debug APK targeting the ordinary app.
+// Only this module is restricted; uhabits-android debug instrumentation is unchanged.
+androidComponents {
+    beforeVariants(selector().all()) { variant ->
+        variant.enable = variant.buildType == "benchmark"
+    }
+}
+
 dependencies {
     implementation(libs.junit)
     implementation(libs.rules)
     implementation(libs.uiautomator)
     implementation(libs.espresso.core)
+    implementation(libs.benchmark.macro.junit4)
+    implementation(libs.profileinstaller)
 }

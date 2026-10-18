@@ -19,375 +19,243 @@
 
 package org.isoron.uhabits.benchmark
 
-import android.content.Context
-import android.content.Intent
 import android.os.Build
+import android.os.SystemClock
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.Configurator
 import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
-import androidx.test.uiautomator.Until
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
+import androidx.test.uiautomator.UiObject2
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/**
- * Dedicated profileable QA scenario suite targeting `org.isoron.uhabits.plus.benchmark`.
- *
- * Executes out-of-process in the separate `:benchmark` test module to guarantee:
- * 1. Target package isolation (`org.isoron.uhabits.plus.benchmark`).
- * 2. True process-cold startup semantics via `am force-stop` and `am start -W`.
- * 3. Fail-closed deterministic execution without silent skipping of UI journeys.
- * 4. Grounded UI bounds for scrolling and interaction without arbitrary coordinate assumptions.
- * 5. Allowlisted AVD verification preventing execution on physical devices or unverified images.
- */
+/** External isolated workload. Fixture provisioning is a separate, explicitly authorized step. */
 @RunWith(AndroidJUnit4::class)
 class ProfileableReleaseQaScenarios {
-
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val device = UiDevice.getInstance(instrumentation)
-    private val context: Context = instrumentation.context
 
     companion object {
         const val TARGET_PACKAGE = "org.isoron.uhabits.plus.benchmark"
         const val MAIN_ACTIVITY = "org.isoron.uhabits.activities.main.MainActivity"
+        const val FIXTURE_ACTIVITY = "org.isoron.uhabits.benchmark.BenchmarkFixtureActivity"
         const val UI_TIMEOUT_MS = 8000L
-
-        /** Known allowlisted AVD environments verified for offline QA runs. */
-        val ALLOWLISTED_AVD_TOKENS = setOf(
-            "UHabit_Next_QA_Isolated_Experiment_API35_20261017",
-            "UHabit_UI_Review_Disposable_20261011"
-        )
+        private const val HABIT_LIST = "habitCardList"
+        private const val CHECKMARK_TODAY = "habitCheckmarkToday"
     }
 
-    @Before
-    fun setUp() {
-        verifySafetyAndIsolationGuards()
-    }
+    @Before fun setUp() = verifySafetyAndIsolationGuards()
 
-    /**
-     * Verifies that execution is restricted to authorized emulators and offline benchmark targets.
-     */
     fun verifySafetyAndIsolationGuards() {
-        check(Build.MODEL.contains("sdk") || Build.MODEL.contains("Emulator")) {
-            "Physical devices are strictly forbidden for profileable QA"
+        check(Build.MODEL.contains("sdk") || Build.MODEL.contains("Emulator")) { "Physical devices are forbidden" }
+        check(instrumentation.context.packageName == "org.isoron.uhabits.benchmark" &&
+            instrumentation.targetContext.packageName == instrumentation.context.packageName) {
+            "Benchmark must instrument its own isolated test process"
         }
-        val targetPkg = instrumentation.targetContext.packageName
-        check(targetPkg == TARGET_PACKAGE) {
-            "Instrumentation target package mismatch: expected '$TARGET_PACKAGE', actual '$targetPkg'"
+        check(instrumentation.context.createPackageContext(TARGET_PACKAGE, 0).packageName == TARGET_PACKAGE) {
+            "Isolated measured app is not installed"
         }
-
-        val requestedAvd = InstrumentationRegistry.getArguments().getString("authorizedAvd")
-        check(!requestedAvd.isNullOrBlank()) {
-            "Explicit -e authorizedAvd argument is required; automatic execution on unverified images is forbidden"
+        check(InstrumentationRegistry.getArguments().getString("allowIsolatedQa") == "true") {
+            "Explicit allowIsolatedQa=true is required"
         }
-        check(requestedAvd in ALLOWLISTED_AVD_TOKENS) {
-            "Requested AVD '$requestedAvd' is not in the verified allowlist: $ALLOWLISTED_AVD_TOKENS"
+        check(device.executeShellCommand("getprop ro.boot.qemu.avd_name").trim() == authorizedAvd()) {
+            "Disposable AVD identity mismatch"
         }
-
-        val guestAvd = device.executeShellCommand("getprop ro.boot.qemu.avd_name").trim()
-        check(guestAvd == requestedAvd) {
-            "Guest AVD identity mismatch: requested '$requestedAvd', actual guest '$guestAvd'"
-        }
-
-        // Verify device-level radio restrictions
-        val airplaneOn = device.executeShellCommand("settings get global airplane_mode_on").trim()
-        val wifiOn = device.executeShellCommand("settings get global wifi_on").trim()
-        check(airplaneOn == "1" && wifiOn == "0") {
-            "Device radio isolation violation: airplane_mode=$airplaneOn (expected 1), wifi=$wifiOn (expected 0)"
-        }
+        check(device.executeShellCommand("settings get global airplane_mode_on").trim() == "1" &&
+            device.executeShellCommand("settings get global wifi_on").trim() == "0") { "Offline radio isolation required" }
     }
 
-    /**
-     * Runs all 7 representative scenarios in sequence under ART profiling.
-     */
-    @Test
-    fun runRepresentativeProfileCollectionWorkload() {
-        device.wakeUp()
+    private fun authorizedAvd(): String {
+        val avd = InstrumentationRegistry.getArguments().getString("authorizedAvd").orEmpty()
+        check(avd == "UHabit_Next_Benchmark_Disposable_API35_Phase22") {
+            "Dedicated disposable benchmark AVD authorization required"
+        }
+        return avd
+    }
 
-        // 1. Process-Cold Application Startup
+    /** Verifies persisted selection, database contents and offline capabilities in the target process. */
+    fun verifyFixtureReady(): String {
+        val output = device.executeShellCommand(
+            "am start -W -n $TARGET_PACKAGE/$FIXTURE_ACTIVITY --es operation verify " +
+                "--es authorization provision-isolated-synthetic-v1 --es disposableAvd ${authorizedAvd()}"
+        )
+        check(output.contains("Status: ok")) { "Fixture verification activity failed: $output" }
+        val ready = requireObject("Pre-provisioned synthetic fixture missing or invalid",
+            By.pkg(TARGET_PACKAGE).desc("fixture-ready:benchmark-synthetic-v1:uhabits-container-experimental.db:32:84:5792:10:2:offline"))
+            .contentDescription
+        launchHabits()
+        return ready
+    }
+
+    @Test fun runRepresentativeProfileCollectionWorkload() {
         val coldPid = scenario1_processColdStartup()
+        runPopulatedJourneys()
+        assertEquals("Target process restarted during workload", coldPid, getTargetPid())
+    }
 
-        // 2. Initial Populated Habits List Traversal
+    fun runPopulatedJourneys() {
         scenario2_populatedHabitsList()
-
-        // 3. Nested Habit Containers
         scenario3_nestedContainers()
-
-        // 4. Completing Habit and Observing UI Updates
         scenario4_completeHabitAndObserveUi()
-
-        // 5. Opening Populated Statistics
         scenario5_openPopulatedStatistics()
-
-        // 6. Switching Statistics Periods
         scenario6_switchStatisticsPeriods()
-
-        // 7. Opening Tasks and Calendar
         scenario7_openTasksAndCalendar()
-
-        // Verify target process remained alive and stable throughout the journey
-        val finalPid = getTargetPid()
-        assertNotNull("Target process died during benchmark scenario execution", finalPid)
-        check(finalPid == coldPid) {
-            "Target process restarted unexpectedly during benchmark journey (initial PID $coldPid, final PID $finalPid)"
-        }
     }
 
-    /**
-     * Scenario 1: True process-cold startup.
-     * Force-stops the target package, confirms termination, and launches cold via AM start.
-     */
     fun scenario1_processColdStartup(): String {
-        // Step A: Ensure target process is terminated
+        val before = verifyFixtureReady()
         device.executeShellCommand("am force-stop $TARGET_PACKAGE")
-        device.waitForIdle()
-        val pidBefore = getTargetPid()
-        assertTrue("Target process failed to terminate before cold start", pidBefore.isNullOrBlank())
-
-        // Step B: Cold process launch
-        val amStartOutput = device.executeShellCommand(
-            "am start -W -n $TARGET_PACKAGE/$MAIN_ACTIVITY --es main.destination HABITS"
-        )
-        assertTrue(
-            "Cold start failed: $amStartOutput",
-            amStartOutput.contains("Status: ok") || amStartOutput.contains("Complete")
-        )
-
-        // Step C: Confirm new process created
-        val pidAfter = getTargetPid()
-        assertNotNull("Target process was not created on cold start", pidAfter)
-
-        // Step D: Validate initial UI rendered
-        val isListRendered = device.wait(
-            Until.hasObject(By.pkg(TARGET_PACKAGE).res(TARGET_PACKAGE, "recyclerView")),
-            UI_TIMEOUT_MS
-        )
-        assertTrue("Habit list failed to render on cold start within $UI_TIMEOUT_MS ms", isListRendered)
-
-        return pidAfter!!
+        check(getTargetPid() == null) { "Target process did not terminate" }
+        // AM output confirms launch only; TotalTime is not presented-frame latency.
+        launchHabits()
+        val pid = getTargetPid()
+        assertNotNull("Cold start did not create target process", pid)
+        val after = verifyFixtureReady()
+        assertEquals("Dataset identity, filename or contents changed across process death", before, after)
+        requireObject("Populated habits did not render after cold restart", By.res(TARGET_PACKAGE, CHECKMARK_TODAY))
+        return pid!!
     }
 
-    /**
-     * Scenario 2: Initial populated Habits list traversal and layout.
-     * Fails closed if the list or cards are missing; scrolls using actual UI bounds.
-     */
     fun scenario2_populatedHabitsList() {
         navigateToDestination("Привычки")
-
-        val recyclerView = device.wait(
-            Until.findObject(By.pkg(TARGET_PACKAGE).res(TARGET_PACKAGE, "recyclerView")),
-            UI_TIMEOUT_MS
-        )
-        assertNotNull("Precondition failed: Habit recyclerView not found", recyclerView)
-
-        val firstCard = device.wait(
-            Until.findObject(By.pkg(TARGET_PACKAGE).clazz("androidx.cardview.widget.CardView")),
-            UI_TIMEOUT_MS
-        )
-        assertNotNull("Precondition failed: Populated habits list contains zero CardViews", firstCard)
-
-        // Grounded scroll using element bounds
-        val bounds = recyclerView!!.visibleBounds
-        val centerX = bounds.centerX()
-        val top = bounds.top + (bounds.height() * 0.15).toInt()
-        val bottom = bounds.bottom - (bounds.height() * 0.15).toInt()
-
-        device.swipe(centerX, bottom, centerX, top, 20)
-        device.waitForIdle()
-        device.swipe(centerX, top, centerX, bottom, 20)
-        device.waitForIdle()
+        val list = requireObject("Habit list missing", By.res(TARGET_PACKAGE, HABIT_LIST))
+        requireObject("Habit list is empty", By.res(TARGET_PACKAGE, CHECKMARK_TODAY))
+        list.scroll(Direction.DOWN, 0.7f)
+        list.scroll(Direction.UP, 0.7f)
     }
 
-    /**
-     * Scenario 3: Nested habit containers interaction.
-     * Navigates to Tasks, opens the drawer, and selects both root and nested containers with strict assertions.
-     */
     fun scenario3_nestedContainers() {
         navigateToDestination("Задачи")
-
-        val navButton = device.wait(
-            Until.findObject(
-                By.pkg(TARGET_PACKAGE).desc("Навигация по задачам")
-                    ?: By.pkg(TARGET_PACKAGE).desc("Open navigation drawer")
-                    ?: By.pkg(TARGET_PACKAGE).res(TARGET_PACKAGE, "btnTaskNavigation")
-            ),
-            UI_TIMEOUT_MS
-        )
-        assertNotNull("Precondition failed: Tasks drawer button not found", navButton)
-        navButton!!.click()
-        device.waitForIdle()
-
-        // Select root container "Учёба"
-        val studyNode = device.wait(Until.findObject(By.text("Учёба")), UI_TIMEOUT_MS)
-        assertNotNull("Precondition failed: Root container 'Учёба' not found in drawer", studyNode)
-        studyNode!!.click()
-        device.waitForIdle()
-
-        // Re-open drawer and select nested container "Курсовая работа"
-        val navButton2 = device.wait(
-            Until.findObject(
-                By.pkg(TARGET_PACKAGE).desc("Навигация по задачам")
-                    ?: By.pkg(TARGET_PACKAGE).desc("Open navigation drawer")
-                    ?: By.pkg(TARGET_PACKAGE).res(TARGET_PACKAGE, "btnTaskNavigation")
-            ),
-            UI_TIMEOUT_MS
-        )
-        assertNotNull("Tasks drawer button not found on second open", navButton2)
-        navButton2!!.click()
-        device.waitForIdle()
-
-        val courseworkNode = device.wait(Until.findObject(By.text("Курсовая работа")), UI_TIMEOUT_MS)
-        assertNotNull("Precondition failed: Nested container 'Курсовая работа' not found", courseworkNode)
-        courseworkNode!!.click()
-        device.waitForIdle()
-
-        // Return to Habits
+        requireObject("Tasks navigation missing", By.pkg(TARGET_PACKAGE).desc("Открыть навигацию задач")).click()
+        requireObject("Root container missing", By.pkg(TARGET_PACKAGE).text("Учёба")).click()
+        requireObject("Tasks navigation missing", By.pkg(TARGET_PACKAGE).desc("Открыть навигацию задач")).click()
+        requireObject("Nested container missing", By.pkg(TARGET_PACKAGE).text("Курсовая работа")).click()
         navigateToDestination("Привычки")
     }
 
-    /**
-     * Scenario 4: Completing a habit and observing UI updates.
-     * Finds checkmark, clicks it, verifies UI state changes, then restores initial state.
-     */
     fun scenario4_completeHabitAndObserveUi() {
         navigateToDestination("Привычки")
-
-        val checkmark = device.wait(
-            Until.findObject(By.pkg(TARGET_PACKAGE).clazz("org.isoron.uhabits.activities.habits.list.views.CheckmarkButtonView")),
-            UI_TIMEOUT_MS
-        )
-        assertNotNull("Precondition failed: CheckmarkButtonView not found on visible habit card", checkmark)
-
-        val initialDesc = checkmark!!.contentDescription ?: ""
-        val initialSelected = checkmark.isSelected
-
-        checkmark.click()
-        device.waitForIdle()
-
-        val updatedCheckmark = device.wait(
-            Until.findObject(By.pkg(TARGET_PACKAGE).clazz("org.isoron.uhabits.activities.habits.list.views.CheckmarkButtonView")),
-            UI_TIMEOUT_MS
-        )
-        assertNotNull("Checkmark view disappeared after click", updatedCheckmark)
-        val updatedDesc = updatedCheckmark!!.contentDescription ?: ""
-        val updatedSelected = updatedCheckmark.isSelected
-
-        // Fail closed if the click did not result in an observable UI state mutation
-        val stateMutated = (initialDesc != updatedDesc) || (initialSelected != updatedSelected)
-        assertTrue("Checkmark click did not mutate UI state (desc: '$initialDesc', selected: $initialSelected)", stateMutated)
-
-        // Toggle back to preserve deterministic fixture baseline
-        updatedCheckmark.click()
-        device.waitForIdle()
+        verifyHabitToggle()
     }
 
-    /**
-     * Scenario 5: Opening populated Statistics.
-     * Validates that the statistics workspace hydrates content within the timeout.
-     */
     fun scenario5_openPopulatedStatistics() {
         navigateToDestination("Статистика")
-
-        val statsRoot = device.wait(
-            Until.findObject(
-                By.pkg(TARGET_PACKAGE).text("Статистика")
-                    ?: By.pkg(TARGET_PACKAGE).res(TARGET_PACKAGE, "statisticsContainer")
-                    ?: By.pkg(TARGET_PACKAGE).res(TARGET_PACKAGE, "recyclerView")
-            ),
-            UI_TIMEOUT_MS
-        )
-        assertNotNull("Precondition failed: Statistics workspace failed to hydrate content", statsRoot)
+        requireObject("Statistics workspace missing", By.pkg(TARGET_PACKAGE).res(TARGET_PACKAGE, "pageTransitionHost"))
+        requireObject("Statistics date range missing", By.pkg(TARGET_PACKAGE).res(TARGET_PACKAGE, "tvDateRange"))
     }
 
-    /**
-     * Scenario 6: Switching Statistics periods.
-     * Exercises date range recalculation and chart hydration for different periods.
-     */
     fun scenario6_switchStatisticsPeriods() {
         navigateToDestination("Статистика")
-
-        val monthTab = device.wait(Until.findObject(By.text("Месяц")), UI_TIMEOUT_MS)
-        val yearTab = device.wait(Until.findObject(By.text("Год")), UI_TIMEOUT_MS)
-        assertNotNull("Precondition failed: Period tab 'Месяц' not found", monthTab)
-        assertNotNull("Precondition failed: Period tab 'Год' not found", yearTab)
-
-        yearTab!!.click()
-        device.waitForIdle()
-
-        monthTab!!.click()
-        device.waitForIdle()
+        requireObject("Year period missing", By.pkg(TARGET_PACKAGE).text("Год")).click()
+        requireObject("Month period missing", By.pkg(TARGET_PACKAGE).text("Месяц")).click()
     }
 
-    /**
-     * Scenario 7: Opening Tasks and calendar.
-     * Switches between List and Calendar representations with explicit presence assertions.
-     */
     fun scenario7_openTasksAndCalendar() {
         navigateToDestination("Задачи")
-
-        val calendarToggle = device.wait(
-            Until.findObject(
-                By.pkg(TARGET_PACKAGE).desc("Календарь")
-                    ?: By.pkg(TARGET_PACKAGE).text("Календарь")
-            ),
-            UI_TIMEOUT_MS
-        )
-        assertNotNull("Precondition failed: Calendar toggle button not found", calendarToggle)
-        calendarToggle!!.click()
-        device.waitForIdle()
-
-        val calendarView = device.wait(
-            Until.findObject(
-                By.pkg(TARGET_PACKAGE).clazz("android.widget.CalendarView")
-                    ?: By.pkg(TARGET_PACKAGE).res(TARGET_PACKAGE, "calendarView")
-                    ?: By.pkg(TARGET_PACKAGE).res(TARGET_PACKAGE, "layoutCalendar")
-            ),
-            UI_TIMEOUT_MS
-        )
-        assertNotNull("Calendar view failed to display after toggle", calendarView)
-
-        val listToggle = device.wait(
-            Until.findObject(
-                By.pkg(TARGET_PACKAGE).desc("Список")
-                    ?: By.pkg(TARGET_PACKAGE).text("Список")
-            ),
-            UI_TIMEOUT_MS
-        )
-        assertNotNull("Precondition failed: List toggle button not found", listToggle)
-        listToggle!!.click()
-        device.waitForIdle()
-
-        val listView = device.wait(
-            Until.findObject(
-                By.pkg(TARGET_PACKAGE).res(TARGET_PACKAGE, "recyclerView")
-                    ?: By.pkg(TARGET_PACKAGE).clazz("androidx.recyclerview.widget.RecyclerView")
-            ),
-            UI_TIMEOUT_MS
-        )
-        assertNotNull("Task list view failed to display after toggling back from calendar", listView)
+        requireObject("Calendar toggle missing", By.pkg(TARGET_PACKAGE).desc("Показать календарь")).click()
+        // TasksFragment builds a custom LinearLayout calendar, not android.widget.CalendarView.
+        requireObject("Calendar previous month control missing", By.pkg(TARGET_PACKAGE).desc("Предыдущий месяц"))
+        requireObject("Calendar next month control missing", By.pkg(TARGET_PACKAGE).desc("Следующий месяц"))
+        requireObject("List toggle missing", By.pkg(TARGET_PACKAGE).desc("Показать список")).click()
+        requireObject("Task list missing", By.pkg(TARGET_PACKAGE).res(TARGET_PACKAGE, "rvTasks"))
     }
 
     private fun navigateToDestination(label: String) {
-        val tab = device.wait(
-            Until.findObject(
-                By.pkg(TARGET_PACKAGE).desc(label)
-                    ?: By.pkg(TARGET_PACKAGE).text(label)
-            ),
-            UI_TIMEOUT_MS
-        )
-        assertNotNull("Navigation tab '$label' not found", tab)
-        tab!!.click()
+        requireObject("Navigation '$label' missing", By.pkg(TARGET_PACKAGE).desc(label), By.pkg(TARGET_PACKAGE).text(label)).click()
         device.waitForIdle()
     }
 
-    private fun getTargetPid(): String? {
-        val output = device.executeShellCommand("pidof $TARGET_PACKAGE").trim()
-        return output.ifBlank { null }
+    /** Every polling round queries candidates in priority order under one shared deadline. */
+    private fun requireObject(message: String, vararg selectors: BySelector): UiObject2 {
+        val configurator = Configurator.getInstance()
+        val previousIdleTimeout = configurator.waitForIdleTimeout
+        // findObject normally waits for idle on every lookup. Disable that hidden wait only here.
+        configurator.setWaitForIdleTimeout(0L)
+        try {
+            return pollOrderedSelectors(message, selectors)
+        } finally {
+            configurator.setWaitForIdleTimeout(previousIdleTimeout)
+        }
+    }
+
+    private fun pollOrderedSelectors(message: String, selectors: Array<out BySelector>): UiObject2 {
+        val deadline = SystemClock.uptimeMillis() + UI_TIMEOUT_MS
+        do {
+            for (selector in selectors) {
+                if (SystemClock.uptimeMillis() >= deadline) break
+                device.findObject(selector)?.let { return it }
+            }
+            val remaining = deadline - SystemClock.uptimeMillis()
+            if (remaining > 0) SystemClock.sleep(minOf(50L, remaining))
+        } while (SystemClock.uptimeMillis() < deadline)
+        error("$message (timeout ${UI_TIMEOUT_MS}ms)")
+    }
+
+    private fun launchHabits() {
+        val output = device.executeShellCommand(
+            "am start -W --activity-clear-top --activity-single-top -n $TARGET_PACKAGE/$MAIN_ACTIVITY --es main.destination HABITS"
+        )
+        check(output.contains("Status: ok")) { "Main activity launch failed: $output" }
+        requireObject("Habit list missing", By.res(TARGET_PACKAGE, HABIT_LIST))
+    }
+
+    private fun getTargetPid(): String? = device.executeShellCommand("pidof $TARGET_PACKAGE").trim().ifBlank { null }
+
+    private fun verifyHabitToggle() {
+        val before = inspectHabitValue()
+        clickTargetHabitToday()
+        val after = awaitHabitValue(2 - before)
+        check(after != before && after in setOf(0, 2)) { "Habit toggle did not change the durable boolean entry: $before -> $after" }
+        clickTargetHabitToday()
+        assertEquals("Second boolean toggle did not restore fixture entry", before, awaitHabitValue(before))
+        verifyFixtureReady()
+    }
+
+    private fun awaitHabitValue(expected: Int): Int {
+        // This bounds retries, not ActivityManager launch duration; shell am start -W has its own wait.
+        val deadline = SystemClock.uptimeMillis() + UI_TIMEOUT_MS
+        do {
+            val value = inspectHabitValue()
+            if (value == expected) return value
+            SystemClock.sleep(50)
+        } while (SystemClock.uptimeMillis() < deadline)
+        error("Durable fixture habit did not reach expected value $expected")
+    }
+
+    private fun inspectHabitValue(): Int {
+        val output = device.executeShellCommand(
+            "am start -W -n $TARGET_PACKAGE/$FIXTURE_ACTIVITY --es operation inspectHabit " +
+                "--es disposableAvd ${authorizedAvd()}"
+        )
+        check(output.contains("Status: ok")) { "Habit verification failed: $output" }
+        val report = requireObject("Durable fixture habit evidence missing",
+            By.pkg(TARGET_PACKAGE).descStartsWith("fixture-habit:Изучать материалы:")).contentDescription
+        val value = report.substringAfterLast(':').toInt()
+        check(value in setOf(0, 2)) { "Fixture target must be a binary habit entry: $report" }
+        launchHabits()
+        return value
+    }
+
+    private fun clickTargetHabitToday() {
+        val rowSelector = By.res(TARGET_PACKAGE, "habitCard")
+            .hasDescendant(By.desc("Изучать материалы"))
+        val list = requireObject("Habit list missing", By.res(TARGET_PACKAGE, HABIT_LIST))
+        // Returning to the top uses the real list's scrolling API; no coordinate or row-position assumption.
+        repeat(8) {
+            if (device.hasObject(rowSelector)) return@repeat
+            list.scroll(Direction.UP, 0.8f)
+        }
+        val row = requireObject("Named fixture habit missing", rowSelector)
+        // The real panel assigns this ID by date offset, independently of visual ordering.
+        val today = row.findObject(By.res(TARGET_PACKAGE, CHECKMARK_TODAY))
+        assertNotNull("Today's boolean checkmark missing from named habit", today)
+        today!!.click()
+        device.waitForIdle()
     }
 }

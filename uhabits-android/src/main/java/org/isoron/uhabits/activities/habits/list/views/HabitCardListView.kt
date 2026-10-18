@@ -111,6 +111,7 @@ class HabitCardListView(
 
 
     init {
+        id = R.id.habitCardList
         setHasFixedSize(true)
         isLongClickable = true
         layoutManager = LinearLayoutManager(context)

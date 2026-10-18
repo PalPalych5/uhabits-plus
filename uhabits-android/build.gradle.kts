@@ -102,6 +102,11 @@ android {
             matchingFallbacks += listOf("release")
             isDebuggable = false
             applicationIdSuffix = ".benchmark"
+            // Generation needs unobfuscated signatures; performance QA keeps release R8.
+            val profileGeneration = providers.gradleProperty("benchmarkProfileGeneration")
+                .map { it.toBooleanStrict() }.getOrElse(false)
+            isMinifyEnabled = !profileGeneration
+            resValue("bool", "benchmark_profile_generation", profileGeneration.toString())
         }
 
         debug {
@@ -138,6 +143,7 @@ mokkery {
 }
 
 dependencies {
+    "benchmarkImplementation"(libs.profileinstaller)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(libs.appIntro)
     implementation(libs.jsr305)

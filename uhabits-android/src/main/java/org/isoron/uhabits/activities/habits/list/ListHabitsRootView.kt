@@ -118,6 +118,8 @@ class ListHabitsRootView(
             addBelow(listView, header, height = MATCH_PARENT) {
                 it.topMargin = dp(3f).toInt()
             }
+            // addBelow assigns a generated ID; retain the list's stable resource identity afterward.
+            listView.id = R.id.habitCardList
             addBelow(llEmpty, header, height = MATCH_PARENT) {
                 it.topMargin = dp(3f).toInt()
             }

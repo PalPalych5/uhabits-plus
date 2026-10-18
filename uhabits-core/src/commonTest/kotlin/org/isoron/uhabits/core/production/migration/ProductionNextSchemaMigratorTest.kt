@@ -38,6 +38,31 @@ import kotlin.test.assertTrue
 class ProductionNextSchemaMigratorTest {
 
     @Test
+    fun freshEmptySchemaSupportsSyntheticExperimentalIdentityWithoutSnapshot() = runTest {
+        val db = org.isoron.platform.io.TestDatabaseHelper.createEmptyDatabase()
+        try {
+            assertEquals(29, db.getVersion())
+            assertEquals(0L, db.queryLong("SELECT COUNT(*) FROM Habits"))
+            // The shipped empty v29 schema includes built-in legacy blocks.
+            // Preserve those through migration; the marked synthetic generator replaces them later.
+            val defaultBlocks = db.queryLong("SELECT COUNT(*) FROM HabitBlocks")
+            assertEquals(0L, db.queryLong("SELECT COUNT(*) FROM Repetitions"))
+            assertIs<ProductionNextMigrationResult.Success>(ProductionNextSchemaMigrator.migrate(
+                db, 1791676800000L, datasetUuid = "benchmark-synthetic-v1"))
+            db.run("UPDATE OrganizationState SET mode = 'CONTAINER_LOCAL' WHERE id = 1")
+            assertEquals(30, db.getVersion())
+            assertEquals("benchmark-synthetic-v1", db.queryString("SELECT dataset_uuid FROM OrganizationState"))
+            assertEquals("CONTAINER_LOCAL", db.queryString("SELECT mode FROM OrganizationState"))
+            assertEquals(1L, db.queryLong("SELECT COUNT(*) FROM OrganizationChanges"))
+            assertEquals(defaultBlocks, db.queryLong("SELECT COUNT(*) FROM Containers"))
+            assertEquals(0L, db.queryLong("SELECT COUNT(*) FROM Habits"))
+            assertEquals(0L, db.queryLong("SELECT COUNT(*) FROM UserTasks"))
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
     fun migratesV29ToV30Successfully() = runTest {
         val db = SemanticMigrationFixtures.createAndSeedV29Database()
         try {

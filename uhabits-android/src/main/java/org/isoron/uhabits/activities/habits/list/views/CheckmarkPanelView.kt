@@ -23,6 +23,7 @@ import android.content.Context
 import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
+import org.isoron.uhabits.R
 import org.isoron.uhabits.core.models.Entry.Companion.UNKNOWN
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.inject.ActivityContext
@@ -82,6 +83,7 @@ class CheckmarkPanelView(
 
         buttons.forEachIndexed { index, button ->
             val date = today.minus(index + dataOffset)
+            button.id = if (index + dataOffset == 0) R.id.habitCheckmarkToday else R.id.habitCheckmark
             button.value = when {
                 index + dataOffset < values.size -> values[index + dataOffset]
                 else -> UNKNOWN
