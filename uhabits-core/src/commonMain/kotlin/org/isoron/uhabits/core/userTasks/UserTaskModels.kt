@@ -79,10 +79,16 @@ fun LocalDate.toIsoDateString(): String {
 
 fun parseIsoDateString(str: String?): LocalDate? {
     if (str.isNullOrBlank()) return null
-    val parts = str.split("-")
-    if (parts.size != 3) return null
-    val y = parts[0].toIntOrNull() ?: return null
-    val m = parts[1].toIntOrNull() ?: return null
-    val d = parts[2].toIntOrNull() ?: return null
+    val firstDash = str.indexOf('-')
+    if (firstDash <= 0) return null
+    val secondDash = str.indexOf('-', firstDash + 1)
+    if (secondDash <= firstDash + 1 || secondDash >= str.length - 1) return null
+
+    // Keep the original toIntOrNull contract (including + signs and overflow),
+    // while avoiding split's list allocation. LocalDate normalization is intentional.
+    val y = str.substring(0, firstDash).toIntOrNull() ?: return null
+    val m = str.substring(firstDash + 1, secondDash).toIntOrNull() ?: return null
+    if (str.indexOf('-', secondDash + 1) >= 0) return null
+    val d = str.substring(secondDash + 1).toIntOrNull() ?: return null
     return LocalDate(y, m, d)
 }

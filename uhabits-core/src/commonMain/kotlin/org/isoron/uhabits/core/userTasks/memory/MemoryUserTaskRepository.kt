@@ -43,6 +43,10 @@ class MemoryUserTaskRepository : UserTaskRepository {
         .filter { it.parentTaskId == parentTaskId }
         .sortedBy { it.sortOrder }
 
+    override fun getMaxSortOrder(parentTaskId: TaskId?): Int? = tasks.values
+        .filter { it.parentTaskId == parentTaskId }
+        .maxOfOrNull { it.sortOrder }
+
     override fun save(task: UserTask) {
         tasks[task.id] = task
     }

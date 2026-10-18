@@ -67,7 +67,8 @@ object SettingsIconRegistry {
     val allowedSemanticRepeats: Set<Set<String>> = setOf(
         setOf("pref_midnight_delay", "pomodoroExactAlarm"),
         setOf("pref_pomodoro_default_focus_minutes", "pref_pomodoro_focus_alert"),
-        setOf("pref_pomodoro_default_break_minutes", "pref_pomodoro_break_alert")
+        setOf("pref_pomodoro_default_break_minutes", "pref_pomodoro_break_alert"),
+        setOf("syncReview", "pref_production_cutover", "pref_production_cutover_dev")
     )
 
     @DrawableRes

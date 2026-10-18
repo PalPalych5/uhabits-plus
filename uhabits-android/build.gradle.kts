@@ -40,13 +40,25 @@ kotlin {
     jvmToolchain(17)
 }
 
+val prepareAndroidCoreAssets by tasks.registering(Sync::class) {
+    from("../uhabits-core/assets/main") {
+        // Android uses platform fonts and its own root FontAwesome asset.
+        exclude(
+            "fonts/FontAwesome.ttf",
+            "fonts/NotoSans-Bold.ttf",
+            "fonts/NotoSans-Regular.ttf",
+        )
+    }
+    into(layout.buildDirectory.dir("generated/coreAssets"))
+}
+
 android {
     namespace = "org.isoron.uhabits"
     compileSdk = 36
 
     sourceSets {
         getByName("main") {
-            assets.srcDirs("src/main/assets", "../uhabits-core/assets/main")
+            assets.srcDirs("src/main/assets", prepareAndroidCoreAssets)
         }
     }
 
@@ -100,6 +112,10 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
+}
+
+tasks.named("preBuild") {
+    dependsOn(prepareAndroidCoreAssets)
 }
 
 mokkery {

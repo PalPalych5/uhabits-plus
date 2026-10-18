@@ -18,14 +18,18 @@ internal class TasksWorkspaceSnapshot private constructor(
     val availableContainers: List<OrganizationalItem>,
     val pendingCounts: Map<ContainerId, Int>,
 ) {
+    // Only the selected subtree is needed by rendering. Retaining every transitive
+    // closure takes quadratic space for a chain of containers.
     fun scope(id: ContainerId): Set<ContainerId> {
         if (id !in containers) return emptySet()
-        val result = mutableSetOf<ContainerId>()
-        fun visit(current: ContainerId) {
-            if (!result.add(current)) return
-            children[current].orEmpty().forEach { visit(it.id) }
+        val result = linkedSetOf<ContainerId>()
+        val pending = ArrayDeque<ContainerId>()
+        pending.addLast(id)
+        while (pending.isNotEmpty()) {
+            val current = pending.removeLast()
+            if (!result.add(current)) continue
+            children[current].orEmpty().asReversed().forEach { pending.addLast(it.id) }
         }
-        visit(id)
         return result
     }
 
@@ -34,12 +38,14 @@ internal class TasksWorkspaceSnapshot private constructor(
             val containers = if (queries is OrganizationStore) queries.getAllContainers(includeDeleted = true) else {
                 val result = mutableListOf<Container>()
                 val seen = mutableSetOf<ContainerId>()
-                fun visit(container: Container) {
-                    if (!seen.add(container.id)) return
+                val pending = ArrayDeque<Container>()
+                queries?.roots()?.asReversed()?.forEach(pending::addLast)
+                while (pending.isNotEmpty()) {
+                    val container = pending.removeLast()
+                    if (!seen.add(container.id)) continue
                     result.add(container)
-                    queries?.children(container.id)?.forEach(::visit)
+                    queries?.children(container.id)?.asReversed()?.forEach(pending::addLast)
                 }
-                queries?.roots()?.forEach(::visit)
                 result
             }
             return build(tasks.getAll(), containers)
@@ -51,30 +57,47 @@ internal class TasksWorkspaceSnapshot private constructor(
             for (task in tasks) {
                 val parent = task.parentTaskId ?: continue
                 val old = counts[parent] ?: (0 to 0)
-                counts[parent] = (old.first + if (task.isCompleted) 1 else 0) to old.second + 1
+                counts[parent] = (old.first + if (task.isCompleted) 1 else 0) to (old.second + 1)
             }
+
             val rawChildren = allContainers.groupBy { it.parentId }
                 .mapValues { (_, values) -> values.sortedWith(compareBy<Container> { it.siblingOrder }.thenBy { it.id.value }) }
             val active = linkedMapOf<ContainerId, Container>()
             val available = mutableListOf<OrganizationalItem>()
             val children = mutableMapOf<ContainerId?, MutableList<Container>>()
-            val directCounts = roots.filter { !it.isCompleted && it.containerId != null }.groupingBy { it.containerId!! }.eachCount()
+            val directCounts = roots.filter { !it.isCompleted && it.containerId != null }
+                .groupingBy { it.containerId!! }.eachCount()
             val pending = mutableMapOf<ContainerId, Int>()
-            fun visit(container: Container, path: String): Int {
-                if (container.isArchived || container.deletedAt != null || container.id in active) return 0
+
+            val stack = ArrayDeque<Pair<Container, String>>()
+            rawChildren[null].orEmpty().asReversed().forEach { stack.addLast(it to "") }
+            while (stack.isNotEmpty()) {
+                val (container, path) = stack.removeLast()
+                if (container.isArchived || container.deletedAt != null || container.id in active) continue
                 active[container.id] = container
                 children.getOrPut(container.parentId) { mutableListOf() }.add(container)
                 val currentPath = if (path.isEmpty()) container.name else "$path / ${container.name}"
                 available.add(OrganizationalItem(container.id.value, container.name, container.color, container.icon,
                     currentPath, container.parentId == null))
-                var count = directCounts[container.id] ?: 0
-                rawChildren[container.id].orEmpty().forEach { count += visit(it, currentPath) }
-                pending[container.id] = count
-                return count
+                pending[container.id] = directCounts[container.id] ?: 0
+                rawChildren[container.id].orEmpty().asReversed().forEach { stack.addLast(it to currentPath) }
             }
-            rawChildren[null].orEmpty().forEach { visit(it, "") }
-            return TasksWorkspaceSnapshot(roots.toList(), counts.toMap(), active.toMap(),
-                children.mapValues { it.value.toList() }, available.toList(), pending.toMap())
+            // Reverse preorder visits each child before its parent, without recursion.
+            for (container in active.values.toList().asReversed()) {
+                val parent = container.parentId ?: continue
+                pending[parent] = (pending[parent] ?: 0) + pending.getValue(container.id)
+            }
+
+            val immutableChildren = children.mapValues { it.value.toList() }
+
+            return TasksWorkspaceSnapshot(
+                roots = roots,
+                subtaskCounts = counts,
+                containers = active,
+                children = immutableChildren,
+                availableContainers = available,
+                pendingCounts = pending,
+            )
         }
     }
 }

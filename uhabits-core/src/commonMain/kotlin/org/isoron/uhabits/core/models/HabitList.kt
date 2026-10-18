@@ -219,6 +219,9 @@ abstract class HabitList : Iterable<Habit> {
         listHabit.recompute()
     }
 
+    /** Entry-only mutation; implementations must preserve membership, order and listener delivery. */
+    open fun onEntriesChanged() = resort()
+
     abstract fun resort()
     open fun getBlocks(): List<HabitBlock> = emptyList()
     open var globalStatisticsStartDate: LocalDate? = null
@@ -234,5 +237,14 @@ abstract class HabitList : Iterable<Habit> {
         BY_POSITION,
         BY_SPHERE,
         BY_DAY_TIER
+    }
+
+    companion object {
+        val ENTRY_DEPENDENT_ORDERS = setOf(
+            Order.BY_SCORE_ASC,
+            Order.BY_SCORE_DESC,
+            Order.BY_STATUS_ASC,
+            Order.BY_STATUS_DESC
+        )
     }
 }

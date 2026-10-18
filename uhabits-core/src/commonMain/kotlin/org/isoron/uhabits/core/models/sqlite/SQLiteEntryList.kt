@@ -107,6 +107,11 @@ class SQLiteEntryList(
         return super.getKnown()
     }
 
+    override fun getEarliestDate(): LocalDate? {
+        loadRecords()
+        return super.getEarliestDate()
+    }
+
     override fun recomputeFrom(
         originalEntries: EntryList,
         frequency: Frequency,

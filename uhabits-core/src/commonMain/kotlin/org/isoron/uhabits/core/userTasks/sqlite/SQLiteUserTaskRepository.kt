@@ -23,6 +23,7 @@ import org.isoron.platform.io.Database
 import org.isoron.platform.io.PreparedStatement
 import org.isoron.platform.io.StepResult
 import org.isoron.platform.io.run
+import org.isoron.platform.io.runInTransaction
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.TaskStatus
@@ -113,6 +114,27 @@ class SQLiteUserTaskRepository(
         }
     }
 
+    override fun getMaxSortOrder(parentTaskId: TaskId?): Int? {
+        val sql = if (parentTaskId == null) {
+            "SELECT MAX(sort_order) FROM UserTasks WHERE parent_task_id IS NULL"
+        } else {
+            "SELECT MAX(sort_order) FROM UserTasks WHERE parent_task_id = ?"
+        }
+        val stmt = db.prepareStatement(sql)
+        return try {
+            if (parentTaskId != null) {
+                stmt.bindText(1, parentTaskId.value)
+            }
+            if (stmt.step() == StepResult.ROW) {
+                stmt.getIntOrNull(0)
+            } else {
+                null
+            }
+        } finally {
+            stmt.finalize()
+        }
+    }
+
     override fun save(task: UserTask) {
         val stmt = db.prepareStatement(
             """
@@ -141,10 +163,12 @@ class SQLiteUserTaskRepository(
             """.trimIndent()
         )
         try {
-            for (task in tasks) {
-                stmt.reset()
-                bindTask(stmt, task)
-                stmt.step()
+            db.runInTransaction {
+                for (task in tasks) {
+                    stmt.reset()
+                    bindTask(stmt, task)
+                    stmt.step()
+                }
             }
         } finally {
             stmt.finalize()

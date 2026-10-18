@@ -27,6 +27,7 @@ interface UserTaskRepository {
     fun getRoots(): List<UserTask>
     fun getByContainer(containerId: ContainerId): List<UserTask>
     fun getSubtasks(parentTaskId: TaskId): List<UserTask>
+    fun getMaxSortOrder(parentTaskId: TaskId?): Int?
     fun save(task: UserTask)
     fun saveAll(tasks: Collection<UserTask>)
     fun delete(id: TaskId)

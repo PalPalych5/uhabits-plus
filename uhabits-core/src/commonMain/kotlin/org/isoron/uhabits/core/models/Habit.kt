@@ -95,13 +95,31 @@ data class Habit(
                     unit = unit
                 )
             )
-        } else if (goalHistory.size == 1) {
-            goalHistory[0] = goalHistory[0].copy(
-                frequency = frequency,
-                targetType = targetType,
-                targetValue = targetValue,
-                unit = unit
-            )
+            return goalHistory
+        }
+        if (goalHistory.size == 1) {
+            val current = goalHistory[0]
+            if (current.frequency != frequency || current.targetType != targetType ||
+                current.targetValue != targetValue || current.unit != unit
+            ) {
+                goalHistory[0] = current.copy(
+                    frequency = frequency,
+                    targetType = targetType,
+                    targetValue = targetValue,
+                    unit = unit
+                )
+            }
+            return goalHistory
+        }
+        var isStrictlySorted = true
+        for (i in 0 until goalHistory.size - 1) {
+            if (!goalHistory[i].effectiveDate.isOlderThan(goalHistory[i + 1].effectiveDate)) {
+                isStrictlySorted = false
+                break
+            }
+        }
+        if (isStrictlySorted) {
+            return goalHistory
         }
         val sorted = goalHistory.sortedBy { it.effectiveDate }
         val deduped = sorted.fold(mutableListOf<HabitGoal>()) { acc, goal ->
@@ -116,6 +134,15 @@ data class Habit(
     }
 
     fun goalAt(date: LocalDate): HabitGoal {
+        if (goalHistory.size == 1) {
+            val single = goalHistory[0]
+            if (single.frequency == frequency && single.targetType == targetType &&
+                single.targetValue == targetValue && single.unit == unit &&
+                !single.effectiveDate.isNewerThan(date)
+            ) {
+                return single
+            }
+        }
         val history = normalizedGoalHistory()
         return history.lastOrNull { !it.effectiveDate.isNewerThan(date) } ?: history.first()
     }

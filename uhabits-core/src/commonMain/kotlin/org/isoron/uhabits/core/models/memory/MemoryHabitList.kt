@@ -194,6 +194,48 @@ open class MemoryHabitList : HabitList {
     @Synchronized
     @Throws(IllegalArgumentException::class)
     override fun add(habit: Habit) {
+        append(habit)
+        resort()
+    }
+
+    /**
+     * SQLite-owned, callback-free hydration sequence. Existing filtered children
+     * must keep observing each sorted prefix during reload. An unobserved empty
+     * list can defer sorting until every hydrated habit has been appended. The
+     * SQLite owner serializes hydration and subscriptions; do not hold this
+     * list's monitor while advancing the sequence's database reads/recompute.
+     */
+    internal fun addAllForHydration(habits: Sequence<Habit>) {
+        if (!canDeferHydration()) {
+            habits.forEach { add(it) }
+            return
+        }
+        try {
+            habits.forEach { append(it) }
+        } catch (failure: Throwable) {
+            // Preserve the baseline's usable sorted prefix after a failed read,
+            // without replacing the original hydration error with a sort error.
+            try { finishHydration() } catch (sortFailure: Throwable) { failure.addSuppressed(sortFailure) }
+            throw failure
+        }
+        finishHydration()
+    }
+
+    @Synchronized
+    private fun canDeferHydration(): Boolean {
+        throwIfHasParent()
+        if (observable.listenerCount != 0) return false
+        if (list.isNotEmpty()) return false
+        return true
+    }
+
+    @Synchronized
+    private fun finishHydration() {
+        if (list.isNotEmpty()) resort()
+    }
+
+    @Synchronized
+    private fun append(habit: Habit) {
         throwIfHasParent()
         require(!list.contains(habit)) { "habit already added" }
         val id = habit.id
@@ -201,7 +243,6 @@ open class MemoryHabitList : HabitList {
         if (id == null) habit.id = list.size.toLong()
         habit.globalStatisticsStartDate = globalStatisticsStartDate
         list.add(habit)
-        resort()
     }
 
     @Synchronized
@@ -379,6 +420,19 @@ open class MemoryHabitList : HabitList {
                 resort()
             }
         } finally { org.isoron.uhabits.core.io.HabitResortDiagnostics.end(diagnostic) }
+    }
+
+    @Synchronized
+    override fun onEntriesChanged() {
+        // Entries cannot change position, metadata or organization keys. Both
+        // orders matter: entry-sensitive secondary keys can reorder tied habits.
+        if (parent != null || primaryOrder in ENTRY_DEPENDENT_ORDERS || secondaryOrder in ENTRY_DEPENDENT_ORDERS) {
+            resort()
+        } else {
+            // Keep the existing propagation: children rebuild membership and
+            // independently ordered children still run their own comparators.
+            org.isoron.uhabits.core.io.HabitResortDiagnostics.measure("memory.notify", this) { observable.notifyListeners() }
+        }
     }
 
     @Synchronized

@@ -28,13 +28,39 @@ data class TaskCalendarEvent(val task: UserTask, val day: LocalDate, val kind: T
 
 /** Two independent events; a task with both dates is deliberately represented twice. */
 object TaskCalendarEvents {
-    fun from(tasks: List<UserTask>): List<TaskCalendarEvent> = tasks.flatMap { task ->
-        buildList {
-            task.plannedDate?.let { add(TaskCalendarEvent(task, it, TaskCalendarEventKind.PLAN)) }
-            task.deadline?.let { timestamp ->
-                val date = Calendar.getInstance().apply { timeInMillis = timestamp }
-                add(TaskCalendarEvent(task, LocalDate(date.get(Calendar.YEAR), date.get(Calendar.MONTH) + 1, date.get(Calendar.DAY_OF_MONTH)), TaskCalendarEventKind.DEADLINE))
+    private val eventComparator = Comparator<TaskCalendarEvent> { a, b ->
+        val dayCmp = a.day.daysSince2000.compareTo(b.day.daysSince2000)
+        if (dayCmp != 0) {
+            dayCmp
+        } else {
+            val aDeadline = a.task.deadline ?: Long.MAX_VALUE
+            val bDeadline = b.task.deadline ?: Long.MAX_VALUE
+            aDeadline.compareTo(bDeadline)
+        }
+    }
+
+    fun from(tasks: List<UserTask>): List<TaskCalendarEvent> {
+        if (tasks.isEmpty()) return emptyList()
+        val result = ArrayList<TaskCalendarEvent>(tasks.size)
+        var cal: Calendar? = null
+        for (task in tasks) {
+            val plan = task.plannedDate
+            if (plan != null) {
+                result.add(TaskCalendarEvent(task, plan, TaskCalendarEventKind.PLAN))
+            }
+            val deadline = task.deadline
+            if (deadline != null) {
+                val c = cal ?: Calendar.getInstance().also { cal = it }
+                c.timeInMillis = deadline
+                val deadlineDate = LocalDate(
+                    c.get(Calendar.YEAR),
+                    c.get(Calendar.MONTH) + 1,
+                    c.get(Calendar.DAY_OF_MONTH)
+                )
+                result.add(TaskCalendarEvent(task, deadlineDate, TaskCalendarEventKind.DEADLINE))
             }
         }
-    }.sortedWith(compareBy<TaskCalendarEvent> { it.day.daysSince2000 }.thenBy { it.task.deadline ?: Long.MAX_VALUE })
+        result.sortWith(eventComparator)
+        return result
+    }
 }
