@@ -35,7 +35,8 @@ object DemoDataGenerator {
         val component = HabitsApplication.component
         val session = component.session
         val marker = File(context.filesDir, "$DISPOSABLE_MARKER-${session.datasetId}")
-        check(BuildConfig.DEBUG && session.isExperimental && !session.capabilities.syncEnabled &&
+        val isPermittedBuild = BuildConfig.DEBUG || BuildConfig.BUILD_TYPE == "benchmark"
+        check(isPermittedBuild && session.isExperimental && !session.capabilities.syncEnabled &&
             !session.capabilities.remoteCallsAllowed && marker.isFile &&
             marker.readText().trim() == session.databaseFilename &&
             component.sqlModelFactory === modelFactory && component.habitList === habitList &&

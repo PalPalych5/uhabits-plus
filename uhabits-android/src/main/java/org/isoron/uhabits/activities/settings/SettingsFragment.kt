@@ -246,7 +246,8 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             Log.d("SettingsFragment", "updating widgets")
             widgetUpdater!!.updateWidgets()
         }
-        AndroidBackupManager.dataChanged("org.isoron.uhabits.plus")
+        val pkg = context?.packageName ?: "org.isoron.uhabits.plus"
+        AndroidBackupManager.dataChanged(pkg)
         activity?.runOnUiThread {
             rebuildSettingsList()
         }
@@ -1624,7 +1625,7 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     private fun shareSyncDiagnostics(file: File) {
         val uri = FileProvider.getUriForFile(
             requireContext(),
-            "org.isoron.uhabits.plus",
+            requireContext().packageName,
             file
         )
         val intent = Intent(Intent.ACTION_SEND).apply {

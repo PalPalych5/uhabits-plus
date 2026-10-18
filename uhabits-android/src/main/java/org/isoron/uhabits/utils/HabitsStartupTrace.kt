@@ -16,7 +16,8 @@ object HabitsStartupTrace {
         private set
 
     fun install(context: Context) {
-        enabled = BuildConfig.DEBUG && (Build.MODEL.contains("sdk") || Build.MODEL.contains("Emulator")) &&
+        val isPermittedBuild = BuildConfig.DEBUG || BuildConfig.BUILD_TYPE == "benchmark"
+        enabled = isPermittedBuild && (Build.MODEL.contains("sdk") || Build.MODEL.contains("Emulator")) &&
             File(context.filesDir, MARKER).exists()
         HabitStartupTiming.observer = if (enabled) { stage, generation -> mark(stage, generation) } else null
     }
