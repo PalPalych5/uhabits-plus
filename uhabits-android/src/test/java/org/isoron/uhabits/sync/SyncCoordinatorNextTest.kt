@@ -181,7 +181,7 @@ class SyncCoordinatorNextTest {
         val contribRepo: SQLiteContributionRepository
     )
 
-    private fun setupDeviceEnvironment(
+    internal fun setupDeviceEnvironment(
         db: Database,
         backend: SyncBackend,
         deviceId: String,
