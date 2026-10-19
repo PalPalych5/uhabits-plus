@@ -4,6 +4,7 @@
     <string name="effective_read_incomplete">Учтён вклад фокуса; ручная история заполнена не полностью. Значения — нижние границы, оценка и серия недоступны. Редактирование меняет только ручное значение.</string>
     <string name="effective_read_quantity_unavailable">Это значение не поддерживается текущими графиками. Прогресс календарной цели и ручное редактирование доступны.</string>
     <string name="effective_read_summary">Учтён фокус · Подробнее</string>
-    <string name="effective_read_summary_unavailable">Часть графиков недоступна · Подробнее</string>
-    <string name="effective_read_summary_incomplete">Учтён фокус · Есть дни без записи · Подробнее</string>
+    <string name="effective_read_summary_unavailable">Часть графиков недоступна</string>
+    <string name="effective_read_summary_incomplete">Есть дни без записи</string>
+    <string name="habit_edit_history">Изменить записи</string>
 </resources>

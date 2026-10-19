@@ -43,6 +43,14 @@ class ShowHabitMenu(
 
     private fun performAction(itemId: Int): Boolean {
         when (itemId) {
+            R.id.action_edit_habit_history -> {
+                activity.editHistory()
+                return true
+            }
+            R.id.action_habit_progress_details -> {
+                activity.showProgressDetails()
+                return true
+            }
             R.id.action_edit_habit -> {
                 presenter.onEditHabit()
                 return true
@@ -100,6 +108,15 @@ class ShowHabitMenu(
         CompactPopupMenu.show(
             anchor = anchor,
             entries = listOf(
+                CompactPopupMenu.Entry.Item(
+                    id = R.id.action_edit_habit_history,
+                    title = activity.getString(R.string.habit_edit_history),
+                ),
+                CompactPopupMenu.Entry.Item(
+                    id = R.id.action_habit_progress_details,
+                    title = activity.getString(R.string.focus_credit_breakdown),
+                    visible = activity.hasProgressDetails,
+                ),
                 CompactPopupMenu.Entry.Item(
                     id = R.id.export,
                     title = activity.getString(R.string.export),

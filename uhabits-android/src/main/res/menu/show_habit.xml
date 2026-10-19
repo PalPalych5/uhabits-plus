@@ -35,6 +35,8 @@
         app:showAsAction="always"/>
 
     <item android:id="@+id/export" android:title="@string/export" android:visible="false" />
+    <item android:id="@+id/action_edit_habit_history" android:title="@string/habit_edit_history" android:visible="false" />
+    <item android:id="@+id/action_habit_progress_details" android:title="@string/focus_credit_breakdown" android:visible="false" />
     <item android:id="@+id/action_archive_habit" android:title="@string/archive" android:visible="false" />
     <item android:id="@+id/action_unarchive_habit" android:title="@string/unarchive" android:visible="false" />
     <item android:id="@+id/action_soft_reset_statistics" android:title="@string/start_statistics_over" android:visible="false" />

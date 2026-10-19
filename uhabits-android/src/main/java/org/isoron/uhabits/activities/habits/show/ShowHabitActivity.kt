@@ -205,6 +205,12 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
         return menu.onCreateOptionsMenu(m)
     }
 
+    fun editHistory() = presenter.historyCardPresenter.onClickEditButton()
+
+    val hasProgressDetails: Boolean get() = view.hasProgressDetails
+
+    fun showProgressDetails() = view.showProgressDetails()
+
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         if (item.itemId == android.R.id.home) {
             finish()

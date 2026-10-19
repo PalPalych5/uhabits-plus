@@ -48,17 +48,6 @@
             android:layout_height="wrap_content"
             android:paddingTop="8dp"
             android:textColor="?attr/contrast60" />
-        <TextView
-            android:id="@+id/focusBreakdown"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:minHeight="48dp"
-            android:gravity="center_vertical"
-            android:text="@string/focus_credit_breakdown"
-            android:textColor="?attr/contrast100"
-            android:background="?attr/selectableItemBackground"
-            android:clickable="true"
-            android:focusable="true" />
     </LinearLayout>
     <org.isoron.uhabits.activities.common.views.TargetChart
         android:id="@+id/targetChart"

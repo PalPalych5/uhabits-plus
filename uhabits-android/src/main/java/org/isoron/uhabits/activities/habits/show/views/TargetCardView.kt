@@ -38,28 +38,29 @@ import org.isoron.uhabits.utils.StyledResources
 class TargetCardView(context: Context, attrs: AttributeSet) : LinearLayout(context, attrs) {
     private val binding = ShowHabitTargetBinding.inflate(LayoutInflater.from(context), this)
     private val sres = StyledResources(context)
+    private var hasShortTermTargets = false
+    private var showBreakdown: (() -> Unit)? = null
+
+    val hasProgressDetails: Boolean get() = showBreakdown != null
+
+    fun showProgressDetails() = showBreakdown?.invoke()
 
     fun setFocusProgress(progress: FocusProgressPresentation?, unavailable: Boolean = false) {
         val visible = progress != null || unavailable
         binding.focusProgress.visibility = if (visible) View.VISIBLE else View.GONE
         binding.targetChart.visibility = if (visible) View.GONE else View.VISIBLE
+        visibility = if (visible || hasShortTermTargets) View.VISIBLE else View.GONE
+        showBreakdown = null
         if (!visible) return
         binding.title.setText(R.string.focus_credit_progress)
         if (progress == null) {
             binding.focusValue.setText(R.string.focus_credit_unavailable)
             binding.focusGoal.visibility = View.GONE
             binding.focusCoverage.visibility = View.GONE
-            binding.focusBreakdown.visibility = View.GONE
             return
         }
         binding.focusGoal.visibility = View.VISIBLE
-        binding.focusBreakdown.visibility = if (progress.total != null ||
-            progress.focus != 0L || progress.excludedFocus != 0L) View.VISIBLE else View.GONE
-        fun amount(value: Long) = HabitQuantityFormatter.format(value / 1000.0, progress.unit, progress.lowerBound).toString()
         val skipped = progress.status == HabitGoalStatus.SKIPPED || progress.status == HabitGoalStatus.EXCLUDED
-        val value = progress.total?.let(::amount) ?: resources.getString(
-            if (skipped) R.string.focus_credit_day_excluded else R.string.focus_credit_unknown
-        )
         val formatted = progress.total?.let { totalVal ->
             val amt = HabitQuantityFormatter.format(totalVal / 1000.0, progress.unit, progress.lowerBound)
             amt.toString()
@@ -71,7 +72,7 @@ class TargetCardView(context: Context, attrs: AttributeSet) : LinearLayout(conte
         binding.focusGoal.text = resources.getString(R.string.focus_credit_goal, target)
         binding.focusCoverage.visibility = if (skipped || progress.lowerBound) View.VISIBLE else View.GONE
         binding.focusCoverage.setText(if (skipped) R.string.focus_credit_skipped else R.string.focus_credit_incomplete)
-        binding.focusBreakdown.setOnClickListener {
+        if (progress.total != null || progress.focus != 0L || progress.excludedFocus != 0L) showBreakdown = {
             val exactFormat = NumberFormat.getNumberInstance().apply { maximumFractionDigits = 3 }
             fun exact(value: Long) = "${exactFormat.format(value / 1000.0)} ${progress.unit}"
             val message = buildString {
@@ -91,11 +92,15 @@ class TargetCardView(context: Context, attrs: AttributeSet) : LinearLayout(conte
     }
 
     fun setState(state: TargetCardState) {
+        showBreakdown = null
         binding.title.setText(R.string.target)
         val androidColor = state.theme.color(state.color).toInt()
-        binding.targetChart.setValues(state.values)
-        binding.targetChart.setTargets(state.targets)
-        binding.targetChart.setLabels(state.intervals.map { intervalToLabel(resources, it) })
+        // Presentation only: keep daily/weekly rows without changing goal calculations.
+        val indices = state.intervals.indices.filter { state.intervals[it] <= 7 }
+        hasShortTermTargets = indices.isNotEmpty()
+        binding.targetChart.setValues(indices.map { state.values[it] })
+        binding.targetChart.setTargets(indices.map { state.targets[it] })
+        binding.targetChart.setLabels(indices.map { intervalToLabel(resources, state.intervals[it]) })
         binding.title.setTextColor(sres.getColor(R.attr.contrast100))
         binding.targetChart.setColor(androidColor)
         postInvalidate()

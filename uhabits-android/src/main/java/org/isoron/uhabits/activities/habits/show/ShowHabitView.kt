@@ -42,13 +42,16 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
     private val binding = ShowHabitBinding.inflate(LayoutInflater.from(context))
     private var habitUnit: String = ""
     private var isTimerEnabled: Boolean = false
+    private var isNumerical: Boolean = false
 
     init {
         binding.toolbar.applyToolbarInsets()
+        binding.historyCard.findViewById<View>(R.id.edit).visibility = GONE
         addView(binding.root)
     }
 
     fun setState(data: ShowHabitState) {
+        isNumerical = data.isNumerical
         setupToolbar(
             binding.toolbar,
             title = data.title,
@@ -65,21 +68,21 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
         binding.frequencyCard.setState(data.frequency)
         binding.historyCard.setState(data.history)
         binding.historyCard.visibility = VISIBLE
-        binding.targetCard.visibility = if (data.isNumerical) VISIBLE else GONE
+        binding.targetCard.visibility = if (data.isNumerical && data.target.intervals.any { it <= 7 }) VISIBLE else GONE
         binding.barCard.setState(data.bar)
         binding.scoreCard.visibility = if (data.scoreUnavailable) GONE else VISIBLE
         binding.streakCard.visibility = if (data.streakUnavailable) GONE else VISIBLE
         binding.barCard.visibility = if (data.quantityUnavailable) GONE else VISIBLE
         binding.frequencyCard.visibility = if (data.quantityUnavailable) GONE else VISIBLE
         // Target's Long-based current-period row remains supported when legacy Int charts are gated.
-        binding.effectiveReadNotice.visibility = if (data.hasAutomaticQuantity || data.quantityUnavailable) VISIBLE else GONE
+        binding.effectiveReadNotice.visibility = if (data.hasIncompleteCoverage || data.quantityUnavailable) VISIBLE else GONE
         val provenance = when {
             data.quantityUnavailable -> org.isoron.uhabits.R.string.effective_read_quantity_unavailable
             data.hasIncompleteCoverage -> org.isoron.uhabits.R.string.effective_read_incomplete
             else -> org.isoron.uhabits.R.string.effective_read_provenance
         }
         binding.effectiveReadNotice.setText(when {
-            data.quantityUnavailable && !data.hasAutomaticQuantity -> R.string.effective_read_summary_unavailable
+            data.quantityUnavailable -> R.string.effective_read_summary_unavailable
             data.hasIncompleteCoverage -> R.string.effective_read_summary_incomplete
             else -> R.string.effective_read_summary
         })
@@ -102,6 +105,7 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
             binding.historyCard, binding.barCard, binding.frequencyCard).forEach { it.visibility = GONE }
         binding.effectiveReadNotice.visibility = VISIBLE
         binding.effectiveReadNotice.setText(org.isoron.uhabits.R.string.effective_read_unavailable)
+        binding.effectiveReadNotice.setOnClickListener(null)
     }
 
     fun setListener(presenter: ShowHabitPresenter) {
@@ -126,6 +130,12 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
 
     fun refreshTimerAlertHealth() = binding.timerCard.refreshAlertHealth()
 
-    fun setFocusProgress(progress: FocusProgressPresentation?, unavailable: Boolean = false) =
+    fun setFocusProgress(progress: FocusProgressPresentation?, unavailable: Boolean = false) {
         binding.targetCard.setFocusProgress(progress, unavailable)
+        if (!isNumerical) binding.targetCard.visibility = GONE
+    }
+
+    val hasProgressDetails: Boolean get() = binding.targetCard.hasProgressDetails && binding.targetCard.visibility == VISIBLE
+
+    fun showProgressDetails() = binding.targetCard.showProgressDetails()
 }
