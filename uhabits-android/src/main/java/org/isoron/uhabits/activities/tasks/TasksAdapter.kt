@@ -221,6 +221,11 @@ class TasksAdapter(
 
             val dates = SpannableStringBuilder()
             val spokenDates = mutableListOf<String>()
+            if (task.unsupportedPlannedDateRaw != null) {
+                val label = itemView.context.getString(R.string.task_planned_date_needs_repair)
+                dates.appendProperty(R.drawable.ic_cat_calendar, label, palette.onSurfaceVariant)
+                spokenDates.add(label)
+            }
             if (!task.isCompleted) {
                 task.plannedDate?.let { planned ->
                     val missed = task.isMissedPlan(today, nowMillis)

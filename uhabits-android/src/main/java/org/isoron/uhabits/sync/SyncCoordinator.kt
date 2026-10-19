@@ -1,6 +1,8 @@
 package org.isoron.uhabits.sync
 
 import me.tatarka.inject.annotations.Inject
+import org.isoron.uhabits.core.userTasks.normalizeTaskPlannedDateForSync
+import org.isoron.uhabits.core.userTasks.parseTaskPlannedDate
 import org.isoron.uhabits.core.database.EntryData
 import org.isoron.uhabits.core.database.HabitBlockData
 import org.isoron.uhabits.core.database.HabitData
@@ -474,7 +476,24 @@ class SyncCoordinator(
 
                 val bootstrapResult = ensureBootstrapSyncQueue()
 
-                val pending = modelFactory.syncQueueRepository.findPending()
+                val unresolvedTasks = mutableMapOf<String, Boolean>()
+                val pending = modelFactory.syncQueueRepository.findPending().mapNotNull { record ->
+                    if (record.entityType != "user_task" || record.operationType == "delete") record
+                    else if (unresolvedTasks.getOrPut(record.entityUuid) { hasUnsupportedTaskPlan(record.entityUuid) }) null
+                    else try {
+                        val payload = JSONObject(record.payloadJson)
+                        val raw = payload.optionalString("planned_date")
+                        val canonical = normalizeTaskPlannedDateForSync(raw)
+                        // Transport copy only: preserve queue identity/order and the stored retry payload.
+                        if (canonical == raw) record else record.copy(
+                            payloadJson = payload.put("planned_date", canonical ?: JSONObject.NULL).toString()
+                        )
+                    } catch (_: IllegalArgumentException) {
+                        null // Retain an older unreadable queued payload without blocking other tasks.
+                    } catch (_: IndexOutOfBoundsException) {
+                        null
+                    }
+                }
                 val pushed = backend.pushChanges(config, session, deviceIdProvider.value(), pending)
                 pushed.pushedQueueIds.forEach { queueId ->
                     modelFactory.syncQueueRepository.markPushed(queueId, System.currentTimeMillis())
@@ -505,7 +524,10 @@ class SyncCoordinator(
                     ", bootstrap_queued=${bootstrapResult.queuedRecords}, bootstrap_complete=${bootstrapResult.complete}, bootstrap_missing_goals_before=${bootstrapResult.missingGoalsBefore}"
                 )
                 if (skipped > 0) {
-                    details.append(", first_error=missing_parent_habit")
+                    val blockedTask = pulledForeignEvents.any {
+                        it.logId == firstSkippedLogId && it.entityType == "user_task"
+                    }
+                    details.append(if (blockedTask) ", first_error=unsupported_task_planned_date" else ", first_error=missing_parent_habit")
                 }
                 preferences.syncStatusDetail = details.toString()
 
@@ -1348,7 +1370,7 @@ class SyncCoordinator(
                         true
                     }
                     "habit_placement" -> applyHabitPlacement(event)
-                    "user_task" -> { applyUserTask(event); true }
+                    "user_task" -> applyUserTask(event)
                     "focus_session" -> { applyFocusSession(event); true }
                     "contribution" -> applyContribution(event)
                     "habit_goal" -> applyGoal(event)
@@ -1932,8 +1954,23 @@ class SyncCoordinator(
         return true
     }
 
-    private fun applyUserTask(event: RemoteSyncEvent) {
-        if (!isNextSchemaAvailable()) return
+    private fun hasUnsupportedTaskPlan(taskId: String): Boolean {
+        if (!isNextSchemaAvailable()) return true
+        val raw = modelFactory.database.querySingle("SELECT planned_date FROM UserTasks WHERE id = ?", taskId) {
+            it.getTextOrNull(0)
+        }
+        return try {
+            parseTaskPlannedDate(raw)
+            false
+        } catch (_: IllegalArgumentException) {
+            true
+        } catch (_: IndexOutOfBoundsException) {
+            true
+        }
+    }
+
+    private fun applyUserTask(event: RemoteSyncEvent): Boolean {
+        if (!isNextSchemaAvailable()) return true
         val taskId = event.entityUuid
         val existingUpdatedAt = modelFactory.database.querySingle(
             "SELECT updated_at FROM UserTasks WHERE id = ?",
@@ -1941,12 +1978,12 @@ class SyncCoordinator(
         ) { it.getLong(0) }
 
         if (existingUpdatedAt != null && event.createdAt < existingUpdatedAt) {
-            return
+            return true
         }
 
         if (event.operationType == "delete") {
             modelFactory.database.run("DELETE FROM UserTasks WHERE id = '$taskId'")
-            return
+            return true
         }
 
         val payload = JSONObject(event.payloadJson)
@@ -1954,13 +1991,17 @@ class SyncCoordinator(
         val description = payload.optString("description", "")
         val containerId = payload.optionalString("container_id")
         val status = payload.optString("status", "PENDING")
-        val plannedDate = payload.optionalString("planned_date")
+        val plannedDate = normalizeTaskPlannedDateForSync(
+            payload.optionalString("planned_date")
+        )
         val deadline = payload.optionalLong("deadline", event)
         val completedAt = payload.optionalLong("completed_at", event)
         val parentTaskId = payload.optionalString("parent_task_id")
         val sortOrder = payload.intOrDefault("sort_order", 0, event)
         val createdAt = payload.optionalLong("created_at", event) ?: event.createdAt
         val updatedAt = payload.optionalLong("updated_at", event) ?: event.createdAt
+        // A remote title-only/null upsert must not erase unresolved local raw data.
+        if (hasUnsupportedTaskPlan(taskId)) return false
 
         val stmt = modelFactory.database.prepareStatement(
             """INSERT OR REPLACE INTO UserTasks (
@@ -1982,6 +2023,7 @@ class SyncCoordinator(
         stmt.bindLong(12, updatedAt)
         stmt.step()
         stmt.finalize()
+        return true
     }
 
     private fun applyFocusSession(event: RemoteSyncEvent) {
@@ -2177,7 +2219,13 @@ class SyncCoordinator(
             val description = stmt.getText(2)
             val containerId = stmt.getTextOrNull(3)
             val status = stmt.getText(4)
-            val plannedDate = stmt.getTextOrNull(5)
+            val plannedDate = try {
+                normalizeTaskPlannedDateForSync(stmt.getTextOrNull(5))
+            } catch (_: IllegalArgumentException) {
+                return@query // Keep this raw row locally; bootstrap other tasks normally.
+            } catch (_: IndexOutOfBoundsException) {
+                return@query
+            }
             val deadline = stmt.getLongOrNull(6)
             val completedAt = stmt.getLongOrNull(7)
             val parentTaskId = stmt.getTextOrNull(8)

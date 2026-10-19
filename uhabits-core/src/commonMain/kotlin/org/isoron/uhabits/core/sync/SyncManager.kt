@@ -11,6 +11,7 @@ import org.isoron.uhabits.core.focus.FocusSession
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.userTasks.UserTask
+import org.isoron.uhabits.core.userTasks.toIsoDateString
 
 /**
  * Local sync foundation only. Future remote sync should apply:
@@ -266,6 +267,8 @@ class SyncManager(
     }
 
     fun enqueueUserTask(task: UserTask, operationType: String = "upsert") {
+        // Do not publish a false clear or an unreadable date. The task remains editable locally.
+        if (task.unsupportedPlannedDateRaw != null) return
         enqueue(
             "user_task",
             task.id.value,
@@ -276,7 +279,7 @@ class SyncManager(
                 "description" to task.description,
                 "container_id" to task.containerId?.value,
                 "status" to task.status.name,
-                "planned_date" to task.plannedDate?.unixTime?.toString(),
+                "planned_date" to task.plannedDate?.toIsoDateString(),
                 "deadline" to task.deadline?.toString(),
                 "completed_at" to task.completedAt?.toString(),
                 "parent_task_id" to task.parentTaskId?.value,

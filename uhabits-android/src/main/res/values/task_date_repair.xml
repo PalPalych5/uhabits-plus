@@ -1,0 +1,4 @@
+<resources>
+    <string name="task_planned_date_needs_repair">Check date · sync paused</string>
+    <string name="task_planned_date_repair_hint">Unsupported date: %1$s. Select a date or clear it. Changes stay on this device until the date is fixed.</string>
+</resources>

@@ -69,6 +69,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     private var currentTask: UserTask? = null
     private var selectedContainerId: ContainerId? = null
     private var selectedPlannedDate: LocalDate? = null
+    private var plannedDateEdited = false
     private var selectedDeadline: Long? = null
     private var isCompleted: Boolean = false
 
@@ -200,6 +201,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     override fun onStart() {
         super.onStart()
         TaskDatePicker.reconnect(childFragmentManager, "Плановая дата") { date ->
+            plannedDateEdited = true
             selectedPlannedDate = date
             updatePlannedDateDisplay()
             saveChanges()
@@ -358,9 +360,16 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun updatePlannedDateDisplay() {
+        rowPlannedDate.contentDescription = null
         val p = selectedPlannedDate
         tvPlannedDateValue.setTextColor(if (p == null) palette.onSurfaceVariant else palette.onSurface)
-        if (p == null) {
+        val unsupported = currentTask?.unsupportedPlannedDateRaw
+        if (unsupported != null && !plannedDateEdited) {
+            tvPlannedDateValue.setText(R.string.task_planned_date_needs_repair)
+            btnClearPlannedDate.visibility = View.VISIBLE
+            rowPlannedDate.contentDescription = getString(R.string.task_planned_date_repair_hint, unsupported)
+            return
+        } else if (p == null) {
             tvPlannedDateValue.text = "Запланировать"
             btnClearPlannedDate.visibility = View.GONE
         } else {
@@ -467,6 +476,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         }
 
         btnClearPlannedDate.setOnClickListener {
+            plannedDateEdited = true
             selectedPlannedDate = null
             updatePlannedDateDisplay()
             saveChanges()
@@ -533,16 +543,20 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     private fun showPlannedDatePicker() {
         val options = arrayOf("Сегодня", "Завтра", "Выбрать дату в календаре", "Очистить плановую дату")
         AlertDialog.Builder(requireContext())
-            .setTitle("Запланировать на")
+            .setTitle(currentTask?.unsupportedPlannedDateRaw?.let {
+                getString(R.string.task_planned_date_repair_hint, it.take(80))
+            } ?: "Запланировать на")
             .setItems(options) { _, which ->
                 val today = getToday()
                 when (which) {
                     0 -> {
+                        plannedDateEdited = true
                         selectedPlannedDate = today
                         updatePlannedDateDisplay()
                         saveChanges()
                     }
                     1 -> {
+                        plannedDateEdited = true
                         selectedPlannedDate = LocalDate(today.daysSince2000 + 1)
                         updatePlannedDateDisplay()
                         saveChanges()
@@ -550,12 +564,14 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                     2 -> {
                         val initial = selectedPlannedDate ?: today
                         showDatePicker(initial, "Плановая дата") { date ->
+                                plannedDateEdited = true
                                 selectedPlannedDate = date
                                 updatePlannedDateDisplay()
                                 saveChanges()
                         }
                     }
                     3 -> {
+                        plannedDateEdited = true
                         selectedPlannedDate = null
                         updatePlannedDateDisplay()
                         saveChanges()
@@ -632,7 +648,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         val newTitle = etTitle.text?.toString()?.trim()?.takeIf { it.isNotBlank() } ?: task.title
         val newDesc = etDescription.text?.toString()?.trim() ?: ""
 
-        val propertiesChanged = newTitle != task.title || newDesc != task.description ||
+        val propertiesChanged = plannedDateEdited || newTitle != task.title || newDesc != task.description ||
             selectedContainerId != task.containerId || selectedPlannedDate != task.plannedDate ||
             selectedDeadline != task.deadline
         if (!propertiesChanged && isCompleted == task.isCompleted) return
@@ -644,7 +660,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             containerId = selectedContainerId,
             clearContainer = selectedContainerId == null,
             plannedDate = selectedPlannedDate,
-            clearPlannedDate = selectedPlannedDate == null,
+            clearPlannedDate = plannedDateEdited && selectedPlannedDate == null,
             deadline = selectedDeadline,
             clearDeadline = selectedDeadline == null,
         )
@@ -654,6 +670,8 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         }
 
         currentTask = savedTask
+        plannedDateEdited = false
+        updatePlannedDateDisplay()
         onTaskUpdatedListener?.invoke()
     }
 

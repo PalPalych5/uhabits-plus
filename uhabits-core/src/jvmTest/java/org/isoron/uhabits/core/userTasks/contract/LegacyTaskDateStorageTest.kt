@@ -50,7 +50,7 @@ class LegacyTaskDateStorageTest {
             val plan = LegacyContainerMigrationPlanner.plan(RawLegacyInventoryReader.read(source), cutoverTimestamp = 1000000L)
             assertTrue(LegacyContainerMigrationExecutor.execute(source, plan) is MigrationExecutionResult.Success)
             UserTaskSchema.createSchema(source)
-            val plans = listOf(null, "2026-10-19", "2026-10-18", "1792368000000", "2026-02-30", "")
+            val plans = listOf(null, "2026-10-19", "2026-10-18", "1792368000000", "2026-02-30", "", "1792393200000")
             val deadlines = listOf(null, 1792368000000L, 1792432800000L, 1792432800123L)
             var index = 0
             for (plan in plans) for (deadline in deadlines) {
@@ -70,15 +70,25 @@ class LegacyTaskDateStorageTest {
                 assertEquals(original, rows(source))
                 assertEquals(source.getVersion(), target.getVersion())
             }
-            assertEquals(24, original.size)
+            assertEquals(28, original.size)
             val numericRawId = original.first { it.second == "1792368000000" }.first
-            assertNull("Current model cannot read preserved numeric plan text", SQLiteUserTaskRepository(target).getById(TaskId(numericRawId))!!.plannedDate)
+            val expectedPlan = org.isoron.platform.time.LocalDate(2026, 10, 19)
+            assertEquals(expectedPlan, SQLiteUserTaskRepository(target).getById(TaskId(numericRawId))!!.plannedDate)
             assertTrue(ContainerBackupService.createBackup(source, target, 3000000L) is BackupCreationResult.Success)
             repeat(2) {
                 assertTrue(ContainerRestoreService.restore(target, staging, destination) is RestoreResult.Success)
                 assertEquals(original, rows(destination))
                 assertEquals(original, rows(source))
+                assertEquals(expectedPlan, SQLiteUserTaskRepository(destination).getById(TaskId(numericRawId))!!.plannedDate)
             }
+            val restoredService = org.isoron.uhabits.core.userTasks.UserTaskServiceImpl(
+                SQLiteUserTaskRepository(destination), { 4000000L }, { error("No new task expected") })
+            val badId = TaskId(original.first { it.second == "1792393200000" }.first)
+            restoredService.updateTask(badId, title = "Unrelated edit after restore")
+            assertEquals("1792393200000", rows(destination).first { it.first == badId.value }.second)
+            restoredService.updateTask(TaskId(numericRawId), title = "Title edit after restore")
+            assertEquals("2026-10-19", rows(destination).first { it.first == numericRawId }.second)
+            assertEquals(expectedPlan, SQLiteUserTaskRepository(destination).getById(TaskId(numericRawId))!!.plannedDate)
         } finally { source.close(); target.close(); staging.close(); destination.close() }
     }
 

@@ -46,6 +46,8 @@ data class UserTask(
     val sortOrder: Int = 0,
     val createdAt: Long,
     val updatedAt: Long,
+    /** Read diagnostic only: preserves an unsupported SQLite planned_date until explicitly resolved. */
+    val unsupportedPlannedDateRaw: String? = null,
 ) {
     val isCompleted: Boolean get() = status == TaskStatus.COMPLETED
 

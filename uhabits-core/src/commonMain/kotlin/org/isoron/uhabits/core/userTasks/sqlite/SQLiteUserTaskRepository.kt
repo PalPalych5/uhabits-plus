@@ -29,7 +29,7 @@ import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.TaskStatus
 import org.isoron.uhabits.core.userTasks.UserTask
 import org.isoron.uhabits.core.userTasks.UserTaskRepository
-import org.isoron.uhabits.core.userTasks.parseIsoDateString
+import org.isoron.uhabits.core.userTasks.parseTaskPlannedDate
 import org.isoron.uhabits.core.userTasks.toIsoDateString
 
 class SQLiteUserTaskRepository(
@@ -205,7 +205,14 @@ class SQLiteUserTaskRepository(
         stmt.bindText(3, task.description)
         if (task.containerId != null) stmt.bindText(4, task.containerId.value) else stmt.bindNull(4)
         stmt.bindText(5, task.status.name)
-        if (task.plannedDate != null) stmt.bindText(6, task.plannedDate.toIsoDateString()) else stmt.bindNull(6)
+        when {
+            task.unsupportedPlannedDateRaw != null -> {
+                require(task.plannedDate == null) { "Resolve unsupported planned_date before assigning a date" }
+                stmt.bindText(6, task.unsupportedPlannedDateRaw)
+            }
+            task.plannedDate != null -> stmt.bindText(6, task.plannedDate.toIsoDateString())
+            else -> stmt.bindNull(6)
+        }
         if (task.deadline != null) stmt.bindLong(7, task.deadline) else stmt.bindNull(7)
         if (task.completedAt != null) stmt.bindLong(8, task.completedAt) else stmt.bindNull(8)
         if (task.parentTaskId != null) stmt.bindText(9, task.parentTaskId.value) else stmt.bindNull(9)
@@ -220,7 +227,17 @@ class SQLiteUserTaskRepository(
         val description = stmt.getText(2)
         val containerId = stmt.getTextOrNull(3)?.let { ContainerId(it) }
         val status = try { TaskStatus.valueOf(stmt.getText(4)) } catch (_: Throwable) { TaskStatus.PENDING }
-        val plannedDate = parseIsoDateString(stmt.getTextOrNull(5))
+        val rawPlan = stmt.getTextOrNull(5)
+        var unsupportedPlan: String? = null
+        val plannedDate = try {
+            parseTaskPlannedDate(rawPlan)
+        } catch (_: IllegalArgumentException) {
+            unsupportedPlan = rawPlan
+            null
+        } catch (_: IndexOutOfBoundsException) {
+            unsupportedPlan = rawPlan
+            null
+        }
         val deadline = stmt.getLongOrNull(6)
         val completedAt = stmt.getLongOrNull(7)
         val parentTaskId = stmt.getTextOrNull(8)?.let { TaskId(it) }
@@ -240,7 +257,8 @@ class SQLiteUserTaskRepository(
             parentTaskId = parentTaskId,
             sortOrder = sortOrder,
             createdAt = createdAt,
-            updatedAt = updatedAt
+            updatedAt = updatedAt,
+            unsupportedPlannedDateRaw = unsupportedPlan,
         )
     }
 }

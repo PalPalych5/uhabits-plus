@@ -128,6 +128,7 @@ class UserTaskServiceImpl(
             description = newDescription,
             containerId = newContainerId,
             plannedDate = newPlannedDate,
+            unsupportedPlannedDateRaw = if (clearPlannedDate || plannedDate != null) null else existing.unsupportedPlannedDateRaw,
             deadline = newDeadline,
             parentTaskId = newParentId,
             sortOrder = newSortOrder,
