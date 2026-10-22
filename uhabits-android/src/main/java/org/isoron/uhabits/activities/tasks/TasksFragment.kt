@@ -458,75 +458,29 @@ class TasksFragment : Fragment() {
             collapseComposer()
         }
 
-        quickDueView.setOnClickListener {
-            val options = mutableListOf("Сегодня", "Завтра", "Выбрать дату")
-            if (quickTaskDue !is TaskDue.None) {
-                options.add("Установить время")
-                options.add("Без срока")
-            }
-            AlertDialog.Builder(requireContext()).setItems(options.toTypedArray()) { _, choice ->
-                val today = getToday()
-                when (options[choice]) {
-                    "Сегодня" -> quickTaskDue = TaskDue.Day(TaskDueDate.from(today))
-                    "Завтра" -> {
-                        val t = LocalDate(today.daysSince2000 + 1)
-                        quickTaskDue = TaskDue.Day(TaskDueDate.from(t))
-                    }
-                    "Выбрать дату" -> {
-                        val initial = when (val d = quickTaskDue) {
-                            is TaskDue.Day -> d.date.toLocalDate()
-                            is TaskDue.Timed -> {
-                                val c = Calendar.getInstance().apply { timeInMillis = d.epochMillis }
-                                LocalDate(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
-                            }
-                            is TaskDue.None -> today
-                        }
-                        TaskDatePicker.show(childFragmentManager, initial, "Срок") { date ->
-                            if (isAdded) {
-                                quickTaskDue = TaskDue.Day(TaskDueDate.from(date))
-                                refreshOptionLabels()
-                            }
-                        }
-                    }
-                    "Установить время" -> {
-                        val initialMillis = when (val d = quickTaskDue) {
-                            is TaskDue.Timed -> d.epochMillis
-                            is TaskDue.Day -> {
-                                val ld = d.date.toLocalDate()
-                                val c = Calendar.getInstance()
-                                c.set(ld.year, ld.month - 1, ld.day, 12, 0, 0)
-                                c.timeInMillis
-                            }
-                            is TaskDue.None -> {
-                                val c = Calendar.getInstance()
-                                c.set(today.year, today.month - 1, today.day, 12, 0, 0)
-                                c.timeInMillis
-                            }
-                        }
-                        TaskDatePicker.showTime(requireContext(), initialMillis) { millis ->
-                            if (isAdded) {
-                                quickTaskDue = TaskDue.Timed.local(millis, java.util.TimeZone.getDefault().id)
-                                refreshOptionLabels()
-                            }
-                        }
-                    }
-                    "Без срока" -> quickTaskDue = TaskDue.None
-                }
-                refreshOptionLabels()
-            }.show()
-        }
-
-        quickContainerView.setOnClickListener {
-            val items = workspaceSnapshot?.availableContainers.orEmpty()
-            AlertDialog.Builder(requireContext()).setItems((listOf("Без раздела") + items.map { it.name }).toTypedArray()) { _, index ->
-                quickContainer = if (index == 0) null else ContainerId(items[index - 1].key)
-                refreshOptionLabels()
-            }.show()
-        }
-
-        TaskDatePicker.reconnect(childFragmentManager, "Срок") { date ->
-            quickTaskDue = TaskDue.Day(TaskDueDate.from(date))
+        childFragmentManager.setFragmentResultListener("quickDue", viewLifecycleOwner) { _, result ->
+            if (component !== HabitsApplication.component) return@setFragmentResultListener
+            quickTaskDue = TaskDuePickerBottomSheet.readResult(result)
+            quickDraftRestored = true
             refreshOptionLabels()
+        }
+        childFragmentManager.setFragmentResultListener("quickContainer", viewLifecycleOwner) { _, result ->
+            if (component !== HabitsApplication.component) return@setFragmentResultListener
+            quickContainer = result.getString(TaskContainerPickerBottomSheet.RESULT_CONTAINER_ID)?.let(::ContainerId)
+            quickDraftRestored = true
+            refreshOptionLabels()
+        }
+        quickDueView.setOnClickListener {
+            if (childFragmentManager.findFragmentByTag("quickDue") == null) {
+                TaskDuePickerBottomSheet.newInstance("quickDue", quickTaskDue)
+                    .show(childFragmentManager, "quickDue")
+            }
+        }
+        quickContainerView.setOnClickListener {
+            if (childFragmentManager.findFragmentByTag("quickContainer") == null) {
+                TaskContainerPickerBottomSheet.newInstance(quickContainer, "quickContainer", component.session.datasetId)
+                    .show(childFragmentManager, "quickContainer")
+            }
         }
 
         fun submitQuickAdd() {

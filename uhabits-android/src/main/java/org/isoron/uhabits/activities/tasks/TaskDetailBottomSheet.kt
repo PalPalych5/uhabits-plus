@@ -45,7 +45,6 @@ import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetBehavior
-import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
@@ -57,9 +56,7 @@ import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.UserTask
 import org.isoron.uhabits.core.userTasks.UserTaskService
 import org.isoron.uhabits.core.userTasks.due.TaskDue
-import org.isoron.uhabits.core.userTasks.due.TaskDueDate
 import java.text.DateFormat
-import java.util.Calendar
 import java.util.Date
 
 class TaskDetailBottomSheet : BottomSheetDialogFragment() {
@@ -146,6 +143,19 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         }
         setupListeners()
         viewReady = true
+        childFragmentManager.setFragmentResultListener("detailDue", viewLifecycleOwner) { _, result ->
+            if (taskDeleted || HabitsApplication.component !== launchComponent) return@setFragmentResultListener
+            selectedDue = TaskDuePickerBottomSheet.readResult(result)
+            updateDueDisplay()
+            saveChanges(forceDue = result.getBoolean(TaskDuePickerBottomSheet.RESULT_EDITED))
+        }
+        childFragmentManager.setFragmentResultListener("detailContainer", viewLifecycleOwner) { _, result ->
+            if (taskDeleted || HabitsApplication.component !== launchComponent) return@setFragmentResultListener
+            selectedContainerId = result.getString(TaskContainerPickerBottomSheet.RESULT_CONTAINER_ID)?.let(::ContainerId)
+            updateContainerDisplay()
+            saveChanges()
+        }
+
         view.findViewById<View>(R.id.rowDetailFocus).apply {
             visibility = if (launchComponent.session.isNextArchitecture && currentTask != null) View.VISIBLE else View.GONE
             setOnClickListener {
@@ -201,11 +211,6 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
     override fun onStart() {
         super.onStart()
-        TaskDatePicker.reconnect(childFragmentManager, "Срок") { date ->
-            selectedDue = TaskDue.Day(TaskDueDate.from(date))
-            updateDueDisplay()
-            saveChanges()
-        }
         (dialog as? BottomSheetDialog)?.let { sheet ->
             sheet.dismissWithAnimation = true
             sheet.behavior.skipCollapsed = true
@@ -486,7 +491,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         btnClearDue.setOnClickListener {
             selectedDue = TaskDue.None
             updateDueDisplay()
-            saveChanges()
+            saveChanges(forceDue = true)
         }
 
         btnAcceptLegacyPlan.setOnClickListener {
@@ -545,104 +550,20 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun showContainerPicker() {
-        val containers = organizationFacade.availableContainers()
-        val items = mutableListOf("Без раздела")
-        items.addAll(containers.map { it.name })
-
-        AlertDialog.Builder(requireContext())
-            .setTitle("Выберите раздел")
-            .setItems(items.toTypedArray()) { _, which ->
-                if (which == 0) {
-                    selectedContainerId = null
-                } else {
-                    selectedContainerId = ContainerId(containers[which - 1].key)
-                }
-                updateContainerDisplay()
-                saveChanges()
-            }
-            .show()
+        if (childFragmentManager.findFragmentByTag("detailContainer") == null) {
+            TaskContainerPickerBottomSheet.newInstance(selectedContainerId, "detailContainer", launchComponent.session.datasetId)
+                .show(childFragmentManager, "detailContainer")
+        }
     }
 
     private fun showDuePicker() {
-        val options = mutableListOf("Сегодня", "Завтра", "Выбрать дату в календаре")
-        if (selectedDue !is TaskDue.None) {
-            options.add(if (selectedDue is TaskDue.Timed) "Изменить время" else "Установить точное время")
-            options.add("Без срока (очистить)")
-        }
-        AlertDialog.Builder(requireContext())
-            .setTitle("Срок задачи")
-            .setItems(options.toTypedArray()) { _, which ->
-                val today = getToday()
-                when (options[which]) {
-                    "Сегодня" -> {
-                        selectedDue = TaskDue.Day(TaskDueDate.from(today))
-                        updateDueDisplay()
-                        saveChanges()
-                    }
-                    "Завтра" -> {
-                        val tomorrow = LocalDate(today.daysSince2000 + 1)
-                        selectedDue = TaskDue.Day(TaskDueDate.from(tomorrow))
-                        updateDueDisplay()
-                        saveChanges()
-                    }
-                    "Выбрать дату в календаре" -> {
-                        val initial = when (val d = selectedDue) {
-                            is TaskDue.Day -> d.date.toLocalDate()
-                            is TaskDue.Timed -> {
-                                val c = Calendar.getInstance().apply { timeInMillis = d.epochMillis }
-                                LocalDate(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
-                            }
-                            is TaskDue.None -> today
-                        }
-                        showDatePicker(initial, "Срок") { date ->
-                            selectedDue = TaskDue.Day(TaskDueDate.from(date))
-                            updateDueDisplay()
-                            saveChanges()
-                        }
-                    }
-                    "Установить точное время", "Изменить время" -> {
-                        val initialMillis = when (val d = selectedDue) {
-                            is TaskDue.Timed -> d.epochMillis
-                            is TaskDue.Day -> {
-                                val ld = d.date.toLocalDate()
-                                val c = Calendar.getInstance()
-                                c.set(ld.year, ld.month - 1, ld.day, 12, 0, 0)
-                                c.timeInMillis
-                            }
-                            is TaskDue.None -> {
-                                val c = Calendar.getInstance()
-                                c.set(today.year, today.month - 1, today.day, 12, 0, 0)
-                                c.timeInMillis
-                            }
-                        }
-                        TaskDatePicker.showTime(requireContext(), initialMillis) { millis ->
-                            if (isAdded && !taskDeleted &&
-                                (requireContext().applicationContext as HabitsApplication).component === launchComponent) {
-                                selectedDue = TaskDue.Timed.local(millis, java.util.TimeZone.getDefault().id)
-                                updateDueDisplay()
-                                saveChanges()
-                            }
-                        }
-                    }
-                    "Без срока (очистить)" -> {
-                        selectedDue = TaskDue.None
-                        updateDueDisplay()
-                        saveChanges()
-                    }
-                }
-            }
-            .show()
-    }
-
-    private fun showDatePicker(initial: LocalDate, title: String, apply: (LocalDate) -> Unit) {
-        TaskDatePicker.show(childFragmentManager, initial, title) { date ->
-            if (!isAdded || taskDeleted || (requireContext().applicationContext as HabitsApplication).component !== launchComponent)
-                return@show
-            apply(date)
+        if (childFragmentManager.findFragmentByTag("detailDue") == null) {
+            TaskDuePickerBottomSheet.newInstance("detailDue", selectedDue)
+                .show(childFragmentManager, "detailDue")
         }
     }
 
-    private fun saveChanges() {
+    private fun saveChanges(forceDue: Boolean = false) {
         saveHandler.removeCallbacks(pendingSave)
         if (!viewReady || taskDeleted) return
         val task = currentTask ?: return
@@ -650,7 +571,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         val newDesc = etDescription.text?.toString()?.trim() ?: ""
 
         val propertiesChanged = newTitle != task.title || newDesc != task.description ||
-            selectedContainerId != task.containerId || selectedDue != task.due
+            selectedContainerId != task.containerId || selectedDue != task.due || forceDue
         if (!propertiesChanged && isCompleted == task.isCompleted) return
         var savedTask = task
         if (propertiesChanged) savedTask = taskService.updateTask(
@@ -659,7 +580,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             description = newDesc,
             containerId = selectedContainerId,
             clearContainer = selectedContainerId == null,
-            due = selectedDue.takeIf { it != task.due },
+            due = selectedDue.takeIf { forceDue || it != task.due },
         )
 
         if (isCompleted != task.isCompleted) {
