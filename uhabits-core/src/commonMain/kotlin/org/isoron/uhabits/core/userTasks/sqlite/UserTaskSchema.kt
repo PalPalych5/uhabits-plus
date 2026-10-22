@@ -20,7 +20,9 @@
 package org.isoron.uhabits.core.userTasks.sqlite
 
 import org.isoron.platform.io.Database
+import org.isoron.platform.io.StepResult
 import org.isoron.platform.io.run
+import org.isoron.uhabits.core.DATABASE_VERSION
 
 object UserTaskSchema {
     val DDL_STATEMENTS = listOf(
@@ -47,9 +49,57 @@ object UserTaskSchema {
         "CREATE INDEX IF NOT EXISTS idx_user_tasks_order ON UserTasks(parent_task_id, sort_order);"
     )
 
-    fun createSchema(db: Database) {
+    fun createSchema(db: Database, targetVersion: Int = DATABASE_VERSION) {
         for (stmt in DDL_STATEMENTS) {
             db.run(stmt)
+        }
+        if (targetVersion >= 31) {
+            ensureV31Columns(db)
+        }
+    }
+
+    fun ensureV31Columns(db: Database) {
+        val columns = mutableSetOf<String>()
+        val pragma = db.prepareStatement("PRAGMA table_info(UserTasks)")
+        try {
+            while (pragma.step() == StepResult.ROW) {
+                columns.add(pragma.getText(1))
+            }
+        } finally {
+            pragma.finalize()
+        }
+
+        if ("due_kind" !in columns) {
+            db.run("ALTER TABLE UserTasks ADD COLUMN due_kind TEXT NOT NULL DEFAULT 'NONE'")
+            db.run("ALTER TABLE UserTasks ADD COLUMN due_date TEXT")
+            db.run("ALTER TABLE UserTasks ADD COLUMN due_time_millis INTEGER")
+            db.run("ALTER TABLE UserTasks ADD COLUMN due_zone TEXT")
+
+            if ("deadline" in columns) {
+                db.run("UPDATE UserTasks SET due_kind = 'TIMED', due_time_millis = deadline WHERE deadline IS NOT NULL AND deadline > 0")
+            }
+            if ("planned_date" in columns) {
+                db.run("""
+                    UPDATE UserTasks SET due_kind = 'DAY', due_date = trim(planned_date)
+                    WHERE (deadline IS NULL OR deadline <= 0)
+                      AND planned_date IS NOT NULL
+                      AND length(trim(planned_date)) = 10
+                      AND trim(planned_date) GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+                      AND trim(planned_date) >= date('now', 'localtime')
+                """.trimIndent())
+                db.run("""
+                    UPDATE UserTasks SET due_kind = 'DAY', due_date = date(planned_date / 1000, 'unixepoch', 'localtime')
+                    WHERE (deadline IS NULL OR deadline <= 0)
+                      AND planned_date IS NOT NULL
+                      AND planned_date NOT GLOB '*[^0-9]*'
+                      AND length(planned_date) >= 12
+                      AND date(planned_date / 1000, 'unixepoch', 'localtime') >= date('now', 'localtime')
+                """.trimIndent())
+            }
+
+            db.run("DROP INDEX IF EXISTS idx_user_tasks_planned")
+            db.run("CREATE INDEX IF NOT EXISTS idx_user_tasks_due_kind ON UserTasks(due_kind);")
+            db.run("CREATE INDEX IF NOT EXISTS idx_user_tasks_due_date ON UserTasks(due_date);")
         }
     }
 }

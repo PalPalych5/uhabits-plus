@@ -5,6 +5,7 @@ import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.activities.settings.SettingsThemePalette
 import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.UserTask
+import org.isoron.uhabits.core.userTasks.due.TaskDue
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -56,7 +57,7 @@ class TasksAdapterTest {
 
     @Test fun nonemptyUpdatesNotifyMovesAndEveryBindingDependency() {
         val adapter = adapter()
-        val a = task("a").copy(deadline = 100)
+        val a = task("a").copy(due = TaskDue.Timed.of(100))
         val b = task("b")
         var changes = 0
         var moves = 0

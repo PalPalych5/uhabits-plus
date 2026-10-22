@@ -133,8 +133,8 @@ class ProductionSchemaParityTest {
             }
 
             // Setup DB via runtime schema helpers
-            OrganizationSchema.createSchema(dbViaRuntimeHelpers)
-            UserTaskSchema.createSchema(dbViaRuntimeHelpers)
+            OrganizationSchema.createSchema(dbViaRuntimeHelpers, targetVersion = 30)
+            UserTaskSchema.createSchema(dbViaRuntimeHelpers, targetVersion = 30)
             FocusSessionSchema.createSchema(dbViaRuntimeHelpers)
             SQLiteFocusCaptureStore(dbViaRuntimeHelpers) // creates FocusCaptureJournal table
             ContributionSchema.createSchema(dbViaRuntimeHelpers)

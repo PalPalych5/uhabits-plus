@@ -23,6 +23,10 @@ import kotlinx.coroutines.test.runTest
 import org.isoron.platform.io.TestDatabaseHelper
 import org.isoron.platform.io.queryLong
 import org.isoron.platform.io.run
+import org.isoron.platform.io.getVersion
+import org.isoron.platform.io.setVersion
+import org.isoron.uhabits.core.DATABASE_VERSION
+import org.isoron.uhabits.core.userTasks.sqlite.UserTaskSchema
 import org.isoron.uhabits.core.containers.migration.LegacyContainerMigrationExecutor
 import org.isoron.uhabits.core.containers.migration.LegacyContainerMigrationPlanner
 import org.isoron.uhabits.core.containers.migration.RawLegacyInventoryReader
@@ -32,6 +36,50 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class InvalidBackupRejectionTest {
+
+    @Test
+    fun testRejectsBackup_newerSchema_beforeStagingMutation() = runTest {
+        assertUnsupportedTaskBackup(newerSchema = true)
+    }
+
+    @Test
+    fun testRejectsBackup_unknownTaskColumn_beforeStagingMutation() = runTest {
+        assertUnsupportedTaskBackup(newerSchema = false)
+    }
+
+    private suspend fun assertUnsupportedTaskBackup(newerSchema: Boolean) {
+        val backup = SemanticMigrationFixtures.createAndSeedV29Database()
+        val staging = TestDatabaseHelper.createEmptyDatabase()
+        val destination = TestDatabaseHelper.createEmptyDatabase()
+        try {
+            UserTaskSchema.createSchema(backup)
+            backup.run("INSERT INTO UserTasks(id,title,created_at,updated_at) VALUES ('source','Preserved source',1,1)")
+            if (newerSchema) backup.setVersion(DATABASE_VERSION + 1)
+            else {
+                backup.setVersion(DATABASE_VERSION)
+                backup.run("ALTER TABLE UserTasks ADD COLUMN proposed_due_v1 TEXT")
+                backup.run("UPDATE UserTasks SET proposed_due_v1='NONE'")
+            }
+            for (db in listOf(staging, destination)) {
+                db.run("CREATE TABLE ExistingSentinel (value TEXT)")
+                db.run("INSERT INTO ExistingSentinel VALUES ('untouched')")
+                db.setVersion(17)
+            }
+            val sourceTables = DatabaseSnapshotter.listTables(backup)
+            val targetTables = listOf(staging, destination).associateWith { DatabaseSnapshotter.listTables(it) }
+            val result = ContainerRestoreService.restore(backup, staging, destination)
+            assertTrue(result is RestoreResult.Failure)
+            assertTrue(result.reason.contains(if (newerSchema) "Unsupported newer" else "Unsupported UserTasks columns"))
+            for (db in listOf(staging, destination)) {
+                assertEquals(targetTables.getValue(db), DatabaseSnapshotter.listTables(db))
+                assertEquals(17, db.getVersion())
+                assertEquals(1L, db.queryLong("SELECT count(*) FROM ExistingSentinel WHERE value='untouched'"))
+            }
+            assertEquals(sourceTables, DatabaseSnapshotter.listTables(backup))
+            assertEquals(1L, backup.queryLong("SELECT count(*) FROM UserTasks WHERE id='source'"))
+            if (!newerSchema) assertEquals(1L, backup.queryLong("SELECT count(*) FROM UserTasks WHERE proposed_due_v1='NONE'"))
+        } finally { backup.close(); staging.close(); destination.close() }
+    }
 
     @Test
     fun testRejectsBackup_missingOrganizationTables_destinationUntouched() = runTest {

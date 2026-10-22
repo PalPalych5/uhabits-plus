@@ -35,6 +35,7 @@ import org.isoron.uhabits.core.models.projection.HabitGoalStatus
 import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.UserTask
 import org.isoron.uhabits.core.userTasks.UserTaskRepository
+import org.isoron.uhabits.core.userTasks.due.TaskDue
 import kotlin.math.roundToInt
 
 class TodayEvaluationService(
@@ -89,22 +90,24 @@ class TodayEvaluationService(
             )
         }
 
-        // A. Hard overdue tasks: deadline < nowMillis && !isCompleted
+        // A. Overdue tasks: task.isOverdue(today, nowMillis)
         val hardOverdue = rootTasks
-            .filter { it.isHardOverdue(nowMillis) }
-            .sortedWith(compareBy<UserTask> { it.deadline ?: Long.MAX_VALUE }.thenBy { it.createdAt })
+            .filter { it.isOverdue(today, nowMillis) }
+            .sortedWith(compareBy<UserTask> {
+                when (val d = it.due) {
+                    is TaskDue.Timed -> d.epochMillis
+                    is TaskDue.Day -> d.date.toLocalDate().daysSince2000.toLong() * 86400000L
+                    is TaskDue.None -> Long.MAX_VALUE
+                }
+            }.thenBy { it.createdAt })
             .map { toTaskItem(it, TodayTaskUrgency.HARD_OVERDUE) }
 
-        // B. Missed plan tasks: plannedDate < today && !isCompleted && !isHardOverdue
-        // Invariant: plannedDate != deadline. Missed plan is NOT hard overdue!
-        val missedPlan = rootTasks
-            .filter { it.isMissedPlan(today, nowMillis) }
-            .sortedWith(compareBy<UserTask> { it.plannedDate?.daysSince2000 ?: Int.MAX_VALUE }.thenBy { it.createdAt })
-            .map { toTaskItem(it, TodayTaskUrgency.MISSED_PLAN) }
+        // B. Missed plan tasks: now unified into overdue, so empty list
+        val missedPlan = emptyList<TodayTaskItem>()
 
-        // C. Planned today tasks: plannedDate == today && !isCompleted && !isHardOverdue
+        // C. Planned today tasks: task.isDueToday(today, nowMillis)
         val plannedToday = rootTasks
-            .filter { !it.isCompleted && !it.isHardOverdue(nowMillis) && it.plannedDate == today }
+            .filter { it.isDueToday(today, nowMillis) }
             .sortedWith(compareBy<UserTask> { it.sortOrder }.thenBy { it.createdAt })
             .map { toTaskItem(it, TodayTaskUrgency.PLANNED_TODAY) }
 
@@ -114,9 +117,9 @@ class TodayEvaluationService(
             .sortedByDescending { it.completedAt }
             .map { toTaskItem(it, TodayTaskUrgency.COMPLETED_TODAY) }
 
-        // Optional undated inbox tasks: root, incomplete, no container, no dates
+        // Optional undated inbox tasks: root, incomplete, no container, due is TaskDue.None
         val undatedInbox = rootTasks
-            .filter { !it.isCompleted && it.containerId == null && it.plannedDate == null && it.deadline == null }
+            .filter { !it.isCompleted && it.containerId == null && it.due is TaskDue.None }
             .sortedWith(compareBy<UserTask> { it.sortOrder }.thenBy { it.createdAt })
             .map { toTaskItem(it, TodayTaskUrgency.INBOX_UNDATED) }
 

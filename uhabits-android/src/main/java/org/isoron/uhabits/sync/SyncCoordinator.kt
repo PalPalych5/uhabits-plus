@@ -42,8 +42,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
 
+private data class Quad<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
+
+
+
 @AppScope
 @Inject
+
+
 class SyncCoordinator(
     @AppContext private val context: Context,
     private val modelFactory: SQLModelFactory,
@@ -536,6 +542,20 @@ class SyncCoordinator(
                         else if (unresolvedTasks.getOrPut(record.entityUuid) { hasUnsupportedTaskPlan(record.entityUuid) }) null
                         else try {
                             val payload = JSONObject(record.payloadJson)
+                            if (!payload.has("due_kind")) {
+                                val localTask = modelFactory.database.querySingle(
+                                    "SELECT due_kind, due_date, due_time_millis, due_zone FROM UserTasks WHERE id = ?",
+                                    record.entityUuid
+                                ) { stmt ->
+                                    Quad(stmt.getText(0), stmt.getTextOrNull(1), stmt.getLongOrNull(2), stmt.getTextOrNull(3))
+                                }
+                                if (localTask != null) {
+                                    payload.put("due_kind", localTask.first)
+                                    payload.put("due_date", localTask.second ?: JSONObject.NULL)
+                                    payload.put("due_time_millis", localTask.third ?: JSONObject.NULL)
+                                    payload.put("due_zone", localTask.fourth ?: JSONObject.NULL)
+                                }
+                            }
                             val raw = payload.optionalString("planned_date")
                             val canonical = normalizeTaskPlannedDateForSync(raw)
                             // Transport copy only: preserve queue identity/order and the stored retry payload.
@@ -2260,12 +2280,75 @@ class SyncCoordinator(
                 else -> throw e
             }
         }
-        val deadline = payload.optionalLong("deadline", event)
+
+        val dueKind: String
+        val dueDate: String?
+        val dueTimeMillis: Long?
+        val dueZone: String?
+
+        val rawDueKind = payload.optionalString("due_kind")
+        if (rawDueKind != null) {
+            dueKind = rawDueKind
+            dueDate = payload.optionalString("due_date")
+            dueTimeMillis = payload.optionalLong("due_time_millis", event)
+            dueZone = payload.optionalString("due_zone")
+            if (dueDate != null) {
+                try {
+                    if (org.isoron.uhabits.core.userTasks.parseIsoDateString(dueDate) == null) {
+                        throw IllegalArgumentException("Malformed due_date: $dueDate")
+                    }
+                } catch (e: Exception) {
+                    deferRemoteEvent(
+                        SyncInboxRecord(
+                            logId = event.logId,
+                            deviceId = event.deviceId,
+                            opUuid = event.opUuid,
+                            entityType = event.entityType,
+                            entityUuid = event.entityUuid,
+                            operationType = event.operationType,
+                            payloadJson = event.payloadJson,
+                            createdAt = event.createdAt,
+                            receivedAt = System.currentTimeMillis(),
+                            deferredReason = "MALFORMED_TASK_PAYLOAD",
+                            status = "BLOCKED_MALFORMED"
+                        )
+                    )
+                    return false
+                }
+            }
+        } else {
+            val deadline = payload.optionalLong("deadline", event)
+            if (deadline != null && deadline > 0) {
+                dueKind = "TIMED"
+                dueDate = null
+                dueTimeMillis = deadline
+                dueZone = null
+            } else {
+                val existingDue = modelFactory.database.querySingle(
+                    "SELECT due_kind, due_date, due_time_millis, due_zone FROM UserTasks WHERE id = ?",
+                    taskId
+                ) { Quad(it.getText(0), it.getTextOrNull(1), it.getLongOrNull(2), it.getTextOrNull(3)) }
+
+                if (existingDue != null && existingDue.first != "NONE") {
+                    dueKind = existingDue.first
+                    dueDate = existingDue.second
+                    dueTimeMillis = existingDue.third
+                    dueZone = existingDue.fourth
+                } else {
+                    dueKind = "NONE"
+                    dueDate = null
+                    dueTimeMillis = null
+                    dueZone = null
+                }
+            }
+        }
+
         val completedAt = payload.optionalLong("completed_at", event)
         val parentTaskId = payload.optionalString("parent_task_id")
         val sortOrder = payload.intOrDefault("sort_order", 0, event)
         val createdAt = payload.optionalLong("created_at", event) ?: event.createdAt
         val updatedAt = payload.optionalLong("updated_at", event) ?: event.createdAt
+
         // A remote title-only/null upsert must not erase unresolved local raw data.
         if (hasUnsupportedTaskPlan(taskId)) {
             deferRemoteEvent(
@@ -2286,26 +2369,23 @@ class SyncCoordinator(
             return false
         }
 
-        val stmt = modelFactory.database.prepareStatement(
-            """INSERT OR REPLACE INTO UserTasks (
-                id, title, description, container_id, status, planned_date,
-                deadline, completed_at, parent_task_id, sort_order, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
-        )
-        stmt.bindText(1, taskId)
-        stmt.bindText(2, title)
-        stmt.bindText(3, description)
-        if (containerId != null) stmt.bindText(4, containerId) else stmt.bindNull(4)
-        stmt.bindText(5, status)
-        if (plannedDate != null) stmt.bindText(6, plannedDate) else stmt.bindNull(6)
-        if (deadline != null) stmt.bindLong(7, deadline) else stmt.bindNull(7)
-        if (completedAt != null) stmt.bindLong(8, completedAt) else stmt.bindNull(8)
-        if (parentTaskId != null) stmt.bindText(9, parentTaskId) else stmt.bindNull(9)
-        stmt.bindInt(10, sortOrder)
-        stmt.bindLong(11, createdAt)
-        stmt.bindLong(12, updatedAt)
-        stmt.step()
-        stmt.finalize()
+        org.isoron.uhabits.core.userTasks.sqlite.UserTaskSqlWriter.upsert(modelFactory.database, taskId) {
+            bindText(1, taskId)
+            bindText(2, title)
+            bindText(3, description)
+            if (containerId != null) bindText(4, containerId) else bindNull(4)
+            bindText(5, status)
+            bindText(6, dueKind)
+            if (dueDate != null) bindText(7, dueDate) else bindNull(7)
+            if (dueTimeMillis != null) bindLong(8, dueTimeMillis) else bindNull(8)
+            if (dueZone != null) bindText(9, dueZone) else bindNull(9)
+            if (completedAt != null) bindLong(10, completedAt) else bindNull(10)
+            if (parentTaskId != null) bindText(11, parentTaskId) else bindNull(11)
+            bindInt(12, sortOrder)
+            bindLong(13, createdAt)
+            bindLong(14, updatedAt)
+            if (plannedDate != null) bindText(15, plannedDate) else bindNull(15)
+        }
 
         modelFactory.syncInboxRepository.deleteByLogId(event.logId)
         return true
@@ -2504,8 +2584,8 @@ class SyncCoordinator(
 
         // 3. User Tasks
         modelFactory.database.query(
-            """SELECT id, title, description, container_id, status, planned_date,
-                      deadline, completed_at, parent_task_id, sort_order, created_at, updated_at
+            """SELECT id, title, description, container_id, status, due_kind,
+                      due_date, due_time_millis, due_zone, completed_at, parent_task_id, sort_order, created_at, updated_at
                FROM UserTasks"""
         ) { stmt ->
             val taskId = stmt.getText(0)
@@ -2513,19 +2593,15 @@ class SyncCoordinator(
             val description = stmt.getText(2)
             val containerId = stmt.getTextOrNull(3)
             val status = stmt.getText(4)
-            val plannedDate = try {
-                normalizeTaskPlannedDateForSync(stmt.getTextOrNull(5))
-            } catch (_: IllegalArgumentException) {
-                return@query // Keep this raw row locally; bootstrap other tasks normally.
-            } catch (_: IndexOutOfBoundsException) {
-                return@query
-            }
-            val deadline = stmt.getLongOrNull(6)
-            val completedAt = stmt.getLongOrNull(7)
-            val parentTaskId = stmt.getTextOrNull(8)
-            val sortOrder = stmt.getInt(9)
-            val createdAt = stmt.getLong(10)
-            val updatedAt = stmt.getLong(11)
+            val dueKind = stmt.getText(5)
+            val dueDate = stmt.getTextOrNull(6)
+            val dueTimeMillis = stmt.getLongOrNull(7)
+            val dueZone = stmt.getTextOrNull(8)
+            val completedAt = stmt.getLongOrNull(9)
+            val parentTaskId = stmt.getTextOrNull(10)
+            val sortOrder = stmt.getInt(11)
+            val createdAt = stmt.getLong(12)
+            val updatedAt = stmt.getLong(13)
 
             val payload = json(
                 "id" to taskId,
@@ -2533,8 +2609,10 @@ class SyncCoordinator(
                 "description" to description,
                 "container_id" to containerId,
                 "status" to status,
-                "planned_date" to plannedDate,
-                "deadline" to deadline?.toString(),
+                "due_kind" to dueKind,
+                "due_date" to dueDate,
+                "due_time_millis" to dueTimeMillis?.toString(),
+                "due_zone" to dueZone,
                 "completed_at" to completedAt?.toString(),
                 "parent_task_id" to parentTaskId,
                 "sort_order" to sortOrder.toString(),

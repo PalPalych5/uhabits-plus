@@ -37,7 +37,11 @@ class ProductionEffectiveHistoryRegressionTest : BaseUnitTest() {
             val result = ProductionNextSchemaMigrator.migrate(db, 1700000000000L,
                 sourceFileSha256 = "aa".repeat(32), sourceSchemaSha256 = "bb".repeat(32))
             val success = assertIs<ProductionNextMigrationResult.Success>(result)
-            assertIs<ProductionValidationResult.Valid>(ProductionNextMigrationValidator.validate(db, inventory, success.plan, success.metadata))
+            val validation = ProductionNextMigrationValidator.validate(db, inventory, success.plan, success.metadata)
+            if (validation is ProductionValidationResult.Invalid) {
+                fail("Validation errors: " + validation.errors.joinToString("; "))
+            }
+            assertIs<ProductionValidationResult.Valid>(validation)
             val migrated = SQLModelFactory(db).buildHabitList().getByUUID(habit.uuid!!)!!
             assertEquals(legacyEntries, (4 downTo 0).map { migrated.originalEntries.get(date.minus(it)) })
             val repetitionsBefore = db.queryLong("SELECT count(*) FROM Repetitions")

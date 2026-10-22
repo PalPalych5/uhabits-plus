@@ -31,6 +31,8 @@ import org.isoron.uhabits.core.today.TodayTaskItem
 import org.isoron.uhabits.core.today.TodayTaskUrgency
 import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.UserTask
+import org.isoron.uhabits.core.userTasks.due.TaskDue
+import org.isoron.uhabits.core.userTasks.due.TaskDueDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -43,19 +45,19 @@ class TodayPresentationTest {
     @Test
     fun testGroupingModes_sectionedVsUnified() {
         val taskOverdue = TodayTaskItem(
-            task = UserTask(TaskId("t1"), "Сдать МУСы", deadline = nowMillis - 1000, createdAt = 0, updatedAt = 0),
+            task = UserTask(TaskId("t1"), "Сдать МУСы", due = TaskDue.Timed.of(nowMillis - 1000), createdAt = 0, updatedAt = 0),
             urgency = TodayTaskUrgency.HARD_OVERDUE,
             containerName = "Учёба",
             containerId = ContainerId("study")
         )
         val taskMissed = TodayTaskItem(
-            task = UserTask(TaskId("t2"), "Оформить отчёт", plannedDate = today.minus(1), deadline = nowMillis + 86400000, createdAt = 0, updatedAt = 0),
+            task = UserTask(TaskId("t2"), "Оформить отчёт", due = TaskDue.Day(TaskDueDate.from(today.minus(1))), createdAt = 0, updatedAt = 0),
             urgency = TodayTaskUrgency.MISSED_PLAN,
             containerName = "Учёба",
             containerId = ContainerId("study")
         )
         val taskToday = TodayTaskItem(
-            task = UserTask(TaskId("t3"), "Сделать запросы БД", plannedDate = today, createdAt = 0, updatedAt = 0),
+            task = UserTask(TaskId("t3"), "Сделать запросы БД", due = TaskDue.Day(TaskDueDate.from(today)), createdAt = 0, updatedAt = 0),
             urgency = TodayTaskUrgency.PLANNED_TODAY,
             containerName = "Базы данных",
             containerId = ContainerId("db")

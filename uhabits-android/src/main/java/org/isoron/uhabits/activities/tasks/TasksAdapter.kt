@@ -45,6 +45,7 @@ import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.facade.OrganizationalItem
 import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.UserTask
+import org.isoron.uhabits.core.userTasks.due.TaskDue
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -86,7 +87,7 @@ class TasksAdapter(
                     subtaskCounts[oldT.id] == newSubtaskCounts[newT.id] &&
                     today == currentToday &&
                     oldT.containerId?.let { containers[it] } == newT.containerId?.let { newContainers[it] } &&
-                    oldT.isHardOverdue(nowMillis) == newT.isHardOverdue(currentTimeMillis)
+                    oldT.isOverdue(today, nowMillis) == newT.isOverdue(currentToday, currentTimeMillis)
             }
         })
         tasks = newTasks
@@ -221,35 +222,51 @@ class TasksAdapter(
 
             val dates = SpannableStringBuilder()
             val spokenDates = mutableListOf<String>()
-            if (task.unsupportedPlannedDateRaw != null) {
-                val label = itemView.context.getString(R.string.task_planned_date_needs_repair)
-                dates.appendProperty(R.drawable.ic_cat_calendar, label, palette.onSurfaceVariant)
-                spokenDates.add(label)
-            }
             if (!task.isCompleted) {
-                task.plannedDate?.let { planned ->
-                    val missed = task.isMissedPlan(today, nowMillis)
-                    val label = when {
-                        missed -> "План прошёл: ${planned.day}.${planned.month.toString().padStart(2, '0')}"
-                        planned == today -> "План сегодня"
-                        else -> "План ${planned.day}.${planned.month.toString().padStart(2, '0')}"
+                when (val due = task.due) {
+                    is TaskDue.None -> {
+                        if (task.hasPendingLegacyPlan) {
+                            val label = "План: ${task.legacyPlanDate}"
+                            dates.appendProperty(R.drawable.ic_cat_calendar, label, palette.onSurfaceVariant)
+                            spokenDates.add(label)
+                        }
                     }
-                    val color = if (missed) {
-                        if (palette.isDark) 0xFFF0C170.toInt() else 0xFF926018.toInt()
-                    } else palette.onSurfaceVariant
-                    dates.appendProperty(R.drawable.ic_cat_calendar, label, color)
-                    spokenDates.add(label)
-                }
-                task.deadline?.let { deadline ->
-                    val cal = java.util.Calendar.getInstance().apply { timeInMillis = deadline }
-                    val overdue = task.isHardOverdue(nowMillis)
-                    val prefix = if (overdue) "Дедлайн прошёл:" else "Дедлайн"
-                    val label = "$prefix ${cal.get(java.util.Calendar.DAY_OF_MONTH)}.${(cal.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')}, ${timeFormat.format(Date(deadline))}"
-                    val color = if (overdue) {
-                        if (palette.isDark) 0xFFFFAAA3.toInt() else 0xFFAB3D36.toInt()
-                    } else palette.onSurfaceVariant
-                    dates.appendProperty(R.drawable.ic_cat_flag, label, color)
-                    spokenDates.add(label)
+                    is TaskDue.Day -> {
+                        val d = due.date.toLocalDate()
+                        val overdue = task.isOverdue(today, nowMillis)
+                        val isToday = task.isDueToday(today, nowMillis)
+                        val label = when {
+                            overdue -> "Срок прошёл: ${d.day}.${d.month.toString().padStart(2, '0')}"
+                            isToday -> "Срок сегодня"
+                            d.daysSince2000 == today.daysSince2000 + 1 -> "Срок завтра"
+                            else -> "Срок ${d.day}.${d.month.toString().padStart(2, '0')}"
+                        }
+                        val color = when {
+                            overdue -> if (palette.isDark) 0xFFFFAAA3.toInt() else 0xFFAB3D36.toInt()
+                            isToday -> palette.accent
+                            else -> palette.onSurfaceVariant
+                        }
+                        dates.appendProperty(R.drawable.ic_cat_calendar, label, color)
+                        spokenDates.add(label)
+                    }
+                    is TaskDue.Timed -> {
+                        val overdue = task.isOverdue(today, nowMillis)
+                        val isToday = task.isDueToday(today, nowMillis)
+                        val cal = java.util.Calendar.getInstance().apply { timeInMillis = due.epochMillis }
+                        val timeStr = timeFormat.format(Date(due.epochMillis))
+                        val label = when {
+                            overdue -> "Срок прошёл: ${cal.get(java.util.Calendar.DAY_OF_MONTH)}.${(cal.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')}, $timeStr"
+                            isToday -> "Срок сегодня, $timeStr"
+                            else -> "Срок ${cal.get(java.util.Calendar.DAY_OF_MONTH)}.${(cal.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')}, $timeStr"
+                        }
+                        val color = when {
+                            overdue -> if (palette.isDark) 0xFFFFAAA3.toInt() else 0xFFAB3D36.toInt()
+                            isToday -> palette.accent
+                            else -> palette.onSurfaceVariant
+                        }
+                        dates.appendProperty(R.drawable.ic_cat_calendar_clock, label, color)
+                        spokenDates.add(label)
+                    }
                 }
             }
             tvTaskMeta.text = dates

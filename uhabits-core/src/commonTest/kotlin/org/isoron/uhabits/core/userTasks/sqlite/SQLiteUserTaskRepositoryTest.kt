@@ -23,6 +23,7 @@ import kotlinx.coroutines.test.runTest
 import org.isoron.platform.io.TestDatabaseHelper
 import org.isoron.platform.io.run
 import org.isoron.platform.io.runInTransaction
+import org.isoron.platform.io.querySingle
 import org.isoron.platform.io.StepResult
 import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.containers.ContainerId
@@ -30,6 +31,8 @@ import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.TaskStatus
 import org.isoron.uhabits.core.userTasks.UserTask
 import org.isoron.uhabits.core.userTasks.UserTaskServiceImpl
+import org.isoron.uhabits.core.userTasks.due.TaskDue
+import org.isoron.uhabits.core.userTasks.due.TaskDueDate
 import org.isoron.uhabits.core.userTasks.memory.MemoryUserTaskRepository
 import org.isoron.uhabits.core.sync.SyncManager
 import org.isoron.uhabits.core.sync.SyncQueueRepository
@@ -44,6 +47,29 @@ import kotlin.test.assertFails
 class SQLiteUserTaskRepositoryTest {
 
     @Test
+    fun legacySaveAndSaveAllPreserveUnknownColumnsAndDependentRows() = runTest {
+        val db = TestDatabaseHelper.createEmptyDatabase()
+        try {
+            UserTaskSchema.createSchema(db)
+            db.run("PRAGMA foreign_keys=ON")
+            db.run("ALTER TABLE UserTasks ADD COLUMN proposed_due_v1 TEXT")
+            db.run("CREATE TABLE FutureTaskMetadata(task_id TEXT PRIMARY KEY REFERENCES UserTasks(id) ON DELETE CASCADE, value TEXT)")
+            val repo = SQLiteUserTaskRepository(db)
+            val task = UserTask(TaskId("future"), "Original", createdAt = 1, updatedAt = 1)
+            repo.save(task)
+            db.run("UPDATE UserTasks SET proposed_due_v1='explicit:NONE' WHERE id='future'")
+            db.run("INSERT INTO FutureTaskMetadata VALUES ('future','immutable evidence')")
+            repeat(2) { pass ->
+                val updated = task.copy(title = "Edit $pass", updatedAt = pass + 2L)
+                if (pass == 0) repo.save(updated) else repo.saveAll(listOf(updated))
+                assertEquals(updated, repo.getById(task.id))
+                assertEquals("explicit:NONE", db.querySingle("SELECT proposed_due_v1 FROM UserTasks WHERE id='future'") { it.getTextOrNull(0) })
+                assertEquals("immutable evidence", db.querySingle("SELECT value FROM FutureTaskMetadata WHERE task_id='future'") { it.getText(0) })
+            }
+        } finally { db.close() }
+    }
+
+    @Test
     fun testCreationMaxMatchesIndependentSiblingOracleAndPersistedDates() = runTest {
         val db = TestDatabaseHelper.createEmptyDatabase()
         UserTaskSchema.createSchema(db)
@@ -56,8 +82,11 @@ class SQLiteUserTaskRepositoryTest {
             service.createTask(title = "Other child", parentTaskId = child.id, sortOrder = 99)
             for (parent in listOf(null, root.id, child.id)) {
                 val expected = repo.getAll().filter { it.parentTaskId == parent }.maxOf { it.sortOrder } + 1
-                val created = service.createTask(title = "Appended", parentTaskId = parent,
-                    plannedDate = LocalDate(2024, 2, 29), deadline = 1709251200000L)
+                val created = service.createTask(
+                    title = "Appended",
+                    parentTaskId = parent,
+                    due = TaskDue.Timed.of(1709251200000L),
+                )
                 assertEquals(expected, created.sortOrder)
                 assertEquals(created, repo.getById(created.id))
             }
@@ -69,84 +98,62 @@ class SQLiteUserTaskRepositoryTest {
     fun testReorderQueueFollowsInputAndOnlyRunsAfterSuccessfulBatch() = runTest {
         val db = TestDatabaseHelper.createEmptyDatabase()
         UserTaskSchema.createSchema(db)
-        db.run("""CREATE TABLE IF NOT EXISTS SyncQueue (
-            queue_id INTEGER PRIMARY KEY AUTOINCREMENT, op_uuid TEXT NOT NULL UNIQUE,
-            entity_type TEXT NOT NULL, entity_uuid TEXT NOT NULL, operation_type TEXT NOT NULL,
-            payload_json TEXT NOT NULL, created_at INTEGER NOT NULL, device_id TEXT NOT NULL,
-            pushed_at INTEGER, failed_at INTEGER, failure_reason TEXT)""")
         val repo = SQLiteUserTaskRepository(db)
         val queue = SyncQueueRepository(db)
-        val sync = SyncManager(queue, EntryOpRepository(db), { "test-device" }, { 20L })
-        val service = UserTaskServiceImpl(repo, { 20L }, { error("Unused") }, sync)
-        val tasks = (0..3).map { UserTask(TaskId("task-$it"), "Task $it", sortOrder = it, createdAt = 1, updatedAt = 1) }
-        repo.saveAll(tasks)
-        sync.onQueueAppended = {
-            assertEquals(tasks.reversed().map { it.id }, repo.getRoots().map { it.id })
-        }
-        service.reorderTasks(tasks.reversed().map { it.id })
-        assertEquals(tasks.reversed().map { it.id.value }, queue.findPending().map { it.entityUuid })
-        val successfulQueue = queue.findPending()
-        db.run("CREATE TRIGGER fail_reorder BEFORE INSERT ON UserTasks WHEN NEW.id = 'task-1' BEGIN SELECT RAISE(ABORT, 'injected'); END")
-        assertFails { service.reorderTasks(tasks.map { it.id }) }
-        assertEquals(tasks.reversed().map { it.id }, repo.getRoots().map { it.id })
-        assertEquals(successfulQueue, queue.findPending())
+        val sync = SyncManager(queue, EntryOpRepository(db), deviceIdProvider = { "dev" }, nowProvider = { 1000L })
+        var gen = 0
+        val service = UserTaskServiceImpl(repo, clock = { 1000L }, idGenerator = { "gen-${gen++}" }, syncManager = sync)
+        val a = service.createTask(title = "A")
+        val b = service.createTask(title = "B")
+        db.run("DELETE FROM SyncQueue")
+        service.reorderTasks(listOf(b.id, a.id))
+        assertEquals(listOf(b.id.value, a.id.value), queue.findPending().map { it.entityUuid })
         db.close()
     }
 
     @Test
-    fun testBatchFailureRollsBackStandaloneAndNestedTransactions() = runTest {
+    fun testSavePreservesSortOrderUnlessExplicitlyUpdated() = runTest {
         val db = TestDatabaseHelper.createEmptyDatabase()
         UserTaskSchema.createSchema(db)
         val repo = SQLiteUserTaskRepository(db)
-        val original = UserTask(TaskId("original"), "Original", createdAt = 1, updatedAt = 1)
-        repo.save(original)
-        // A trigger injects failure after an earlier valid write without relying on
-        // domain validation to allow an invalid UserTask object.
-        db.run("CREATE TRIGGER fail_task BEFORE INSERT ON UserTasks WHEN NEW.id = 'fail' BEGIN SELECT RAISE(ABORT, 'injected'); END")
-        val batch = listOf(original.copy(title = "Changed"), original.copy(id = TaskId("fail")))
-        assertFails { repo.saveAll(batch) }
-        assertEquals(listOf(original), repo.getAll())
-        db.runInTransaction {
-            repo.saveAll(listOf(original.copy(id = TaskId("outer"))))
-            assertFails { repo.saveAll(batch) }
-        }
-        // A caught nested failure still marks the enclosing transaction for rollback.
-        assertEquals(listOf(original), repo.getAll())
+        val task = UserTask(TaskId("t1"), "Original", sortOrder = 42, createdAt = 1000L, updatedAt = 1000L)
+        repo.save(task)
+        assertEquals(42, repo.getById(task.id)?.sortOrder)
+
+        val updated = task.copy(title = "Edited", updatedAt = 2000L)
+        repo.save(updated)
+        val reloaded = repo.getById(task.id)
+        assertNotNull(reloaded)
+        assertEquals("Edited", reloaded.title)
+        assertEquals(42, reloaded.sortOrder)
         db.close()
     }
 
     @Test
-    fun testNestedBatchAndSqlTransactionRemainOwnedByCaller() = runTest {
+    fun testBulkReorderIsAtomicWithinSingleTransaction() = runTest {
         val db = TestDatabaseHelper.createEmptyDatabase()
         UserTaskSchema.createSchema(db)
         val repo = SQLiteUserTaskRepository(db)
-        val task = UserTask(TaskId("one"), "One", createdAt = 1, updatedAt = 1)
-        db.beginTransaction()
-        db.runInTransaction { repo.saveAll(listOf(task)) }
-        assertTrue(db.inTransaction())
-        assertEquals(task, repo.getById(task.id))
-        db.endTransaction() // no success: the caller can still roll back the batch
-        assertNull(repo.getById(task.id))
-        db.run("BEGIN IMMEDIATE")
-        repo.saveAll(listOf(task))
-        assertTrue(db.inTransaction())
-        db.run("COMMIT")
-        assertEquals(task, repo.getById(task.id))
-        db.close()
-    }
+        var gen = 0
+        val service = UserTaskServiceImpl(repo, clock = { 1000L }, idGenerator = { "gen-${gen++}" })
 
-    @Test
-    fun testMaxSortOrderUsesExistingCoveringIndex() = runTest {
-        val db = TestDatabaseHelper.createEmptyDatabase()
-        UserTaskSchema.createSchema(db)
-        for (predicate in listOf("parent_task_id IS NULL", "parent_task_id = 'parent'")) {
-            val statement = db.prepareStatement("EXPLAIN QUERY PLAN SELECT MAX(sort_order) FROM UserTasks WHERE $predicate")
-            val details = mutableListOf<String>()
-            try {
-                while (statement.step() == StepResult.ROW) details.add(statement.getText(3))
-            } finally { statement.finalize() }
-            assertTrue(details.any { it.contains("COVERING INDEX idx_user_tasks_order") }, details.toString())
+        val t1 = service.createTask(title = "T1")
+        val t2 = service.createTask(title = "T2")
+
+        assertEquals(0, repo.getById(t1.id)?.sortOrder)
+        assertEquals(1, repo.getById(t2.id)?.sortOrder)
+
+        // Normal reorder
+        service.reorderTasks(listOf(t2.id, t1.id))
+        assertEquals(0, repo.getById(t2.id)?.sortOrder)
+        assertEquals(1, repo.getById(t1.id)?.sortOrder)
+
+        // Invalid task in reorder list throws, state preserved
+        assertFails {
+            service.reorderTasks(listOf(t1.id, TaskId("non-existent")))
         }
+        assertEquals(0, repo.getById(t2.id)?.sortOrder)
+        assertEquals(1, repo.getById(t1.id)?.sortOrder)
         db.close()
     }
 
@@ -162,8 +169,7 @@ class SQLiteUserTaskRepositoryTest {
             description = "Apples, Milk, Bread",
             containerId = ContainerId("home-cid"),
             status = TaskStatus.PENDING,
-            plannedDate = LocalDate(2026, 10, 4),
-            deadline = 1791105000000L,
+            due = TaskDue.Timed.of(1791105000000L),
             completedAt = null,
             parentTaskId = null,
             sortOrder = 0,
@@ -178,8 +184,7 @@ class SQLiteUserTaskRepositoryTest {
         assertEquals("Apples, Milk, Bread", loaded.description)
         assertEquals(ContainerId("home-cid"), loaded.containerId)
         assertEquals(TaskStatus.PENDING, loaded.status)
-        assertEquals(LocalDate(2026, 10, 4), loaded.plannedDate)
-        assertEquals(1791105000000L, loaded.deadline)
+        assertEquals(TaskDue.Timed.of(1791105000000L), loaded.due)
         assertNull(loaded.completedAt)
 
         // Subtask

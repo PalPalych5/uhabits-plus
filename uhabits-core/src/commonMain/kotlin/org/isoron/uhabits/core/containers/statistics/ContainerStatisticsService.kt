@@ -171,12 +171,13 @@ class ContainerStatisticsService(
         val allTasks = userTaskRepository.getAll()
         val scopeTasks = allTasks.filter { it.containerId != null && it.containerId in targetScopeContainerIds }
         val nowMillis = clock()
+        val today = localDateAt(nowMillis, hourOffset, minuteOffset)
 
         val completedCount = scopeTasks.count { task ->
             task.isCompleted && task.completedAt != null && task.completedAt in startTs until endTs
         }
         val pendingCount = scopeTasks.count { !it.isCompleted }
-        val overdueCount = scopeTasks.count { it.isHardOverdue(nowMillis) }
+        val overdueCount = scopeTasks.count { it.isOverdue(today, nowMillis) }
 
         val taskSummary = TaskSummary(
             completedCount = completedCount,

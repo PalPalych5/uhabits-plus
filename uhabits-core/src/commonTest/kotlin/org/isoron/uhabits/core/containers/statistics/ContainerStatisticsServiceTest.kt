@@ -47,6 +47,8 @@ import org.isoron.uhabits.core.models.projection.EffectiveHabitValueService
 import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.TaskStatus
 import org.isoron.uhabits.core.userTasks.UserTask
+import org.isoron.uhabits.core.userTasks.due.TaskDue
+import org.isoron.uhabits.core.userTasks.due.TaskDueDate
 import org.isoron.uhabits.core.userTasks.memory.MemoryUserTaskRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -146,8 +148,7 @@ class ContainerStatisticsServiceTest {
         title: String,
         containerId: String? = null,
         status: TaskStatus = TaskStatus.PENDING,
-        plannedDate: LocalDate? = null,
-        deadline: Long? = null,
+        due: TaskDue = TaskDue.None,
         completedAt: Long? = null,
     ): UserTask {
         val t = UserTask(
@@ -155,8 +156,7 @@ class ContainerStatisticsServiceTest {
             title = title,
             containerId = containerId?.let(::ContainerId),
             status = status,
-            plannedDate = plannedDate,
-            deadline = deadline,
+            due = due,
             completedAt = completedAt,
             createdAt = 1000L,
             updatedAt = 1000L
@@ -349,14 +349,14 @@ class ContainerStatisticsServiceTest {
         createTask("t3", "Task Completed Yesterday", containerId = "study",
             status = TaskStatus.COMPLETED, completedAt = startTs - 5000L)
 
-        // Pending task with plannedDate (plannedDate != completion!)
+        // Pending task with due (due != completion!)
         createTask("t4", "Pending Planned Task", containerId = "study",
-            status = TaskStatus.PENDING, plannedDate = day)
+            status = TaskStatus.PENDING, due = TaskDue.Day(TaskDueDate.from(day)))
 
-        // Hard overdue pending task
+        // Overdue pending task
         nowMillisValue = startTs + 50000L
         createTask("t5", "Hard Overdue Task", containerId = "db",
-            status = TaskStatus.PENDING, deadline = startTs + 1000L)
+            status = TaskStatus.PENDING, due = TaskDue.Timed.of(startTs + 1000L))
 
         val range = ContainerStatsRange.day(day)
 

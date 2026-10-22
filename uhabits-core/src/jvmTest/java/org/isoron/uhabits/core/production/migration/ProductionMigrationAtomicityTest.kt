@@ -89,7 +89,7 @@ class ProductionMigrationAtomicityTest {
                 )
                 assertTrue("Retry should succeed", retryResult is ProductionNextMigrationResult.Success)
                 val success = retryResult as ProductionNextMigrationResult.Success
-                assertEquals(DATABASE_VERSION, db.getVersion())
+                assertEquals(30, db.getVersion())
 
                 val validation = ProductionNextMigrationValidator.validate(
                     db = db,

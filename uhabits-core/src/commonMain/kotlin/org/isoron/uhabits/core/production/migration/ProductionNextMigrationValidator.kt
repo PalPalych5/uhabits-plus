@@ -74,6 +74,9 @@ object ProductionNextMigrationValidator {
         "android_metadata",
         "sqlite_sequence",
         "BackupManifest",
+        "SyncState",
+        "SyncInbox",
+        "SyncTombstones",
     )
 
     fun validate(
@@ -143,7 +146,7 @@ object ProductionNextMigrationValidator {
             }
 
             // Verify expected indexes
-            val expectedIndexes = setOf(
+            val expectedIndexes = mutableSetOf(
                 "idx_containers_tree",
                 "idx_containers_active",
                 "idx_habit_placements_contents",
@@ -153,7 +156,6 @@ object ProductionNextMigrationValidator {
                 "idx_user_tasks_container",
                 "idx_user_tasks_parent",
                 "idx_user_tasks_status",
-                "idx_user_tasks_planned",
                 "idx_user_tasks_order",
                 "idx_focus_sessions_task",
                 "idx_focus_sessions_started",
@@ -166,6 +168,12 @@ object ProductionNextMigrationValidator {
                 "idx_source_rules_container",
                 "idx_source_rules_active",
             )
+            if (db.getVersion() >= 31) {
+                expectedIndexes.add("idx_user_tasks_due_kind")
+                expectedIndexes.add("idx_user_tasks_due_date")
+            } else {
+                expectedIndexes.add("idx_user_tasks_planned")
+            }
             val actualIndexes = mutableSetOf<String>()
             val idxStmt = db.prepareStatement("SELECT name FROM sqlite_master WHERE type = 'index'")
             while (idxStmt.step() == StepResult.ROW) {

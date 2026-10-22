@@ -5,6 +5,8 @@ import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.TaskStatus
 import org.isoron.uhabits.core.userTasks.UserTask
+import org.isoron.uhabits.core.userTasks.due.TaskDue
+import org.isoron.uhabits.core.userTasks.due.TaskDueDate
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -13,7 +15,8 @@ class TaskSmartViewTest {
     private val today = LocalDate(2026, 10, 4)
     private val yesterday = LocalDate(2026, 10, 3)
     private val tomorrow = LocalDate(2026, 10, 5)
-    private val now = 1_000L
+    // 2026-10-04 12:00:00 UTC = 1791115200000L
+    private val now = 1791115200000L
     private val task = UserTask(TaskId("task"), "Study indexes", createdAt = 0, updatedAt = 0)
 
     @Test
@@ -23,10 +26,10 @@ class TaskSmartViewTest {
     }
 
     @Test
-    fun inboxIncludesUnassignedTasksRegardlessOfPlanning() {
-        assertTrue(matches(TaskSmartView.INBOX, task.copy(plannedDate = tomorrow)))
-        assertTrue(matches(TaskSmartView.INBOX, task.copy(deadline = now + 1)))
-        assertTrue(matches(TaskSmartView.INBOX, task.copy(plannedDate = yesterday, deadline = now - 1)))
+    fun inboxIncludesUnassignedTasksRegardlessOfDue() {
+        assertTrue(matches(TaskSmartView.INBOX, task.copy(due = TaskDue.Day(TaskDueDate.from(tomorrow)))))
+        assertTrue(matches(TaskSmartView.INBOX, task.copy(due = TaskDue.Timed.of(now + 3600000L))))
+        assertTrue(matches(TaskSmartView.INBOX, task.copy(due = TaskDue.Day(TaskDueDate.from(yesterday)))))
     }
 
     @Test
@@ -34,8 +37,7 @@ class TaskSmartViewTest {
         val completed = task.copy(
             status = TaskStatus.COMPLETED,
             completedAt = now,
-            plannedDate = today,
-            deadline = now - 1,
+            due = TaskDue.Day(TaskDueDate.from(today)),
         )
         for (view in TaskSmartView.entries) {
             if (view == TaskSmartView.COMPLETED) assertTrue(matches(view, completed))
@@ -45,30 +47,52 @@ class TaskSmartViewTest {
     }
 
     @Test
-    fun todayIncludesCurrentPlanMissedPlanAndHardOverdue() {
-        assertTrue(matches(TaskSmartView.TODAY, task.copy(plannedDate = today)))
-        val missedPlan = task.copy(plannedDate = yesterday)
-        assertTrue(matches(TaskSmartView.TODAY, missedPlan))
-        assertTrue(missedPlan.isMissedPlan(today, now))
-        assertFalse(missedPlan.isHardOverdue(now))
-        val overdue = task.copy(plannedDate = tomorrow, deadline = now - 1)
-        assertTrue(matches(TaskSmartView.TODAY, overdue))
-        assertTrue(overdue.isHardOverdue(now))
-        assertFalse(overdue.isMissedPlan(today, now))
+    fun todayStrictlyIncludesTasksDueToday() {
+        val dueTodayDay = task.copy(due = TaskDue.Day(TaskDueDate.from(today)))
+        assertTrue(matches(TaskSmartView.TODAY, dueTodayDay))
+
+        // Timed due today
+        val dueTodayTimed = task.copy(due = TaskDue.Timed.of(now + 1000L))
+        assertTrue(matches(TaskSmartView.TODAY, dueTodayTimed))
+
+        // None does not match today
         assertFalse(matches(TaskSmartView.TODAY, task))
-        assertFalse(matches(TaskSmartView.TODAY, task.copy(plannedDate = tomorrow)))
-        assertFalse(matches(TaskSmartView.TODAY, task.copy(deadline = now + 1)))
+
+        // Yesterday does NOT match today (it's overdue!)
+        val dueYesterday = task.copy(due = TaskDue.Day(TaskDueDate.from(yesterday)))
+        assertFalse(matches(TaskSmartView.TODAY, dueYesterday))
+        assertTrue(matches(TaskSmartView.OVERDUE, dueYesterday))
+
+        // Tomorrow does NOT match today (it's upcoming!)
+        val dueTomorrow = task.copy(due = TaskDue.Day(TaskDueDate.from(tomorrow)))
+        assertFalse(matches(TaskSmartView.TODAY, dueTomorrow))
+        assertTrue(matches(TaskSmartView.UPCOMING, dueTomorrow))
     }
 
     @Test
-    fun upcomingUsesFuturePlanOrFutureDeadlineWithoutMissedPlan() {
-        assertTrue(matches(TaskSmartView.UPCOMING, task.copy(plannedDate = tomorrow)))
-        assertTrue(matches(TaskSmartView.UPCOMING, task.copy(deadline = now + 1)))
-        assertTrue(matches(TaskSmartView.UPCOMING, task.copy(plannedDate = today, deadline = now + 1)))
-        assertFalse(matches(TaskSmartView.UPCOMING, task.copy(plannedDate = yesterday, deadline = now + 1)))
-        assertFalse(matches(TaskSmartView.UPCOMING, task.copy(plannedDate = today)))
-        assertFalse(matches(TaskSmartView.UPCOMING, task.copy(deadline = now)))
+    fun overdueIncludesOnlyOverdueTasks() {
+        val overdueDay = task.copy(due = TaskDue.Day(TaskDueDate.from(yesterday)))
+        assertTrue(matches(TaskSmartView.OVERDUE, overdueDay))
+
+        val overdueTimed = task.copy(due = TaskDue.Timed.of(now - 1000L))
+        assertTrue(matches(TaskSmartView.OVERDUE, overdueTimed))
+
+        assertFalse(matches(TaskSmartView.OVERDUE, task))
+        assertFalse(matches(TaskSmartView.OVERDUE, task.copy(due = TaskDue.Day(TaskDueDate.from(today)))))
+        assertFalse(matches(TaskSmartView.OVERDUE, task.copy(due = TaskDue.Day(TaskDueDate.from(tomorrow)))))
+    }
+
+    @Test
+    fun upcomingIncludesOnlyFutureTasks() {
+        val futureDay = task.copy(due = TaskDue.Day(TaskDueDate.from(tomorrow)))
+        assertTrue(matches(TaskSmartView.UPCOMING, futureDay))
+
+        val futureTimed = task.copy(due = TaskDue.Timed.of(now + 86400000L * 2))
+        assertTrue(matches(TaskSmartView.UPCOMING, futureTimed))
+
         assertFalse(matches(TaskSmartView.UPCOMING, task))
+        assertFalse(matches(TaskSmartView.UPCOMING, task.copy(due = TaskDue.Day(TaskDueDate.from(today)))))
+        assertFalse(matches(TaskSmartView.UPCOMING, task.copy(due = TaskDue.Day(TaskDueDate.from(yesterday)))))
     }
 
     @Test
@@ -76,6 +100,6 @@ class TaskSmartViewTest {
         assertTrue(matches(TaskSmartView.ALL, task.copy(containerId = ContainerId("study"))))
     }
 
-    private fun matches(view: TaskSmartView, candidate: UserTask): Boolean =
-        view.matches(candidate, today, now)
+    private fun matches(view: TaskSmartView, task: UserTask): Boolean =
+        view.matches(task, today, now)
 }

@@ -16,6 +16,8 @@ import org.isoron.uhabits.core.rules.*
 import org.isoron.uhabits.core.rules.sqlite.*
 import org.isoron.uhabits.core.contribution.sqlite.*
 import org.isoron.uhabits.core.userTasks.*
+import org.isoron.uhabits.core.userTasks.due.TaskDue
+import org.isoron.uhabits.core.userTasks.due.TaskDueDate
 import org.isoron.uhabits.core.ui.screens.habits.list.HabitCardListCache
 import org.isoron.uhabits.widgets.WidgetUpdater
 import java.io.File
@@ -135,12 +137,23 @@ object DemoDataGenerator {
             db.run("UPDATE OrganizationState SET cutover_at = $created")
             val tasks = (0 until 84).map { i ->
                 val completed = i % 5 == 0 || (i >= 72 && (i - 72) % 5 == 0)
+                val taskDue = when {
+                    i % 4 == 0 -> TaskDue.None
+                    i % 3 == 0 -> {
+                        val d = referenceDate.plus(i % 13 - 3)
+                        val cal = java.util.Calendar.getInstance().apply { clear(); set(d.year, d.month - 1, d.day, 20, 0) }
+                        TaskDue.Timed.of(cal.timeInMillis)
+                    }
+                    else -> {
+                        val d = referenceDate.plus(i % 13 - 5)
+                        TaskDue.Day(TaskDueDate.from(d))
+                    }
+                }
                 UserTask(TaskId("qa-task-$i"), taskTitles[i % taskTitles.size] + if (i >= 12) " · ${i / 12 + 1}" else "",
                     description = "Проверить результат и записать следующий шаг.\nДемонстрационные данные.",
                     containerId = if (i % 7 == 0) null else containers[i % containers.size],
                     status = if (completed) TaskStatus.COMPLETED else TaskStatus.PENDING,
-                    plannedDate = if (i % 4 == 0) null else referenceDate.plus(i % 13 - 5),
-                    deadline = if (i % 3 == 0) referenceDate.plus(i % 13 - 3).let { date -> java.util.Calendar.getInstance().apply { clear(); set(date.year, date.month - 1, date.day, 20, 0) }.timeInMillis } else null,
+                    due = taskDue,
                     completedAt = if (completed) referenceDate.minus(i % 15).unixTime + 12 * 3600000L else null,
                     parentTaskId = if (i >= 72) TaskId("qa-task-${i - 72}") else null,
                     sortOrder = i, createdAt = created, updatedAt = referenceDate.unixTime + 23 * 3600000L)

@@ -20,7 +20,10 @@
 package org.isoron.uhabits.core.userTasks
 
 import org.isoron.platform.time.LocalDate
+import org.isoron.platform.time.localDateAt
 import org.isoron.uhabits.core.containers.ContainerId
+import org.isoron.uhabits.core.userTasks.due.TaskDue
+import org.isoron.uhabits.core.userTasks.due.TaskDueDate
 import kotlin.jvm.JvmInline
 
 @JvmInline
@@ -39,36 +42,42 @@ data class UserTask(
     val description: String = "",
     val containerId: ContainerId? = null,
     val status: TaskStatus = TaskStatus.PENDING,
-    val plannedDate: LocalDate? = null,
-    val deadline: Long? = null,
+    val due: TaskDue = TaskDue.None,
+    val legacyPlanDate: String? = null,
     val completedAt: Long? = null,
     val parentTaskId: TaskId? = null,
     val sortOrder: Int = 0,
     val createdAt: Long,
     val updatedAt: Long,
-    /** Read diagnostic only: preserves an unsupported SQLite planned_date until explicitly resolved. */
-    val unsupportedPlannedDateRaw: String? = null,
 ) {
     val isCompleted: Boolean get() = status == TaskStatus.COMPLETED
+    val hasPendingLegacyPlan: Boolean get() = due is TaskDue.None && !legacyPlanDate.isNullOrBlank()
 
-    /**
-     * Hard overdue is strictly when a non-null deadline has passed and the task is incomplete.
-     * Missed planned date does NOT constitute hard overdue.
-     */
-    fun isHardOverdue(nowMillis: Long): Boolean {
+    fun isOverdue(today: LocalDate, nowMillis: Long): Boolean {
         if (isCompleted) return false
-        val d = deadline ?: return false
-        return d < nowMillis
+        return when (due) {
+            is TaskDue.None -> false
+            is TaskDue.Day -> due.date.toLocalDate() < today
+            is TaskDue.Timed -> due.epochMillis < nowMillis
+        }
     }
 
-    /**
-     * Missed plan is when planned date has passed, the task is incomplete, and it is NOT hard overdue.
-     */
-    fun isMissedPlan(today: LocalDate, nowMillis: Long): Boolean {
+    fun isDueToday(today: LocalDate, nowMillis: Long): Boolean {
         if (isCompleted) return false
-        if (isHardOverdue(nowMillis)) return false
-        val p = plannedDate ?: return false
-        return p < today
+        return when (due) {
+            is TaskDue.None -> false
+            is TaskDue.Day -> due.date.toLocalDate() == today
+            is TaskDue.Timed -> !isOverdue(today, nowMillis) && localDateAt(due.epochMillis) == today
+        }
+    }
+
+    fun isDueUpcoming(today: LocalDate, nowMillis: Long): Boolean {
+        if (isCompleted) return false
+        return when (due) {
+            is TaskDue.None -> false
+            is TaskDue.Day -> due.date.toLocalDate() > today
+            is TaskDue.Timed -> due.epochMillis > nowMillis && localDateAt(due.epochMillis) > today
+        }
     }
 }
 
@@ -86,8 +95,6 @@ fun parseIsoDateString(str: String?): LocalDate? {
     val secondDash = str.indexOf('-', firstDash + 1)
     if (secondDash <= firstDash + 1 || secondDash >= str.length - 1) return null
 
-    // Keep the original toIntOrNull contract (including + signs and overflow),
-    // while avoiding split's list allocation. LocalDate normalization is intentional.
     val y = str.substring(0, firstDash).toIntOrNull() ?: return null
     val m = str.substring(firstDash + 1, secondDash).toIntOrNull() ?: return null
     if (str.indexOf('-', secondDash + 1) >= 0) return null

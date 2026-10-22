@@ -83,51 +83,51 @@
                 android:layout_width="16dp" android:layout_height="16dp" android:layout_marginEnd="16dp"
                 android:src="@drawable/ic_task_detail_chevron" />
         </LinearLayout>
-        <LinearLayout android:id="@+id/rowDetailPlannedDate"
+        <LinearLayout android:id="@+id/rowDetailDue"
             android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
             android:orientation="horizontal" android:gravity="center_vertical"
             android:background="?android:attr/selectableItemBackground" android:clickable="true" android:focusable="true">
-            <ImageView android:id="@+id/ivDetailPlanIcon"
+            <ImageView android:id="@+id/ivDetailDueIcon"
                 android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="12dp"
-                android:layout_marginEnd="16dp" android:src="@drawable/ic_task_detail_plan" />
+                android:layout_marginEnd="16dp" android:src="@drawable/ic_cat_calendar" />
             <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
                 android:layout_weight="1" android:orientation="vertical"
                 android:paddingTop="8dp" android:paddingBottom="8dp">
-                <TextView android:id="@+id/tvDetailPlanLabel"
+                <TextView android:id="@+id/tvDetailDueLabel"
                     android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:text="План" android:textSize="12sp" android:fontFamily="sans-serif" android:visibility="gone" />
-                <TextView android:id="@+id/tvDetailPlannedDateValue"
-                android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:paddingTop="0dp" android:paddingBottom="0dp" android:textSize="15sp" android:maxLines="2" android:ellipsize="end"
-                android:fontFamily="sans-serif" android:text="Запланировать" />
+                    android:text="Срок" android:textSize="12sp" android:fontFamily="sans-serif" android:visibility="gone" />
+                <TextView android:id="@+id/tvDetailDueValue"
+                    android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:paddingTop="0dp" android:paddingBottom="0dp" android:textSize="15sp" android:maxLines="2" android:ellipsize="end"
+                    android:fontFamily="sans-serif" android:text="Задать срок" />
             </LinearLayout>
-            <ImageButton android:id="@+id/btnClearPlannedDate"
+            <ImageButton android:id="@+id/btnClearDue"
                 android:layout_width="48dp" android:layout_height="48dp" android:padding="16dp"
                 android:background="?android:attr/selectableItemBackgroundBorderless" android:src="@drawable/ic_close"
-                android:contentDescription="Очистить плановую дату" android:visibility="gone" />
+                android:contentDescription="Очистить срок" android:visibility="gone" />
         </LinearLayout>
-        <LinearLayout android:id="@+id/rowDetailDeadline"
-            android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
-            android:orientation="horizontal" android:gravity="center_vertical"
-            android:background="?android:attr/selectableItemBackground" android:clickable="true" android:focusable="true">
-            <ImageView android:id="@+id/ivDetailDeadlineIcon"
-                android:layout_width="20dp" android:layout_height="20dp" android:layout_marginStart="12dp"
-                android:layout_marginEnd="16dp" android:src="@drawable/ic_cat_flag" />
-            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
-                android:layout_weight="1" android:orientation="vertical"
-                android:paddingTop="8dp" android:paddingBottom="8dp">
-                <TextView android:id="@+id/tvDetailDeadlineLabel"
-                    android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:text="Дедлайн" android:textSize="12sp" android:fontFamily="sans-serif" android:visibility="gone" />
-                <TextView android:id="@+id/tvDetailDeadlineValue"
+
+        <LinearLayout android:id="@+id/cardLegacyPlanDecision"
+            android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:padding="12dp"
+            android:layout_marginStart="48dp" android:layout_marginEnd="12dp" android:layout_marginTop="4dp" android:layout_marginBottom="8dp"
+            android:visibility="gone">
+            <TextView android:id="@+id/tvLegacyPlanPrompt"
                 android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:paddingTop="0dp" android:paddingBottom="0dp" android:textSize="15sp" android:maxLines="2" android:ellipsize="end"
-                android:fontFamily="sans-serif" android:text="Добавить дедлайн" />
+                android:textSize="13sp" android:fontFamily="sans-serif-medium"
+                android:text="Ранее запланировано:" />
+            <LinearLayout
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="horizontal" android:gravity="end" android:layout_marginTop="6dp">
+                <Button android:id="@+id/btnDismissLegacyPlan"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Отклонить" android:textSize="12sp" />
+                <Button android:id="@+id/btnAcceptLegacyPlan"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="Сделать сроком" android:textSize="12sp" />
             </LinearLayout>
-            <ImageButton android:id="@+id/btnClearDeadline"
-                android:layout_width="48dp" android:layout_height="48dp" android:padding="16dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless" android:src="@drawable/ic_close"
-                android:contentDescription="Очистить дедлайн" android:visibility="gone" />
         </LinearLayout>
 
         <View android:id="@+id/divider2"

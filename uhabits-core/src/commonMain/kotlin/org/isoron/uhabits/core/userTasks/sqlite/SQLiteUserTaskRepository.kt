@@ -29,16 +29,21 @@ import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.TaskStatus
 import org.isoron.uhabits.core.userTasks.UserTask
 import org.isoron.uhabits.core.userTasks.UserTaskRepository
-import org.isoron.uhabits.core.userTasks.parseTaskPlannedDate
-import org.isoron.uhabits.core.userTasks.toIsoDateString
+import org.isoron.uhabits.core.userTasks.due.TaskDue
+import org.isoron.uhabits.core.userTasks.due.TaskDueDate
 
 class SQLiteUserTaskRepository(
     private val db: Database
 ) : UserTaskRepository {
 
+    companion object {
+        private const val SELECT_COLUMNS =
+            "id, title, description, container_id, status, due_kind, due_date, due_time_millis, due_zone, completed_at, parent_task_id, sort_order, created_at, updated_at, planned_date"
+    }
+
     override fun getById(id: TaskId): UserTask? {
         val stmt = db.prepareStatement(
-            "SELECT id, title, description, container_id, status, planned_date, deadline, completed_at, parent_task_id, sort_order, created_at, updated_at FROM UserTasks WHERE id = ?"
+            "SELECT $SELECT_COLUMNS FROM UserTasks WHERE id = ?"
         )
         return try {
             stmt.bindText(1, id.value)
@@ -54,7 +59,7 @@ class SQLiteUserTaskRepository(
 
     override fun getAll(): List<UserTask> {
         val stmt = db.prepareStatement(
-            "SELECT id, title, description, container_id, status, planned_date, deadline, completed_at, parent_task_id, sort_order, created_at, updated_at FROM UserTasks ORDER BY sort_order ASC, created_at ASC"
+            "SELECT $SELECT_COLUMNS FROM UserTasks ORDER BY sort_order ASC, created_at ASC"
         )
         val list = mutableListOf<UserTask>()
         return try {
@@ -69,7 +74,7 @@ class SQLiteUserTaskRepository(
 
     override fun getRoots(): List<UserTask> {
         val stmt = db.prepareStatement(
-            "SELECT id, title, description, container_id, status, planned_date, deadline, completed_at, parent_task_id, sort_order, created_at, updated_at FROM UserTasks WHERE parent_task_id IS NULL ORDER BY sort_order ASC, created_at ASC"
+            "SELECT $SELECT_COLUMNS FROM UserTasks WHERE parent_task_id IS NULL ORDER BY sort_order ASC, created_at ASC"
         )
         val list = mutableListOf<UserTask>()
         return try {
@@ -84,7 +89,7 @@ class SQLiteUserTaskRepository(
 
     override fun getByContainer(containerId: ContainerId): List<UserTask> {
         val stmt = db.prepareStatement(
-            "SELECT id, title, description, container_id, status, planned_date, deadline, completed_at, parent_task_id, sort_order, created_at, updated_at FROM UserTasks WHERE container_id = ? ORDER BY sort_order ASC, created_at ASC"
+            "SELECT $SELECT_COLUMNS FROM UserTasks WHERE container_id = ? ORDER BY sort_order ASC, created_at ASC"
         )
         val list = mutableListOf<UserTask>()
         return try {
@@ -100,7 +105,7 @@ class SQLiteUserTaskRepository(
 
     override fun getSubtasks(parentTaskId: TaskId): List<UserTask> {
         val stmt = db.prepareStatement(
-            "SELECT id, title, description, container_id, status, planned_date, deadline, completed_at, parent_task_id, sort_order, created_at, updated_at FROM UserTasks WHERE parent_task_id = ? ORDER BY sort_order ASC, created_at ASC"
+            "SELECT $SELECT_COLUMNS FROM UserTasks WHERE parent_task_id = ? ORDER BY sort_order ASC, created_at ASC"
         )
         val list = mutableListOf<UserTask>()
         return try {
@@ -136,42 +141,15 @@ class SQLiteUserTaskRepository(
     }
 
     override fun save(task: UserTask) {
-        val stmt = db.prepareStatement(
-            """
-            INSERT OR REPLACE INTO UserTasks (
-                id, title, description, container_id, status, planned_date,
-                deadline, completed_at, parent_task_id, sort_order, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """.trimIndent()
-        )
-        try {
-            bindTask(stmt, task)
-            stmt.step()
-        } finally {
-            stmt.finalize()
+        UserTaskSqlWriter.upsert(db, task.id.value) {
+            bindTask(this, task)
         }
     }
 
     override fun saveAll(tasks: Collection<UserTask>) {
         if (tasks.isEmpty()) return
-        val stmt = db.prepareStatement(
-            """
-            INSERT OR REPLACE INTO UserTasks (
-                id, title, description, container_id, status, planned_date,
-                deadline, completed_at, parent_task_id, sort_order, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """.trimIndent()
-        )
-        try {
-            db.runInTransaction {
-                for (task in tasks) {
-                    stmt.reset()
-                    bindTask(stmt, task)
-                    stmt.step()
-                }
-            }
-        } finally {
-            stmt.finalize()
+        db.runInTransaction {
+            for (task in tasks) save(task)
         }
     }
 
@@ -205,20 +183,32 @@ class SQLiteUserTaskRepository(
         stmt.bindText(3, task.description)
         if (task.containerId != null) stmt.bindText(4, task.containerId.value) else stmt.bindNull(4)
         stmt.bindText(5, task.status.name)
-        when {
-            task.unsupportedPlannedDateRaw != null -> {
-                require(task.plannedDate == null) { "Resolve unsupported planned_date before assigning a date" }
-                stmt.bindText(6, task.unsupportedPlannedDateRaw)
+        when (val due = task.due) {
+            is TaskDue.None -> {
+                stmt.bindText(6, "NONE")
+                stmt.bindNull(7)
+                stmt.bindNull(8)
+                stmt.bindNull(9)
             }
-            task.plannedDate != null -> stmt.bindText(6, task.plannedDate.toIsoDateString())
-            else -> stmt.bindNull(6)
+            is TaskDue.Day -> {
+                stmt.bindText(6, "DAY")
+                stmt.bindText(7, due.date.isoDate)
+                stmt.bindNull(8)
+                stmt.bindNull(9)
+            }
+            is TaskDue.Timed -> {
+                stmt.bindText(6, "TIMED")
+                stmt.bindNull(7)
+                stmt.bindLong(8, due.epochMillis)
+                if (due.originZoneId != null) stmt.bindText(9, due.originZoneId) else stmt.bindNull(9)
+            }
         }
-        if (task.deadline != null) stmt.bindLong(7, task.deadline) else stmt.bindNull(7)
-        if (task.completedAt != null) stmt.bindLong(8, task.completedAt) else stmt.bindNull(8)
-        if (task.parentTaskId != null) stmt.bindText(9, task.parentTaskId.value) else stmt.bindNull(9)
-        stmt.bindInt(10, task.sortOrder)
-        stmt.bindLong(11, task.createdAt)
-        stmt.bindLong(12, task.updatedAt)
+        if (task.completedAt != null) stmt.bindLong(10, task.completedAt) else stmt.bindNull(10)
+        if (task.parentTaskId != null) stmt.bindText(11, task.parentTaskId.value) else stmt.bindNull(11)
+        stmt.bindInt(12, task.sortOrder)
+        stmt.bindLong(13, task.createdAt)
+        stmt.bindLong(14, task.updatedAt)
+        if (task.legacyPlanDate != null) stmt.bindText(15, task.legacyPlanDate) else stmt.bindNull(15)
     }
 
     private fun mapRow(stmt: PreparedStatement): UserTask {
@@ -227,23 +217,23 @@ class SQLiteUserTaskRepository(
         val description = stmt.getText(2)
         val containerId = stmt.getTextOrNull(3)?.let { ContainerId(it) }
         val status = try { TaskStatus.valueOf(stmt.getText(4)) } catch (_: Throwable) { TaskStatus.PENDING }
-        val rawPlan = stmt.getTextOrNull(5)
-        var unsupportedPlan: String? = null
-        val plannedDate = try {
-            parseTaskPlannedDate(rawPlan)
-        } catch (_: IllegalArgumentException) {
-            unsupportedPlan = rawPlan
-            null
-        } catch (_: IndexOutOfBoundsException) {
-            unsupportedPlan = rawPlan
-            null
+        val dueKind = stmt.getTextOrNull(5)
+        val dueDateStr = stmt.getTextOrNull(6)
+        val dueTimeMillis = stmt.getLongOrNull(7)
+        val dueZone = stmt.getTextOrNull(8)
+
+        val due: TaskDue = when (dueKind) {
+            "DAY" -> dueDateStr?.let { runCatching { TaskDue.Day(TaskDueDate.parse(it)) }.getOrNull() } ?: TaskDue.None
+            "TIMED" -> dueTimeMillis?.let { TaskDue.Timed.of(it, dueZone) } ?: TaskDue.None
+            else -> TaskDue.None
         }
-        val deadline = stmt.getLongOrNull(6)
-        val completedAt = stmt.getLongOrNull(7)
-        val parentTaskId = stmt.getTextOrNull(8)?.let { TaskId(it) }
-        val sortOrder = stmt.getInt(9)
-        val createdAt = stmt.getLong(10)
-        val updatedAt = stmt.getLong(11)
+
+        val completedAt = stmt.getLongOrNull(9)
+        val parentTaskId = stmt.getTextOrNull(10)?.let { TaskId(it) }
+        val sortOrder = stmt.getInt(11)
+        val createdAt = stmt.getLong(12)
+        val updatedAt = stmt.getLong(13)
+        val legacyPlanDate = stmt.getTextOrNull(14)
 
         return UserTask(
             id = id,
@@ -251,14 +241,13 @@ class SQLiteUserTaskRepository(
             description = description,
             containerId = containerId,
             status = status,
-            plannedDate = plannedDate,
-            deadline = deadline,
+            due = due,
+            legacyPlanDate = legacyPlanDate,
             completedAt = completedAt,
             parentTaskId = parentTaskId,
             sortOrder = sortOrder,
             createdAt = createdAt,
             updatedAt = updatedAt,
-            unsupportedPlannedDateRaw = unsupportedPlan,
         )
     }
 }

@@ -28,8 +28,30 @@ import org.isoron.platform.io.runInTransaction
 import org.isoron.platform.io.setVersion
 import org.isoron.uhabits.core.containers.migration.RawLegacyInventoryReader
 import org.isoron.uhabits.core.containers.sqlite.OrganizationSchema
+import org.isoron.uhabits.core.DATABASE_VERSION
 
 object DatabaseSnapshotter {
+
+    /** Fixed-column copies must refuse schemas whose task facts they cannot preserve. */
+    private fun requireSupportedDatabase(db: Database, role: String) {
+        require(db.getVersion() <= DATABASE_VERSION) { "Unsupported $role database schema version: ${db.getVersion()}" }
+        val tables = listTables(db)
+        if ("UserTasks" !in tables) return
+        val supported = setOf(
+            "id", "title", "description", "container_id", "status",
+            "due_kind", "due_date", "due_time_millis", "due_zone",
+            "completed_at", "parent_task_id", "sort_order", "created_at", "updated_at",
+            "planned_date", "deadline"
+        )
+        val columns = mutableSetOf<String>()
+        val stmt = db.prepareStatement("PRAGMA table_info(UserTasks)")
+        try {
+            while (stmt.step() == StepResult.ROW) columns.add(stmt.getText(1))
+        } finally { stmt.finalize() }
+        require((columns - supported).isEmpty()) {
+            "Unsupported UserTasks columns; refusing silent task fact loss: ${(columns - supported).sorted()}"
+        }
+    }
 
     /** A restored snapshot must fetch afresh, never replay a previous live account's delivery state. */
     fun clearSyncDeliveryState(db: Database) {
@@ -54,6 +76,8 @@ object DatabaseSnapshotter {
     }
 
     fun initTargetSchema(sourceDb: Database, targetDb: Database) {
+        requireSupportedDatabase(sourceDb, "source")
+        requireSupportedDatabase(targetDb, "target")
         val sourceTables = listTables(sourceDb)
         val sourceVersion = sourceDb.getVersion()
         targetDb.setVersion(sourceVersion)
@@ -61,8 +85,9 @@ object DatabaseSnapshotter {
         // 1. Create Organization Schema if present in source
         if (sourceTables.contains("OrganizationState")) {
             OrganizationSchema.createSchema(targetDb)
-        } else if (sourceTables.contains("UserTasks")) {
-            org.isoron.uhabits.core.userTasks.sqlite.UserTaskSchema.createSchema(targetDb)
+        }
+        if (sourceTables.contains("UserTasks")) {
+            org.isoron.uhabits.core.userTasks.sqlite.UserTaskSchema.createSchema(targetDb, targetVersion = DATABASE_VERSION)
         }
 
         // 2. Create Legacy tables if not already created
@@ -313,6 +338,9 @@ object DatabaseSnapshotter {
     }
 
     fun copyAllData(sourceDb: Database, targetDb: Database) {
+        // Validate before BEGIN or clearing any destination data, including direct callers.
+        requireSupportedDatabase(sourceDb, "source")
+        requireSupportedDatabase(targetDb, "target")
         val sourceTables = listTables(sourceDb)
 
         try {
@@ -887,38 +915,95 @@ object DatabaseSnapshotter {
     }
 
     private fun copyUserTasks(sourceDb: Database, targetDb: Database) {
-        val select = sourceDb.prepareStatement(
+        val srcColumns = mutableSetOf<String>()
+        val pragma = sourceDb.prepareStatement("PRAGMA table_info(UserTasks)")
+        try {
+            while (pragma.step() == StepResult.ROW) srcColumns.add(pragma.getText(1))
+        } finally { pragma.finalize() }
+
+        val hasDueKind = "due_kind" in srcColumns
+        val hasPlannedDate = "planned_date" in srcColumns
+        val hasDeadline = "deadline" in srcColumns
+
+        val selectSql = if (hasDueKind) {
             """
-            SELECT id, title, description, container_id, status, planned_date,
-                   deadline, completed_at, parent_task_id, sort_order, created_at, updated_at
+            SELECT id, title, description, container_id, status, due_kind, due_date,
+                   due_time_millis, due_zone, completed_at, parent_task_id, sort_order, created_at, updated_at
+                   ${if (hasPlannedDate) ", planned_date" else ", NULL"}
+                   ${if (hasDeadline) ", deadline" else ", NULL"}
             FROM UserTasks
             """.trimIndent()
-        )
+        } else {
+            """
+            SELECT id, title, description, container_id, status, planned_date, deadline,
+                   completed_at, parent_task_id, sort_order, created_at, updated_at
+            FROM UserTasks
+            """.trimIndent()
+        }
+
+        val select = sourceDb.prepareStatement(selectSql)
         val insert = targetDb.prepareStatement(
             """
             INSERT OR REPLACE INTO UserTasks (
-                id, title, description, container_id, status, planned_date,
-                deadline, completed_at, parent_task_id, sort_order, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                id, title, description, container_id, status, due_kind, due_date,
+                due_time_millis, due_zone, completed_at, parent_task_id, sort_order, created_at, updated_at,
+                planned_date, deadline
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent()
         )
-        while (select.step() == StepResult.ROW) {
-            insert.bindText(1, select.getText(0))
-            insert.bindText(2, select.getText(1))
-            insert.bindText(3, select.getText(2))
-            val cid = select.getTextOrNull(3); if (cid != null) insert.bindText(4, cid) else insert.bindNull(4)
-            insert.bindText(5, select.getText(4))
-            val pdate = select.getTextOrNull(5); if (pdate != null) insert.bindText(6, pdate) else insert.bindNull(6)
-            val dline = select.getLongOrNull(6); if (dline != null) insert.bindLong(7, dline) else insert.bindNull(7)
-            val compAt = select.getLongOrNull(7); if (compAt != null) insert.bindLong(8, compAt) else insert.bindNull(8)
-            val pid = select.getTextOrNull(8); if (pid != null) insert.bindText(9, pid) else insert.bindNull(9)
-            insert.bindInt(10, select.getInt(9))
-            insert.bindLong(11, select.getLong(10))
-            insert.bindLong(12, select.getLong(11))
-            insert.step()
-            insert.reset()
+        try {
+            while (select.step() == StepResult.ROW) {
+                insert.bindText(1, select.getText(0))
+                insert.bindText(2, select.getText(1))
+                insert.bindText(3, select.getText(2))
+                val cid = select.getTextOrNull(3); if (cid != null) insert.bindText(4, cid) else insert.bindNull(4)
+                insert.bindText(5, select.getText(4))
+
+                if (hasDueKind) {
+                    val dk = select.getTextOrNull(5) ?: "NONE"
+                    insert.bindText(6, dk)
+                    val dd = select.getTextOrNull(6); if (dd != null) insert.bindText(7, dd) else insert.bindNull(7)
+                    val dt = select.getLongOrNull(7); if (dt != null) insert.bindLong(8, dt) else insert.bindNull(8)
+                    val dz = select.getTextOrNull(8); if (dz != null) insert.bindText(9, dz) else insert.bindNull(9)
+                    val compAt = select.getLongOrNull(9); if (compAt != null) insert.bindLong(10, compAt) else insert.bindNull(10)
+                    val pid = select.getTextOrNull(10); if (pid != null) insert.bindText(11, pid) else insert.bindNull(11)
+                    insert.bindInt(12, select.getInt(11))
+                    insert.bindLong(13, select.getLong(12))
+                    insert.bindLong(14, select.getLong(13))
+                    val pdate = select.getTextOrNull(14); if (pdate != null) insert.bindText(15, pdate) else insert.bindNull(15)
+                    val dline = select.getLongOrNull(15); if (dline != null) insert.bindLong(16, dline) else insert.bindNull(16)
+                } else {
+                    val pdate = select.getTextOrNull(5)
+                    val dline = select.getLongOrNull(6)
+                    when {
+                        dline != null && dline > 0 -> {
+                            insert.bindText(6, "TIMED")
+                            insert.bindNull(7)
+                            insert.bindLong(8, dline)
+                            insert.bindNull(9)
+                        }
+                        else -> {
+                            insert.bindText(6, "NONE")
+                            insert.bindNull(7)
+                            insert.bindNull(8)
+                            insert.bindNull(9)
+                        }
+                    }
+                    val compAt = select.getLongOrNull(7); if (compAt != null) insert.bindLong(10, compAt) else insert.bindNull(10)
+                    val pid = select.getTextOrNull(8); if (pid != null) insert.bindText(11, pid) else insert.bindNull(11)
+                    insert.bindInt(12, select.getInt(9))
+                    insert.bindLong(13, select.getLong(10))
+                    insert.bindLong(14, select.getLong(11))
+                    if (pdate != null) insert.bindText(15, pdate) else insert.bindNull(15)
+                    if (dline != null) insert.bindLong(16, dline) else insert.bindNull(16)
+                }
+
+                insert.step()
+                insert.reset()
+            }
+        } finally {
+            select.finalize()
+            insert.finalize()
         }
-        select.finalize()
-        insert.finalize()
     }
 }

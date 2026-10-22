@@ -11,6 +11,7 @@ import org.isoron.uhabits.core.focus.FocusSession
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.userTasks.UserTask
+import org.isoron.uhabits.core.userTasks.due.TaskDue
 import org.isoron.uhabits.core.userTasks.toIsoDateString
 
 /**
@@ -269,8 +270,14 @@ class SyncManager(
     }
 
     fun enqueueUserTask(task: UserTask, operationType: String = "upsert") {
-        // Do not publish a false clear or an unreadable date. The task remains editable locally.
-        if (task.unsupportedPlannedDateRaw != null) return
+        val dueKind = when (task.due) {
+            is TaskDue.None -> "NONE"
+            is TaskDue.Day -> "DAY"
+            is TaskDue.Timed -> "TIMED"
+        }
+        val dueDate = (task.due as? TaskDue.Day)?.date?.isoDate
+        val dueTimeMillis = (task.due as? TaskDue.Timed)?.epochMillis?.toString()
+        val dueZone = (task.due as? TaskDue.Timed)?.originZoneId
         enqueue(
             "user_task",
             task.id.value,
@@ -281,8 +288,10 @@ class SyncManager(
                 "description" to task.description,
                 "container_id" to task.containerId?.value,
                 "status" to task.status.name,
-                "planned_date" to task.plannedDate?.toIsoDateString(),
-                "deadline" to task.deadline?.toString(),
+                "due_kind" to dueKind,
+                "due_date" to dueDate,
+                "due_time_millis" to dueTimeMillis,
+                "due_zone" to dueZone,
                 "completed_at" to task.completedAt?.toString(),
                 "parent_task_id" to task.parentTaskId?.value,
                 "sort_order" to task.sortOrder.toString(),

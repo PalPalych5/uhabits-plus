@@ -89,8 +89,9 @@ class DatasetSessionManager(
             val dbFile = DatabaseUtils.getDatabaseFile(context)
             if (dbFile.exists()) {
                 val validation = DatabaseUtils.validateDatabaseBackup(dbFile, org.isoron.uhabits.core.DATABASE_VERSION)
-                if (validation.isValid && validation.databaseVersion == org.isoron.uhabits.core.DATABASE_VERSION) {
-                    Log.i(TAG, "Production Next dataset validated successfully on startup: $datasetUuid")
+                if (validation.isValid && validation.databaseVersion != null &&
+                    validation.databaseVersion in 29..org.isoron.uhabits.core.DATABASE_VERSION) {
+                    Log.i(TAG, "Production Next dataset validated successfully on startup: $datasetUuid (v${validation.databaseVersion})")
                     return DatasetSessionFactory.productionNext(datasetUuid)
                 } else {
                     Log.w(TAG, "Production Next database failed validation (${validation.errorMessage}), safely falling back to legacy production")
@@ -141,8 +142,19 @@ class DatasetSessionManager(
     }
 
     fun isProductionNextSelected(): Boolean {
-        val modeStr = sessionPrefs.getString(KEY_SELECTED_MODE, DatasetMode.LEGACY_PRODUCTION.name)
-        return modeStr == DatasetMode.PRODUCTION_NEXT.name
+        val modeStr = sessionPrefs.getString(KEY_SELECTED_MODE, null)
+        if (modeStr == DatasetMode.PRODUCTION_NEXT.name) return true
+        if (modeStr == null || modeStr == DatasetMode.LEGACY_PRODUCTION.name) {
+            val dbFile = DatabaseUtils.getDatabaseFile(context)
+            if (dbFile.exists()) {
+                val validation = DatabaseUtils.validateDatabaseBackup(dbFile, org.isoron.uhabits.core.DATABASE_VERSION)
+                if (validation.isValid && (validation.databaseVersion ?: 0) >= 30) {
+                    persistProductionNextSelection()
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     fun persistProductionNextSelection(datasetUuid: String = "production") {

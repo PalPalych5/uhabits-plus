@@ -144,6 +144,14 @@ class HabitsDatabaseOpener @JvmOverloads constructor(
                 throw IllegalStateException("Version 30 schema migration failed: ${result.reason}", result.cause)
             }
         }
+        if (newVersion >= 31 && wrappedDb.getVersion() < newVersion) {
+            runBlocking {
+                wrappedDb.migrateTo(newVersion) { version ->
+                    val filename = "%02d.sql".format(version)
+                    context.assets.open("migrations/$filename").bufferedReader().readText()
+                }
+            }
+        }
     }
 
     override fun onDowngrade(

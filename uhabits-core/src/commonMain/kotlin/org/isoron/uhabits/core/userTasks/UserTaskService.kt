@@ -19,16 +19,15 @@
 
 package org.isoron.uhabits.core.userTasks
 
-import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.containers.ContainerId
+import org.isoron.uhabits.core.userTasks.due.TaskDue
 
 interface UserTaskService {
     fun createTask(
         title: String,
         description: String = "",
         containerId: ContainerId? = null,
-        plannedDate: LocalDate? = null,
-        deadline: Long? = null,
+        due: TaskDue = TaskDue.None,
         parentTaskId: TaskId? = null,
         explicitId: TaskId? = null,
         sortOrder: Int? = null,
@@ -40,10 +39,7 @@ interface UserTaskService {
         description: String? = null,
         containerId: ContainerId? = null,
         clearContainer: Boolean = false,
-        plannedDate: LocalDate? = null,
-        clearPlannedDate: Boolean = false,
-        deadline: Long? = null,
-        clearDeadline: Boolean = false,
+        due: TaskDue? = null,
         parentTaskId: TaskId? = null,
         clearParentTask: Boolean = false,
         sortOrder: Int? = null,
@@ -52,6 +48,8 @@ interface UserTaskService {
     fun toggleComplete(id: TaskId): UserTask
 
     fun setCompleted(id: TaskId, completed: Boolean): UserTask
+
+    fun resolveLegacyPlan(id: TaskId, accept: Boolean): UserTask
 
     fun deleteTask(id: TaskId, cascadeSubtasks: Boolean = true)
 

@@ -210,7 +210,7 @@
                 android:paddingBottom="4dp">
 
                 <TextView
-                    android:id="@+id/quickPlan"
+                    android:id="@+id/quickDue"
                     android:layout_width="0dp"
                     android:layout_weight="1"
                     android:layout_height="48dp"
@@ -238,30 +238,11 @@
                     android:textSize="12sp"
                     android:fontFamily="sans-serif"
                     android:text="Раздел"
-
                     android:maxLines="1"
                     android:ellipsize="end"
                     android:background="?android:attr/selectableItemBackground"
                     android:clickable="true"
                     android:focusable="true" />
-
-                <TextView
-                    android:id="@+id/quickDeadline"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="48dp"
-                    android:layout_marginStart="4dp"
-                    android:gravity="center_vertical"
-                    android:paddingStart="8dp"
-                    android:paddingEnd="8dp"
-                    android:textSize="12sp"
-                    android:fontFamily="sans-serif"
-                    android:text="Дедлайн"
-                    android:background="?android:attr/selectableItemBackground"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:maxLines="1"
-                    android:ellipsize="end" />
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>

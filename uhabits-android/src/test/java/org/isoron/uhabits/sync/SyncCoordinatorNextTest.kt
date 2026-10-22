@@ -678,8 +678,8 @@ class SyncCoordinatorNextTest {
         // 3. UserTask
         val taskId = "pre-existing-task"
         env.db.run(
-            """INSERT INTO UserTasks (id, title, description, container_id, status, planned_date, deadline, completed_at, parent_task_id, sort_order, created_at, updated_at)
-               VALUES ('$taskId', 'Offline Task', 'Notes', '$containerUuid', 'PENDING', NULL, NULL, NULL, NULL, 0, 1000, 1000)"""
+            """INSERT INTO UserTasks (id, title, description, container_id, status, due_kind, due_date, due_time_millis, due_zone, completed_at, parent_task_id, sort_order, created_at, updated_at)
+               VALUES ('$taskId', 'Offline Task', 'Notes', '$containerUuid', 'PENDING', 'NONE', NULL, NULL, NULL, NULL, NULL, 0, 1000, 1000)"""
         )
 
         // 4. FocusSession

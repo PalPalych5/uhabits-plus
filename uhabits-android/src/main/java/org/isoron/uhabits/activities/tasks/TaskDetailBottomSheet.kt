@@ -32,6 +32,7 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.Button
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -55,6 +56,8 @@ import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade
 import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.UserTask
 import org.isoron.uhabits.core.userTasks.UserTaskService
+import org.isoron.uhabits.core.userTasks.due.TaskDue
+import org.isoron.uhabits.core.userTasks.due.TaskDueDate
 import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
@@ -68,9 +71,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     private var taskId: TaskId? = null
     private var currentTask: UserTask? = null
     private var selectedContainerId: ContainerId? = null
-    private var selectedPlannedDate: LocalDate? = null
-    private var plannedDateEdited = false
-    private var selectedDeadline: Long? = null
+    private var selectedDue: TaskDue = TaskDue.None
     private var isCompleted: Boolean = false
 
     private lateinit var etTitle: EditText
@@ -83,13 +84,14 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     private lateinit var viewContainerDot: View
     private lateinit var tvContainerValue: TextView
 
-    private lateinit var rowPlannedDate: LinearLayout
-    private lateinit var tvPlannedDateValue: TextView
-    private lateinit var btnClearPlannedDate: ImageButton
-
-    private lateinit var rowDeadline: LinearLayout
-    private lateinit var tvDeadlineValue: TextView
-    private lateinit var btnClearDeadline: ImageButton
+    private lateinit var rowDue: LinearLayout
+    private lateinit var tvDueLabel: TextView
+    private lateinit var tvDueValue: TextView
+    private lateinit var btnClearDue: ImageButton
+    private lateinit var cardLegacyPlanDecision: View
+    private lateinit var tvLegacyPlanPrompt: TextView
+    private lateinit var btnAcceptLegacyPlan: Button
+    private lateinit var btnDismissLegacyPlan: Button
 
     private lateinit var rvSubtasks: RecyclerView
     private lateinit var subtasksAdapter: SubtasksAdapter
@@ -122,8 +124,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             currentTask = app.component.userTaskRepository.getById(taskId!!)
             currentTask?.let {
                 selectedContainerId = it.containerId
-                selectedPlannedDate = it.plannedDate
-                selectedDeadline = it.deadline
+                selectedDue = it.due
                 isCompleted = it.isCompleted
             }
         }
@@ -200,14 +201,10 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
     override fun onStart() {
         super.onStart()
-        TaskDatePicker.reconnect(childFragmentManager, "Плановая дата") { date ->
-            plannedDateEdited = true
-            selectedPlannedDate = date
-            updatePlannedDateDisplay()
+        TaskDatePicker.reconnect(childFragmentManager, "Срок") { date ->
+            selectedDue = TaskDue.Day(TaskDueDate.from(date))
+            updateDueDisplay()
             saveChanges()
-        }
-        TaskDatePicker.reconnect(childFragmentManager, "Дедлайн") { date ->
-            applyDeadlineDate(date.year, date.month - 1, date.day)
         }
         (dialog as? BottomSheetDialog)?.let { sheet ->
             sheet.dismissWithAnimation = true
@@ -236,13 +233,14 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         viewContainerDot = view.findViewById(R.id.viewDetailContainerDot)
         tvContainerValue = view.findViewById(R.id.tvDetailContainerValue)
 
-        rowPlannedDate = view.findViewById(R.id.rowDetailPlannedDate)
-        tvPlannedDateValue = view.findViewById(R.id.tvDetailPlannedDateValue)
-        btnClearPlannedDate = view.findViewById(R.id.btnClearPlannedDate)
-
-        rowDeadline = view.findViewById(R.id.rowDetailDeadline)
-        tvDeadlineValue = view.findViewById(R.id.tvDetailDeadlineValue)
-        btnClearDeadline = view.findViewById(R.id.btnClearDeadline)
+        rowDue = view.findViewById(R.id.rowDetailDue)
+        tvDueLabel = view.findViewById(R.id.tvDetailDueLabel)
+        tvDueValue = view.findViewById(R.id.tvDetailDueValue)
+        btnClearDue = view.findViewById(R.id.btnClearDue)
+        cardLegacyPlanDecision = view.findViewById(R.id.cardLegacyPlanDecision)
+        tvLegacyPlanPrompt = view.findViewById(R.id.tvLegacyPlanPrompt)
+        btnAcceptLegacyPlan = view.findViewById(R.id.btnAcceptLegacyPlan)
+        btnDismissLegacyPlan = view.findViewById(R.id.btnDismissLegacyPlan)
 
         rvSubtasks = view.findViewById(R.id.rvDetailSubtasks)
         tvSubtasksCount = view.findViewById(R.id.tvDetailSubtasksCount)
@@ -289,19 +287,25 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         etNewSubtask.setHintTextColor(palette.onSurfaceVariant)
 
         tvContainerValue.setTextColor(palette.onSurface)
-        tvPlannedDateValue.setTextColor(palette.onSurface)
-        tvDeadlineValue.setTextColor(palette.onSurface)
+        tvDueValue.setTextColor(palette.onSurface)
+        val planBg = GradientDrawable().apply {
+            cornerRadius = dp(8f)
+            setColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.12f))
+        }
+        cardLegacyPlanDecision.background = planBg
+        tvLegacyPlanPrompt.setTextColor(palette.onSurface)
+        btnDismissLegacyPlan.setTextColor(palette.onSurfaceVariant)
+        btnAcceptLegacyPlan.setTextColor(palette.accent)
         tvSubtasksCount.setTextColor(palette.onSurfaceVariant)
-        listOf(R.id.tvDetailContainerLabel, R.id.tvDetailPlanLabel, R.id.tvDetailDeadlineLabel).forEach { id ->
-            view.findViewById<TextView>(id).setTextColor(palette.onSurfaceVariant)
+        listOf(R.id.tvDetailContainerLabel, R.id.tvDetailDueLabel).forEach { id ->
+            view.findViewById<TextView>(id)?.setTextColor(palette.onSurfaceVariant)
         }
 
-        btnClearPlannedDate.setColorFilter(palette.onSurfaceVariant)
-        btnClearDeadline.setColorFilter(palette.onSurfaceVariant)
+        btnClearDue.setColorFilter(palette.onSurfaceVariant)
 
-        listOf(R.id.ivDetailContainerIcon, R.id.ivDetailPlanIcon, R.id.ivDetailDeadlineIcon,
+        listOf(R.id.ivDetailContainerIcon, R.id.ivDetailDueIcon,
             R.id.ivDetailContainerChevron, R.id.ivAddSubtask).forEach { id ->
-            view.findViewById<ImageView>(id).setColorFilter(palette.onSurfaceVariant)
+            view.findViewById<ImageView>(id)?.setColorFilter(palette.onSurfaceVariant)
         }
         btnMore.setColorFilter(palette.onSurfaceVariant)
         view.findViewById<TextView>(R.id.tvDetailSubtasksLabel).setTextColor(palette.onSurface)
@@ -314,8 +318,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         etDescription.setText(task.description)
         updateCheckState()
         updateContainerDisplay()
-        updatePlannedDateDisplay()
-        updateDeadlineDisplay()
+        updateDueDisplay()
         setupSubtasks()
     }
 
@@ -342,7 +345,6 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
     private fun updateContainerDisplay() {
         val cid = selectedContainerId
-        // The folder/value pair supplies context without adding a metadata chip or color dot.
         viewContainerDot.visibility = View.GONE
         if (cid == null) {
             tvContainerValue.text = "Без раздела"
@@ -359,45 +361,48 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         rowContainer.contentDescription = "Раздел: ${tvContainerValue.text}. Изменить раздел"
     }
 
-    private fun updatePlannedDateDisplay() {
-        rowPlannedDate.contentDescription = null
-        val p = selectedPlannedDate
-        tvPlannedDateValue.setTextColor(if (p == null) palette.onSurfaceVariant else palette.onSurface)
-        val unsupported = currentTask?.unsupportedPlannedDateRaw
-        if (unsupported != null && !plannedDateEdited) {
-            tvPlannedDateValue.setText(R.string.task_planned_date_needs_repair)
-            btnClearPlannedDate.visibility = View.VISIBLE
-            rowPlannedDate.contentDescription = getString(R.string.task_planned_date_repair_hint, unsupported)
-            return
-        } else if (p == null) {
-            tvPlannedDateValue.text = "Запланировать"
-            btnClearPlannedDate.visibility = View.GONE
+    private fun updateDueDisplay() {
+        rowDue.contentDescription = null
+        val hasLegacy = currentTask?.hasPendingLegacyPlan == true && selectedDue is TaskDue.None
+        if (hasLegacy) {
+            cardLegacyPlanDecision.visibility = View.VISIBLE
+            tvLegacyPlanPrompt.text = "Ранее запланировано: ${currentTask?.legacyPlanDate}"
         } else {
-            val today = getToday()
-            val text = when {
-                p == today -> "Сегодня"
-                p.daysSince2000 == today.daysSince2000 + 1 -> "Завтра"
-                p.daysSince2000 == today.daysSince2000 - 1 -> "Вчера"
-                else -> "${p.day}.${p.month.toString().padStart(2, '0')}.${p.year}"
+            cardLegacyPlanDecision.visibility = View.GONE
+        }
+        when (val due = selectedDue) {
+            is TaskDue.None -> {
+                tvDueLabel.visibility = View.GONE
+                tvDueValue.text = "Задать срок"
+                tvDueValue.setTextColor(palette.onSurfaceVariant)
+                btnClearDue.visibility = View.GONE
+                rowDue.contentDescription = "Срок не задан. Нажмите, чтобы задать срок"
             }
-            tvPlannedDateValue.text = text
-            btnClearPlannedDate.visibility = View.VISIBLE
+            is TaskDue.Day -> {
+                tvDueLabel.visibility = View.VISIBLE
+                val ld = due.date.toLocalDate()
+                val today = getToday()
+                val text = when {
+                    ld == today -> "Сегодня"
+                    ld.daysSince2000 == today.daysSince2000 + 1 -> "Завтра"
+                    ld.daysSince2000 == today.daysSince2000 - 1 -> "Вчера"
+                    else -> "${ld.day}.${ld.month.toString().padStart(2, '0')}.${ld.year}"
+                }
+                tvDueValue.text = text
+                tvDueValue.setTextColor(palette.onSurface)
+                btnClearDue.visibility = View.VISIBLE
+                rowDue.contentDescription = "Срок: $text. Изменить срок"
+            }
+            is TaskDue.Timed -> {
+                tvDueLabel.visibility = View.VISIBLE
+                val df = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                val text = df.format(Date(due.epochMillis))
+                tvDueValue.text = text
+                tvDueValue.setTextColor(palette.onSurface)
+                btnClearDue.visibility = View.VISIBLE
+                rowDue.contentDescription = "Срок: $text. Изменить срок"
+            }
         }
-        rowPlannedDate.contentDescription = "План: ${tvPlannedDateValue.text}. Изменить плановую дату"
-    }
-
-    private fun updateDeadlineDisplay() {
-        val d = selectedDeadline
-        tvDeadlineValue.setTextColor(if (d == null) palette.onSurfaceVariant else palette.onSurface)
-        if (d == null) {
-            tvDeadlineValue.text = "Без дедлайна"
-            btnClearDeadline.visibility = View.GONE
-        } else {
-            val df = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-            tvDeadlineValue.text = df.format(Date(d))
-            btnClearDeadline.visibility = View.VISIBLE
-        }
-        rowDeadline.contentDescription = "Дедлайн: ${tvDeadlineValue.text}. Изменить дедлайн"
     }
 
     private fun setupSubtasks() {
@@ -454,13 +459,16 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun setupListeners() {
-        listOf(etTitle, etDescription).forEach { field ->
-            field.doAfterTextChanged {
-                saveHandler.removeCallbacks(pendingSave)
-                if (viewReady && !taskDeleted) saveHandler.postDelayed(pendingSave, 350)
-            }
-            field.setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) saveChanges() }
+        etTitle.doAfterTextChanged {
+            saveHandler.removeCallbacks(pendingSave)
+            saveHandler.postDelayed(pendingSave, 500)
         }
+
+        etDescription.doAfterTextChanged {
+            saveHandler.removeCallbacks(pendingSave)
+            saveHandler.postDelayed(pendingSave, 500)
+        }
+
         btnCheck.setOnClickListener {
             isCompleted = !isCompleted
             updateCheckState()
@@ -471,25 +479,32 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             showContainerPicker()
         }
 
-        rowPlannedDate.setOnClickListener {
-            showPlannedDatePicker()
+        rowDue.setOnClickListener {
+            showDuePicker()
         }
 
-        btnClearPlannedDate.setOnClickListener {
-            plannedDateEdited = true
-            selectedPlannedDate = null
-            updatePlannedDateDisplay()
+        btnClearDue.setOnClickListener {
+            selectedDue = TaskDue.None
+            updateDueDisplay()
             saveChanges()
         }
 
-        rowDeadline.setOnClickListener {
-            showDeadlinePicker()
+        btnAcceptLegacyPlan.setOnClickListener {
+            val t = currentTask ?: return@setOnClickListener
+            val updated = taskService.resolveLegacyPlan(t.id, accept = true)
+            currentTask = updated
+            selectedDue = updated.due
+            updateDueDisplay()
+            onTaskUpdatedListener?.invoke()
         }
 
-        btnClearDeadline.setOnClickListener {
-            selectedDeadline = null
-            updateDeadlineDisplay()
-            saveChanges()
+        btnDismissLegacyPlan.setOnClickListener {
+            val t = currentTask ?: return@setOnClickListener
+            val updated = taskService.resolveLegacyPlan(t.id, accept = false)
+            currentTask = updated
+            selectedDue = updated.due
+            updateDueDisplay()
+            onTaskUpdatedListener?.invoke()
         }
 
         btnMore.setOnClickListener {
@@ -540,97 +555,75 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             .show()
     }
 
-    private fun showPlannedDatePicker() {
-        val options = arrayOf("Сегодня", "Завтра", "Выбрать дату в календаре", "Очистить плановую дату")
+    private fun showDuePicker() {
+        val options = mutableListOf("Сегодня", "Завтра", "Выбрать дату в календаре")
+        if (selectedDue !is TaskDue.None) {
+            options.add(if (selectedDue is TaskDue.Timed) "Изменить время" else "Установить точное время")
+            options.add("Без срока (очистить)")
+        }
         AlertDialog.Builder(requireContext())
-            .setTitle(currentTask?.unsupportedPlannedDateRaw?.let {
-                getString(R.string.task_planned_date_repair_hint, it.take(80))
-            } ?: "Запланировать на")
-            .setItems(options) { _, which ->
+            .setTitle("Срок задачи")
+            .setItems(options.toTypedArray()) { _, which ->
                 val today = getToday()
-                when (which) {
-                    0 -> {
-                        plannedDateEdited = true
-                        selectedPlannedDate = today
-                        updatePlannedDateDisplay()
+                when (options[which]) {
+                    "Сегодня" -> {
+                        selectedDue = TaskDue.Day(TaskDueDate.from(today))
+                        updateDueDisplay()
                         saveChanges()
                     }
-                    1 -> {
-                        plannedDateEdited = true
-                        selectedPlannedDate = LocalDate(today.daysSince2000 + 1)
-                        updatePlannedDateDisplay()
+                    "Завтра" -> {
+                        val tomorrow = LocalDate(today.daysSince2000 + 1)
+                        selectedDue = TaskDue.Day(TaskDueDate.from(tomorrow))
+                        updateDueDisplay()
                         saveChanges()
                     }
-                    2 -> {
-                        val initial = selectedPlannedDate ?: today
-                        showDatePicker(initial, "Плановая дата") { date ->
-                                plannedDateEdited = true
-                                selectedPlannedDate = date
-                                updatePlannedDateDisplay()
-                                saveChanges()
+                    "Выбрать дату в календаре" -> {
+                        val initial = when (val d = selectedDue) {
+                            is TaskDue.Day -> d.date.toLocalDate()
+                            is TaskDue.Timed -> {
+                                val c = Calendar.getInstance().apply { timeInMillis = d.epochMillis }
+                                LocalDate(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
+                            }
+                            is TaskDue.None -> today
+                        }
+                        showDatePicker(initial, "Срок") { date ->
+                            selectedDue = TaskDue.Day(TaskDueDate.from(date))
+                            updateDueDisplay()
+                            saveChanges()
                         }
                     }
-                    3 -> {
-                        plannedDateEdited = true
-                        selectedPlannedDate = null
-                        updatePlannedDateDisplay()
+                    "Установить точное время", "Изменить время" -> {
+                        val initialMillis = when (val d = selectedDue) {
+                            is TaskDue.Timed -> d.epochMillis
+                            is TaskDue.Day -> {
+                                val ld = d.date.toLocalDate()
+                                val c = Calendar.getInstance()
+                                c.set(ld.year, ld.month - 1, ld.day, 12, 0, 0)
+                                c.timeInMillis
+                            }
+                            is TaskDue.None -> {
+                                val c = Calendar.getInstance()
+                                c.set(today.year, today.month - 1, today.day, 12, 0, 0)
+                                c.timeInMillis
+                            }
+                        }
+                        TaskDatePicker.showTime(requireContext(), initialMillis) { millis ->
+                            if (isAdded && !taskDeleted &&
+                                (requireContext().applicationContext as HabitsApplication).component === launchComponent) {
+                                selectedDue = TaskDue.Timed.of(millis)
+                                updateDueDisplay()
+                                saveChanges()
+                            }
+                        }
+                    }
+                    "Без срока (очистить)" -> {
+                        selectedDue = TaskDue.None
+                        updateDueDisplay()
                         saveChanges()
                     }
                 }
             }
             .show()
-    }
-
-    private fun showDeadlinePicker() {
-        val options = mutableListOf("Сегодня", "Завтра", "Выбрать дату в календаре", "Очистить дедлайн")
-        if (selectedDeadline != null) options.add("Изменить время")
-        AlertDialog.Builder(requireContext())
-            .setTitle("Дедлайн")
-            .setItems(options.toTypedArray()) { _, which ->
-                val today = getToday()
-                when (which) {
-                    0 -> applyDeadlineDate(today.year, today.month - 1, today.day)
-                    1 -> LocalDate(today.daysSince2000 + 1).let { applyDeadlineDate(it.year, it.month - 1, it.day) }
-                    2 -> showCustomDeadlinePicker()
-                    3 -> {
-                        selectedDeadline = null
-                        updateDeadlineDisplay()
-                        saveChanges()
-                    }
-                    4 -> selectedDeadline?.let { initial ->
-                        TaskDatePicker.showTime(requireContext(), initial) { deadline ->
-                            if (isAdded && !taskDeleted &&
-                                (requireContext().applicationContext as HabitsApplication).component === launchComponent) {
-                                selectedDeadline = deadline
-                                updateDeadlineDisplay()
-                                saveChanges()
-                            }
-                        }
-                    }
-                }
-            }.show()
-    }
-
-    private fun applyDeadlineDate(year: Int, month: Int, day: Int) {
-        val previous = Calendar.getInstance().apply { selectedDeadline?.let { timeInMillis = it } }
-        selectedDeadline = Calendar.getInstance().apply {
-            set(year, month, day,
-                if (selectedDeadline == null) 18 else previous.get(Calendar.HOUR_OF_DAY),
-                if (selectedDeadline == null) 0 else previous.get(Calendar.MINUTE), 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
-        updateDeadlineDisplay()
-        saveChanges()
-    }
-
-    private fun showCustomDeadlinePicker() {
-        val cal = Calendar.getInstance().apply {
-            selectedDeadline?.let { timeInMillis = it }
-        }
-        showDatePicker(LocalDate(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1,
-            cal.get(Calendar.DAY_OF_MONTH)), "Дедлайн") { date ->
-            applyDeadlineDate(date.year, date.month - 1, date.day)
-        }
     }
 
     private fun showDatePicker(initial: LocalDate, title: String, apply: (LocalDate) -> Unit) {
@@ -648,9 +641,8 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         val newTitle = etTitle.text?.toString()?.trim()?.takeIf { it.isNotBlank() } ?: task.title
         val newDesc = etDescription.text?.toString()?.trim() ?: ""
 
-        val propertiesChanged = plannedDateEdited || newTitle != task.title || newDesc != task.description ||
-            selectedContainerId != task.containerId || selectedPlannedDate != task.plannedDate ||
-            selectedDeadline != task.deadline
+        val propertiesChanged = newTitle != task.title || newDesc != task.description ||
+            selectedContainerId != task.containerId || selectedDue != task.due
         if (!propertiesChanged && isCompleted == task.isCompleted) return
         var savedTask = task
         if (propertiesChanged) savedTask = taskService.updateTask(
@@ -659,10 +651,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             description = newDesc,
             containerId = selectedContainerId,
             clearContainer = selectedContainerId == null,
-            plannedDate = selectedPlannedDate,
-            clearPlannedDate = plannedDateEdited && selectedPlannedDate == null,
-            deadline = selectedDeadline,
-            clearDeadline = selectedDeadline == null,
+            due = selectedDue,
         )
 
         if (isCompleted != task.isCompleted) {
@@ -670,8 +659,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         }
 
         currentTask = savedTask
-        plannedDateEdited = false
-        updatePlannedDateDisplay()
+        updateDueDisplay()
         onTaskUpdatedListener?.invoke()
     }
 

@@ -19,13 +19,13 @@
 
 package org.isoron.uhabits.core.userTasks
 
-import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.containers.ContainerId
+import org.isoron.uhabits.core.userTasks.due.TaskDue
 
 class UserTaskServiceImpl(
     private val repository: UserTaskRepository,
-    private val clock: () -> Long,
-    private val idGenerator: () -> String,
+    private val clock: () -> Long = { 0L },
+    private val idGenerator: () -> String = { "" },
     private val syncManager: org.isoron.uhabits.core.sync.SyncManager? = null,
 ) : UserTaskService {
 
@@ -33,8 +33,7 @@ class UserTaskServiceImpl(
         title: String,
         description: String,
         containerId: ContainerId?,
-        plannedDate: LocalDate?,
-        deadline: Long?,
+        due: TaskDue,
         parentTaskId: TaskId?,
         explicitId: TaskId?,
         sortOrder: Int?,
@@ -42,7 +41,7 @@ class UserTaskServiceImpl(
         require(title.isNotBlank()) { "Task title cannot be blank" }
 
         if (parentTaskId != null) {
-            val parent = repository.getById(parentTaskId)
+            repository.getById(parentTaskId)
                 ?: throw IllegalArgumentException("Parent task $parentTaskId does not exist")
         }
 
@@ -57,8 +56,7 @@ class UserTaskServiceImpl(
             description = description.trim(),
             containerId = containerId,
             status = TaskStatus.PENDING,
-            plannedDate = plannedDate,
-            deadline = deadline,
+            due = due,
             completedAt = null,
             parentTaskId = parentTaskId,
             sortOrder = effectiveSortOrder,
@@ -77,10 +75,7 @@ class UserTaskServiceImpl(
         description: String?,
         containerId: ContainerId?,
         clearContainer: Boolean,
-        plannedDate: LocalDate?,
-        clearPlannedDate: Boolean,
-        deadline: Long?,
-        clearDeadline: Boolean,
+        due: TaskDue?,
         parentTaskId: TaskId?,
         clearParentTask: Boolean,
         sortOrder: Int?,
@@ -103,17 +98,8 @@ class UserTaskServiceImpl(
             else -> existing.containerId
         }
 
-        val newPlannedDate = when {
-            clearPlannedDate -> null
-            plannedDate != null -> plannedDate
-            else -> existing.plannedDate
-        }
-
-        val newDeadline = when {
-            clearDeadline -> null
-            deadline != null -> deadline
-            else -> existing.deadline
-        }
+        val newDue = due ?: existing.due
+        val newLegacyPlanDate = if (due != null && due !is TaskDue.None) null else existing.legacyPlanDate
 
         val newTitle = title?.let {
             require(it.isNotBlank()) { "Task title cannot be blank" }
@@ -127,9 +113,8 @@ class UserTaskServiceImpl(
             title = newTitle,
             description = newDescription,
             containerId = newContainerId,
-            plannedDate = newPlannedDate,
-            unsupportedPlannedDateRaw = if (clearPlannedDate || plannedDate != null) null else existing.unsupportedPlannedDateRaw,
-            deadline = newDeadline,
+            due = newDue,
+            legacyPlanDate = newLegacyPlanDate,
             parentTaskId = newParentId,
             sortOrder = newSortOrder,
             updatedAt = clock(),
@@ -179,6 +164,23 @@ class UserTaskServiceImpl(
         return updated
     }
 
+    override fun resolveLegacyPlan(id: TaskId, accept: Boolean): UserTask {
+        val existing = repository.getById(id)
+            ?: throw IllegalArgumentException("Task $id not found")
+        val now = clock()
+        val updated = if (accept && !existing.legacyPlanDate.isNullOrBlank()) {
+            val date = runCatching { org.isoron.uhabits.core.userTasks.due.TaskDueDate.parse(existing.legacyPlanDate) }.getOrNull()
+                ?: parseIsoDateString(existing.legacyPlanDate)?.let { org.isoron.uhabits.core.userTasks.due.TaskDueDate.parse(it.toIsoDateString()) }
+            val newDue = if (date != null) TaskDue.Day(date) else TaskDue.None
+            existing.copy(due = newDue, legacyPlanDate = null, updatedAt = now)
+        } else {
+            existing.copy(legacyPlanDate = null, updatedAt = now)
+        }
+        repository.save(updated)
+        syncManager?.enqueueUserTask(updated, "upsert")
+        return updated
+    }
+
     override fun deleteTask(id: TaskId, cascadeSubtasks: Boolean) {
         if (cascadeSubtasks) {
             val subtasks = repository.getSubtasks(id)
@@ -197,7 +199,8 @@ class UserTaskServiceImpl(
         val pendingById = mutableMapOf<TaskId, UserTask>()
         orderedIds.forEachIndexed { index, taskId ->
             val task = pendingById[taskId] ?: repository.getById(taskId)
-            if (task != null && task.sortOrder != index) {
+                ?: throw IllegalArgumentException("Task $taskId not found")
+            if (task.sortOrder != index) {
                 val updated = task.copy(sortOrder = index, updatedAt = now)
                 toUpdate.add(updated)
                 pendingById[taskId] = updated

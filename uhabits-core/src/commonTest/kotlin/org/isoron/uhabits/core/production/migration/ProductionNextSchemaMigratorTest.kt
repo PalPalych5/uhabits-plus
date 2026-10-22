@@ -56,7 +56,7 @@ class ProductionNextSchemaMigratorTest {
             )
 
             assertIs<ProductionNextMigrationResult.Success>(migrationResult)
-            assertEquals(DATABASE_VERSION, db.getVersion())
+            assertEquals(30, db.getVersion())
             assertEquals(initialBlocksCount.toInt(), migrationResult.plan.containers.size)
             assertEquals(initialHabitsCount.toInt(), migrationResult.plan.placements.size)
 

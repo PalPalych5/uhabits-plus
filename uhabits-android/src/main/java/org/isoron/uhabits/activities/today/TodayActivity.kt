@@ -61,6 +61,7 @@ import org.isoron.uhabits.core.today.TodayScreenData
 import org.isoron.uhabits.core.today.TodayTaskItem
 import org.isoron.uhabits.core.today.TodayTaskUrgency
 import org.isoron.uhabits.core.userTasks.TaskId
+import org.isoron.uhabits.core.userTasks.due.TaskDue
 import org.isoron.uhabits.utils.applyRootViewInsets
 import org.isoron.uhabits.utils.applyToolbarInsets
 import java.text.SimpleDateFormat
@@ -591,21 +592,18 @@ class TodayActivity : AppCompatActivity(), TimerSessionManager.Listener {
             metaLine.addView(tvContainer)
         }
 
-        // Date/Deadline/Subtask info
-        val taskDeadline = item.task.deadline
-        val plannedDate = item.task.plannedDate
-        val metaText = when {
-            item.urgency == TodayTaskUrgency.HARD_OVERDUE && taskDeadline != null -> {
-                "Дедлайн: ${formatDateTime(taskDeadline)}"
+        // Date/Due/Subtask info
+        val metaText = when (val due = item.task.due) {
+            is TaskDue.None -> ""
+            is TaskDue.Day -> {
+                val d = due.date.toLocalDate()
+                val dateStr = "${d.day} ${monthNameRu(d.month)}"
+                if (item.urgency == TodayTaskUrgency.HARD_OVERDUE) "Срок: $dateStr (просрочен)" else "Срок: сегодня"
             }
-            item.urgency == TodayTaskUrgency.MISSED_PLAN && plannedDate != null -> {
-                val dateStr = "${plannedDate.day} ${monthNameRu(plannedDate.month)}"
-                "План: $dateStr (просрочен)"
+            is TaskDue.Timed -> {
+                val formatted = formatDateTime(due.epochMillis)
+                if (item.urgency == TodayTaskUrgency.HARD_OVERDUE) "Срок: $formatted (просрочен)" else "Срок: $formatted"
             }
-            plannedDate != null -> {
-                "План: сегодня"
-            }
-            else -> ""
         }
 
         val subtaskInfo = if (item.subtasksTotal > 0) {
@@ -617,8 +615,7 @@ class TodayActivity : AppCompatActivity(), TimerSessionManager.Listener {
             textSize = 12f
             setTextColor(
                 when (item.urgency) {
-                    TodayTaskUrgency.HARD_OVERDUE -> ContextCompat.getColor(context, R.color.red_500)
-                    TodayTaskUrgency.MISSED_PLAN -> ContextCompat.getColor(context, R.color.amber_700)
+                    TodayTaskUrgency.HARD_OVERDUE, TodayTaskUrgency.MISSED_PLAN -> ContextCompat.getColor(context, R.color.red_500)
                     else -> palette.onSurfaceVariant
                 }
             )

@@ -21,21 +21,21 @@ package org.isoron.uhabits.activities.tasks
 
 import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.userTasks.UserTask
+import org.isoron.uhabits.core.userTasks.due.TaskDue
 import java.util.Calendar
 
 enum class TaskCalendarEventKind { PLAN, DEADLINE }
 data class TaskCalendarEvent(val task: UserTask, val day: LocalDate, val kind: TaskCalendarEventKind)
 
-/** Two independent events; a task with both dates is deliberately represented twice. */
 object TaskCalendarEvents {
     private val eventComparator = Comparator<TaskCalendarEvent> { a, b ->
         val dayCmp = a.day.daysSince2000.compareTo(b.day.daysSince2000)
         if (dayCmp != 0) {
             dayCmp
         } else {
-            val aDeadline = a.task.deadline ?: Long.MAX_VALUE
-            val bDeadline = b.task.deadline ?: Long.MAX_VALUE
-            aDeadline.compareTo(bDeadline)
+            val aTime = (a.task.due as? TaskDue.Timed)?.epochMillis ?: Long.MAX_VALUE
+            val bTime = (b.task.due as? TaskDue.Timed)?.epochMillis ?: Long.MAX_VALUE
+            aTime.compareTo(bTime)
         }
     }
 
@@ -44,20 +44,21 @@ object TaskCalendarEvents {
         val result = ArrayList<TaskCalendarEvent>(tasks.size)
         var cal: Calendar? = null
         for (task in tasks) {
-            val plan = task.plannedDate
-            if (plan != null) {
-                result.add(TaskCalendarEvent(task, plan, TaskCalendarEventKind.PLAN))
-            }
-            val deadline = task.deadline
-            if (deadline != null) {
-                val c = cal ?: Calendar.getInstance().also { cal = it }
-                c.timeInMillis = deadline
-                val deadlineDate = LocalDate(
-                    c.get(Calendar.YEAR),
-                    c.get(Calendar.MONTH) + 1,
-                    c.get(Calendar.DAY_OF_MONTH)
-                )
-                result.add(TaskCalendarEvent(task, deadlineDate, TaskCalendarEventKind.DEADLINE))
+            when (val due = task.due) {
+                is TaskDue.None -> { /* not on calendar */ }
+                is TaskDue.Day -> {
+                    result.add(TaskCalendarEvent(task, due.date.toLocalDate(), TaskCalendarEventKind.PLAN))
+                }
+                is TaskDue.Timed -> {
+                    val c = cal ?: Calendar.getInstance().also { cal = it }
+                    c.timeInMillis = due.epochMillis
+                    val deadlineDate = LocalDate(
+                        c.get(Calendar.YEAR),
+                        c.get(Calendar.MONTH) + 1,
+                        c.get(Calendar.DAY_OF_MONTH)
+                    )
+                    result.add(TaskCalendarEvent(task, deadlineDate, TaskCalendarEventKind.DEADLINE))
+                }
             }
         }
         result.sortWith(eventComparator)

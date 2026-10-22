@@ -155,7 +155,7 @@ class ProductionStagingMigrationServiceTest {
             // Re-open staging database independently and verify contents
             val reopened = JavaDatabaseOpener().open(stagingDb.absolutePath)
             try {
-                assertEquals(DATABASE_VERSION, reopened.getVersion())
+                assertEquals(30, reopened.getVersion())
                 assertEquals("PRODUCTION_NEXT", reopened.queryString("SELECT mode FROM OrganizationState"))
                 assertEquals(ProductionCutoverGate.AUTHORITY_LEGACY, reopened.queryString("SELECT runtime_authority FROM OrganizationState"))
                 assertEquals(0L, reopened.queryLong("SELECT authority_epoch FROM OrganizationState"))

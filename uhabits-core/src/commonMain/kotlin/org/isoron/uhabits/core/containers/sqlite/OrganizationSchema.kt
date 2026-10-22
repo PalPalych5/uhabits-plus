@@ -136,7 +136,7 @@ object OrganizationSchema {
         "CREATE INDEX IF NOT EXISTS idx_org_changes_recorded ON OrganizationChanges(recorded_at, revision);",
     )
 
-    fun createSchema(db: Database) {
+    fun createSchema(db: Database, targetVersion: Int = org.isoron.uhabits.core.DATABASE_VERSION) {
         for (stmt in DDL_STATEMENTS) {
             db.run(stmt)
         }
@@ -153,7 +153,7 @@ object OrganizationSchema {
         if ("authority_epoch" !in columns) db.run("ALTER TABLE OrganizationState ADD COLUMN authority_epoch INTEGER NOT NULL DEFAULT 0")
         if ("conversion_op_uuid" !in columns) db.run("ALTER TABLE OrganizationState ADD COLUMN conversion_op_uuid TEXT")
 
-        org.isoron.uhabits.core.userTasks.sqlite.UserTaskSchema.createSchema(db)
+        org.isoron.uhabits.core.userTasks.sqlite.UserTaskSchema.createSchema(db, targetVersion = targetVersion)
     }
 
     fun enableForeignKeys(db: Database) {

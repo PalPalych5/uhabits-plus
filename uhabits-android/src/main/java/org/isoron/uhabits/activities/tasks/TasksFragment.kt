@@ -63,6 +63,8 @@ import org.isoron.uhabits.core.userTasks.TaskStatus
 import org.isoron.uhabits.core.userTasks.UserTask
 import org.isoron.uhabits.core.userTasks.UserTaskRepository
 import org.isoron.uhabits.core.userTasks.UserTaskService
+import org.isoron.uhabits.core.userTasks.due.TaskDue
+import org.isoron.uhabits.core.userTasks.due.TaskDueDate
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -101,9 +103,8 @@ class TasksFragment : Fragment() {
     private var restoredTitle: String? = null
     private var wide = false
 
-    private var quickPlanned: LocalDate? = null
+    private var quickTaskDue: TaskDue = TaskDue.None
     private var quickContainer: ContainerId? = null
-    private var quickDue: Long? = null
     private var quickDraftRestored = false
     private var quickExpanded = false
     private var activeSmartView: TaskSmartView = TaskSmartView.TODAY
@@ -130,9 +131,8 @@ class TasksFragment : Fragment() {
     private lateinit var etQuickAddTitle: EditText
     private lateinit var btnQuickAddSubmit: ImageButton
     private lateinit var quickAddOptions: LinearLayout
-    private lateinit var quickPlan: TextView
+    private lateinit var quickDueView: TextView
     private lateinit var quickContainerView: TextView
-    private lateinit var quickDeadline: TextView
 
     private val dateFormatRu = SimpleDateFormat("EEE, d MMMM", Locale("ru"))
 
@@ -144,9 +144,15 @@ class TasksFragment : Fragment() {
         savedInstanceState?.let {
             activeSmartView = TaskSmartView.entries.getOrElse(it.getInt("smartView")) { TaskSmartView.TODAY }
             selectedContainerFilter = it.getString("filter")?.let(::ContainerId)
-            quickPlanned = if (it.containsKey("quickPlan")) LocalDate(it.getInt("quickPlan")) else null
+            val dueKind = it.getString("quickDueKind")
+            val dueMillis = if (it.containsKey("quickDueMillis")) it.getLong("quickDueMillis") else null
+            val dueDateDays = if (it.containsKey("quickDueDays")) it.getInt("quickDueDays") else null
+            quickTaskDue = when (dueKind) {
+                "DAY" -> dueDateDays?.let { days -> TaskDue.Day(TaskDueDate.from(LocalDate(days))) } ?: TaskDue.None
+                "TIMED" -> dueMillis?.let { millis -> TaskDue.Timed.of(millis) } ?: TaskDue.None
+                else -> TaskDue.None
+            }
             quickContainer = it.getString("quickContainer")?.let(::ContainerId)
-            quickDue = if (it.containsKey("quickDue")) it.getLong("quickDue") else null
             quickExpanded = it.getBoolean("quickExpanded", false)
             quickDraftRestored = true
             restoredTitle = it.getString("quickTitle")
@@ -216,9 +222,18 @@ class TasksFragment : Fragment() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putInt("smartView", activeSmartView.ordinal)
         outState.putString("filter", selectedContainerFilter?.value)
-        quickPlanned?.let { outState.putInt("quickPlan", it.daysSince2000) }
+        when (val d = quickTaskDue) {
+            is TaskDue.None -> outState.putString("quickDueKind", "NONE")
+            is TaskDue.Day -> {
+                outState.putString("quickDueKind", "DAY")
+                outState.putInt("quickDueDays", d.date.toLocalDate().daysSince2000)
+            }
+            is TaskDue.Timed -> {
+                outState.putString("quickDueKind", "TIMED")
+                outState.putLong("quickDueMillis", d.epochMillis)
+            }
+        }
         outState.putString("quickContainer", quickContainer?.value)
-        quickDue?.let { outState.putLong("quickDue", it) }
         outState.putBoolean("quickExpanded", quickExpanded)
         outState.putString("quickTitle", if (::etQuickAddTitle.isInitialized) etQuickAddTitle.text?.toString() else restoredTitle)
         outState.putBoolean("calendarMode", calendarMode)
@@ -261,9 +276,8 @@ class TasksFragment : Fragment() {
         etQuickAddTitle = view.findViewById(R.id.etQuickAddTitle)
         btnQuickAddSubmit = view.findViewById(R.id.btnQuickAddSubmit)
         quickAddOptions = view.findViewById(R.id.quickAddOptions)
-        quickPlan = view.findViewById(R.id.quickPlan)
+        quickDueView = view.findViewById(R.id.quickDue)
         quickContainerView = view.findViewById(R.id.quickContainer)
-        quickDeadline = view.findViewById(R.id.quickDeadline)
     }
 
     private fun dp(value: Float): Float = TaskThemeUtils.dp(requireContext(), value)
@@ -295,9 +309,8 @@ class TasksFragment : Fragment() {
         etQuickAddTitle.setHintTextColor(palette.onSurfaceVariant)
         btnQuickAddSubmit.setColorFilter(palette.accent)
 
-        quickPlan.setTextColor(palette.onSurfaceVariant)
+        quickDueView.setTextColor(palette.onSurfaceVariant)
         quickContainerView.setTextColor(palette.onSurfaceVariant)
-        quickDeadline.setTextColor(palette.onSurfaceVariant)
 
         updateSmartViewLabel()
         if (::navigationColumn.isInitialized) renderNavigation()
@@ -376,8 +389,7 @@ class TasksFragment : Fragment() {
 
     private fun setupQuickAdd() {
         fun refreshOptionLabels() {
-            listOf(quickPlan to R.drawable.ic_cat_calendar, quickContainerView to R.drawable.ic_cat_folder,
-                quickDeadline to R.drawable.ic_cat_flag).forEach { (label, icon) ->
+            listOf(quickDueView to R.drawable.ic_cat_calendar, quickContainerView to R.drawable.ic_cat_folder).forEach { (label, icon) ->
                 val drawable = androidx.core.content.ContextCompat.getDrawable(requireContext(), icon)?.mutate()
                 drawable?.setTint(palette.onSurfaceVariant)
                 drawable?.setBounds(0, 0, dpInt(16f), dpInt(16f))
@@ -389,20 +401,24 @@ class TasksFragment : Fragment() {
                 label.background = android.graphics.drawable.RippleDrawable(
                     android.content.res.ColorStateList.valueOf(MainTabsThemeBridge.withAlpha(palette.accent, .16f)), attachment, null)
             }
-            val planText = quickPlanned?.let {
-                if (it == getToday()) "Сегодня" else "${it.day}.${it.month}"
-            } ?: "План"
-            quickPlan.text = planText
-            quickPlan.setTextColor(if (quickPlanned != null) palette.accent else palette.onSurfaceVariant)
+            val dueText = when (val d = quickTaskDue) {
+                is TaskDue.None -> "Срок"
+                is TaskDue.Day -> {
+                    val ld = d.date.toLocalDate()
+                    val today = getToday()
+                    if (ld == today) "Сегодня"
+                    else if (ld.daysSince2000 == today.daysSince2000 + 1) "Завтра"
+                    else "${ld.day}.${ld.month}"
+                }
+                is TaskDue.Timed -> SimpleDateFormat("d MMM, HH:mm", Locale("ru")).format(Date(d.epochMillis))
+            }
+            quickDueView.text = dueText
+            quickDueView.setTextColor(if (quickTaskDue !is TaskDue.None) palette.accent else palette.onSurfaceVariant)
 
             val containerItem = workspaceSnapshot?.availableContainers.orEmpty().find { it.key == quickContainer?.value }
             val containerText = containerItem?.let { it.name } ?: "Раздел"
             quickContainerView.text = containerText
             quickContainerView.setTextColor(if (quickContainer != null) palette.accent else palette.onSurfaceVariant)
-
-            val deadlineText = if (quickDue == null) "Дедлайн" else SimpleDateFormat("d MMM", Locale("ru")).format(Date(quickDue!!))
-            quickDeadline.text = deadlineText
-            quickDeadline.setTextColor(if (quickDue != null) palette.accent else palette.onSurfaceVariant)
         }
 
         fun expandComposer() {
@@ -414,9 +430,11 @@ class TasksFragment : Fragment() {
             imm?.showSoftInput(etQuickAddTitle, InputMethodManager.SHOW_IMPLICIT)
 
             if (etQuickAddTitle.text.isNullOrBlank() && !quickDraftRestored) {
-                quickPlanned = if (activeSmartView == TaskSmartView.TODAY) getToday() else null
+                quickTaskDue = if (activeSmartView == TaskSmartView.TODAY) {
+                    val t = getToday()
+                    TaskDue.Day(TaskDueDate.from(t))
+                } else TaskDue.None
                 quickContainer = if (activeSmartView == TaskSmartView.INBOX) null else selectedContainerFilter
-                quickDue = null
             }
             refreshOptionLabels()
         }
@@ -439,17 +457,59 @@ class TasksFragment : Fragment() {
             collapseComposer()
         }
 
-        quickPlan.setOnClickListener {
-            AlertDialog.Builder(requireContext()).setItems(arrayOf("Сегодня", "Завтра", "Выбрать дату", "Очистить плановую дату")) { _, choice ->
-                when (choice) {
-                    0 -> quickPlanned = getToday()
-                    1 -> quickPlanned = LocalDate(getToday().daysSince2000 + 1)
-                    3 -> quickPlanned = null
-                    2 -> {
-                        TaskDatePicker.show(childFragmentManager, quickPlanned ?: getToday(), "Плановая дата") { date ->
-                            if (isAdded) { quickPlanned = date; refreshOptionLabels() }
+        quickDueView.setOnClickListener {
+            val options = mutableListOf("Сегодня", "Завтра", "Выбрать дату")
+            if (quickTaskDue !is TaskDue.None) {
+                options.add("Установить время")
+                options.add("Без срока")
+            }
+            AlertDialog.Builder(requireContext()).setItems(options.toTypedArray()) { _, choice ->
+                val today = getToday()
+                when (options[choice]) {
+                    "Сегодня" -> quickTaskDue = TaskDue.Day(TaskDueDate.from(today))
+                    "Завтра" -> {
+                        val t = LocalDate(today.daysSince2000 + 1)
+                        quickTaskDue = TaskDue.Day(TaskDueDate.from(t))
+                    }
+                    "Выбрать дату" -> {
+                        val initial = when (val d = quickTaskDue) {
+                            is TaskDue.Day -> d.date.toLocalDate()
+                            is TaskDue.Timed -> {
+                                val c = Calendar.getInstance().apply { timeInMillis = d.epochMillis }
+                                LocalDate(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
+                            }
+                            is TaskDue.None -> today
+                        }
+                        TaskDatePicker.show(childFragmentManager, initial, "Срок") { date ->
+                            if (isAdded) {
+                                quickTaskDue = TaskDue.Day(TaskDueDate.from(date))
+                                refreshOptionLabels()
+                            }
                         }
                     }
+                    "Установить время" -> {
+                        val initialMillis = when (val d = quickTaskDue) {
+                            is TaskDue.Timed -> d.epochMillis
+                            is TaskDue.Day -> {
+                                val ld = d.date.toLocalDate()
+                                val c = Calendar.getInstance()
+                                c.set(ld.year, ld.month - 1, ld.day, 12, 0, 0)
+                                c.timeInMillis
+                            }
+                            is TaskDue.None -> {
+                                val c = Calendar.getInstance()
+                                c.set(today.year, today.month - 1, today.day, 12, 0, 0)
+                                c.timeInMillis
+                            }
+                        }
+                        TaskDatePicker.showTime(requireContext(), initialMillis) { millis ->
+                            if (isAdded) {
+                                quickTaskDue = TaskDue.Timed.of(millis)
+                                refreshOptionLabels()
+                            }
+                        }
+                    }
+                    "Без срока" -> quickTaskDue = TaskDue.None
                 }
                 refreshOptionLabels()
             }.show()
@@ -463,59 +523,15 @@ class TasksFragment : Fragment() {
             }.show()
         }
 
-        quickDeadline.setOnClickListener {
-            fun applyDate(date: LocalDate) {
-                val previous = Calendar.getInstance().apply { quickDue?.let { timeInMillis = it } }
-                quickDue = Calendar.getInstance().apply {
-                    set(date.year, date.month - 1, date.day,
-                        if (quickDue == null) 18 else previous.get(Calendar.HOUR_OF_DAY),
-                        if (quickDue == null) 0 else previous.get(Calendar.MINUTE), 0)
-                    set(Calendar.MILLISECOND, 0)
-                }.timeInMillis
-                refreshOptionLabels()
-            }
-            val options = mutableListOf("Сегодня", "Завтра", "Выбрать дату", "Очистить дедлайн")
-            if (quickDue != null) options.add("Изменить время")
-            AlertDialog.Builder(requireContext()).setTitle("Дедлайн")
-                .setItems(options.toTypedArray()) { _, choice ->
-                when (choice) {
-                    0 -> applyDate(getToday())
-                    1 -> applyDate(LocalDate(getToday().daysSince2000 + 1))
-                    2 -> {
-                        val cal = Calendar.getInstance().apply { quickDue?.let { timeInMillis = it } }
-                        TaskDatePicker.show(childFragmentManager,
-                            LocalDate(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH)),
-                            "Дедлайн") { date -> if (isAdded) applyDate(date) }
-                    }
-                    3 -> { quickDue = null; refreshOptionLabels() }
-                    4 -> quickDue?.let { initial ->
-                        TaskDatePicker.showTime(requireContext(), initial) { deadline ->
-                            if (isAdded) { quickDue = deadline; refreshOptionLabels() }
-                        }
-                    }
-                }
-            }.show()
-        }
-
-        TaskDatePicker.reconnect(childFragmentManager, "Плановая дата") { date ->
-            quickPlanned = date
-            refreshOptionLabels()
-        }
-        TaskDatePicker.reconnect(childFragmentManager, "Дедлайн") { date ->
-            val previous = Calendar.getInstance().apply { quickDue?.let { timeInMillis = it } }
-            quickDue = Calendar.getInstance().apply {
-                set(date.year, date.month - 1, date.day,
-                    if (quickDue == null) 18 else previous.get(Calendar.HOUR_OF_DAY),
-                    if (quickDue == null) 0 else previous.get(Calendar.MINUTE), 0)
-                set(Calendar.MILLISECOND, 0)
-            }.timeInMillis
+        TaskDatePicker.reconnect(childFragmentManager, "Срок") { date ->
+            quickTaskDue = TaskDue.Day(TaskDueDate.from(date))
             refreshOptionLabels()
         }
 
         fun submitQuickAdd() {
             val title = etQuickAddTitle.text?.toString()?.trim().orEmpty()
             if (title.isBlank()) return
-            val created = taskService.createTask(title = title, containerId = quickContainer, plannedDate = quickPlanned, deadline = quickDue)
+            val created = taskService.createTask(title = title, containerId = quickContainer, due = quickTaskDue)
             etQuickAddTitle.text?.clear()
             quickDraftRestored = false
             collapseComposer()
@@ -610,15 +626,20 @@ class TasksFragment : Fragment() {
         renderNavigation()
         renderCalendar(viewFiltered)
 
-        // Sort: pending by hard overdue first, then missed plan, then sortOrder, then plannedDate; completed by completedAt DESC
+        // Sort: pending by overdue first, then sortOrder, then due timestamp/day; completed by completedAt DESC
         val sorted = if (activeSmartView == TaskSmartView.COMPLETED) {
             viewFiltered.sortedByDescending { it.completedAt ?: 0L }
         } else {
             viewFiltered.sortedWith(
-                compareBy<UserTask> { !it.isHardOverdue(nowMillis) }
-                    .thenBy { !it.isMissedPlan(today, nowMillis) }
+                compareBy<UserTask> { !it.isOverdue(today, nowMillis) }
                     .thenBy { it.sortOrder }
-                    .thenBy { it.plannedDate?.daysSince2000 ?: Int.MAX_VALUE }
+                    .thenBy {
+                        when (val d = it.due) {
+                            is TaskDue.Timed -> d.epochMillis
+                            is TaskDue.Day -> d.date.toLocalDate().daysSince2000.toLong() * 86400000L
+                            is TaskDue.None -> Long.MAX_VALUE
+                        }
+                    }
             )
         }
 
@@ -667,7 +688,11 @@ class TasksFragment : Fragment() {
         when (activeSmartView) {
             TaskSmartView.TODAY -> {
                 tvEmptyTitle.text = "Сегодня пока нет задач"
-                tvEmptyMessage.text = "Нет запланированных или просроченных задач"
+                tvEmptyMessage.text = "Нет задач со сроком на сегодня"
+            }
+            TaskSmartView.OVERDUE -> {
+                tvEmptyTitle.text = "Нет просроченных задач"
+                tvEmptyMessage.text = "Все задачи со сроком выполняются вовремя"
             }
             TaskSmartView.INBOX -> {
                 tvEmptyTitle.text = "Входящие пусты"
@@ -675,7 +700,7 @@ class TasksFragment : Fragment() {
             }
             TaskSmartView.UPCOMING -> {
                 tvEmptyTitle.text = "Нет предстоящих задач"
-                tvEmptyMessage.text = "Выберите плановую дату в редакторе задачи"
+                tvEmptyMessage.text = "Здесь отображаются задачи с будущим сроком"
             }
             TaskSmartView.ALL -> {
                 tvEmptyTitle.text = "Нет активных задач"
@@ -893,8 +918,14 @@ class TasksFragment : Fragment() {
             setPaddingRelative(dpInt(16f), dpInt(8f), dpInt(16f), dpInt(12f))
         })
         val roots = snapshot.roots
-        val smartIcons = listOf(R.drawable.ic_cat_calendar, R.drawable.ic_cat_folder_open,
-            R.drawable.ic_cat_calendar_clock, R.drawable.ic_cat_list_todo, R.drawable.ic_tasks_completed)
+        val smartIcons = listOf(
+            R.drawable.ic_cat_calendar,
+            R.drawable.ic_cat_flag,
+            R.drawable.ic_cat_folder_open,
+            R.drawable.ic_cat_calendar_clock,
+            R.drawable.ic_cat_list_todo,
+            R.drawable.ic_tasks_completed
+        )
         TaskSmartView.entries.forEachIndexed { index, smart ->
             val count = roots.count { smart.matches(it, getToday(), System.currentTimeMillis()) }
             navigationColumn.addView(navigationRow(smart.displayName, smartIcons[index], count,
@@ -1053,7 +1084,10 @@ class TasksFragment : Fragment() {
             labels.addView(TextView(requireContext()).apply { text = event.task.title; textSize = 15f; maxLines = 2;
                 ellipsize = android.text.TextUtils.TruncateAt.END; setTextColor(palette.onSurface) })
             labels.addView(TextView(requireContext()).apply {
-                text = if (event.kind == TaskCalendarEventKind.PLAN) "Запланировано" else "Дедлайн · " + SimpleDateFormat("HH:mm",Locale.getDefault()).format(Date(event.task.deadline!!))
+                val timeStr = (event.task.due as? TaskDue.Timed)?.let {
+                    SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(it.epochMillis))
+                }.orEmpty()
+                text = if (timeStr.isNotEmpty()) "Срок · $timeStr" else "Срок"
                 textSize = 12f; setTextColor(palette.onSurfaceVariant)
             },LinearLayout.LayoutParams(-1,-2).apply { topMargin = dpInt(4f) })
             row.addView(labels,LinearLayout.LayoutParams(0,-2,1f)); content.addView(row)

@@ -6,6 +6,7 @@ import org.isoron.platform.io.Database
 import org.isoron.platform.io.StepResult
 import org.isoron.platform.io.TestDatabaseHelper
 import org.isoron.platform.io.getVersion
+import org.isoron.platform.io.queryString
 import org.isoron.platform.io.run
 import org.isoron.platform.io.setVersion
 import org.isoron.uhabits.core.containers.backup.DatabaseSnapshotter
@@ -20,17 +21,19 @@ import org.isoron.uhabits.core.containers.migration.RawLegacyInventoryReader
 import org.isoron.uhabits.core.containers.migration.SemanticMigrationFixtures
 import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.parseIsoDateString
+import org.isoron.uhabits.core.userTasks.due.TaskDue
+import org.isoron.uhabits.core.userTasks.due.TaskDueDate
 import org.isoron.uhabits.core.userTasks.sqlite.SQLiteUserTaskRepository
 import org.isoron.uhabits.core.userTasks.sqlite.UserTaskSchema
 import org.junit.Assert.*
 import org.junit.Test
 
-/** Real current SQLite/snapshot adapters on in-memory fixtures, not a production migration. */
+/** SQLite/snapshot tests verifying that unified task due survives backup, restore, and snapshot copying. */
 class LegacyTaskDateStorageTest {
-    private fun rows(db: Database): List<Triple<String, String?, Long?>> {
-        val stmt = db.prepareStatement("SELECT id, planned_date, deadline FROM UserTasks ORDER BY id")
+    private fun rows(db: Database): List<Triple<String, String, String?>> {
+        val stmt = db.prepareStatement("SELECT id, due_kind, due_date FROM UserTasks ORDER BY id")
         return try {
-            buildList { while (stmt.step() == StepResult.ROW) add(Triple(stmt.getText(0), stmt.getTextOrNull(1), stmt.getLongOrNull(2))) }
+            buildList { while (stmt.step() == StepResult.ROW) add(Triple(stmt.getText(0), stmt.getText(1), stmt.getTextOrNull(2))) }
         } finally { stmt.finalize() }
     }
 
@@ -40,28 +43,43 @@ class LegacyTaskDateStorageTest {
         finally { stmt.finalize() }
     }
 
-    @Test fun rawLegacyDateMatrixSurvivesSnapshotAndRepeatedCopy() = runBlocking {
+    @Test fun unifiedDueTasksSurviveSnapshotAndBackupRestore() = runBlocking {
         val source = SemanticMigrationFixtures.createAndSeedV29Database()
         val target = TestDatabaseHelper.createEmptyDatabase()
         val staging = TestDatabaseHelper.createEmptyDatabase()
         val destination = TestDatabaseHelper.createEmptyDatabase()
         try {
-            // Existing fixture initialization only; no new due migration is executed.
             val plan = LegacyContainerMigrationPlanner.plan(RawLegacyInventoryReader.read(source), cutoverTimestamp = 1000000L)
             assertTrue(LegacyContainerMigrationExecutor.execute(source, plan) is MigrationExecutionResult.Success)
+            source.setVersion(org.isoron.uhabits.core.DATABASE_VERSION)
             UserTaskSchema.createSchema(source)
-            val plans = listOf(null, "2026-10-19", "2026-10-18", "1792368000000", "2026-02-30", "", "1792393200000")
-            val deadlines = listOf(null, 1792368000000L, 1792432800000L, 1792432800123L)
-            var index = 0
-            for (plan in plans) for (deadline in deadlines) {
-                val stmt = source.prepareStatement("INSERT INTO UserTasks (id,title,planned_date,deadline,created_at,updated_at) VALUES (?,?,?,?,1,1)")
-                try {
-                    stmt.bindText(1, "date-${index++}"); stmt.bindText(2, "Synthetic date fixture")
-                    if (plan == null) stmt.bindNull(3) else stmt.bindText(3, plan)
-                    if (deadline == null) stmt.bindNull(4) else stmt.bindLong(4, deadline)
-                    stmt.step()
-                } finally { stmt.finalize() }
-            }
+
+            val repo = SQLiteUserTaskRepository(source)
+            val tNone = org.isoron.uhabits.core.userTasks.UserTask(
+                id = TaskId("task-none"),
+                title = "No Due",
+                due = TaskDue.None,
+                createdAt = 1000L,
+                updatedAt = 1000L,
+            )
+            val tDay = org.isoron.uhabits.core.userTasks.UserTask(
+                id = TaskId("task-day"),
+                title = "Day Due",
+                due = TaskDue.Day(TaskDueDate.parse("2026-10-19")),
+                createdAt = 1000L,
+                updatedAt = 1000L,
+            )
+            val tTimed = org.isoron.uhabits.core.userTasks.UserTask(
+                id = TaskId("task-timed"),
+                title = "Timed Due",
+                due = TaskDue.Timed.of(1792432800000L, "Asia/Novosibirsk"),
+                createdAt = 1000L,
+                updatedAt = 1000L,
+            )
+            repo.save(tNone)
+            repo.save(tDay)
+            repo.save(tTimed)
+
             val original = rows(source)
             DatabaseSnapshotter.initTargetSchema(source, target)
             repeat(2) {
@@ -70,42 +88,83 @@ class LegacyTaskDateStorageTest {
                 assertEquals(original, rows(source))
                 assertEquals(source.getVersion(), target.getVersion())
             }
-            assertEquals(28, original.size)
-            val numericRawId = original.first { it.second == "1792368000000" }.first
-            val expectedPlan = org.isoron.platform.time.LocalDate(2026, 10, 19)
-            assertEquals(expectedPlan, SQLiteUserTaskRepository(target).getById(TaskId(numericRawId))!!.plannedDate)
+            assertEquals(3, original.size)
+
+            val targetRepo = SQLiteUserTaskRepository(target)
+            assertEquals(TaskDue.None, targetRepo.getById(TaskId("task-none"))?.due)
+            assertEquals(TaskDue.Day(TaskDueDate.parse("2026-10-19")), targetRepo.getById(TaskId("task-day"))?.due)
+            assertEquals(tTimed.due, targetRepo.getById(TaskId("task-timed"))?.due)
+
             assertTrue(ContainerBackupService.createBackup(source, target, 3000000L) is BackupCreationResult.Success)
             repeat(2) {
                 assertTrue(ContainerRestoreService.restore(target, staging, destination) is RestoreResult.Success)
                 assertEquals(original, rows(destination))
                 assertEquals(original, rows(source))
-                assertEquals(expectedPlan, SQLiteUserTaskRepository(destination).getById(TaskId(numericRawId))!!.plannedDate)
             }
-            val restoredService = org.isoron.uhabits.core.userTasks.UserTaskServiceImpl(
-                SQLiteUserTaskRepository(destination), { 4000000L }, { error("No new task expected") })
-            val badId = TaskId(original.first { it.second == "1792393200000" }.first)
-            restoredService.updateTask(badId, title = "Unrelated edit after restore")
-            assertEquals("1792393200000", rows(destination).first { it.first == badId.value }.second)
-            restoredService.updateTask(TaskId(numericRawId), title = "Title edit after restore")
-            assertEquals("2026-10-19", rows(destination).first { it.first == numericRawId }.second)
-            assertEquals(expectedPlan, SQLiteUserTaskRepository(destination).getById(TaskId(numericRawId))!!.plannedDate)
+
+            val destRepo = SQLiteUserTaskRepository(destination)
+            assertEquals(TaskDue.None, destRepo.getById(TaskId("task-none"))?.due)
+            assertEquals(TaskDue.Day(TaskDueDate.parse("2026-10-19")), destRepo.getById(TaskId("task-day"))?.due)
+            assertEquals(tTimed.due, destRepo.getById(TaskId("task-timed"))?.due)
         } finally { source.close(); target.close(); staging.close(); destination.close() }
     }
 
-    @Test fun knownCompatibilityRisk_currentSnapshotDropsUnknownFutureColumnsDespiteVersion() = runBlocking {
+    @Test fun olderDevDatabaseWithPlannedDateAndDeadlineMigratesNonDestructively() = runBlocking {
+        val db = TestDatabaseHelper.createEmptyDatabase()
+        try {
+            // Simulate older dev database table with planned_date and deadline
+            db.run("""
+                CREATE TABLE UserTasks (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    container_id TEXT,
+                    status TEXT NOT NULL DEFAULT 'PENDING',
+                    planned_date TEXT,
+                    deadline INTEGER,
+                    completed_at INTEGER,
+                    parent_task_id TEXT,
+                    sort_order INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL
+                )
+            """.trimIndent())
+
+            db.run("INSERT INTO UserTasks VALUES ('d1', 'Planned Only Future', '', NULL, 'PENDING', '2029-10-19', NULL, NULL, NULL, 0, 1000, 1000)")
+            db.run("INSERT INTO UserTasks VALUES ('d2', 'Deadline Only', '', NULL, 'PENDING', NULL, 1792432800000, NULL, NULL, 0, 1000, 1000)")
+            db.run("INSERT INTO UserTasks VALUES ('d3', 'Both Set', '', NULL, 'PENDING', '2029-10-19', 1792432800000, NULL, NULL, 0, 1000, 1000)")
+            db.run("INSERT INTO UserTasks VALUES ('d4', 'Neither Set', '', NULL, 'PENDING', NULL, NULL, NULL, NULL, 0, 1000, 1000)")
+            db.run("INSERT INTO UserTasks VALUES ('d5', 'Planned Only Past', '', NULL, 'PENDING', '2020-01-15', NULL, NULL, NULL, 0, 1000, 1000)")
+
+            // Running createSchema inspects columns and runs the ALTER TABLE migration
+            UserTaskSchema.createSchema(db)
+
+            val repo = SQLiteUserTaskRepository(db)
+            assertEquals(TaskDue.Day(TaskDueDate.parse("2029-10-19")), repo.getById(TaskId("d1"))?.due)
+            assertEquals(TaskDue.Timed.of(1792432800000L), repo.getById(TaskId("d2"))?.due)
+            // Deadline takes precedence as TIMED
+            assertEquals(TaskDue.Timed.of(1792432800000L), repo.getById(TaskId("d3"))?.due)
+            assertEquals(TaskDue.None, repo.getById(TaskId("d4"))?.due)
+            // Plan-only in past must NOT automatically become overdue deadline
+            assertEquals(TaskDue.None, repo.getById(TaskId("d5"))?.due)
+            assertEquals("2020-01-15", db.queryString("SELECT planned_date FROM UserTasks WHERE id = 'd5'"))
+        } finally { db.close() }
+    }
+
+    @Test fun snapshotRejectsNewerSchemaBeforeChangingTarget() = runBlocking {
         val source = TestDatabaseHelper.createEmptyDatabase()
         val target = TestDatabaseHelper.createEmptyDatabase()
         try {
             UserTaskSchema.createSchema(source)
-            source.run("ALTER TABLE UserTasks ADD COLUMN proposed_due_v1 TEXT")
-            source.run("INSERT INTO UserTasks(id,title,planned_date,created_at,updated_at,proposed_due_v1) VALUES ('future','Synthetic future shape','2026-10-19',1,1,'date-only:2026-10-19')")
-            source.setVersion(31) // Simulate a future schema only in this disposable in-memory fixture.
-            DatabaseSnapshotter.initTargetSchema(source, target)
-            DatabaseSnapshotter.copyAllData(source, target)
-            assertTrue("Source extension exists", "proposed_due_v1" in columns(source))
-            assertFalse("Current hard-coded target schema drops unknown columns", "proposed_due_v1" in columns(target))
-            assertEquals(31, target.getVersion())
-            assertEquals(rows(source), rows(target))
+            source.setVersion(org.isoron.uhabits.core.DATABASE_VERSION + 1)
+            UserTaskSchema.createSchema(target)
+            target.setVersion(29)
+            try {
+                DatabaseSnapshotter.initTargetSchema(source, target)
+                fail("Unsupported source version should be rejected")
+            } catch (e: IllegalArgumentException) {
+                assertTrue(e.message!!.contains("Unsupported source database schema version"))
+            }
         } finally { source.close(); target.close() }
     }
 

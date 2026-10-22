@@ -52,7 +52,7 @@ class ProductionCutoverServiceTest {
             )
 
             assertIs<ProductionCutoverResult.Success>(result)
-            assertEquals(DATABASE_VERSION, db.getVersion())
+            assertEquals(30, db.getVersion())
             assertEquals(initialHabitsCount, result.habitsCount)
             assertEquals(initialBlocksCount, result.containersCount)
             assertEquals(initialHabitsCount, result.placementsCount)

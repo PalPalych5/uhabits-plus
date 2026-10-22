@@ -121,8 +121,8 @@ object ProductionNextSchemaMigrator {
             }
 
             // Step 1: Install all Next durable DDL
-            OrganizationSchema.createSchema(db)
-            UserTaskSchema.createSchema(db)
+            OrganizationSchema.createSchema(db, targetVersion = 30)
+            UserTaskSchema.createSchema(db, targetVersion = 30)
             FocusSessionSchema.createSchema(db)
             // FocusCaptureJournal table
             db.run(

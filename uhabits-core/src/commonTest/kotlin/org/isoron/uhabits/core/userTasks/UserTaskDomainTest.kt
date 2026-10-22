@@ -21,6 +21,8 @@ package org.isoron.uhabits.core.userTasks
 
 import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.containers.ContainerId
+import org.isoron.uhabits.core.userTasks.due.TaskDue
+import org.isoron.uhabits.core.userTasks.due.TaskDueDate
 import org.isoron.uhabits.core.userTasks.memory.MemoryUserTaskRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -36,47 +38,46 @@ class UserTaskDomainTest {
     private val nowMillis = 1791100000000L // arbitrary fixed time
 
     @Test
-    fun testSemanticInvariant_plannedDateNotDeadline() {
-        // Task A: planned yesterday, no deadline -> MISSED PLAN, NOT hard overdue
+    fun testUnifiedDueEvaluation() {
+        // Task A: Day due yesterday -> OVERDUE
         val taskA = UserTask(
             id = TaskId("task-a"),
             title = "Read Chapter 3",
-            plannedDate = LocalDate(2026, 10, 3), // yesterday
-            deadline = null,
+            due = TaskDue.Day(TaskDueDate.from(LocalDate(2026, 10, 3))),
             createdAt = nowMillis,
             updatedAt = nowMillis,
         )
-        assertTrue(taskA.isMissedPlan(today, nowMillis), "Task with past plannedDate should be missed plan")
-        assertFalse(taskA.isHardOverdue(nowMillis), "Missed plan must NOT be hard overdue")
+        assertTrue(taskA.isOverdue(today, nowMillis))
+        assertFalse(taskA.isDueToday(today, nowMillis))
+        assertFalse(taskA.isDueUpcoming(today, nowMillis))
 
-        // Task B: planned yesterday, but deadline is next week -> MISSED PLAN, NOT hard overdue
+        // Task B: Day due today -> DUE TODAY
         val taskB = UserTask(
             id = TaskId("task-b"),
             title = "Submit Paper Draft",
-            plannedDate = LocalDate(2026, 10, 3), // yesterday
-            deadline = nowMillis + 86400000L * 7, // 7 days in future
+            due = TaskDue.Day(TaskDueDate.from(today)),
             createdAt = nowMillis,
             updatedAt = nowMillis,
         )
-        assertTrue(taskB.isMissedPlan(today, nowMillis))
-        assertFalse(taskB.isHardOverdue(nowMillis))
+        assertFalse(taskB.isOverdue(today, nowMillis))
+        assertTrue(taskB.isDueToday(today, nowMillis))
+        assertFalse(taskB.isDueUpcoming(today, nowMillis))
 
-        // Task C: deadline was 2 hours ago -> HARD OVERDUE, NOT missed plan
+        // Task C: Timed due 2 hours ago -> OVERDUE
         val taskC = UserTask(
             id = TaskId("task-c"),
             title = "Pay Tuition Fee",
-            plannedDate = LocalDate(2026, 10, 4), // today
-            deadline = nowMillis - 7200000L, // 2 hours ago
+            due = TaskDue.Timed.of(nowMillis - 7200000L),
             createdAt = nowMillis,
             updatedAt = nowMillis,
         )
-        assertTrue(taskC.isHardOverdue(nowMillis), "Past deadline must be hard overdue")
-        assertFalse(taskC.isMissedPlan(today, nowMillis), "Hard overdue task should not report as missed plan")
+        assertTrue(taskC.isOverdue(today, nowMillis))
+        assertFalse(taskC.isDueToday(today, nowMillis))
 
-        // Task D: completed task is neither hard overdue nor missed plan
+        // Task D: completed task is never overdue or due today
         val taskD = taskC.copy(status = TaskStatus.COMPLETED, completedAt = nowMillis)
-        assertFalse(taskD.isHardOverdue(nowMillis))
-        assertFalse(taskD.isMissedPlan(today, nowMillis))
+        assertFalse(taskD.isOverdue(today, nowMillis))
+        assertFalse(taskD.isDueToday(today, nowMillis))
     }
 
     @Test
@@ -90,10 +91,11 @@ class UserTaskDomainTest {
             title = "Math homework",
             description = "Exercises 1-10",
             containerId = ContainerId("study-cid"),
-            plannedDate = today,
+            due = TaskDue.Day(TaskDueDate.from(today)),
         )
         assertEquals(TaskId("t-1"), task.id)
         assertEquals("Math homework", task.title)
+        assertEquals(TaskDue.Day(TaskDueDate.from(today)), task.due)
         assertEquals(TaskStatus.PENDING, task.status)
         assertNull(task.completedAt)
 

@@ -41,6 +41,8 @@ import org.isoron.uhabits.core.containers.migration.SemanticMigrationFixtures
 import org.isoron.uhabits.core.containers.sqlite.SQLiteHabitVisualIdentityStore
 import org.isoron.uhabits.core.containers.sqlite.SQLiteOrganizationStore
 import org.isoron.uhabits.core.models.PaletteColor
+import org.isoron.uhabits.core.userTasks.due.TaskDue
+import org.isoron.uhabits.core.userTasks.due.TaskDueDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -321,8 +323,7 @@ class ContainerBackupRestoreTest {
             description = "Sections 1 through 5",
             containerId = ContainerId("b-uuid-1"),
             status = org.isoron.uhabits.core.userTasks.TaskStatus.PENDING,
-            plannedDate = org.isoron.platform.time.LocalDate(2026, 10, 4),
-            deadline = 1791108000000L,
+            due = TaskDue.Timed.of(1791108000000L),
             completedAt = null,
             parentTaskId = null,
             sortOrder = 0,
@@ -335,8 +336,7 @@ class ContainerBackupRestoreTest {
             description = "Mermaid chart",
             containerId = ContainerId("b-uuid-1"),
             status = org.isoron.uhabits.core.userTasks.TaskStatus.COMPLETED,
-            plannedDate = org.isoron.platform.time.LocalDate(2026, 10, 3),
-            deadline = null,
+            due = TaskDue.Day(TaskDueDate.from(org.isoron.platform.time.LocalDate(2026, 10, 3))),
             completedAt = 2000L,
             parentTaskId = rootTask.id,
             sortOrder = 0,
@@ -349,8 +349,7 @@ class ContainerBackupRestoreTest {
             description = "",
             containerId = null,
             status = org.isoron.uhabits.core.userTasks.TaskStatus.PENDING,
-            plannedDate = null,
-            deadline = null,
+            due = TaskDue.None,
             completedAt = null,
             parentTaskId = null,
             sortOrder = 1,
@@ -404,8 +403,7 @@ class ContainerBackupRestoreTest {
         assertEquals("Sections 1 through 5", restoredRoot.description)
         assertEquals(ContainerId("b-uuid-1"), restoredRoot.containerId)
         assertEquals(org.isoron.uhabits.core.userTasks.TaskStatus.PENDING, restoredRoot.status)
-        assertEquals(org.isoron.platform.time.LocalDate(2026, 10, 4), restoredRoot.plannedDate)
-        assertEquals(1791108000000L, restoredRoot.deadline)
+        assertEquals(TaskDue.Timed.of(1791108000000L), restoredRoot.due)
         assertNull(restoredRoot.completedAt)
         assertNull(restoredRoot.parentTaskId)
 
@@ -415,12 +413,14 @@ class ContainerBackupRestoreTest {
         assertEquals(org.isoron.uhabits.core.userTasks.TaskStatus.COMPLETED, restoredSub.status)
         assertEquals(2000L, restoredSub.completedAt)
         assertEquals(rootTask.id, restoredSub.parentTaskId)
+        assertEquals(TaskDue.Day(TaskDueDate.from(org.isoron.platform.time.LocalDate(2026, 10, 3))), restoredSub.due)
 
         val restoredInbox = destTaskRepo.getById(standaloneTask.id)
         assertNotNull(restoredInbox)
         assertEquals("Buy fresh coffee beans", restoredInbox.title)
         assertNull(restoredInbox.containerId)
         assertNull(restoredInbox.parentTaskId)
+        assertEquals(TaskDue.None, restoredInbox.due)
 
         val destInventory = RawLegacyInventoryReader.read(destinationDb)
         val errors = ContainerRestoreService.validateContainerDatasetSemantics(destinationDb, destInventory)

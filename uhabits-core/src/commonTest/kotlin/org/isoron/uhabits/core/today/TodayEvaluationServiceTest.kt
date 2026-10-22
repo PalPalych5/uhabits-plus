@@ -46,6 +46,8 @@ import org.isoron.uhabits.core.timer.TimerMode
 import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.TaskStatus
 import org.isoron.uhabits.core.userTasks.UserTask
+import org.isoron.uhabits.core.userTasks.due.TaskDue
+import org.isoron.uhabits.core.userTasks.due.TaskDueDate
 import org.isoron.uhabits.core.userTasks.memory.MemoryUserTaskRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -142,8 +144,7 @@ class TodayEvaluationServiceTest {
         id: String,
         title: String,
         containerId: String? = null,
-        plannedDate: LocalDate? = null,
-        deadline: Long? = null,
+        due: TaskDue = TaskDue.None,
         status: TaskStatus = TaskStatus.PENDING,
         completedAt: Long? = null,
         parentTaskId: TaskId? = null,
@@ -152,8 +153,7 @@ class TodayEvaluationServiceTest {
             id = TaskId(id),
             title = title,
             containerId = containerId?.let(::ContainerId),
-            plannedDate = plannedDate,
-            deadline = deadline,
+            due = due,
             status = status,
             completedAt = completedAt,
             parentTaskId = parentTaskId,
@@ -165,24 +165,23 @@ class TodayEvaluationServiceTest {
     }
 
     @Test
-    fun testTaskCategories_hardOverdue_missedPlan_plannedToday_and_futureExclusion() {
+    fun testTaskCategories_overdue_dueToday_and_futureExclusion() {
         addContainer("study", "Учёба")
 
-        // 1. Hard overdue: deadline has passed (yesterday)
-        val tOverdue = addTask(
+        // 1. Overdue: deadline has passed (1 hour ago)
+        val tOverdue1 = addTask(
             id = "t1",
             title = "Сдать МУСы",
             containerId = "study",
-            deadline = nowMillisValue - 3600000L // 1 hour ago
+            due = TaskDue.Timed.of(nowMillisValue - 3600000L)
         )
 
-        // 2. Missed plan: planned yesterday, deadline tomorrow (NOT hard overdue!)
-        val tMissed = addTask(
+        // 2. Overdue: day was yesterday
+        val tOverdue2 = addTask(
             id = "t2",
             title = "Оформить отчёт",
             containerId = "study",
-            plannedDate = todayDate.minus(1),
-            deadline = nowMillisValue + 86400000L // tomorrow
+            due = TaskDue.Day(TaskDueDate.from(todayDate.minus(1)))
         )
 
         // 3. Planned today
@@ -190,15 +189,15 @@ class TodayEvaluationServiceTest {
             id = "t3",
             title = "Сделать запросы БД",
             containerId = "study",
-            plannedDate = todayDate
+            due = TaskDue.Day(TaskDueDate.from(todayDate))
         )
 
-        // 4. Future planned task: planned in 3 days, no overdue deadline -> MUST NOT APPEAR
+        // 4. Future planned task: planned in 3 days -> MUST NOT APPEAR
         addTask(
             id = "t4",
             title = "Подготовка к экзамену",
             containerId = "study",
-            plannedDate = todayDate.plus(3)
+            due = TaskDue.Day(TaskDueDate.from(todayDate.plus(3)))
         )
 
         // 5. Completed task today
@@ -212,15 +211,9 @@ class TodayEvaluationServiceTest {
 
         val data = service.evaluateToday()
 
-        assertEquals(1, data.hardOverdueTasks.size)
-        assertEquals("t1", data.hardOverdueTasks[0].task.id.value)
+        assertEquals(2, data.hardOverdueTasks.size)
         assertEquals(TodayTaskUrgency.HARD_OVERDUE, data.hardOverdueTasks[0].urgency)
         assertEquals("Учёба", data.hardOverdueTasks[0].containerName)
-
-        assertEquals(1, data.missedPlanTasks.size)
-        assertEquals("t2", data.missedPlanTasks[0].task.id.value)
-        assertEquals(TodayTaskUrgency.MISSED_PLAN, data.missedPlanTasks[0].urgency)
-        assertEquals("Учёба", data.missedPlanTasks[0].containerName)
 
         assertEquals(1, data.plannedTodayTasks.size)
         assertEquals("t3", data.plannedTodayTasks[0].task.id.value)
@@ -229,30 +222,27 @@ class TodayEvaluationServiceTest {
         assertEquals(1, data.completedTodayTasks.size)
         assertEquals("t5", data.completedTodayTasks[0].task.id.value)
 
-        // Verify total actionable count (overdue + missed + today) = 3 (future task excluded)
+        // Verify total actionable count (overdue + today) = 3 (future task excluded)
         assertEquals(3, data.totalActionableTasksCount)
     }
 
     @Test
-    fun testPlannedDateNotEqualToDeadlineInvariant() {
-        // A task whose plannedDate was yesterday but deadline is next week is MISSED_PLAN, NOT HARD_OVERDUE
+    fun testUnifiedDueOverdueEvaluation() {
         addTask(
-            id = "t_plan",
-            title = "Task with missed plan",
-            plannedDate = todayDate.minus(2),
-            deadline = nowMillisValue + 7 * 86400000L
+            id = "t_past",
+            title = "Task with past day",
+            due = TaskDue.Day(TaskDueDate.from(todayDate.minus(2)))
         )
 
         val data = service.evaluateToday()
-        assertEquals(0, data.hardOverdueTasks.size)
-        assertEquals(1, data.missedPlanTasks.size)
-        assertEquals("t_plan", data.missedPlanTasks[0].task.id.value)
-        assertEquals(TodayTaskUrgency.MISSED_PLAN, data.missedPlanTasks[0].urgency)
+        assertEquals(1, data.hardOverdueTasks.size)
+        assertEquals("t_past", data.hardOverdueTasks[0].task.id.value)
+        assertEquals(TodayTaskUrgency.HARD_OVERDUE, data.hardOverdueTasks[0].urgency)
     }
 
     @Test
     fun testSubtaskCountsForRootTasks() {
-        val root = addTask("root1", "Root Task", plannedDate = todayDate)
+        val root = addTask("root1", "Root Task", due = TaskDue.Day(TaskDueDate.from(todayDate)))
         addTask("sub1", "Subtask 1", parentTaskId = root.id, status = TaskStatus.COMPLETED)
         addTask("sub2", "Subtask 2", parentTaskId = root.id, status = TaskStatus.PENDING)
         addTask("sub3", "Subtask 3", parentTaskId = root.id, status = TaskStatus.COMPLETED)

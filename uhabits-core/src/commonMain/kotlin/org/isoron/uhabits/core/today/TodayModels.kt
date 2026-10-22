@@ -31,19 +31,24 @@ import org.isoron.uhabits.core.userTasks.UserTask
 
 /**
  * Categorization of task urgency for Today view.
- * Planned date != deadline: A missed planned date is NOT hard overdue!
+ * Unified task due: Overdue vs Due Today.
  */
 enum class TodayTaskUrgency {
-    /** Objective hard overdue: deadline < now. */
+    /** Objective overdue: due date/time has passed. */
     HARD_OVERDUE,
-    /** Missed plan: plannedDate < today && not hard overdue. Requires replanning. */
+    /** Missed plan (deprecated, unified into overdue). */
     MISSED_PLAN,
-    /** Planned for today. */
+    /** Planned / due for today. */
     PLANNED_TODAY,
     /** Completed today. */
     COMPLETED_TODAY,
     /** Optional undated inbox item. */
-    INBOX_UNDATED,
+    INBOX_UNDATED;
+
+    companion object {
+        val OVERDUE = HARD_OVERDUE
+        val DUE_TODAY = PLANNED_TODAY
+    }
 }
 
 data class TodayTaskItem(
@@ -85,7 +90,7 @@ data class TodayFocusItem(
 )
 
 enum class TodayGroupingMode {
-    /** Grouped by urgency subsections: Hard Overdue, Missed Plan, Planned Today. */
+    /** Grouped by urgency subsections: Hard Overdue, Planned Today. */
     SECTIONED,
     /** Flat list sorted deterministically by urgency. */
     UNIFIED_LIST,
@@ -95,14 +100,17 @@ data class TodayScreenData(
     val todayDate: LocalDate,
     val nowMillis: Long,
     val hardOverdueTasks: List<TodayTaskItem>,
-    val missedPlanTasks: List<TodayTaskItem>,
     val plannedTodayTasks: List<TodayTaskItem>,
     val completedTodayTasks: List<TodayTaskItem>,
     val undatedInboxTasks: List<TodayTaskItem>,
     val booleanHabits: List<TodayHabitItem>,
     val numericalHabits: List<TodayHabitItem>,
     val activeFocus: TodayFocusItem? = null,
+    val missedPlanTasks: List<TodayTaskItem> = emptyList(),
 ) {
+    val overdueTasks: List<TodayTaskItem> get() = hardOverdueTasks
+    val dueTodayTasks: List<TodayTaskItem> get() = plannedTodayTasks
+
     val totalActionableTasksCount: Int
         get() = hardOverdueTasks.size + missedPlanTasks.size + plannedTodayTasks.size
 
