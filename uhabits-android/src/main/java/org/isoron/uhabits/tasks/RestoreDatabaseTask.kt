@@ -20,9 +20,8 @@ class RestoreDatabaseTask(
     override suspend fun doInBackground() {
         result = runCatching {
             backupManager.restoreFromBackup(entry).also {
-                if (!application.component.session.isExperimental) application.component.syncCoordinator.markRestoreNeedsReview(
-                    "Локальная база восстановлена из резервной копии. Перед следующей синхронизацией требуется подтверждение."
-                )
+                // DatabaseUtils quarantines sync and clears the replacement's delivery
+                // state before publishing it; the old component DB is already closed.
                 application.shutdownForDatabaseRestoreRestart()
             }
         }

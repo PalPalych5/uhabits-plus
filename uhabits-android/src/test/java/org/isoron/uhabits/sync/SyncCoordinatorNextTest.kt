@@ -148,7 +148,7 @@ class SyncCoordinatorNextTest {
         }
     }
 
-    private suspend fun createTestDatabase(): Database {
+    internal suspend fun createTestDatabase(): Database {
         val db = JavaDatabaseOpener().open(":memory:")
         db.setVersion(8)
 
@@ -178,14 +178,16 @@ class SyncCoordinatorNextTest {
         val taskRepo: SQLiteUserTaskRepository,
         val taskService: UserTaskServiceImpl,
         val focusRepo: SQLiteFocusSessionRepository,
-        val contribRepo: SQLiteContributionRepository
+        val contribRepo: SQLiteContributionRepository,
+        val preferences: Preferences
     )
 
     internal fun setupDeviceEnvironment(
         db: Database,
         backend: SyncBackend,
         deviceId: String,
-        session: DatasetSession = DatasetSessionFactory.productionNext()
+        session: DatasetSession = DatasetSessionFactory.productionNext(),
+        legacyCursor: Long = 0L
     ): DeviceEnvironment {
         val modelFactory = SQLModelFactory(
             db,
@@ -196,6 +198,7 @@ class SyncCoordinatorNextTest {
 
         val habitList = SQLiteHabitList(modelFactory)
         val preferences = Preferences(MemoryStorage()).apply {
+            syncLastLogId = legacyCursor
             isSyncEnabled = true
             syncSupabaseUrl = "https://example.supabase.co"
             syncSupabaseAnonKey = "anon-key-123"
@@ -224,7 +227,10 @@ class SyncCoordinatorNextTest {
 
         OrganizationSchema.createSchema(db)
         val orgStore = SQLiteOrganizationStore(db, syncManager = modelFactory.syncManager)
-        orgStore.seedBaseline()
+        // Reopening a file-backed fixture must preserve its baseline/change history.
+        if (db.querySingle("SELECT current_revision FROM OrganizationState WHERE id = 1") { it.getLong(0) } == null) {
+            orgStore.seedBaseline()
+        }
 
         UserTaskSchema.createSchema(db)
         val taskRepo = SQLiteUserTaskRepository(db)
@@ -249,7 +255,8 @@ class SyncCoordinatorNextTest {
             taskRepo = taskRepo,
             taskService = taskService,
             focusRepo = focusRepo,
-            contribRepo = contribRepo
+            contribRepo = contribRepo,
+            preferences = preferences
         )
     }
 

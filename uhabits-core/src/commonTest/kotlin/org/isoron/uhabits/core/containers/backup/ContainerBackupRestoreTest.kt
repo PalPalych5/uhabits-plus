@@ -50,6 +50,23 @@ import kotlin.test.assertTrue
 class ContainerBackupRestoreTest {
 
     @Test
+    fun restoredRawSnapshotDropsDeliveryContextAndCannotImportLegacyCursor() = runTest {
+        val db = SemanticMigrationFixtures.createAndSeedV29Database()
+        try {
+            // Also supports snapshots predating PR 2.2: no service tables exist yet.
+            DatabaseSnapshotter.clearSyncDeliveryState(db)
+            assertEquals(0L, org.isoron.uhabits.core.sync.SyncStateRepository(db).getCursor())
+            seedDeliveryState(db, "backup-account")
+            DatabaseSnapshotter.clearSyncDeliveryState(db)
+            assertEquals(0L, org.isoron.uhabits.core.sync.SyncStateRepository(db).getCursor())
+            assertNull(org.isoron.uhabits.core.sync.SyncStateRepository(db).getAccountUserId())
+            assertEquals(0L, db.queryLong("SELECT count(*) FROM SyncInbox"))
+            assertEquals(0L, db.queryLong("SELECT count(*) FROM SyncTombstones"))
+            assertEquals(7L, db.queryLong("SELECT count(*) FROM Habits"))
+        } finally { db.close() }
+    }
+
+    @Test
     fun testFullBackupRestoreRoundtrip_logicalParity() = runTest {
         // 1. Create and seed v29 database
         val sourceDb = SemanticMigrationFixtures.createAndSeedV29Database()
@@ -344,6 +361,9 @@ class ContainerBackupRestoreTest {
         taskRepo.save(subTask)
         taskRepo.save(standaloneTask)
 
+        // Sync delivery state belongs to a live account/database, not a backup.
+        seedDeliveryState(sourceDb, "source-account")
+
         // Create full experimental backup
         val backupDb = TestDatabaseHelper.createEmptyDatabase()
         val backupRes = ContainerBackupService.createBackup(
@@ -354,8 +374,15 @@ class ContainerBackupRestoreTest {
         )
         assertTrue(backupRes is BackupCreationResult.Success)
 
+        assertTrue(DatabaseSnapshotter.listTables(backupDb).intersect(
+            setOf("SyncInbox", "SyncState", "SyncTombstones")
+        ).isEmpty())
+        assertEquals(1L, sourceDb.queryLong("SELECT count(*) FROM SyncInbox"))
+
         val stagingDb = TestDatabaseHelper.createEmptyDatabase()
         val destinationDb = TestDatabaseHelper.createEmptyDatabase()
+
+        seedDeliveryState(destinationDb, "previous-destination-account")
 
         val restoreRes = ContainerRestoreService.restore(
             backupDb = backupDb,
@@ -363,6 +390,11 @@ class ContainerBackupRestoreTest {
             destinationDb = destinationDb,
         )
         assertTrue(restoreRes is RestoreResult.Success)
+
+        for (table in listOf("SyncInbox", "SyncState", "SyncTombstones")) {
+            assertEquals(0L, destinationDb.queryLong("SELECT count(*) FROM $table"), table)
+        }
+        assertEquals(7L, destinationDb.queryLong("SELECT count(*) FROM Habits"))
 
         // Verify tasks in destinationDb
         val destTaskRepo = org.isoron.uhabits.core.userTasks.sqlite.SQLiteUserTaskRepository(destinationDb)
@@ -409,5 +441,19 @@ class ContainerBackupRestoreTest {
         backupDb.close()
         stagingDb.close()
         destinationDb.close()
+    }
+
+    private fun seedDeliveryState(db: org.isoron.platform.io.Database, account: String) {
+        org.isoron.uhabits.core.sync.SyncInboxSchema.createSchema(db)
+        org.isoron.uhabits.core.sync.SyncStateRepository(db).apply {
+            setCursor(42L)
+            setAccountUserId(account)
+        }
+        db.run("INSERT INTO SyncTombstones VALUES ('user_task', 'deleted-task', 100)")
+        db.run("""
+            INSERT INTO SyncInbox (log_id, device_id, op_uuid, entity_type, entity_uuid,
+                operation_type, payload_json, created_at, received_at, deferred_reason)
+            VALUES (43, 'device', 'op', 'user_task', 'stale-task', 'UPSERT', '{}', 100, 101, 'DEPENDENCY')
+        """.trimIndent())
     }
 }

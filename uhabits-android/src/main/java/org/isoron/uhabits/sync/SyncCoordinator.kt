@@ -14,6 +14,8 @@ import org.isoron.uhabits.core.models.sqlite.SQLModelFactory
 import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.widgets.WidgetUpdater
+import org.isoron.uhabits.core.sync.SyncInboxRecord
+import org.isoron.uhabits.core.sync.SyncInboxSchema
 import org.isoron.uhabits.core.sync.SyncQueueRecord
 import org.isoron.platform.io.begin
 import org.isoron.platform.io.commit
@@ -22,6 +24,7 @@ import org.isoron.platform.io.query
 import org.isoron.platform.io.queryLong
 import org.isoron.platform.io.querySingle
 import org.isoron.platform.io.run
+import org.isoron.platform.io.runInTransaction
 import org.isoron.platform.time.getToday
 import org.json.JSONArray
 import org.json.JSONObject
@@ -89,8 +92,27 @@ class SyncCoordinator(
     private var isPendingSync = false
     private var syncJob: kotlinx.coroutines.Job? = null
     private val syncScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default)
+    // Account/dataset transitions and local application share this coordinator's monitor.
+    private var syncContextGeneration = 0L
+    private var disposed = false
+
+    private class SyncContextChanged : IllegalStateException("Sync context changed")
+
+    private fun <T> inSyncContext(generation: Long, userId: String, block: () -> T): T =
+        synchronized(this) {
+            if (disposed || generation != syncContextGeneration || authStore.load()?.userId != userId) {
+                throw SyncContextChanged()
+            }
+            block()
+        }
 
     init {
+        SyncInboxSchema.createSchema(modelFactory.database)
+        val existingDbCursor = modelFactory.syncStateRepository.getCursor()
+        if (existingDbCursor == null && preferences.syncLastLogId > 0L) {
+            modelFactory.syncStateRepository.setCursor(preferences.syncLastLogId, System.currentTimeMillis())
+        }
+
         if (session.capabilities.syncEnabled && session.mode != org.isoron.uhabits.core.containers.session.DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL) {
             modelFactory.syncManager.onQueueAppended = {
                 if (isAutoSyncPaused) {
@@ -291,6 +313,9 @@ class SyncCoordinator(
         root.put("bootstrap_queued", preferences.isSyncBootstrapQueued)
         root.put("bootstrap_done", preferences.isSyncBootstrapDone)
         root.put("sync_last_log_id", preferences.syncLastLogId)
+        root.put("sync_durable_cursor", modelFactory.syncStateRepository.getCursor() ?: JSONObject.NULL)
+        root.put("sync_inbox_pending_count", modelFactory.syncInboxRepository.count())
+        root.put("sync_account_user_id", modelFactory.syncStateRepository.getAccountUserId() ?: JSONObject.NULL)
         root.put("sync_status", preferences.syncStatus)
         root.put("sync_status_detail", preferences.syncStatusDetail)
         root.put(
@@ -359,14 +384,30 @@ class SyncCoordinator(
             ?: return@withContext configurationMissing("Укажите Supabase URL и anon key в режиме разработчика.")
         return@withContext runCatching {
             val session = backend.signIn(config, email.trim(), password)
-            authStore.save(session)
-            preferences.syncAccountEmail = session.email ?: email.trim()
-            preferences.syncStatus = "idle"
-            preferences.syncStatusDetail = ""
-            preferences.isSyncBootstrapQueued = false
-            preferences.isSyncBootstrapDone = false
-            preferences.syncLastLogId = 0L
-            SyncRunResult.Success(0, 0)
+            synchronized(this@SyncCoordinator) {
+                if (disposed) throw SyncContextChanged()
+                syncContextGeneration++
+                authStore.save(session)
+                val storedUserId = modelFactory.syncStateRepository.getAccountUserId()
+                if (storedUserId != null && storedUserId != session.userId) {
+                    modelFactory.database.runInTransaction {
+                        modelFactory.syncStateRepository.clear()
+                        modelFactory.syncInboxRepository.clearAll()
+                        modelFactory.syncTombstoneRepository.clearAll()
+                        modelFactory.syncStateRepository.setAccountUserId(session.userId, System.currentTimeMillis())
+                    }
+                    preferences.syncLastLogId = 0L
+                } else {
+                    modelFactory.syncStateRepository.setAccountUserId(session.userId, System.currentTimeMillis())
+                }
+                preferences.syncAccountEmail = session.email ?: email.trim()
+                preferences.syncStatus = "idle"
+                preferences.syncStatusDetail = ""
+                preferences.isSyncBootstrapQueued = false
+                preferences.isSyncBootstrapDone = false
+                preferences.syncLastLogId = modelFactory.syncStateRepository.getCursor() ?: 0L
+                SyncRunResult.Success(0, 0)
+            }
         }.getOrElse {
             syncUnavailable("Не удалось войти в аккаунт синхронизации.", it)
         }
@@ -377,19 +418,25 @@ class SyncCoordinator(
             return@withContext syncUnavailable("Синхронизация отключена в текущей сессии.", IllegalStateException("Sync disabled in session"))
         }
         return@withContext runCatching {
-            val session = authStore.load()
             val config = requireConfig()
+            val session = synchronized(this@SyncCoordinator) {
+                syncContextGeneration++
+                val oldSession = authStore.load()
+                authStore.clear()
+                preferences.syncAccountEmail = null
+                preferences.syncStatus = "signed_out"
+                preferences.syncStatusDetail = ""
+                preferences.isSyncEnabled = false
+                preferences.isSyncBootstrapQueued = false
+                preferences.isSyncBootstrapDone = false
+                preferences.syncLastLogId = 0L
+                modelFactory.syncStateRepository.clear()
+                modelFactory.syncInboxRepository.clearAll()
+                oldSession
+            }
             runCatching {
                 if (session != null && config != null) backend.signOut(session, config)
             }
-            authStore.clear()
-            preferences.syncAccountEmail = null
-            preferences.syncStatus = "signed_out"
-            preferences.syncStatusDetail = ""
-            preferences.isSyncEnabled = false
-            preferences.isSyncBootstrapQueued = false
-            preferences.isSyncBootstrapDone = false
-            preferences.syncLastLogId = 0L
             SyncRunResult.Success(0, 0)
         }.getOrElse {
             syncUnavailable("Не удалось отключить синхронизацию на этом устройстве.", it)
@@ -446,7 +493,8 @@ class SyncCoordinator(
         var session = authStore.load()
             ?: return@withContext SyncRunResult.Failure("Сначала войдите в аккаунт синхронизации.", "No session")
 
-        synchronized(this@SyncCoordinator) {
+        val runGeneration = synchronized(this@SyncCoordinator) {
+            if (disposed) return@withContext SyncRunResult.Skipped("sync_context_changed")
             if (isSyncing) {
                 return@withContext if (manual) {
                     SyncRunResult.Failure(
@@ -457,98 +505,135 @@ class SyncCoordinator(
                     SyncRunResult.Skipped("already_syncing")
                 }
             }
+            session = authStore.load()
+                ?: return@withContext SyncRunResult.Skipped("sync_context_changed")
             isSyncing = true
+            syncContextGeneration
         }
         notifySyncStateChanged(true)
 
         var result: SyncRunResult? = null
         try {
             val res = runCatching {
-                preferences.syncStatus = "syncing"
-                preferences.syncStatusDetail = ""
+                inSyncContext(runGeneration, session.userId) {
+                    preferences.syncStatus = "syncing"
+                    preferences.syncStatusDetail = ""
+                }
 
                 if (session.expiresAtEpochSeconds in 1 until (System.currentTimeMillis() / 1000L + 60L)) {
                     session = backend.refreshSession(config, session)
-                    authStore.save(session)
+                    inSyncContext(runGeneration, session.userId) { authStore.save(session) }
                 }
 
-                repairDefaultBlockUuids()
+                val (bootstrapResult, pending) = inSyncContext(runGeneration, session.userId) {
+                    repairDefaultBlockUuids()
 
-                val bootstrapResult = ensureBootstrapSyncQueue()
+                    val bootstrapResult = ensureBootstrapSyncQueue()
 
-                val unresolvedTasks = mutableMapOf<String, Boolean>()
-                val pending = modelFactory.syncQueueRepository.findPending().mapNotNull { record ->
-                    if (record.entityType != "user_task" || record.operationType == "delete") record
-                    else if (unresolvedTasks.getOrPut(record.entityUuid) { hasUnsupportedTaskPlan(record.entityUuid) }) null
-                    else try {
-                        val payload = JSONObject(record.payloadJson)
-                        val raw = payload.optionalString("planned_date")
-                        val canonical = normalizeTaskPlannedDateForSync(raw)
-                        // Transport copy only: preserve queue identity/order and the stored retry payload.
-                        if (canonical == raw) record else record.copy(
-                            payloadJson = payload.put("planned_date", canonical ?: JSONObject.NULL).toString()
-                        )
-                    } catch (_: IllegalArgumentException) {
-                        null // Retain an older unreadable queued payload without blocking other tasks.
-                    } catch (_: IndexOutOfBoundsException) {
-                        null
+                    val unresolvedTasks = mutableMapOf<String, Boolean>()
+                    val pending = modelFactory.syncQueueRepository.findPending().mapNotNull { record ->
+                        if (record.entityType != "user_task" || record.operationType == "delete") record
+                        else if (unresolvedTasks.getOrPut(record.entityUuid) { hasUnsupportedTaskPlan(record.entityUuid) }) null
+                        else try {
+                            val payload = JSONObject(record.payloadJson)
+                            val raw = payload.optionalString("planned_date")
+                            val canonical = normalizeTaskPlannedDateForSync(raw)
+                            // Transport copy only: preserve queue identity/order and the stored retry payload.
+                            if (canonical == raw) record else record.copy(
+                                payloadJson = payload.put("planned_date", canonical ?: JSONObject.NULL).toString()
+                            )
+                        } catch (_: IllegalArgumentException) {
+                            null // Retain an older unreadable queued payload without blocking other tasks.
+                        } catch (_: IndexOutOfBoundsException) {
+                            null
+                        }
                     }
+                    Pair(bootstrapResult, pending)
                 }
                 val pushed = backend.pushChanges(config, session, deviceIdProvider.value(), pending)
-                pushed.pushedQueueIds.forEach { queueId ->
-                    modelFactory.syncQueueRepository.markPushed(queueId, System.currentTimeMillis())
-                }
-
-                val lastLogIdBefore = preferences.syncLastLogId
-                val pull = backend.pullChanges(config, session, lastLogIdBefore)
-                val pulledForeignEvents = pull.events.filter { it.deviceId != deviceIdProvider.value() }
-                val skipped = applyRemoteEvents(pulledForeignEvents)
-                val applied = pulledForeignEvents.size - skipped
-                // Retry unresolved child events on the next pull instead of losing them forever.
-                val firstSkippedLogId = lastSkippedRemoteLogId
-                preferences.syncLastLogId = if (firstSkippedLogId != null) {
-                    minOf(pull.latestLogId, firstSkippedLogId - 1)
-                } else {
-                    pull.latestLogId
-                }
-                preferences.syncLastSuccessAt = System.currentTimeMillis()
-                preferences.syncStatus = "success"
-
-                val hasPending = modelFactory.syncQueueRepository.findPending().isNotEmpty()
-                preferences.isSyncBootstrapDone = bootstrapResult.complete || (preferences.isSyncBootstrapQueued && !hasPending)
-
-                val details = StringBuilder(
-                    "pushed=${pushed.pushedQueueIds.size}, pulled=${pulledForeignEvents.size}, applied=$applied, skipped=$skipped, last_log_before=$lastLogIdBefore, last_log_after=${pull.latestLogId}"
-                )
-                details.append(
-                    ", bootstrap_queued=${bootstrapResult.queuedRecords}, bootstrap_complete=${bootstrapResult.complete}, bootstrap_missing_goals_before=${bootstrapResult.missingGoalsBefore}"
-                )
-                if (skipped > 0) {
-                    val blockedTask = pulledForeignEvents.any {
-                        it.logId == firstSkippedLogId && it.entityType == "user_task"
+                val lastLogIdBefore = inSyncContext(runGeneration, session.userId) {
+                    pushed.pushedQueueIds.forEach { queueId ->
+                        modelFactory.syncQueueRepository.markPushed(queueId, System.currentTimeMillis())
                     }
-                    details.append(if (blockedTask) ", first_error=unsupported_task_planned_date" else ", first_error=missing_parent_habit")
+
+                    val storedUserId = modelFactory.syncStateRepository.getAccountUserId()
+                    if (storedUserId != null && storedUserId != session.userId) {
+                        modelFactory.database.runInTransaction {
+                            modelFactory.syncStateRepository.clear()
+                            modelFactory.syncInboxRepository.clearAll()
+                            modelFactory.syncTombstoneRepository.clearAll()
+                            modelFactory.syncStateRepository.setAccountUserId(session.userId, System.currentTimeMillis())
+                        }
+                        preferences.syncLastLogId = 0L
+                    } else if (storedUserId == null) {
+                        modelFactory.syncStateRepository.setAccountUserId(session.userId, System.currentTimeMillis())
+                    }
+
+                    val lastLogIdBefore = modelFactory.syncStateRepository.getCursor() ?: preferences.syncLastLogId
+                    if (preferences.syncLastLogId != lastLogIdBefore) {
+                        preferences.syncLastLogId = lastLogIdBefore
+                    }
+                    lastLogIdBefore
                 }
-                preferences.syncStatusDetail = details.toString()
 
-                habitList.reloadAndNotify()
-                widgetUpdater.updateWidgets()
-                preferences.syncLastUiRefreshReason = "sync_coordinator_success"
-                preferences.syncLastUiRefreshAt = System.currentTimeMillis()
-                preferences.syncLastUiRefreshDestination = "listener_pending"
-                preferences.syncLastUiRefreshHabitCount = activeHabitCount()
-                preferences.notifySyncFinished()
+                val pull = backend.pullChanges(config, session, lastLogIdBefore)
+                inSyncContext(runGeneration, session.userId) {
+                    val pulledForeignEvents = pull.events.filter { it.deviceId != deviceIdProvider.value() }
 
-                if (!manual) {
-                    preferences.syncLastBackgroundSyncResult = "success"
+                    val (applied, skipped) = modelFactory.database.runInTransaction {
+                        val skippedCount = applyRemoteEvents(pulledForeignEvents)
+                        modelFactory.syncStateRepository.setCursor(pull.latestLogId, System.currentTimeMillis())
+                        Pair(pulledForeignEvents.size - skippedCount, skippedCount)
+                    }
+
+                    preferences.syncLastLogId = pull.latestLogId
+                    preferences.syncLastSuccessAt = System.currentTimeMillis()
+                    preferences.syncStatus = "success"
+
+                    val replayed = replayInbox(ignoreBackoff = manual)
+
+                    val hasPending = modelFactory.syncQueueRepository.findPending().isNotEmpty()
+                    preferences.isSyncBootstrapDone = bootstrapResult.complete || (preferences.isSyncBootstrapQueued && !hasPending)
+
+                    val details = StringBuilder(
+                        "pushed=${pushed.pushedQueueIds.size}, pulled=${pulledForeignEvents.size}, applied=$applied, skipped=$skipped, replayed=$replayed, last_log_before=$lastLogIdBefore, last_log_after=${pull.latestLogId}"
+                    )
+                    details.append(
+                        ", bootstrap_queued=${bootstrapResult.queuedRecords}, bootstrap_complete=${bootstrapResult.complete}, bootstrap_missing_goals_before=${bootstrapResult.missingGoalsBefore}"
+                    )
+                    if (skipped > 0) {
+                        val blockedTask = pulledForeignEvents.any {
+                            it.logId == lastSkippedRemoteLogId && it.entityType == "user_task"
+                        }
+                        details.append(if (blockedTask) ", first_error=unsupported_task_planned_date" else ", first_error=missing_parent_habit")
+                    }
+                    preferences.syncStatusDetail = details.toString()
+
+                    habitList.reloadAndNotify()
+                    widgetUpdater.updateWidgets()
+                    preferences.syncLastUiRefreshReason = "sync_coordinator_success"
+                    preferences.syncLastUiRefreshAt = System.currentTimeMillis()
+                    preferences.syncLastUiRefreshDestination = "listener_pending"
+                    preferences.syncLastUiRefreshHabitCount = activeHabitCount()
+                    preferences.notifySyncFinished()
+
+                    if (!manual) {
+                        preferences.syncLastBackgroundSyncResult = "success"
+                    }
+
+                    SyncRunResult.Success(pushed = pushed.pushedQueueIds.size, pulled = pulledForeignEvents.size)
                 }
-
-                SyncRunResult.Success(pushed = pushed.pushedQueueIds.size, pulled = pulledForeignEvents.size)
             }.getOrElse {
-                if (!manual) {
-                    preferences.syncLastBackgroundSyncResult = "failure: ${technicalMessageFor(it)}"
+                if (it is SyncContextChanged) return@getOrElse SyncRunResult.Skipped("sync_context_changed")
+                synchronized(this@SyncCoordinator) {
+                    if (disposed || runGeneration != syncContextGeneration) {
+                        return@getOrElse SyncRunResult.Skipped("sync_context_changed")
+                    }
+                    if (!manual) {
+                        preferences.syncLastBackgroundSyncResult = "failure: ${technicalMessageFor(it)}"
+                    }
+                    syncUnavailable("Синхронизация сейчас недоступна.", it)
                 }
-                syncUnavailable("Синхронизация сейчас недоступна.", it)
             }
             result = res
             return@withContext res
@@ -563,12 +648,16 @@ class SyncCoordinator(
         }
     }
 
-    fun markRestoreNeedsReview(reason: String) {
+    fun markRestoreNeedsReview(reason: String) = synchronized(this) {
+        syncContextGeneration++
         preferences.isSyncReviewRequired = true
         preferences.syncReviewReason = reason
         preferences.syncStatus = "review_required"
         preferences.syncStatusDetail = reason
         preferences.syncLastLogId = 0L
+        modelFactory.syncStateRepository.clear()
+        modelFactory.syncInboxRepository.clearAll()
+        modelFactory.syncTombstoneRepository.clearAll()
     }
 
     fun confirmSyncReview() {
@@ -1429,8 +1518,79 @@ class SyncCoordinator(
             }
         }
 
-        habitList.reloadAndNotify()
         return skipped
+    }
+
+    // Replaying a still-blocked event must not reset its bounded retry history.
+    private fun deferRemoteEvent(record: SyncInboxRecord) {
+        val previous = modelFactory.syncInboxRepository.findByEntity(record.entityType, record.entityUuid)
+            .firstOrNull { it.logId == record.logId }
+        modelFactory.syncInboxRepository.insertOrUpdate(
+            if (previous == null) record else record.copy(
+                receivedAt = previous.receivedAt,
+                attempts = previous.attempts,
+                lastAttemptAt = previous.lastAttemptAt,
+                status = if (record.status == "PENDING") previous.status else record.status
+            )
+        )
+    }
+    internal fun replayInbox(
+        maxAttempts: Int = 5,
+        now: Long = System.currentTimeMillis(),
+        ignoreBackoff: Boolean = false
+    ): Int {
+        val pending = modelFactory.syncInboxRepository.findPending(
+            maxAttempts = maxAttempts,
+            now = now,
+            ignoreBackoff = ignoreBackoff
+        )
+        if (pending.isEmpty()) return 0
+        var replayedCount = 0
+
+        modelFactory.database.runInTransaction {
+            modelFactory.syncManager.withCapturePaused {
+                for (record in pending) {
+                    if (modelFactory.syncTombstoneRepository.isDeleted(record.entityType, record.entityUuid, record.createdAt)) {
+                        modelFactory.syncInboxRepository.deleteByLogId(record.logId)
+                        continue
+                    }
+
+                    val event = RemoteSyncEvent(
+                        logId = record.logId,
+                        opUuid = record.opUuid,
+                        entityType = record.entityType,
+                        entityUuid = record.entityUuid,
+                        operationType = record.operationType,
+                        payloadJson = record.payloadJson,
+                        createdAt = record.createdAt,
+                        deviceId = record.deviceId
+                    )
+
+                    val applied = when (record.entityType) {
+                        "user_task" -> {
+                            if (hasUnsupportedTaskPlan(record.entityUuid)) {
+                                false
+                            } else {
+                                applyUserTask(event)
+                            }
+                        }
+                        "habit_placement" -> applyHabitPlacement(event)
+                        "habit_goal" -> applyGoal(event)
+                        "entry" -> applyEntry(event)
+                        "entry_op" -> applyEntryOp(event)
+                        else -> true
+                    }
+
+                    if (applied) {
+                        modelFactory.syncInboxRepository.deleteByLogId(record.logId)
+                        replayedCount++
+                    } else {
+                        modelFactory.syncInboxRepository.recordAttempt(record.logId, now, null, maxAttempts)
+                    }
+                }
+            }
+        }
+        return replayedCount
     }
 
     /**
@@ -1633,9 +1793,30 @@ class SyncCoordinator(
 
     private fun applyGoal(event: RemoteSyncEvent): Boolean {
         val payload = JSONObject(event.payloadJson)
-        val habit = modelFactory.habitRepository.findByUuid(payload.getString("habit_uuid")) ?: return false
+        val habit = modelFactory.habitRepository.findByUuid(payload.getString("habit_uuid"))
+        if (habit == null) {
+            deferRemoteEvent(
+                SyncInboxRecord(
+                    logId = event.logId,
+                    deviceId = event.deviceId,
+                    opUuid = event.opUuid,
+                    entityType = event.entityType,
+                    entityUuid = event.entityUuid,
+                    operationType = event.operationType,
+                    payloadJson = event.payloadJson,
+                    createdAt = event.createdAt,
+                    receivedAt = System.currentTimeMillis(),
+                    deferredReason = "MISSING_PARENT_HABIT",
+                    status = "PENDING"
+                )
+            )
+            return false
+        }
         val existing = modelFactory.habitGoalRepository.findByUuid(event.entityUuid)
-        if (!shouldApply(existing?.updatedAt ?: 0L, existing?.deletedAt, event)) return true
+        if (!shouldApply(existing?.updatedAt ?: 0L, existing?.deletedAt, event)) {
+            modelFactory.syncInboxRepository.deleteByLogId(event.logId)
+            return true
+        }
         modelFactory.habitGoalRepository.upsert(
             HabitGoalData(
                 id = existing?.id,
@@ -1651,14 +1832,36 @@ class SyncCoordinator(
                 deletedAt = if (event.operationType == "delete") event.createdAt else null
             )
         )
+        modelFactory.syncInboxRepository.deleteByLogId(event.logId)
         return true
     }
 
     private fun applyEntry(event: RemoteSyncEvent): Boolean {
         val payload = JSONObject(event.payloadJson)
-        val habit = modelFactory.habitRepository.findByUuid(payload.getString("habit_uuid")) ?: return false
+        val habit = modelFactory.habitRepository.findByUuid(payload.getString("habit_uuid"))
+        if (habit == null) {
+            deferRemoteEvent(
+                SyncInboxRecord(
+                    logId = event.logId,
+                    deviceId = event.deviceId,
+                    opUuid = event.opUuid,
+                    entityType = event.entityType,
+                    entityUuid = event.entityUuid,
+                    operationType = event.operationType,
+                    payloadJson = event.payloadJson,
+                    createdAt = event.createdAt,
+                    receivedAt = System.currentTimeMillis(),
+                    deferredReason = "MISSING_PARENT_HABIT",
+                    status = "PENDING"
+                )
+            )
+            return false
+        }
         val existing = modelFactory.entryRepository.findByUuid(event.entityUuid)
-        if (!shouldApply(existing?.updatedAt ?: 0L, existing?.deletedAt, event)) return true
+        if (!shouldApply(existing?.updatedAt ?: 0L, existing?.deletedAt, event)) {
+            modelFactory.syncInboxRepository.deleteByLogId(event.logId)
+            return true
+        }
         modelFactory.entryRepository.upsert(
             EntryData(
                 id = existing?.id,
@@ -1672,6 +1875,7 @@ class SyncCoordinator(
                 deletedAt = if (event.operationType == "delete") event.createdAt else null
             )
         )
+        modelFactory.syncInboxRepository.deleteByLogId(event.logId)
         return true
     }
 
@@ -1679,7 +1883,19 @@ class SyncCoordinator(
         if (modelFactory.entryOpRepository.findByOpUuid(event.entityUuid) != null) return true
         val payload = JSONObject(event.payloadJson)
         val habitUuid = payload.getString("habit_uuid")
-        val habit = modelFactory.habitRepository.findByUuid(habitUuid) ?: return false
+        val habit = modelFactory.habitRepository.findByUuid(habitUuid)
+        if (habit == null) {
+            deferRemoteEvent(
+                SyncInboxRecord(
+                    logId = event.logId, deviceId = event.deviceId, opUuid = event.opUuid,
+                    entityType = event.entityType, entityUuid = event.entityUuid,
+                    operationType = event.operationType, payloadJson = event.payloadJson,
+                    createdAt = event.createdAt, receivedAt = System.currentTimeMillis(),
+                    deferredReason = "MISSING_PARENT_HABIT"
+                )
+            )
+            return false
+        }
         val timestamp = payload.requiredLong("entry_date", event)
         modelFactory.entryOpRepository.insert(
             org.isoron.uhabits.core.sync.EntryOpRecord(
@@ -1920,7 +2136,25 @@ class SyncCoordinator(
         val habitLocalId = modelFactory.database.querySingle(
             "SELECT id FROM Habits WHERE uuid = ? AND deleted_at IS NULL",
             habitUuid
-        ) { it.getLong(0) } ?: return false
+        ) { it.getLong(0) }
+        if (habitLocalId == null) {
+            deferRemoteEvent(
+                SyncInboxRecord(
+                    logId = event.logId,
+                    deviceId = event.deviceId,
+                    opUuid = event.opUuid,
+                    entityType = event.entityType,
+                    entityUuid = event.entityUuid,
+                    operationType = event.operationType,
+                    payloadJson = event.payloadJson,
+                    createdAt = event.createdAt,
+                    receivedAt = System.currentTimeMillis(),
+                    deferredReason = "MISSING_PARENT_HABIT",
+                    status = "PENDING"
+                )
+            )
+            return false
+        }
 
         val containerUuid = payload.optionalString("container_uuid")
         val containerLocalId = if (containerUuid != null) {
@@ -1951,6 +2185,7 @@ class SyncCoordinator(
         stmt.step()
         stmt.finalize()
 
+        modelFactory.syncInboxRepository.deleteByLogId(event.logId)
         return true
     }
 
@@ -1972,6 +2207,11 @@ class SyncCoordinator(
     private fun applyUserTask(event: RemoteSyncEvent): Boolean {
         if (!isNextSchemaAvailable()) return true
         val taskId = event.entityUuid
+
+        if (modelFactory.syncTombstoneRepository.isDeleted("user_task", taskId, event.createdAt)) {
+            return true
+        }
+
         val existingUpdatedAt = modelFactory.database.querySingle(
             "SELECT updated_at FROM UserTasks WHERE id = ?",
             taskId
@@ -1982,6 +2222,8 @@ class SyncCoordinator(
         }
 
         if (event.operationType == "delete") {
+            modelFactory.syncTombstoneRepository.recordTombstone("user_task", taskId, event.createdAt)
+            modelFactory.syncInboxRepository.purgeForEntity("user_task", taskId)
             modelFactory.database.run("DELETE FROM UserTasks WHERE id = '$taskId'")
             return true
         }
@@ -1991,9 +2233,33 @@ class SyncCoordinator(
         val description = payload.optString("description", "")
         val containerId = payload.optionalString("container_id")
         val status = payload.optString("status", "PENDING")
-        val plannedDate = normalizeTaskPlannedDateForSync(
-            payload.optionalString("planned_date")
-        )
+        val plannedDate = try {
+            normalizeTaskPlannedDateForSync(
+                payload.optionalString("planned_date")
+            )
+        } catch (e: Exception) {
+            when (e) {
+                is IllegalArgumentException, is IndexOutOfBoundsException -> {
+                    deferRemoteEvent(
+                        SyncInboxRecord(
+                            logId = event.logId,
+                            deviceId = event.deviceId,
+                            opUuid = event.opUuid,
+                            entityType = event.entityType,
+                            entityUuid = event.entityUuid,
+                            operationType = event.operationType,
+                            payloadJson = event.payloadJson,
+                            createdAt = event.createdAt,
+                            receivedAt = System.currentTimeMillis(),
+                            deferredReason = "MALFORMED_TASK_PAYLOAD",
+                            status = "BLOCKED_MALFORMED"
+                        )
+                    )
+                    return false
+                }
+                else -> throw e
+            }
+        }
         val deadline = payload.optionalLong("deadline", event)
         val completedAt = payload.optionalLong("completed_at", event)
         val parentTaskId = payload.optionalString("parent_task_id")
@@ -2001,7 +2267,24 @@ class SyncCoordinator(
         val createdAt = payload.optionalLong("created_at", event) ?: event.createdAt
         val updatedAt = payload.optionalLong("updated_at", event) ?: event.createdAt
         // A remote title-only/null upsert must not erase unresolved local raw data.
-        if (hasUnsupportedTaskPlan(taskId)) return false
+        if (hasUnsupportedTaskPlan(taskId)) {
+            deferRemoteEvent(
+                SyncInboxRecord(
+                    logId = event.logId,
+                    deviceId = event.deviceId,
+                    opUuid = event.opUuid,
+                    entityType = event.entityType,
+                    entityUuid = event.entityUuid,
+                    operationType = event.operationType,
+                    payloadJson = event.payloadJson,
+                    createdAt = event.createdAt,
+                    receivedAt = System.currentTimeMillis(),
+                    deferredReason = "UNSUPPORTED_TASK_PLAN",
+                    status = "PENDING"
+                )
+            )
+            return false
+        }
 
         val stmt = modelFactory.database.prepareStatement(
             """INSERT OR REPLACE INTO UserTasks (
@@ -2023,12 +2306,19 @@ class SyncCoordinator(
         stmt.bindLong(12, updatedAt)
         stmt.step()
         stmt.finalize()
+
+        modelFactory.syncInboxRepository.deleteByLogId(event.logId)
         return true
     }
 
     private fun applyFocusSession(event: RemoteSyncEvent) {
         if (!isNextSchemaAvailable()) return
         val sessionId = event.entityUuid
+
+        if (modelFactory.syncTombstoneRepository.isDeleted("focus_session", sessionId, event.createdAt)) {
+            return
+        }
+
         val existingUpdatedAt = modelFactory.database.querySingle(
             "SELECT updated_at FROM FocusSessions WHERE id = ?",
             sessionId
@@ -2039,6 +2329,8 @@ class SyncCoordinator(
         }
 
         if (event.operationType == "delete") {
+            modelFactory.syncTombstoneRepository.recordTombstone("focus_session", sessionId, event.createdAt)
+            modelFactory.syncInboxRepository.purgeForEntity("focus_session", sessionId)
             modelFactory.database.run("DELETE FROM FocusSessions WHERE id = '$sessionId'")
             return
         }
@@ -2079,6 +2371,8 @@ class SyncCoordinator(
         if (organizationContext != null) stmt.bindText(13, organizationContext) else stmt.bindNull(13)
         stmt.step()
         stmt.finalize()
+
+        modelFactory.syncInboxRepository.purgeForEntity("focus_session", sessionId)
     }
 
     private fun applyContribution(event: RemoteSyncEvent): Boolean {
@@ -2349,6 +2643,10 @@ class SyncCoordinator(
     }
 
     fun dispose() {
+        synchronized(this) {
+            disposed = true
+            syncContextGeneration++
+        }
         modelFactory.syncManager.onQueueAppended = null
         runCatching { syncScope.cancel() }
         synchronized(syncListeners) { syncListeners.clear() }

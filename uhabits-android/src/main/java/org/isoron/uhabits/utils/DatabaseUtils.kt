@@ -681,6 +681,15 @@ object DatabaseUtils {
                 }
             }
 
+            // Sanitize the replacement itself before publication. The active component's
+            // database handle is closed during the swap and cannot reset restored state.
+            val restoreCandidate = SQLiteDatabase.openDatabase(
+                restoreTemp.absolutePath, null, SQLiteDatabase.OPEN_READWRITE
+            )
+            try {
+                DatabaseSnapshotter.clearSyncDeliveryState(AndroidDatabase(restoreCandidate))
+            } finally { restoreCandidate.close() }
+
             val migratedValidation = validateDatabaseBackup(restoreTemp, targetVersion)
             require(migratedValidation.isValid && migratedValidation.databaseVersion == targetVersion) {
                 migratedValidation.errorMessage ?: "Migrated backup is invalid"
@@ -750,6 +759,7 @@ object DatabaseUtils {
 
                 // Phase 9: Set or preserve required sync-quarantine gate unconditionally upon restore
                 sharedPrefs.edit()
+                    .putLong("pref_sync_last_log_id", 0L)
                     .putBoolean("pref_sync_review_required", true)
                     .putString("pref_sync_review_reason", "Database restored from backup")
                     .commit()

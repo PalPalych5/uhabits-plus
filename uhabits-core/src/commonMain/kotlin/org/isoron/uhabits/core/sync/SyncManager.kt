@@ -27,7 +27,9 @@ class SyncManager(
     val entryOpRepository: EntryOpRepository,
     private val deviceIdProvider: () -> String,
     private val nowProvider: () -> Long,
-    private val blockUuidProvider: (Long?) -> String? = { null }
+    private val blockUuidProvider: (Long?) -> String? = { null },
+    val tombstoneRepository: SyncTombstoneRepository? = null,
+    val inboxRepository: SyncInboxRepository? = null
 ) {
     var authorityMode: OrganizationAuthorityMode = OrganizationAuthorityMode.LEGACY
     var onQueueAppended: (() -> Unit)? = null
@@ -291,6 +293,8 @@ class SyncManager(
     }
 
     fun enqueueUserTaskDelete(taskId: String, deletedAt: Long) {
+        tombstoneRepository?.recordTombstone("user_task", taskId, deletedAt)
+        inboxRepository?.purgeForEntity("user_task", taskId)
         enqueue(
             "user_task",
             taskId,
@@ -304,6 +308,10 @@ class SyncManager(
     }
 
     fun enqueueFocusSession(session: FocusSession, operationType: String = "upsert") {
+        if (operationType == "delete") {
+            tombstoneRepository?.recordTombstone("focus_session", session.id.value, session.updatedAt)
+            inboxRepository?.purgeForEntity("focus_session", session.id.value)
+        }
         enqueue(
             "focus_session",
             session.id.value,

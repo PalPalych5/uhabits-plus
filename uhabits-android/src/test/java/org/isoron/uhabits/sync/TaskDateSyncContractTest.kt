@@ -7,20 +7,28 @@ import org.isoron.platform.io.JavaDatabaseOpener
 import org.isoron.platform.io.migrateTo
 import org.isoron.platform.io.querySingle
 import org.isoron.platform.io.run
+import org.isoron.platform.io.runInTransaction
 import org.isoron.platform.io.setVersion
 import org.isoron.platform.time.LocalDate
+import org.isoron.platform.time.setToday
 import org.isoron.uhabits.core.DATABASE_VERSION
 import org.isoron.uhabits.core.sync.SyncQueueRecord
 import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.toIsoDateString
 import org.json.JSONObject
 import org.junit.Assert.*
+import org.junit.Before
 import org.junit.Test
 import java.io.File
 
 /** Offline regressions for the existing plannedDate wire format; no production migration. */
 class TaskDateSyncContractTest {
     private val harness = SyncCoordinatorNextTest()
+
+    @Before
+    fun setUp() {
+        setToday(LocalDate(2026, 10, 19))
+    }
 
     private suspend fun database(): Database {
         val migrations = sequenceOf(File("../uhabits-core/assets/main/migrations"),
@@ -124,41 +132,126 @@ class TaskDateSyncContractTest {
     }
 
     @Test
-    fun knownRisk_malformedIncomingTaskPinsCursorAndStarvesLaterPages() = runBlocking {
+    fun malformedIncomingTaskDoesNotPinCursorAndAllowsLaterPages() = runBlocking {
         val backend = PagedTaskBackend(cursorFixtureEvents(invalid = true), pageSize = 1)
         val env = harness.setupDeviceEnvironment(database(), backend, "malformed-cursor")
         try {
-            repeat(3) { assertTrue(env.coordinator.runSync(manual = true) is SyncRunResult.Failure) }
-            assertEquals(listOf(0L, 0L, 0L), backend.cursors)
-            assertEquals(listOf(listOf(1L), listOf(1L), listOf(1L)), backend.deliveries)
+            repeat(4) { assertTrue(env.coordinator.runSync(manual = true) is SyncRunResult.Success) }
+            assertEquals(listOf(0L, 1L, 2L, 3L), backend.cursors)
+            assertEquals(listOf(listOf(1L), listOf(2L), listOf(3L), listOf(4L)), backend.deliveries)
             assertNull(env.taskRepo.getById(TaskId("blocked-task")))
-            assertNull(env.taskRepo.getById(TaskId("later-task")))
-            assertNull(env.modelFactory.habitRepository.findByUuid("later-habit"))
-            assertNull(env.db.querySingle("SELECT name FROM Containers WHERE uuid='later-container'") { it.getText(0) })
+            val inboxRecord = env.modelFactory.syncInboxRepository.findByEntity("user_task", "blocked-task").single()
+            assertEquals("BLOCKED_MALFORMED", inboxRecord.status)
+            assertEquals("MALFORMED_TASK_PAYLOAD", inboxRecord.deferredReason)
+            assertNotNull(env.taskRepo.getById(TaskId("later-task")))
+            assertNotNull(env.modelFactory.habitRepository.findByUuid("later-habit"))
+            assertNotNull(env.db.querySingle("SELECT name FROM Containers WHERE uuid='later-container'") { it.getText(0) })
         } finally { env.coordinator.dispose(); env.db.close() }
     }
 
     @Test
-    fun knownRisk_deferredTaskAllowsSamePageButPinsLaterPagesAndIsRetriedAfterRepair() = runBlocking {
+    fun deferredTaskAllowsLaterPagesAndIsRetriedAfterRepair() = runBlocking {
         val backend = PagedTaskBackend(cursorFixtureEvents(invalid = false), pageSize = 2)
         val env = harness.setupDeviceEnvironment(database(), backend, "deferred-cursor")
         try {
             env.db.run("INSERT INTO UserTasks(id,title,planned_date,created_at,updated_at) VALUES ('blocked-task','Local title','1792393200000',1,1)")
-            repeat(3) { assertTrue(env.coordinator.runSync(manual = true) is SyncRunResult.Success) }
-            assertEquals(listOf(0L, 0L, 0L), backend.cursors)
+            // Page 1 (events 1 & 2): blocked-task deferred to inbox, later-task applied, cursor -> 2L
+            assertTrue(env.coordinator.runSync(manual = true) is SyncRunResult.Success)
+            // Page 2 (events 3 & 4): later-habit and later-container applied, cursor -> 4L
+            assertTrue(env.coordinator.runSync(manual = true) is SyncRunResult.Success)
+            assertEquals(listOf(0L, 2L), backend.cursors)
             assertNotNull(env.taskRepo.getById(TaskId("later-task")))
-            assertNull(env.modelFactory.habitRepository.findByUuid("later-habit"))
-            assertNull(env.db.querySingle("SELECT name FROM Containers WHERE uuid='later-container'") { it.getText(0) })
+            assertNotNull(env.modelFactory.habitRepository.findByUuid("later-habit"))
+            assertNotNull(env.db.querySingle("SELECT name FROM Containers WHERE uuid='later-container'") { it.getText(0) })
             assertEquals("1792393200000", rawPlan(env, TaskId("blocked-task")))
+            assertEquals(1, env.modelFactory.syncInboxRepository.findByEntity("user_task", "blocked-task").size)
+
+            // Repair task locally
             env.taskService.updateTask(TaskId("blocked-task"), clearPlannedDate = true)
             // Make the deferred event newer than the repair to prove replay, rather than stale-event filtering.
             env.db.run("UPDATE UserTasks SET updated_at=1 WHERE id='blocked-task'")
             assertTrue(env.coordinator.runSync(manual = true) is SyncRunResult.Success)
             assertEquals("Remote title", env.taskRepo.getById(TaskId("blocked-task"))!!.title)
+            assertTrue(env.modelFactory.syncInboxRepository.findByEntity("user_task", "blocked-task").isEmpty())
+            assertEquals(listOf(0L, 2L, 4L), backend.cursors)
+        } finally { env.coordinator.dispose(); env.db.close() }
+    }
+
+    @Test
+    fun crashBeforeCommitRollsBackDomainAndInboxAndLeavesCursorUnchanged() = runBlocking {
+        val events = listOf(
+            RemoteSyncEvent(1, "op-1", "user_task", "task-crash", "upsert",
+                JSONObject().put("title", "Crash task").put("planned_date", "2026-10-19").toString(), 100, "dev-1")
+        )
+        val backend = PagedTaskBackend(events, pageSize = 1)
+        val env = harness.setupDeviceEnvironment(database(), backend, "crash-before-commit")
+        try {
+            val cursorBefore = env.modelFactory.syncStateRepository.getCursor()
+            try {
+                env.db.runInTransaction {
+                    env.coordinator.applyRemoteEvents(events)
+                    env.modelFactory.syncStateRepository.setCursor(1L)
+                    throw RuntimeException("Simulated crash before COMMIT")
+                }
+            } catch (_: RuntimeException) {}
+
+            assertEquals(cursorBefore, env.modelFactory.syncStateRepository.getCursor())
+            assertNull(env.taskRepo.getById(TaskId("task-crash")))
+            assertTrue(env.modelFactory.syncInboxRepository.findByEntity("user_task", "task-crash").isEmpty())
+
             assertTrue(env.coordinator.runSync(manual = true) is SyncRunResult.Success)
-            assertEquals(listOf(0L, 0L, 0L, 0L, 2L), backend.cursors)
-            assertNotNull(env.modelFactory.habitRepository.findByUuid("later-habit"))
-            assertNotNull(env.db.querySingle("SELECT name FROM Containers WHERE uuid='later-container'") { it.getText(0) })
+            assertEquals(1L, env.modelFactory.syncStateRepository.getCursor())
+            assertNotNull(env.taskRepo.getById(TaskId("task-crash")))
+        } finally { env.coordinator.dispose(); env.db.close() }
+    }
+
+    @Test
+    fun crashAfterCommitPreservesDurableSqliteCursorAndReconcilesPreferences() = runBlocking {
+        val events = listOf(
+            RemoteSyncEvent(1, "op-1", "user_task", "task-after-crash", "upsert",
+                JSONObject().put("title", "Committed task").put("planned_date", "2026-10-19").toString(), 100, "dev-1"),
+            RemoteSyncEvent(2, "op-2", "user_task", "task-next-page", "upsert",
+                JSONObject().put("title", "Next page task").put("planned_date", "2026-10-20").toString(), 200, "dev-1")
+        )
+        val backend = PagedTaskBackend(events, pageSize = 1)
+        val env = harness.setupDeviceEnvironment(database(), backend, "crash-after-commit")
+        try {
+            assertTrue(env.coordinator.runSync(manual = true) is SyncRunResult.Success)
+            assertEquals(1L, env.modelFactory.syncStateRepository.getCursor())
+            assertEquals(1L, env.preferences.syncLastLogId)
+
+            // Simulate crash where Preferences was wiped/reverted to 0
+            env.preferences.syncLastLogId = 0L
+
+            assertTrue(env.coordinator.runSync(manual = true) is SyncRunResult.Success)
+            assertEquals(listOf(0L, 1L), backend.cursors)
+            assertEquals(2L, env.modelFactory.syncStateRepository.getCursor())
+            assertEquals(2L, env.preferences.syncLastLogId)
+            assertNotNull(env.taskRepo.getById(TaskId("task-next-page")))
+        } finally { env.coordinator.dispose(); env.db.close() }
+    }
+
+    @Test
+    fun deletePurgesInboxAndTombstoneBlocksResurrection() = runBlocking {
+        val backend = SyncCoordinatorNextTest.InMemorySyncBackend()
+        val env = harness.setupDeviceEnvironment(database(), backend, "tombstone-test")
+        try {
+            env.db.run("INSERT INTO UserTasks(id,title,planned_date,created_at,updated_at) VALUES ('victim-task','Local title','1792393200000',10,10)")
+            val updateEvent = RemoteSyncEvent(1, "upd-1", "user_task", "victim-task", "upsert",
+                JSONObject().put("title", "Remote update").put("planned_date", "2026-10-19").toString(), 50, "foreign")
+            assertEquals(1, env.coordinator.applyRemoteEvents(listOf(updateEvent)))
+            assertEquals(1, env.modelFactory.syncInboxRepository.findByEntity("user_task", "victim-task").size)
+
+            env.modelFactory.syncManager.enqueueUserTaskDelete("victim-task", deletedAt = 100L)
+            env.db.run("DELETE FROM UserTasks WHERE id = 'victim-task'")
+            assertTrue(env.modelFactory.syncInboxRepository.findByEntity("user_task", "victim-task").isEmpty())
+            assertTrue(env.modelFactory.syncTombstoneRepository.isDeleted("user_task", "victim-task", beforeOrAtTimestamp = 100L))
+
+            val staleEvent = RemoteSyncEvent(2, "upd-2", "user_task", "victim-task", "upsert",
+                JSONObject().put("title", "Stale resurrect").put("planned_date", "2026-10-19").toString(), 80, "foreign")
+            assertEquals(0, env.coordinator.applyRemoteEvents(listOf(staleEvent)))
+            assertNull("Deleted task must not be resurrected", env.taskRepo.getById(TaskId("victim-task")))
+            assertTrue("Stale event must not re-enter inbox", env.modelFactory.syncInboxRepository.findByEntity("user_task", "victim-task").isEmpty())
         } finally { env.coordinator.dispose(); env.db.close() }
     }
 
@@ -330,9 +423,12 @@ class TaskDateSyncContractTest {
             apply(record, target)
             val invalid = record.copy(payloadJson = JSONObject(record.payloadJson)
                 .put("title", "Must not overwrite").put("planned_date", "1792393200000").toString())
-            org.junit.Assert.assertThrows(IllegalArgumentException::class.java) { apply(invalid, target) }
+            org.junit.Assert.assertThrows(AssertionError::class.java) { apply(invalid, target) }
             assertEquals(task, target.taskRepo.getById(task.id))
             assertEquals("2026-10-19", rawPlan(target, task.id))
+            val inboxRecord = target.modelFactory.syncInboxRepository.findByEntity("user_task", task.id.value).single()
+            assertEquals("BLOCKED_MALFORMED", inboxRecord.status)
+            assertEquals("MALFORMED_TASK_PAYLOAD", inboxRecord.deferredReason)
         } finally {
             source.coordinator.dispose(); target.coordinator.dispose()
             source.db.close(); target.db.close()

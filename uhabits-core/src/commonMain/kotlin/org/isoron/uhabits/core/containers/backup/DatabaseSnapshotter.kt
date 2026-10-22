@@ -24,11 +24,24 @@ import org.isoron.platform.io.StepResult
 import org.isoron.platform.io.getVersion
 import org.isoron.platform.io.querySingle
 import org.isoron.platform.io.run
+import org.isoron.platform.io.runInTransaction
 import org.isoron.platform.io.setVersion
 import org.isoron.uhabits.core.containers.migration.RawLegacyInventoryReader
 import org.isoron.uhabits.core.containers.sqlite.OrganizationSchema
 
 object DatabaseSnapshotter {
+
+    /** A restored snapshot must fetch afresh, never replay a previous live account's delivery state. */
+    fun clearSyncDeliveryState(db: Database) {
+        val tables = listTables(db)
+        db.runInTransaction {
+            for (table in listOf("SyncInbox", "SyncState", "SyncTombstones")) {
+                if (table in tables) db.run("DELETE FROM $table")
+            }
+            org.isoron.uhabits.core.sync.SyncInboxSchema.createSchema(db)
+            org.isoron.uhabits.core.sync.SyncStateRepository(db).setCursor(0L)
+        }
+    }
 
     fun listTables(db: Database): Set<String> {
         val result = mutableSetOf<String>()
@@ -330,6 +343,9 @@ object DatabaseSnapshotter {
                 "HabitBlocks",
                 "Habits",
                 "AppSettings",
+                "SyncInbox",
+                "SyncState",
+                "SyncTombstones",
             )
             for (tbl in tablesToClear) {
                 if (targetTables.contains(tbl)) {

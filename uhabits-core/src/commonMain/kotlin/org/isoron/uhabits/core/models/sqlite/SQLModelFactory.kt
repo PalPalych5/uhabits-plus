@@ -30,8 +30,12 @@ import org.isoron.uhabits.core.models.ModelFactory
 import org.isoron.uhabits.core.models.ScoreList
 import org.isoron.uhabits.core.models.StreakList
 import org.isoron.uhabits.core.sync.EntryOpRepository
+import org.isoron.uhabits.core.sync.SyncInboxRepository
+import org.isoron.uhabits.core.sync.SyncInboxSchema
 import org.isoron.uhabits.core.sync.SyncManager
 import org.isoron.uhabits.core.sync.SyncQueueRepository
+import org.isoron.uhabits.core.sync.SyncStateRepository
+import org.isoron.uhabits.core.sync.SyncTombstoneRepository
 
 /**
  * Factory that provides models backed by an SQLite database.
@@ -42,6 +46,11 @@ class SQLModelFactory(
     deviceIdProvider: () -> String = { "test-device" },
     nowProvider: () -> Long = { 0L }
 ) : ModelFactory {
+    init {
+        // Local deletes can run before the Android coordinator is constructed.
+        SyncInboxSchema.createSchema(database)
+    }
+
     val habitRepository = HabitRepository(database)
     val habitExtensionRepository = HabitExtensionRepository(database)
     val habitGoalRepository = HabitGoalRepository(database)
@@ -50,12 +59,17 @@ class SQLModelFactory(
     val appSettingRepository = AppSettingRepository(database)
     val syncQueueRepository = SyncQueueRepository(database)
     val entryOpRepository = EntryOpRepository(database)
+    val syncStateRepository = SyncStateRepository(database)
+    val syncInboxRepository = SyncInboxRepository(database)
+    val syncTombstoneRepository = SyncTombstoneRepository(database)
     val syncManager = SyncManager(
         syncQueueRepository,
         entryOpRepository,
         deviceIdProvider,
         nowProvider,
-        blockUuidProvider = { blockId -> blockId?.let { habitBlockRepository.findById(it)?.uuid } }
+        blockUuidProvider = { blockId -> blockId?.let { habitBlockRepository.findById(it)?.uuid } },
+        tombstoneRepository = syncTombstoneRepository,
+        inboxRepository = syncInboxRepository
     )
 
     override fun buildOriginalEntries() = SQLiteEntryList(entryRepository, syncManager)
