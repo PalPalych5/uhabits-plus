@@ -44,6 +44,7 @@ data class UserTask(
     val status: TaskStatus = TaskStatus.PENDING,
     val due: TaskDue = TaskDue.None,
     val legacyPlanDate: String? = null,
+    val legacyPlanReviewPending: Boolean = legacyPlanDate != null && due is TaskDue.None,
     val completedAt: Long? = null,
     val parentTaskId: TaskId? = null,
     val sortOrder: Int = 0,
@@ -51,7 +52,7 @@ data class UserTask(
     val updatedAt: Long,
 ) {
     val isCompleted: Boolean get() = status == TaskStatus.COMPLETED
-    val hasPendingLegacyPlan: Boolean get() = due is TaskDue.None && !legacyPlanDate.isNullOrBlank()
+    val hasPendingLegacyPlan: Boolean get() = legacyPlanReviewPending && legacyPlanDate != null
 
     fun isOverdue(today: LocalDate, nowMillis: Long): Boolean {
         if (isCompleted) return false

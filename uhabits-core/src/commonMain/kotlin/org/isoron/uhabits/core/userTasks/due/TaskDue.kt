@@ -25,9 +25,6 @@ sealed class TaskDue {
 
             /** Carries an already resolved instant; local-clock DST selection belongs at the input boundary. */
             fun local(epochMillis: Long, originZoneId: String): Timed {
-                require(Regex("[A-Za-z_]+(?:/[A-Za-z0-9_+.-]+)+|UTC").matches(originZoneId)) {
-                    "Invalid origin timezone identifier shape"
-                }
                 require(isKnownTaskDueZone(originZoneId)) { "Unknown origin timezone" }
                 return Timed(epochMillis, originZoneId)
             }

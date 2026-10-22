@@ -21,6 +21,8 @@ import org.isoron.uhabits.core.userTasks.TaskStatus
 import org.isoron.uhabits.core.userTasks.due.TaskDue
 import org.isoron.uhabits.core.userTasks.due.TaskDueDate
 import org.isoron.uhabits.core.userTasks.sqlite.SQLiteUserTaskRepository
+import org.isoron.uhabits.core.userTasks.sqlite.UserTaskSchema
+import kotlin.test.assertFailsWith
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -158,6 +160,10 @@ class ProductionV30ToV31MigrationTest {
             assertTrue("idx_user_tasks_due_kind must exist", "idx_user_tasks_due_kind" in indexes)
             assertTrue("idx_user_tasks_due_date must exist", "idx_user_tasks_due_date" in indexes)
 
+            // v31 remains immutable; review state is an additive v32 upgrade.
+            db.migrateTo(32) { TestDatabaseHelper.loadMigrationSQL(it) }
+            assertEquals(32, db.getVersion())
+
             // 6. VERIFY TASK DUE CONVERSIONS & DATA FIDELITY
             val repo = SQLiteUserTaskRepository(db)
 
@@ -185,16 +191,17 @@ class ProductionV30ToV31MigrationTest {
             val accepted = taskService.resolveLegacyPlan(TaskId("t-plan-future"), accept = true)
             assertEquals(TaskDue.Day(TaskDueDate.parse("2029-12-31")), accepted.due)
             assertFalse(accepted.hasPendingLegacyPlan)
-            assertNull(accepted.legacyPlanDate)
+            assertEquals("2029-12-31", accepted.legacyPlanDate)
 
             val dismissed = taskService.resolveLegacyPlan(TaskId("t-plan-past"), accept = false)
             assertEquals(TaskDue.None, dismissed.due)
             assertFalse(dismissed.hasPendingLegacyPlan)
-            assertNull(dismissed.legacyPlanDate)
+            assertEquals("2020-01-15", dismissed.legacyPlanDate)
 
             // Case D: both future -> TaskDue.Timed, raw planned_date preserved
             val taskD = repo.getById(TaskId("t-both-future"))!!
             assertTrue("t-both-future must prioritize deadline as Timed", taskD.due is TaskDue.Timed)
+            assertFalse(taskD.hasPendingLegacyPlan)
             assertEquals(1792432800000L, (taskD.due as TaskDue.Timed).epochMillis)
             val rawPlanD = db.queryString("SELECT planned_date FROM UserTasks WHERE id = 't-both-future'")
             assertEquals("Raw planned_date must be preserved", "2029-12-31", rawPlanD)
@@ -209,6 +216,11 @@ class ProductionV30ToV31MigrationTest {
             // Case F: corrupt plan -> TaskDue.None, raw value preserved
             val taskF = repo.getById(TaskId("t-corrupt-plan"))!!
             assertEquals("Corrupt plan date must safely map to None", TaskDue.None, taskF.due)
+            assertTrue(taskF.hasPendingLegacyPlan)
+            assertFailsWith<IllegalArgumentException> {
+                taskService.resolveLegacyPlan(taskF.id, accept = true)
+            }
+            assertEquals(taskF, repo.getById(taskF.id))
             val rawPlanF = db.queryString("SELECT planned_date FROM UserTasks WHERE id = 't-corrupt-plan'")
             assertEquals("Corrupt planned_date must not be deleted", "not-a-date", rawPlanF)
 
@@ -248,18 +260,25 @@ class ProductionV30ToV31MigrationTest {
         // 8. TEST INDEPENDENT RE-OPEN
         val reopened = opener.open(dbFile.absolutePath)
         try {
-            assertEquals(31, reopened.getVersion())
+            assertEquals(32, reopened.getVersion())
             val repoReopened = SQLiteUserTaskRepository(reopened)
             assertEquals(9, repoReopened.getAll().size)
             val taskB = repoReopened.getById(TaskId("t-plan-future"))!!
             assertEquals(TaskDueDate.parse("2029-12-31"), (taskB.due as TaskDue.Day).date)
+            assertEquals("2029-12-31", taskB.legacyPlanDate)
+            assertFalse(taskB.hasPendingLegacyPlan)
             val taskC = repoReopened.getById(TaskId("t-plan-past"))!!
             assertEquals(TaskDue.None, taskC.due)
+            assertEquals("2020-01-15", taskC.legacyPlanDate)
+            assertFalse(taskC.hasPendingLegacyPlan)
+            val corrupt = repoReopened.getById(TaskId("t-corrupt-plan"))!!
+            assertEquals("not-a-date", corrupt.legacyPlanDate)
+            assertTrue(corrupt.hasPendingLegacyPlan)
         } finally {
             reopened.close()
         }
 
-        // 9. TEST BACKUP AND RESTORE ON V31
+        // 9. TEST BACKUP AND RESTORE ON V32
         val sourceDb = opener.open(dbFile.absolutePath)
         val backupDbFile = File(tempFolder.newFolder(), "backup.db")
         val backupDb = opener.open(backupDbFile.absolutePath)
@@ -294,12 +313,12 @@ class ProductionV30ToV31MigrationTest {
             val restoredTaskB = restoreRepo.getById(TaskId("t-plan-future"))!!
             assertEquals(TaskDue.Day(TaskDueDate.parse("2029-12-31")), restoredTaskB.due)
             assertFalse(restoredTaskB.hasPendingLegacyPlan)
-            assertNull(restoredTaskB.legacyPlanDate)
+            assertEquals("2029-12-31", restoredTaskB.legacyPlanDate)
 
             val restoredTaskC = restoreRepo.getById(TaskId("t-plan-past"))!!
             assertEquals(TaskDue.None, restoredTaskC.due)
             assertFalse(restoredTaskC.hasPendingLegacyPlan)
-            assertNull(restoredTaskC.legacyPlanDate)
+            assertEquals("2020-01-15", restoredTaskC.legacyPlanDate)
 
             val restoredTaskF = restoreRepo.getById(TaskId("t-corrupt-plan"))!!
             assertEquals(TaskDue.None, restoredTaskF.due)
@@ -318,4 +337,63 @@ class ProductionV30ToV31MigrationTest {
         }
     }
 
+}
+
+class UserTaskV32SchemaParityTest {
+    @Test
+    fun testExistingV30RowsUpgradeIdenticallyThroughSqlAndEnsurePaths() = runBlocking {
+        val migrated = JavaDatabaseOpener().open(":memory:")
+        val ensured = JavaDatabaseOpener().open(":memory:")
+        try {
+            for (db in listOf(migrated, ensured)) {
+                UserTaskSchema.createSchema(db, targetVersion = 30)
+                db.setVersion(30)
+                db.run("""INSERT INTO UserTasks(id,title,planned_date,deadline,created_at,updated_at) VALUES
+                    ('plan','Plan','2026-10-22',NULL,1,2),
+                    ('deadline','Deadline',NULL,1792432800000,1,2),
+                    ('both','Both','2020-01-15',1792432800000,1,2),
+                    ('corrupt','Corrupt','not-a-date',NULL,1,2),
+                    ('none','None',NULL,NULL,1,2),
+                    ('zero','Zero','2026-10-23',0,1,2)""")
+            }
+            migrated.migrateTo(31) { TestDatabaseHelper.loadMigrationSQL(it) }
+            assertEquals(31, migrated.getVersion())
+            UserTaskSchema.ensureV31Columns(ensured)
+            // Compare every legacy and Due value before the additive review-state upgrade.
+            fun snapshot(db: org.isoron.platform.io.Database): List<List<String?>> {
+                val stmt = db.prepareStatement("SELECT id,title,planned_date,deadline,due_kind,due_date,due_time_millis,due_zone,created_at,updated_at FROM UserTasks ORDER BY id")
+                return try {
+                    buildList {
+                        while (stmt.step() == StepResult.ROW) add((0..9).map { stmt.getTextOrNull(it) })
+                    }
+                } finally { stmt.finalize() }
+            }
+            assertEquals(snapshot(migrated), snapshot(ensured))
+            val beforeV32 = snapshot(migrated)
+            migrated.migrateTo(32) { TestDatabaseHelper.loadMigrationSQL(it) }
+            UserTaskSchema.ensureV32Columns(ensured)
+            assertEquals(beforeV32, snapshot(migrated))
+            assertEquals(snapshot(migrated), snapshot(ensured))
+            val expectedPending = setOf("plan", "corrupt", "zero")
+            for (db in listOf(migrated, ensured)) {
+                val tasks = SQLiteUserTaskRepository(db).getAll()
+                assertEquals(6, tasks.size)
+                for (task in tasks) {
+                    assertEquals(task.id.value in expectedPending, task.hasPendingLegacyPlan)
+                    val expectedDue = if (task.id.value in setOf("deadline", "both")) {
+                        TaskDue.Timed.of(1792432800000L)
+                    } else TaskDue.None
+                    assertEquals(expectedDue, task.due)
+                }
+                // Repeated schema initialization cannot resurrect a processed legacy date.
+                val service = org.isoron.uhabits.core.userTasks.UserTaskServiceImpl(SQLiteUserTaskRepository(db))
+                service.resolveLegacyPlan(TaskId("plan"), accept = false)
+                UserTaskSchema.ensureV32Columns(db)
+                assertFalse(SQLiteUserTaskRepository(db).getById(TaskId("plan"))!!.hasPendingLegacyPlan)
+            }
+        } finally {
+            migrated.close()
+            ensured.close()
+        }
+    }
 }

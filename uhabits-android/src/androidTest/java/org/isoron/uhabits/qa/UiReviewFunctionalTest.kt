@@ -15,6 +15,8 @@ import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.activities.tasks.TaskDetailBottomSheet
 import org.isoron.uhabits.core.focus.sqlite.SQLiteFocusSessionRepository
 import org.isoron.uhabits.core.userTasks.TaskId
+import org.isoron.uhabits.core.userTasks.due.TaskDue
+import org.isoron.uhabits.core.userTasks.due.TaskDueDate
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -42,7 +44,7 @@ class UiReviewFunctionalTest {
         QaEmulatorUi.clearSystemUiError()
         val pattern = Pattern.compile(Pattern.quote(text), Pattern.CASE_INSENSITIVE or Pattern.UNICODE_CASE)
         val menuItem = text in listOf("Сегодня", "Завтра", "Выбрать дату в календаре",
-            "Очистить плановую дату", "Очистить дедлайн")
+            "Без срока (очистить)", "Установить точное время", "Изменить время")
         val selector = if (menuItem) By.res("android", "text1").text(pattern)
             else if (text == "Начать") By.desc("Начать фокус") else By.text(pattern)
         val view = device.wait(Until.findObject(selector), 8000)
@@ -84,34 +86,34 @@ class UiReviewFunctionalTest {
                 TaskDetailBottomSheet.newInstance(taskId).show(it.supportFragmentManager, "functional-detail")
             }
             device.waitForIdle()
-            clickId("rowDetailPlannedDate"); clickText("Сегодня")
-            assertEquals(today, component.userTaskRepository.getById(taskId)!!.plannedDate)
-            clickId("rowDetailPlannedDate"); clickText("Выбрать дату в календаре")
+            clickId("rowDetailDue"); clickText("Сегодня")
+            assertEquals(TaskDue.Day(TaskDueDate.from(today)), component.userTaskRepository.getById(taskId)!!.due)
+            clickId("rowDetailDue"); clickText("Выбрать дату в календаре")
             clickText("Отмена")
-            assertEquals("Cancellation preserves the saved plan", today, component.userTaskRepository.getById(taskId)!!.plannedDate)
-            clickId("rowDetailPlannedDate"); clickText("Выбрать дату в календаре")
+            assertEquals("Cancellation preserves the saved due", TaskDue.Day(TaskDueDate.from(today)), component.userTaskRepository.getById(taskId)!!.due)
+            clickId("rowDetailDue"); clickText("Выбрать дату в календаре")
             // A real calendar cell, followed by the explicit confirmation control.
             selectCalendarDay(15); clickText("Применить")
             val custom = LocalDate(today.year, today.month, 15)
-            assertEquals(custom, component.userTaskRepository.getById(taskId)!!.plannedDate)
-            clickId("rowDetailPlannedDate"); clickText("Очистить плановую дату")
-            assertNull(component.userTaskRepository.getById(taskId)!!.plannedDate)
-            clickId("rowDetailPlannedDate"); clickText("Завтра")
-            assertEquals(tomorrow, component.userTaskRepository.getById(taskId)!!.plannedDate)
-            clickId("rowDetailDeadline"); clickText("Сегодня")
-            val deadlineToday = component.userTaskRepository.getById(taskId)!!.deadline
-            assertNotNull(deadlineToday)
-            clickId("rowDetailDeadline"); clickText("Выбрать дату в календаре"); clickText("Отмена")
-            assertEquals(deadlineToday, component.userTaskRepository.getById(taskId)!!.deadline)
-            clickId("rowDetailDeadline"); clickText("Выбрать дату в календаре")
-            selectCalendarDay(15); clickText("Применить")
-            val deadlineCustom = Calendar.getInstance().apply {
-                timeInMillis = component.userTaskRepository.getById(taskId)!!.deadline!!
-            }
-            assertEquals(15, deadlineCustom.get(Calendar.DAY_OF_MONTH))
-            clickId("rowDetailDeadline"); clickText("Очистить дедлайн")
-            assertNull(component.userTaskRepository.getById(taskId)!!.deadline)
-            clickId("rowDetailDeadline"); clickText("Завтра")
+            assertEquals(TaskDue.Day(TaskDueDate.from(custom)), component.userTaskRepository.getById(taskId)!!.due)
+            clickId("rowDetailDue"); clickText("Без срока (очистить)")
+            assertEquals(TaskDue.None, component.userTaskRepository.getById(taskId)!!.due)
+            clickId("rowDetailDue"); clickText("Завтра")
+            assertEquals(TaskDue.Day(TaskDueDate.from(tomorrow)), component.userTaskRepository.getById(taskId)!!.due)
+            clickId("rowDetailDue"); clickText("Установить точное время")
+            clickId("button1") // Confirm the displayed local time in the native TimePickerDialog.
+            val timed = component.userTaskRepository.getById(taskId)!!.due as TaskDue.Timed
+            assertEquals(java.util.TimeZone.getDefault().id, timed.originZoneId)
+            val local = Calendar.getInstance().apply { timeInMillis = timed.epochMillis }
+            assertEquals(tomorrow.year, local.get(Calendar.YEAR))
+            assertEquals(tomorrow.month - 1, local.get(Calendar.MONTH))
+            assertEquals(tomorrow.day, local.get(Calendar.DAY_OF_MONTH))
+            clickId("rowDetailDue"); clickText("Изменить время"); clickId("button2")
+            assertEquals("Cancelling time edit preserves instant and zone", timed, component.userTaskRepository.getById(taskId)!!.due)
+            clickId("rowDetailDue"); clickText("Без срока (очистить)")
+            assertEquals(TaskDue.None, component.userTaskRepository.getById(taskId)!!.due)
+            clickId("rowDetailDue"); clickText("Завтра")
+            clickId("rowDetailDue"); clickText("Установить точное время"); clickId("button1")
             val saved = component.userTaskRepository.getById(taskId)!!
             clickId("rowDetailFocus")
             assertFalse("Preparation must remain idle", component.timerSessionManager.snapshot().hasActiveSession)
@@ -131,7 +133,8 @@ class UiReviewFunctionalTest {
             assertEquals(before + 1, completed.size)
             assertTrue(completed.last().durationMs > 0)
             evidence().writeText(JSONObject().put("datasetId", component.session.datasetId)
-                .put("plannedDate", saved.plannedDate!!.daysSince2000).put("deadline", saved.deadline)
+                .put("dueKind", "TIMED").put("dueTimeMillis", (saved.due as TaskDue.Timed).epochMillis)
+                .put("dueZone", (saved.due as TaskDue.Timed).originZoneId)
                 .put("focusCount", completed.size).put("focusDuration", completed.sumOf { it.durationMs }).toString(2))
         }
     }
@@ -143,8 +146,8 @@ class UiReviewFunctionalTest {
         assertEquals(expected.getString("datasetId"), component.session.datasetId)
         assertTrue(component.session.isExperimental)
         val saved = component.userTaskRepository.getById(taskId)!!
-        assertEquals(expected.getInt("plannedDate"), saved.plannedDate!!.daysSince2000)
-        assertEquals(expected.getLong("deadline"), saved.deadline!!)
+        assertEquals("TIMED", expected.getString("dueKind"))
+        assertEquals(TaskDue.Timed.of(expected.getLong("dueTimeMillis"), expected.getString("dueZone")), saved.due)
         val completed = SQLiteFocusSessionRepository(component.db).getByTask(taskId)
         assertEquals(expected.getInt("focusCount"), completed.size)
         assertEquals(expected.getLong("focusDuration"), completed.sumOf { it.durationMs })

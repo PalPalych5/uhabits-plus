@@ -97,7 +97,7 @@ class ProductionCutoverGateAndroidTest {
     @Test
     fun canonicalDatabaseVersionIs29ByDefault() {
         assertEquals(29, LEGACY_DATABASE_VERSION)
-        assertEquals(31, DATABASE_VERSION)
+        assertEquals(32, DATABASE_VERSION)
     }
 
     @Test

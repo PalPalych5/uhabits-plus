@@ -539,9 +539,10 @@ class SyncCoordinator(
                     val unresolvedTasks = mutableMapOf<String, Boolean>()
                     val pending = modelFactory.syncQueueRepository.findPending().mapNotNull { record ->
                         if (record.entityType != "user_task" || record.operationType == "delete") record
-                        else if (unresolvedTasks.getOrPut(record.entityUuid) { hasUnsupportedTaskPlan(record.entityUuid) }) null
                         else try {
                             val payload = JSONObject(record.payloadJson)
+                            if (!payload.has("legacy_plan_raw") &&
+                                unresolvedTasks.getOrPut(record.entityUuid) { hasUnsupportedTaskPlan(record.entityUuid) }) return@mapNotNull null
                             if (!payload.has("due_kind")) {
                                 val localTask = modelFactory.database.querySingle(
                                     "SELECT due_kind, due_date, due_time_millis, due_zone FROM UserTasks WHERE id = ?",
@@ -1588,11 +1589,7 @@ class SyncCoordinator(
 
                     val applied = when (record.entityType) {
                         "user_task" -> {
-                            if (hasUnsupportedTaskPlan(record.entityUuid)) {
-                                false
-                            } else {
-                                applyUserTask(event)
-                            }
+                            applyUserTask(event)
                         }
                         "habit_placement" -> applyHabitPlacement(event)
                         "habit_goal" -> applyGoal(event)
@@ -2254,9 +2251,11 @@ class SyncCoordinator(
         val containerId = payload.optionalString("container_id")
         val status = payload.optString("status", "PENDING")
         val plannedDate = try {
-            normalizeTaskPlannedDateForSync(
-                payload.optionalString("planned_date")
-            )
+            if (payload.has("legacy_plan_raw")) payload.optionalString("legacy_plan_raw")
+            else if (payload.has("planned_date")) normalizeTaskPlannedDateForSync(payload.optionalString("planned_date"))
+            else modelFactory.database.querySingle("SELECT planned_date FROM UserTasks WHERE id = ?", taskId) {
+                it.getTextOrNull(0)
+            }
         } catch (e: Exception) {
             when (e) {
                 is IllegalArgumentException, is IndexOutOfBoundsException -> {
@@ -2350,7 +2349,7 @@ class SyncCoordinator(
         val updatedAt = payload.optionalLong("updated_at", event) ?: event.createdAt
 
         // A remote title-only/null upsert must not erase unresolved local raw data.
-        if (hasUnsupportedTaskPlan(taskId)) {
+        if (!payload.has("legacy_plan_raw") && hasUnsupportedTaskPlan(taskId)) {
             deferRemoteEvent(
                 SyncInboxRecord(
                     logId = event.logId,
@@ -2385,6 +2384,14 @@ class SyncCoordinator(
             bindLong(13, createdAt)
             bindLong(14, updatedAt)
             if (plannedDate != null) bindText(15, plannedDate) else bindNull(15)
+            val existingReview = modelFactory.database.querySingle(
+                "SELECT legacy_plan_review_pending FROM UserTasks WHERE id = ?", taskId
+            ) { it.getInt(0) }
+            val pendingReview = if (payload.has("legacy_plan_review_pending"))
+                payload.optString("legacy_plan_review_pending") in listOf("1", "true")
+            else if (dueKind != "NONE") false
+            else existingReview?.let { it != 0 } ?: (plannedDate != null)
+            bindInt(16, if (pendingReview) 1 else 0)
         }
 
         modelFactory.syncInboxRepository.deleteByLogId(event.logId)
@@ -2585,7 +2592,8 @@ class SyncCoordinator(
         // 3. User Tasks
         modelFactory.database.query(
             """SELECT id, title, description, container_id, status, due_kind,
-                      due_date, due_time_millis, due_zone, completed_at, parent_task_id, sort_order, created_at, updated_at
+                      due_date, due_time_millis, due_zone, completed_at, parent_task_id, sort_order, created_at, updated_at,
+                      planned_date, legacy_plan_review_pending
                FROM UserTasks"""
         ) { stmt ->
             val taskId = stmt.getText(0)
@@ -2613,6 +2621,8 @@ class SyncCoordinator(
                 "due_date" to dueDate,
                 "due_time_millis" to dueTimeMillis?.toString(),
                 "due_zone" to dueZone,
+                "legacy_plan_raw" to stmt.getTextOrNull(14),
+                "legacy_plan_review_pending" to stmt.getInt(15).toString(),
                 "completed_at" to completedAt?.toString(),
                 "parent_task_id" to parentTaskId,
                 "sort_order" to sortOrder.toString(),

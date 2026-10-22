@@ -56,6 +56,7 @@ object UserTaskSchema {
         if (targetVersion >= 31) {
             ensureV31Columns(db)
         }
+        if (targetVersion >= 32) ensureV32Columns(db)
     }
 
     fun ensureV31Columns(db: Database) {
@@ -78,28 +79,24 @@ object UserTaskSchema {
             if ("deadline" in columns) {
                 db.run("UPDATE UserTasks SET due_kind = 'TIMED', due_time_millis = deadline WHERE deadline IS NOT NULL AND deadline > 0")
             }
-            if ("planned_date" in columns) {
-                db.run("""
-                    UPDATE UserTasks SET due_kind = 'DAY', due_date = trim(planned_date)
-                    WHERE (deadline IS NULL OR deadline <= 0)
-                      AND planned_date IS NOT NULL
-                      AND length(trim(planned_date)) = 10
-                      AND trim(planned_date) GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
-                      AND trim(planned_date) >= date('now', 'localtime')
-                """.trimIndent())
-                db.run("""
-                    UPDATE UserTasks SET due_kind = 'DAY', due_date = date(planned_date / 1000, 'unixepoch', 'localtime')
-                    WHERE (deadline IS NULL OR deadline <= 0)
-                      AND planned_date IS NOT NULL
-                      AND planned_date NOT GLOB '*[^0-9]*'
-                      AND length(planned_date) >= 12
-                      AND date(planned_date / 1000, 'unixepoch', 'localtime') >= date('now', 'localtime')
-                """.trimIndent())
-            }
 
             db.run("DROP INDEX IF EXISTS idx_user_tasks_planned")
             db.run("CREATE INDEX IF NOT EXISTS idx_user_tasks_due_kind ON UserTasks(due_kind);")
             db.run("CREATE INDEX IF NOT EXISTS idx_user_tasks_due_date ON UserTasks(due_date);")
+        }
+    }
+
+    fun ensureV32Columns(db: Database) {
+        val stmt = db.prepareStatement("PRAGMA table_info(UserTasks)")
+        var hasReviewState = false
+        try {
+            while (stmt.step() == StepResult.ROW) {
+                if (stmt.getText(1) == "legacy_plan_review_pending") hasReviewState = true
+            }
+        } finally { stmt.finalize() }
+        if (!hasReviewState) {
+            db.run("ALTER TABLE UserTasks ADD COLUMN legacy_plan_review_pending INTEGER NOT NULL DEFAULT 0 CHECK(legacy_plan_review_pending IN (0, 1))")
+            db.run("UPDATE UserTasks SET legacy_plan_review_pending = 1 WHERE due_kind = 'NONE' AND planned_date IS NOT NULL")
         }
     }
 }

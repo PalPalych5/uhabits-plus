@@ -47,6 +47,65 @@ import kotlin.test.assertFails
 class SQLiteUserTaskRepositoryTest {
 
     @Test
+    fun testBatchFailureRollsBackStandaloneAndNestedTransactions() = runTest {
+        val db = TestDatabaseHelper.createEmptyDatabase()
+        try {
+            UserTaskSchema.createSchema(db)
+            val repo = SQLiteUserTaskRepository(db)
+            val original = UserTask(TaskId("original"), "Original",
+                due = TaskDue.Day(TaskDueDate.parse("2026-10-22")), createdAt = 1, updatedAt = 1)
+            repo.save(original)
+            db.run("CREATE TRIGGER fail_task BEFORE INSERT ON UserTasks WHEN NEW.id = 'fail' BEGIN SELECT RAISE(ABORT, 'injected'); END")
+            val batch = listOf(original.copy(title = "Changed", due = TaskDue.None), original.copy(id = TaskId("fail")))
+            assertFails { repo.saveAll(batch) }
+            assertEquals(listOf(original), repo.getAll())
+            db.runInTransaction {
+                repo.saveAll(listOf(original.copy(id = TaskId("outer"))))
+                assertFails { repo.saveAll(batch) }
+            }
+            // A caught nested failure still marks the enclosing transaction for rollback.
+            assertEquals(listOf(original), repo.getAll())
+        } finally { db.close() }
+    }
+
+    @Test
+    fun testNestedBatchAndSqlTransactionRemainOwnedByCaller() = runTest {
+        val db = TestDatabaseHelper.createEmptyDatabase()
+        try {
+            UserTaskSchema.createSchema(db)
+            val repo = SQLiteUserTaskRepository(db)
+            val task = UserTask(TaskId("one"), "One", createdAt = 1, updatedAt = 1)
+            db.beginTransaction()
+            db.runInTransaction { repo.saveAll(listOf(task)) }
+            assertTrue(db.inTransaction())
+            assertEquals(task, repo.getById(task.id))
+            db.endTransaction() // The caller can still roll back the batch.
+            assertNull(repo.getById(task.id))
+            db.run("BEGIN IMMEDIATE")
+            repo.saveAll(listOf(task))
+            assertTrue(db.inTransaction())
+            db.run("COMMIT")
+            assertEquals(task, repo.getById(task.id))
+        } finally { db.close() }
+    }
+
+    @Test
+    fun testMaxSortOrderUsesExistingCoveringIndex() = runTest {
+        val db = TestDatabaseHelper.createEmptyDatabase()
+        try {
+            UserTaskSchema.createSchema(db)
+            for (predicate in listOf("parent_task_id IS NULL", "parent_task_id = 'parent'")) {
+                val statement = db.prepareStatement("EXPLAIN QUERY PLAN SELECT MAX(sort_order) FROM UserTasks WHERE $predicate")
+                val details = mutableListOf<String>()
+                try {
+                    while (statement.step() == StepResult.ROW) details.add(statement.getText(3))
+                } finally { statement.finalize() }
+                assertTrue(details.any { it.contains("COVERING INDEX idx_user_tasks_order") }, details.toString())
+            }
+        } finally { db.close() }
+    }
+
+    @Test
     fun legacySaveAndSaveAllPreserveUnknownColumnsAndDependentRows() = runTest {
         val db = TestDatabaseHelper.createEmptyDatabase()
         try {
@@ -108,6 +167,12 @@ class SQLiteUserTaskRepositoryTest {
         db.run("DELETE FROM SyncQueue")
         service.reorderTasks(listOf(b.id, a.id))
         assertEquals(listOf(b.id.value, a.id.value), queue.findPending().map { it.entityUuid })
+        val successfulQueue = queue.findPending()
+        val successfulTasks = repo.getAll()
+        db.run("CREATE TRIGGER fail_reorder BEFORE UPDATE ON UserTasks WHEN NEW.id = '${b.id.value}' BEGIN SELECT RAISE(ABORT, 'injected'); END")
+        assertFails { service.reorderTasks(listOf(a.id, b.id)) }
+        assertEquals(successfulTasks, repo.getAll())
+        assertEquals(successfulQueue, queue.findPending())
         db.close()
     }
 
@@ -130,7 +195,7 @@ class SQLiteUserTaskRepositoryTest {
     }
 
     @Test
-    fun testBulkReorderIsAtomicWithinSingleTransaction() = runTest {
+    fun testBulkReorderSkipsMissingIdsAndKeepsInputIndices() = runTest {
         val db = TestDatabaseHelper.createEmptyDatabase()
         UserTaskSchema.createSchema(db)
         val repo = SQLiteUserTaskRepository(db)
@@ -148,12 +213,9 @@ class SQLiteUserTaskRepositoryTest {
         assertEquals(0, repo.getById(t2.id)?.sortOrder)
         assertEquals(1, repo.getById(t1.id)?.sortOrder)
 
-        // Invalid task in reorder list throws, state preserved
-        assertFails {
-            service.reorderTasks(listOf(t1.id, TaskId("non-existent")))
-        }
-        assertEquals(0, repo.getById(t2.id)?.sortOrder)
+        service.reorderTasks(listOf(TaskId("non-existent"), t1.id, t2.id))
         assertEquals(1, repo.getById(t1.id)?.sortOrder)
+        assertEquals(2, repo.getById(t2.id)?.sortOrder)
         db.close()
     }
 

@@ -41,7 +41,7 @@ object DatabaseSnapshotter {
             "id", "title", "description", "container_id", "status",
             "due_kind", "due_date", "due_time_millis", "due_zone",
             "completed_at", "parent_task_id", "sort_order", "created_at", "updated_at",
-            "planned_date", "deadline"
+            "planned_date", "deadline", "legacy_plan_review_pending"
         )
         val columns = mutableSetOf<String>()
         val stmt = db.prepareStatement("PRAGMA table_info(UserTasks)")
@@ -88,6 +88,9 @@ object DatabaseSnapshotter {
         }
         if (sourceTables.contains("UserTasks")) {
             org.isoron.uhabits.core.userTasks.sqlite.UserTaskSchema.createSchema(targetDb, targetVersion = DATABASE_VERSION)
+            // The snapshot contains the current task columns, even when copied from v30/v31.
+            // Stamp their actual schema so the next opener does not add them a second time.
+            if (sourceVersion >= 30) targetDb.setVersion(DATABASE_VERSION)
         }
 
         // 2. Create Legacy tables if not already created
@@ -924,6 +927,9 @@ object DatabaseSnapshotter {
         val hasDueKind = "due_kind" in srcColumns
         val hasPlannedDate = "planned_date" in srcColumns
         val hasDeadline = "deadline" in srcColumns
+        val reviewExpression = if ("legacy_plan_review_pending" in srcColumns) "legacy_plan_review_pending"
+            else if (hasPlannedDate) "CASE WHEN due_kind = 'NONE' AND planned_date IS NOT NULL THEN 1 ELSE 0 END"
+            else "0"
 
         val selectSql = if (hasDueKind) {
             """
@@ -931,6 +937,7 @@ object DatabaseSnapshotter {
                    due_time_millis, due_zone, completed_at, parent_task_id, sort_order, created_at, updated_at
                    ${if (hasPlannedDate) ", planned_date" else ", NULL"}
                    ${if (hasDeadline) ", deadline" else ", NULL"}
+                   , $reviewExpression
             FROM UserTasks
             """.trimIndent()
         } else {
@@ -947,8 +954,8 @@ object DatabaseSnapshotter {
             INSERT OR REPLACE INTO UserTasks (
                 id, title, description, container_id, status, due_kind, due_date,
                 due_time_millis, due_zone, completed_at, parent_task_id, sort_order, created_at, updated_at,
-                planned_date, deadline
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                planned_date, deadline, legacy_plan_review_pending
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent()
         )
         try {
@@ -972,6 +979,7 @@ object DatabaseSnapshotter {
                     insert.bindLong(14, select.getLong(13))
                     val pdate = select.getTextOrNull(14); if (pdate != null) insert.bindText(15, pdate) else insert.bindNull(15)
                     val dline = select.getLongOrNull(15); if (dline != null) insert.bindLong(16, dline) else insert.bindNull(16)
+                    insert.bindInt(17, select.getInt(16))
                 } else {
                     val pdate = select.getTextOrNull(5)
                     val dline = select.getLongOrNull(6)
@@ -996,6 +1004,7 @@ object DatabaseSnapshotter {
                     insert.bindLong(14, select.getLong(11))
                     if (pdate != null) insert.bindText(15, pdate) else insert.bindNull(15)
                     if (dline != null) insert.bindLong(16, dline) else insert.bindNull(16)
+                    insert.bindInt(17, if (pdate != null && (dline == null || dline <= 0)) 1 else 0)
                 }
 
                 insert.step()

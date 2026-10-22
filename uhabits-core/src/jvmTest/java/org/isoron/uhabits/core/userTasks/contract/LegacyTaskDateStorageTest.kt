@@ -6,6 +6,7 @@ import org.isoron.platform.io.Database
 import org.isoron.platform.io.StepResult
 import org.isoron.platform.io.TestDatabaseHelper
 import org.isoron.platform.io.getVersion
+import org.isoron.platform.io.migrateTo
 import org.isoron.platform.io.queryString
 import org.isoron.platform.io.run
 import org.isoron.platform.io.setVersion
@@ -30,6 +31,34 @@ import org.junit.Test
 
 /** SQLite/snapshot tests verifying that unified task due survives backup, restore, and snapshot copying. */
 class LegacyTaskDateStorageTest {
+    @Test fun v31BackupRestoreAddsReviewStateAndStampsActualSchema() = runBlocking {
+        val source = TestDatabaseHelper.createEmptyDatabase()
+        val backup = TestDatabaseHelper.createEmptyDatabase()
+        val staging = TestDatabaseHelper.createEmptyDatabase()
+        val destination = TestDatabaseHelper.createEmptyDatabase()
+        try {
+            SemanticMigrationFixtures.seedAllFixtures(source)
+            val result = org.isoron.uhabits.core.production.migration.ProductionNextSchemaMigrator.migrate(
+                source, cutoverTimestamp = 1000000L,
+                sourceFileSha256 = "aa".repeat(32), sourceSchemaSha256 = "bb".repeat(32),
+                runtimeAuthority = "NEXT", authorityEpoch = 1L,
+            )
+            assertTrue(result is org.isoron.uhabits.core.production.migration.ProductionNextMigrationResult.Success)
+            source.migrateTo(31) { TestDatabaseHelper.loadMigrationSQL(it) }
+            source.run("INSERT INTO UserTasks (id,title,planned_date,created_at,updated_at) VALUES ('old','Old plan','not-a-date',1,1)")
+            assertFalse("legacy_plan_review_pending" in columns(source))
+            assertTrue(ContainerBackupService.createBackup(source, backup, 3000000L) is BackupCreationResult.Success)
+            assertEquals(org.isoron.uhabits.core.DATABASE_VERSION, backup.getVersion())
+            assertTrue(ContainerRestoreService.restore(backup, staging, destination) is RestoreResult.Success)
+            destination.migrateTo(org.isoron.uhabits.core.DATABASE_VERSION) { TestDatabaseHelper.loadMigrationSQL(it) }
+            val restored = SQLiteUserTaskRepository(destination).getById(TaskId("old"))!!
+            assertEquals("not-a-date", restored.legacyPlanDate)
+            assertTrue(restored.hasPendingLegacyPlan)
+            assertEquals(31, source.getVersion())
+            assertFalse("legacy_plan_review_pending" in columns(source))
+        } finally { source.close(); backup.close(); staging.close(); destination.close() }
+    }
+
     private fun rows(db: Database): List<Triple<String, String, String?>> {
         val stmt = db.prepareStatement("SELECT id, due_kind, due_date FROM UserTasks ORDER BY id")
         return try {
@@ -59,6 +88,8 @@ class LegacyTaskDateStorageTest {
                 id = TaskId("task-none"),
                 title = "No Due",
                 due = TaskDue.None,
+                legacyPlanDate = "not-a-date",
+                legacyPlanReviewPending = true,
                 createdAt = 1000L,
                 updatedAt = 1000L,
             )
@@ -66,6 +97,8 @@ class LegacyTaskDateStorageTest {
                 id = TaskId("task-day"),
                 title = "Day Due",
                 due = TaskDue.Day(TaskDueDate.parse("2026-10-19")),
+                legacyPlanDate = "2026-10-19",
+                legacyPlanReviewPending = false,
                 createdAt = 1000L,
                 updatedAt = 1000L,
             )
@@ -73,6 +106,8 @@ class LegacyTaskDateStorageTest {
                 id = TaskId("task-timed"),
                 title = "Timed Due",
                 due = TaskDue.Timed.of(1792432800000L, "Asia/Novosibirsk"),
+                legacyPlanDate = "historical-raw",
+                legacyPlanReviewPending = false,
                 createdAt = 1000L,
                 updatedAt = 1000L,
             )
@@ -106,6 +141,18 @@ class LegacyTaskDateStorageTest {
             assertEquals(TaskDue.None, destRepo.getById(TaskId("task-none"))?.due)
             assertEquals(TaskDue.Day(TaskDueDate.parse("2026-10-19")), destRepo.getById(TaskId("task-day"))?.due)
             assertEquals(tTimed.due, destRepo.getById(TaskId("task-timed"))?.due)
+            for (expected in listOf(tNone, tDay, tTimed)) {
+                val actual = destRepo.getById(expected.id)!!
+                assertEquals(expected.legacyPlanDate, actual.legacyPlanDate)
+                assertEquals(expected.legacyPlanReviewPending, actual.legacyPlanReviewPending)
+            }
+            val timed = destRepo.getById(tTimed.id)!!.due as TaskDue.Timed
+            assertEquals(1792432800000L, timed.epochMillis)
+            assertEquals("Asia/Novosibirsk", timed.originZoneId)
+            // Clearing a reviewed deadline must not turn historical raw data into a new review.
+            destRepo.save(destRepo.getById(tTimed.id)!!.copy(due = TaskDue.None))
+            assertFalse(destRepo.getById(tTimed.id)!!.hasPendingLegacyPlan)
+            assertEquals("historical-raw", destRepo.getById(tTimed.id)!!.legacyPlanDate)
         } finally { source.close(); target.close(); staging.close(); destination.close() }
     }
 
@@ -140,7 +187,8 @@ class LegacyTaskDateStorageTest {
             UserTaskSchema.createSchema(db)
 
             val repo = SQLiteUserTaskRepository(db)
-            assertEquals(TaskDue.Day(TaskDueDate.parse("2029-10-19")), repo.getById(TaskId("d1"))?.due)
+            assertEquals(TaskDue.None, repo.getById(TaskId("d1"))?.due)
+            assertTrue(repo.getById(TaskId("d1"))!!.hasPendingLegacyPlan)
             assertEquals(TaskDue.Timed.of(1792432800000L), repo.getById(TaskId("d2"))?.due)
             // Deadline takes precedence as TIMED
             assertEquals(TaskDue.Timed.of(1792432800000L), repo.getById(TaskId("d3"))?.due)

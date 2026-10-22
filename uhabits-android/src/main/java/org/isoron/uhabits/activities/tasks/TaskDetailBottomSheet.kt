@@ -491,7 +491,15 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
         btnAcceptLegacyPlan.setOnClickListener {
             val t = currentTask ?: return@setOnClickListener
-            val updated = taskService.resolveLegacyPlan(t.id, accept = true)
+            val updated = try {
+                taskService.resolveLegacyPlan(t.id, accept = true)
+            } catch (_: org.isoron.uhabits.core.userTasks.InvalidLegacyPlanException) {
+                AlertDialog.Builder(requireContext())
+                    .setMessage("Не удалось распознать старую дату. Исходное значение сохранено. Выберите корректный срок вручную или нажмите «Отклонить».")
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show()
+                return@setOnClickListener
+            }
             currentTask = updated
             selectedDue = updated.due
             updateDueDisplay()
@@ -610,7 +618,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                         TaskDatePicker.showTime(requireContext(), initialMillis) { millis ->
                             if (isAdded && !taskDeleted &&
                                 (requireContext().applicationContext as HabitsApplication).component === launchComponent) {
-                                selectedDue = TaskDue.Timed.of(millis)
+                                selectedDue = TaskDue.Timed.local(millis, java.util.TimeZone.getDefault().id)
                                 updateDueDisplay()
                                 saveChanges()
                             }
@@ -651,7 +659,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             description = newDesc,
             containerId = selectedContainerId,
             clearContainer = selectedContainerId == null,
-            due = selectedDue,
+            due = selectedDue.takeIf { it != task.due },
         )
 
         if (isCompleted != task.isCompleted) {

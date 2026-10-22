@@ -228,6 +228,58 @@ class UserTaskDomainTest {
     }
 
     @Test
+    fun testReorderMissingIdsPreservesInputPositions() {
+        val repo = MemoryUserTaskRepository()
+        var id = 0
+        val service = UserTaskServiceImpl(repo, clock = { 1000L }, idGenerator = { "${id++}" })
+        val first = service.createTask(title = "First")
+        val second = service.createTask(title = "Second")
+        service.reorderTasks(listOf(TaskId("missing"), second.id, first.id))
+        assertEquals(1, repo.getById(second.id)?.sortOrder)
+        assertEquals(2, repo.getById(first.id)?.sortOrder)
+    }
+
+    @Test
+    fun testFailedLegacyAcceptanceKeepsRawAndAllowsManualDueOrDismissal() {
+        val repo = MemoryUserTaskRepository()
+        val service = UserTaskServiceImpl(repo, clock = { 2000L })
+        val original = UserTask(TaskId("malformed"), "Malformed plan", legacyPlanDate = "not-a-date",
+            createdAt = 1, updatedAt = 1)
+        repo.save(original)
+        assertFailsWith<IllegalArgumentException> { service.resolveLegacyPlan(original.id, accept = true) }
+        assertEquals(original, repo.getById(original.id))
+        assertTrue(repo.getById(original.id)!!.legacyPlanReviewPending)
+        val manuallySet = service.updateTask(original.id, due = TaskDue.Timed.of(nowMillis, "Asia/Novosibirsk"))
+        assertEquals("not-a-date", manuallySet.legacyPlanDate)
+        assertFalse(manuallySet.legacyPlanReviewPending)
+        val cleared = service.updateTask(original.id, due = TaskDue.None)
+        assertFalse(cleared.legacyPlanReviewPending)
+        assertEquals("not-a-date", cleared.legacyPlanDate)
+
+        repo.save(original)
+        val dismissed = service.resolveLegacyPlan(original.id, accept = false)
+        assertEquals("not-a-date", dismissed.legacyPlanDate)
+        assertFalse(dismissed.legacyPlanReviewPending)
+        assertEquals(TaskDue.None, dismissed.due)
+    }
+
+    @Test
+    fun testAcceptedLegacyPlanKeepsHistoryWithoutRenewingReviewWhenCleared() {
+        val repo = MemoryUserTaskRepository()
+        val service = UserTaskServiceImpl(repo, clock = { 2000L })
+        val original = UserTask(TaskId("legacy"), "Legacy plan", legacyPlanDate = "2026-10-22",
+            createdAt = 1, updatedAt = 1)
+        repo.save(original)
+        val accepted = service.resolveLegacyPlan(original.id, accept = true)
+        assertEquals(TaskDue.Day(TaskDueDate.parse("2026-10-22")), accepted.due)
+        assertEquals(original.legacyPlanDate, accepted.legacyPlanDate)
+        assertFalse(accepted.legacyPlanReviewPending)
+        val cleared = service.updateTask(original.id, due = TaskDue.None)
+        assertEquals(original.legacyPlanDate, cleared.legacyPlanDate)
+        assertFalse(cleared.legacyPlanReviewPending)
+    }
+
+    @Test
     fun testTaskService_reorderTasks() {
         val repo = MemoryUserTaskRepository()
         var idCounter = 1

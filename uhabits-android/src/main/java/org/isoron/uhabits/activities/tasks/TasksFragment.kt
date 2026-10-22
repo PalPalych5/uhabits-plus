@@ -149,7 +149,7 @@ class TasksFragment : Fragment() {
             val dueDateDays = if (it.containsKey("quickDueDays")) it.getInt("quickDueDays") else null
             quickTaskDue = when (dueKind) {
                 "DAY" -> dueDateDays?.let { days -> TaskDue.Day(TaskDueDate.from(LocalDate(days))) } ?: TaskDue.None
-                "TIMED" -> dueMillis?.let { millis -> TaskDue.Timed.of(millis) } ?: TaskDue.None
+                "TIMED" -> dueMillis?.let { millis -> TaskDue.Timed.of(millis, it.getString("quickDueZone")) } ?: TaskDue.None
                 else -> TaskDue.None
             }
             quickContainer = it.getString("quickContainer")?.let(::ContainerId)
@@ -231,6 +231,7 @@ class TasksFragment : Fragment() {
             is TaskDue.Timed -> {
                 outState.putString("quickDueKind", "TIMED")
                 outState.putLong("quickDueMillis", d.epochMillis)
+                outState.putString("quickDueZone", d.originZoneId)
             }
         }
         outState.putString("quickContainer", quickContainer?.value)
@@ -504,7 +505,7 @@ class TasksFragment : Fragment() {
                         }
                         TaskDatePicker.showTime(requireContext(), initialMillis) { millis ->
                             if (isAdded) {
-                                quickTaskDue = TaskDue.Timed.of(millis)
+                                quickTaskDue = TaskDue.Timed.local(millis, java.util.TimeZone.getDefault().id)
                                 refreshOptionLabels()
                             }
                         }

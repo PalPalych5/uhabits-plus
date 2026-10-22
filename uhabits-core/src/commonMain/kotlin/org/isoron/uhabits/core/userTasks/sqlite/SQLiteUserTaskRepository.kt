@@ -38,7 +38,7 @@ class SQLiteUserTaskRepository(
 
     companion object {
         private const val SELECT_COLUMNS =
-            "id, title, description, container_id, status, due_kind, due_date, due_time_millis, due_zone, completed_at, parent_task_id, sort_order, created_at, updated_at, planned_date"
+            "id, title, description, container_id, status, due_kind, due_date, due_time_millis, due_zone, completed_at, parent_task_id, sort_order, created_at, updated_at, planned_date, legacy_plan_review_pending"
     }
 
     override fun getById(id: TaskId): UserTask? {
@@ -209,6 +209,7 @@ class SQLiteUserTaskRepository(
         stmt.bindLong(13, task.createdAt)
         stmt.bindLong(14, task.updatedAt)
         if (task.legacyPlanDate != null) stmt.bindText(15, task.legacyPlanDate) else stmt.bindNull(15)
+        stmt.bindInt(16, if (task.legacyPlanReviewPending) 1 else 0)
     }
 
     private fun mapRow(stmt: PreparedStatement): UserTask {
@@ -243,6 +244,7 @@ class SQLiteUserTaskRepository(
             status = status,
             due = due,
             legacyPlanDate = legacyPlanDate,
+            legacyPlanReviewPending = stmt.getInt(15) != 0,
             completedAt = completedAt,
             parentTaskId = parentTaskId,
             sortOrder = sortOrder,

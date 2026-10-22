@@ -22,6 +22,9 @@ package org.isoron.uhabits.core.userTasks
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.userTasks.due.TaskDue
 
+class InvalidLegacyPlanException(cause: IllegalArgumentException) :
+    IllegalArgumentException("Legacy plan cannot be converted to a valid Due date", cause)
+
 class UserTaskServiceImpl(
     private val repository: UserTaskRepository,
     private val clock: () -> Long = { 0L },
@@ -99,7 +102,6 @@ class UserTaskServiceImpl(
         }
 
         val newDue = due ?: existing.due
-        val newLegacyPlanDate = if (due != null && due !is TaskDue.None) null else existing.legacyPlanDate
 
         val newTitle = title?.let {
             require(it.isNotBlank()) { "Task title cannot be blank" }
@@ -114,7 +116,7 @@ class UserTaskServiceImpl(
             description = newDescription,
             containerId = newContainerId,
             due = newDue,
-            legacyPlanDate = newLegacyPlanDate,
+            legacyPlanReviewPending = if (due != null) false else existing.legacyPlanReviewPending,
             parentTaskId = newParentId,
             sortOrder = newSortOrder,
             updatedAt = clock(),
@@ -167,14 +169,26 @@ class UserTaskServiceImpl(
     override fun resolveLegacyPlan(id: TaskId, accept: Boolean): UserTask {
         val existing = repository.getById(id)
             ?: throw IllegalArgumentException("Task $id not found")
+        if (!existing.hasPendingLegacyPlan) return existing
         val now = clock()
-        val updated = if (accept && !existing.legacyPlanDate.isNullOrBlank()) {
-            val date = runCatching { org.isoron.uhabits.core.userTasks.due.TaskDueDate.parse(existing.legacyPlanDate) }.getOrNull()
-                ?: parseIsoDateString(existing.legacyPlanDate)?.let { org.isoron.uhabits.core.userTasks.due.TaskDueDate.parse(it.toIsoDateString()) }
-            val newDue = if (date != null) TaskDue.Day(date) else TaskDue.None
-            existing.copy(due = newDue, legacyPlanDate = null, updatedAt = now)
+        val updated = if (accept) {
+            val raw = requireNotNull(existing.legacyPlanDate)
+            // Only the documented UTC epoch-day numeric encoding may be converted.
+            // ISO input must pass strict validation; never normalize an invalid calendar date.
+            val date = try {
+                if (raw.toLongOrNull() != null) {
+                    org.isoron.uhabits.core.userTasks.due.TaskDueDate.from(
+                        requireNotNull(parseTaskPlannedDate(raw))
+                    )
+                } else {
+                    org.isoron.uhabits.core.userTasks.due.TaskDueDate.parse(raw)
+                }
+            } catch (e: IllegalArgumentException) {
+                throw InvalidLegacyPlanException(e)
+            }
+            existing.copy(due = TaskDue.Day(date), legacyPlanReviewPending = false, updatedAt = now)
         } else {
-            existing.copy(legacyPlanDate = null, updatedAt = now)
+            existing.copy(legacyPlanReviewPending = false, updatedAt = now)
         }
         repository.save(updated)
         syncManager?.enqueueUserTask(updated, "upsert")
@@ -199,7 +213,7 @@ class UserTaskServiceImpl(
         val pendingById = mutableMapOf<TaskId, UserTask>()
         orderedIds.forEachIndexed { index, taskId ->
             val task = pendingById[taskId] ?: repository.getById(taskId)
-                ?: throw IllegalArgumentException("Task $taskId not found")
+                ?: return@forEachIndexed
             if (task.sortOrder != index) {
                 val updated = task.copy(sortOrder = index, updatedAt = now)
                 toUpdate.add(updated)

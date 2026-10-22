@@ -14,17 +14,17 @@ object UserTaskSqlWriter {
                 """UPDATE UserTasks SET id=?, title=?, description=?, container_id=?, status=?,
                     due_kind=?, due_date=?, due_time_millis=?, due_zone=?,
                     completed_at=?, parent_task_id=?, sort_order=?,
-                    created_at=?, updated_at=?, planned_date=? WHERE id=?"""
+                    created_at=?, updated_at=?, planned_date=?, legacy_plan_review_pending=? WHERE id=?"""
             } else {
                 """INSERT INTO UserTasks (id, title, description, container_id, status,
                     due_kind, due_date, due_time_millis, due_zone,
-                    completed_at, parent_task_id, sort_order, created_at, updated_at, planned_date)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+                    completed_at, parent_task_id, sort_order, created_at, updated_at, planned_date, legacy_plan_review_pending)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
             }
             val stmt = db.prepareStatement(sql)
             try {
                 stmt.bind()
-                if (exists) stmt.bindText(16, taskId)
+                if (exists) stmt.bindText(17, taskId)
                 stmt.step()
             } finally { stmt.finalize() }
         }

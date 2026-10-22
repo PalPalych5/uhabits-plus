@@ -59,6 +59,61 @@ class TaskDateSyncContractTest {
         }!!
 
     @Test
+    fun rawHistoryAndReviewDecisionRoundTripOfflineWithoutResurfacing() = runBlocking {
+        val backend = SyncCoordinatorNextTest.InMemorySyncBackend()
+        val source = harness.setupDeviceEnvironment(database(), backend, "review-source")
+        val target = harness.setupDeviceEnvironment(database(), backend, "review-target")
+        try {
+            val original = UserTask(
+                id = TaskId("raw-review"), title = "Raw review", due = TaskDue.None,
+                legacyPlanDate = "not-a-date", legacyPlanReviewPending = true,
+                createdAt = 100L, updatedAt = 100L,
+            )
+            source.modelFactory.syncManager.enqueueUserTask(original)
+            apply(taskRecord(source, original.id), target)
+            val pending = target.taskRepo.getById(original.id)!!
+            assertEquals("not-a-date", pending.legacyPlanDate)
+            assertTrue(pending.hasPendingLegacyPlan)
+
+            val reviewed = original.copy(legacyPlanReviewPending = false, updatedAt = 200L)
+            source.modelFactory.syncManager.enqueueUserTask(reviewed)
+            apply(taskRecord(source, original.id), target)
+            val accepted = target.taskRepo.getById(original.id)!!
+            assertEquals("not-a-date", accepted.legacyPlanDate)
+            assertFalse(accepted.hasPendingLegacyPlan)
+            assertFalse(accepted.legacyPlanReviewPending)
+        } finally {
+            source.coordinator.dispose(); source.db.close()
+            target.coordinator.dispose(); target.db.close()
+        }
+    }
+
+    @Test
+    fun legacyPayloadWithoutReviewFieldsPreservesReviewedHistory() = runBlocking {
+        val target = harness.setupDeviceEnvironment(database(), SyncCoordinatorNextTest.InMemorySyncBackend(), "legacy-review")
+        try {
+            val original = UserTask(
+                id = TaskId("reviewed-history"), title = "Reviewed", due = TaskDue.None,
+                legacyPlanDate = "2026-10-19", legacyPlanReviewPending = false,
+                createdAt = 100L, updatedAt = 100L,
+            )
+            target.taskRepo.save(original)
+            val skipped = target.coordinator.applyRemoteEvents(listOf(RemoteSyncEvent(
+                logId = 1L, opUuid = "legacy-no-review-fields", entityType = "user_task",
+                entityUuid = original.id.value, operationType = "upsert",
+                payloadJson = JSONObject().put("title", "Legacy edit").put("due_kind", "NONE").toString(),
+                createdAt = 200L, deviceId = "foreign-legacy",
+            )))
+            assertEquals(0, skipped)
+            val actual = target.taskRepo.getById(original.id)!!
+            assertEquals("Legacy edit", actual.title)
+            assertEquals("2026-10-19", actual.legacyPlanDate)
+            assertFalse(actual.legacyPlanReviewPending)
+            assertFalse(actual.hasPendingLegacyPlan)
+        } finally { target.coordinator.dispose(); target.db.close() }
+    }
+
+    @Test
     fun pendingDuePayloadsPreserveIdentityAndQueueSafeguards() = runBlocking {
         val delegate = SyncCoordinatorNextTest.InMemorySyncBackend()
         val pushes = mutableListOf<List<SyncQueueRecord>>()

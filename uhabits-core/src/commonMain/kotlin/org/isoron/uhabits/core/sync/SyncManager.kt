@@ -292,6 +292,8 @@ class SyncManager(
                 "due_date" to dueDate,
                 "due_time_millis" to dueTimeMillis,
                 "due_zone" to dueZone,
+                "legacy_plan_raw" to task.legacyPlanDate,
+                "legacy_plan_review_pending" to if (task.legacyPlanReviewPending) "1" else "0",
                 "completed_at" to task.completedAt?.toString(),
                 "parent_task_id" to task.parentTaskId?.value,
                 "sort_order" to task.sortOrder.toString(),
