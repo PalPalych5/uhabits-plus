@@ -48,7 +48,6 @@ import androidx.core.content.ContextCompat
 import android.annotation.SuppressLint
 import android.view.MotionEvent
 import org.isoron.uhabits.activities.tasks.TasksFragment
-import org.isoron.uhabits.utils.applyBottomInset
 import org.isoron.uhabits.utils.applyRootViewInsets
 import org.isoron.uhabits.utils.restartWithFade
 
@@ -71,6 +70,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     private lateinit var settingsTabAnimator: TabAnimator
     private var bottomNavigationNaturalHeight = 0
     private var bottomNavigationAnimationToken = 0
+    private var taskQuickAddActive = false
     private lateinit var workspaceSidebar: MainWorkspaceSidebar
     private val experimentalWide: Boolean
         get() = appComponent.session.isNextArchitecture && resources.configuration.screenWidthDp >= 600
@@ -94,7 +94,14 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         binding = ActivityMainBinding.inflate(layoutInflater)
         org.isoron.uhabits.utils.HabitsStartupTrace.mark("activity.inflate.end")
         binding.root.applyRootViewInsets()
-        binding.bottomNavigationContainer.applyBottomInset()
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.bottomNavigationContainer) { view, insets ->
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
+            binding.bottomNavigation.visibility = if (taskQuickAddActive &&
+                insets.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime())) View.GONE else View.VISIBLE
+            view.setPadding(0, 0, 0, maxOf(bars.bottom, ime.bottom))
+            insets
+        }
         setContentView(binding.root)
         binding.bottomNavigationContainer.post {
             bottomNavigationNaturalHeight = binding.bottomNavigationContainer.height
@@ -723,6 +730,14 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         super.onDestroy()
     }
 
+    fun setTaskQuickAddActive(active: Boolean) {
+        if (taskQuickAddActive == active) return
+        taskQuickAddActive = active
+        androidx.core.view.ViewCompat.getRootWindowInsets(binding.bottomNavigationContainer)?.let {
+            androidx.core.view.ViewCompat.dispatchApplyWindowInsets(binding.bottomNavigationContainer, it)
+        }
+    }
+
     override fun setBottomNavigationVisible(visible: Boolean, animate: Boolean) {
         if (experimentalWide) {
             binding.bottomNavigationContainer.visibility = View.GONE
@@ -801,7 +816,8 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         pureBlack = prefs.isPureBlackEnabled
         currentResolvedNightMode = AndroidThemeSwitcher(this, prefs).isNightMode
         intent.removeExtra(EXTRA_DESTINATION)
-        intent.putExtra(EXTRA_RECREATE_DESTINATION, MainDestination.SETTINGS.name)
+        val destination = if (navigationState.current == MainDestination.TASKS) MainDestination.TASKS else MainDestination.SETTINGS
+        intent.putExtra(EXTRA_RECREATE_DESTINATION, destination.name)
         recreate()
     }
 

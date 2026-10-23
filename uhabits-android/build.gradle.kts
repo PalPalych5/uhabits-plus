@@ -69,7 +69,9 @@ android {
         targetSdk = 36
         applicationId = "org.isoron.uhabits.plus"
         // Database-only migration checks must not execute the application's legacy test reset.
-        testInstrumentationRunner = if (providers.gradleProperty("dueMigrationTest").orNull == "true")
+        testInstrumentationRunner = if (providers.gradleProperty("taskDraftQaTest").orNull == "true")
+            "org.isoron.uhabits.activities.tasks.TaskDraftQaRunner"
+        else if (providers.gradleProperty("dueMigrationTest").orNull == "true")
             "org.isoron.uhabits.database.TaskDueMigrationRunner"
         else "androidx.test.runner.AndroidJUnitRunner"
     }

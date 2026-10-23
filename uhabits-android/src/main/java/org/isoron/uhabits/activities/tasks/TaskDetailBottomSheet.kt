@@ -20,6 +20,7 @@
 package org.isoron.uhabits.activities.tasks
 
 import android.content.DialogInterface
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
@@ -30,22 +31,26 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
+import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.Button
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.PopupMenu
 import androidx.core.widget.doAfterTextChanged
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.bottomsheet.BottomSheetDialogFragment
-import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetBehavior
-import org.isoron.platform.time.getToday
+import com.google.android.material.bottomsheet.BottomSheetDialog
+import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import org.isoron.platform.io.runInTransaction
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
@@ -56,8 +61,6 @@ import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.UserTask
 import org.isoron.uhabits.core.userTasks.UserTaskService
 import org.isoron.uhabits.core.userTasks.due.TaskDue
-import java.text.DateFormat
-import java.util.Date
 
 class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
@@ -67,39 +70,58 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
     private var taskId: TaskId? = null
     private var currentTask: UserTask? = null
+    private var isCreateMode: Boolean = false
+
     private var selectedContainerId: ContainerId? = null
     private var selectedDue: TaskDue = TaskDue.None
     private var isCompleted: Boolean = false
+    private val draftSubtasks = mutableListOf<TaskDraft.DraftSubtask>()
 
-    private lateinit var etTitle: EditText
-    private lateinit var etDescription: EditText
+    // Top Bar views
+    private lateinit var topBarCreate: View
+    private lateinit var topBarEdit: View
+    private lateinit var btnDetailCollapse: TextView
+    private lateinit var tvDetailSheetTitle: TextView
+    private lateinit var btnDetailCreate: Button
+    private lateinit var tvDetailSaveStatus: TextView
+    private lateinit var btnDetailMore: ImageButton
+
+    // Title & Check
     private lateinit var btnCheck: FrameLayout
     private lateinit var viewCheckCircle: View
     private lateinit var ivCheckmark: ImageView
+    private lateinit var etTitle: EditText
 
-    private lateinit var rowContainer: LinearLayout
-    private lateinit var viewContainerDot: View
+    // Attributes (Chips)
+    private lateinit var chipDue: View
+    private lateinit var ivDueIcon: ImageView
+    private lateinit var tvDueValue: TextView
+    private lateinit var btnClearDue: ImageView
+    private lateinit var chipContainer: View
+    private lateinit var ivContainerIcon: ImageView
     private lateinit var tvContainerValue: TextView
 
-    private lateinit var rowDue: LinearLayout
-    private lateinit var tvDueLabel: TextView
-    private lateinit var tvDueValue: TextView
-    private lateinit var btnClearDue: ImageButton
-    private lateinit var cardLegacyPlanDecision: View
-    private lateinit var tvLegacyPlanPrompt: TextView
-    private lateinit var btnAcceptLegacyPlan: Button
-    private lateinit var btnDismissLegacyPlan: Button
+    // Note
+    private lateinit var etDescription: EditText
 
+    // Subtasks
     private lateinit var rvSubtasks: RecyclerView
     private lateinit var subtasksAdapter: SubtasksAdapter
     private lateinit var tvSubtasksCount: TextView
     private lateinit var etNewSubtask: EditText
     private lateinit var btnAddSubtask: ImageButton
 
-    private lateinit var btnMore: ImageButton
+    // Focus & Legacy Plan
+    private lateinit var rowFocus: View
+    private lateinit var cardLegacyPlanDecision: View
+    private lateinit var tvLegacyPlanPrompt: TextView
+    private lateinit var btnAcceptLegacyPlan: Button
+    private lateinit var btnDismissLegacyPlan: Button
+
     private val saveHandler = Handler(Looper.getMainLooper())
     private val pendingSave = Runnable { saveChanges() }
     private var viewReady = false
+    private var taskCreated = false
     private var taskDeleted = false
     private lateinit var launchComponent: org.isoron.uhabits.inject.HabitsApplicationComponent
 
@@ -116,7 +138,9 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         val idStr = arguments?.getString(ARG_TASK_ID)?.takeIf {
             arguments?.getString("focusDatasetId") == app.component.session.datasetId
         }
+
         if (idStr != null) {
+            isCreateMode = false
             taskId = TaskId(idStr)
             currentTask = app.component.userTaskRepository.getById(taskId!!)
             currentTask?.let {
@@ -124,6 +148,14 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                 selectedDue = it.due
                 isCompleted = it.isCompleted
             }
+        } else {
+            isCreateMode = true
+            val initialDraft = TaskDraft.fromBundle(arguments?.getBundle(ARG_TASK_DRAFT))
+            selectedContainerId = initialDraft.containerId
+            selectedDue = initialDraft.due
+            isCompleted = false
+            draftSubtasks.clear()
+            draftSubtasks.addAll(initialDraft.subtasks)
         }
     }
 
@@ -136,31 +168,53 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         bindViews(view)
         applyTheme(view)
         populateData()
+
         savedInstanceState?.let { restored ->
             etTitle.setText(restored.getString("detailTitle", etTitle.text.toString()))
             etDescription.setText(restored.getString("detailNotes", etDescription.text.toString()))
             etNewSubtask.setText(restored.getString("detailSubtask", ""))
+            if (isCreateMode && restored.containsKey("draftBundle")) {
+                val restoredDraft = TaskDraft.fromBundle(restored.getBundle("draftBundle"))
+                selectedContainerId = restoredDraft.containerId
+                selectedDue = restoredDraft.due
+                draftSubtasks.clear()
+                draftSubtasks.addAll(restoredDraft.subtasks)
+                updateDueDisplay()
+                updateContainerDisplay()
+                refreshSubtasks()
+            }
         }
+
         setupListeners()
         viewReady = true
+
         childFragmentManager.setFragmentResultListener("detailDue", viewLifecycleOwner) { _, result ->
             if (taskDeleted || HabitsApplication.component !== launchComponent) return@setFragmentResultListener
             selectedDue = TaskDuePickerBottomSheet.readResult(result)
             updateDueDisplay()
-            saveChanges(forceDue = result.getBoolean(TaskDuePickerBottomSheet.RESULT_EDITED))
+            if (!isCreateMode) {
+                saveChanges(forceDue = result.getBoolean(TaskDuePickerBottomSheet.RESULT_EDITED))
+            }
         }
+
         childFragmentManager.setFragmentResultListener("detailContainer", viewLifecycleOwner) { _, result ->
             if (taskDeleted || HabitsApplication.component !== launchComponent) return@setFragmentResultListener
             selectedContainerId = result.getString(TaskContainerPickerBottomSheet.RESULT_CONTAINER_ID)?.let(::ContainerId)
             updateContainerDisplay()
-            saveChanges()
+            if (!isCreateMode) {
+                saveChanges()
+            }
         }
 
-        view.findViewById<View>(R.id.rowDetailFocus).apply {
-            visibility = if (launchComponent.session.isNextArchitecture && currentTask != null) View.VISIBLE else View.GONE
+        rowFocus.apply {
+            visibility = if (!isCreateMode && launchComponent.session.isNextArchitecture && currentTask != null) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
             setOnClickListener {
                 val app = requireContext().applicationContext as HabitsApplication
-                if (app.component !== launchComponent || taskDeleted) return@setOnClickListener
+                if (app.component !== launchComponent || taskDeleted || isCreateMode) return@setOnClickListener
                 saveHandler.removeCallbacks(pendingSave)
                 saveChanges()
                 val id = taskId ?: return@setOnClickListener
@@ -179,12 +233,16 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                 }
             }
         }
-        refreshFocusSummary(view)
+
+        if (!isCreateMode) {
+            refreshFocusSummary(view)
+        }
+
         return view
     }
 
     private fun refreshFocusSummary(root: View? = view) {
-        if (!launchComponent.session.isNextArchitecture) return
+        if (!launchComponent.session.isNextArchitecture || isCreateMode) return
         val id = taskId ?: return
         launchComponent.taskRunner.execute(object : org.isoron.uhabits.core.tasks.Task {
             private var duration = 0L
@@ -203,7 +261,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                 }
                 root?.findViewById<TextView>(R.id.tvDetailFocus)?.apply {
                     maxLines = 2
-                    text = "Начать фокус · всего $formatted"
+                    text = "всего $formatted"
                 }
             }
         })
@@ -214,45 +272,78 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         (dialog as? BottomSheetDialog)?.let { sheet ->
             sheet.dismissWithAnimation = true
             sheet.behavior.skipCollapsed = true
-            sheet.behavior.state = BottomSheetBehavior.STATE_EXPANDED
-            sheet.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            // The editor consumes IME insets itself; resizing the dialog as well would
+            // subtract the keyboard twice on short displays.
+            sheet.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
+            sheet.window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
             sheet.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)?.apply {
+                fun resize(insets: WindowInsetsCompat?) {
+                    val bars = insets?.getInsets(WindowInsetsCompat.Type.systemBars())
+                    val windowHeight = if (android.os.Build.VERSION.SDK_INT >= 30) {
+                        requireContext().getSystemService(android.view.WindowManager::class.java).currentWindowMetrics.bounds.height()
+                    } else resources.displayMetrics.heightPixels
+                    val height = (windowHeight - (bars?.top ?: 0) - dpInt(16f)).coerceAtLeast(dpInt(160f))
+                    if (layoutParams.height != height) {
+                        layoutParams = layoutParams.apply { this.height = height }
+                    }
+                    sheet.behavior.maxHeight = height
+                    val bottom = maxOf(bars?.bottom ?: 0, insets?.getInsets(WindowInsetsCompat.Type.ime())?.bottom ?: 0)
+                    view?.findViewById<View>(R.id.taskDetailRoot)?.setPadding(dpInt(16f), dpInt(8f), dpInt(16f), bottom)
+                }
+                resize(ViewCompat.getRootWindowInsets(this))
+                view?.let { content ->
+                    ViewCompat.setOnApplyWindowInsetsListener(content) { _, insets ->
+                        resize(insets)
+                        insets
+                    }
+                    ViewCompat.requestApplyInsets(content)
+                }
                 backgroundTintList = null
                 background = GradientDrawable().apply {
                     setColor(palette.surface)
                     cornerRadii = floatArrayOf(dp(24f), dp(24f), dp(24f), dp(24f), 0f, 0f, 0f, 0f)
                 }
                 clipToOutline = true
+                sheet.behavior.state = BottomSheetBehavior.STATE_EXPANDED
             }
         }
     }
 
     private fun bindViews(view: View) {
-        etTitle = view.findViewById(R.id.etDetailTitle)
-        etDescription = view.findViewById(R.id.etDetailDescription)
+        topBarCreate = view.findViewById(R.id.topBarCreate)
+        topBarEdit = view.findViewById(R.id.topBarEdit)
+        btnDetailCollapse = view.findViewById(R.id.btnDetailCollapse)
+        tvDetailSheetTitle = view.findViewById(R.id.tvDetailSheetTitle)
+        btnDetailCreate = view.findViewById(R.id.btnDetailCreate)
+        tvDetailSaveStatus = view.findViewById(R.id.tvDetailSaveStatus)
+        btnDetailMore = view.findViewById(R.id.btnDetailMore)
+
         btnCheck = view.findViewById(R.id.btnDetailCheck)
         viewCheckCircle = view.findViewById(R.id.viewDetailCheckCircle)
         ivCheckmark = view.findViewById(R.id.ivDetailCheckmark)
+        etTitle = view.findViewById(R.id.etDetailTitle)
 
-        rowContainer = view.findViewById(R.id.rowDetailContainer)
-        viewContainerDot = view.findViewById(R.id.viewDetailContainerDot)
-        tvContainerValue = view.findViewById(R.id.tvDetailContainerValue)
-
-        rowDue = view.findViewById(R.id.rowDetailDue)
-        tvDueLabel = view.findViewById(R.id.tvDetailDueLabel)
+        chipDue = view.findViewById(R.id.chipDetailDue)
+        ivDueIcon = view.findViewById(R.id.ivDetailDueIcon)
         tvDueValue = view.findViewById(R.id.tvDetailDueValue)
         btnClearDue = view.findViewById(R.id.btnClearDue)
-        cardLegacyPlanDecision = view.findViewById(R.id.cardLegacyPlanDecision)
-        tvLegacyPlanPrompt = view.findViewById(R.id.tvLegacyPlanPrompt)
-        btnAcceptLegacyPlan = view.findViewById(R.id.btnAcceptLegacyPlan)
-        btnDismissLegacyPlan = view.findViewById(R.id.btnDismissLegacyPlan)
+
+        chipContainer = view.findViewById(R.id.chipDetailContainer)
+        ivContainerIcon = view.findViewById(R.id.ivDetailContainerIcon)
+        tvContainerValue = view.findViewById(R.id.tvDetailContainerValue)
+
+        etDescription = view.findViewById(R.id.etDetailDescription)
 
         rvSubtasks = view.findViewById(R.id.rvDetailSubtasks)
         tvSubtasksCount = view.findViewById(R.id.tvDetailSubtasksCount)
         etNewSubtask = view.findViewById(R.id.etNewSubtaskTitle)
         btnAddSubtask = view.findViewById(R.id.ivAddSubtask)
 
-        btnMore = view.findViewById(R.id.btnDetailMore)
+        rowFocus = view.findViewById(R.id.rowDetailFocus)
+        cardLegacyPlanDecision = view.findViewById(R.id.cardLegacyPlanDecision)
+        tvLegacyPlanPrompt = view.findViewById(R.id.tvLegacyPlanPrompt)
+        btnAcceptLegacyPlan = view.findViewById(R.id.btnAcceptLegacyPlan)
+        btnDismissLegacyPlan = view.findViewById(R.id.btnDismissLegacyPlan)
     }
 
     private fun dp(value: Float): Float = TaskThemeUtils.dp(requireContext(), value)
@@ -268,63 +359,108 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         view.clipToOutline = true
 
         val dragHandle = view.findViewById<View>(R.id.viewDragHandle)
-        val handleBg = GradientDrawable().apply {
+        dragHandle.background = GradientDrawable().apply {
             cornerRadius = dp(2f)
             setColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.4f))
         }
-        dragHandle.background = handleBg
 
-        val dividers = listOf(
-            view.findViewById<View>(R.id.divider1),
-            view.findViewById<View>(R.id.divider2)
-        )
-        for (d in dividers) {
-            d.setBackgroundColor(palette.divider)
+        listOf(R.id.dividerAttributes, R.id.dividerNote).forEach { id ->
+            view.findViewById<View>(id)?.setBackgroundColor(palette.divider)
         }
 
+        // Top bar theme
+        btnDetailCollapse.setTextColor(palette.onSurfaceVariant)
+        tvDetailSheetTitle.setTextColor(palette.onSurface)
+        btnDetailCreate.apply {
+            val blue = ColorStateList.valueOf(0xFF2563EB.toInt())
+            (this as? androidx.appcompat.widget.AppCompatButton)?.supportBackgroundTintList = blue
+            isAllCaps = false
+            minimumHeight = 0
+            minHeight = 0
+            background = GradientDrawable().apply {
+                cornerRadius = dp(18f)
+                setColor(0xFF2563EB.toInt())
+            }
+            backgroundTintList = blue
+            (this as? androidx.appcompat.widget.AppCompatButton)?.supportBackgroundTintList = blue
+            setTextColor(Color.WHITE)
+        }
+        tvDetailSaveStatus.setTextColor(palette.onSurfaceVariant)
+        btnDetailMore.setColorFilter(palette.onSurfaceVariant)
+
+        // Title and description
         etTitle.setTextColor(palette.onSurface)
-        view.findViewById<TextView>(R.id.tvDetailFocus).setTextColor(palette.accent)
-        view.findViewById<ImageView>(R.id.ivDetailFocusIcon).setColorFilter(palette.accent)
         etTitle.setHintTextColor(palette.onSurfaceVariant)
-        etDescription.setTextColor(palette.onSurfaceVariant)
+        etDescription.setTextColor(palette.onSurface)
         etDescription.setHintTextColor(palette.onSurfaceVariant)
+
+        // Subtasks theme
+        view.findViewById<TextView>(R.id.tvDetailDescriptionLabel).setTextColor(palette.onSurfaceVariant)
+        view.findViewById<TextView>(R.id.tvDetailSubtasksLabel).setTextColor(palette.onSurface)
+        tvSubtasksCount.setTextColor(palette.onSurfaceVariant)
         etNewSubtask.setTextColor(palette.onSurface)
         etNewSubtask.setHintTextColor(palette.onSurfaceVariant)
+        btnAddSubtask.setColorFilter(palette.onSurfaceVariant)
 
-        tvContainerValue.setTextColor(palette.onSurface)
-        tvDueValue.setTextColor(palette.onSurface)
-        val planBg = GradientDrawable().apply {
+        // Focus card theme
+        view.findViewById<TextView>(R.id.tvDetailFocusTitle)?.setTextColor(palette.onSurface)
+        view.findViewById<TextView>(R.id.tvDetailFocus)?.setTextColor(palette.onSurfaceVariant)
+        val focusBg = GradientDrawable().apply {
+            cornerRadius = dp(16f)
+            setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.04f))
+            setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.2f))
+        }
+        rowFocus.background = focusBg
+        val playBg = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(palette.accent)
+        }
+        view.findViewById<View>(R.id.layoutFocusPlay)?.background = playBg
+        view.findViewById<ImageView>(R.id.ivDetailFocusIcon)?.setColorFilter(Color.WHITE)
+
+        // Legacy plan card theme
+        cardLegacyPlanDecision.background = GradientDrawable().apply {
             cornerRadius = dp(8f)
             setColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.12f))
         }
-        cardLegacyPlanDecision.background = planBg
         tvLegacyPlanPrompt.setTextColor(palette.onSurface)
         btnDismissLegacyPlan.setTextColor(palette.onSurfaceVariant)
         btnAcceptLegacyPlan.setTextColor(palette.accent)
-        tvSubtasksCount.setTextColor(palette.onSurfaceVariant)
-        listOf(R.id.tvDetailContainerLabel, R.id.tvDetailDueLabel).forEach { id ->
-            view.findViewById<TextView>(id)?.setTextColor(palette.onSurfaceVariant)
-        }
-
-        btnClearDue.setColorFilter(palette.onSurfaceVariant)
-
-        listOf(R.id.ivDetailContainerIcon, R.id.ivDetailDueIcon,
-            R.id.ivDetailContainerChevron, R.id.ivAddSubtask).forEach { id ->
-            view.findViewById<ImageView>(id)?.setColorFilter(palette.onSurfaceVariant)
-        }
-        btnMore.setColorFilter(palette.onSurfaceVariant)
-        view.findViewById<TextView>(R.id.tvDetailSubtasksLabel).setTextColor(palette.onSurface)
     }
 
     private fun populateData() {
-        val task = currentTask ?: return
+        if (isCreateMode) {
+            topBarCreate.visibility = View.VISIBLE
+            topBarEdit.visibility = View.GONE
+            btnCheck.visibility = View.GONE
+            cardLegacyPlanDecision.visibility = View.GONE
+            rowFocus.visibility = View.GONE
 
-        etTitle.setText(task.title)
-        etDescription.setText(task.description)
-        updateCheckState()
-        updateContainerDisplay()
-        updateDueDisplay()
-        setupSubtasks()
+            val draft = TaskDraft.fromBundle(arguments?.getBundle(ARG_TASK_DRAFT))
+            etTitle.setText(draft.title)
+            etDescription.setText(draft.description)
+            selectedContainerId = draft.containerId
+            selectedDue = draft.due
+            updateContainerDisplay()
+            updateDueDisplay()
+            setupSubtasks()
+        } else {
+            topBarCreate.visibility = View.GONE
+            topBarEdit.visibility = View.VISIBLE
+            btnCheck.visibility = View.VISIBLE
+
+            val task = currentTask ?: return
+            etTitle.setText(task.title)
+            etDescription.setText(task.description)
+            selectedContainerId = task.containerId
+            selectedDue = task.due
+            isCompleted = task.isCompleted
+
+            updateCheckState()
+            updateContainerDisplay()
+            updateDueDisplay()
+            setupSubtasks()
+        }
     }
 
     private fun updateCheckState() {
@@ -350,78 +486,86 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
     private fun updateContainerDisplay() {
         val cid = selectedContainerId
-        viewContainerDot.visibility = View.GONE
-        if (cid == null) {
-            tvContainerValue.text = "Без раздела"
+        val containerName = if (cid == null) {
+            "Входящие"
         } else {
             val containers = organizationFacade.availableContainers()
-            val item = containers.find { it.key == cid.value }
-            if (item != null) {
-                tvContainerValue.text = item.name
-            } else {
-                viewContainerDot.visibility = View.GONE
-                tvContainerValue.text = "Недоступный раздел"
-            }
+            containers.find { it.key == cid.value }?.name ?: "Недоступный раздел"
         }
-        rowContainer.contentDescription = "Раздел: ${tvContainerValue.text}. Изменить раздел"
+        tvContainerValue.text = containerName
+        chipContainer.contentDescription = "Раздел: $containerName. Изменить раздел"
+
+        val hasCustomContainer = cid != null
+        chipContainer.background = GradientDrawable().apply {
+            cornerRadius = dp(18f)
+            setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.05f))
+            setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, if (hasCustomContainer) 0.35f else 0.2f))
+        }
+        tvContainerValue.setTextColor(if (hasCustomContainer) palette.onSurface else palette.onSurfaceVariant)
+        ivContainerIcon.setColorFilter(palette.onSurfaceVariant)
     }
 
     private fun updateDueDisplay() {
-        rowDue.contentDescription = null
-        val hasLegacy = currentTask?.hasPendingLegacyPlan == true && selectedDue is TaskDue.None
+        chipDue.contentDescription = null
+        val hasLegacy = !isCreateMode && currentTask?.hasPendingLegacyPlan == true && selectedDue is TaskDue.None
         if (hasLegacy) {
             cardLegacyPlanDecision.visibility = View.VISIBLE
             tvLegacyPlanPrompt.text = "Ранее запланировано: ${currentTask?.legacyPlanDate}"
         } else {
             cardLegacyPlanDecision.visibility = View.GONE
         }
-        when (val due = selectedDue) {
-            is TaskDue.None -> {
-                tvDueLabel.visibility = View.GONE
-                tvDueValue.text = "Задать срок"
-                tvDueValue.setTextColor(palette.onSurfaceVariant)
-                btnClearDue.visibility = View.GONE
-                rowDue.contentDescription = "Срок не задан. Нажмите, чтобы задать срок"
-            }
-            is TaskDue.Day -> {
-                tvDueLabel.visibility = View.VISIBLE
-                val ld = due.date.toLocalDate()
-                val today = getToday()
-                val text = when {
-                    ld == today -> "Сегодня"
-                    ld.daysSince2000 == today.daysSince2000 + 1 -> "Завтра"
-                    ld.daysSince2000 == today.daysSince2000 - 1 -> "Вчера"
-                    else -> "${ld.day}.${ld.month.toString().padStart(2, '0')}.${ld.year}"
-                }
-                tvDueValue.text = text
-                tvDueValue.setTextColor(palette.onSurface)
-                btnClearDue.visibility = View.VISIBLE
-                rowDue.contentDescription = "Срок: $text. Изменить срок"
-            }
-            is TaskDue.Timed -> {
-                tvDueLabel.visibility = View.VISIBLE
-                val df = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
-                val text = df.format(Date(due.epochMillis))
-                tvDueValue.text = text
-                tvDueValue.setTextColor(palette.onSurface)
-                btnClearDue.visibility = View.VISIBLE
-                rowDue.contentDescription = "Срок: $text. Изменить срок"
+
+        val hasDue = selectedDue !is TaskDue.None
+        val text = TaskDueDisplayFormatter.format(selectedDue, TaskDueDisplayFormatter.selectedLocale(requireContext()))
+        tvDueValue.text = text
+        btnClearDue.visibility = if (hasDue) View.VISIBLE else View.GONE
+        chipDue.contentDescription = if (hasDue) "Срок: $text. Изменить срок"
+            else "Срок не задан. Нажмите, чтобы задать срок"
+
+        chipDue.background = GradientDrawable().apply {
+            cornerRadius = dp(18f)
+            if (hasDue) {
+                setColor(MainTabsThemeBridge.withAlpha(palette.accent, 0.12f))
+                setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.accent, 0.4f))
+            } else {
+                setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.05f))
+                setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.2f))
             }
         }
+        val contentColor = if (hasDue) palette.accent else palette.onSurfaceVariant
+        tvDueValue.setTextColor(contentColor)
+        ivDueIcon.setColorFilter(contentColor)
+        btnClearDue.setColorFilter(contentColor)
     }
 
     private fun setupSubtasks() {
         subtasksAdapter = SubtasksAdapter(
             palette = palette,
-            onToggleComplete = { subtask ->
-                taskService.toggleComplete(subtask.id)
-                refreshSubtasks()
-                onTaskUpdatedListener?.invoke()
+            onToggleComplete = { item ->
+                if (isCreateMode) {
+                    val idx = item.id.toIntOrNull()
+                    if (idx != null && idx in draftSubtasks.indices) {
+                        draftSubtasks[idx] = draftSubtasks[idx].copy(isCompleted = !draftSubtasks[idx].isCompleted)
+                        refreshSubtasks()
+                    }
+                } else {
+                    taskService.toggleComplete(TaskId(item.id))
+                    refreshSubtasks()
+                    onTaskUpdatedListener?.invoke()
+                }
             },
-            onDeleteSubtask = { subtask ->
-                taskService.deleteTask(subtask.id)
-                refreshSubtasks()
-                onTaskUpdatedListener?.invoke()
+            onDeleteSubtask = { item ->
+                if (isCreateMode) {
+                    val idx = item.id.toIntOrNull()
+                    if (idx != null && idx in draftSubtasks.indices) {
+                        draftSubtasks.removeAt(idx)
+                        refreshSubtasks()
+                    }
+                } else {
+                    taskService.deleteTask(TaskId(item.id))
+                    refreshSubtasks()
+                    onTaskUpdatedListener?.invoke()
+                }
             }
         )
 
@@ -439,96 +583,191 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun refreshSubtasks() {
-        val task = currentTask ?: return
-        val app = requireContext().applicationContext as HabitsApplication
-        val subtasks = app.component.userTaskRepository.getSubtasks(task.id)
-        subtasksAdapter.updateData(subtasks)
-
-        val completedCount = subtasks.count { it.isCompleted }
-        tvSubtasksCount.text = "$completedCount из ${subtasks.size}"
+        if (isCreateMode) {
+            val items = draftSubtasks.mapIndexed { idx, sub ->
+                SubtasksAdapter.SubtaskItem(
+                    id = idx.toString(),
+                    title = sub.title,
+                    isCompleted = sub.isCompleted
+                )
+            }
+            subtasksAdapter.updateData(items)
+            val completed = draftSubtasks.count { it.isCompleted }
+            tvSubtasksCount.text = "$completed / ${draftSubtasks.size}"
+        } else {
+            val task = currentTask ?: return
+            val app = requireContext().applicationContext as HabitsApplication
+            val subtasks = app.component.userTaskRepository.getSubtasks(task.id)
+            val items = subtasks.map {
+                SubtasksAdapter.SubtaskItem(
+                    id = it.id.value,
+                    title = it.title,
+                    isCompleted = it.isCompleted
+                )
+            }
+            subtasksAdapter.updateData(items)
+            val completedCount = subtasks.count { it.isCompleted }
+            tvSubtasksCount.text = "$completedCount / ${subtasks.size}"
+        }
     }
 
     private fun addNewSubtask() {
         val title = etNewSubtask.text?.toString()?.trim() ?: ""
         if (title.isBlank()) return
-        val task = currentTask ?: return
 
-        taskService.createTask(
-            title = title,
-            parentTaskId = task.id,
-            containerId = selectedContainerId,
-        )
-        etNewSubtask.text?.clear()
-        refreshSubtasks()
-        onTaskUpdatedListener?.invoke()
+        if (isCreateMode) {
+            draftSubtasks.add(TaskDraft.DraftSubtask(title = title, isCompleted = false))
+            etNewSubtask.text?.clear()
+            refreshSubtasks()
+        } else {
+            val task = currentTask ?: return
+            taskService.createTask(
+                title = title,
+                parentTaskId = task.id,
+                containerId = selectedContainerId,
+            )
+            etNewSubtask.text?.clear()
+            refreshSubtasks()
+            onTaskUpdatedListener?.invoke()
+        }
     }
 
     private fun setupListeners() {
-        etTitle.doAfterTextChanged {
-            saveHandler.removeCallbacks(pendingSave)
-            saveHandler.postDelayed(pendingSave, 500)
+        if (isCreateMode) {
+            btnDetailCollapse.setOnClickListener {
+                dismiss()
+            }
+
+            btnDetailCreate.setOnClickListener {
+                submitCreateTask()
+            }
+        } else {
+            etTitle.doAfterTextChanged {
+                tvDetailSaveStatus.text = "Сохранение…"
+                tvDetailSaveStatus.alpha = 0.7f
+                saveHandler.removeCallbacks(pendingSave)
+                saveHandler.postDelayed(pendingSave, 500)
+            }
+
+            etDescription.doAfterTextChanged {
+                tvDetailSaveStatus.text = "Сохранение…"
+                tvDetailSaveStatus.alpha = 0.7f
+                saveHandler.removeCallbacks(pendingSave)
+                saveHandler.postDelayed(pendingSave, 500)
+            }
+
+            btnCheck.setOnClickListener {
+                isCompleted = !isCompleted
+                updateCheckState()
+                saveChanges()
+            }
+
+            btnDetailMore.setOnClickListener {
+                PopupMenu(requireContext(), btnDetailMore).apply {
+                    menu.add("Удалить задачу")
+                    setOnMenuItemClickListener {
+                        confirmDelete()
+                        true
+                    }
+                }.show()
+            }
+
+            btnAcceptLegacyPlan.setOnClickListener {
+                val t = currentTask ?: return@setOnClickListener
+                val updated = try {
+                    taskService.resolveLegacyPlan(t.id, accept = true)
+                } catch (_: org.isoron.uhabits.core.userTasks.InvalidLegacyPlanException) {
+                    AlertDialog.Builder(requireContext())
+                        .setMessage("Не удалось распознать старую дату. Исходное значение сохранено. Выберите корректный срок вручную или нажмите «Отклонить».")
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show()
+                    return@setOnClickListener
+                }
+                currentTask = updated
+                selectedDue = updated.due
+                updateDueDisplay()
+                onTaskUpdatedListener?.invoke()
+            }
+
+            btnDismissLegacyPlan.setOnClickListener {
+                val t = currentTask ?: return@setOnClickListener
+                val updated = taskService.resolveLegacyPlan(t.id, accept = false)
+                currentTask = updated
+                selectedDue = updated.due
+                updateDueDisplay()
+                onTaskUpdatedListener?.invoke()
+            }
         }
 
-        etDescription.doAfterTextChanged {
-            saveHandler.removeCallbacks(pendingSave)
-            saveHandler.postDelayed(pendingSave, 500)
-        }
-
-        btnCheck.setOnClickListener {
-            isCompleted = !isCompleted
-            updateCheckState()
-            saveChanges()
-        }
-
-        rowContainer.setOnClickListener {
+        chipContainer.setOnClickListener {
             showContainerPicker()
         }
 
-        rowDue.setOnClickListener {
+        chipDue.setOnClickListener {
             showDuePicker()
         }
 
         btnClearDue.setOnClickListener {
             selectedDue = TaskDue.None
             updateDueDisplay()
-            saveChanges(forceDue = true)
-        }
-
-        btnAcceptLegacyPlan.setOnClickListener {
-            val t = currentTask ?: return@setOnClickListener
-            val updated = try {
-                taskService.resolveLegacyPlan(t.id, accept = true)
-            } catch (_: org.isoron.uhabits.core.userTasks.InvalidLegacyPlanException) {
-                AlertDialog.Builder(requireContext())
-                    .setMessage("Не удалось распознать старую дату. Исходное значение сохранено. Выберите корректный срок вручную или нажмите «Отклонить».")
-                    .setPositiveButton(android.R.string.ok, null)
-                    .show()
-                return@setOnClickListener
+            if (!isCreateMode) {
+                saveChanges(forceDue = true)
             }
-            currentTask = updated
-            selectedDue = updated.due
-            updateDueDisplay()
-            onTaskUpdatedListener?.invoke()
+        }
+    }
+
+    private fun submitCreateTask() {
+        if (taskCreated || !btnDetailCreate.isEnabled) return
+        val title = etTitle.text?.toString()?.trim().orEmpty()
+        if (title.isBlank()) {
+            etTitle.requestFocus()
+            return
         }
 
-        btnDismissLegacyPlan.setOnClickListener {
-            val t = currentTask ?: return@setOnClickListener
-            val updated = taskService.resolveLegacyPlan(t.id, accept = false)
-            currentTask = updated
-            selectedDue = updated.due
-            updateDueDisplay()
-            onTaskUpdatedListener?.invoke()
-        }
+        // Double-tap prevention
+        btnDetailCreate.isEnabled = false
 
-        btnMore.setOnClickListener {
-            PopupMenu(requireContext(), btnMore).apply {
-                menu.add("Удалить задачу")
-                setOnMenuItemClickListener {
-                    confirmDelete()
-                    true
+        val description = etDescription.text?.toString()?.trim().orEmpty()
+        val due = selectedDue
+        val containerId = selectedContainerId
+        val subtasksSnapshot = draftSubtasks.toList()
+
+        try { launchComponent.db.runInTransaction {
+            val mainTask = taskService.createTask(
+                title = title,
+                description = description,
+                containerId = containerId,
+                due = due,
+            )
+            for (sub in subtasksSnapshot) {
+                if (sub.title.isNotBlank()) {
+                    val createdSub = taskService.createTask(
+                        title = sub.title,
+                        parentTaskId = mainTask.id,
+                        containerId = containerId,
+                    )
+                    if (sub.isCompleted) {
+                        taskService.setCompleted(createdSub.id, true)
+                    }
                 }
-            }.show()
+            }
+            mainTask
+        } } catch (e: Exception) {
+            android.util.Log.e("TaskDetailBottomSheet", "Task creation failed", e)
+            btnDetailCreate.isEnabled = true
+            Toast.makeText(requireContext(), "Не удалось создать задачу. Попробуйте ещё раз.", Toast.LENGTH_LONG).show()
+            return
         }
+
+        taskCreated = true
+        parentFragmentManager.setFragmentResult(
+            REQUEST_KEY_CREATE,
+            Bundle().apply {
+                putString(RESULT_ACTION, ACTION_CREATED)
+            }
+        )
+        onTaskUpdatedListener?.invoke()
+        dismiss()
     }
 
     private fun confirmDelete() {
@@ -565,14 +804,19 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
     private fun saveChanges(forceDue: Boolean = false) {
         saveHandler.removeCallbacks(pendingSave)
-        if (!viewReady || taskDeleted) return
+        if (!viewReady || taskDeleted || isCreateMode) return
         val task = currentTask ?: return
         val newTitle = etTitle.text?.toString()?.trim()?.takeIf { it.isNotBlank() } ?: task.title
         val newDesc = etDescription.text?.toString()?.trim() ?: ""
 
         val propertiesChanged = newTitle != task.title || newDesc != task.description ||
             selectedContainerId != task.containerId || selectedDue != task.due || forceDue
-        if (!propertiesChanged && isCompleted == task.isCompleted) return
+        if (!propertiesChanged && isCompleted == task.isCompleted) {
+            tvDetailSaveStatus.text = "Изменения сохранены"
+            tvDetailSaveStatus.alpha = 1f
+            return
+        }
+
         var savedTask = task
         if (propertiesChanged) savedTask = taskService.updateTask(
             id = task.id,
@@ -589,44 +833,94 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
         currentTask = savedTask
         updateDueDisplay()
+        tvDetailSaveStatus.text = "Изменения сохранены"
+        tvDetailSaveStatus.alpha = 1f
         onTaskUpdatedListener?.invoke()
     }
 
     override fun onPause() {
-        saveChanges()
+        if (!isCreateMode) {
+            saveChanges()
+        }
         super.onPause()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         if (viewReady) {
-            saveChanges()
+            if (!isCreateMode) {
+                saveChanges()
+            }
             outState.putString("detailTitle", etTitle.text.toString())
             outState.putString("detailNotes", etDescription.text.toString())
             outState.putString("detailSubtask", etNewSubtask.text.toString())
+            if (isCreateMode) {
+                val currentDraft = buildCurrentDraft()
+                outState.putBundle("draftBundle", currentDraft.toBundle())
+            }
         }
         super.onSaveInstanceState(outState)
     }
 
+    private fun buildCurrentDraft(): TaskDraft {
+        return TaskDraft(
+            title = if (::etTitle.isInitialized) etTitle.text?.toString().orEmpty() else "",
+            description = if (::etDescription.isInitialized) etDescription.text?.toString().orEmpty() else "",
+            due = selectedDue,
+            containerId = selectedContainerId,
+            subtasks = draftSubtasks.toList()
+        )
+    }
+
     override fun onDismiss(dialog: DialogInterface) {
-        saveChanges()
+        if (!isCreateMode) {
+            saveChanges()
+        } else if (!taskCreated) {
+            // Sheet was dismissed/collapsed without saving: return current draft back to Quick Add
+            val currentDraft = buildCurrentDraft()
+            parentFragmentManager.setFragmentResult(
+                REQUEST_KEY_CREATE,
+                Bundle().apply {
+                    putString(RESULT_ACTION, ACTION_COLLAPSED)
+                    putBundle(RESULT_DRAFT, currentDraft.toBundle())
+                }
+            )
+        }
         super.onDismiss(dialog)
     }
 
     override fun onDestroyView() {
-        saveChanges()
+        if (!isCreateMode) {
+            saveChanges()
+        }
         viewReady = false
         saveHandler.removeCallbacks(pendingSave)
         super.onDestroyView()
     }
 
     companion object {
+        const val REQUEST_KEY_CREATE = "task_detail_create_result"
+        const val RESULT_ACTION = "action"
+        const val ACTION_CREATED = "action_created"
+        const val ACTION_COLLAPSED = "action_collapsed"
+        const val RESULT_DRAFT = "draft"
+
         private const val ARG_TASK_ID = "task_id"
+        private const val ARG_TASK_DRAFT = "task_draft"
 
         fun newInstance(taskId: TaskId): TaskDetailBottomSheet {
             return TaskDetailBottomSheet().apply {
                 arguments = Bundle().apply {
                     putString(ARG_TASK_ID, taskId.value)
                     putString("focusDatasetId", HabitsApplication.component.session.datasetId)
+                }
+            }
+        }
+
+        fun newInstanceForCreate(draft: TaskDraft, datasetId: String): TaskDetailBottomSheet {
+            return TaskDetailBottomSheet().apply {
+                arguments = Bundle().apply {
+                    putBundle(ARG_TASK_DRAFT, draft.toBundle())
+                    putString("focusDatasetId", datasetId)
                 }
             }
         }

@@ -238,7 +238,7 @@ class TaskDuePickerBottomSheet : BottomSheetDialogFragment() {
             else root.layoutParams = root.layoutParams.apply { height = targetHeight }
         }
         refresh = {
-            val locale = resources.configuration.locales.takeUnless { it.isEmpty }?.get(0) ?: java.util.Locale.getDefault()
+            val locale = TaskDueDisplayFormatter.selectedLocale(requireContext())
             summary.text = date?.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM", locale))?.replaceFirstChar { it.titlecase(locale) } ?: "Без срока"
             shortcuts.removeAllViews()
             val today = LocalDate.now(zone)
@@ -325,7 +325,7 @@ class TaskDuePickerBottomSheet : BottomSheetDialogFragment() {
             "TIMED" -> TaskDue.Timed.of(bundle.getLong("dueMillis"), bundle.getString("dueZone"))
             else -> TaskDue.None
         }
-        private fun encode(due: TaskDue) = Bundle().apply {
+        fun encode(due: TaskDue) = Bundle().apply {
             when (due) {
                 is TaskDue.None -> putString("dueKind", "NONE")
                 is TaskDue.Day -> { putString("dueKind", "DAY"); putString("dueDate", due.date.isoDate) }

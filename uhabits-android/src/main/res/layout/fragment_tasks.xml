@@ -117,7 +117,7 @@
         </LinearLayout>
     </FrameLayout>
 
-    <!-- Quick Add Docked Bar at the bottom (Concept A: flat docked bar with top divider, no capsule) -->
+    <!-- Quick Add Docked Bar at the bottom -->
     <LinearLayout
         android:id="@+id/layoutQuickAddContainer"
         android:layout_width="match_parent"
@@ -130,7 +130,7 @@
             android:layout_width="match_parent"
             android:layout_height="1dp" />
 
-        <!-- Collapsed Persistent Row: "+ Новая задача" -->
+        <!-- Collapsed Persistent Row: "+ Добавить задачу…" -->
         <LinearLayout
             android:id="@+id/layoutQuickAddCollapsed"
             android:layout_width="match_parent"
@@ -167,7 +167,7 @@
             android:orientation="vertical"
             android:visibility="gone">
 
-            <!-- Input Row: field + submit button -->
+            <!-- Input Row: field + expand chevron + submit button -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="48dp"
@@ -190,9 +190,20 @@
                     android:singleLine="true" />
 
                 <ImageButton
+                    android:id="@+id/btnQuickAddExpand"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:padding="10dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:src="@drawable/ic_chevron_up"
+                    android:contentDescription="Развернуть в полный редактор" />
+
+                <ImageButton
                     android:id="@+id/btnQuickAddSubmit"
-                    android:layout_width="48dp"
-                    android:layout_height="48dp"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_marginStart="4dp"
+                    android:padding="10dp"
                     android:background="?android:attr/selectableItemBackgroundBorderless"
                     android:src="@drawable/ic_toolbar_add"
                     android:contentDescription="Добавить" />
@@ -207,19 +218,18 @@
                 android:gravity="center_vertical"
                 android:paddingStart="12dp"
                 android:paddingEnd="12dp"
-                android:paddingBottom="4dp">
+                android:paddingBottom="6dp">
 
                 <TextView
                     android:id="@+id/quickDue"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="48dp"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
                     android:gravity="center_vertical"
-                    android:paddingStart="8dp"
-                    android:paddingEnd="8dp"
-                    android:textSize="12sp"
-                    android:fontFamily="sans-serif"
-                    android:text="Сегодня"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:textSize="13sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:text="Задать срок"
                     android:background="?android:attr/selectableItemBackground"
                     android:clickable="true"
                     android:focusable="true"
@@ -230,14 +240,14 @@
                     android:id="@+id/quickContainer"
                     android:layout_width="0dp"
                     android:layout_weight="1"
-                    android:layout_height="48dp"
+                    android:layout_height="36dp"
                     android:gravity="center_vertical"
-                    android:paddingStart="8dp"
-                    android:paddingEnd="8dp"
-                    android:layout_marginStart="4dp"
-                    android:textSize="12sp"
-                    android:fontFamily="sans-serif"
-                    android:text="Раздел"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:layout_marginStart="8dp"
+                    android:textSize="13sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:text="Входящие"
                     android:maxLines="1"
                     android:ellipsize="end"
                     android:background="?android:attr/selectableItemBackground"

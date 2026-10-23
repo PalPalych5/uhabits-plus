@@ -33,17 +33,22 @@ import androidx.recyclerview.widget.RecyclerView
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.settings.SettingsThemePalette
-import org.isoron.uhabits.core.userTasks.UserTask
 
 class SubtasksAdapter(
     private var palette: SettingsThemePalette,
-    private val onToggleComplete: (UserTask) -> Unit,
-    private val onDeleteSubtask: (UserTask) -> Unit,
+    private val onToggleComplete: (SubtaskItem) -> Unit,
+    private val onDeleteSubtask: (SubtaskItem) -> Unit,
 ) : RecyclerView.Adapter<SubtasksAdapter.SubtaskViewHolder>() {
 
-    private var subtasks: List<UserTask> = emptyList()
+    data class SubtaskItem(
+        val id: String,
+        val title: String,
+        val isCompleted: Boolean,
+    )
 
-    fun updateData(newSubtasks: List<UserTask>) {
+    private var subtasks: List<SubtaskItem> = emptyList()
+
+    fun updateData(newSubtasks: List<SubtaskItem>) {
         subtasks = newSubtasks
         notifyDataSetChanged()
     }
@@ -71,7 +76,7 @@ class SubtasksAdapter(
         private val tvTitle: TextView = itemView.findViewById(R.id.tvSubtaskTitle)
         private val btnDelete: ImageButton = itemView.findViewById(R.id.btnDeleteSubtask)
 
-        fun bind(subtask: UserTask) {
+        fun bind(subtask: SubtaskItem) {
             val isCompleted = subtask.isCompleted
 
             tvTitle.text = subtask.title

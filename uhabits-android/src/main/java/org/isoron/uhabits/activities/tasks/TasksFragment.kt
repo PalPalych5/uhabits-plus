@@ -36,9 +36,12 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.PopupMenu
+import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
+import org.isoron.platform.io.runInTransaction
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -107,6 +110,8 @@ class TasksFragment : Fragment() {
     private var quickContainer: ContainerId? = null
     private var quickDraftRestored = false
     private var quickExpanded = false
+    private var quickDraftNotes: String = ""
+    private val quickDraftSubtasks = mutableListOf<TaskDraft.DraftSubtask>()
     private var activeSmartView: TaskSmartView = TaskSmartView.TODAY
     private var selectedContainerFilter: ContainerId? = null
 
@@ -129,6 +134,7 @@ class TasksFragment : Fragment() {
     private lateinit var tvQuickAddCollapsedLabel: TextView
     private lateinit var layoutQuickAddExpanded: LinearLayout
     private lateinit var etQuickAddTitle: EditText
+    private lateinit var btnQuickAddExpand: ImageButton
     private lateinit var btnQuickAddSubmit: ImageButton
     private lateinit var quickAddOptions: LinearLayout
     private lateinit var quickDueView: TextView
@@ -156,6 +162,13 @@ class TasksFragment : Fragment() {
             quickExpanded = it.getBoolean("quickExpanded", false)
             quickDraftRestored = true
             restoredTitle = it.getString("quickTitle")
+            quickDraftNotes = it.getString("quickDraftNotes").orEmpty()
+            val subTitles = it.getStringArrayList("quickDraftSubtaskTitles").orEmpty()
+            val subCompleted = it.getBooleanArray("quickDraftSubtaskCompleted") ?: BooleanArray(subTitles.size)
+            quickDraftSubtasks.clear()
+            subTitles.forEachIndexed { i, st ->
+                quickDraftSubtasks.add(TaskDraft.DraftSubtask(st, subCompleted.getOrElse(i) { false }))
+            }
             calendarMode = it.getBoolean("calendarMode")
             selectedDay = LocalDate(it.getInt("selectedDay", getToday().daysSince2000))
             calendarMonth.timeInMillis = it.getLong("calendarMonth", calendarMonth.timeInMillis)
@@ -193,6 +206,7 @@ class TasksFragment : Fragment() {
 
     override fun onResume() {
         super.onResume()
+        (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(quickExpanded)
         workspaceActive = true
         component.workspaceReadRevision.addListener(workspaceChanged)
         palette = MainTabsThemeBridge.resolve(requireContext())
@@ -203,6 +217,7 @@ class TasksFragment : Fragment() {
     }
 
     override fun onPause() {
+        (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(false)
         workspaceActive = false
         component.workspaceReadRevision.removeListener(workspaceChanged)
         loadGeneration++
@@ -212,6 +227,7 @@ class TasksFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(false)
         loadGeneration++
         loadJob?.cancel()
         loadJob = null
@@ -237,6 +253,9 @@ class TasksFragment : Fragment() {
         outState.putString("quickContainer", quickContainer?.value)
         outState.putBoolean("quickExpanded", quickExpanded)
         outState.putString("quickTitle", if (::etQuickAddTitle.isInitialized) etQuickAddTitle.text?.toString() else restoredTitle)
+        outState.putString("quickDraftNotes", quickDraftNotes)
+        outState.putStringArrayList("quickDraftSubtaskTitles", ArrayList(quickDraftSubtasks.map { it.title }))
+        outState.putBooleanArray("quickDraftSubtaskCompleted", quickDraftSubtasks.map { it.isCompleted }.toBooleanArray())
         outState.putBoolean("calendarMode", calendarMode)
         outState.putInt("selectedDay", selectedDay.daysSince2000)
         outState.putLong("calendarMonth", calendarMonth.timeInMillis)
@@ -275,6 +294,7 @@ class TasksFragment : Fragment() {
         tvQuickAddCollapsedLabel = view.findViewById(R.id.tvQuickAddCollapsedLabel)
         layoutQuickAddExpanded = view.findViewById(R.id.layoutQuickAddExpanded)
         etQuickAddTitle = view.findViewById(R.id.etQuickAddTitle)
+        btnQuickAddExpand = view.findViewById(R.id.btnQuickAddExpand)
         btnQuickAddSubmit = view.findViewById(R.id.btnQuickAddSubmit)
         quickAddOptions = view.findViewById(R.id.quickAddOptions)
         quickDueView = view.findViewById(R.id.quickDue)
@@ -308,6 +328,7 @@ class TasksFragment : Fragment() {
         tvQuickAddCollapsedLabel.setTextColor(palette.onSurfaceVariant)
         etQuickAddTitle.setTextColor(palette.onSurface)
         etQuickAddTitle.setHintTextColor(palette.onSurfaceVariant)
+        btnQuickAddExpand.setColorFilter(palette.onSurfaceVariant)
         btnQuickAddSubmit.setColorFilter(palette.accent)
 
         quickDueView.setTextColor(palette.onSurfaceVariant)
@@ -389,41 +410,62 @@ class TasksFragment : Fragment() {
     }
 
     private fun setupQuickAdd() {
+        fun updateSubmitButtonState() {
+            val hasText = !etQuickAddTitle.text.isNullOrBlank()
+            btnQuickAddSubmit.alpha = if (hasText) 1.0f else 0.45f
+            btnQuickAddSubmit.setColorFilter(if (hasText) palette.accent else palette.onSurfaceVariant)
+        }
+
         fun refreshOptionLabels() {
-            listOf(quickDueView to R.drawable.ic_cat_calendar, quickContainerView to R.drawable.ic_cat_folder).forEach { (label, icon) ->
-                val drawable = androidx.core.content.ContextCompat.getDrawable(requireContext(), icon)?.mutate()
-                drawable?.setTint(palette.onSurfaceVariant)
-                drawable?.setBounds(0, 0, dpInt(16f), dpInt(16f))
-                label.setCompoundDrawablesRelative(drawable, null, null, null)
-                label.compoundDrawablePadding = dpInt(6f)
-                val attachment = android.graphics.drawable.InsetDrawable(GradientDrawable().apply {
-                    cornerRadius = dp(8f); setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, .045f))
-                }, 0, dpInt(8f), 0, dpInt(8f))
-                label.background = android.graphics.drawable.RippleDrawable(
-                    android.content.res.ColorStateList.valueOf(MainTabsThemeBridge.withAlpha(palette.accent, .16f)), attachment, null)
-            }
-            val dueText = when (val d = quickTaskDue) {
-                is TaskDue.None -> "Срок"
-                is TaskDue.Day -> {
-                    val ld = d.date.toLocalDate()
-                    val today = getToday()
-                    if (ld == today) "Сегодня"
-                    else if (ld.daysSince2000 == today.daysSince2000 + 1) "Завтра"
-                    else "${ld.day}.${ld.month}"
+            val hasDue = quickTaskDue !is TaskDue.None
+            val dueBg = GradientDrawable().apply {
+                cornerRadius = dp(18f)
+                if (hasDue) {
+                    setColor(MainTabsThemeBridge.withAlpha(palette.accent, 0.12f))
+                    setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.accent, 0.4f))
+                } else {
+                    setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.05f))
+                    setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.2f))
                 }
-                is TaskDue.Timed -> SimpleDateFormat("d MMM, HH:mm", Locale("ru")).format(Date(d.epochMillis))
             }
+            quickDueView.background = dueBg
+
+            val dueDrawable = androidx.core.content.ContextCompat.getDrawable(requireContext(), R.drawable.ic_cat_calendar)?.mutate()
+            val dueColor = if (hasDue) palette.accent else palette.onSurfaceVariant
+            dueDrawable?.setTint(dueColor)
+            dueDrawable?.setBounds(0, 0, dpInt(16f), dpInt(16f))
+            quickDueView.setCompoundDrawablesRelative(dueDrawable, null, null, null)
+            quickDueView.compoundDrawablePadding = dpInt(6f)
+            quickDueView.setTextColor(dueColor)
+
+            val dueText = TaskDueDisplayFormatter.format(quickTaskDue, TaskDueDisplayFormatter.selectedLocale(requireContext()))
             quickDueView.text = dueText
-            quickDueView.setTextColor(if (quickTaskDue !is TaskDue.None) palette.accent else palette.onSurfaceVariant)
+
+            val hasContainer = quickContainer != null
+            val containerBg = GradientDrawable().apply {
+                cornerRadius = dp(18f)
+                setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.05f))
+                setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, if (hasContainer) 0.35f else 0.2f))
+            }
+            quickContainerView.background = containerBg
+
+            val containerDrawable = androidx.core.content.ContextCompat.getDrawable(requireContext(), R.drawable.ic_cat_folder)?.mutate()
+            containerDrawable?.setTint(palette.onSurfaceVariant)
+            containerDrawable?.setBounds(0, 0, dpInt(16f), dpInt(16f))
+            quickContainerView.setCompoundDrawablesRelative(containerDrawable, null, null, null)
+            quickContainerView.compoundDrawablePadding = dpInt(6f)
 
             val containerItem = workspaceSnapshot?.availableContainers.orEmpty().find { it.key == quickContainer?.value }
-            val containerText = containerItem?.let { it.name } ?: "Раздел"
+            val containerText = containerItem?.name ?: "Входящие"
             quickContainerView.text = containerText
-            quickContainerView.setTextColor(if (quickContainer != null) palette.accent else palette.onSurfaceVariant)
+            quickContainerView.setTextColor(if (hasContainer) palette.onSurface else palette.onSurfaceVariant)
+
+            updateSubmitButtonState()
         }
 
         fun expandComposer() {
             quickExpanded = true
+            (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(true)
             layoutQuickAddCollapsed.visibility = View.GONE
             layoutQuickAddExpanded.visibility = View.VISIBLE
             etQuickAddTitle.requestFocus()
@@ -442,6 +484,7 @@ class TasksFragment : Fragment() {
 
         fun collapseComposer() {
             quickExpanded = false
+            (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(false)
             layoutQuickAddExpanded.visibility = View.GONE
             layoutQuickAddCollapsed.visibility = View.VISIBLE
             val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
@@ -483,12 +526,87 @@ class TasksFragment : Fragment() {
             }
         }
 
+        btnQuickAddExpand.setOnClickListener {
+            val title = etQuickAddTitle.text?.toString().orEmpty()
+            val draft = TaskDraft(
+                title = title,
+                description = quickDraftNotes,
+                due = quickTaskDue,
+                containerId = quickContainer,
+                subtasks = quickDraftSubtasks.toList()
+            )
+            TaskDetailBottomSheet.newInstanceForCreate(draft, component.session.datasetId)
+                .show(childFragmentManager, "task_detail_create")
+        }
+
+        childFragmentManager.setFragmentResultListener(TaskDetailBottomSheet.REQUEST_KEY_CREATE, viewLifecycleOwner) { _, result ->
+            if (component !== HabitsApplication.component) return@setFragmentResultListener
+            val action = result.getString(TaskDetailBottomSheet.RESULT_ACTION)
+            if (action == TaskDetailBottomSheet.ACTION_CREATED) {
+                etQuickAddTitle.text?.clear()
+                quickDraftNotes = ""
+                quickDraftSubtasks.clear()
+                quickDraftRestored = false
+                collapseComposer()
+                loadTasks()
+            } else if (action == TaskDetailBottomSheet.ACTION_COLLAPSED) {
+                val returnedDraft = TaskDraft.fromBundle(result.getBundle(TaskDetailBottomSheet.RESULT_DRAFT))
+                etQuickAddTitle.setText(returnedDraft.title)
+                etQuickAddTitle.setSelection(returnedDraft.title.length)
+                quickTaskDue = returnedDraft.due
+                quickContainer = returnedDraft.containerId
+                quickDraftNotes = returnedDraft.description
+                quickDraftSubtasks.clear()
+                quickDraftSubtasks.addAll(returnedDraft.subtasks)
+                quickDraftRestored = true
+                expandComposer()
+                refreshOptionLabels()
+            }
+        }
+
         fun submitQuickAdd() {
+            if (!btnQuickAddSubmit.isEnabled) return
             val title = etQuickAddTitle.text?.toString()?.trim().orEmpty()
             if (title.isBlank()) return
-            val created = taskService.createTask(title = title, containerId = quickContainer, due = quickTaskDue)
+            btnQuickAddSubmit.isEnabled = false
+
+            val notes = quickDraftNotes
+            val subs = quickDraftSubtasks.toList()
+            val due = quickTaskDue
+            val cid = quickContainer
+
+            val created = try { component.db.runInTransaction {
+                val mainTask = taskService.createTask(
+                    title = title,
+                    description = notes,
+                    containerId = cid,
+                    due = due,
+                )
+                for (sub in subs) {
+                    if (sub.title.isNotBlank()) {
+                        val createdSub = taskService.createTask(
+                            title = sub.title,
+                            parentTaskId = mainTask.id,
+                            containerId = cid,
+                        )
+                        if (sub.isCompleted) {
+                            taskService.setCompleted(createdSub.id, true)
+                        }
+                    }
+                }
+                mainTask
+            } } catch (e: Exception) {
+                android.util.Log.e("TasksFragment", "Task creation failed", e)
+                btnQuickAddSubmit.isEnabled = true
+                Toast.makeText(requireContext(), "Не удалось создать задачу. Попробуйте ещё раз.", Toast.LENGTH_LONG).show()
+                return
+            }
+
             etQuickAddTitle.text?.clear()
+            quickDraftNotes = ""
+            quickDraftSubtasks.clear()
             quickDraftRestored = false
+            btnQuickAddSubmit.isEnabled = true
             collapseComposer()
 
             // Reveal the new task even when it no longer matches the current view/filter.
@@ -496,8 +614,8 @@ class TasksFragment : Fragment() {
                 activeSmartView = TaskSmartView.ALL
                 updateSmartViewLabel()
             }
-            if (quickContainer != selectedContainerFilter) {
-                selectedContainerFilter = quickContainer
+            if (cid != selectedContainerFilter) {
+                selectedContainerFilter = cid
                 updateSmartViewLabel()
             }
             loadTasks()
@@ -507,6 +625,9 @@ class TasksFragment : Fragment() {
         restoredTitle?.let { etQuickAddTitle.setText(it); restoredTitle = null }
         etQuickAddTitle.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_DONE) { submitQuickAdd(); true } else false
+        }
+        etQuickAddTitle.doAfterTextChanged {
+            updateSubmitButtonState()
         }
         refreshQuickLabels = ::refreshOptionLabels
         refreshOptionLabels()
@@ -813,6 +934,7 @@ class TasksFragment : Fragment() {
         }
         if (quickExpanded) {
             quickExpanded = false
+            (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(false)
             layoutQuickAddExpanded.visibility = View.GONE
             layoutQuickAddCollapsed.visibility = View.VISIBLE
             (requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)?.hideSoftInputFromWindow(etQuickAddTitle.windowToken, 0)
