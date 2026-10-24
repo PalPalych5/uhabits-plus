@@ -125,6 +125,9 @@ class TasksFragment : Fragment() {
     private lateinit var adapter: TasksAdapter
     private lateinit var overdueAdapter: TasksAdapter
     private lateinit var completedAdapter: TasksAdapter
+    private lateinit var groupedAdapter: TaskListAdapter
+    private lateinit var createGroupAdapter: () -> TasksAdapter
+    private val groupAdapters = mutableMapOf<String, Pair<TaskSectionAdapter, TasksAdapter>>()
     private lateinit var overdueHeader: TaskSectionAdapter
     private lateinit var activeHeader: TaskSectionAdapter
     private lateinit var completedHeader: TaskSectionAdapter
@@ -419,6 +422,9 @@ class TasksFragment : Fragment() {
             }
         )
         adapter = taskAdapter()
+        createGroupAdapter = ::taskAdapter
+        groupAdapters.clear()
+        groupedAdapter = TaskListAdapter()
         overdueAdapter = taskAdapter()
         completedAdapter = taskAdapter()
         overdueHeader = TaskSectionAdapter("Просроченные") {
@@ -432,7 +438,7 @@ class TasksFragment : Fragment() {
         }
         rvTasks.layoutManager = LinearLayoutManager(requireContext())
         rvTasks.adapter = TaskListAdapter(
-            overdueHeader, overdueAdapter, activeHeader, adapter, completedHeader, completedAdapter)
+            overdueHeader, overdueAdapter, activeHeader, groupedAdapter, completedHeader, completedAdapter)
     }
 
     private fun setupQuickAdd() {
@@ -728,7 +734,14 @@ class TasksFragment : Fragment() {
         renderNavigation()
         renderCalendar(viewFiltered)
 
-        val sections = TaskListSections.build(containerFiltered, activeSmartView, today, nowMillis)
+        val sections = TaskListSections.build(
+            containerFiltered,
+            activeSmartView,
+            today,
+            nowMillis,
+            availableContainers,
+            TaskDueDisplayFormatter.selectedLocale(requireContext()),
+        )
 
         val containerItemMap = availableContainers.associateBy { ContainerId(it.key) }
 
@@ -739,10 +752,21 @@ class TasksFragment : Fragment() {
             currentToday = today,
             currentTimeMillis = nowMillis,
         )
+        groupAdapters.keys.retainAll(sections.groups.map { it.key }.toSet())
+        groupedAdapter.replaceSections(if (sections.groups.isEmpty()) listOf(adapter) else
+            sections.groups.flatMap { group ->
+                val (header, rows) = groupAdapters.getOrPut(group.key) {
+                    TaskSectionAdapter(group.title) to createGroupAdapter()
+                }
+                header.update(true, true, palette, group.title)
+                rows.updatePalette(palette)
+                rows.updateData(group.tasks, subtaskMap, containerItemMap, today, nowMillis)
+                listOf(header, rows)
+            })
         overdueAdapter.updateData(if (overdueExpanded) sections.overdue else emptyList(), subtaskMap, containerItemMap, today, nowMillis)
         completedAdapter.updateData(if (completedExpanded) sections.completed else emptyList(), subtaskMap, containerItemMap, today, nowMillis)
         overdueHeader.update(sections.overdue.isNotEmpty(), overdueExpanded, palette)
-        activeHeader.update(sections.overdue.isNotEmpty() && sections.active.isNotEmpty(), true, palette,
+        activeHeader.update(sections.groups.isEmpty() && sections.overdue.isNotEmpty() && sections.active.isNotEmpty(), true, palette,
             if (activeSmartView == TaskSmartView.TODAY) "Сегодня" else "Задачи")
         completedHeader.update(sections.completed.isNotEmpty(), completedExpanded, palette)
 

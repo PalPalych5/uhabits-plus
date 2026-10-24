@@ -271,7 +271,7 @@ class TasksAdapter(
                 }
             }
             val completedAt = task.completedAt
-            if (task.isCompleted && completedAt != null) {
+            if (task.isCompleted && completedAt != null && completedAt > 0L) {
                 val label = "Выполнено " + SimpleDateFormat("d MMM", TaskDueDisplayFormatter.selectedLocale(itemView.context)).format(Date(completedAt))
                 dates.appendProperty(R.drawable.ic_action_check, label, palette.onSurfaceVariant)
                 spokenDates.add(label)

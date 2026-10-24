@@ -2,11 +2,13 @@ package org.isoron.uhabits.activities.tasks
 
 import android.graphics.Rect
 import android.os.SystemClock
+import android.provider.Settings
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
+import androidx.core.view.ViewCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
@@ -17,6 +19,9 @@ import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.core.containers.ContainerId
+import org.isoron.uhabits.core.containers.session.DatasetSessionFactory
+import org.isoron.uhabits.core.containers.session.ExperimentalDatasetMetadata
+import org.isoron.uhabits.utils.DemoDataGenerator
 import org.isoron.uhabits.core.ui.ThemeSwitcher
 import org.isoron.uhabits.core.userTasks.UserTask
 import org.isoron.uhabits.core.userTasks.due.TaskDue
@@ -44,6 +49,7 @@ class TaskListVisualTest {
         check(phase.matches(Regex("[a-zA-Z0-9_-]+")))
         setToday(org.isoron.platform.time.LocalDate(today.year, today.monthValue, today.dayOfMonth))
         val harness = TaskDraftLifecycleTest()
+        bootstrapDisposableSession()
         harness.guard()
         val parentName = "Работа и проекты"
         val childName = "Разработка приложения и долгосрочные планы команды"
@@ -52,6 +58,10 @@ class TaskListVisualTest {
             ?: component.organizationFacade.createContainer(parentName).getOrThrow().id
         val child = queries.children(parent).find { it.name == childName }?.id
             ?: component.organizationFacade.createContainer(childName, parentId = parent).getOrThrow().id
+        val third = queries.children(child).find { it.name == "Прототипирование" }?.id
+            ?: component.organizationFacade.createContainer("Прототипирование", parentId = child).getOrThrow().id
+        val fourth = queries.children(third).find { it.name == "Списки и группировки" }?.id
+            ?: component.organizationFacade.createContainer("Списки и группировки", parentId = third).getOrThrow().id
         val empty = queries.roots().find { it.name == "Идеи на будущее" }?.id
             ?: component.organizationFacade.createContainer("Идеи на будущее").getOrThrow().id
         fun day(offset: Long) = TaskDue.Day(TaskDueDate.parse(today.plusDays(offset).toString()))
@@ -72,6 +82,14 @@ class TaskListVisualTest {
         seed("Изучить новые идеи для интерфейса", container = parent)
         seed("Собрать обратную связь по прототипу", day(3), child, completed = true)
         seed("Обновить список материалов", container = parent, completed = true)
+        seed("Проверить вложенный раздел четвёртого уровня", container = fourth)
+        seed("Обсудить следующий этап", day(2), parent)
+        seed("Проверить точный срок", timed(2, 14), child)
+        seed("Подготовить итоговый отчёт", day(10), child)
+        val yesterday = seed("Завершено вчера", completed = true)
+        component.userTaskRepository.save(yesterday.copy(completedAt = today.minusDays(1).atTime(12, 0).atZone(zone).toInstant().toEpochMilli()))
+        val unknown = seed("Историческая задача без даты завершения", day(-7), completed = true)
+        component.userTaskRepository.save(unknown.copy(completedAt = null))
         val oldTheme = component.preferences.theme
         val oldBlack = component.preferences.isPureBlackEnabled
         try {
@@ -95,6 +113,12 @@ class TaskListVisualTest {
                 }
                 select(TaskSmartView.ALL)
                 screenshot("01-all-light")
+                if (phase != "before") controller.onActivity { activity ->
+                    val groups = field<Map<String, Pair<TaskSectionAdapter, TasksAdapter>>>(tasks(activity), "groupAdapters")
+                    val ids = groups.values.flatMap { field<List<UserTask>>(it.second, "tasks") }.map { it.id }
+                    assertEquals("Direct container groups must never duplicate tasks", ids.size, ids.distinct().size)
+                    assertTrue("Fourth-level container must have its own direct group", "container:${fourth.value}" in groups)
+                }
                 if (phase != "before") {
                     clickSection(controller, "Просроченные")
                     controller.onActivity { assertFalse(field<Boolean>(tasks(it), "overdueExpanded")) }
@@ -142,7 +166,7 @@ class TaskListVisualTest {
                 controller.onActivity { activity ->
                     val fragment = tasks(activity)
                     val active = field<List<UserTask>>(field<Any>(fragment, "adapter"), "tasks")
-                    val overdue = if (phase == "before") emptyList() else field<List<UserTask>>(field<Any>(fragment, "overdueAdapter"), "tasks")
+                    val overdue = field<List<UserTask>>(field<Any>(fragment, "overdueAdapter"), "tasks")
                     val scope = queries.subtreeIds(parent) + parent
                     val expected = component.userTaskRepository.getRoots().filter { !it.isCompleted && it.containerId in scope }.map { it.id }.toSet()
                     val rendered = (active + overdue).map { it.id }.toSet()
@@ -164,8 +188,35 @@ class TaskListVisualTest {
                     assertEquals("Long section title must not be clipped vertically", title.height, actual.height())
                 }
                 screenshot("03b-child-long-title-light")
+                select(TaskSmartView.ALL, fourth)
+                screenshot("03c-fourth-level-light")
                 select(TaskSmartView.COMPLETED)
                 screenshot("04-completed-light")
+                if (phase != "before") controller.onActivity { activity ->
+                    val groups = field<Map<String, Pair<TaskSectionAdapter, TasksAdapter>>>(tasks(activity), "groupAdapters")
+                    assertTrue("Undated completions must be separate", "completed:unknown" in groups)
+                    assertEquals(listOf(unknown.id), field<List<UserTask>>(groups.getValue("completed:unknown").second, "tasks").map { it.id })
+                    val adapter = groups.getValue("completed:unknown").second
+                    val recycler = tasks(activity).requireView().findViewById<RecyclerView>(R.id.rvTasks)
+                    val holder = adapter.onCreateViewHolder(recycler, 0)
+                    // Rebind one real row holder to catch stale completion text as well as invalid dates.
+                    for (completedAt in listOf(yesterday.completedAt, 0L, -1L, null)) {
+                        holder.bind(unknown.copy(completedAt = completedAt))
+                        val metadata = holder.itemView.findViewById<TextView>(R.id.tvTaskMeta)
+                        val hasCompletion = completedAt != null && completedAt > 0L
+                        assertEquals("Completion date visibility for $completedAt", hasCompletion,
+                            metadata.text.toString().contains("Выполнено "))
+                        assertEquals("Spoken completion date visibility for $completedAt", hasCompletion,
+                            metadata.contentDescription.toString().contains("Выполнено "))
+                    }
+                }
+                select(TaskSmartView.UPCOMING)
+                screenshot("04b-upcoming-light")
+                if (phase != "before") controller.onActivity { activity ->
+                    val groups = field<Map<String, Pair<TaskSectionAdapter, TasksAdapter>>>(tasks(activity), "groupAdapters")
+                    assertTrue("Upcoming fixture must span at least three local dates", groups.size >= 3)
+                    assertTrue(groups.keys.all { it.startsWith("due:") })
+                }
                 select(TaskSmartView.ALL, empty)
                 screenshot("05-empty-light")
                 select(TaskSmartView.INBOX)
@@ -218,6 +269,37 @@ class TaskListVisualTest {
                     screenshot("07-all-$name")
                     select(TaskSmartView.TODAY)
                     screenshot("08-today-$name")
+                    select(TaskSmartView.UPCOMING)
+                    screenshot("08b-upcoming-$name")
+                    select(TaskSmartView.COMPLETED)
+                    screenshot("08c-completed-$name")
+                }
+                val oldFontScale = context.resources.configuration.fontScale
+                try {
+                    device.executeShellCommand("settings put system font_scale 1.3")
+                    device.executeShellCommand("wm size 720x1280")
+                    device.executeShellCommand("wm density 320")
+                    idle()
+                    for ((name, theme, black) in listOf(Triple("light", ThemeSwitcher.THEME_LIGHT, false),
+                        Triple("dark", ThemeSwitcher.THEME_DARK, false), Triple("amoled", ThemeSwitcher.THEME_DARK, true))) {
+                        component.preferences.theme = theme
+                        component.preferences.isPureBlackEnabled = black
+                        controller.recreate()
+                        select(TaskSmartView.ALL)
+                        if (phase != "before") controller.onActivity { assertVisibleListTextGeometry(it) }
+                        screenshot("11-all-font130-$name")
+                        select(TaskSmartView.UPCOMING)
+                        if (phase != "before") controller.onActivity { assertVisibleListTextGeometry(it) }
+                        screenshot("12-upcoming-font130-$name")
+                        select(TaskSmartView.COMPLETED)
+                        if (phase != "before") controller.onActivity { assertVisibleListTextGeometry(it) }
+                        screenshot("13-completed-font130-$name")
+                    }
+                } finally {
+                    device.executeShellCommand("settings put system font_scale $oldFontScale")
+                    device.executeShellCommand("wm size reset")
+                    device.executeShellCommand("wm density reset")
+                    idle()
                 }
                 if (InstrumentationRegistry.getArguments().getString("longList") == "true") {
                     captureLongList(controller)
@@ -231,6 +313,7 @@ class TaskListVisualTest {
     @Test fun captureLongListAndVerifyChrome() {
         check(phase.matches(Regex("[a-zA-Z0-9_-]+")))
         val harness = TaskDraftLifecycleTest()
+        bootstrapDisposableSession()
         harness.guard()
         val oldTheme = component.preferences.theme
         val oldBlack = component.preferences.isPureBlackEnabled
@@ -238,6 +321,85 @@ class TaskListVisualTest {
             harness.QaActivityController().use { captureLongList(it) }
         } finally {
             instrumentation.runOnMainSync { component.preferences.theme = oldTheme; component.preferences.isPureBlackEnabled = oldBlack }
+        }
+    }
+
+    private fun bootstrapDisposableSession() {
+        val authorizedAvd = InstrumentationRegistry.getArguments().getString("authorizedAvd")
+        if (authorizedAvd?.startsWith("UHabit_Temp_") != true ||
+            device.executeShellCommand("getprop ro.boot.qemu.avd_name").trim() != authorizedAvd) return
+        if (Settings.Global.getInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 1 ||
+            Settings.Global.getInt(context.contentResolver, Settings.Global.WIFI_ON, 0) != 0) {
+            device.executeShellCommand("svc wifi disable")
+            device.executeShellCommand("cmd connectivity airplane-mode enable")
+            device.executeShellCommand("settings put global airplane_mode_on 1")
+            device.executeShellCommand("settings put global wifi_on 0")
+            val deadline = SystemClock.uptimeMillis() + 5_000
+            while (SystemClock.uptimeMillis() < deadline &&
+                (Settings.Global.getInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) != 1 ||
+                    Settings.Global.getInt(context.contentResolver, Settings.Global.WIFI_ON, 0) != 0)) {
+                device.executeShellCommand("settings put global airplane_mode_on 1")
+                device.executeShellCommand("settings put global wifi_on 0")
+                SystemClock.sleep(100)
+            }
+        }
+        if (component.session.isExperimental) return
+        val app = context.applicationContext as HabitsApplication
+        val metadata = ExperimentalDatasetMetadata(
+            datasetId = "qa-temp-pr7",
+            databaseFilename = DatasetSessionFactory.EXPERIMENTAL_DB_FILENAME,
+            foundationVersion = 1,
+            sourceSnapshotSha256 = "",
+            createdAtMillis = System.currentTimeMillis()
+        )
+        val session = DatasetSessionFactory.experimental(metadata)
+        File(context.filesDir, DemoDataGenerator.DISPOSABLE_MARKER + '-' + session.datasetId)
+            .writeText(session.databaseFilename)
+        instrumentation.runOnMainSync { app.switchDatasetSession(session) }
+        val stmt = component.db.prepareStatement(
+            "UPDATE OrganizationState SET dataset_uuid = ?, mode = 'CONTAINER_LOCAL' WHERE id = 1"
+        )
+        stmt.bindText(1, session.datasetId)
+        stmt.step()
+        stmt.finalize()
+        component.preferences.isFirstRun = false
+        app.sessionManager.persistExperimentalSelection(metadata)
+    }
+
+    private fun assertVisibleListTextGeometry(activity: MainActivity) {
+        val recycler = tasks(activity).requireView().findViewById<RecyclerView>(R.id.rvTasks)
+        val sectionTitleId = context.resources.getIdentifier("tvSectionTitle", "id", context.packageName)
+        val visibleText = texts(recycler).filter {
+            (it.id == R.id.tvTaskTitle || (sectionTitleId != 0 && it.id == sectionTitleId) ||
+                ViewCompat.isAccessibilityHeading(it)) && it.isShown && it.getGlobalVisibleRect(Rect())
+        }
+        assertTrue("Fixture must expose task titles", visibleText.any { it.id == R.id.tvTaskTitle })
+        assertTrue("Fixture must expose section headings", visibleText.any { it.id != R.id.tvTaskTitle })
+        val bounds = visibleText.map { text ->
+            val label = text.text.toString()
+            val layout = requireNotNull(text.layout) { "Missing text layout: $label" }
+            assertTrue("Text must have rendered lines: $label", layout.lineCount > 0)
+            assertTrue("Text must fit vertically: $label", layout.height <= text.height - text.compoundPaddingTop - text.compoundPaddingBottom)
+            for (line in 0 until layout.lineCount) {
+                assertTrue("Text must fit horizontally or ellipsize: $label",
+                    layout.getLineWidth(line) <= text.width - text.compoundPaddingLeft - text.compoundPaddingRight + 1 ||
+                        layout.getEllipsisCount(line) > 0)
+            }
+            val position = IntArray(2)
+            text.getLocationOnScreen(position)
+            val full = Rect(position[0], position[1], position[0] + text.width, position[1] + text.height)
+            val visible = Rect()
+            assertTrue(text.getGlobalVisibleRect(visible))
+            // RecyclerView may deliberately expose a partial row at either viewport edge.
+            val viewport = Rect()
+            assertTrue(recycler.getGlobalVisibleRect(viewport))
+            val expected = Rect(full)
+            assertTrue(expected.intersect(viewport))
+            assertEquals("Text must not be clipped inside its visible row: $label", expected, visible)
+            full
+        }
+        for (i in bounds.indices) for (j in i + 1 until bounds.size) {
+            assertFalse("Section headings and task titles must not overlap", Rect.intersects(bounds[i], bounds[j]))
         }
     }
 
@@ -385,7 +547,7 @@ class TaskListVisualTest {
         }
         idle()
         SystemClock.sleep(500)
-        val file = File(context.getExternalFilesDir(null), "pr6/$phase/$name.png")
+        val file = File(context.getExternalFilesDir(null), "pr7/$phase/$name.png")
         check(file.parentFile!!.mkdirs() || file.parentFile!!.isDirectory)
         check(device.takeScreenshot(file))
     }

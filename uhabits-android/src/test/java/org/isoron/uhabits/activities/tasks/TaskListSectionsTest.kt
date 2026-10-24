@@ -15,12 +15,13 @@ class TaskListSectionsTest {
     private val today = LocalDate(2026, 10, 23)
     private val now = java.time.LocalDateTime.of(2026, 10, 23, 12, 0)
         .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    private val ru = java.util.Locale("ru")
     private fun day(value: Int) = TaskDue.Day(TaskDueDate.from(LocalDate(2026, 10, value)))
     private fun task(id: String, due: TaskDue = TaskDue.None, order: Int = 0) =
         UserTask(TaskId(id), id, due = due, sortOrder = order, createdAt = 0, updatedAt = 0)
     private fun done(id: String, at: Long? = null) = task(id).copy(status = TaskStatus.COMPLETED, completedAt = at)
     private fun build(tasks: List<UserTask>, view: TaskSmartView = TaskSmartView.ALL) =
-        TaskListSections.build(tasks, view, today, now)
+        TaskListSections.build(tasks, view, today, now, locale = ru)
     private fun List<UserTask>.ids() = map { it.id.value }
 
     @Test fun todayKeepsDayAndExactInstantWhileExpiredTimedMovesOnlyToOverdue() {
@@ -89,6 +90,70 @@ class TaskListSectionsTest {
         assertEquals(listOf(completed), sections.completed)
     }
 
+    @Test fun upcomingCombinesDayAndTimedOnLocalCalendarDate() {
+        val timed = java.time.LocalDateTime.of(2026, 10, 24, 23, 59)
+            .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val result = build(listOf(task("later", day(26)), task("timed", TaskDue.Timed.of(timed)),
+            task("day", day(24)), task("none"), done("completed")), TaskSmartView.UPCOMING)
+        assertEquals("Завтра", result.groups.first().title)
+        assertEquals(setOf("day", "timed"), result.groups.first().tasks.ids().toSet())
+        assertEquals(listOf("later"), result.groups.last().tasks.ids())
+        assertEquals(2, result.groups.size)
+    }
+
+    @Test fun archiveUsesOnlyPositiveCompletionInstantAndKeepsUnknownDatesLast() {
+        val result = build(listOf(done("today", now), done("yesterday", now - 86400000L),
+            done("null").copy(due = day(24), updatedAt = now), done("zero", 0), done("negative", -1)),
+            TaskSmartView.COMPLETED)
+        assertEquals(listOf("Сегодня", "Вчера", "Дата завершения не указана"), result.groups.map { it.title })
+        assertEquals(listOf("today"), result.groups[0].tasks.ids())
+        assertEquals(setOf("null", "zero", "negative"), result.groups.last().tasks.ids().toSet())
+    }
+
+    @Test fun upcomingYearBoundaryIncludesYearAndOmitsEmptyDates() {
+        val result = TaskListSections.build(
+            listOf(task("tomorrow", day(24)), task("future", TaskDue.Day(TaskDueDate.parse("2027-01-02")))),
+            TaskSmartView.UPCOMING,
+            today,
+            now,
+            locale = java.util.Locale.ENGLISH,
+        )
+        assertEquals(listOf("Tomorrow", "2 Jan 2027"), result.groups.map { it.title })
+        val archive = TaskListSections.build(
+            listOf(done("today", now), done("yesterday", now - 86400000L), done("unknown")),
+            TaskSmartView.COMPLETED,
+            today,
+            now,
+            locale = java.util.Locale.ENGLISH,
+        )
+        assertEquals(listOf("Today", "Yesterday", "Completion date not specified"), archive.groups.map { it.title })
+        assertTrue(build(emptyList(), TaskSmartView.UPCOMING).groups.isEmpty())
+    }
+
+    @Test fun timedAndCompletionGroupingUseLocalMidnightRatherThanUtcDate() {
+        val original = java.util.TimeZone.getDefault()
+        try {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Asia/Novosibirsk"))
+            val instant = java.time.Instant.parse("2026-10-23T18:00:00Z").toEpochMilli()
+            val upcoming = build(listOf(task("timed", TaskDue.Timed.of(instant)), task("day", day(24))), TaskSmartView.UPCOMING)
+            assertEquals(1, upcoming.groups.size)
+            assertEquals("Завтра", upcoming.groups.single().title)
+            val archive = TaskListSections.build(listOf(done("completed", instant)), TaskSmartView.COMPLETED,
+                LocalDate(2026, 10, 24), instant, locale = ru)
+            assertEquals("Сегодня", archive.groups.single().title)
+        } finally {
+            java.util.TimeZone.setDefault(original)
+        }
+    }
+
+    @Test fun todayNeverIncludesCompletedCompanionRegardlessOfDue() {
+        val result = build(listOf(done("day").copy(due = day(23)),
+            done("timed").copy(due = TaskDue.Timed.of(now)),
+            done("other").copy(due = day(22)), done("none")), TaskSmartView.TODAY)
+        assertTrue(result.completed.isEmpty())
+        assertTrue(result.active.isEmpty() && result.overdue.isEmpty())
+    }
+
     @Test fun emptyAndCompletedOnlySourcesRemainRepresentable() {
         assertEquals(TaskListSections(emptyList(), emptyList(), emptyList()), build(emptyList()))
         val completed = done("done", now)
@@ -98,5 +163,24 @@ class TaskListSectionsTest {
         val archive = build(listOf(completed), TaskSmartView.COMPLETED)
         assertEquals(listOf(completed), archive.active)
         assertTrue(archive.overdue.isEmpty() && archive.completed.isEmpty())
+    }
+
+    @Test fun allUsesDirectPreorderContainersAndRetainsUnavailableAssignments() {
+        val tasks = listOf(task("none"), task("missing").copy(containerId = ContainerId("missing")),
+            task("parent").copy(containerId = ContainerId("p")), task("deep").copy(containerId = ContainerId("d")))
+        fun item(key: String, path: String) = org.isoron.uhabits.core.containers.facade.OrganizationalItem(
+            key, key, null, null, path, key == "p")
+        val result = TaskListSections.build(tasks, TaskSmartView.ALL, today, now,
+            listOf(item("p", "Parent"), item("empty", "Parent / Empty"), item("d", "Parent / Child / Third / Fourth")),
+            locale = ru)
+        assertEquals(listOf("inbox", "container:p", "container:d", "container:unavailable"), result.groups.map { it.key })
+        assertEquals(listOf("none"), result.groups.first().tasks.ids())
+        assertTrue(result.groups.first().tasks.all { it.containerId == null })
+        assertEquals("Parent / Child / Third / Fourth", result.groups[2].title)
+        assertEquals("Другой раздел", result.groups.last().title)
+        assertEquals(listOf("missing"), result.groups.last().tasks.ids())
+        assertEquals(ContainerId("missing"), result.groups.last().tasks.single().containerId)
+        assertEquals(tasks.map { it.id }.toSet(), result.groups.flatMap { it.tasks }.map { it.id }.toSet())
+        assertEquals(tasks.size, result.groups.sumOf { it.tasks.size })
     }
 }

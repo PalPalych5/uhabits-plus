@@ -25,6 +25,9 @@ class TaskListAdapterTest {
         override fun registerAdapterDataObserver(observer: RecyclerView.AdapterDataObserver) {
             observers(this).add(observer)
         }
+        override fun unregisterAdapterDataObserver(observer: RecyclerView.AdapterDataObserver) {
+            observers(this).remove(observer)
+        }
         fun insert(start: Int, amount: Int) { count += amount; notifyItemRangeInserted(start, amount) }
         fun remove(start: Int, amount: Int) { count -= amount; notifyItemRangeRemoved(start, amount) }
     }
@@ -80,5 +83,29 @@ class TaskListAdapterTest {
         tasks.notifyDataSetChanged()
         assertEquals(listOf(1, 1, 2), (0 until adapter.itemCount).map(adapter::getItemViewType))
         assertEquals(listOf("insert:0:2:3", "change:2:1:null", "all:3"), events)
+    }
+
+    @Test fun replacingGroupsDetachesOldObserversAndNeverReusesHolderTypes() {
+        val old = Section(2)
+        val replacement = Section(3)
+        val adapter = TaskListAdapter(old)
+        val oldType = adapter.getItemViewType(0)
+        val events = record(adapter)
+        adapter.replaceSections(listOf(replacement))
+        assertEquals(listOf("all:3"), events)
+        old.insert(0, 1)
+        assertEquals(listOf("all:3"), events)
+        replacement.insert(1, 1)
+        assertEquals("insert:1:1:4", events.last())
+        org.junit.Assert.assertNotEquals(oldType, adapter.getItemViewType(0))
+        adapter.replaceSections(emptyList())
+        assertEquals(0, adapter.itemCount)
+    }
+
+    @Test fun nestedCompositionKeepsHeaderAndRowTypesDistinct() {
+        val nested = TaskListAdapter(Section(1), Section(2))
+        val outer = TaskListAdapter(nested)
+        org.junit.Assert.assertNotEquals(outer.getItemViewType(0), outer.getItemViewType(1))
+        assertEquals(outer.getItemViewType(1), outer.getItemViewType(2))
     }
 }
