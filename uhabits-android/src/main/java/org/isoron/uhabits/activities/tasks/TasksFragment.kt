@@ -20,8 +20,10 @@
 package org.isoron.uhabits.activities.tasks
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Bundle
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -43,6 +45,9 @@ import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.ItemTouchHelper
+import org.isoron.uhabits.activities.habits.show.ShowHabitActivity
+import org.isoron.uhabits.core.containers.facade.OrganizationalItem
+import org.isoron.uhabits.core.models.Habit
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.snackbar.Snackbar
@@ -106,6 +111,9 @@ class TasksFragment : Fragment() {
     private val collapsedContainers = mutableSetOf<String>()
     private var calendarMode = false
     private var matrixMode = false
+    private var calendarScale = CalendarScale.MONTH
+    private var activeHabits: List<Habit> = emptyList()
+    private var calendarViewController: TaskCalendarViewController? = null
     private var quickImportant: Boolean? = null
     private var quickUrgent: Boolean? = null
     private var renderedCalendarMonth: String? = null
@@ -146,6 +154,7 @@ class TasksFragment : Fragment() {
     private lateinit var tvTitle: TextView
     private lateinit var btnTasksOverflow: ImageButton
 
+    private lateinit var layoutListInfo: LinearLayout
     private lateinit var tvSubtitle: TextView
     private lateinit var tvTasksTagFilter: TextView
     private lateinit var tvTasksDate: TextView
@@ -215,6 +224,9 @@ class TasksFragment : Fragment() {
             }
             calendarMode = it.getBoolean("calendarMode")
             matrixMode = it.getBoolean("matrixMode")
+            calendarScale = it.getString("calendarScale")?.let { name ->
+                try { CalendarScale.valueOf(name) } catch (e: Exception) { CalendarScale.MONTH }
+            } ?: CalendarScale.MONTH
             quickImportant = if (it.containsKey("quickImportant")) it.getBoolean("quickImportant") else null
             quickUrgent = if (it.containsKey("quickUrgent")) it.getBoolean("quickUrgent") else null
             selectedDay = LocalDate(it.getInt("selectedDay", getToday().daysSince2000))
@@ -317,6 +329,7 @@ class TasksFragment : Fragment() {
         loadJob?.cancel()
         loadJob = null
         refreshQuickLabels = null
+        calendarViewController = null
         super.onDestroyView()
     }
 
@@ -347,6 +360,7 @@ class TasksFragment : Fragment() {
         outState.putBooleanArray("quickDraftSubtaskCompleted", quickDraftSubtasks.map { it.isCompleted }.toBooleanArray())
         outState.putBoolean("calendarMode", calendarMode)
         outState.putBoolean("matrixMode", matrixMode)
+        outState.putString("calendarScale", calendarScale.name)
         quickImportant?.let { outState.putBoolean("quickImportant", it) }
         quickUrgent?.let { outState.putBoolean("quickUrgent", it) }
         outState.putInt("selectedDay", selectedDay.daysSince2000)
@@ -384,6 +398,7 @@ class TasksFragment : Fragment() {
         tvTitle = view.findViewById(R.id.tvTasksTitle)
         btnTasksOverflow = view.findViewById(R.id.btnTasksOverflow)
 
+        layoutListInfo = view.findViewById(R.id.layoutListInfo)
         tvSubtitle = view.findViewById(R.id.tvTasksSubtitle)
         tvTasksTagFilter = view.findViewById(R.id.tvTasksTagFilter)
         tvTasksDate = view.findViewById(R.id.tvTasksDate)
@@ -461,6 +476,8 @@ class TasksFragment : Fragment() {
         updateTagFilterChip()
         updateSelectionBarUi()
         if (::navigationColumn.isInitialized) renderNavigation()
+        calendarViewController?.updatePalette(palette)
+        if (calendarMode) calendarViewController?.render()
     }
 
     private fun openTagFilterPicker() {
@@ -936,10 +953,15 @@ class TasksFragment : Fragment() {
     }
 
     private fun updateSmartViewLabel() {
-        tvTitle.text = selectedContainerFilter?.let { workspaceSnapshot?.availableContainers.orEmpty().find { item -> item.key == it.value }?.name }
-            ?: if (matrixMode) {
-                if (TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru") "Матрица" else "Matrix"
-            } else activeSmartView.displayName
+        val ru = TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru"
+        tvTitle.text = if (calendarMode) {
+            if (ru) "Календарь" else "Calendar"
+        } else {
+            selectedContainerFilter?.let { workspaceSnapshot?.availableContainers.orEmpty().find { item -> item.key == it.value }?.name }
+                ?: if (matrixMode) {
+                    if (ru) "Матрица" else "Matrix"
+                } else activeSmartView.displayName
+        }
     }
 
     private fun setupRecyclerView() {
@@ -1300,7 +1322,7 @@ class TasksFragment : Fragment() {
         val generation = ++loadGeneration
         loadJob = viewLifecycleOwner.lifecycleScope.launch {
             val loaded = withContext(Dispatchers.IO) {
-                var stable: Pair<Long, TasksWorkspaceSnapshot>? = null
+                var stable: Pair<Long, Pair<TasksWorkspaceSnapshot, List<Habit>>>? = null
                 repeat(3) {
                     if (stable == null) {
                         val before = component.workspaceReadRevision.value
@@ -1309,7 +1331,12 @@ class TasksFragment : Fragment() {
                             orgFacade.containerQueries,
                             component.taskTagRepository,
                         )
-                        if (before == component.workspaceReadRevision.value) stable = before to snapshot
+                        val habitsList = component.habitList.getFiltered(
+                            org.isoron.uhabits.core.models.HabitMatcher(isArchivedAllowed = false)
+                        ).toList()
+                        if (before == component.workspaceReadRevision.value) {
+                            stable = before to (snapshot to habitsList)
+                        }
                     }
                 }
                 stable
@@ -1323,8 +1350,9 @@ class TasksFragment : Fragment() {
                 return@launch
             }
             snapshotRevision = loaded.first
-            workspaceSnapshot = loaded.second
-            renderTasks(loaded.second)
+            workspaceSnapshot = loaded.second.first
+            activeHabits = loaded.second.second
+            renderTasks(loaded.second.first)
         }
     }
 
@@ -1374,7 +1402,8 @@ class TasksFragment : Fragment() {
         updateTagFilterChip()
         refreshQuickLabels?.invoke()
         renderNavigation()
-        renderCalendar(viewFiltered)
+        val calendarTasks = if (activeSmartView == TaskSmartView.COMPLETED) tagFiltered.filter { it.isCompleted } else tagFiltered
+        renderCalendar(calendarTasks, activeHabits)
 
         val sections = TaskListSections.build(
             tagFiltered,
@@ -1430,22 +1459,24 @@ class TasksFragment : Fragment() {
             if (activeSmartView == TaskSmartView.TODAY) "Сегодня" else "Задачи")
         completedHeader.update(sections.completed.isNotEmpty(), completedExpanded, palette)
 
-        // Subtitle count
-        val activeCount = when {
-            calendarMode -> viewFiltered.size
-            activeSmartView == TaskSmartView.TODAY -> sections.active.size
-            else -> sections.active.size + sections.overdue.size
-        }
-        tvSubtitle.text = "$activeCount ${pluralTasks(activeCount)}"
-        tvSubtitle.visibility = if (!matrixMode && activeSmartView == TaskSmartView.COMPLETED) View.GONE else View.VISIBLE
+        // Subtitle count and info row visibility
+        layoutListInfo.visibility = if (calendarMode) View.GONE else View.VISIBLE
+        if (!calendarMode) {
+            val activeCount = when {
+                activeSmartView == TaskSmartView.TODAY -> sections.active.size
+                else -> sections.active.size + sections.overdue.size
+            }
+            tvSubtitle.text = "$activeCount ${pluralTasks(activeCount)}"
+            tvSubtitle.visibility = if (!matrixMode && activeSmartView == TaskSmartView.COMPLETED) View.GONE else View.VISIBLE
 
-        // Date indicator on the right (shown in TODAY mode)
-        if (!matrixMode && activeSmartView == TaskSmartView.TODAY) {
-            val dateStr = dateFormatRu.format(Date(nowMillis))
-            tvTasksDate.text = dateStr.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale("ru")) else it.toString() }
-            tvTasksDate.visibility = View.VISIBLE
-        } else {
-            tvTasksDate.visibility = View.GONE
+            // Date indicator on the right (shown in TODAY mode)
+            if (!matrixMode && activeSmartView == TaskSmartView.TODAY) {
+                val dateStr = dateFormatRu.format(Date(nowMillis))
+                tvTasksDate.text = dateStr.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale("ru")) else it.toString() }
+                tvTasksDate.visibility = View.VISIBLE
+            } else {
+                tvTasksDate.visibility = View.GONE
+            }
         }
 
         // Empty view visibility
@@ -1610,6 +1641,7 @@ class TasksFragment : Fragment() {
                     calendarMode = choice == 1
                     matrixMode = choice == 2
                     dialog.dismiss()
+                    updateSmartViewLabel()
                     loadTasks()
                 }.show()
             }
@@ -1845,133 +1877,82 @@ class TasksFragment : Fragment() {
         })
     }
 
-    private fun renderCalendar(tasks: List<UserTask>) {
+    private fun renderCalendar(tasks: List<UserTask>, habits: List<Habit> = activeHabits) {
         representationButton.setImageResource(if (calendarMode) R.drawable.ic_cat_list_todo else R.drawable.ic_cat_calendar)
         representationButton.contentDescription = "Представление: " + if (matrixMode) "Матрица" else if (calendarMode) "Календарь" else "Список"
         calendarPanel.visibility = if (calendarMode) View.VISIBLE else View.GONE
         if (!calendarMode) return
-        val monthKey = "${calendarMonth.get(Calendar.YEAR)}-${calendarMonth.get(Calendar.MONTH)}"
-        val scrollY = if (renderedCalendarMonth == monthKey) (calendarPanel.getChildAt(0) as? ScrollView)?.scrollY ?: 0 else 0
-        renderedCalendarMonth = monthKey
-        calendarPanel.removeAllViews()
-        val scroll = ScrollView(requireContext())
-        val content = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
-        scroll.addView(content)
-        calendarPanel.addView(scroll, LinearLayout.LayoutParams(-1, -1))
-        val monthRow = LinearLayout(requireContext())
-        fun changeMonth(delta: Int) { calendarMonth.add(Calendar.MONTH, delta); renderCalendar(tasks) }
-        monthRow.addView(navText("‹", action = { changeMonth(-1) }).apply { contentDescription = "Предыдущий месяц" }, LinearLayout.LayoutParams(dpInt(48f), -2))
-        monthRow.addView(navText(SimpleDateFormat("LLLL yyyy", Locale("ru")).format(calendarMonth.time)) {
-            calendarMonth = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1) }; selectedDay = getToday(); renderCalendar(tasks)
-        }.apply { typeface = android.graphics.Typeface.create("sans-serif-medium", 0) }, LinearLayout.LayoutParams(0, -2, 1f))
-        monthRow.addView(navText("›", action = { changeMonth(1) }).apply { contentDescription = "Следующий месяц" }, LinearLayout.LayoutParams(dpInt(48f), -2))
-        content.addView(monthRow)
-        val events = TaskCalendarEvents.from(tasks)
-        val weekdays = LinearLayout(requireContext())
-        listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс").forEach {
-            weekdays.addView(navText(it).apply {
-                textSize = 11f; gravity = Gravity.CENTER; setPadding(0, 0, 0, 0); minHeight = dpInt(24f); setTextColor(palette.onSurfaceVariant)
-            }, LinearLayout.LayoutParams(0, -2, 1f))
-        }
-        content.addView(weekdays)
-        val month = calendarMonth.get(Calendar.MONTH) + 1
-        val year = calendarMonth.get(Calendar.YEAR)
-        val offset = (calendarMonth.get(Calendar.DAY_OF_WEEK) + 5) % 7
-        val days = calendarMonth.getActualMaximum(Calendar.DAY_OF_MONTH)
-        for (week in 0 until (offset + days + 6) / 7) {
-            val row = LinearLayout(requireContext())
-            for (column in 0..6) {
-                val number = week * 7 + column - offset + 1
-                val day = if (number in 1..days) LocalDate(year, month, number) else null
-                val dayEvents = events.filter { it.day == day }
-                val cell = LinearLayout(requireContext()).apply {
-                    orientation = LinearLayout.VERTICAL
-                    minimumHeight = dpInt(if (wide) 100f else 52f)
-                    gravity = if (wide) Gravity.TOP else Gravity.CENTER_HORIZONTAL
-                    setPaddingRelative(dpInt(4f), dpInt(4f), dpInt(4f), dpInt(4f))
-                    if (day != null) {
-                        isFocusable = true
-                        val ripple = android.util.TypedValue()
-                        requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
-                        setBackgroundResource(ripple.resourceId)
-                        setOnClickListener { selectedDay = day; renderCalendar(tasks) }
-                        contentDescription = "${number}.${month}.${year}, ${dayEvents.size} событий"
-                    }
-                }
-                cell.addView(TextView(requireContext()).apply {
-                    text = if (day == null) "" else number.toString(); textSize = 13f
-                    gravity = Gravity.CENTER; minimumHeight = dpInt(24f)
-                    setTextColor(if (day == selectedDay) Color.WHITE else if (day == getToday()) palette.accent else palette.onSurface)
-                    if (day == selectedDay) background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(palette.accent) }
-                }, LinearLayout.LayoutParams(dpInt(maxOf(28f, 22f * resources.configuration.fontScale)), dpInt(maxOf(28f, 22f * resources.configuration.fontScale))).apply { gravity = if (wide) Gravity.START else Gravity.CENTER_HORIZONTAL })
-                if (wide) {
-                    dayEvents.take(2).forEach { event ->
-                        cell.addView(TextView(requireContext()).apply {
-                            text = event.task.title; textSize = 11f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
-                            setPaddingRelative(dpInt(4f), dpInt(3f), dpInt(2f), dpInt(3f))
-                            setTextColor(palette.onSurface)
-                            val drawable = androidx.core.content.ContextCompat.getDrawable(
-                                requireContext(),
-                                if (event.kind == TaskCalendarEventKind.PLAN) R.drawable.ic_cat_calendar else R.drawable.ic_cat_flag,
-                            )?.mutate()
-                            drawable?.setTint(if (event.kind == TaskCalendarEventKind.PLAN) palette.accent else palette.onSurfaceVariant)
-                            drawable?.setBounds(0, 0, dpInt(12f), dpInt(12f))
-                            setCompoundDrawablesRelative(drawable, null, null, null); compoundDrawablePadding = dpInt(3f)
-                        }, LinearLayout.LayoutParams(-1, -2))
-                    }
-                    if (dayEvents.size > 2) cell.addView(TextView(requireContext()).apply {
-                        text = "+${dayEvents.size - 2} ещё"; textSize = 10f; setTextColor(palette.onSurfaceVariant)
-                    })
-                } else if (dayEvents.isNotEmpty()) {
-                    val indicators = LinearLayout(requireContext()).apply { gravity = Gravity.CENTER }
-                    TaskCalendarEventKind.entries.filter { kind -> dayEvents.any { it.kind == kind } }.forEach { kind ->
-                        indicators.addView(ImageView(requireContext()).apply {
-                            setImageResource(if (kind == TaskCalendarEventKind.PLAN) R.drawable.ic_cat_calendar else R.drawable.ic_cat_flag)
-                            setColorFilter(if (kind == TaskCalendarEventKind.PLAN) palette.accent else palette.onSurfaceVariant)
-                        }, LinearLayout.LayoutParams(dpInt(12f), dpInt(12f)).apply { marginStart = dpInt(2f); marginEnd = dpInt(2f) })
-                    }
-                    cell.addView(indicators)
-                }
-                row.addView(cell, LinearLayout.LayoutParams(0, -2, 1f))
+
+        val controller = calendarViewController ?: TaskCalendarViewController(
+            context = requireContext(),
+            container = calendarPanel,
+            palette = palette,
+            wide = wide,
+            onTaskClicked = { task ->
+                clearSelection()
+                val sheet = TaskDetailBottomSheet.newInstance(task.id)
+                sheet.onTaskUpdatedListener = { loadTasks() }
+                sheet.show(childFragmentManager, "task_detail")
+            },
+            onTaskToggleComplete = { task ->
+                executeCompleteAction(listOf(task.id))
+            },
+            onTaskQuickMenu = { task ->
+                showTaskQuickMenu(task)
+            },
+            onHabitClicked = { plannedHabit ->
+                showPlannedHabitDialog(plannedHabit)
+            },
+            onDateChanged = { newDate ->
+                selectedDay = newDate
+            },
+            onScaleChanged = { newScale ->
+                calendarScale = newScale
             }
-            content.addView(row)
-            if (wide) content.addView(View(requireContext()).apply { setBackgroundColor(palette.divider) }, LinearLayout.LayoutParams(-1, dpInt(1f)))
+        ).also { calendarViewController = it }
+
+        controller.selectedDay = selectedDay
+        controller.scale = calendarScale
+        controller.calendarMonth = calendarMonth
+        controller.updatePalette(palette)
+        controller.updateData(
+            newTasks = tasks,
+            newHabits = habits,
+            newContainers = workspaceSnapshot?.containers.orEmpty().mapValues { (id, c) ->
+                OrganizationalItem(id.value, c.name, c.color, c.icon, c.name, c.parentId == null)
+            },
+            newTaskTags = workspaceSnapshot?.taskTags.orEmpty()
+        )
+        controller.render()
+    }
+
+    private fun showPlannedHabitDialog(plannedHabit: PlannedHabit) {
+        val ru = TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru"
+        val habit = component.habitList.getById(plannedHabit.habitId)
+        val details = buildString {
+            if (plannedHabit.reminderHour != null && plannedHabit.reminderMinute != null) {
+                val time = String.format(Locale.getDefault(), "%02d:%02d", plannedHabit.reminderHour, plannedHabit.reminderMinute)
+                append(if (ru) "Напоминание запланировано на $time." else "Reminder scheduled at $time.")
+            } else {
+                append(if (ru) "Запланировано по регулярному расписанию." else "Scheduled according to regular recurrence.")
+            }
+            append("\n\n")
+            append(if (ru) "Привычки и задачи остаются раздельными сущностями. Просмотр календаря не изменяет прогресс привычки." else "Habits and tasks remain distinct entities. Viewing the calendar does not alter habit progress.")
         }
-        content.addView(navText(SimpleDateFormat("EEEE, d MMMM", Locale("ru")).format(Calendar.getInstance().apply {
-            set(selectedDay.year, selectedDay.month - 1, selectedDay.day)
-        }.time)).apply { textSize = 15f; typeface = android.graphics.Typeface.create("sans-serif-medium", 0); minHeight = dpInt(48f) })
-        val agenda = events.filter { it.day == selectedDay }
-        if (agenda.isEmpty()) content.addView(navText("Нет задач на выбранный день").apply { setTextColor(palette.onSurfaceVariant) })
-        agenda.forEach { event ->
-            val row = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-                minimumHeight = dpInt(64f); setPaddingRelative(dpInt(16f), dpInt(8f), dpInt(16f), dpInt(8f))
-                val ripple = android.util.TypedValue(); requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
-                setBackgroundResource(ripple.resourceId); isFocusable = true
-                setOnClickListener {
-                    val sheet = TaskDetailBottomSheet.newInstance(event.task.id)
-                    sheet.onTaskUpdatedListener = { loadTasks() }; sheet.show(childFragmentManager, "task_detail")
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(plannedHabit.name)
+            .setMessage(details)
+            .setPositiveButton(if (ru) "Открыть привычку" else "Open habit") { _, _ ->
+                if (habit != null) {
+                    val intent = Intent(requireContext(), ShowHabitActivity::class.java).apply {
+                        data = Uri.parse(habit.uriString)
+                    }
+                    startActivity(intent)
                 }
             }
-            row.addView(ImageView(requireContext()).apply {
-                setImageResource(if (event.kind == TaskCalendarEventKind.PLAN) R.drawable.ic_cat_calendar else R.drawable.ic_cat_flag)
-                setColorFilter(if (event.kind == TaskCalendarEventKind.PLAN) palette.accent else palette.onSurfaceVariant)
-            }, LinearLayout.LayoutParams(dpInt(20f), dpInt(20f)).apply { marginEnd = dpInt(16f) })
-            val labels = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
-            labels.addView(TextView(requireContext()).apply {
-                text = event.task.title; textSize = 15f; maxLines = 2
-                ellipsize = android.text.TextUtils.TruncateAt.END; setTextColor(palette.onSurface)
-            })
-            labels.addView(TextView(requireContext()).apply {
-                val timeStr = (event.task.due as? TaskDue.Timed)?.let {
-                    SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(it.epochMillis))
-                }.orEmpty()
-                text = if (timeStr.isNotEmpty()) "Срок · $timeStr" else "Срок"
-                textSize = 12f; setTextColor(palette.onSurfaceVariant)
-            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dpInt(4f) })
-            row.addView(labels, LinearLayout.LayoutParams(0, -2, 1f)); content.addView(row)
-        }
-        scroll.post { if (scroll.parent != null) scroll.scrollTo(0, scrollY) }
+            .setNegativeButton(if (ru) "Закрыть" else "Close", null)
+            .show()
     }
 
     internal fun showTaskQuickMenu(task: UserTask) {

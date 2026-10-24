@@ -67,4 +67,58 @@ class TaskCalendarEventsTest {
             TimeZone.setDefault(previous)
         }
     }
+
+    @Test fun buildAgendaForDaySeparatesAllDayAndTimedAndHabits() {
+        val testDay = LocalDate(2026, 10, 24)
+        val cal = Calendar.getInstance().apply {
+            clear()
+            set(2026, Calendar.OCTOBER, 24, 14, 30)
+        }
+        val allDayTask = task.copy(id = TaskId("allDay"), due = TaskDue.Day(TaskDueDate.from(testDay)))
+        val timedTask = task.copy(id = TaskId("timed"), due = TaskDue.Timed.of(cal.timeInMillis))
+        val otherDayTask = task.copy(id = TaskId("other"), due = TaskDue.Day(TaskDueDate.from(LocalDate(2026, 10, 25))))
+        val noneTask = task.copy(id = TaskId("none"), due = TaskDue.None)
+
+        val modelFactory = org.isoron.uhabits.core.models.memory.MemoryModelFactory()
+        val dailyHabit = modelFactory.buildHabit().apply {
+            id = 101L
+            name = "Read Books"
+            frequency = org.isoron.uhabits.core.models.Frequency.DAILY
+        }
+        val timedHabit = modelFactory.buildHabit().apply {
+            id = 102L
+            name = "Gym Workout"
+            reminder = org.isoron.uhabits.core.models.Reminder(17, 45, org.isoron.uhabits.core.models.WeekdayList(127))
+        }
+
+        val agenda = TaskCalendarEvents.buildAgendaForDay(
+            listOf(allDayTask, timedTask, otherDayTask, noneTask),
+            listOf(dailyHabit, timedHabit),
+            testDay
+        )
+
+        assertEquals(1, agenda.allDayTasks.size)
+        assertEquals("allDay", agenda.allDayTasks.single().id.value)
+
+        assertEquals(1, agenda.timedTasks.size)
+        val timedEvent = agenda.timedTasks.single()
+        assertEquals("timed", timedEvent.task.id.value)
+        assertEquals(14, timedEvent.hour)
+        assertEquals(30, timedEvent.minute)
+        org.junit.Assert.assertTrue(timedEvent.isTimed)
+        org.junit.Assert.assertFalse(timedEvent.isAllDay)
+
+        assertEquals(1, agenda.allDayHabits.size)
+        assertEquals("Read Books", agenda.allDayHabits.single().name)
+        org.junit.Assert.assertTrue(agenda.allDayHabits.single().isAllDay)
+
+        assertEquals(1, agenda.timedHabits.size)
+        val th = agenda.timedHabits.single()
+        assertEquals("Gym Workout", th.name)
+        assertEquals(17, th.reminderHour)
+        assertEquals(45, th.reminderMinute)
+        org.junit.Assert.assertFalse(th.isAllDay)
+
+        org.junit.Assert.assertTrue(agenda.hasItems)
+    }
 }

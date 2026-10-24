@@ -20,12 +20,45 @@
 package org.isoron.uhabits.activities.tasks
 
 import org.isoron.platform.time.LocalDate
+import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.userTasks.UserTask
 import org.isoron.uhabits.core.userTasks.due.TaskDue
 import java.util.Calendar
 
 enum class TaskCalendarEventKind { PLAN, DEADLINE }
-data class TaskCalendarEvent(val task: UserTask, val day: LocalDate, val kind: TaskCalendarEventKind)
+
+data class TaskCalendarEvent(
+    val task: UserTask,
+    val day: LocalDate,
+    val kind: TaskCalendarEventKind
+) {
+    val hour: Int?
+        get() = (task.due as? TaskDue.Timed)?.let {
+            val c = Calendar.getInstance()
+            c.timeInMillis = it.epochMillis
+            c.get(Calendar.HOUR_OF_DAY)
+        }
+
+    val minute: Int?
+        get() = (task.due as? TaskDue.Timed)?.let {
+            val c = Calendar.getInstance()
+            c.timeInMillis = it.epochMillis
+            c.get(Calendar.MINUTE)
+        }
+
+    val isAllDay: Boolean get() = task.due is TaskDue.Day
+    val isTimed: Boolean get() = task.due is TaskDue.Timed
+}
+
+data class DayCalendarAgenda(
+    val day: LocalDate,
+    val allDayTasks: List<UserTask>,
+    val timedTasks: List<TaskCalendarEvent>,
+    val allDayHabits: List<PlannedHabit>,
+    val timedHabits: List<PlannedHabit>
+) {
+    val hasItems: Boolean get() = allDayTasks.isNotEmpty() || timedTasks.isNotEmpty() || allDayHabits.isNotEmpty() || timedHabits.isNotEmpty()
+}
 
 object TaskCalendarEvents {
     private val eventComparator = Comparator<TaskCalendarEvent> { a, b ->
@@ -63,5 +96,27 @@ object TaskCalendarEvents {
         }
         result.sortWith(eventComparator)
         return result
+    }
+
+    fun buildAgendaForDay(
+        tasks: List<UserTask>,
+        habits: List<Habit>,
+        day: LocalDate
+    ): DayCalendarAgenda {
+        val events = from(tasks).filter { it.day == day }
+        val allDayTasks = events.filter { it.isAllDay }.map { it.task }
+        val timedTasks = events.filter { it.isTimed }
+
+        val plannedHabits = PlannedHabitProjector.projectForDate(habits, day)
+        val allDayHabits = plannedHabits.filter { it.isAllDay }
+        val timedHabits = plannedHabits.filter { !it.isAllDay }
+
+        return DayCalendarAgenda(
+            day = day,
+            allDayTasks = allDayTasks,
+            timedTasks = timedTasks,
+            allDayHabits = allDayHabits,
+            timedHabits = timedHabits
+        )
     }
 }
