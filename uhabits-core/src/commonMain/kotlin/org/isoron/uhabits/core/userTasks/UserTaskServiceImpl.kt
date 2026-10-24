@@ -119,7 +119,7 @@ class UserTaskServiceImpl(
             legacyPlanReviewPending = if (due != null) false else existing.legacyPlanReviewPending,
             parentTaskId = newParentId,
             sortOrder = newSortOrder,
-            updatedAt = clock(),
+            updatedAt = maxOf(clock(), existing.updatedAt + 1L),
         )
 
         repository.save(updated)
@@ -131,7 +131,7 @@ class UserTaskServiceImpl(
         val existing = repository.getById(id)
             ?: throw IllegalArgumentException("Task $id not found")
 
-        val now = clock()
+        val now = maxOf(clock(), existing.updatedAt + 1L)
         val (newStatus, newCompletedAt) = if (existing.status == TaskStatus.PENDING) {
             TaskStatus.COMPLETED to now
         } else {
@@ -152,9 +152,9 @@ class UserTaskServiceImpl(
         val existing = repository.getById(id)
             ?: throw IllegalArgumentException("Task $id not found")
 
-        val now = clock()
         val targetStatus = if (completed) TaskStatus.COMPLETED else TaskStatus.PENDING
         if (existing.status == targetStatus) return existing
+        val now = maxOf(clock(), existing.updatedAt + 1L)
 
         val updated = existing.copy(
             status = targetStatus,
@@ -170,7 +170,7 @@ class UserTaskServiceImpl(
         val existing = repository.getById(id)
             ?: throw IllegalArgumentException("Task $id not found")
         if (!existing.hasPendingLegacyPlan) return existing
-        val now = clock()
+        val now = maxOf(clock(), existing.updatedAt + 1L)
         val updated = if (accept) {
             val raw = requireNotNull(existing.legacyPlanDate)
             // Only the documented UTC epoch-day numeric encoding may be converted.
@@ -195,6 +195,20 @@ class UserTaskServiceImpl(
         return updated
     }
 
+    override fun restoreTaskSnapshot(expectedCurrent: UserTask, previousState: UserTask): UserTask? {
+        require(expectedCurrent.id == previousState.id) {
+            "Snapshot ids must match: ${expectedCurrent.id} != ${previousState.id}"
+        }
+        val current = repository.getById(previousState.id) ?: return null
+        if (current != expectedCurrent) return null
+
+        val now = maxOf(clock(), current.updatedAt + 1L)
+        val restored = previousState.copy(updatedAt = now)
+        repository.save(restored)
+        syncManager?.enqueueUserTask(restored, "upsert")
+        return restored
+    }
+
     override fun deleteTask(id: TaskId, cascadeSubtasks: Boolean) {
         if (cascadeSubtasks) {
             val subtasks = repository.getSubtasks(id)
@@ -202,7 +216,7 @@ class UserTaskServiceImpl(
                 deleteTask(sub.id, cascadeSubtasks = true)
             }
         }
-        val now = clock()
+        val now = maxOf(clock(), (repository.getById(id)?.updatedAt ?: Long.MIN_VALUE) + 1L)
         repository.delete(id)
         syncManager?.enqueueUserTaskDelete(id.value, now)
     }
@@ -215,7 +229,7 @@ class UserTaskServiceImpl(
             val task = pendingById[taskId] ?: repository.getById(taskId)
                 ?: return@forEachIndexed
             if (task.sortOrder != index) {
-                val updated = task.copy(sortOrder = index, updatedAt = now)
+                val updated = task.copy(sortOrder = index, updatedAt = maxOf(now, task.updatedAt + 1L))
                 toUpdate.add(updated)
                 pendingById[taskId] = updated
             }

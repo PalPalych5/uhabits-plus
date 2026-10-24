@@ -299,7 +299,8 @@ class SyncManager(
                 "sort_order" to task.sortOrder.toString(),
                 "created_at" to task.createdAt.toString(),
                 "updated_at" to task.updatedAt.toString()
-            )
+            ),
+            createdAt = task.updatedAt
         )
     }
 
@@ -314,7 +315,8 @@ class SyncManager(
                 "id" to taskId,
                 "deleted_at" to deletedAt.toString(),
                 "updated_at" to deletedAt.toString()
-            )
+            ),
+            createdAt = deletedAt
         )
     }
 

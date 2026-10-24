@@ -51,6 +51,8 @@ interface UserTaskService {
 
     fun resolveLegacyPlan(id: TaskId, accept: Boolean): UserTask
 
+    fun restoreTaskSnapshot(expectedCurrent: UserTask, previousState: UserTask): UserTask?
+
     fun deleteTask(id: TaskId, cascadeSubtasks: Boolean = true)
 
     fun reorderTasks(orderedIds: List<TaskId>)

@@ -59,6 +59,36 @@ class TaskDateSyncContractTest {
         }!!
 
     @Test
+    fun monotonicCompletionUndoReorderAndDeleteSurviveClockRollback() = runBlocking {
+        val source = harness.setupDeviceEnvironment(database(), SyncCoordinatorNextTest.InMemorySyncBackend(), "undo-source")
+        val target = harness.setupDeviceEnvironment(database(), SyncCoordinatorNextTest.InMemorySyncBackend(), "undo-target")
+        try {
+            val queue = org.isoron.uhabits.core.sync.SyncQueueRepository(source.db)
+            val sync = org.isoron.uhabits.core.sync.SyncManager(queue,
+                org.isoron.uhabits.core.sync.EntryOpRepository(source.db), { "undo-source" }, { 1000L })
+            val service = org.isoron.uhabits.core.userTasks.UserTaskServiceImpl(source.taskRepo, { 1000L }, { "clock-rollback" }, sync)
+            val before = service.createTask("Clock rollback")
+            apply(queue.findPending().last(), target)
+            val completed = service.setCompleted(before.id, true)
+            apply(queue.findPending().last(), target)
+            assertTrue(target.taskRepo.getById(before.id)!!.isCompleted)
+            val restored = service.restoreTaskSnapshot(completed, before)!!
+            assertEquals(restored.updatedAt, queue.findPending().last().createdAt)
+            apply(queue.findPending().last(), target)
+            assertEquals(restored, target.taskRepo.getById(before.id))
+            service.reorderTasks(listOf(TaskId("missing"), before.id))
+            apply(queue.findPending().last(), target)
+            assertEquals(1, target.taskRepo.getById(before.id)!!.sortOrder)
+            service.deleteTask(before.id, cascadeSubtasks = true)
+            apply(queue.findPending().last(), target)
+            assertNull(target.taskRepo.getById(before.id))
+        } finally {
+            source.coordinator.dispose(); source.db.close()
+            target.coordinator.dispose(); target.db.close()
+        }
+    }
+
+    @Test
     fun rawHistoryAndReviewDecisionRoundTripOfflineWithoutResurfacing() = runBlocking {
         val backend = SyncCoordinatorNextTest.InMemorySyncBackend()
         val source = harness.setupDeviceEnvironment(database(), backend, "review-source")

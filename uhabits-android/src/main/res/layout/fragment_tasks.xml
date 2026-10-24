@@ -38,6 +38,88 @@
             android:contentDescription="Действия со списком" />
     </LinearLayout>
 
+    <!-- Multi-selection Action Bar: Compact (48dp) -->
+    <LinearLayout
+        android:id="@+id/tasksSelectionBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="48dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:visibility="gone">
+
+        <ImageButton
+            android:id="@+id/btnSelectionClose"
+            android:layout_width="40dp"
+            android:layout_height="48dp"
+            android:padding="10dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_close"
+            android:contentDescription="Выйти из режима выбора" />
+
+        <TextView
+            android:id="@+id/tvSelectionCount"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
+            android:textSize="16sp"
+            android:maxLines="1"
+            android:ellipsize="middle"
+            android:fontFamily="sans-serif-medium"
+            android:fontFeatureSettings="tnum"
+            android:includeFontPadding="false" />
+
+        <ImageButton
+            android:id="@+id/btnSelectionDue"
+            android:layout_width="40dp"
+            android:layout_height="48dp"
+            android:padding="10dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_cat_calendar"
+            android:contentDescription="Изменить срок выбранных" />
+
+        <ImageButton
+            android:id="@+id/btnSelectionContainer"
+            android:layout_width="40dp"
+            android:layout_height="48dp"
+            android:padding="10dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_cat_folder"
+            android:contentDescription="Переместить выбранные в раздел" />
+
+        <ImageButton
+            android:id="@+id/btnSelectionComplete"
+            android:layout_width="40dp"
+            android:layout_height="48dp"
+            android:padding="10dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_action_check"
+            android:contentDescription="Завершить выбранные" />
+
+        <ImageButton
+            android:id="@+id/btnSelectionDelete"
+            android:layout_width="40dp"
+            android:layout_height="48dp"
+            android:padding="10dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_settings_trash"
+            android:contentDescription="Удалить выбранные" />
+
+        <ImageButton
+            android:id="@+id/btnSelectionMore"
+            android:layout_width="40dp"
+            android:layout_height="48dp"
+            android:padding="10dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_toolbar_more_vertical"
+            android:contentDescription="Действия с задачей"
+            android:visibility="gone" />
+    </LinearLayout>
+
     <!-- List Info line: Count on the left, Date on the right -->
     <LinearLayout
         android:id="@+id/layoutListInfo"

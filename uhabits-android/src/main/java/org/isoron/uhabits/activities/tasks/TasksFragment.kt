@@ -23,57 +23,62 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.widget.FrameLayout
-import android.widget.ScrollView
-import android.view.Gravity
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.PopupMenu
 import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
-import org.isoron.platform.io.runInTransaction
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.delay
-import org.isoron.uhabits.inject.HabitsApplicationComponent
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.snackbar.Snackbar
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.isoron.platform.io.runInTransaction
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
-import org.isoron.uhabits.activities.main.MainNavigationHost
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
+import org.isoron.uhabits.activities.main.MainNavigationHost
 import org.isoron.uhabits.activities.settings.SettingsThemePalette
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade
-import org.isoron.uhabits.core.containers.facade.OrganizationalItem
 import org.isoron.uhabits.core.userTasks.TaskId
-import org.isoron.uhabits.core.userTasks.TaskStatus
 import org.isoron.uhabits.core.userTasks.UserTask
 import org.isoron.uhabits.core.userTasks.UserTaskRepository
 import org.isoron.uhabits.core.userTasks.UserTaskService
 import org.isoron.uhabits.core.userTasks.due.TaskDue
 import org.isoron.uhabits.core.userTasks.due.TaskDueDate
+import org.isoron.uhabits.inject.HabitsApplicationComponent
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
 class TasksFragment : Fragment() {
+
+    internal data class TaskUndoEntry(
+        val before: UserTask,
+        val after: UserTask,
+    )
 
     private lateinit var taskRepo: UserTaskRepository
     private lateinit var taskService: UserTaskService
@@ -114,6 +119,24 @@ class TasksFragment : Fragment() {
     private val quickDraftSubtasks = mutableListOf<TaskDraft.DraftSubtask>()
     private var activeSmartView: TaskSmartView = TaskSmartView.TODAY
     private var selectedContainerFilter: ContainerId? = null
+
+    private val selectedTaskIds = linkedSetOf<TaskId>()
+    private val pendingActionTaskIds = linkedSetOf<TaskId>()
+    private val pendingDeleteConfirmationIds = linkedSetOf<TaskId>()
+    private var deleteConfirmationDialog: AlertDialog? = null
+    private var activeSnackbar: Snackbar? = null
+    private var lastUndoEntries: List<TaskUndoEntry> = emptyList()
+    private lateinit var swipeCallback: TaskSwipeCallback
+
+    private lateinit var tasksHeader: LinearLayout
+    private lateinit var tasksSelectionBar: LinearLayout
+    private lateinit var btnSelectionClose: ImageButton
+    private lateinit var tvSelectionCount: TextView
+    private lateinit var btnSelectionDue: ImageButton
+    private lateinit var btnSelectionContainer: ImageButton
+    private lateinit var btnSelectionComplete: ImageButton
+    private lateinit var btnSelectionDelete: ImageButton
+    private lateinit var btnSelectionMore: ImageButton
 
     private lateinit var tvTitle: TextView
     private lateinit var btnTasksOverflow: ImageButton
@@ -186,11 +209,21 @@ class TasksFragment : Fragment() {
             calendarMonth.timeInMillis = it.getLong("calendarMonth", calendarMonth.timeInMillis)
             localTreeRoot = it.getString("localTreeRoot")?.let(::ContainerId)
             collapsedContainers.addAll(it.getStringArrayList("collapsedContainers").orEmpty())
+            selectedTaskIds.clear()
+            it.getStringArrayList("selectedTaskIds")?.mapTo(selectedTaskIds, ::TaskId)
+            pendingActionTaskIds.clear()
+            it.getStringArrayList("pendingActionTaskIds")?.mapTo(pendingActionTaskIds, ::TaskId)
+            pendingDeleteConfirmationIds.clear()
+            it.getStringArrayList("pendingDeleteConfirmationIds")?.mapTo(pendingDeleteConfirmationIds, ::TaskId)
         }
         val app = requireContext().applicationContext as HabitsApplication
         if (::component.isInitialized && component !== app.component) {
             workspaceSnapshot = null
             snapshotRevision = -1L
+            selectedTaskIds.clear()
+            pendingActionTaskIds.clear()
+            pendingDeleteConfirmationIds.clear()
+            lastUndoEntries = emptyList()
         }
         component = app.component
         taskRepo = component.userTaskRepository
@@ -199,21 +232,41 @@ class TasksFragment : Fragment() {
         palette = MainTabsThemeBridge.resolve(requireContext())
 
         val view = inflater.inflate(R.layout.fragment_tasks, container, false)
-        val tasksHeader = view.findViewById<View>(R.id.tasksHeader)
-        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(tasksHeader) { v, insets ->
+        val headerView = view.findViewById<View>(R.id.tasksHeader)
+        val selectionBarView = view.findViewById<View>(R.id.tasksSelectionBar)
+        val topInsetListener = androidx.core.view.OnApplyWindowInsetsListener { v, insets ->
             val statusBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.statusBars())
             val cutout = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.displayCutout())
             val topInset = maxOf(statusBars.top, cutout.top)
             v.setPadding(v.paddingLeft, topInset + dpInt(6f), v.paddingRight, v.paddingBottom)
             insets
         }
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(headerView, topInsetListener)
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(selectionBarView, topInsetListener)
         bindViews(view)
         setupOverflowMenu()
+        setupSelectionBar()
         setupRecyclerView()
         setupQuickAdd()
         setupAdaptiveNavigation(view)
         applyTheme(view)
+        updateSelectionBarUi()
+        if (pendingDeleteConfirmationIds.isNotEmpty()) {
+            view.post {
+                if (isAdded && pendingDeleteConfirmationIds.isNotEmpty()) {
+                    confirmDeleteTasks(pendingDeleteConfirmationIds.toList())
+                }
+            }
+        }
         return shellRoot
+    }
+
+    override fun onHiddenChanged(hidden: Boolean) {
+        super.onHiddenChanged(hidden)
+        if (hidden) {
+            clearSelection()
+            activeSnackbar?.dismiss()
+        }
     }
 
     override fun onResume() {
@@ -226,6 +279,7 @@ class TasksFragment : Fragment() {
         adapter.updatePalette(palette)
         overdueAdapter.updatePalette(palette)
         completedAdapter.updatePalette(palette)
+        if (::swipeCallback.isInitialized) swipeCallback.updatePalette(palette)
         (childFragmentManager.findFragmentByTag("task_detail") as? TaskDetailBottomSheet)?.onTaskUpdatedListener = { if (view != null) loadTasks() }
         loadTasks()
     }
@@ -242,6 +296,11 @@ class TasksFragment : Fragment() {
 
     override fun onDestroyView() {
         (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(false)
+        deleteConfirmationDialog?.setOnDismissListener(null)
+        deleteConfirmationDialog?.dismiss()
+        deleteConfirmationDialog = null
+        activeSnackbar?.dismiss()
+        activeSnackbar = null
         loadGeneration++
         loadJob?.cancel()
         loadJob = null
@@ -277,6 +336,9 @@ class TasksFragment : Fragment() {
         outState.putLong("calendarMonth", calendarMonth.timeInMillis)
         outState.putString("localTreeRoot", localTreeRoot?.value)
         outState.putStringArrayList("collapsedContainers", ArrayList(collapsedContainers))
+        outState.putStringArrayList("selectedTaskIds", ArrayList(selectedTaskIds.map { it.value }))
+        outState.putStringArrayList("pendingActionTaskIds", ArrayList(pendingActionTaskIds.map { it.value }))
+        outState.putStringArrayList("pendingDeleteConfirmationIds", ArrayList(pendingDeleteConfirmationIds.map { it.value }))
         super.onSaveInstanceState(outState)
     }
 
@@ -292,6 +354,16 @@ class TasksFragment : Fragment() {
     }
 
     private fun bindViews(view: View) {
+        tasksHeader = view.findViewById(R.id.tasksHeader)
+        tasksSelectionBar = view.findViewById(R.id.tasksSelectionBar)
+        btnSelectionClose = view.findViewById(R.id.btnSelectionClose)
+        tvSelectionCount = view.findViewById(R.id.tvSelectionCount)
+        btnSelectionDue = view.findViewById(R.id.btnSelectionDue)
+        btnSelectionContainer = view.findViewById(R.id.btnSelectionContainer)
+        btnSelectionComplete = view.findViewById(R.id.btnSelectionComplete)
+        btnSelectionDelete = view.findViewById(R.id.btnSelectionDelete)
+        btnSelectionMore = view.findViewById(R.id.btnSelectionMore)
+
         tvTitle = view.findViewById(R.id.tvTasksTitle)
         btnTasksOverflow = view.findViewById(R.id.btnTasksOverflow)
 
@@ -320,6 +392,11 @@ class TasksFragment : Fragment() {
     private fun dp(value: Float): Float = TaskThemeUtils.dp(requireContext(), value)
     private fun dpInt(value: Float): Int = TaskThemeUtils.dpInt(requireContext(), value)
 
+    private fun dangerColor(): Int = androidx.core.content.ContextCompat.getColor(
+        requireContext(),
+        if (palette.isDark) R.color.color_picker_danger_dark else R.color.color_picker_danger_light,
+    )
+
     private fun applyTheme(view: View) {
         view.setBackgroundColor(palette.background)
         androidx.core.view.WindowInsetsControllerCompat(requireActivity().window, view).apply {
@@ -332,6 +409,16 @@ class TasksFragment : Fragment() {
         tvSubtitle.setTextColor(palette.onSurfaceVariant)
         tvTasksDate.setTextColor(palette.onSurfaceVariant)
 
+        tasksSelectionBar.setBackgroundColor(
+            MainTabsThemeBridge.withAlpha(palette.accent, if (palette.isDark) 0.14f else 0.08f)
+        )
+        btnSelectionClose.setColorFilter(palette.onSurface)
+        tvSelectionCount.setTextColor(palette.onSurface)
+        btnSelectionDue.setColorFilter(palette.onSurface)
+        btnSelectionContainer.setColorFilter(palette.onSurface)
+        btnSelectionComplete.setColorFilter(palette.accent)
+        btnSelectionDelete.setColorFilter(dangerColor())
+        btnSelectionMore.setColorFilter(palette.onSurfaceVariant)
 
         view.findViewById<ImageView>(R.id.ivEmptyIcon).setColorFilter(palette.onSurfaceVariant)
         tvEmptyTitle.setTextColor(palette.onSurface)
@@ -351,6 +438,7 @@ class TasksFragment : Fragment() {
         quickContainerView.setTextColor(palette.onSurfaceVariant)
 
         updateSmartViewLabel()
+        updateSelectionBarUi()
         if (::navigationColumn.isInitialized) renderNavigation()
     }
 
@@ -367,6 +455,7 @@ class TasksFragment : Fragment() {
             popup.setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     1 -> {
+                        clearSelection()
                         selectedContainerFilter = null
                         activeSmartView = TaskSmartView.ALL
                         updateSmartViewLabel()
@@ -374,13 +463,18 @@ class TasksFragment : Fragment() {
                         true
                     }
                     2 -> {
+                        clearSelection()
                         selectedContainerFilter = null
                         activeSmartView = TaskSmartView.COMPLETED
                         updateSmartViewLabel()
                         loadTasks()
                         true
                     }
-                    3 -> { workspaceNavigator?.invoke("Settings"); true }
+                    3 -> {
+                        clearSelection()
+                        workspaceNavigator?.invoke("Settings")
+                        true
+                    }
                     4 -> {
                         selectedContainerFilter?.let { filter ->
                             org.isoron.uhabits.activities.containers.statistics.ContainerStatisticsActivity.start(
@@ -401,6 +495,350 @@ class TasksFragment : Fragment() {
         }
     }
 
+    private fun setupSelectionBar() {
+        btnSelectionClose.setOnClickListener {
+            clearSelection()
+        }
+        btnSelectionDue.setOnClickListener {
+            val ids = selectedTaskIds.toList()
+            if (ids.isNotEmpty()) openActionDuePicker(ids)
+        }
+        btnSelectionContainer.setOnClickListener {
+            val ids = selectedTaskIds.toList()
+            if (ids.isNotEmpty()) openActionContainerPicker(ids)
+        }
+        btnSelectionComplete.setOnClickListener {
+            val ids = selectedTaskIds.toList()
+            if (ids.isNotEmpty()) executeCompleteAction(ids)
+        }
+        btnSelectionDelete.setOnClickListener {
+            val ids = selectedTaskIds.toList()
+            if (ids.isNotEmpty()) confirmDeleteTasks(ids)
+        }
+        btnSelectionMore.setOnClickListener {
+            val single = selectedTasksFromSnapshot().singleOrNull()
+            if (single != null) showTaskQuickMenu(single)
+        }
+
+        childFragmentManager.setFragmentResultListener(REQUEST_KEY_ACTION_DUE, viewLifecycleOwner) { _, result ->
+            if (component !== HabitsApplication.component) return@setFragmentResultListener
+            val targetIds = pendingActionTaskIds.toList()
+            pendingActionTaskIds.clear()
+            if (targetIds.isEmpty()) return@setFragmentResultListener
+            val chosenDue = TaskDuePickerBottomSheet.readResult(result)
+            applyDueToTasks(targetIds, chosenDue)
+        }
+        childFragmentManager.setFragmentResultListener(REQUEST_KEY_ACTION_CONTAINER, viewLifecycleOwner) { _, result ->
+            if (component !== HabitsApplication.component) return@setFragmentResultListener
+            val targetIds = pendingActionTaskIds.toList()
+            pendingActionTaskIds.clear()
+            if (targetIds.isEmpty()) return@setFragmentResultListener
+            val chosenContainer = result.getString(TaskContainerPickerBottomSheet.RESULT_CONTAINER_ID)?.let(::ContainerId)
+            applyContainerToTasks(targetIds, chosenContainer)
+        }
+    }
+
+    private fun toggleTaskSelection(taskId: TaskId) {
+        activeSnackbar?.dismiss()
+        if (!selectedTaskIds.add(taskId)) {
+            selectedTaskIds.remove(taskId)
+        }
+        if (selectedTaskIds.isNotEmpty() && quickExpanded) {
+            collapseQuickComposerQuietly()
+        }
+        syncSelectionToAdapters()
+        updateSelectionBarUi()
+    }
+
+    internal fun clearSelection() {
+        if (selectedTaskIds.isEmpty()) return
+        selectedTaskIds.clear()
+        syncSelectionToAdapters()
+        updateSelectionBarUi()
+    }
+
+    private fun syncSelectionToAdapters() {
+        val currentSelection = selectedTaskIds.toSet()
+        if (::adapter.isInitialized) adapter.updateSelection(currentSelection)
+        if (::overdueAdapter.isInitialized) overdueAdapter.updateSelection(currentSelection)
+        if (::completedAdapter.isInitialized) completedAdapter.updateSelection(currentSelection)
+        groupAdapters.values.forEach { (_, rows) -> rows.updateSelection(currentSelection) }
+    }
+
+    private fun selectedTasksFromSnapshot(): List<UserTask> {
+        val rootsById = workspaceSnapshot?.roots.orEmpty().associateBy { it.id }
+        return selectedTaskIds.mapNotNull { rootsById[it] }
+    }
+
+    private fun updateSelectionBarUi() {
+        if (!::tasksHeader.isInitialized || !::tasksSelectionBar.isInitialized) return
+        val count = selectedTaskIds.size
+        if (count == 0) {
+            tasksSelectionBar.visibility = View.GONE
+            tasksHeader.visibility = View.VISIBLE
+            return
+        }
+        tasksHeader.visibility = View.GONE
+        tasksSelectionBar.visibility = View.VISIBLE
+        val compactFont = resources.configuration.screenWidthDp <= 380 && resources.configuration.fontScale > 1.15f
+        tvSelectionCount.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, if (compactFont) 14f else 16f)
+        tvSelectionCount.text = "Выбрано: $count"
+        tvSelectionCount.contentDescription = "Выбрано задач: $count"
+        btnSelectionMore.visibility = if (count == 1) View.VISIBLE else View.GONE
+
+        val selectedTasks = selectedTasksFromSnapshot()
+        val allCompleted = selectedTasks.isNotEmpty() && selectedTasks.all { it.isCompleted }
+        if (allCompleted) {
+            btnSelectionComplete.setImageResource(R.drawable.ic_cat_refresh_cw)
+            btnSelectionComplete.contentDescription = "Вернуть в активные"
+        } else {
+            btnSelectionComplete.setImageResource(R.drawable.ic_action_check)
+            btnSelectionComplete.contentDescription = "Завершить выбранные"
+        }
+    }
+
+    private fun collapseQuickComposerQuietly() {
+        if (!quickExpanded) return
+        quickExpanded = false
+        (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(false)
+        if (::layoutQuickAddExpanded.isInitialized && ::layoutQuickAddCollapsed.isInitialized) {
+            layoutQuickAddExpanded.visibility = View.GONE
+            layoutQuickAddCollapsed.visibility = View.VISIBLE
+        }
+        if (::etQuickAddTitle.isInitialized) {
+            val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.hideSoftInputFromWindow(etQuickAddTitle.windowToken, 0)
+        }
+    }
+
+    private fun openActionDuePicker(ids: List<TaskId>) {
+        if (ids.isEmpty()) return
+        if (childFragmentManager.findFragmentByTag(REQUEST_KEY_ACTION_DUE) != null) return
+        activeSnackbar?.dismiss()
+        pendingActionTaskIds.clear()
+        pendingActionTaskIds.addAll(ids)
+        val distinctDues = ids.mapNotNull { taskRepo.getById(it)?.due }.distinct()
+        val initialDue = if (distinctDues.size == 1) distinctDues.single() else TaskDue.None
+        TaskDuePickerBottomSheet.newInstance(REQUEST_KEY_ACTION_DUE, initialDue)
+            .show(childFragmentManager, REQUEST_KEY_ACTION_DUE)
+    }
+
+    private fun openActionContainerPicker(ids: List<TaskId>) {
+        if (ids.isEmpty()) return
+        if (childFragmentManager.findFragmentByTag(REQUEST_KEY_ACTION_CONTAINER) != null) return
+        activeSnackbar?.dismiss()
+        pendingActionTaskIds.clear()
+        pendingActionTaskIds.addAll(ids)
+        val distinctContainers = ids.mapNotNull { taskRepo.getById(it) }.map { it.containerId }.distinct()
+        val initialContainer = if (distinctContainers.size == 1) distinctContainers.single() else null
+        TaskContainerPickerBottomSheet.newInstance(
+            initialContainer,
+            REQUEST_KEY_ACTION_CONTAINER,
+            component.session.datasetId,
+        ).show(childFragmentManager, REQUEST_KEY_ACTION_CONTAINER)
+    }
+
+    private fun applyDueToTasks(ids: List<TaskId>, targetDue: TaskDue) {
+        val uniqueIds = ids.distinct()
+        if (uniqueIds.isEmpty()) return
+        val entries = try {
+            component.db.runInTransaction {
+                val changed = mutableListOf<TaskUndoEntry>()
+                for (id in uniqueIds) {
+                    val before = taskRepo.getById(id) ?: continue
+                    if (before.due == targetDue && !before.hasPendingLegacyPlan) continue
+                    val after = taskService.updateTask(id = id, due = targetDue)
+                    changed.add(TaskUndoEntry(before = before, after = after))
+                }
+                changed
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("TasksFragment", "Failed to update task due", e)
+            Toast.makeText(requireContext(), "Не удалось обновить срок. Попробуйте ещё раз.", Toast.LENGTH_LONG).show()
+            loadTasks()
+            return
+        }
+        clearSelection()
+        loadTasks()
+        if (entries.isNotEmpty()) {
+            val msg = if (entries.size == 1) "Срок задачи обновлён" else "Срок обновлён (${entries.size})"
+            showUndoSnackbar(msg, entries)
+        }
+    }
+
+    private fun applyContainerToTasks(ids: List<TaskId>, targetContainer: ContainerId?) {
+        val uniqueIds = ids.distinct()
+        if (uniqueIds.isEmpty()) return
+        val entries = try {
+            component.db.runInTransaction {
+                val changed = mutableListOf<TaskUndoEntry>()
+                for (id in uniqueIds) {
+                    val before = taskRepo.getById(id) ?: continue
+                    if (before.containerId == targetContainer) continue
+                    val after = taskService.updateTask(
+                        id = id,
+                        containerId = targetContainer,
+                        clearContainer = targetContainer == null,
+                    )
+                    changed.add(TaskUndoEntry(before = before, after = after))
+                }
+                changed
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("TasksFragment", "Failed to move task container", e)
+            Toast.makeText(requireContext(), "Не удалось переместить задачи. Попробуйте ещё раз.", Toast.LENGTH_LONG).show()
+            loadTasks()
+            return
+        }
+        clearSelection()
+        loadTasks()
+        if (entries.isNotEmpty()) {
+            val msg = if (entries.size == 1) "Задача перемещена" else "Задачи перемещены (${entries.size})"
+            showUndoSnackbar(msg, entries)
+        }
+    }
+
+    private fun executeCompleteAction(ids: List<TaskId>) {
+        val uniqueIds = ids.distinct()
+        if (uniqueIds.isEmpty()) return
+        val result = try {
+            component.db.runInTransaction {
+                val existing = uniqueIds.mapNotNull { taskRepo.getById(it) }
+                if (existing.isEmpty()) return@runInTransaction false to emptyList<TaskUndoEntry>()
+                val targetCompleted = existing.any { !it.isCompleted }
+                val changed = mutableListOf<TaskUndoEntry>()
+                for (before in existing) {
+                    if (before.isCompleted == targetCompleted) continue
+                    val after = taskService.setCompleted(before.id, targetCompleted)
+                    changed.add(TaskUndoEntry(before = before, after = after))
+                }
+                targetCompleted to changed
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("TasksFragment", "Failed to update completion state", e)
+            Toast.makeText(requireContext(), "Не удалось обновить статус задач. Попробуйте ещё раз.", Toast.LENGTH_LONG).show()
+            loadTasks()
+            return
+        }
+        val (targetCompleted, entries) = result
+        clearSelection()
+        loadTasks()
+        if (entries.isNotEmpty()) {
+            val msg = when {
+                entries.size == 1 && targetCompleted -> "Задача завершена"
+                entries.size == 1 && !targetCompleted -> "Задача возвращена в активные"
+                targetCompleted -> "Завершено задач: ${entries.size}"
+                else -> "Возвращено в активные: ${entries.size}"
+            }
+            showUndoSnackbar(msg, entries)
+        }
+    }
+
+    private fun confirmDeleteTasks(ids: List<TaskId>) {
+        val uniqueIds = ids.distinct()
+        if (uniqueIds.isEmpty()) return
+        activeSnackbar?.dismiss()
+        pendingDeleteConfirmationIds.clear()
+        pendingDeleteConfirmationIds.addAll(uniqueIds)
+        deleteConfirmationDialog?.setOnDismissListener(null)
+        deleteConfirmationDialog?.dismiss()
+
+        val title = if (uniqueIds.size == 1) {
+            "Удалить задачу?"
+        } else {
+            "Удалить выбранные задачи (${uniqueIds.size})?"
+        }
+        val message = if (uniqueIds.size == 1) {
+            "Задача и её подзадачи будут удалены без возможности отмены."
+        } else {
+            "Выбранные задачи и их подзадачи будут удалены без возможности отмены."
+        }
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle(title)
+            .setMessage(message)
+            .setNegativeButton("Отмена") { _, _ ->
+                pendingDeleteConfirmationIds.clear()
+            }
+            .setPositiveButton("Удалить") { _, _ ->
+                val toDelete = pendingDeleteConfirmationIds.toList()
+                pendingDeleteConfirmationIds.clear()
+                executeDeleteTasks(toDelete)
+            }
+            .setOnCancelListener {
+                pendingDeleteConfirmationIds.clear()
+            }
+            .create()
+        deleteConfirmationDialog = dialog
+        dialog.show()
+    }
+
+    private fun executeDeleteTasks(ids: List<TaskId>) {
+        val uniqueIds = ids.distinct()
+        if (uniqueIds.isEmpty()) return
+        try {
+            component.db.runInTransaction {
+                for (id in uniqueIds) {
+                    if (taskRepo.getById(id) != null) {
+                        taskService.deleteTask(id, cascadeSubtasks = true)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("TasksFragment", "Failed to delete tasks", e)
+            Toast.makeText(requireContext(), "Не удалось удалить задачи. Попробуйте ещё раз.", Toast.LENGTH_LONG).show()
+            loadTasks()
+            return
+        }
+        activeSnackbar?.dismiss()
+        lastUndoEntries = emptyList()
+        clearSelection()
+        loadTasks()
+    }
+
+    private fun showUndoSnackbar(message: String, entries: List<TaskUndoEntry>) {
+        if (entries.isEmpty() || !isAdded || view == null) return
+        lastUndoEntries = entries
+        activeSnackbar?.dismiss()
+        val snackbar = Snackbar.make(shellRoot, message, Snackbar.LENGTH_LONG)
+        if (::layoutQuickAddContainer.isInitialized && layoutQuickAddContainer.visibility == View.VISIBLE) {
+            snackbar.anchorView = layoutQuickAddContainer
+        }
+        val bgColor = if (palette.isDark) palette.surfaceVariant else Color.parseColor("#252B33")
+        snackbar.setBackgroundTint(bgColor)
+        snackbar.setTextColor(Color.WHITE)
+        snackbar.setActionTextColor(if (palette.isDark) palette.accent else Color.parseColor("#7CC4FA"))
+        snackbar.setAction("Отменить") {
+            performUndo(entries)
+        }
+        activeSnackbar = snackbar
+        snackbar.show()
+    }
+
+    internal fun performUndo(entries: List<TaskUndoEntry> = lastUndoEntries): Int {
+        if (entries.isEmpty()) return 0
+        val restoredCount = try {
+            component.db.runInTransaction {
+                var count = 0
+                for (entry in entries) {
+                    val restored = taskService.restoreTaskSnapshot(
+                        expectedCurrent = entry.after,
+                        previousState = entry.before,
+                    )
+                    if (restored != null) count++
+                }
+                count
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("TasksFragment", "Failed to undo task operation", e)
+            Toast.makeText(requireContext(), "Не удалось отменить действие.", Toast.LENGTH_LONG).show()
+            loadTasks()
+            return 0
+        }
+        lastUndoEntries = emptyList()
+        loadTasks()
+        return restoredCount
+    }
+
     private fun updateSmartViewLabel() {
         tvTitle.text = selectedContainerFilter?.let { workspaceSnapshot?.availableContainers.orEmpty().find { item -> item.key == it.value }?.name } ?: activeSmartView.displayName
     }
@@ -409,17 +847,33 @@ class TasksFragment : Fragment() {
         fun taskAdapter() = TasksAdapter(
             palette = palette,
             onTaskClicked = { task ->
-                val sheet = TaskDetailBottomSheet.newInstance(task.id)
-                sheet.onTaskUpdatedListener = { loadTasks() }
-                sheet.show(childFragmentManager, "task_detail")
+                if (selectedTaskIds.isNotEmpty()) {
+                    toggleTaskSelection(task.id)
+                } else {
+                    val sheet = TaskDetailBottomSheet.newInstance(task.id)
+                    sheet.onTaskUpdatedListener = { loadTasks() }
+                    sheet.show(childFragmentManager, "task_detail")
+                }
             },
             onToggleComplete = { task ->
-                taskService.toggleComplete(task.id)
-                loadTasks()
+                if (selectedTaskIds.isNotEmpty()) {
+                    toggleTaskSelection(task.id)
+                } else {
+                    executeCompleteAction(listOf(task.id))
+                }
             },
             onTaskLongClicked = { task, _ ->
+                toggleTaskSelection(task.id)
+            },
+            onChangeDue = { task ->
+                openActionDuePicker(listOf(task.id))
+            },
+            onMoveContainer = { task ->
+                openActionContainerPicker(listOf(task.id))
+            },
+            onShowContextMenu = { task ->
                 showTaskQuickMenu(task)
-            }
+            },
         )
         adapter = taskAdapter()
         createGroupAdapter = ::taskAdapter
@@ -437,8 +891,20 @@ class TasksFragment : Fragment() {
             workspaceSnapshot?.let(::renderTasks)
         }
         rvTasks.layoutManager = LinearLayoutManager(requireContext())
+        rvTasks.itemAnimator = null
         rvTasks.adapter = TaskListAdapter(
-            overdueHeader, overdueAdapter, activeHeader, groupedAdapter, completedHeader, completedAdapter)
+            overdueHeader, overdueAdapter, activeHeader, groupedAdapter, completedHeader, completedAdapter
+        )
+        swipeCallback = TaskSwipeCallback(
+            palette = palette,
+            isSelectionModeActive = { selectedTaskIds.isNotEmpty() },
+            onSwipeChangeDue = { task -> openActionDuePicker(listOf(task.id)) },
+            onSwipeMoveContainer = { task -> openActionContainerPicker(listOf(task.id)) },
+        )
+        val helper = ItemTouchHelper(swipeCallback)
+        swipeCallback.itemTouchHelper = helper
+        swipeCallback.attachedRecyclerView = rvTasks
+        helper.attachToRecyclerView(rvTasks)
     }
 
     private fun setupQuickAdd() {
@@ -496,6 +962,7 @@ class TasksFragment : Fragment() {
         }
 
         fun expandComposer() {
+            clearSelection()
             quickExpanded = true
             (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(true)
             layoutQuickAddCollapsed.visibility = View.GONE
@@ -743,6 +1210,21 @@ class TasksFragment : Fragment() {
             TaskDueDisplayFormatter.selectedLocale(requireContext()),
         )
 
+        val renderedTaskIds = hashSetOf<TaskId>().apply {
+            if (!calendarMode) {
+                if (sections.groups.isEmpty()) {
+                    sections.active.forEach { add(it.id) }
+                } else {
+                    sections.groups.forEach { group -> group.tasks.forEach { add(it.id) } }
+                }
+                if (overdueExpanded) sections.overdue.forEach { add(it.id) }
+                if (completedExpanded) sections.completed.forEach { add(it.id) }
+            }
+        }
+        selectedTaskIds.retainAll(renderedTaskIds)
+        val currentSelection = selectedTaskIds.toSet()
+        updateSelectionBarUi()
+
         val containerItemMap = availableContainers.associateBy { ContainerId(it.key) }
 
         adapter.updateData(
@@ -751,6 +1233,7 @@ class TasksFragment : Fragment() {
             newContainers = containerItemMap,
             currentToday = today,
             currentTimeMillis = nowMillis,
+            newSelectedIds = currentSelection,
         )
         groupAdapters.keys.retainAll(sections.groups.map { it.key }.toSet())
         groupedAdapter.replaceSections(if (sections.groups.isEmpty()) listOf(adapter) else
@@ -760,11 +1243,11 @@ class TasksFragment : Fragment() {
                 }
                 header.update(true, true, palette, group.title)
                 rows.updatePalette(palette)
-                rows.updateData(group.tasks, subtaskMap, containerItemMap, today, nowMillis)
+                rows.updateData(group.tasks, subtaskMap, containerItemMap, today, nowMillis, currentSelection)
                 listOf(header, rows)
             })
-        overdueAdapter.updateData(if (overdueExpanded) sections.overdue else emptyList(), subtaskMap, containerItemMap, today, nowMillis)
-        completedAdapter.updateData(if (completedExpanded) sections.completed else emptyList(), subtaskMap, containerItemMap, today, nowMillis)
+        overdueAdapter.updateData(if (overdueExpanded) sections.overdue else emptyList(), subtaskMap, containerItemMap, today, nowMillis, currentSelection)
+        completedAdapter.updateData(if (completedExpanded) sections.completed else emptyList(), subtaskMap, containerItemMap, today, nowMillis, currentSelection)
         overdueHeader.update(sections.overdue.isNotEmpty(), overdueExpanded, palette)
         activeHeader.update(sections.groups.isEmpty() && sections.overdue.isNotEmpty() && sections.active.isNotEmpty(), true, palette,
             if (activeSmartView == TaskSmartView.TODAY) "Сегодня" else "Задачи")
@@ -847,7 +1330,6 @@ class TasksFragment : Fragment() {
         }
     }
 
-
     private fun navText(label: String, selected: Boolean = false, action: (() -> Unit)? = null): TextView = TextView(requireContext()).apply {
         text = label
         textSize = 15f
@@ -909,10 +1391,10 @@ class TasksFragment : Fragment() {
             setColorFilter(palette.onSurfaceVariant)
             setPadding(dpInt(12f), dpInt(12f), dpInt(12f), dpInt(12f))
             setBackgroundResource(run {
-                        val value = android.util.TypedValue()
-                        requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, value, true)
-                        value.resourceId
-                    })
+                val value = android.util.TypedValue()
+                requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, value, true)
+                value.resourceId
+            })
             setOnClickListener { openNavigation() }
             contentDescription = "Открыть навигацию задач"
             visibility = if (wide) View.GONE else View.VISIBLE
@@ -921,12 +1403,16 @@ class TasksFragment : Fragment() {
         representationButton = ImageButton(requireContext()).apply {
             setPadding(dpInt(12f), dpInt(12f), dpInt(12f), dpInt(12f))
             setBackgroundResource(run {
-                        val value = android.util.TypedValue()
-                        requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, value, true)
-                        value.resourceId
-                    })
+                val value = android.util.TypedValue()
+                requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, value, true)
+                value.resourceId
+            })
             setColorFilter(palette.onSurfaceVariant)
-            setOnClickListener { calendarMode = !calendarMode; loadTasks() }
+            setOnClickListener {
+                clearSelection()
+                calendarMode = !calendarMode
+                loadTasks()
+            }
         }
         header.addView(representationButton, header.childCount - 1, LinearLayout.LayoutParams(dpInt(48f), dpInt(48f)))
         tvTitle.setOnLongClickListener {
@@ -979,6 +1465,10 @@ class TasksFragment : Fragment() {
             } else closeNavigation()
             return true
         }
+        if (selectedTaskIds.isNotEmpty()) {
+            clearSelection()
+            return true
+        }
         if (quickExpanded) {
             quickExpanded = false
             (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(false)
@@ -990,8 +1480,14 @@ class TasksFragment : Fragment() {
         return false
     }
 
-    private fun navigationRow(label: String, icon: Int, count: Int? = null, selected: Boolean = false,
-                              depth: Int = 0, action: () -> Unit): LinearLayout = LinearLayout(requireContext()).apply {
+    private fun navigationRow(
+        label: String,
+        icon: Int,
+        count: Int? = null,
+        selected: Boolean = false,
+        depth: Int = 0,
+        action: () -> Unit,
+    ): LinearLayout = LinearLayout(requireContext()).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         minimumHeight = dpInt(48f)
@@ -1001,7 +1497,9 @@ class TasksFragment : Fragment() {
         setBackgroundResource(ripple.resourceId)
         if (selected) background = android.graphics.drawable.RippleDrawable(
             android.content.res.ColorStateList.valueOf(MainTabsThemeBridge.withAlpha(palette.accent, .16f)),
-            GradientDrawable().apply { cornerRadius = dp(8f); setColor(MainTabsThemeBridge.withAlpha(palette.accent, .09f)) }, null)
+            GradientDrawable().apply { cornerRadius = dp(8f); setColor(MainTabsThemeBridge.withAlpha(palette.accent, .09f)) },
+            null,
+        )
         isFocusable = true
         isSelected = selected
         setOnClickListener { action() }
@@ -1028,13 +1526,22 @@ class TasksFragment : Fragment() {
         navigationColumn.removeAllViews()
         navigationColumn.setBackgroundColor(palette.background)
         navigationColumn.setPaddingRelative(dpInt(8f), dpInt(8f), dpInt(8f), dpInt(16f))
-        fun divider() { navigationColumn.addView(View(requireContext()).apply { setBackgroundColor(palette.divider) },
-            LinearLayout.LayoutParams(-1, dpInt(1f)).apply { topMargin = dpInt(12f); bottomMargin = dpInt(12f) }) }
+        fun divider() {
+            navigationColumn.addView(
+                View(requireContext()).apply { setBackgroundColor(palette.divider) },
+                LinearLayout.LayoutParams(-1, dpInt(1f)).apply { topMargin = dpInt(12f); bottomMargin = dpInt(12f) },
+            )
+        }
         if (wide) {
-            listOf(Triple("Habits", "Привычки", R.drawable.ic_tasks_completed),
+            listOf(
+                Triple("Habits", "Привычки", R.drawable.ic_tasks_completed),
                 Triple("Tasks", "Задачи", R.drawable.ic_cat_list_todo),
-                Triple("Statistics", "Статистика", R.drawable.ic_settings_statistics)).forEach { (key, name, icon) ->
-                navigationColumn.addView(navigationRow(name, icon, selected = key == "Tasks") { workspaceNavigator?.invoke(key) })
+                Triple("Statistics", "Статистика", R.drawable.ic_settings_statistics),
+            ).forEach { (key, name, icon) ->
+                navigationColumn.addView(navigationRow(name, icon, selected = key == "Tasks") {
+                    clearSelection()
+                    workspaceNavigator?.invoke(key)
+                })
             }
             divider()
         } else navigationColumn.addView(navText("Задачи").apply {
@@ -1048,29 +1555,48 @@ class TasksFragment : Fragment() {
             R.drawable.ic_cat_folder_open,
             R.drawable.ic_cat_calendar_clock,
             R.drawable.ic_cat_list_todo,
-            R.drawable.ic_tasks_completed
+            R.drawable.ic_tasks_completed,
         )
         TaskSmartView.entries.forEachIndexed { index, smart ->
             val count = roots.count { smart.matches(it, getToday(), System.currentTimeMillis()) }
-            navigationColumn.addView(navigationRow(smart.displayName, smartIcons[index], count.takeUnless { smart == TaskSmartView.COMPLETED },
-                selectedContainerFilter == null && activeSmartView == smart) {
-                selectedContainerFilter = null; activeSmartView = smart; closeNavigation(); loadTasks()
+            navigationColumn.addView(navigationRow(
+                smart.displayName,
+                smartIcons[index],
+                count.takeUnless { smart == TaskSmartView.COMPLETED },
+                selectedContainerFilter == null && activeSmartView == smart,
+            ) {
+                clearSelection()
+                selectedContainerFilter = null
+                activeSmartView = smart
+                closeNavigation()
+                loadTasks()
             })
         }
         divider()
         navigationColumn.addView(navText("Разделы").apply { textSize = 12f; minHeight = dpInt(32f); setTextColor(palette.onSurfaceVariant) })
         if (snapshot.containers.isNotEmpty()) {
             localTreeRoot?.let { id ->
-                navigationColumn.addView(navigationRow(snapshot.containers[id]?.parentId?.let { snapshot.containers[it]?.name } ?: "Все разделы",
-                    R.drawable.ic_tasks_parent) { localTreeRoot = snapshot.containers[id]?.parentId; renderNavigation() })
+                navigationColumn.addView(navigationRow(
+                    snapshot.containers[id]?.parentId?.let { snapshot.containers[it]?.name } ?: "Все разделы",
+                    R.drawable.ic_tasks_parent,
+                ) { localTreeRoot = snapshot.containers[id]?.parentId; renderNavigation() })
             }
             fun addContainer(item: org.isoron.uhabits.core.containers.Container, depth: Int) {
                 val children = snapshot.children[item.id].orEmpty()
                 val count = snapshot.pendingCounts[item.id] ?: 0
                 val row = LinearLayout(requireContext()).apply { orientation = LinearLayout.HORIZONTAL }
-                row.addView(navigationRow(item.name, if (depth == 0) R.drawable.ic_cat_folder else R.drawable.ic_cat_list_todo,
-                    count, selectedContainerFilter == item.id, depth) {
-                    selectedContainerFilter = item.id; activeSmartView = TaskSmartView.ALL; closeNavigation(); loadTasks()
+                row.addView(navigationRow(
+                    item.name,
+                    if (depth == 0) R.drawable.ic_cat_folder else R.drawable.ic_cat_list_todo,
+                    count,
+                    selectedContainerFilter == item.id,
+                    depth,
+                ) {
+                    clearSelection()
+                    selectedContainerFilter = item.id
+                    activeSmartView = TaskSmartView.ALL
+                    closeNavigation()
+                    loadTasks()
                 }, LinearLayout.LayoutParams(0, -2, 1f))
                 if (children.isNotEmpty()) row.addView(ImageButton(requireContext()).apply {
                     setImageResource(if (depth >= 2 || item.id.value in collapsedContainers) R.drawable.ic_chevron_right else R.drawable.ic_chevron_down)
@@ -1093,7 +1619,11 @@ class TasksFragment : Fragment() {
             if (local != null) addContainer(local, 0) else snapshot.children[null].orEmpty().forEach { addContainer(it, 0) }
         }
         divider()
-        navigationColumn.addView(navigationRow("Настройки", R.drawable.ic_nav_settings) { closeNavigation(); workspaceNavigator?.invoke("Settings") })
+        navigationColumn.addView(navigationRow("Настройки", R.drawable.ic_nav_settings) {
+            clearSelection()
+            closeNavigation()
+            workspaceNavigator?.invoke("Settings")
+        })
     }
 
     private fun renderCalendar(tasks: List<UserTask>) {
@@ -1119,9 +1649,11 @@ class TasksFragment : Fragment() {
         content.addView(monthRow)
         val events = TaskCalendarEvents.from(tasks)
         val weekdays = LinearLayout(requireContext())
-        listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс").forEach { weekdays.addView(navText(it).apply {
-            textSize = 11f; gravity = Gravity.CENTER; setPadding(0,0,0,0); minHeight = dpInt(24f); setTextColor(palette.onSurfaceVariant)
-        }, LinearLayout.LayoutParams(0, -2, 1f)) }
+        listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс").forEach {
+            weekdays.addView(navText(it).apply {
+                textSize = 11f; gravity = Gravity.CENTER; setPadding(0, 0, 0, 0); minHeight = dpInt(24f); setTextColor(palette.onSurfaceVariant)
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+        }
         content.addView(weekdays)
         val month = calendarMonth.get(Calendar.MONTH) + 1
         val year = calendarMonth.get(Calendar.YEAR)
@@ -1159,12 +1691,14 @@ class TasksFragment : Fragment() {
                             text = event.task.title; textSize = 11f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
                             setPaddingRelative(dpInt(4f), dpInt(3f), dpInt(2f), dpInt(3f))
                             setTextColor(palette.onSurface)
-                            val drawable = androidx.core.content.ContextCompat.getDrawable(requireContext(),
-                                if (event.kind == TaskCalendarEventKind.PLAN) R.drawable.ic_cat_calendar else R.drawable.ic_cat_flag)?.mutate()
+                            val drawable = androidx.core.content.ContextCompat.getDrawable(
+                                requireContext(),
+                                if (event.kind == TaskCalendarEventKind.PLAN) R.drawable.ic_cat_calendar else R.drawable.ic_cat_flag,
+                            )?.mutate()
                             drawable?.setTint(if (event.kind == TaskCalendarEventKind.PLAN) palette.accent else palette.onSurfaceVariant)
-                            drawable?.setBounds(0,0,dpInt(12f),dpInt(12f))
-                            setCompoundDrawablesRelative(drawable,null,null,null); compoundDrawablePadding = dpInt(3f)
-                        }, LinearLayout.LayoutParams(-1,-2))
+                            drawable?.setBounds(0, 0, dpInt(12f), dpInt(12f))
+                            setCompoundDrawablesRelative(drawable, null, null, null); compoundDrawablePadding = dpInt(3f)
+                        }, LinearLayout.LayoutParams(-1, -2))
                     }
                     if (dayEvents.size > 2) cell.addView(TextView(requireContext()).apply {
                         text = "+${dayEvents.size - 2} ещё"; textSize = 10f; setTextColor(palette.onSurfaceVariant)
@@ -1175,71 +1709,84 @@ class TasksFragment : Fragment() {
                         indicators.addView(ImageView(requireContext()).apply {
                             setImageResource(if (kind == TaskCalendarEventKind.PLAN) R.drawable.ic_cat_calendar else R.drawable.ic_cat_flag)
                             setColorFilter(if (kind == TaskCalendarEventKind.PLAN) palette.accent else palette.onSurfaceVariant)
-                        }, LinearLayout.LayoutParams(dpInt(12f),dpInt(12f)).apply { marginStart = dpInt(2f); marginEnd = dpInt(2f) })
+                        }, LinearLayout.LayoutParams(dpInt(12f), dpInt(12f)).apply { marginStart = dpInt(2f); marginEnd = dpInt(2f) })
                     }
                     cell.addView(indicators)
                 }
                 row.addView(cell, LinearLayout.LayoutParams(0, -2, 1f))
             }
             content.addView(row)
-            if (wide) content.addView(View(requireContext()).apply { setBackgroundColor(palette.divider) }, LinearLayout.LayoutParams(-1,dpInt(1f)))
+            if (wide) content.addView(View(requireContext()).apply { setBackgroundColor(palette.divider) }, LinearLayout.LayoutParams(-1, dpInt(1f)))
         }
-        content.addView(navText(SimpleDateFormat("EEEE, d MMMM",Locale("ru")).format(Calendar.getInstance().apply {
+        content.addView(navText(SimpleDateFormat("EEEE, d MMMM", Locale("ru")).format(Calendar.getInstance().apply {
             set(selectedDay.year, selectedDay.month - 1, selectedDay.day)
-        }.time)).apply { textSize = 15f; typeface = android.graphics.Typeface.create("sans-serif-medium",0); minHeight = dpInt(48f) })
+        }.time)).apply { textSize = 15f; typeface = android.graphics.Typeface.create("sans-serif-medium", 0); minHeight = dpInt(48f) })
         val agenda = events.filter { it.day == selectedDay }
         if (agenda.isEmpty()) content.addView(navText("Нет задач на выбранный день").apply { setTextColor(palette.onSurfaceVariant) })
         agenda.forEach { event ->
             val row = LinearLayout(requireContext()).apply {
                 orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-                minimumHeight = dpInt(64f); setPaddingRelative(dpInt(16f),dpInt(8f),dpInt(16f),dpInt(8f))
-                val ripple = android.util.TypedValue(); requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground,ripple,true)
+                minimumHeight = dpInt(64f); setPaddingRelative(dpInt(16f), dpInt(8f), dpInt(16f), dpInt(8f))
+                val ripple = android.util.TypedValue(); requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
                 setBackgroundResource(ripple.resourceId); isFocusable = true
                 setOnClickListener {
                     val sheet = TaskDetailBottomSheet.newInstance(event.task.id)
-                    sheet.onTaskUpdatedListener = { loadTasks() }; sheet.show(childFragmentManager,"task_detail")
+                    sheet.onTaskUpdatedListener = { loadTasks() }; sheet.show(childFragmentManager, "task_detail")
                 }
             }
             row.addView(ImageView(requireContext()).apply {
                 setImageResource(if (event.kind == TaskCalendarEventKind.PLAN) R.drawable.ic_cat_calendar else R.drawable.ic_cat_flag)
                 setColorFilter(if (event.kind == TaskCalendarEventKind.PLAN) palette.accent else palette.onSurfaceVariant)
-            },LinearLayout.LayoutParams(dpInt(20f),dpInt(20f)).apply { marginEnd = dpInt(16f) })
+            }, LinearLayout.LayoutParams(dpInt(20f), dpInt(20f)).apply { marginEnd = dpInt(16f) })
             val labels = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
-            labels.addView(TextView(requireContext()).apply { text = event.task.title; textSize = 15f; maxLines = 2;
-                ellipsize = android.text.TextUtils.TruncateAt.END; setTextColor(palette.onSurface) })
+            labels.addView(TextView(requireContext()).apply {
+                text = event.task.title; textSize = 15f; maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END; setTextColor(palette.onSurface)
+            })
             labels.addView(TextView(requireContext()).apply {
                 val timeStr = (event.task.due as? TaskDue.Timed)?.let {
                     SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(it.epochMillis))
                 }.orEmpty()
                 text = if (timeStr.isNotEmpty()) "Срок · $timeStr" else "Срок"
                 textSize = 12f; setTextColor(palette.onSurfaceVariant)
-            },LinearLayout.LayoutParams(-1,-2).apply { topMargin = dpInt(4f) })
-            row.addView(labels,LinearLayout.LayoutParams(0,-2,1f)); content.addView(row)
+            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dpInt(4f) })
+            row.addView(labels, LinearLayout.LayoutParams(0, -2, 1f)); content.addView(row)
         }
         scroll.post { if (scroll.parent != null) scroll.scrollTo(0, scrollY) }
     }
 
-    private fun showTaskQuickMenu(task: UserTask) {
-        val actions = arrayOf("Редактировать", if (task.isCompleted) "Отметить невыполненной" else "Завершить", "Удалить")
+    internal fun showTaskQuickMenu(task: UserTask) {
+        val isSelected = task.id in selectedTaskIds
+        val actions = arrayOf(
+            "Изменить срок",
+            "Переместить в раздел",
+            "Редактировать",
+            if (task.isCompleted) "Отметить невыполненной" else "Завершить",
+            if (isSelected) "Снять выделение" else "Выбрать",
+            "Удалить",
+        )
         AlertDialog.Builder(requireContext())
             .setTitle(task.title)
             .setItems(actions) { _, which ->
                 when (which) {
-                    0 -> {
+                    0 -> openActionDuePicker(listOf(task.id))
+                    1 -> openActionContainerPicker(listOf(task.id))
+                    2 -> {
+                        clearSelection()
                         val sheet = TaskDetailBottomSheet.newInstance(task.id)
                         sheet.onTaskUpdatedListener = { loadTasks() }
                         sheet.show(childFragmentManager, "task_detail")
                     }
-                    1 -> {
-                        taskService.toggleComplete(task.id)
-                        loadTasks()
-                    }
-                    2 -> {
-                        taskService.deleteTask(task.id, cascadeSubtasks = true)
-                        loadTasks()
-                    }
+                    3 -> executeCompleteAction(listOf(task.id))
+                    4 -> toggleTaskSelection(task.id)
+                    5 -> confirmDeleteTasks(listOf(task.id))
                 }
             }
             .show()
+    }
+
+    companion object {
+        internal const val REQUEST_KEY_ACTION_DUE = "taskActionDue"
+        internal const val REQUEST_KEY_ACTION_CONTAINER = "taskActionContainer"
     }
 }

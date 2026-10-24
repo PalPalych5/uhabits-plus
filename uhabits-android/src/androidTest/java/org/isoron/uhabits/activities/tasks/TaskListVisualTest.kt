@@ -324,6 +324,453 @@ class TaskListVisualTest {
         }
     }
 
+    @Test fun verifyPr8QuickActionsMultiSelectionAndUndo() {
+        check(phase.matches(Regex("[a-zA-Z0-9_-]+")))
+        setToday(org.isoron.platform.time.LocalDate(today.year, today.monthValue, today.dayOfMonth))
+        val harness = TaskDraftLifecycleTest()
+        bootstrapDisposableSession()
+        harness.guard()
+
+        // Clean existing tasks in disposable DB for deterministic PR8 verification
+        for (root in component.userTaskRepository.getRoots()) {
+            component.userTaskService.deleteTask(root.id, cascadeSubtasks = true)
+        }
+
+        val queries = requireNotNull(component.organizationFacade.containerQueries)
+        val workName = "Работа и проекты"
+        val homeName = "Дом и личное"
+        val work = queries.roots().find { it.name == workName }?.id
+            ?: component.organizationFacade.createContainer(workName).getOrThrow().id
+        val home = queries.roots().find { it.name == homeName }?.id
+            ?: component.organizationFacade.createContainer(homeName).getOrThrow().id
+
+        fun day(offset: Long) = TaskDue.Day(TaskDueDate.parse(today.plusDays(offset).toString()))
+        fun timed(offset: Long, hour: Int, minute: Int = 0) =
+            TaskDue.Timed.local(today.plusDays(offset).atTime(hour, minute).atZone(zone).toInstant().toEpochMilli(), zone.id)
+
+        val tInbox = component.userTaskService.createTask("Разобрать почту и входящие заметки", due = day(0))
+        val tWorkToday = component.userTaskService.createTask("Согласовать архитектуру спринта", containerId = work, due = timed(0, 18, 30))
+        val tOverdue = component.userTaskService.createTask("Отправить квартальный отчёт", containerId = work, due = day(-1))
+        val tUpcoming1 = component.userTaskService.createTask("Подготовить демо для ревью", containerId = work, due = day(1))
+        val tUpcoming2 = component.userTaskService.createTask("Заказать книги для чтения", containerId = home, due = timed(2, 14, 0))
+        val tSubParent = component.userTaskService.createTask("Собрать дорожную карту релиза", containerId = work, due = day(0))
+        val tSubChild = component.userTaskService.createTask("Проверить чеклист миграции", parentTaskId = tSubParent.id, containerId = work)
+
+        val oldTheme = component.preferences.theme
+        val oldBlack = component.preferences.isPureBlackEnabled
+        try {
+            component.preferences.theme = ThemeSwitcher.THEME_LIGHT
+            component.preferences.isPureBlackEnabled = false
+            harness.QaActivityController().use { controller ->
+                fun select(view: TaskSmartView, container: ContainerId? = null) {
+                    controller.onActivity { activity ->
+                        activity.navigate(MainDestination.TASKS)
+                        activity.supportFragmentManager.executePendingTransactions()
+                        val fragment = tasks(activity)
+                        set(fragment, "activeSmartView", view)
+                        set(fragment, "selectedContainerFilter", container?.value)
+                        invoke(fragment, "loadTasks")
+                    }
+                    idle()
+                    await {
+                        var ready = false
+                        controller.onActivity {
+                            ready = field<Any?>(tasks(it), "loadJob") == null ||
+                                field<kotlinx.coroutines.Job?>(tasks(it), "loadJob")?.isActive != true
+                        }
+                        ready
+                    }
+                    controller.onActivity { tasks(it).requireView().findViewById<RecyclerView>(R.id.rvTasks).scrollToPosition(0) }
+                    idle()
+                }
+
+                // 1. Capture visual swipe previews (Right = Срок, Left = Раздел) and verify real swipe opens pickers
+                select(TaskSmartView.TODAY)
+                var previewDecoration: RecyclerView.ItemDecoration? = null
+                controller.onActivity { activity ->
+                    val fragment = tasks(activity)
+                    val recycler = fragment.requireView().findViewById<RecyclerView>(R.id.rvTasks)
+                    val row = requireNotNull(findRow(fragment, tInbox.title))
+                    val holder = recycler.getChildViewHolder(row)
+                    val callback = field<TaskSwipeCallback>(fragment, "swipeCallback")
+                    val decoration = object : RecyclerView.ItemDecoration() {
+                        override fun onDraw(c: android.graphics.Canvas, parent: RecyclerView, state: RecyclerView.State) {
+                            callback.onChildDraw(
+                                c,
+                                parent,
+                                holder,
+                                TaskThemeUtils.dp(activity, 108f),
+                                0f,
+                                androidx.recyclerview.widget.ItemTouchHelper.ACTION_STATE_SWIPE,
+                                true,
+                            )
+                        }
+                    }
+                    previewDecoration = decoration
+                    recycler.addItemDecoration(decoration)
+                    recycler.invalidate()
+                }
+                screenshot("pr8-01-swipe-right-due-light")
+                controller.onActivity { activity ->
+                    val fragment = tasks(activity)
+                    val recycler = fragment.requireView().findViewById<RecyclerView>(R.id.rvTasks)
+                    previewDecoration?.let { recycler.removeItemDecoration(it) }
+                    val row = requireNotNull(findRow(fragment, tInbox.title))
+                    row.translationX = 0f
+                    val holder = recycler.getChildViewHolder(row)
+                    val callback = field<TaskSwipeCallback>(fragment, "swipeCallback")
+                    val decoration = object : RecyclerView.ItemDecoration() {
+                        override fun onDraw(c: android.graphics.Canvas, parent: RecyclerView, state: RecyclerView.State) {
+                            callback.onChildDraw(
+                                c,
+                                parent,
+                                holder,
+                                -TaskThemeUtils.dp(activity, 108f),
+                                0f,
+                                androidx.recyclerview.widget.ItemTouchHelper.ACTION_STATE_SWIPE,
+                                true,
+                            )
+                        }
+                    }
+                    previewDecoration = decoration
+                    recycler.addItemDecoration(decoration)
+                    recycler.invalidate()
+                }
+                screenshot("pr8-02-swipe-left-container-light")
+                controller.onActivity { activity ->
+                    val fragment = tasks(activity)
+                    val recycler = fragment.requireView().findViewById<RecyclerView>(R.id.rvTasks)
+                    previewDecoration?.let { recycler.removeItemDecoration(it) }
+                    previewDecoration = null
+                    findRow(fragment, tInbox.title)?.translationX = 0f
+                    recycler.invalidate()
+                }
+                idle()
+
+                // 2. Real swipe right in UPCOMING opens TaskDuePickerBottomSheet & moves task to new date group without duplication
+                select(TaskSmartView.UPCOMING)
+                var rowRect = Rect()
+                controller.onActivity { activity ->
+                    val row = requireNotNull(findRow(tasks(activity), tUpcoming1.title))
+                    assertTrue(row.getGlobalVisibleRect(rowRect))
+                }
+                val swipeStartX = rowRect.left + rowRect.width() / 5
+                val swipeEndX = rowRect.right - rowRect.width() / 5
+                device.swipe(swipeStartX, rowRect.centerY(), swipeEndX, rowRect.centerY(), 18)
+                await {
+                    var opened = false
+                    controller.onActivity { activity ->
+                        val fragment = tasks(activity)
+                        fragment.childFragmentManager.executePendingTransactions()
+                        opened = fragment.childFragmentManager.findFragmentByTag(TasksFragment.REQUEST_KEY_ACTION_DUE) is TaskDuePickerBottomSheet
+                    }
+                    opened
+                }
+                // First, dismiss the picker without changes and verify the row snaps back and can be swiped a second time!
+                controller.onActivity { activity ->
+                    val fragment = tasks(activity)
+                    val sheet = fragment.childFragmentManager.findFragmentByTag(TasksFragment.REQUEST_KEY_ACTION_DUE) as? TaskDuePickerBottomSheet
+                    assertNotNull("Swipe right must open TaskDuePickerBottomSheet", sheet)
+                    sheet?.dismissAllowingStateLoss()
+                    fragment.childFragmentManager.executePendingTransactions()
+                }
+                idle()
+                controller.onActivity { activity ->
+                    val row = requireNotNull(findRow(tasks(activity), tUpcoming1.title))
+                    assertEquals("Row must snap back to 0 translationX when picker is dismissed", 0f, row.translationX, 0.5f)
+                    assertTrue(row.getGlobalVisibleRect(rowRect))
+                }
+                // Swipe the exact same row a second time ("повторные быстрые действия")
+                device.swipe(rowRect.left + rowRect.width() / 5, rowRect.centerY(), rowRect.right - rowRect.width() / 5, rowRect.centerY(), 18)
+                await {
+                    var opened = false
+                    controller.onActivity { activity ->
+                        val fragment = tasks(activity)
+                        fragment.childFragmentManager.executePendingTransactions()
+                        opened = fragment.childFragmentManager.findFragmentByTag(TasksFragment.REQUEST_KEY_ACTION_DUE) is TaskDuePickerBottomSheet
+                    }
+                    opened
+                }
+                screenshot("pr8-03-swipe-due-picker-open-light")
+                controller.onActivity { activity ->
+                    val fragment = tasks(activity)
+                    val sheet = fragment.childFragmentManager.findFragmentByTag(TasksFragment.REQUEST_KEY_ACTION_DUE) as? TaskDuePickerBottomSheet
+                    sheet?.dismissAllowingStateLoss()
+                    fragment.childFragmentManager.setFragmentResult(
+                        TasksFragment.REQUEST_KEY_ACTION_DUE,
+                        TaskDuePickerBottomSheet.encode(day(5)).apply {
+                            putBoolean(TaskDuePickerBottomSheet.RESULT_EDITED, true)
+                        },
+                    )
+                }
+                idle()
+                await { component.userTaskRepository.getById(tUpcoming1.id)?.due == day(5) }
+                controller.onActivity { activity ->
+                    val groups = field<Map<String, Pair<TaskSectionAdapter, TasksAdapter>>>(tasks(activity), "groupAdapters")
+                    val allIds = groups.values.flatMap { field<List<UserTask>>(it.second, "tasks") }.map { it.id }
+                    assertEquals("Task must move to new date group in UPCOMING without duplication", allIds.size, allIds.distinct().size)
+                    assertTrue(tUpcoming1.id in allIds)
+                }
+                // Undo the swipe due change via performUndo
+                controller.onActivity { activity ->
+                    assertEquals(1, tasks(activity).performUndo())
+                }
+                idle()
+                assertEquals(day(1), component.userTaskRepository.getById(tUpcoming1.id)?.due)
+
+                // 3. Real swipe left in ALL opens TaskContainerPickerBottomSheet & moves task to section without duplication
+                select(TaskSmartView.ALL)
+                controller.onActivity { activity ->
+                    val row = requireNotNull(findRow(tasks(activity), tInbox.title))
+                    assertTrue(row.getGlobalVisibleRect(rowRect))
+                }
+                device.swipe(rowRect.right - rowRect.width() / 5, rowRect.centerY(), rowRect.left + rowRect.width() / 5, rowRect.centerY(), 18)
+                await {
+                    var opened = false
+                    controller.onActivity { activity ->
+                        val fragment = tasks(activity)
+                        fragment.childFragmentManager.executePendingTransactions()
+                        opened = fragment.childFragmentManager.findFragmentByTag(TasksFragment.REQUEST_KEY_ACTION_CONTAINER) is TaskContainerPickerBottomSheet
+                    }
+                    opened
+                }
+                controller.onActivity { activity ->
+                    val fragment = tasks(activity)
+                    fragment.childFragmentManager.executePendingTransactions()
+                    val sheet = fragment.childFragmentManager.findFragmentByTag(TasksFragment.REQUEST_KEY_ACTION_CONTAINER) as? TaskContainerPickerBottomSheet
+                    assertNotNull("Swipe left must open TaskContainerPickerBottomSheet", sheet)
+                    sheet?.dismissAllowingStateLoss()
+                    fragment.childFragmentManager.setFragmentResult(
+                        TasksFragment.REQUEST_KEY_ACTION_CONTAINER,
+                        android.os.Bundle().apply {
+                            putString(TaskContainerPickerBottomSheet.RESULT_CONTAINER_ID, home.value)
+                        },
+                    )
+                }
+                idle()
+                assertEquals(home, component.userTaskRepository.getById(tInbox.id)?.containerId)
+                controller.onActivity { activity ->
+                    val groups = field<Map<String, Pair<TaskSectionAdapter, TasksAdapter>>>(tasks(activity), "groupAdapters")
+                    val allIds = groups.values.flatMap { field<List<UserTask>>(it.second, "tasks") }.map { it.id }
+                    assertEquals("Task must move to container group in ALL without duplication", allIds.size, allIds.distinct().size)
+                    val homeTasks = field<List<UserTask>>(groups.getValue("container:${home.value}").second, "tasks").map { it.id }
+                    assertTrue(tInbox.id in homeTasks)
+                }
+                // Undo container move
+                controller.onActivity { activity ->
+                    assertEquals(1, tasks(activity).performUndo())
+                }
+                idle()
+                assertNull(component.userTaskRepository.getById(tInbox.id)?.containerId)
+
+                // 4. Checkbox completion shows Undo Snackbar and restores exact state; guarded against newer edits
+                select(TaskSmartView.TODAY)
+                controller.onActivity { activity ->
+                    val fragment = tasks(activity)
+                    val row = requireNotNull(findRow(fragment, tWorkToday.title))
+                    row.findViewById<View>(R.id.btnTaskCheck).performClick()
+                }
+                idle()
+                assertTrue(component.userTaskRepository.getById(tWorkToday.id)!!.isCompleted)
+                screenshot("pr8-04-checkbox-undo-snackbar-light")
+                controller.onActivity { activity ->
+                    assertEquals(1, tasks(activity).performUndo())
+                }
+                idle()
+                val restoredTimed = component.userTaskRepository.getById(tWorkToday.id)!!
+                assertFalse(restoredTimed.isCompleted)
+                assertNull(restoredTimed.completedAt)
+                assertEquals(timed(0, 18, 30), restoredTimed.due)
+
+                // Guarded Undo: complete -> edit task -> performUndo must NOT overwrite newer edit
+                controller.onActivity { activity ->
+                    val fragment = tasks(activity)
+                    val row = requireNotNull(findRow(fragment, tWorkToday.title))
+                    row.findViewById<View>(R.id.btnTaskCheck).performClick()
+                }
+                idle()
+                val modifiedTitle = "Согласовать архитектуру спринта (обновлено)"
+                component.userTaskService.updateTask(tWorkToday.id, title = modifiedTitle)
+                controller.onActivity { activity ->
+                    assertEquals("Stale undo must be skipped when task has newer user edit", 0, tasks(activity).performUndo())
+                }
+                idle()
+                val afterStaleUndo = component.userTaskRepository.getById(tWorkToday.id)!!
+                assertTrue(afterStaleUndo.isCompleted)
+                assertEquals(modifiedTitle, afterStaleUndo.title)
+                // Restore tWorkToday to pending & original title for subsequent checks
+                component.userTaskService.updateTask(tWorkToday.id, title = "Согласовать архитектуру спринта")
+                component.userTaskService.setCompleted(tWorkToday.id, false)
+
+                // 5. Multi-selection across different sections/groups, Activity recreation, Back button, and bulk actions
+                select(TaskSmartView.ALL)
+                controller.onActivity { activity ->
+                    val fragment = tasks(activity)
+                    val rowOverdue = requireNotNull(findRow(fragment, tOverdue.title))
+                    val rowInbox = requireNotNull(findRow(fragment, tInbox.title))
+                    val rowWork = requireNotNull(findRow(fragment, tWorkToday.title))
+                    rowOverdue.performLongClick()
+                    rowInbox.performClick()
+                    rowWork.findViewById<View>(R.id.btnTaskCheck).performClick()
+                    val selectionBar = fragment.requireView().findViewById<View>(R.id.tasksSelectionBar)
+                    val countText = fragment.requireView().findViewById<TextView>(R.id.tvSelectionCount)
+                    assertEquals(View.VISIBLE, selectionBar.visibility)
+                    assertEquals("Выбрано: 3", countText.text.toString())
+                }
+                idle()
+                screenshot("pr8-05-multiselect-light")
+
+                // Activity recreation preserves selection mode
+                controller.recreate()
+                idle()
+                await {
+                    var ready = false
+                    controller.onActivity {
+                        ready = field<Any?>(tasks(it), "loadJob") == null ||
+                            field<kotlinx.coroutines.Job?>(tasks(it), "loadJob")?.isActive != true
+                    }
+                    ready
+                }
+                controller.onActivity { activity ->
+                    val fragment = tasks(activity)
+                    val selectionBar = fragment.requireView().findViewById<View>(R.id.tasksSelectionBar)
+                    val countText = fragment.requireView().findViewById<TextView>(R.id.tvSelectionCount)
+                    assertEquals("Selection bar must survive Activity recreation", View.VISIBLE, selectionBar.visibility)
+                    assertEquals("Выбрано: 3", countText.text.toString())
+                }
+
+                // Back button exits selection mode first without finishing Activity
+                device.pressBack()
+                idle()
+                controller.onActivity { activity ->
+                    assertFalse(activity.isFinishing)
+                    val fragment = tasks(activity)
+                    val selectionBar = fragment.requireView().findViewById<View>(R.id.tasksSelectionBar)
+                    assertEquals("Back press must exit selection mode first", View.GONE, selectionBar.visibility)
+                }
+
+                // Select 2 tasks from different groups and perform bulk move to home + bulk due + bulk complete + Undo
+                controller.onActivity { activity ->
+                    val fragment = tasks(activity)
+                    requireNotNull(findRow(fragment, tInbox.title)).performLongClick()
+                    requireNotNull(findRow(fragment, tOverdue.title)).performClick()
+                    fragment.requireView().findViewById<View>(R.id.btnSelectionContainer).performClick()
+                    fragment.childFragmentManager.executePendingTransactions()
+                    val sheet = fragment.childFragmentManager.findFragmentByTag(TasksFragment.REQUEST_KEY_ACTION_CONTAINER) as? TaskContainerPickerBottomSheet
+                    assertNotNull(sheet)
+                    sheet?.dismissAllowingStateLoss()
+                    fragment.childFragmentManager.setFragmentResult(
+                        TasksFragment.REQUEST_KEY_ACTION_CONTAINER,
+                        android.os.Bundle().apply {
+                            putString(TaskContainerPickerBottomSheet.RESULT_CONTAINER_ID, home.value)
+                        },
+                    )
+                }
+                idle()
+                assertEquals(home, component.userTaskRepository.getById(tInbox.id)?.containerId)
+                assertEquals(home, component.userTaskRepository.getById(tOverdue.id)?.containerId)
+                // Undo bulk container move
+                controller.onActivity { activity ->
+                    assertEquals(2, tasks(activity).performUndo())
+                }
+                idle()
+                assertNull(component.userTaskRepository.getById(tInbox.id)?.containerId)
+                assertEquals(work, component.userTaskRepository.getById(tOverdue.id)?.containerId)
+
+                // Bulk complete + Undo
+                controller.onActivity { activity ->
+                    val fragment = tasks(activity)
+                    requireNotNull(findRow(fragment, tInbox.title)).performLongClick()
+                    requireNotNull(findRow(fragment, tWorkToday.title)).performClick()
+                    fragment.requireView().findViewById<View>(R.id.btnSelectionComplete).performClick()
+                }
+                idle()
+                assertTrue(component.userTaskRepository.getById(tInbox.id)!!.isCompleted)
+                assertTrue(component.userTaskRepository.getById(tWorkToday.id)!!.isCompleted)
+                controller.onActivity { activity ->
+                    assertEquals(2, tasks(activity).performUndo())
+                }
+                idle()
+                assertFalse(component.userTaskRepository.getById(tInbox.id)!!.isCompleted)
+                assertFalse(component.userTaskRepository.getById(tWorkToday.id)!!.isCompleted)
+
+                // Bulk delete confirmation dialog + cascade subtask deletion
+                controller.onActivity { activity ->
+                    val fragment = tasks(activity)
+                    requireNotNull(findRow(fragment, tSubParent.title)).performLongClick()
+                    fragment.requireView().findViewById<View>(R.id.btnSelectionDelete).performClick()
+                }
+                idle()
+                screenshot("pr8-06-delete-confirm-light")
+                controller.onActivity { activity ->
+                    val dialog = field<androidx.appcompat.app.AlertDialog?>(tasks(activity), "deleteConfirmationDialog")
+                    assertNotNull("Delete must require confirmation dialog", dialog)
+                    assertTrue(dialog!!.isShowing)
+                    dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
+                }
+                idle()
+                assertNull("Parent task must be deleted", component.userTaskRepository.getById(tSubParent.id))
+                assertNull("Child subtask must be cascade-deleted", component.userTaskRepository.getById(tSubChild.id))
+
+                // 6. Dark and AMOLED themes + 1.3x font scale on 720x1280 small screen in selection mode
+                for ((name, black) in listOf("dark" to false, "amoled" to true)) {
+                    component.preferences.theme = ThemeSwitcher.THEME_DARK
+                    component.preferences.isPureBlackEnabled = black
+                    controller.recreate()
+                    select(TaskSmartView.ALL)
+                    controller.onActivity { activity ->
+                        val fragment = tasks(activity)
+                        requireNotNull(findRow(fragment, tInbox.title)).performLongClick()
+                        requireNotNull(findRow(fragment, tWorkToday.title)).performClick()
+                    }
+                    idle()
+                    screenshot("pr8-07-multiselect-$name")
+                    controller.onActivity { tasks(it).clearSelection() }
+                    idle()
+                }
+
+                val oldFontScale = context.resources.configuration.fontScale
+                try {
+                    device.executeShellCommand("settings put system font_scale 1.3")
+                    device.executeShellCommand("wm size 720x1280")
+                    device.executeShellCommand("wm density 320")
+                    idle()
+                    component.preferences.theme = ThemeSwitcher.THEME_LIGHT
+                    component.preferences.isPureBlackEnabled = false
+                    controller.recreate()
+                    select(TaskSmartView.ALL)
+                    controller.onActivity { activity ->
+                        val fragment = tasks(activity)
+                        requireNotNull(findRow(fragment, tInbox.title)).performLongClick()
+                        assertEquals("More button must be visible for single selection", View.VISIBLE, fragment.requireView().findViewById<View>(R.id.btnSelectionMore).visibility)
+                        requireNotNull(findRow(fragment, tWorkToday.title)).performClick()
+                        assertEquals("More button must hide when multiple tasks are selected", View.GONE, fragment.requireView().findViewById<View>(R.id.btnSelectionMore).visibility)
+                    }
+                    idle()
+                    controller.onActivity { activity ->
+                        val fragment = tasks(activity)
+                        val countView = fragment.requireView().findViewById<TextView>(R.id.tvSelectionCount)
+                        val layout = requireNotNull(countView.layout) { "tvSelectionCount layout must be measured after idle()" }
+                        assertEquals(1, layout.lineCount)
+                        assertEquals("Selection count must not be ellipsized on 360dp @ 1.3x font scale", 0, layout.getEllipsisCount(0))
+                    }
+                    screenshot("pr8-08-multiselect-small-font130-light")
+                    controller.onActivity { tasks(it).clearSelection() }
+                } finally {
+                    device.executeShellCommand("settings put system font_scale $oldFontScale")
+                    device.executeShellCommand("wm size reset")
+                    device.executeShellCommand("wm density reset")
+                    idle()
+                }
+            }
+        } finally {
+            instrumentation.runOnMainSync {
+                component.preferences.theme = oldTheme
+                component.preferences.isPureBlackEnabled = oldBlack
+            }
+        }
+    }
+
     private fun bootstrapDisposableSession() {
         val authorizedAvd = InstrumentationRegistry.getArguments().getString("authorizedAvd")
         if (authorizedAvd?.startsWith("UHabit_Temp_") != true ||

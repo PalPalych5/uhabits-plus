@@ -183,4 +183,44 @@ class TaskListSectionsTest {
         assertEquals(tasks.map { it.id }.toSet(), result.groups.flatMap { it.tasks }.map { it.id }.toSet())
         assertEquals(tasks.size, result.groups.sumOf { it.tasks.size })
     }
+
+    @Test fun dueAndContainerQuickActionsRelocateTasksAcrossGroupsWithoutDuplication() {
+        fun item(key: String, path: String) = org.isoron.uhabits.core.containers.facade.OrganizationalItem(
+            key, key, null, null, path, true
+        )
+        val containers = listOf(item("work", "Работа"), item("home", "Дом"))
+
+        // 1. UPCOMING: changing due moves task from Tomorrow to 26 Oct without duplication
+        val t1 = task("t1", day(24))
+        val t2 = TaskDue.Timed.of(
+            java.time.LocalDateTime.of(2026, 10, 24, 15, 30)
+                .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+            ZoneId.systemDefault().id,
+        ).let { task("t2", it) }
+        val beforeUpcoming = TaskListSections.build(listOf(t1, t2), TaskSmartView.UPCOMING, today, now, containers, ru)
+        assertEquals(1, beforeUpcoming.groups.size)
+        assertEquals(setOf("t1", "t2"), beforeUpcoming.groups.single().tasks.ids().toSet())
+
+        val t1Moved = t1.copy(due = day(26))
+        val afterUpcoming = TaskListSections.build(listOf(t1Moved, t2), TaskSmartView.UPCOMING, today, now, containers, ru)
+        assertEquals(2, afterUpcoming.groups.size)
+        assertEquals(listOf("t2"), afterUpcoming.groups[0].tasks.ids())
+        assertEquals(listOf("t1"), afterUpcoming.groups[1].tasks.ids())
+        assertEquals(2, afterUpcoming.groups.flatMap { it.tasks }.size)
+
+        // 2. ALL: moving tasks from Inbox and Work to Home relocates without duplication
+        val inboxTask = task("inbox", day(23))
+        val workTask = task("workTask", day(25)).copy(containerId = ContainerId("work"))
+        val beforeAll = TaskListSections.build(listOf(inboxTask, workTask), TaskSmartView.ALL, today, now, containers, ru)
+        assertEquals(listOf("inbox", "container:work"), beforeAll.groups.map { it.key })
+
+        val movedToHome = listOf(
+            inboxTask.copy(containerId = ContainerId("home")),
+            workTask.copy(containerId = ContainerId("home")),
+        )
+        val afterAll = TaskListSections.build(movedToHome, TaskSmartView.ALL, today, now, containers, ru)
+        assertEquals(listOf("container:home"), afterAll.groups.map { it.key })
+        assertEquals(setOf("inbox", "workTask"), afterAll.groups.single().tasks.ids().toSet())
+        assertEquals(2, afterAll.groups.sumOf { it.tasks.size })
+    }
 }

@@ -27,7 +27,6 @@ import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.style.ForegroundColorSpan
 import android.text.style.ImageSpan
-import androidx.appcompat.content.res.AppCompatResources
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -35,6 +34,8 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.view.ViewCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import org.isoron.platform.time.LocalDate
@@ -55,6 +56,9 @@ class TasksAdapter(
     private val onTaskClicked: (UserTask) -> Unit,
     private val onToggleComplete: (UserTask) -> Unit,
     private val onTaskLongClicked: (UserTask, View) -> Unit,
+    private val onChangeDue: ((UserTask) -> Unit)? = null,
+    private val onMoveContainer: ((UserTask) -> Unit)? = null,
+    private val onShowContextMenu: ((UserTask) -> Unit)? = null,
 ) : RecyclerView.Adapter<TasksAdapter.TaskViewHolder>() {
 
     private var tasks: List<UserTask> = emptyList()
@@ -62,6 +66,7 @@ class TasksAdapter(
     private var containers: Map<ContainerId, OrganizationalItem> = emptyMap()
     private var today: LocalDate = LocalDate(2000, 1, 1)
     private var nowMillis: Long = System.currentTimeMillis()
+    private var selectedIds: Set<TaskId> = emptySet()
 
     private val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
@@ -71,7 +76,10 @@ class TasksAdapter(
         newContainers: Map<ContainerId, OrganizationalItem>,
         currentToday: LocalDate,
         currentTimeMillis: Long,
+        newSelectedIds: Set<TaskId> = selectedIds,
     ) {
+        val oldSelectionActive = selectedIds.isNotEmpty()
+        val newSelectionActive = newSelectedIds.isNotEmpty()
         val diff = DiffUtil.calculateDiff(object : DiffUtil.Callback() {
             override fun getOldListSize(): Int = tasks.size
             override fun getNewListSize(): Int = newTasks.size
@@ -87,7 +95,9 @@ class TasksAdapter(
                     subtaskCounts[oldT.id] == newSubtaskCounts[newT.id] &&
                     today == currentToday &&
                     oldT.containerId?.let { containers[it] } == newT.containerId?.let { newContainers[it] } &&
-                    oldT.isOverdue(today, nowMillis) == newT.isOverdue(currentToday, currentTimeMillis)
+                    oldT.isOverdue(today, nowMillis) == newT.isOverdue(currentToday, currentTimeMillis) &&
+                    (oldT.id in selectedIds) == (newT.id in newSelectedIds) &&
+                    oldSelectionActive == newSelectionActive
             }
         })
         tasks = newTasks
@@ -95,7 +105,13 @@ class TasksAdapter(
         containers = newContainers
         today = currentToday
         nowMillis = currentTimeMillis
+        selectedIds = newSelectedIds.toSet()
         diff.dispatchUpdatesTo(this)
+    }
+
+    fun updateSelection(newSelectedIds: Set<TaskId>) {
+        if (selectedIds == newSelectedIds) return
+        updateData(tasks, subtaskCounts, containers, today, nowMillis, newSelectedIds)
     }
 
     fun updatePalette(newPalette: SettingsThemePalette) {
@@ -115,6 +131,8 @@ class TasksAdapter(
     override fun getItemCount(): Int = tasks.size
 
     inner class TaskViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        var currentTask: UserTask? = null
+            private set
         private val btnCheck: FrameLayout = itemView.findViewById(R.id.btnTaskCheck)
         private val viewCheckCircle: View = itemView.findViewById(R.id.viewCheckCircle)
         private val ivCheckmark: ImageView = itemView.findViewById(R.id.ivCheckmark)
@@ -122,11 +140,24 @@ class TasksAdapter(
         private val layoutTaskMeta: LinearLayout = itemView.findViewById(R.id.layoutTaskMeta)
         private val tvTaskContext: TextView = itemView.findViewById(R.id.tvTaskContext)
         private val tvTaskMeta: TextView = itemView.findViewById(R.id.tvTaskMeta)
+        private val accessibilityActionIds = mutableListOf<Int>()
 
         fun bind(task: UserTask) {
+            currentTask = task
+            itemView.translationX = 0f
             val isCompleted = task.isCompleted
+            val isSelected = task.id in selectedIds
+            val selectionActive = selectedIds.isNotEmpty()
             applyRowProfile()
-            btnCheck.contentDescription = (if (isCompleted) "Возобновить: " else "Завершить: ") + task.title
+            applySelectionBackground(isSelected)
+            itemView.isActivated = isSelected
+            ViewCompat.setStateDescription(itemView, if (isSelected) "Выбрано" else null)
+            btnCheck.contentDescription = when {
+                selectionActive && isSelected -> "Снять выделение: ${task.title}"
+                selectionActive -> "Выбрать: ${task.title}"
+                isCompleted -> "Возобновить: ${task.title}"
+                else -> "Завершить: ${task.title}"
+            }
 
             // 1. Title & Strikethrough
             tvTitle.text = task.title
@@ -138,11 +169,18 @@ class TasksAdapter(
                 tvTitle.paintFlags = tvTitle.paintFlags and Paint.STRIKE_THRU_TEXT_FLAG.inv()
             }
 
-            // Completion affordance stays inside a 48dp target.
+            // Completion / Selection affordance stays inside a 48dp target.
             val circleDrawable = GradientDrawable()
             circleDrawable.shape = GradientDrawable.OVAL
 
-            if (isCompleted) {
+            if (isSelected) {
+                circleDrawable.setColor(palette.accent)
+                circleDrawable.setStroke(dp(1.5f), palette.accent)
+                viewCheckCircle.background = circleDrawable
+                ivCheckmark.setImageResource(R.drawable.ic_action_check)
+                ivCheckmark.visibility = View.VISIBLE
+                ivCheckmark.setColorFilter(if (palette.isDark) Color.parseColor("#102638") else Color.WHITE)
+            } else if (isCompleted) {
                 circleDrawable.setColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.12f))
                 circleDrawable.setStroke(dp(1f), palette.onSurfaceVariant)
                 viewCheckCircle.background = circleDrawable
@@ -172,10 +210,56 @@ class TasksAdapter(
                 onTaskLongClicked(task, it)
                 true
             }
+            bindAccessibilityActions(task, isSelected)
+        }
+
+        private fun applySelectionBackground(isSelected: Boolean) {
+            if (isSelected) {
+                itemView.setBackgroundColor(
+                    MainTabsThemeBridge.withAlpha(palette.accent, if (palette.isDark) 0.18f else 0.10f)
+                )
+            } else {
+                val value = android.util.TypedValue()
+                itemView.context.theme.resolveAttribute(android.R.attr.selectableItemBackground, value, true)
+                itemView.setBackgroundResource(value.resourceId)
+            }
+        }
+
+        private fun bindAccessibilityActions(task: UserTask, isSelected: Boolean) {
+            accessibilityActionIds.forEach { ViewCompat.removeAccessibilityAction(itemView, it) }
+            accessibilityActionIds.clear()
+
+            onChangeDue?.let { action ->
+                val id = ViewCompat.addAccessibilityAction(itemView, "Изменить срок") { _, _ ->
+                    action(task)
+                    true
+                }
+                if (id != View.NO_ID) accessibilityActionIds.add(id)
+            }
+            onMoveContainer?.let { action ->
+                val id = ViewCompat.addAccessibilityAction(itemView, "Переместить в раздел") { _, _ ->
+                    action(task)
+                    true
+                }
+                if (id != View.NO_ID) accessibilityActionIds.add(id)
+            }
+            val selectLabel = if (isSelected) "Снять выделение" else "Выбрать задачу"
+            val selectId = ViewCompat.addAccessibilityAction(itemView, selectLabel) { view, _ ->
+                onTaskLongClicked(task, view)
+                true
+            }
+            if (selectId != View.NO_ID) accessibilityActionIds.add(selectId)
+
+            onShowContextMenu?.let { action ->
+                val id = ViewCompat.addAccessibilityAction(itemView, "Действия с задачей") { _, _ ->
+                    action(task)
+                    true
+                }
+                if (id != View.NO_ID) accessibilityActionIds.add(id)
+            }
         }
 
         private fun applyRowProfile() {
-
             itemView.setPaddingRelative(dp(8f), dp(8f), dp(16f), dp(8f))
             tvTitle.textSize = 16f
             tvTitle.typeface = Typeface.create("sans-serif", Typeface.NORMAL)

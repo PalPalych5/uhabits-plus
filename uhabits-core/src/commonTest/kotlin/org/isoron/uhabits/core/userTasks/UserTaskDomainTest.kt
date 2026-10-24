@@ -309,4 +309,79 @@ class UserTaskDomainTest {
         assertEquals(0, repo.getById(s2.id)?.sortOrder)
         assertEquals(1, repo.getById(s1.id)?.sortOrder)
     }
+
+    @Test
+    fun testRestoreTaskSnapshotRestoresExactPreviousCompletionAndLegacyPlanState() {
+        val repo = MemoryUserTaskRepository()
+        var currentClock = 1000L
+        val service = UserTaskServiceImpl(repo, clock = { currentClock })
+        val original = UserTask(
+            id = TaskId("t-restore"),
+            title = "Review report",
+            description = "Detailed notes",
+            containerId = ContainerId("work"),
+            status = TaskStatus.COMPLETED,
+            due = TaskDue.Timed.of(1792753200000L, "Asia/Novosibirsk"),
+            legacyPlanDate = "2026-10-20",
+            legacyPlanReviewPending = true,
+            completedAt = 950L,
+            sortOrder = 3,
+            createdAt = 500L,
+            updatedAt = 950L,
+        )
+        repo.save(original)
+
+        // Reopen task (clears completedAt)
+        currentClock = 2000L
+        val reopened = service.setCompleted(original.id, false)
+        assertEquals(TaskStatus.PENDING, reopened.status)
+        assertNull(reopened.completedAt)
+        assertEquals(2000L, reopened.updatedAt)
+
+        // Undo reopen -> restores exact completedAt = 950L and monotonic updatedAt
+        currentClock = 2000L // Even if clock has not advanced, updatedAt must advance monotonically
+        val restored = service.restoreTaskSnapshot(expectedCurrent = reopened, previousState = original)
+        assertNotNull(restored)
+        assertEquals(TaskStatus.COMPLETED, restored.status)
+        assertEquals(950L, restored.completedAt)
+        assertEquals(original.due, restored.due)
+        assertEquals(original.containerId, restored.containerId)
+        assertEquals("2026-10-20", restored.legacyPlanDate)
+        assertTrue(restored.legacyPlanReviewPending)
+        assertTrue(restored.updatedAt > reopened.updatedAt)
+        assertEquals(restored, repo.getById(original.id))
+    }
+
+    @Test
+    fun testRestoreTaskSnapshotDoesNotOverwriteNewerUserModification() {
+        val repo = MemoryUserTaskRepository()
+        var currentClock = 1000L
+        val service = UserTaskServiceImpl(repo, clock = { currentClock })
+        val beforeComplete = service.createTask(
+            title = "Prepare slides",
+            containerId = ContainerId("work"),
+            due = TaskDue.Day(TaskDueDate.parse("2026-10-23")),
+            explicitId = TaskId("t-stale-undo"),
+        )
+
+        currentClock = 2000L
+        val afterComplete = service.setCompleted(beforeComplete.id, true)
+        assertTrue(afterComplete.isCompleted)
+
+        // Newer user edit happens before Undo is clicked
+        currentClock = 3000L
+        val newerEdit = service.updateTask(
+            id = beforeComplete.id,
+            title = "Prepare slides (updated)",
+            containerId = ContainerId("personal"),
+        )
+
+        currentClock = 4000L
+        val undoResult = service.restoreTaskSnapshot(
+            expectedCurrent = afterComplete,
+            previousState = beforeComplete,
+        )
+        assertNull(undoResult)
+        assertEquals(newerEdit, repo.getById(beforeComplete.id))
+    }
 }
