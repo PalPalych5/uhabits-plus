@@ -74,6 +74,9 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
     private var selectedContainerId: ContainerId? = null
     private var selectedDue: TaskDue = TaskDue.None
+    private var selectedImportant: Boolean? = null
+    private var selectedUrgent: Boolean? = null
+    private lateinit var classificationControls: LinearLayout
     private var isCompleted: Boolean = false
     private var selectedTagIds: Set<String> = emptySet()
     private lateinit var tagChips: com.google.android.material.chip.ChipGroup
@@ -146,6 +149,8 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             taskId = TaskId(idStr)
             currentTask = app.component.userTaskRepository.getById(taskId!!)
             currentTask?.let {
+                selectedImportant = it.important
+                selectedUrgent = it.urgent
                 selectedTagIds = launchComponent.taskTagRepository.getTagIds(it.id)
                 selectedContainerId = it.containerId
                 selectedDue = it.due
@@ -154,6 +159,8 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         } else {
             isCreateMode = true
             val initialDraft = TaskDraft.fromBundle(arguments?.getBundle(ARG_TASK_DRAFT))
+            selectedImportant = initialDraft.important
+            selectedUrgent = initialDraft.urgent
             selectedTagIds = initialDraft.tagIds
             selectedContainerId = initialDraft.containerId
             selectedDue = initialDraft.due
@@ -181,6 +188,8 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             etNewSubtask.setText(restored.getString("detailSubtask", ""))
             if (isCreateMode && restored.containsKey("draftBundle")) {
                 val restoredDraft = TaskDraft.fromBundle(restored.getBundle("draftBundle"))
+                selectedImportant = restoredDraft.important
+                selectedUrgent = restoredDraft.urgent
                 selectedTagIds = restoredDraft.tagIds
                 updateTagDisplay()
                 selectedContainerId = restoredDraft.containerId
@@ -193,6 +202,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             }
         }
 
+        setupClassificationControls()
         setupListeners()
         viewReady = true
 
@@ -487,6 +497,102 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             updateDueDisplay()
             setupSubtasks()
         }
+    }
+
+    private fun setupClassificationControls() {
+        classificationControls = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
+        val holder = tagChips.parent as LinearLayout
+        holder.addView(classificationControls, holder.indexOfChild(tagChips) + 1)
+        updateClassificationControls()
+    }
+
+    private fun updateClassificationControls() {
+        classificationControls.removeAllViews()
+        val ru = TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru"
+        val row = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = TaskThemeUtils.dpInt(context, 4f)
+            }
+        }
+        listOf(true, false).forEachIndexed { index, important ->
+            val label = if (important) { if (ru) "Важность" else "Important" } else { if (ru) "Срочность" else "Urgent" }
+            val options = if (important) {
+                if (ru) arrayOf("Не определено", "Важно", "Не важно")
+                else arrayOf("Not set", "Important", "Not important")
+            } else {
+                if (ru) arrayOf("Не определено", "Срочно", "Не срочно")
+                else arrayOf("Not set", "Urgent", "Not urgent")
+            }
+            val value = if (important) selectedImportant else selectedUrgent
+            val choiceIndex = when (value) { null -> 0; true -> 1; false -> 2 }
+            val valueText = options[choiceIndex]
+            val btn = Button(requireContext()).apply {
+                text = "$label: $valueText"
+                isAllCaps = false
+                textSize = 12f
+                typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                gravity = android.view.Gravity.CENTER
+                minHeight = TaskThemeUtils.dpInt(context, 40f)
+                minimumHeight = TaskThemeUtils.dpInt(context, 40f)
+                stateListAnimator = null
+                elevation = 0f
+                translationZ = 0f
+                setPaddingRelative(TaskThemeUtils.dpInt(context, 8f), TaskThemeUtils.dpInt(context, 6f), TaskThemeUtils.dpInt(context, 8f), TaskThemeUtils.dpInt(context, 6f))
+                setTextColor(if (value != null) palette.onSurface else palette.onSurfaceVariant)
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(18f)
+                    if (value != null) {
+                        setColor(MainTabsThemeBridge.withAlpha(palette.accent, 0.12f))
+                        setStroke(TaskThemeUtils.dpInt(context, 1f), MainTabsThemeBridge.withAlpha(palette.accent, 0.45f))
+                    } else {
+                        setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.05f))
+                        setStroke(TaskThemeUtils.dpInt(context, 1f), MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.2f))
+                    }
+                }
+                contentDescription = "$label: $valueText. " + (if (ru) "Нажмите, чтобы изменить" else "Tap to change")
+                setOnClickListener {
+                    if (HabitsApplication.component !== launchComponent || taskDeleted) return@setOnClickListener
+                    AlertDialog.Builder(requireContext()).setTitle(label)
+                        .setSingleChoiceItems(options, choiceIndex) { dialog, choice ->
+                            if (HabitsApplication.component === launchComponent && !taskDeleted) {
+                                val next = when (choice) { 1 -> true; 2 -> false; else -> null }
+                                if (important) selectedImportant = next else selectedUrgent = next
+                                updateClassificationControls()
+                                if (!isCreateMode) {
+                                    tvDetailSaveStatus.text = if (ru) "Сохранение…" else "Saving…"
+                                    try { saveChanges() } catch (e: Exception) {
+                                        tvDetailSaveStatus.text = if (ru) "Не удалось сохранить" else "Could not save"
+                                    }
+                                }
+                            }
+                            dialog.dismiss()
+                        }.setNegativeButton(R.string.containers_cancel, null).show()
+                }
+            }
+            val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                if (index == 0) marginEnd = TaskThemeUtils.dpInt(requireContext(), 4f)
+                else marginStart = TaskThemeUtils.dpInt(requireContext(), 4f)
+            }
+            row.addView(btn, lp)
+        }
+        classificationControls.addView(row)
+        classificationControls.addView(TextView(requireContext()).apply {
+            text = if (ru) "Локально · без синхронизации" else "Local only · No cloud sync"
+            textSize = 11.5f
+            setTextColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.75f))
+            contentDescription = if (ru) "Оценки сохраняются на этом устройстве и в резервной копии. Облачная синхронизация пока недоступна."
+                else "These ratings are saved on this device and in backups. Cloud sync is not available yet."
+            setPaddingRelative(TaskThemeUtils.dpInt(context, 4f), 0, TaskThemeUtils.dpInt(context, 4f), TaskThemeUtils.dpInt(context, 8f))
+            setOnClickListener {
+                android.widget.Toast.makeText(context, contentDescription, android.widget.Toast.LENGTH_SHORT).show()
+            }
+        })
     }
 
     private fun setupTagChips(view: View) {
@@ -818,6 +924,8 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                 description = description,
                 containerId = containerId,
                 due = due,
+                important = selectedImportant,
+                urgent = selectedUrgent,
             )
             launchComponent.taskTagRepository.setTags(mainTask.id, selectedTagIds)
             for (sub in subtasksSnapshot) {
@@ -885,13 +993,16 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
     private fun saveChanges(forceDue: Boolean = false) {
         saveHandler.removeCallbacks(pendingSave)
-        if (!viewReady || taskDeleted || isCreateMode) return
+        if (!viewReady || taskDeleted || isCreateMode || HabitsApplication.component !== launchComponent) return
         val task = currentTask ?: return
         val newTitle = etTitle.text?.toString()?.trim()?.takeIf { it.isNotBlank() } ?: task.title
         val newDesc = etDescription.text?.toString()?.trim() ?: ""
 
+        val importantChanged = selectedImportant != task.important
+        val urgentChanged = selectedUrgent != task.urgent
         val propertiesChanged = newTitle != task.title || newDesc != task.description ||
-            selectedContainerId != task.containerId || selectedDue != task.due || forceDue
+            selectedContainerId != task.containerId || selectedDue != task.due || forceDue ||
+            importantChanged || urgentChanged
         if (!propertiesChanged && isCompleted == task.isCompleted) {
             tvDetailSaveStatus.text = "Изменения сохранены"
             tvDetailSaveStatus.alpha = 1f
@@ -905,6 +1016,10 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             description = newDesc,
             containerId = selectedContainerId,
             clearContainer = selectedContainerId == null,
+            important = if (importantChanged && selectedImportant != null) selectedImportant else null,
+            urgent = if (urgentChanged && selectedUrgent != null) selectedUrgent else null,
+            clearImportant = importantChanged && selectedImportant == null,
+            clearUrgent = urgentChanged && selectedUrgent == null,
             due = selectedDue.takeIf { forceDue || it != task.due },
         )
 
@@ -913,6 +1028,14 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         }
 
         currentTask = savedTask
+        val rebasedImportant = savedTask.important
+        val rebasedUrgent = savedTask.urgent
+        val controlsNeedUpdate = rebasedImportant != selectedImportant || rebasedUrgent != selectedUrgent
+        selectedImportant = rebasedImportant
+        selectedUrgent = rebasedUrgent
+        if (controlsNeedUpdate && ::classificationControls.isInitialized) {
+            updateClassificationControls()
+        }
         updateDueDisplay()
         tvDetailSaveStatus.text = "Изменения сохранены"
         tvDetailSaveStatus.alpha = 1f
@@ -947,6 +1070,8 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             title = if (::etTitle.isInitialized) etTitle.text?.toString().orEmpty() else "",
             description = if (::etDescription.isInitialized) etDescription.text?.toString().orEmpty() else "",
             tagIds = selectedTagIds,
+            important = selectedImportant,
+            urgent = selectedUrgent,
             due = selectedDue,
             containerId = selectedContainerId,
             subtasks = draftSubtasks.toList()

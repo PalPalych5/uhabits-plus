@@ -37,8 +37,7 @@ internal class TaskSectionAdapter(
             gravity = Gravity.CENTER_VERTICAL
             setPaddingRelative(TaskThemeUtils.dpInt(context, 24f), TaskThemeUtils.dpInt(context, 8f), TaskThemeUtils.dpInt(context, 16f), TaskThemeUtils.dpInt(context, 8f))
             textSize = 13f
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
+            maxLines = Int.MAX_VALUE
             typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
             if (onToggle != null) {
                 val value = android.util.TypedValue()

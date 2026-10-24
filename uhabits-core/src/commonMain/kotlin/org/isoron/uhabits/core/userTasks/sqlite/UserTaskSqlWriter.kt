@@ -7,7 +7,11 @@ import org.isoron.platform.io.querySingle
 import org.isoron.platform.io.runInTransaction
 
 object UserTaskSqlWriter {
-    fun upsert(db: Database, taskId: String, bind: PreparedStatement.() -> Unit) {
+    fun upsert(
+        db: Database, taskId: String, writeClassification: Boolean = false,
+        important: Boolean? = null, urgent: Boolean? = null,
+        bind: PreparedStatement.() -> Unit,
+    ) {
         db.runInTransaction {
             val exists = db.querySingle("SELECT 1 FROM UserTasks WHERE id = ?", taskId) { true } ?: false
             val sql = if (exists) {
@@ -27,6 +31,16 @@ object UserTaskSqlWriter {
                 if (exists) stmt.bindText(17, taskId)
                 stmt.step()
             } finally { stmt.finalize() }
+            // Legacy cloud payloads do not own local classification. Never replace the row.
+            if (writeClassification) {
+                val classification = db.prepareStatement("UPDATE UserTasks SET important=?, urgent=? WHERE id=?")
+                try {
+                    if (important == null) classification.bindNull(1) else classification.bindInt(1, if (important) 1 else 0)
+                    if (urgent == null) classification.bindNull(2) else classification.bindInt(2, if (urgent) 1 else 0)
+                    classification.bindText(3, taskId)
+                    classification.step()
+                } finally { classification.finalize() }
+            }
         }
     }
 }

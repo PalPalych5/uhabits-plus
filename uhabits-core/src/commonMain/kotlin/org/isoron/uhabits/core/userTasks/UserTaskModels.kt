@@ -50,6 +50,8 @@ data class UserTask(
     val sortOrder: Int = 0,
     val createdAt: Long,
     val updatedAt: Long,
+    val important: Boolean? = null,
+    val urgent: Boolean? = null,
 ) {
     val isCompleted: Boolean get() = status == TaskStatus.COMPLETED
     val hasPendingLegacyPlan: Boolean get() = legacyPlanReviewPending && legacyPlanDate != null

@@ -40,6 +40,8 @@ class UserTaskServiceImpl(
         parentTaskId: TaskId?,
         explicitId: TaskId?,
         sortOrder: Int?,
+        important: Boolean?,
+        urgent: Boolean?,
     ): UserTask {
         require(title.isNotBlank()) { "Task title cannot be blank" }
 
@@ -59,6 +61,8 @@ class UserTaskServiceImpl(
             description = description.trim(),
             containerId = containerId,
             status = TaskStatus.PENDING,
+            important = important,
+            urgent = urgent,
             due = due,
             completedAt = null,
             parentTaskId = parentTaskId,
@@ -82,6 +86,10 @@ class UserTaskServiceImpl(
         parentTaskId: TaskId?,
         clearParentTask: Boolean,
         sortOrder: Int?,
+        important: Boolean?,
+        urgent: Boolean?,
+        clearImportant: Boolean,
+        clearUrgent: Boolean,
     ): UserTask {
         val existing = repository.getById(id)
             ?: throw IllegalArgumentException("Task $id not found")
@@ -113,6 +121,8 @@ class UserTaskServiceImpl(
 
         val updated = existing.copy(
             title = newTitle,
+            important = if (clearImportant) null else important ?: existing.important,
+            urgent = if (clearUrgent) null else urgent ?: existing.urgent,
             description = newDescription,
             containerId = newContainerId,
             due = newDue,

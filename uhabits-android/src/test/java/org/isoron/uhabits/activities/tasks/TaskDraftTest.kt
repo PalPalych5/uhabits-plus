@@ -11,6 +11,17 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 
 class TaskDraftTest {
+    @Test fun classificationRemainsIndependentAcrossExpansionAndCollapse() {
+        for (important in listOf(null, false, true)) for (urgent in listOf(null, false, true)) {
+            val quick = TaskDraft(title = "Task", important = important, urgent = urgent)
+            val collapsed = quick.copy(description = "Expanded note").copy(title = "Collapsed")
+            assertEquals(important, collapsed.important)
+            assertEquals(urgent, collapsed.urgent)
+            assertEquals(TaskDue.None, collapsed.due)
+        }
+        assertNull(TaskDraft.EMPTY.important)
+        assertNull(TaskDraft.EMPTY.urgent)
+    }
 
     @Test
     fun editingDraftDoesNotReplaceExactTimedDueWithDay() {

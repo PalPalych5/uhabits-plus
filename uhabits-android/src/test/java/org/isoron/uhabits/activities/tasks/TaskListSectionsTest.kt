@@ -12,6 +12,32 @@ import org.junit.Test
 import java.time.ZoneId
 
 class TaskListSectionsTest {
+    @Test fun matrixRequiresBothExplicitValuesAndNeverInfersUrgencyFromDue() {
+        val source = listOf(true to true, true to false, false to true, false to false,
+            null to null, null to false, false to null, null to true, true to null).mapIndexed { index, (important, urgent) ->
+            task("task-$index", day(22), index).copy(important = important, urgent = urgent)
+        }
+        val result = TaskListSections.build(source + source.first().copy(id = TaskId("done"), status = TaskStatus.COMPLETED),
+            TaskSmartView.TODAY, today, now, matrix = true)
+        assertEquals(listOf("task-0"), result.groups[0].tasks.ids())
+        assertEquals(listOf("task-1"), result.groups[1].tasks.ids())
+        assertEquals(listOf("task-2"), result.groups[2].tasks.ids())
+        assertEquals(listOf("task-3"), result.groups[3].tasks.ids())
+        assertEquals((4..8).map { "task-$it" }, result.groups[4].tasks.ids())
+        assertEquals(source.map { it.id }.toSet(), result.groups.flatMap { it.tasks }.map { it.id }.toSet())
+        assertTrue(result.overdue.isEmpty() && result.completed.isEmpty())
+    }
+
+    @Test fun emptyMatrixKeepsAllHeadingsAndScopedOrderAndIdentityRemainStable() {
+        val empty = TaskListSections.build(emptyList(), TaskSmartView.ALL, today, now, matrix = true)
+        assertEquals(5, empty.groups.size)
+        assertTrue(empty.groups.all { it.tasks.isEmpty() })
+        val first = task("first", order = -1).copy(important = true, urgent = false)
+        val second = task("second", day(22)).copy(important = true, urgent = false)
+        val result = TaskListSections.build(listOf(second, first), TaskSmartView.COMPLETED, today, now, matrix = true)
+        assertEquals(listOf(first, second), result.groups[1].tasks)
+        assertEquals(empty.groups.map { it.key }, result.groups.map { it.key })
+    }
     private val today = LocalDate(2026, 10, 23)
     private val now = java.time.LocalDateTime.of(2026, 10, 23, 12, 0)
         .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()

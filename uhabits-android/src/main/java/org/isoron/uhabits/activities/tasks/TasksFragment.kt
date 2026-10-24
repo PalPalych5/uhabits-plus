@@ -105,6 +105,9 @@ class TasksFragment : Fragment() {
     private var localTreeRoot: ContainerId? = null
     private val collapsedContainers = mutableSetOf<String>()
     private var calendarMode = false
+    private var matrixMode = false
+    private var quickImportant: Boolean? = null
+    private var quickUrgent: Boolean? = null
     private var renderedCalendarMonth: String? = null
     private var selectedDay = getToday()
     private var calendarMonth = Calendar.getInstance().apply { set(Calendar.DAY_OF_MONTH, 1) }
@@ -211,6 +214,9 @@ class TasksFragment : Fragment() {
                 quickDraftSubtasks.add(TaskDraft.DraftSubtask(st, subCompleted.getOrElse(i) { false }))
             }
             calendarMode = it.getBoolean("calendarMode")
+            matrixMode = it.getBoolean("matrixMode")
+            quickImportant = if (it.containsKey("quickImportant")) it.getBoolean("quickImportant") else null
+            quickUrgent = if (it.containsKey("quickUrgent")) it.getBoolean("quickUrgent") else null
             selectedDay = LocalDate(it.getInt("selectedDay", getToday().daysSince2000))
             calendarMonth.timeInMillis = it.getLong("calendarMonth", calendarMonth.timeInMillis)
             localTreeRoot = it.getString("localTreeRoot")?.let(::ContainerId)
@@ -340,6 +346,9 @@ class TasksFragment : Fragment() {
         outState.putStringArrayList("quickDraftSubtaskTitles", ArrayList(quickDraftSubtasks.map { it.title }))
         outState.putBooleanArray("quickDraftSubtaskCompleted", quickDraftSubtasks.map { it.isCompleted }.toBooleanArray())
         outState.putBoolean("calendarMode", calendarMode)
+        outState.putBoolean("matrixMode", matrixMode)
+        quickImportant?.let { outState.putBoolean("quickImportant", it) }
+        quickUrgent?.let { outState.putBoolean("quickUrgent", it) }
         outState.putInt("selectedDay", selectedDay.daysSince2000)
         outState.putLong("calendarMonth", calendarMonth.timeInMillis)
         outState.putString("localTreeRoot", localTreeRoot?.value)
@@ -927,7 +936,10 @@ class TasksFragment : Fragment() {
     }
 
     private fun updateSmartViewLabel() {
-        tvTitle.text = selectedContainerFilter?.let { workspaceSnapshot?.availableContainers.orEmpty().find { item -> item.key == it.value }?.name } ?: activeSmartView.displayName
+        tvTitle.text = selectedContainerFilter?.let { workspaceSnapshot?.availableContainers.orEmpty().find { item -> item.key == it.value }?.name }
+            ?: if (matrixMode) {
+                if (TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru") "Матрица" else "Matrix"
+            } else activeSmartView.displayName
     }
 
     private fun setupRecyclerView() {
@@ -1156,6 +1168,8 @@ class TasksFragment : Fragment() {
                 due = quickTaskDue,
                 containerId = quickContainer,
                 tagIds = quickTagIds,
+                important = quickImportant,
+                urgent = quickUrgent,
                 subtasks = quickDraftSubtasks.toList()
             )
             TaskDetailBottomSheet.newInstanceForCreate(draft, component.session.datasetId)
@@ -1170,6 +1184,8 @@ class TasksFragment : Fragment() {
                 quickDraftNotes = ""
                 quickDraftSubtasks.clear()
                 quickTagIds = emptySet()
+                quickImportant = null
+                quickUrgent = null
                 quickDraftRestored = false
                 collapseComposer()
                 loadTasks()
@@ -1180,6 +1196,8 @@ class TasksFragment : Fragment() {
                 quickTaskDue = returnedDraft.due
                 quickContainer = returnedDraft.containerId
                 quickTagIds = returnedDraft.tagIds
+                quickImportant = returnedDraft.important
+                quickUrgent = returnedDraft.urgent
                 quickDraftNotes = returnedDraft.description
                 quickDraftSubtasks.clear()
                 quickDraftSubtasks.addAll(returnedDraft.subtasks)
@@ -1207,6 +1225,8 @@ class TasksFragment : Fragment() {
                     description = notes,
                     containerId = cid,
                     due = due,
+                    important = quickImportant,
+                    urgent = quickUrgent,
                 )
                 if (tagsToAssign.isNotEmpty()) {
                     component.taskTagRepository.setTags(mainTask.id, tagsToAssign)
@@ -1235,6 +1255,8 @@ class TasksFragment : Fragment() {
             quickDraftNotes = ""
             quickDraftSubtasks.clear()
             quickTagIds = emptySet()
+            quickImportant = null
+            quickUrgent = null
             quickDraftRestored = false
             btnQuickAddSubmit.isEnabled = true
             collapseComposer()
@@ -1361,6 +1383,7 @@ class TasksFragment : Fragment() {
             nowMillis,
             availableContainers,
             TaskDueDisplayFormatter.selectedLocale(requireContext()),
+            matrix = matrixMode,
         )
 
         val renderedTaskIds = hashSetOf<TaskId>().apply {
@@ -1414,10 +1437,10 @@ class TasksFragment : Fragment() {
             else -> sections.active.size + sections.overdue.size
         }
         tvSubtitle.text = "$activeCount ${pluralTasks(activeCount)}"
-        tvSubtitle.visibility = if (activeSmartView == TaskSmartView.COMPLETED) View.GONE else View.VISIBLE
+        tvSubtitle.visibility = if (!matrixMode && activeSmartView == TaskSmartView.COMPLETED) View.GONE else View.VISIBLE
 
         // Date indicator on the right (shown in TODAY mode)
-        if (activeSmartView == TaskSmartView.TODAY) {
+        if (!matrixMode && activeSmartView == TaskSmartView.TODAY) {
             val dateStr = dateFormatRu.format(Date(nowMillis))
             tvTasksDate.text = dateStr.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale("ru")) else it.toString() }
             tvTasksDate.visibility = View.VISIBLE
@@ -1426,10 +1449,15 @@ class TasksFragment : Fragment() {
         }
 
         // Empty view visibility
+        val hasAnyTasks = if (matrixMode) {
+            sections.groups.any { it.tasks.isNotEmpty() }
+        } else {
+            sections.active.isNotEmpty() || sections.overdue.isNotEmpty() || sections.completed.isNotEmpty()
+        }
         if (calendarMode) {
             rvTasks.visibility = View.GONE
             layoutEmpty.visibility = View.GONE
-        } else if (sections.active.isEmpty() && sections.overdue.isEmpty() && sections.completed.isEmpty()) {
+        } else if (!hasAnyTasks) {
             rvTasks.visibility = View.GONE
             layoutEmpty.visibility = View.VISIBLE
             updateEmptyMessage()
@@ -1440,14 +1468,20 @@ class TasksFragment : Fragment() {
     }
 
     private fun updateEmptyMessage() {
+        val ru = TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru"
         if (selectedTagFilter.isNotEmpty()) {
-            tvEmptyTitle.text = "Нет задач с выбранными тегами"
-            tvEmptyMessage.text = "Сбросьте фильтр по тегам или выберите другие теги"
+            tvEmptyTitle.text = if (ru) "Нет задач с выбранными тегами" else "No tasks with selected tags"
+            tvEmptyMessage.text = if (ru) "Сбросьте фильтр по тегам или выберите другие теги" else "Clear tag filter or select other tags"
             return
         }
         if (selectedContainerFilter != null) {
-            tvEmptyTitle.text = "В этом разделе нет задач"
-            tvEmptyMessage.text = "Выберите другой режим или добавьте задачу ниже"
+            tvEmptyTitle.text = if (ru) "В этом разделе нет задач" else "No tasks in this container"
+            tvEmptyMessage.text = if (ru) "Выберите другой режим или добавьте задачу ниже" else "Select another mode or add a task below"
+            return
+        }
+        if (matrixMode) {
+            tvEmptyTitle.text = if (ru) "Матрица пуста" else "Matrix is empty"
+            tvEmptyMessage.text = if (ru) "Добавьте новую задачу через строку внизу" else "Add a new task using the field below"
             return
         }
         when (activeSmartView) {
@@ -1569,8 +1603,15 @@ class TasksFragment : Fragment() {
             setColorFilter(palette.onSurfaceVariant)
             setOnClickListener {
                 clearSelection()
-                calendarMode = !calendarMode
-                loadTasks()
+                val ru = TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru"
+                val labels = if (ru) arrayOf("Список", "Календарь", "Матрица") else arrayOf("List", "Calendar", "Matrix")
+                AlertDialog.Builder(requireContext()).setSingleChoiceItems(labels,
+                    if (matrixMode) 2 else if (calendarMode) 1 else 0) { dialog, choice ->
+                    calendarMode = choice == 1
+                    matrixMode = choice == 2
+                    dialog.dismiss()
+                    loadTasks()
+                }.show()
             }
         }
         header.addView(representationButton, header.childCount - 1, LinearLayout.LayoutParams(dpInt(48f), dpInt(48f)))
@@ -1806,7 +1847,7 @@ class TasksFragment : Fragment() {
 
     private fun renderCalendar(tasks: List<UserTask>) {
         representationButton.setImageResource(if (calendarMode) R.drawable.ic_cat_list_todo else R.drawable.ic_cat_calendar)
-        representationButton.contentDescription = if (calendarMode) "Показать список" else "Показать календарь"
+        representationButton.contentDescription = "Представление: " + if (matrixMode) "Матрица" else if (calendarMode) "Календарь" else "Список"
         calendarPanel.visibility = if (calendarMode) View.VISIBLE else View.GONE
         if (!calendarMode) return
         val monthKey = "${calendarMonth.get(Calendar.YEAR)}-${calendarMonth.get(Calendar.MONTH)}"

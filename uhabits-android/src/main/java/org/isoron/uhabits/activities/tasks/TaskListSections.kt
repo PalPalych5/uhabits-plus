@@ -25,7 +25,29 @@ internal data class TaskListSections(
             nowMillis: Long,
             availableContainers: List<OrganizationalItem> = emptyList(),
             locale: Locale = Locale.getDefault(),
+            matrix: Boolean = false,
         ): TaskListSections {
+            if (matrix) {
+                val pending = scopedRoots.filter { !it.isCompleted }.sortedBy { it.sortOrder }
+                val keys = listOf("I", "II", "III", "IV", "unclassified")
+                val titles = if (locale.language == "ru") listOf(
+                    "I · Важно и срочно", "II · Важно, не срочно", "III · Не важно, срочно",
+                    "IV · Не важно и не срочно", "Без классификации",
+                ) else listOf("I · Important and urgent", "II · Important, not urgent",
+                    "III · Not important, urgent", "IV · Not important or urgent", "Unclassified")
+                val grouped = pending.groupBy { task ->
+                    when {
+                        task.important == null || task.urgent == null -> 4
+                        task.important == true && task.urgent == true -> 0
+                        task.important == true -> 1
+                        task.urgent == true -> 2
+                        else -> 3
+                    }
+                }
+                return TaskListSections(pending, emptyList(), emptyList(), keys.mapIndexed { index, key ->
+                    Group("matrix:$key", titles[index], grouped[index].orEmpty())
+                })
+            }
             val pendingOrder = compareBy<UserTask> { !it.isOverdue(today, nowMillis) }
                 .thenBy { it.sortOrder }
                 .thenBy {

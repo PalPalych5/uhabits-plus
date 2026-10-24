@@ -36,6 +36,8 @@ data class TaskDraft(
     val containerId: ContainerId? = null,
     val subtasks: List<DraftSubtask> = emptyList(),
     val tagIds: Set<String> = emptySet(),
+    val important: Boolean? = null,
+    val urgent: Boolean? = null,
 ) {
     data class DraftSubtask(
         val title: String,
@@ -43,6 +45,8 @@ data class TaskDraft(
     )
 
     fun toBundle(): Bundle = Bundle().apply {
+        important?.let { putBoolean("draftImportant", it) }
+        urgent?.let { putBoolean("draftUrgent", it) }
         putStringArrayList("draftTagIds", ArrayList(tagIds))
         putString("draftTitle", title)
         putString("draftDescription", description)
@@ -73,6 +77,8 @@ data class TaskDraft(
                 containerId = containerId,
                 subtasks = subtasks,
                 tagIds = bundle.getStringArrayList("draftTagIds").orEmpty().toSet(),
+                important = if (bundle.containsKey("draftImportant")) bundle.getBoolean("draftImportant") else null,
+                urgent = if (bundle.containsKey("draftUrgent")) bundle.getBoolean("draftUrgent") else null,
             )
         }
     }

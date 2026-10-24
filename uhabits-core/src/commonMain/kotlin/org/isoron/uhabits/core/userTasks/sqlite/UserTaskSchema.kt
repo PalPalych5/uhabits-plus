@@ -57,6 +57,7 @@ object UserTaskSchema {
             ensureV31Columns(db)
         }
         if (targetVersion >= 32) ensureV32Columns(db)
+        if (targetVersion >= 34) ensureV34Columns(db)
         if (targetVersion >= 33) {
             org.isoron.uhabits.core.userTasks.tags.TaskTagSchema.createSchema(db)
         }
@@ -86,6 +87,17 @@ object UserTaskSchema {
             db.run("DROP INDEX IF EXISTS idx_user_tasks_planned")
             db.run("CREATE INDEX IF NOT EXISTS idx_user_tasks_due_kind ON UserTasks(due_kind);")
             db.run("CREATE INDEX IF NOT EXISTS idx_user_tasks_due_date ON UserTasks(due_date);")
+        }
+    }
+
+    fun ensureV34Columns(db: Database) {
+        val columns = mutableSetOf<String>()
+        val stmt = db.prepareStatement("PRAGMA table_info(UserTasks)")
+        try {
+            while (stmt.step() == StepResult.ROW) columns.add(stmt.getText(1))
+        } finally { stmt.finalize() }
+        for (name in listOf("important", "urgent")) {
+            if (name !in columns) db.run("ALTER TABLE UserTasks ADD COLUMN $name INTEGER CHECK($name IN (0, 1))")
         }
     }
 

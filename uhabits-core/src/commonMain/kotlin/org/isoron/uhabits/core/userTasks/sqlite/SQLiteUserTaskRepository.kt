@@ -38,7 +38,7 @@ class SQLiteUserTaskRepository(
 
     companion object {
         private const val SELECT_COLUMNS =
-            "id, title, description, container_id, status, due_kind, due_date, due_time_millis, due_zone, completed_at, parent_task_id, sort_order, created_at, updated_at, planned_date, legacy_plan_review_pending"
+            "id, title, description, container_id, status, due_kind, due_date, due_time_millis, due_zone, completed_at, parent_task_id, sort_order, created_at, updated_at, planned_date, legacy_plan_review_pending, important, urgent"
     }
 
     override fun getById(id: TaskId): UserTask? {
@@ -141,7 +141,7 @@ class SQLiteUserTaskRepository(
     }
 
     override fun save(task: UserTask) {
-        UserTaskSqlWriter.upsert(db, task.id.value) {
+        UserTaskSqlWriter.upsert(db, task.id.value, writeClassification = true, important = task.important, urgent = task.urgent) {
             bindTask(this, task)
         }
     }
@@ -238,6 +238,8 @@ class SQLiteUserTaskRepository(
 
         return UserTask(
             id = id,
+            important = stmt.getIntOrNull(16)?.let { it != 0 },
+            urgent = stmt.getIntOrNull(17)?.let { it != 0 },
             title = title,
             description = description,
             containerId = containerId,

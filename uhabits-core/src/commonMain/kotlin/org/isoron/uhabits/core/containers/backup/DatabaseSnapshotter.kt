@@ -41,7 +41,7 @@ object DatabaseSnapshotter {
             "id", "title", "description", "container_id", "status",
             "due_kind", "due_date", "due_time_millis", "due_zone",
             "completed_at", "parent_task_id", "sort_order", "created_at", "updated_at",
-            "planned_date", "deadline", "legacy_plan_review_pending"
+            "planned_date", "deadline", "legacy_plan_review_pending", "important", "urgent"
         )
         val columns = mutableSetOf<String>()
         val stmt = db.prepareStatement("PRAGMA table_info(UserTasks)")
@@ -951,6 +951,8 @@ object DatabaseSnapshotter {
                    ${if (hasPlannedDate) ", planned_date" else ", NULL"}
                    ${if (hasDeadline) ", deadline" else ", NULL"}
                    , $reviewExpression
+                   , ${if ("important" in srcColumns) "important" else "NULL"}
+                   , ${if ("urgent" in srcColumns) "urgent" else "NULL"}
             FROM UserTasks
             """.trimIndent()
         } else {
@@ -967,8 +969,8 @@ object DatabaseSnapshotter {
             INSERT OR REPLACE INTO UserTasks (
                 id, title, description, container_id, status, due_kind, due_date,
                 due_time_millis, due_zone, completed_at, parent_task_id, sort_order, created_at, updated_at,
-                planned_date, deadline, legacy_plan_review_pending
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                planned_date, deadline, legacy_plan_review_pending, important, urgent
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent()
         )
         try {
@@ -1020,6 +1022,10 @@ object DatabaseSnapshotter {
                     insert.bindInt(17, if (pdate != null && (dline == null || dline <= 0)) 1 else 0)
                 }
 
+                val important = if (hasDueKind) select.getIntOrNull(17) else null
+                val urgent = if (hasDueKind) select.getIntOrNull(18) else null
+                if (important == null) insert.bindNull(18) else insert.bindInt(18, important)
+                if (urgent == null) insert.bindNull(19) else insert.bindInt(19, urgent)
                 insert.step()
                 insert.reset()
             }

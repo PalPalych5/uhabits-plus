@@ -31,6 +31,8 @@ interface UserTaskService {
         parentTaskId: TaskId? = null,
         explicitId: TaskId? = null,
         sortOrder: Int? = null,
+        important: Boolean? = null,
+        urgent: Boolean? = null,
     ): UserTask
 
     fun updateTask(
@@ -43,6 +45,10 @@ interface UserTaskService {
         parentTaskId: TaskId? = null,
         clearParentTask: Boolean = false,
         sortOrder: Int? = null,
+        important: Boolean? = null,
+        urgent: Boolean? = null,
+        clearImportant: Boolean = false,
+        clearUrgent: Boolean = false,
     ): UserTask
 
     fun toggleComplete(id: TaskId): UserTask
