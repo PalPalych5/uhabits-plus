@@ -21,4 +21,4 @@ package org.isoron.uhabits.core
 const val DATABASE_FILENAME = "uhabits.db"
 
 const val LEGACY_DATABASE_VERSION = 29
-const val DATABASE_VERSION = 32
+const val DATABASE_VERSION = 33

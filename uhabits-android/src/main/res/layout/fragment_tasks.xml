@@ -142,9 +142,29 @@
             android:text="0 задач" />
 
         <TextView
+            android:id="@+id/tvTasksTagFilter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:textSize="12sp"
+            android:fontFamily="sans-serif-medium"
+            android:text="Теги"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="Фильтр по тегам" />
+
+        <TextView
             android:id="@+id/tvTasksDate"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
             android:textSize="12sp"
             android:fontFamily="sans-serif" />
     </LinearLayout>
@@ -330,6 +350,23 @@
                     android:textSize="13sp"
                     android:fontFamily="sans-serif-medium"
                     android:text="Входящие"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:background="?android:attr/selectableItemBackground"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+                <TextView
+                    android:id="@+id/quickTags"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:gravity="center_vertical"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:layout_marginStart="8dp"
+                    android:textSize="13sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:text="Теги"
                     android:maxLines="1"
                     android:ellipsize="end"
                     android:background="?android:attr/selectableItemBackground"

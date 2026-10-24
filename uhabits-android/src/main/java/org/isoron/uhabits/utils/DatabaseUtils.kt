@@ -676,6 +676,17 @@ object DatabaseUtils {
                             throw IllegalStateException("Version 30 schema migration failed: ${result.reason}", result.cause)
                         }
                     }
+                    if (targetVersion >= 31 && wrappedDb.getVersion() < targetVersion) {
+                        runBlocking {
+                            wrappedDb.migrateTo(targetVersion) { version ->
+                                val filename = "%02d.sql".format(version)
+                                context.assets.open("migrations/$filename").bufferedReader().readText()
+                            }
+                        }
+                    }
+                    if (targetVersion >= 33) {
+                        org.isoron.uhabits.core.userTasks.tags.TaskTagSchema.createSchema(wrappedDb)
+                    }
                 } finally {
                     migrated.close()
                 }

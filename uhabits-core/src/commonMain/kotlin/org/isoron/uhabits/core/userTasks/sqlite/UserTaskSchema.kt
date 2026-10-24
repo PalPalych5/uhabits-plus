@@ -57,6 +57,9 @@ object UserTaskSchema {
             ensureV31Columns(db)
         }
         if (targetVersion >= 32) ensureV32Columns(db)
+        if (targetVersion >= 33) {
+            org.isoron.uhabits.core.userTasks.tags.TaskTagSchema.createSchema(db)
+        }
     }
 
     fun ensureV31Columns(db: Database) {

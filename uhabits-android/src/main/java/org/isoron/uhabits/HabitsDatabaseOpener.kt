@@ -152,6 +152,9 @@ class HabitsDatabaseOpener @JvmOverloads constructor(
                 }
             }
         }
+        if (newVersion >= 33) {
+            org.isoron.uhabits.core.userTasks.tags.TaskTagSchema.createSchema(wrappedDb)
+        }
     }
 
     override fun onDowngrade(

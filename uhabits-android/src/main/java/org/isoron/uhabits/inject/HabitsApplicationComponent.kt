@@ -127,6 +127,7 @@ abstract class HabitsApplicationComponent(
     abstract val widgetUpdater: WidgetUpdater
     abstract val userTaskRepository: UserTaskRepository
     abstract val userTaskService: UserTaskService
+    abstract val taskTagRepository: org.isoron.uhabits.core.userTasks.tags.TaskTagRepository
     abstract val sqlModelFactory: SQLModelFactory
 
     val focusCreditController: org.isoron.uhabits.focus.FocusCreditController? by lazy {
@@ -321,6 +322,19 @@ abstract class HabitsApplicationComponent(
         check(session.isNextArchitecture) { "UserTasks are unavailable in legacy production" }
         UserTaskSchema.createSchema(providedDb)
         return SQLiteUserTaskRepository(providedDb)
+    }
+
+    @AppScope
+    @Provides
+    open fun taskTagRepository(): org.isoron.uhabits.core.userTasks.tags.TaskTagRepository {
+        check(session.isNextArchitecture) { "TaskTags are unavailable in legacy production" }
+        UserTaskSchema.createSchema(providedDb)
+        org.isoron.uhabits.core.userTasks.tags.TaskTagSchema.createSchema(providedDb)
+        return org.isoron.uhabits.core.userTasks.tags.TaskTagRepository(
+            db = providedDb,
+            idGenerator = { Uuid.random().toHexString() },
+            clock = { System.currentTimeMillis() },
+        )
     }
 
     @AppScope

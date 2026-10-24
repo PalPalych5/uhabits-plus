@@ -352,7 +352,7 @@ class AndroidDatabase(
         )
     }.let { effective ->
         if (workspaceRevision == null) effective else org.isoron.uhabits.core.models.projection.EffectiveReadDatabase(
-            effective, workspaceRevision, setOf("USERTASKS", "CONTAINERS", "ORGANIZATIONSTATE", "HABITPLACEMENTS", "HABITVISUALIDENTITIES"),
+            effective, workspaceRevision, setOf("USERTASKS", "TASKTAGS", "TASKTAGLINKS", "TASKTAGSTATE", "TASKTAGOUTBOX", "CONTAINERS", "ORGANIZATIONSTATE", "HABITPLACEMENTS", "HABITVISUALIDENTITIES"),
         )
     }.let { workspace ->
         if (organizationRevision == null) workspace else org.isoron.uhabits.core.models.projection.EffectiveReadDatabase(

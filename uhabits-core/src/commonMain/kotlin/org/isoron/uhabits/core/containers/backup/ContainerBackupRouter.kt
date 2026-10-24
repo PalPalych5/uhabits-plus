@@ -79,6 +79,10 @@ object ContainerBackupRouter {
 
         // 4. Resolve manifest if embedded in DB and not supplied externally
         val manifest = externalManifest ?: readEmbeddedManifest(db, tables)
+        val tagSchemaError = TaskTagBackupInventory.schemaError(db)
+        if (tagSchemaError != null) return BackupInspectionResult(
+            kind = DatasetKind.Malformed(tagSchemaError), tableNames = tables, databaseVersion = dbVersion, manifest = manifest,
+        )
         val focusSchemaError = FocusBackupInventory.schemaError(db)
         if (focusSchemaError != null) return BackupInspectionResult(
             kind = DatasetKind.Malformed(focusSchemaError), tableNames = tables, databaseVersion = dbVersion, manifest = manifest,

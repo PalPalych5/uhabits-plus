@@ -75,6 +75,8 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     private var selectedContainerId: ContainerId? = null
     private var selectedDue: TaskDue = TaskDue.None
     private var isCompleted: Boolean = false
+    private var selectedTagIds: Set<String> = emptySet()
+    private lateinit var tagChips: com.google.android.material.chip.ChipGroup
     private val draftSubtasks = mutableListOf<TaskDraft.DraftSubtask>()
 
     // Top Bar views
@@ -144,6 +146,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             taskId = TaskId(idStr)
             currentTask = app.component.userTaskRepository.getById(taskId!!)
             currentTask?.let {
+                selectedTagIds = launchComponent.taskTagRepository.getTagIds(it.id)
                 selectedContainerId = it.containerId
                 selectedDue = it.due
                 isCompleted = it.isCompleted
@@ -151,6 +154,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         } else {
             isCreateMode = true
             val initialDraft = TaskDraft.fromBundle(arguments?.getBundle(ARG_TASK_DRAFT))
+            selectedTagIds = initialDraft.tagIds
             selectedContainerId = initialDraft.containerId
             selectedDue = initialDraft.due
             isCompleted = false
@@ -167,7 +171,9 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         val view = inflater.inflate(R.layout.sheet_task_detail, container, false)
         bindViews(view)
         applyTheme(view)
+        setupTagChips(view)
         populateData()
+        updateTagDisplay()
 
         savedInstanceState?.let { restored ->
             etTitle.setText(restored.getString("detailTitle", etTitle.text.toString()))
@@ -175,6 +181,8 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             etNewSubtask.setText(restored.getString("detailSubtask", ""))
             if (isCreateMode && restored.containsKey("draftBundle")) {
                 val restoredDraft = TaskDraft.fromBundle(restored.getBundle("draftBundle"))
+                selectedTagIds = restoredDraft.tagIds
+                updateTagDisplay()
                 selectedContainerId = restoredDraft.containerId
                 selectedDue = restoredDraft.due
                 draftSubtasks.clear()
@@ -204,6 +212,24 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             if (!isCreateMode) {
                 saveChanges()
             }
+        }
+
+        childFragmentManager.setFragmentResultListener("detailTags", viewLifecycleOwner) { _, result ->
+            if (taskDeleted || HabitsApplication.component !== launchComponent) return@setFragmentResultListener
+            if (result.getBoolean(TaskTagPickerBottomSheet.RESULT_APPLIED)) {
+                val next = result.getStringArrayList(TaskTagPickerBottomSheet.RESULT_TAG_IDS).orEmpty().toSet()
+                if (isCreateMode) selectedTagIds = next else {
+                    try {
+                        launchComponent.taskTagRepository.setTags(taskId ?: return@setFragmentResultListener, next)
+                        selectedTagIds = next
+                        tvDetailSaveStatus.text = "Изменения сохранены"
+                    } catch (e: Exception) {
+                        tvDetailSaveStatus.text = "Не удалось сохранить теги"
+                    }
+                }
+            }
+            updateTagDisplay()
+            onTaskUpdatedListener?.invoke()
         }
 
         rowFocus.apply {
@@ -461,6 +487,60 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             updateDueDisplay()
             setupSubtasks()
         }
+    }
+
+    private fun setupTagChips(view: View) {
+        tagChips = com.google.android.material.chip.ChipGroup(requireContext()).apply {
+            chipSpacingHorizontal = TaskThemeUtils.dpInt(context, 6f)
+            chipSpacingVertical = 0
+            isSingleLine = false
+            setPadding(0, 0, 0, TaskThemeUtils.dpInt(context, 8f))
+        }
+        val attributes = view.findViewById<View>(R.id.layoutDetailChips).parent as View
+        val holder = attributes.parent as LinearLayout
+        holder.addView(tagChips, holder.indexOfChild(attributes) + 1)
+    }
+
+    private fun updateTagDisplay() {
+        if (!::tagChips.isInitialized || HabitsApplication.component !== launchComponent) return
+        val available = launchComponent.taskTagRepository.getAll()
+        selectedTagIds = if (!isCreateMode && taskId != null) launchComponent.taskTagRepository.getTagIds(taskId!!)
+            else selectedTagIds.intersect(available.map { it.id }.toSet())
+        tagChips.removeAllViews()
+        for (tag in available.filter { it.id in selectedTagIds }) {
+            tagChips.addView(com.google.android.material.chip.Chip(requireContext()).apply {
+                text = tag.name; textSize = 12f
+                maxWidth = TaskThemeUtils.dpInt(context, 220f)
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(palette.onSurfaceVariant)
+                chipBackgroundColor = ColorStateList.valueOf(palette.surfaceVariant)
+                chipStrokeWidth = 0f
+                isCloseIconVisible = true
+                closeIconTint = ColorStateList.valueOf(palette.onSurfaceVariant)
+                closeIconContentDescription = "Снять тег ${tag.name}"
+                setEnsureMinTouchTargetSize(true)
+                setOnCloseIconClickListener {
+                    if (HabitsApplication.component !== launchComponent || taskDeleted) return@setOnCloseIconClickListener
+                    val next = selectedTagIds - tag.id
+                    try {
+                        if (!isCreateMode) launchComponent.taskTagRepository.setTags(taskId!!, next)
+                        selectedTagIds = next; updateTagDisplay(); onTaskUpdatedListener?.invoke()
+                    } catch (e: Exception) { tvDetailSaveStatus.text = "Не удалось сохранить теги" }
+                }
+            })
+        }
+        tagChips.addView(com.google.android.material.chip.Chip(requireContext()).apply {
+            text = "+ Тег"; textSize = 12f; contentDescription = "Добавить или выбрать теги"
+            setTextColor(palette.onSurfaceVariant)
+            chipBackgroundColor = ColorStateList.valueOf(palette.surface)
+            chipStrokeColor = ColorStateList.valueOf(palette.divider); chipStrokeWidth = TaskThemeUtils.dp(context, 1f)
+            setEnsureMinTouchTargetSize(true)
+            setOnClickListener {
+                if (HabitsApplication.component === launchComponent && !taskDeleted && childFragmentManager.findFragmentByTag("detailTags") == null)
+                    TaskTagPickerBottomSheet.newInstance(selectedTagIds, "detailTags", launchComponent.session.datasetId)
+                        .show(childFragmentManager, "detailTags")
+            }
+        })
     }
 
     private fun updateCheckState() {
@@ -739,6 +819,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                 containerId = containerId,
                 due = due,
             )
+            launchComponent.taskTagRepository.setTags(mainTask.id, selectedTagIds)
             for (sub in subtasksSnapshot) {
                 if (sub.title.isNotBlank()) {
                     val createdSub = taskService.createTask(
@@ -865,6 +946,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         return TaskDraft(
             title = if (::etTitle.isInitialized) etTitle.text?.toString().orEmpty() else "",
             description = if (::etDescription.isInitialized) etDescription.text?.toString().orEmpty() else "",
+            tagIds = selectedTagIds,
             due = selectedDue,
             containerId = selectedContainerId,
             subtasks = draftSubtasks.toList()

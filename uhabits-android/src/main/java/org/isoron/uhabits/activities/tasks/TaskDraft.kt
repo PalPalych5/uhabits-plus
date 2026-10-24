@@ -35,6 +35,7 @@ data class TaskDraft(
     val due: TaskDue = TaskDue.None,
     val containerId: ContainerId? = null,
     val subtasks: List<DraftSubtask> = emptyList(),
+    val tagIds: Set<String> = emptySet(),
 ) {
     data class DraftSubtask(
         val title: String,
@@ -42,6 +43,7 @@ data class TaskDraft(
     )
 
     fun toBundle(): Bundle = Bundle().apply {
+        putStringArrayList("draftTagIds", ArrayList(tagIds))
         putString("draftTitle", title)
         putString("draftDescription", description)
         putString("draftContainerId", containerId?.value)
@@ -70,6 +72,7 @@ data class TaskDraft(
                 due = due,
                 containerId = containerId,
                 subtasks = subtasks,
+                tagIds = bundle.getStringArrayList("draftTagIds").orEmpty().toSet(),
             )
         }
     }

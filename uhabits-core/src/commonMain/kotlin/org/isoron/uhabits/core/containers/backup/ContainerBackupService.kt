@@ -59,6 +59,7 @@ object ContainerBackupService {
             val focusChecksum = FocusBackupInventory.checksum(sourceDb)
             val contributionChecksum = ContributionBackupInventory.checksum(sourceDb)
             val sourceRulesChecksum = SourceRuleBackupInventory.checksum(sourceDb)
+            val taskTagsChecksum = TaskTagBackupInventory.checksum(sourceDb)
             val canonicalChecksum = ContainerBackupManifest.computeCanonicalChecksum(
                 datasetUuid = containerKind.datasetUuid,
                 sourceSnapshotSha256 = inventory.snapshotSha256,
@@ -97,6 +98,7 @@ object ContainerBackupService {
             check(FocusBackupInventory.checksum(targetDb) == focusChecksum) { "FocusSession snapshot changed while creating backup" }
             check(ContributionBackupInventory.checksum(targetDb) == contributionChecksum) { "Contribution snapshot changed while creating backup" }
             check(SourceRuleBackupInventory.checksum(targetDb) == sourceRulesChecksum) { "SourceRule snapshot changed while creating backup" }
+            check(TaskTagBackupInventory.checksum(targetDb) == taskTagsChecksum) { "TaskTag snapshot changed while creating backup" }
 
             // 6. Write manifest into target database
             DatabaseSnapshotter.writeManifest(targetDb, manifest)

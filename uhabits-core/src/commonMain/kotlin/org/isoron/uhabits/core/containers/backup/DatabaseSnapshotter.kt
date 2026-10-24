@@ -107,6 +107,12 @@ object DatabaseSnapshotter {
             require(SourceRuleBackupInventory.schemaError(sourceDb) == null) { "Unsupported SourceRules schema" }
             org.isoron.uhabits.core.rules.sqlite.SourceRuleSchema.createSchema(targetDb)
         }
+        val tagSchemaError = TaskTagBackupInventory.schemaError(sourceDb)
+        require(tagSchemaError == null) { tagSchemaError!! }
+        if (sourceTables.any { it in TaskTagBackupInventory.columns.keys }) {
+            org.isoron.uhabits.core.userTasks.sqlite.UserTaskSchema.createSchema(targetDb, targetVersion = DATABASE_VERSION)
+            org.isoron.uhabits.core.userTasks.tags.TaskTagSchema.createSchema(targetDb)
+        }
 
         // 3. Create BackupManifest table
         targetDb.run(
@@ -357,6 +363,10 @@ object DatabaseSnapshotter {
                 "SourceRules",
                 "Contributions",
                 "FocusSessions",
+                "TaskTagOutbox",
+                "TaskTagLinks",
+                "TaskTags",
+                "TaskTagState",
                 "UserTasks",
                 "HabitPlacementHistory",
                 "ContainerHistory",
@@ -402,6 +412,9 @@ object DatabaseSnapshotter {
             if (sourceTables.contains("LegacyBlockMap")) copyLegacyBlockMap(sourceDb, targetDb)
             if (sourceTables.contains("HabitVisualIdentities")) copyHabitVisualIdentities(sourceDb, targetDb)
             if (sourceTables.contains("UserTasks")) copyUserTasks(sourceDb, targetDb)
+            if (sourceTables.any { it in TaskTagBackupInventory.columns.keys }) {
+                TaskTagBackupInventory.copy(sourceDb, targetDb)
+            }
             if (sourceTables.contains("FocusSessions")) {
                 val repository = org.isoron.uhabits.core.focus.sqlite.SQLiteFocusSessionRepository(targetDb)
                 FocusBackupInventory.read(sourceDb).forEach(repository::record)

@@ -78,7 +78,7 @@
                 android:textSize="12.5sp"
                 android:includeFontPadding="false"
                 android:fontFamily="sans-serif"
-                android:maxLines="1"
+                android:maxLines="2"
                 android:ellipsize="end"
                 android:fontFeatureSettings="tnum" />
         </LinearLayout>

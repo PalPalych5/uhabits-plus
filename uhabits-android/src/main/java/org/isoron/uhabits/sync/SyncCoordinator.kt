@@ -324,6 +324,14 @@ class SyncCoordinator(
         root.put("sync_account_user_id", modelFactory.syncStateRepository.getAccountUserId() ?: JSONObject.NULL)
         root.put("sync_status", preferences.syncStatus)
         root.put("sync_status_detail", preferences.syncStatusDetail)
+        val hasPendingTaskTagOutbox = runCatching {
+            org.isoron.uhabits.core.userTasks.tags.TaskTagSyncGate.hasPendingChanges(modelFactory.database)
+        }.getOrDefault(false)
+        root.put("task_tags_pending_outbox", hasPendingTaskTagOutbox)
+        root.put(
+            "task_tags_sync_status",
+            if (hasPendingTaskTagOutbox) "task_tags_server_contract_required" else "idle"
+        )
         root.put(
             "last_ui_refresh_trigger",
             JSONObject()

@@ -8,6 +8,8 @@ import org.isoron.uhabits.core.containers.facade.OrganizationalItem
 import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.UserTask
 import org.isoron.uhabits.core.userTasks.UserTaskRepository
+import org.isoron.uhabits.core.userTasks.tags.TaskTag
+import org.isoron.uhabits.core.userTasks.tags.TaskTagRepository
 
 /** Detached immutable records and bounded derived indexes; no repository calls during rendering. */
 internal class TasksWorkspaceSnapshot private constructor(
@@ -17,6 +19,8 @@ internal class TasksWorkspaceSnapshot private constructor(
     val children: Map<ContainerId?, List<Container>>,
     val availableContainers: List<OrganizationalItem>,
     val pendingCounts: Map<ContainerId, Int>,
+    val taskTags: Map<TaskId, List<TaskTag>>,
+    val availableTags: List<TaskTag>,
 ) {
     // Only the selected subtree is needed by rendering. Retaining every transitive
     // closure takes quadratic space for a chain of containers.
@@ -34,7 +38,7 @@ internal class TasksWorkspaceSnapshot private constructor(
     }
 
     companion object {
-        fun load(tasks: UserTaskRepository, queries: ContainerQueries?): TasksWorkspaceSnapshot {
+        fun load(tasks: UserTaskRepository, queries: ContainerQueries?, tags: TaskTagRepository? = null): TasksWorkspaceSnapshot {
             val containers = if (queries is OrganizationStore) queries.getAllContainers(includeDeleted = true) else {
                 val result = mutableListOf<Container>()
                 val seen = mutableSetOf<ContainerId>()
@@ -48,10 +52,14 @@ internal class TasksWorkspaceSnapshot private constructor(
                 }
                 result
             }
-            return build(tasks.getAll(), containers)
+            val records = tasks.getAll()
+            return build(records, containers,
+                tags?.getTaskTags().orEmpty(),
+                tags?.getAll().orEmpty())
         }
 
-        fun build(tasks: List<UserTask>, allContainers: List<Container>): TasksWorkspaceSnapshot {
+        fun build(tasks: List<UserTask>, allContainers: List<Container>,
+                  taskTags: Map<TaskId, List<TaskTag>> = emptyMap(), availableTags: List<TaskTag> = emptyList()): TasksWorkspaceSnapshot {
             val roots = tasks.filter { it.parentTaskId == null }
             val counts = mutableMapOf<TaskId, Pair<Int, Int>>()
             for (task in tasks) {
@@ -97,6 +105,8 @@ internal class TasksWorkspaceSnapshot private constructor(
                 children = immutableChildren,
                 availableContainers = available,
                 pendingCounts = pending,
+                taskTags = taskTags,
+                availableTags = availableTags,
             )
         }
     }

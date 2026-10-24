@@ -223,4 +223,47 @@ class TaskListSectionsTest {
         assertEquals(setOf("inbox", "workTask"), afterAll.groups.single().tasks.ids().toSet())
         assertEquals(2, afterAll.groups.sumOf { it.tasks.size })
     }
+
+    @Test fun tagFilteredTasksMaintainSmartViewGroupingsAndContainerIntersections() {
+        fun item(key: String, path: String) = org.isoron.uhabits.core.containers.facade.OrganizationalItem(
+            key, key, null, null, path, true
+        )
+        val containers = listOf(item("work", "Работа"), item("home", "Дом"))
+        val tInboxWorkImportant = task("inbox-wi", day(23))
+        val tWorkOnly = task("work-only", day(24)).copy(containerId = ContainerId("work"))
+        val tHomeWorkImportant = task("home-wi", day(25)).copy(containerId = ContainerId("home"))
+        val tDoneWorkImportant = done("done-wi", now).copy(containerId = ContainerId("work"))
+        val allTasks = listOf(tInboxWorkImportant, tWorkOnly, tHomeWorkImportant, tDoneWorkImportant)
+        val tagsByTask = mapOf(
+            TaskId("inbox-wi") to setOf("tag-work", "tag-important"),
+            TaskId("work-only") to setOf("tag-work"),
+            TaskId("home-wi") to setOf("tag-work", "tag-important"),
+            TaskId("done-wi") to setOf("tag-work", "tag-important"),
+        )
+        fun filterByTags(source: List<UserTask>, requiredTags: Set<String>): List<UserTask> =
+            if (requiredTags.isEmpty()) source else source.filter { tagsByTask[it.id].orEmpty().containsAll(requiredTags) }
+
+        val intersection = filterByTags(allTasks, setOf("tag-work", "tag-important"))
+        assertEquals(setOf("inbox-wi", "home-wi", "done-wi"), intersection.ids().toSet())
+
+        val allSections = TaskListSections.build(intersection, TaskSmartView.ALL, today, now, containers, ru)
+        assertEquals(listOf("inbox", "container:home"), allSections.groups.map { it.key })
+        assertEquals(listOf("done-wi"), allSections.completed.ids())
+
+        val todaySections = TaskListSections.build(intersection, TaskSmartView.TODAY, today, now, containers, ru)
+        assertEquals(listOf("inbox-wi"), todaySections.active.ids())
+        assertTrue(todaySections.completed.isEmpty())
+
+        val upcomingSections = TaskListSections.build(intersection, TaskSmartView.UPCOMING, today, now, containers, ru)
+        assertEquals(1, upcomingSections.groups.size)
+        assertEquals(listOf("home-wi"), upcomingSections.groups.single().tasks.ids())
+
+        val completedSections = TaskListSections.build(intersection, TaskSmartView.COMPLETED, today, now, containers, ru)
+        assertEquals(1, completedSections.groups.size)
+        assertEquals(listOf("done-wi"), completedSections.groups.single().tasks.ids())
+
+        val emptyIntersection = filterByTags(allTasks, setOf("tag-someday"))
+        val emptySections = TaskListSections.build(emptyIntersection, TaskSmartView.ALL, today, now, containers, ru)
+        assertTrue(emptySections.active.isEmpty() && emptySections.overdue.isEmpty() && emptySections.completed.isEmpty())
+    }
 }

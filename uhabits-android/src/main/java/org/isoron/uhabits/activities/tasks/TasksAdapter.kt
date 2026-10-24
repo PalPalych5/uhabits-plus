@@ -47,6 +47,7 @@ import org.isoron.uhabits.core.containers.facade.OrganizationalItem
 import org.isoron.uhabits.core.userTasks.TaskId
 import org.isoron.uhabits.core.userTasks.UserTask
 import org.isoron.uhabits.core.userTasks.due.TaskDue
+import org.isoron.uhabits.core.userTasks.tags.TaskTag
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -64,6 +65,7 @@ class TasksAdapter(
     private var tasks: List<UserTask> = emptyList()
     private var subtaskCounts: Map<TaskId, Pair<Int, Int>> = emptyMap() // taskId -> (completed, total)
     private var containers: Map<ContainerId, OrganizationalItem> = emptyMap()
+    private var taskTags: Map<TaskId, List<TaskTag>> = emptyMap()
     private var today: LocalDate = LocalDate(2000, 1, 1)
     private var nowMillis: Long = System.currentTimeMillis()
     private var selectedIds: Set<TaskId> = emptySet()
@@ -77,6 +79,7 @@ class TasksAdapter(
         currentToday: LocalDate,
         currentTimeMillis: Long,
         newSelectedIds: Set<TaskId> = selectedIds,
+        newTaskTags: Map<TaskId, List<TaskTag>> = taskTags,
     ) {
         val oldSelectionActive = selectedIds.isNotEmpty()
         val newSelectionActive = newSelectedIds.isNotEmpty()
@@ -93,6 +96,7 @@ class TasksAdapter(
                 val newT = newTasks[newItemPosition]
                 return oldT == newT &&
                     subtaskCounts[oldT.id] == newSubtaskCounts[newT.id] &&
+                    taskTags[oldT.id] == newTaskTags[newT.id] &&
                     today == currentToday &&
                     oldT.containerId?.let { containers[it] } == newT.containerId?.let { newContainers[it] } &&
                     oldT.isOverdue(today, nowMillis) == newT.isOverdue(currentToday, currentTimeMillis) &&
@@ -103,6 +107,7 @@ class TasksAdapter(
         tasks = newTasks
         subtaskCounts = newSubtaskCounts
         containers = newContainers
+        taskTags = newTaskTags
         today = currentToday
         nowMillis = currentTimeMillis
         selectedIds = newSelectedIds.toSet()
@@ -111,7 +116,7 @@ class TasksAdapter(
 
     fun updateSelection(newSelectedIds: Set<TaskId>) {
         if (selectedIds == newSelectedIds) return
-        updateData(tasks, subtaskCounts, containers, today, nowMillis, newSelectedIds)
+        updateData(tasks, subtaskCounts, containers, today, nowMillis, newSelectedIds, taskTags)
     }
 
     fun updatePalette(newPalette: SettingsThemePalette) {
@@ -301,8 +306,23 @@ class TasksAdapter(
             if (counts != null && counts.second > 0) {
                 context.appendProperty(R.drawable.ic_cat_list_todo, "${counts.first}/${counts.second}", palette.onSurfaceVariant)
             }
+            val tags = taskTags[task.id].orEmpty()
+            if (tags.isNotEmpty()) {
+                val visibleTags = tags.take(2)
+                val extraCount = tags.size - visibleTags.size
+                val tagText = buildString {
+                    append(visibleTags.joinToString("  ") { "#${it.name}" })
+                    if (extraCount > 0) append(" +$extraCount")
+                }
+                context.append("   ")
+                val tagStart = context.length
+                context.append(tagText)
+                val tagColor = if (task.isCompleted) palette.onSurfaceVariant else MainTabsThemeBridge.withAlpha(palette.accent, 0.9f)
+                context.setSpan(ForegroundColorSpan(tagColor), tagStart, context.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
             val spokenContext = "Раздел: " + containerName +
-                (if (counts != null && counts.second > 0) "; подзадачи: ${counts.first} из ${counts.second}" else "")
+                (if (counts != null && counts.second > 0) "; подзадачи: ${counts.first} из ${counts.second}" else "") +
+                (if (tags.isNotEmpty()) "; теги: ${tags.joinToString(", ") { it.name }}" else "")
             tvTaskContext.visibility = View.GONE
 
             val dates = SpannableStringBuilder()

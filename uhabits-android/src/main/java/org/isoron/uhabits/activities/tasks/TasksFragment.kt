@@ -113,12 +113,14 @@ class TasksFragment : Fragment() {
 
     private var quickTaskDue: TaskDue = TaskDue.None
     private var quickContainer: ContainerId? = null
+    private var quickTagIds: Set<String> = emptySet()
     private var quickDraftRestored = false
     private var quickExpanded = false
     private var quickDraftNotes: String = ""
     private val quickDraftSubtasks = mutableListOf<TaskDraft.DraftSubtask>()
     private var activeSmartView: TaskSmartView = TaskSmartView.TODAY
     private var selectedContainerFilter: ContainerId? = null
+    private var selectedTagFilter: Set<String> = emptySet()
 
     private val selectedTaskIds = linkedSetOf<TaskId>()
     private val pendingActionTaskIds = linkedSetOf<TaskId>()
@@ -142,6 +144,7 @@ class TasksFragment : Fragment() {
     private lateinit var btnTasksOverflow: ImageButton
 
     private lateinit var tvSubtitle: TextView
+    private lateinit var tvTasksTagFilter: TextView
     private lateinit var tvTasksDate: TextView
 
     private lateinit var rvTasks: RecyclerView
@@ -172,6 +175,7 @@ class TasksFragment : Fragment() {
     private lateinit var quickAddOptions: LinearLayout
     private lateinit var quickDueView: TextView
     private lateinit var quickContainerView: TextView
+    private lateinit var quickTagsView: TextView
 
     private val dateFormatRu = SimpleDateFormat("EEE, d MMMM", Locale("ru"))
 
@@ -185,6 +189,7 @@ class TasksFragment : Fragment() {
             completedExpanded = it.getBoolean("completedExpanded", false)
             activeSmartView = TaskSmartView.entries.getOrElse(it.getInt("smartView")) { TaskSmartView.TODAY }
             selectedContainerFilter = it.getString("filter")?.let(::ContainerId)
+            selectedTagFilter = it.getStringArrayList("tagFilter").orEmpty().toSet()
             val dueKind = it.getString("quickDueKind")
             val dueMillis = if (it.containsKey("quickDueMillis")) it.getLong("quickDueMillis") else null
             val dueDateDays = if (it.containsKey("quickDueDays")) it.getInt("quickDueDays") else null
@@ -194,6 +199,7 @@ class TasksFragment : Fragment() {
                 else -> TaskDue.None
             }
             quickContainer = it.getString("quickContainer")?.let(::ContainerId)
+            quickTagIds = it.getStringArrayList("quickTagIds").orEmpty().toSet()
             quickExpanded = it.getBoolean("quickExpanded", false)
             quickDraftRestored = true
             restoredTitle = it.getString("quickTitle")
@@ -313,6 +319,7 @@ class TasksFragment : Fragment() {
         outState.putBoolean("completedExpanded", completedExpanded)
         outState.putInt("smartView", activeSmartView.ordinal)
         outState.putString("filter", selectedContainerFilter?.value)
+        outState.putStringArrayList("tagFilter", ArrayList(selectedTagFilter))
         when (val d = quickTaskDue) {
             is TaskDue.None -> outState.putString("quickDueKind", "NONE")
             is TaskDue.Day -> {
@@ -326,6 +333,7 @@ class TasksFragment : Fragment() {
             }
         }
         outState.putString("quickContainer", quickContainer?.value)
+        outState.putStringArrayList("quickTagIds", ArrayList(quickTagIds))
         outState.putBoolean("quickExpanded", quickExpanded)
         outState.putString("quickTitle", if (::etQuickAddTitle.isInitialized) etQuickAddTitle.text?.toString() else restoredTitle)
         outState.putString("quickDraftNotes", quickDraftNotes)
@@ -368,6 +376,7 @@ class TasksFragment : Fragment() {
         btnTasksOverflow = view.findViewById(R.id.btnTasksOverflow)
 
         tvSubtitle = view.findViewById(R.id.tvTasksSubtitle)
+        tvTasksTagFilter = view.findViewById(R.id.tvTasksTagFilter)
         tvTasksDate = view.findViewById(R.id.tvTasksDate)
 
         rvTasks = view.findViewById(R.id.rvTasks)
@@ -387,6 +396,7 @@ class TasksFragment : Fragment() {
         quickAddOptions = view.findViewById(R.id.quickAddOptions)
         quickDueView = view.findViewById(R.id.quickDue)
         quickContainerView = view.findViewById(R.id.quickContainer)
+        quickTagsView = view.findViewById(R.id.quickTags)
     }
 
     private fun dp(value: Float): Float = TaskThemeUtils.dp(requireContext(), value)
@@ -436,22 +446,90 @@ class TasksFragment : Fragment() {
 
         quickDueView.setTextColor(palette.onSurfaceVariant)
         quickContainerView.setTextColor(palette.onSurfaceVariant)
+        quickTagsView.setTextColor(palette.onSurfaceVariant)
 
         updateSmartViewLabel()
+        updateTagFilterChip()
         updateSelectionBarUi()
         if (::navigationColumn.isInitialized) renderNavigation()
     }
 
+    private fun openTagFilterPicker() {
+        if (childFragmentManager.findFragmentByTag("filterTags") == null) {
+            TaskTagPickerBottomSheet.newInstance(
+                ids = selectedTagFilter,
+                resultKey = "filterTags",
+                datasetId = component.session.datasetId,
+                filter = true,
+            ).show(childFragmentManager, "filterTags")
+        }
+    }
+
+    private fun updateTagFilterChip() {
+        if (!::tvTasksTagFilter.isInitialized) return
+        val available = workspaceSnapshot?.availableTags.orEmpty()
+        val selectedNames = available.filter { it.id in selectedTagFilter }.map { it.name }
+        val active = selectedNames.isNotEmpty()
+        val bg = GradientDrawable().apply {
+            cornerRadius = dp(12f)
+            if (active) {
+                setColor(MainTabsThemeBridge.withAlpha(palette.accent, 0.14f))
+                setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.accent, 0.45f))
+            } else {
+                setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.05f))
+                setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.2f))
+            }
+        }
+        tvTasksTagFilter.background = bg
+        tvTasksTagFilter.setTextColor(if (active) palette.accent else palette.onSurfaceVariant)
+        tvTasksTagFilter.text = if (active) {
+            val preview = selectedNames.take(2).joinToString(", ") { "#$it" }
+            val extra = selectedNames.size - 2
+            if (extra > 0) "$preview +$extra" else preview
+        } else {
+            "Теги"
+        }
+        tvTasksTagFilter.contentDescription = if (active) {
+            "Фильтр по тегам: ${selectedNames.joinToString(", ")}"
+        } else {
+            "Фильтр по тегам"
+        }
+    }
+
     private fun setupOverflowMenu() {
+        tvTasksTagFilter.setOnClickListener {
+            openTagFilterPicker()
+        }
+        tvTasksTagFilter.setOnLongClickListener {
+            if (selectedTagFilter.isNotEmpty()) {
+                selectedTagFilter = emptySet()
+                loadTasks()
+                true
+            } else {
+                false
+            }
+        }
+        childFragmentManager.setFragmentResultListener("filterTags", viewLifecycleOwner) { _, result ->
+            if (component !== HabitsApplication.component) return@setFragmentResultListener
+            if (result.getBoolean(TaskTagPickerBottomSheet.RESULT_APPLIED, false)) {
+                selectedTagFilter = result.getStringArrayList(TaskTagPickerBottomSheet.RESULT_TAG_IDS).orEmpty().toSet()
+            }
+            loadTasks()
+        }
+
         btnTasksOverflow.setOnClickListener {
             val popup = PopupMenu(requireContext(), btnTasksOverflow)
             popup.menu.add(0, 1, 0, "Все задачи")
             popup.menu.add(0, 2, 1, "Завершённые")
-            popup.menu.add(0, 3, 2, "Настройки")
-            if (selectedContainerFilter != null) {
-                popup.menu.add(0, 4, 3, getString(R.string.container_statistics_title))
+            popup.menu.add(0, 6, 2, "Фильтр по тегам")
+            if (selectedTagFilter.isNotEmpty()) {
+                popup.menu.add(0, 7, 3, "Сбросить фильтр по тегам")
             }
-            popup.menu.add(0, 5, 4, getString(R.string.today_eval_menu_item))
+            popup.menu.add(0, 3, 4, "Настройки")
+            if (selectedContainerFilter != null) {
+                popup.menu.add(0, 4, 5, getString(R.string.container_statistics_title))
+            }
+            popup.menu.add(0, 5, 6, getString(R.string.today_eval_menu_item))
             popup.setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     1 -> {
@@ -467,6 +545,15 @@ class TasksFragment : Fragment() {
                         selectedContainerFilter = null
                         activeSmartView = TaskSmartView.COMPLETED
                         updateSmartViewLabel()
+                        loadTasks()
+                        true
+                    }
+                    6 -> {
+                        openTagFilterPicker()
+                        true
+                    }
+                    7 -> {
+                        selectedTagFilter = emptySet()
                         loadTasks()
                         true
                     }
@@ -958,6 +1045,28 @@ class TasksFragment : Fragment() {
             quickContainerView.text = containerText
             quickContainerView.setTextColor(if (hasContainer) palette.onSurface else palette.onSurfaceVariant)
 
+            val availableTags = workspaceSnapshot?.availableTags.orEmpty()
+            val selectedTagNames = availableTags.filter { it.id in quickTagIds }.map { it.name }
+            val hasTags = selectedTagNames.isNotEmpty()
+            val tagsBg = GradientDrawable().apply {
+                cornerRadius = dp(18f)
+                if (hasTags) {
+                    setColor(MainTabsThemeBridge.withAlpha(palette.accent, 0.12f))
+                    setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.accent, 0.4f))
+                } else {
+                    setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.05f))
+                    setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.2f))
+                }
+            }
+            quickTagsView.background = tagsBg
+            quickTagsView.setTextColor(if (hasTags) palette.accent else palette.onSurfaceVariant)
+            quickTagsView.text = if (hasTags) {
+                val firstTag = "#${selectedTagNames.first()}"
+                if (selectedTagNames.size > 1) "$firstTag +${selectedTagNames.size - 1}" else firstTag
+            } else {
+                "Теги"
+            }
+
             updateSubmitButtonState()
         }
 
@@ -1012,6 +1121,14 @@ class TasksFragment : Fragment() {
             quickDraftRestored = true
             refreshOptionLabels()
         }
+        childFragmentManager.setFragmentResultListener("quickTags", viewLifecycleOwner) { _, result ->
+            if (component !== HabitsApplication.component) return@setFragmentResultListener
+            if (result.getBoolean(TaskTagPickerBottomSheet.RESULT_APPLIED, false)) {
+                quickTagIds = result.getStringArrayList(TaskTagPickerBottomSheet.RESULT_TAG_IDS).orEmpty().toSet()
+                quickDraftRestored = true
+            }
+            loadTasks()
+        }
         quickDueView.setOnClickListener {
             if (childFragmentManager.findFragmentByTag("quickDue") == null) {
                 TaskDuePickerBottomSheet.newInstance("quickDue", quickTaskDue)
@@ -1024,6 +1141,12 @@ class TasksFragment : Fragment() {
                     .show(childFragmentManager, "quickContainer")
             }
         }
+        quickTagsView.setOnClickListener {
+            if (childFragmentManager.findFragmentByTag("quickTags") == null) {
+                TaskTagPickerBottomSheet.newInstance(quickTagIds, "quickTags", component.session.datasetId)
+                    .show(childFragmentManager, "quickTags")
+            }
+        }
 
         btnQuickAddExpand.setOnClickListener {
             val title = etQuickAddTitle.text?.toString().orEmpty()
@@ -1032,6 +1155,7 @@ class TasksFragment : Fragment() {
                 description = quickDraftNotes,
                 due = quickTaskDue,
                 containerId = quickContainer,
+                tagIds = quickTagIds,
                 subtasks = quickDraftSubtasks.toList()
             )
             TaskDetailBottomSheet.newInstanceForCreate(draft, component.session.datasetId)
@@ -1045,6 +1169,7 @@ class TasksFragment : Fragment() {
                 etQuickAddTitle.text?.clear()
                 quickDraftNotes = ""
                 quickDraftSubtasks.clear()
+                quickTagIds = emptySet()
                 quickDraftRestored = false
                 collapseComposer()
                 loadTasks()
@@ -1054,6 +1179,7 @@ class TasksFragment : Fragment() {
                 etQuickAddTitle.setSelection(returnedDraft.title.length)
                 quickTaskDue = returnedDraft.due
                 quickContainer = returnedDraft.containerId
+                quickTagIds = returnedDraft.tagIds
                 quickDraftNotes = returnedDraft.description
                 quickDraftSubtasks.clear()
                 quickDraftSubtasks.addAll(returnedDraft.subtasks)
@@ -1073,6 +1199,7 @@ class TasksFragment : Fragment() {
             val subs = quickDraftSubtasks.toList()
             val due = quickTaskDue
             val cid = quickContainer
+            val tagsToAssign = quickTagIds
 
             val created = try { component.db.runInTransaction {
                 val mainTask = taskService.createTask(
@@ -1081,6 +1208,9 @@ class TasksFragment : Fragment() {
                     containerId = cid,
                     due = due,
                 )
+                if (tagsToAssign.isNotEmpty()) {
+                    component.taskTagRepository.setTags(mainTask.id, tagsToAssign)
+                }
                 for (sub in subs) {
                     if (sub.title.isNotBlank()) {
                         val createdSub = taskService.createTask(
@@ -1104,6 +1234,7 @@ class TasksFragment : Fragment() {
             etQuickAddTitle.text?.clear()
             quickDraftNotes = ""
             quickDraftSubtasks.clear()
+            quickTagIds = emptySet()
             quickDraftRestored = false
             btnQuickAddSubmit.isEnabled = true
             collapseComposer()
@@ -1116,6 +1247,9 @@ class TasksFragment : Fragment() {
             if (cid != selectedContainerFilter) {
                 selectedContainerFilter = cid
                 updateSmartViewLabel()
+            }
+            if (selectedTagFilter.isNotEmpty() && !tagsToAssign.containsAll(selectedTagFilter)) {
+                selectedTagFilter = emptySet()
             }
             loadTasks()
         }
@@ -1148,7 +1282,11 @@ class TasksFragment : Fragment() {
                 repeat(3) {
                     if (stable == null) {
                         val before = component.workspaceReadRevision.value
-                        val snapshot = TasksWorkspaceSnapshot.load(taskRepo, orgFacade.containerQueries)
+                        val snapshot = TasksWorkspaceSnapshot.load(
+                            taskRepo,
+                            orgFacade.containerQueries,
+                            component.taskTagRepository,
+                        )
                         if (before == component.workspaceReadRevision.value) stable = before to snapshot
                     }
                 }
@@ -1180,8 +1318,12 @@ class TasksFragment : Fragment() {
         if (localTreeRoot?.value?.let { it !in visibleContainerIds } == true) {
             localTreeRoot = null
         }
+        val availableTagIds = snapshot.availableTags.mapTo(mutableSetOf()) { it.id }
+        selectedTagFilter = selectedTagFilter.intersect(availableTagIds)
+        quickTagIds = quickTagIds.intersect(availableTagIds)
         val allRoots = snapshot.roots
         val subtaskMap = snapshot.subtaskCounts
+        val taskTagMap = snapshot.taskTags
 
         val today = runCatching { getToday() }.getOrDefault(LocalDate(2026, 10, 4))
         val nowMillis = System.currentTimeMillis()
@@ -1194,15 +1336,26 @@ class TasksFragment : Fragment() {
             allRoots
         }
 
-        // 2. Smart View filter
-        val viewFiltered = containerFiltered.filter { activeSmartView.matches(it, today, nowMillis) }
+        // 2. Tag filter (intersection: task must have all selectedTagFilter tags)
+        val tagFiltered = if (selectedTagFilter.isNotEmpty()) {
+            containerFiltered.filter { task ->
+                val assigned = taskTagMap[task.id].orEmpty().mapTo(mutableSetOf()) { it.id }
+                assigned.containsAll(selectedTagFilter)
+            }
+        } else {
+            containerFiltered
+        }
+
+        // 3. Smart View filter
+        val viewFiltered = tagFiltered.filter { activeSmartView.matches(it, today, nowMillis) }
         updateSmartViewLabel()
+        updateTagFilterChip()
         refreshQuickLabels?.invoke()
         renderNavigation()
         renderCalendar(viewFiltered)
 
         val sections = TaskListSections.build(
-            containerFiltered,
+            tagFiltered,
             activeSmartView,
             today,
             nowMillis,
@@ -1228,12 +1381,13 @@ class TasksFragment : Fragment() {
         val containerItemMap = availableContainers.associateBy { ContainerId(it.key) }
 
         adapter.updateData(
-            newTasks = sections.active,
+            newTasks = if (sections.groups.isEmpty()) sections.active else emptyList(),
             newSubtaskCounts = subtaskMap,
             newContainers = containerItemMap,
             currentToday = today,
             currentTimeMillis = nowMillis,
             newSelectedIds = currentSelection,
+            newTaskTags = taskTagMap,
         )
         groupAdapters.keys.retainAll(sections.groups.map { it.key }.toSet())
         groupedAdapter.replaceSections(if (sections.groups.isEmpty()) listOf(adapter) else
@@ -1243,11 +1397,11 @@ class TasksFragment : Fragment() {
                 }
                 header.update(true, true, palette, group.title)
                 rows.updatePalette(palette)
-                rows.updateData(group.tasks, subtaskMap, containerItemMap, today, nowMillis, currentSelection)
+                rows.updateData(group.tasks, subtaskMap, containerItemMap, today, nowMillis, currentSelection, taskTagMap)
                 listOf(header, rows)
             })
-        overdueAdapter.updateData(if (overdueExpanded) sections.overdue else emptyList(), subtaskMap, containerItemMap, today, nowMillis, currentSelection)
-        completedAdapter.updateData(if (completedExpanded) sections.completed else emptyList(), subtaskMap, containerItemMap, today, nowMillis, currentSelection)
+        overdueAdapter.updateData(if (overdueExpanded) sections.overdue else emptyList(), subtaskMap, containerItemMap, today, nowMillis, currentSelection, taskTagMap)
+        completedAdapter.updateData(if (completedExpanded) sections.completed else emptyList(), subtaskMap, containerItemMap, today, nowMillis, currentSelection, taskTagMap)
         overdueHeader.update(sections.overdue.isNotEmpty(), overdueExpanded, palette)
         activeHeader.update(sections.groups.isEmpty() && sections.overdue.isNotEmpty() && sections.active.isNotEmpty(), true, palette,
             if (activeSmartView == TaskSmartView.TODAY) "Сегодня" else "Задачи")
@@ -1286,6 +1440,11 @@ class TasksFragment : Fragment() {
     }
 
     private fun updateEmptyMessage() {
+        if (selectedTagFilter.isNotEmpty()) {
+            tvEmptyTitle.text = "Нет задач с выбранными тегами"
+            tvEmptyMessage.text = "Сбросьте фильтр по тегам или выберите другие теги"
+            return
+        }
         if (selectedContainerFilter != null) {
             tvEmptyTitle.text = "В этом разделе нет задач"
             tvEmptyMessage.text = "Выберите другой режим или добавьте задачу ниже"
@@ -1615,11 +1774,30 @@ class TasksFragment : Fragment() {
                 navigationColumn.addView(row)
                 if (depth < 2 && item.id.value !in collapsedContainers) children.forEach { addContainer(it, depth + 1) }
             }
-            val local = localTreeRoot?.let { snapshot.containers[it] }
-            if (local != null) addContainer(local, 0) else snapshot.children[null].orEmpty().forEach { addContainer(it, 0) }
-        }
-        divider()
-        navigationColumn.addView(navigationRow("Настройки", R.drawable.ic_nav_settings) {
+                val local = localTreeRoot?.let { snapshot.containers[it] }
+                if (local != null) addContainer(local, 0) else snapshot.children[null].orEmpty().forEach { addContainer(it, 0) }
+            }
+            if (snapshot.availableTags.isNotEmpty()) {
+                divider()
+                navigationColumn.addView(navText("Теги").apply { textSize = 12f; minHeight = dpInt(32f); setTextColor(palette.onSurfaceVariant) })
+                snapshot.availableTags.forEach { tag ->
+                    val isSelected = tag.id in selectedTagFilter
+                    val count = snapshot.roots.count { root -> !root.isCompleted && snapshot.taskTags[root.id].orEmpty().any { it.id == tag.id } }
+                    navigationColumn.addView(navigationRow(
+                        "#${tag.name}",
+                        R.drawable.ic_cat_flag,
+                        count,
+                        isSelected,
+                    ) {
+                        clearSelection()
+                        selectedTagFilter = if (isSelected) selectedTagFilter - tag.id else selectedTagFilter + tag.id
+                        closeNavigation()
+                        loadTasks()
+                    })
+                }
+            }
+            divider()
+            navigationColumn.addView(navigationRow("Настройки", R.drawable.ic_nav_settings) {
             clearSelection()
             closeNavigation()
             workspaceNavigator?.invoke("Settings")
