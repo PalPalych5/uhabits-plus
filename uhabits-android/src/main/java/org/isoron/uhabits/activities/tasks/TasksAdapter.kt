@@ -143,11 +143,12 @@ class TasksAdapter(
             circleDrawable.shape = GradientDrawable.OVAL
 
             if (isCompleted) {
-                circleDrawable.setColor(palette.accent)
+                circleDrawable.setColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.12f))
+                circleDrawable.setStroke(dp(1f), palette.onSurfaceVariant)
                 viewCheckCircle.background = circleDrawable
                 ivCheckmark.setImageResource(R.drawable.ic_action_check)
                 ivCheckmark.visibility = View.VISIBLE
-                ivCheckmark.setColorFilter(Color.WHITE)
+                ivCheckmark.setColorFilter(palette.onSurfaceVariant)
             } else {
                 circleDrawable.setColor(Color.TRANSPARENT)
                 val strokeWidth = TaskThemeUtils.dpInt(itemView.context, 1.5f)
@@ -175,19 +176,20 @@ class TasksAdapter(
 
         private fun applyRowProfile() {
 
-            itemView.setPaddingRelative(dp(8f), dp(8f), dp(20f), dp(8f))
-            tvTitle.textSize = 15.5f
+            itemView.setPaddingRelative(dp(8f), dp(8f), dp(16f), dp(8f))
+            tvTitle.textSize = 16f
             tvTitle.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
             tvTaskContext.textSize = 12f
             tvTaskMeta.textSize = 12f
             (layoutTaskMeta.layoutParams as LinearLayout.LayoutParams).apply { topMargin = dp(4f) }
-            (tvTaskMeta.layoutParams as LinearLayout.LayoutParams).apply { topMargin = dp(4f) }
+            (tvTaskMeta.layoutParams as LinearLayout.LayoutParams).apply { topMargin = 0 }
             viewCheckCircle.layoutParams = (viewCheckCircle.layoutParams as FrameLayout.LayoutParams).apply {
                 width = dp(20f)
                 height = dp(20f)
+                topMargin = dp(2f)
             }
             ivCheckmark.layoutParams = (ivCheckmark.layoutParams as FrameLayout.LayoutParams).apply {
-                topMargin = dp((20f - 12f) / 2f)
+                topMargin = dp(6f)
             }
         }
 
@@ -215,10 +217,9 @@ class TasksAdapter(
             if (counts != null && counts.second > 0) {
                 context.appendProperty(R.drawable.ic_cat_list_todo, "${counts.first}/${counts.second}", palette.onSurfaceVariant)
             }
-            tvTaskContext.text = context
-            tvTaskContext.setTextColor(palette.onSurfaceVariant)
-            tvTaskContext.contentDescription = "Раздел: " + containerName +
+            val spokenContext = "Раздел: " + containerName +
                 (if (counts != null && counts.second > 0) "; подзадачи: ${counts.first} из ${counts.second}" else "")
+            tvTaskContext.visibility = View.GONE
 
             val dates = SpannableStringBuilder()
             val spokenDates = mutableListOf<String>()
@@ -236,13 +237,13 @@ class TasksAdapter(
                         val overdue = task.isOverdue(today, nowMillis)
                         val isToday = task.isDueToday(today, nowMillis)
                         val label = when {
-                            overdue -> "Срок прошёл: ${d.day}.${d.month.toString().padStart(2, '0')}"
-                            isToday -> "Срок сегодня"
-                            d.daysSince2000 == today.daysSince2000 + 1 -> "Срок завтра"
-                            else -> "Срок ${d.day}.${d.month.toString().padStart(2, '0')}"
+                            overdue -> "Просрочено · ${d.day}.${d.month.toString().padStart(2, '0')}"
+                            isToday -> "Сегодня"
+                            d.daysSince2000 == today.daysSince2000 + 1 -> "Завтра"
+                            else -> TaskDueDisplayFormatter.format(due, TaskDueDisplayFormatter.selectedLocale(itemView.context))
                         }
                         val color = when {
-                            overdue -> if (palette.isDark) 0xFFFFAAA3.toInt() else 0xFFAB3D36.toInt()
+                            overdue -> dangerColor()
                             isToday -> palette.accent
                             else -> palette.onSurfaceVariant
                         }
@@ -255,12 +256,12 @@ class TasksAdapter(
                         val cal = java.util.Calendar.getInstance().apply { timeInMillis = due.epochMillis }
                         val timeStr = timeFormat.format(Date(due.epochMillis))
                         val label = when {
-                            overdue -> "Срок прошёл: ${cal.get(java.util.Calendar.DAY_OF_MONTH)}.${(cal.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')}, $timeStr"
-                            isToday -> "Срок сегодня, $timeStr"
-                            else -> "Срок ${cal.get(java.util.Calendar.DAY_OF_MONTH)}.${(cal.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')}, $timeStr"
+                            overdue -> "Просрочено · ${cal.get(java.util.Calendar.DAY_OF_MONTH)}.${(cal.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')}, $timeStr"
+                            isToday -> "Сегодня, $timeStr"
+                            else -> TaskDueDisplayFormatter.format(due, TaskDueDisplayFormatter.selectedLocale(itemView.context))
                         }
                         val color = when {
-                            overdue -> if (palette.isDark) 0xFFFFAAA3.toInt() else 0xFFAB3D36.toInt()
+                            overdue -> dangerColor()
                             isToday -> palette.accent
                             else -> palette.onSurfaceVariant
                         }
@@ -269,11 +270,22 @@ class TasksAdapter(
                     }
                 }
             }
+            val completedAt = task.completedAt
+            if (task.isCompleted && completedAt != null) {
+                val label = "Выполнено " + SimpleDateFormat("d MMM", TaskDueDisplayFormatter.selectedLocale(itemView.context)).format(Date(completedAt))
+                dates.appendProperty(R.drawable.ic_action_check, label, palette.onSurfaceVariant)
+                spokenDates.add(label)
+            }
+            if (dates.isNotEmpty()) dates.append("  ·  ")
+            dates.append(context)
             tvTaskMeta.text = dates
-            tvTaskMeta.contentDescription = spokenDates.joinToString("; ")
+            tvTaskMeta.contentDescription = (spokenDates + spokenContext).joinToString("; ")
             tvTaskMeta.setTextColor(palette.onSurfaceVariant)
             tvTaskMeta.visibility = if (dates.isEmpty()) View.GONE else View.VISIBLE
             layoutTaskMeta.visibility = View.VISIBLE
         }
+
+        private fun dangerColor() = androidx.core.content.ContextCompat.getColor(itemView.context,
+            if (palette.isDark) R.color.color_picker_danger_dark else R.color.color_picker_danger_light)
     }
 }

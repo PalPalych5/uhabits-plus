@@ -123,6 +123,13 @@ class TasksFragment : Fragment() {
 
     private lateinit var rvTasks: RecyclerView
     private lateinit var adapter: TasksAdapter
+    private lateinit var overdueAdapter: TasksAdapter
+    private lateinit var completedAdapter: TasksAdapter
+    private lateinit var overdueHeader: TaskSectionAdapter
+    private lateinit var activeHeader: TaskSectionAdapter
+    private lateinit var completedHeader: TaskSectionAdapter
+    private var overdueExpanded = true
+    private var completedExpanded = false
     private lateinit var layoutEmpty: LinearLayout
     private lateinit var tvEmptyTitle: TextView
     private lateinit var tvEmptyMessage: TextView
@@ -148,6 +155,8 @@ class TasksFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View {
         savedInstanceState?.let {
+            overdueExpanded = it.getBoolean("overdueExpanded", true)
+            completedExpanded = it.getBoolean("completedExpanded", false)
             activeSmartView = TaskSmartView.entries.getOrElse(it.getInt("smartView")) { TaskSmartView.TODAY }
             selectedContainerFilter = it.getString("filter")?.let(::ContainerId)
             val dueKind = it.getString("quickDueKind")
@@ -212,6 +221,8 @@ class TasksFragment : Fragment() {
         palette = MainTabsThemeBridge.resolve(requireContext())
         view?.let { applyTheme(it) }
         adapter.updatePalette(palette)
+        overdueAdapter.updatePalette(palette)
+        completedAdapter.updatePalette(palette)
         (childFragmentManager.findFragmentByTag("task_detail") as? TaskDetailBottomSheet)?.onTaskUpdatedListener = { if (view != null) loadTasks() }
         loadTasks()
     }
@@ -236,6 +247,8 @@ class TasksFragment : Fragment() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("overdueExpanded", overdueExpanded)
+        outState.putBoolean("completedExpanded", completedExpanded)
         outState.putInt("smartView", activeSmartView.ordinal)
         outState.putString("filter", selectedContainerFilter?.value)
         when (val d = quickTaskDue) {
@@ -390,7 +403,7 @@ class TasksFragment : Fragment() {
     }
 
     private fun setupRecyclerView() {
-        adapter = TasksAdapter(
+        fun taskAdapter() = TasksAdapter(
             palette = palette,
             onTaskClicked = { task ->
                 val sheet = TaskDetailBottomSheet.newInstance(task.id)
@@ -405,8 +418,21 @@ class TasksFragment : Fragment() {
                 showTaskQuickMenu(task)
             }
         )
+        adapter = taskAdapter()
+        overdueAdapter = taskAdapter()
+        completedAdapter = taskAdapter()
+        overdueHeader = TaskSectionAdapter("Просроченные") {
+            overdueExpanded = !overdueExpanded
+            workspaceSnapshot?.let(::renderTasks)
+        }
+        activeHeader = TaskSectionAdapter("Сегодня")
+        completedHeader = TaskSectionAdapter("Завершённые") {
+            completedExpanded = !completedExpanded
+            workspaceSnapshot?.let(::renderTasks)
+        }
         rvTasks.layoutManager = LinearLayoutManager(requireContext())
-        rvTasks.adapter = adapter
+        rvTasks.adapter = TaskListAdapter(
+            overdueHeader, overdueAdapter, activeHeader, adapter, completedHeader, completedAdapter)
     }
 
     private fun setupQuickAdd() {
@@ -702,35 +728,32 @@ class TasksFragment : Fragment() {
         renderNavigation()
         renderCalendar(viewFiltered)
 
-        // Sort: pending by overdue first, then sortOrder, then due timestamp/day; completed by completedAt DESC
-        val sorted = if (activeSmartView == TaskSmartView.COMPLETED) {
-            viewFiltered.sortedByDescending { it.completedAt ?: 0L }
-        } else {
-            viewFiltered.sortedWith(
-                compareBy<UserTask> { !it.isOverdue(today, nowMillis) }
-                    .thenBy { it.sortOrder }
-                    .thenBy {
-                        when (val d = it.due) {
-                            is TaskDue.Timed -> d.epochMillis
-                            is TaskDue.Day -> d.date.toLocalDate().daysSince2000.toLong() * 86400000L
-                            is TaskDue.None -> Long.MAX_VALUE
-                        }
-                    }
-            )
-        }
+        val sections = TaskListSections.build(containerFiltered, activeSmartView, today, nowMillis)
 
         val containerItemMap = availableContainers.associateBy { ContainerId(it.key) }
 
         adapter.updateData(
-            newTasks = sorted,
+            newTasks = sections.active,
             newSubtaskCounts = subtaskMap,
             newContainers = containerItemMap,
             currentToday = today,
             currentTimeMillis = nowMillis,
         )
+        overdueAdapter.updateData(if (overdueExpanded) sections.overdue else emptyList(), subtaskMap, containerItemMap, today, nowMillis)
+        completedAdapter.updateData(if (completedExpanded) sections.completed else emptyList(), subtaskMap, containerItemMap, today, nowMillis)
+        overdueHeader.update(sections.overdue.isNotEmpty(), overdueExpanded, palette)
+        activeHeader.update(sections.overdue.isNotEmpty() && sections.active.isNotEmpty(), true, palette,
+            if (activeSmartView == TaskSmartView.TODAY) "Сегодня" else "Задачи")
+        completedHeader.update(sections.completed.isNotEmpty(), completedExpanded, palette)
 
         // Subtitle count
-        tvSubtitle.text = "${sorted.size} ${pluralTasks(sorted.size)}"
+        val activeCount = when {
+            calendarMode -> viewFiltered.size
+            activeSmartView == TaskSmartView.TODAY -> sections.active.size
+            else -> sections.active.size + sections.overdue.size
+        }
+        tvSubtitle.text = "$activeCount ${pluralTasks(activeCount)}"
+        tvSubtitle.visibility = if (activeSmartView == TaskSmartView.COMPLETED) View.GONE else View.VISIBLE
 
         // Date indicator on the right (shown in TODAY mode)
         if (activeSmartView == TaskSmartView.TODAY) {
@@ -745,7 +768,7 @@ class TasksFragment : Fragment() {
         if (calendarMode) {
             rvTasks.visibility = View.GONE
             layoutEmpty.visibility = View.GONE
-        } else if (sorted.isEmpty()) {
+        } else if (sections.active.isEmpty() && sections.overdue.isEmpty() && sections.completed.isEmpty()) {
             rvTasks.visibility = View.GONE
             layoutEmpty.visibility = View.VISIBLE
             updateEmptyMessage()
@@ -1005,7 +1028,7 @@ class TasksFragment : Fragment() {
         )
         TaskSmartView.entries.forEachIndexed { index, smart ->
             val count = roots.count { smart.matches(it, getToday(), System.currentTimeMillis()) }
-            navigationColumn.addView(navigationRow(smart.displayName, smartIcons[index], count,
+            navigationColumn.addView(navigationRow(smart.displayName, smartIcons[index], count.takeUnless { smart == TaskSmartView.COMPLETED },
                 selectedContainerFilter == null && activeSmartView == smart) {
                 selectedContainerFilter = null; activeSmartView = smart; closeNavigation(); loadTasks()
             })

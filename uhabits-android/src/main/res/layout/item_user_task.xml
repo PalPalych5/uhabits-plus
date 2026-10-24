@@ -7,7 +7,7 @@
     android:orientation="horizontal"
     android:gravity="top"
     android:paddingStart="8dp"
-    android:paddingEnd="20dp"
+    android:paddingEnd="16dp"
     android:paddingTop="8dp"
     android:paddingBottom="8dp"
     android:background="?android:attr/selectableItemBackground">
@@ -78,6 +78,8 @@
                 android:textSize="12.5sp"
                 android:includeFontPadding="false"
                 android:fontFamily="sans-serif"
+                android:maxLines="1"
+                android:ellipsize="end"
                 android:fontFeatureSettings="tnum" />
         </LinearLayout>
     </LinearLayout>
