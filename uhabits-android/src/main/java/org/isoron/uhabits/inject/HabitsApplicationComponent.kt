@@ -137,6 +137,13 @@ abstract class HabitsApplicationComponent(
         ) else null
     }
 
+    val focusSessionRepository: org.isoron.uhabits.core.focus.FocusSessionRepository? by lazy {
+        if (session.isNextArchitecture) {
+            FocusSessionSchema.createSchema(providedDb)
+            org.isoron.uhabits.core.focus.sqlite.SQLiteFocusSessionRepository(providedDb)
+        } else null
+    }
+
     val containerStatisticsService: org.isoron.uhabits.core.containers.statistics.ContainerStatisticsService? by lazy {
         val cQueries = organizationFacade.containerQueries
         val pQueries = organizationFacade.habitPlacementQueries

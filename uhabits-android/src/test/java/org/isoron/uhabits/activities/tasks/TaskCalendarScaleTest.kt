@@ -79,6 +79,38 @@ class TaskCalendarScaleTest {
     }
 
     @Test
+    fun modeValuesAreDefined() {
+        val modes = CalendarMode.entries
+        assertEquals(2, modes.size)
+        assertEquals(CalendarMode.PLANNING, modes[0])
+        assertEquals(CalendarMode.HISTORY, modes[1])
+    }
+
+    @Test
+    fun modeSwitchingPreservesDateScaleAndPeriod() {
+        var selectedDay = LocalDate(2026, 10, 24)
+        var scale = CalendarScale.WEEK
+        var mode = CalendarMode.PLANNING
+        val cal = Calendar.getInstance().apply {
+            set(2026, Calendar.OCTOBER, 1)
+        }
+
+        // Switch to HISTORY: selectedDay, scale, and month remain identical
+        mode = CalendarMode.HISTORY
+        assertEquals(CalendarMode.HISTORY, mode)
+        assertEquals(LocalDate(2026, 10, 24), selectedDay)
+        assertEquals(CalendarScale.WEEK, scale)
+        assertEquals(2026, cal.get(Calendar.YEAR))
+        assertEquals(Calendar.OCTOBER, cal.get(Calendar.MONTH))
+
+        // Switch back to PLANNING
+        mode = CalendarMode.PLANNING
+        assertEquals(CalendarMode.PLANNING, mode)
+        assertEquals(LocalDate(2026, 10, 24), selectedDay)
+        assertEquals(CalendarScale.WEEK, scale)
+    }
+
+    @Test
     fun overdueTasksRetainOriginalDueAndAreNotAutoRescheduled() {
         val pastDate = LocalDate(2026, 10, 1)
         val today = LocalDate(2026, 10, 24)

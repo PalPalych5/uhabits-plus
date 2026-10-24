@@ -99,6 +99,9 @@ class TasksFragment : Fragment() {
     private val workspaceChanged: () -> Unit = {
         activity?.runOnUiThread { if (workspaceActive && view != null) loadTasks() }
     }
+    private val timerListener = org.isoron.uhabits.activities.habits.show.timer.TimerSessionManager.Listener {
+        activity?.runOnUiThread { if (workspaceActive && view != null && calendarMode) loadTasks() }
+    }
 
     var workspaceNavigator: ((String) -> Unit)? = null
     private lateinit var shellRoot: FrameLayout
@@ -112,7 +115,9 @@ class TasksFragment : Fragment() {
     private var calendarMode = false
     private var matrixMode = false
     private var calendarScale = CalendarScale.MONTH
+    private var calendarViewMode = CalendarMode.PLANNING
     private var activeHabits: List<Habit> = emptyList()
+    private var historyFocusSessions: List<org.isoron.uhabits.core.focus.FocusSession> = emptyList()
     private var calendarViewController: TaskCalendarViewController? = null
     private var quickImportant: Boolean? = null
     private var quickUrgent: Boolean? = null
@@ -227,6 +232,9 @@ class TasksFragment : Fragment() {
             calendarScale = it.getString("calendarScale")?.let { name ->
                 try { CalendarScale.valueOf(name) } catch (e: Exception) { CalendarScale.MONTH }
             } ?: CalendarScale.MONTH
+            calendarViewMode = it.getString("calendarViewMode")?.let { name ->
+                try { CalendarMode.valueOf(name) } catch (e: Exception) { CalendarMode.PLANNING }
+            } ?: CalendarMode.PLANNING
             quickImportant = if (it.containsKey("quickImportant")) it.getBoolean("quickImportant") else null
             quickUrgent = if (it.containsKey("quickUrgent")) it.getBoolean("quickUrgent") else null
             selectedDay = LocalDate(it.getInt("selectedDay", getToday().daysSince2000))
@@ -298,6 +306,7 @@ class TasksFragment : Fragment() {
         (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(quickExpanded)
         workspaceActive = true
         component.workspaceReadRevision.addListener(workspaceChanged)
+        component.timerSessionManager.addListener(timerListener)
         palette = MainTabsThemeBridge.resolve(requireContext())
         view?.let { applyTheme(it) }
         adapter.updatePalette(palette)
@@ -312,6 +321,7 @@ class TasksFragment : Fragment() {
         (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(false)
         workspaceActive = false
         component.workspaceReadRevision.removeListener(workspaceChanged)
+        component.timerSessionManager.removeListener(timerListener)
         loadGeneration++
         loadJob?.cancel()
         loadJob = null
@@ -361,6 +371,7 @@ class TasksFragment : Fragment() {
         outState.putBoolean("calendarMode", calendarMode)
         outState.putBoolean("matrixMode", matrixMode)
         outState.putString("calendarScale", calendarScale.name)
+        outState.putString("calendarViewMode", calendarViewMode.name)
         quickImportant?.let { outState.putBoolean("quickImportant", it) }
         quickUrgent?.let { outState.putBoolean("quickUrgent", it) }
         outState.putInt("selectedDay", selectedDay.daysSince2000)
@@ -1322,7 +1333,7 @@ class TasksFragment : Fragment() {
         val generation = ++loadGeneration
         loadJob = viewLifecycleOwner.lifecycleScope.launch {
             val loaded = withContext(Dispatchers.IO) {
-                var stable: Pair<Long, Pair<TasksWorkspaceSnapshot, List<Habit>>>? = null
+                var stable: Pair<Long, Triple<TasksWorkspaceSnapshot, List<Habit>, List<org.isoron.uhabits.core.focus.FocusSession>>>? = null
                 repeat(3) {
                     if (stable == null) {
                         val before = component.workspaceReadRevision.value
@@ -1334,8 +1345,10 @@ class TasksFragment : Fragment() {
                         val habitsList = component.habitList.getFiltered(
                             org.isoron.uhabits.core.models.HabitMatcher(isArchivedAllowed = false)
                         ).toList()
+                        val (qStart, qEnd) = FocusHistoryProjector.calculateQueryRange(calendarScale, selectedDay, calendarMonth)
+                        val sessions = component.focusSessionRepository?.getByTimeRange(qStart, qEnd).orEmpty()
                         if (before == component.workspaceReadRevision.value) {
-                            stable = before to (snapshot to habitsList)
+                            stable = before to Triple(snapshot, habitsList, sessions)
                         }
                     }
                 }
@@ -1352,11 +1365,14 @@ class TasksFragment : Fragment() {
             snapshotRevision = loaded.first
             workspaceSnapshot = loaded.second.first
             activeHabits = loaded.second.second
-            renderTasks(loaded.second.first)
+            renderTasks(loaded.second.first, loaded.second.third)
         }
     }
 
-    private fun renderTasks(snapshot: TasksWorkspaceSnapshot) {
+    private fun renderTasks(
+        snapshot: TasksWorkspaceSnapshot,
+        rawSessions: List<org.isoron.uhabits.core.focus.FocusSession> = historyFocusSessions
+    ) {
         // A restored context may have been archived/deleted while this workspace was hidden.
         // availableContainers excludes deleted and effectively archived branches.
         val availableContainers = snapshot.availableContainers
@@ -1402,8 +1418,15 @@ class TasksFragment : Fragment() {
         updateTagFilterChip()
         refreshQuickLabels?.invoke()
         renderNavigation()
+        val scopeContainerIds = if (selectedContainerFilter != null) snapshot.scope(selectedContainerFilter!!) else emptySet()
+        historyFocusSessions = FocusHistoryProjector.filterByContainer(
+            sessions = rawSessions,
+            targetContainer = selectedContainerFilter,
+            currentSubtreeIds = scopeContainerIds,
+            containerQueries = orgFacade.containerQueries
+        )
         val calendarTasks = if (activeSmartView == TaskSmartView.COMPLETED) tagFiltered.filter { it.isCompleted } else tagFiltered
-        renderCalendar(calendarTasks, activeHabits)
+        renderCalendar(calendarTasks, activeHabits, historyFocusSessions)
 
         val sections = TaskListSections.build(
             tagFiltered,
@@ -1877,7 +1900,11 @@ class TasksFragment : Fragment() {
         })
     }
 
-    private fun renderCalendar(tasks: List<UserTask>, habits: List<Habit> = activeHabits) {
+    private fun renderCalendar(
+        tasks: List<UserTask>,
+        habits: List<Habit> = activeHabits,
+        sessions: List<org.isoron.uhabits.core.focus.FocusSession> = historyFocusSessions
+    ) {
         representationButton.setImageResource(if (calendarMode) R.drawable.ic_cat_list_todo else R.drawable.ic_cat_calendar)
         representationButton.contentDescription = "Представление: " + if (matrixMode) "Матрица" else if (calendarMode) "Календарь" else "Список"
         calendarPanel.visibility = if (calendarMode) View.VISIBLE else View.GONE
@@ -1905,14 +1932,21 @@ class TasksFragment : Fragment() {
             },
             onDateChanged = { newDate ->
                 selectedDay = newDate
+                loadTasks()
             },
             onScaleChanged = { newScale ->
                 calendarScale = newScale
+                loadTasks()
+            },
+            onModeChanged = { newMode ->
+                calendarViewMode = newMode
+                loadTasks()
             }
         ).also { calendarViewController = it }
 
         controller.selectedDay = selectedDay
         controller.scale = calendarScale
+        controller.mode = calendarViewMode
         controller.calendarMonth = calendarMonth
         controller.updatePalette(palette)
         controller.updateData(
@@ -1921,7 +1955,8 @@ class TasksFragment : Fragment() {
             newContainers = workspaceSnapshot?.containers.orEmpty().mapValues { (id, c) ->
                 OrganizationalItem(id.value, c.name, c.color, c.icon, c.name, c.parentId == null)
             },
-            newTaskTags = workspaceSnapshot?.taskTags.orEmpty()
+            newTaskTags = workspaceSnapshot?.taskTags.orEmpty(),
+            newFocusSessions = sessions
         )
         controller.render()
     }
