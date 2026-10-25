@@ -195,6 +195,10 @@ object LegacyContainerMigrationValidator {
                 "FocusCaptureJournal",
                 "Contributions",
                 "SourceRules",
+                "TaskTagState",
+                "TaskTags",
+                "TaskTagLinks",
+                "TaskTagOutbox",
                 "BackupManifest",
                 "sqlite_sequence",
             )

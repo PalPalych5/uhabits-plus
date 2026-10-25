@@ -54,7 +54,7 @@ class SQLiteContributionRepositoryTest {
     @Test
     fun testProductionDatabaseVersionUnchanged() = runTest {
         assertEquals(29, LEGACY_DATABASE_VERSION)
-        assertEquals(33, DATABASE_VERSION)
+        assertEquals(35, DATABASE_VERSION)
     }
 
     @Test

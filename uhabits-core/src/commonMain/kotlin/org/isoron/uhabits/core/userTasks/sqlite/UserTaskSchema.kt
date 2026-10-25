@@ -58,6 +58,7 @@ object UserTaskSchema {
         }
         if (targetVersion >= 32) ensureV32Columns(db)
         if (targetVersion >= 34) ensureV34Columns(db)
+        if (targetVersion >= 35) ensureV35Columns(db)
         if (targetVersion >= 33) {
             org.isoron.uhabits.core.userTasks.tags.TaskTagSchema.createSchema(db)
         }
@@ -99,6 +100,24 @@ object UserTaskSchema {
         for (name in listOf("important", "urgent")) {
             if (name !in columns) db.run("ALTER TABLE UserTasks ADD COLUMN $name INTEGER CHECK($name IN (0, 1))")
         }
+    }
+
+    fun ensureV35Columns(db: Database) {
+        val columns = mutableSetOf<String>()
+        val stmt = db.prepareStatement("PRAGMA table_info(UserTasks)")
+        try {
+            while (stmt.step() == StepResult.ROW) columns.add(stmt.getText(1))
+        } finally { stmt.finalize() }
+        if ("linked_habit_uuid" !in columns) {
+            db.run("ALTER TABLE UserTasks ADD COLUMN linked_habit_uuid TEXT")
+        }
+        if ("habit_time_accrual_enabled" !in columns) {
+            db.run("ALTER TABLE UserTasks ADD COLUMN habit_time_accrual_enabled INTEGER NOT NULL DEFAULT 0 CHECK(habit_time_accrual_enabled IN (0, 1))")
+        }
+        if ("habit_link_effective_from" !in columns) {
+            db.run("ALTER TABLE UserTasks ADD COLUMN habit_link_effective_from INTEGER")
+        }
+        db.run("CREATE INDEX IF NOT EXISTS idx_user_tasks_linked_habit ON UserTasks(linked_habit_uuid);")
     }
 
     fun ensureV32Columns(db: Database) {

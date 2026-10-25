@@ -42,6 +42,9 @@ class UserTaskServiceImpl(
         sortOrder: Int?,
         important: Boolean?,
         urgent: Boolean?,
+        linkedHabitUuid: String?,
+        habitTimeAccrualEnabled: Boolean,
+        habitLinkEffectiveFrom: Long?,
     ): UserTask {
         require(title.isNotBlank()) { "Task title cannot be blank" }
 
@@ -54,6 +57,14 @@ class UserTaskServiceImpl(
         val taskId = explicitId ?: TaskId(idGenerator())
 
         val effectiveSortOrder = sortOrder ?: ((repository.getMaxSortOrder(parentTaskId) ?: -1) + 1)
+
+        val normalizedLinkedHabit = linkedHabitUuid?.trim()?.takeIf { it.isNotBlank() }
+        val normalizedAccrual = normalizedLinkedHabit != null && habitTimeAccrualEnabled
+        val normalizedEffectiveFrom = if (normalizedAccrual) {
+            habitLinkEffectiveFrom?.let { maxOf(now, it) } ?: now
+        } else {
+            if (normalizedLinkedHabit != null) habitLinkEffectiveFrom else null
+        }
 
         val task = UserTask(
             id = taskId,
@@ -69,6 +80,9 @@ class UserTaskServiceImpl(
             sortOrder = effectiveSortOrder,
             createdAt = now,
             updatedAt = now,
+            linkedHabitUuid = normalizedLinkedHabit,
+            habitTimeAccrualEnabled = normalizedAccrual,
+            habitLinkEffectiveFrom = normalizedEffectiveFrom,
         )
 
         repository.save(task)
@@ -90,9 +104,16 @@ class UserTaskServiceImpl(
         urgent: Boolean?,
         clearImportant: Boolean,
         clearUrgent: Boolean,
+        linkedHabitUuid: String?,
+        clearLinkedHabit: Boolean,
+        habitTimeAccrualEnabled: Boolean?,
+        habitLinkEffectiveFrom: Long?,
+        clearHabitLinkEffectiveFrom: Boolean,
     ): UserTask {
         val existing = repository.getById(id)
             ?: throw IllegalArgumentException("Task $id not found")
+
+        val now = maxOf(clock(), existing.updatedAt + 1L)
 
         val newParentId = when {
             clearParentTask -> null
@@ -119,6 +140,41 @@ class UserTaskServiceImpl(
         val newDescription = description?.trim() ?: existing.description
         val newSortOrder = sortOrder ?: existing.sortOrder
 
+        val targetChanged = when {
+            clearLinkedHabit -> existing.linkedHabitUuid != null
+            linkedHabitUuid != null -> linkedHabitUuid.trim() != (existing.linkedHabitUuid ?: "")
+            else -> false
+        }
+
+        val newLinkedHabit = when {
+            clearLinkedHabit -> null
+            linkedHabitUuid != null -> linkedHabitUuid.trim().takeIf { it.isNotBlank() }
+            else -> existing.linkedHabitUuid
+        }
+
+        val accrualReEnabled = existing.linkedHabitUuid != null &&
+            !existing.habitTimeAccrualEnabled &&
+            (habitTimeAccrualEnabled == true)
+
+        val newAccrual = if (newLinkedHabit == null) {
+            false
+        } else {
+            habitTimeAccrualEnabled ?: existing.habitTimeAccrualEnabled
+        }
+
+        val newEffectiveFrom = when {
+            clearHabitLinkEffectiveFrom || newLinkedHabit == null -> null
+            habitLinkEffectiveFrom != null -> {
+                if (targetChanged || accrualReEnabled) {
+                    maxOf(now, habitLinkEffectiveFrom)
+                } else {
+                    habitLinkEffectiveFrom
+                }
+            }
+            targetChanged || accrualReEnabled -> now
+            else -> existing.habitLinkEffectiveFrom
+        }
+
         val updated = existing.copy(
             title = newTitle,
             important = if (clearImportant) null else important ?: existing.important,
@@ -129,7 +185,10 @@ class UserTaskServiceImpl(
             legacyPlanReviewPending = if (due != null) false else existing.legacyPlanReviewPending,
             parentTaskId = newParentId,
             sortOrder = newSortOrder,
-            updatedAt = maxOf(clock(), existing.updatedAt + 1L),
+            updatedAt = now,
+            linkedHabitUuid = newLinkedHabit,
+            habitTimeAccrualEnabled = newAccrual,
+            habitLinkEffectiveFrom = newEffectiveFrom,
         )
 
         repository.save(updated)

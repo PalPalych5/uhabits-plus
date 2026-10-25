@@ -38,10 +38,29 @@ data class TaskDraft(
     val tagIds: Set<String> = emptySet(),
     val important: Boolean? = null,
     val urgent: Boolean? = null,
+    val linkedHabitUuid: String? = null,
+    val habitTimeAccrualEnabled: Boolean = false,
+    val habitLinkEffectiveFrom: Long? = null,
 ) {
     data class DraftSubtask(
         val title: String,
         val isCompleted: Boolean = false,
+    )
+
+    fun clearHabitLink(): TaskDraft = copy(
+        linkedHabitUuid = null,
+        habitTimeAccrualEnabled = false,
+        habitLinkEffectiveFrom = null,
+    )
+
+    fun withHabitLink(
+        habitUuid: String,
+        effectiveFrom: Long,
+        accrualEnabled: Boolean = true,
+    ): TaskDraft = copy(
+        linkedHabitUuid = habitUuid,
+        habitTimeAccrualEnabled = accrualEnabled,
+        habitLinkEffectiveFrom = effectiveFrom,
     )
 
     fun toBundle(): Bundle = Bundle().apply {
@@ -54,6 +73,9 @@ data class TaskDraft(
         putBundle("draftDue", TaskDuePickerBottomSheet.encode(due))
         putStringArrayList("draftSubtaskTitles", ArrayList(subtasks.map { it.title }))
         putBooleanArray("draftSubtaskCompleted", subtasks.map { it.isCompleted }.toBooleanArray())
+        linkedHabitUuid?.let { putString("draftLinkedHabitUuid", it) }
+        putBoolean("draftHabitTimeAccrualEnabled", habitTimeAccrualEnabled)
+        habitLinkEffectiveFrom?.let { putLong("draftHabitLinkEffectiveFrom", it) }
     }
 
     companion object {
@@ -70,6 +92,13 @@ data class TaskDraft(
             val subtasks = titles.mapIndexed { index, subtaskTitle ->
                 DraftSubtask(subtaskTitle, completed.getOrElse(index) { false })
             }
+            val linkedHabitUuid = bundle.getString("draftLinkedHabitUuid")
+            val habitTimeAccrualEnabled = if (linkedHabitUuid != null) {
+                bundle.getBoolean("draftHabitTimeAccrualEnabled", false)
+            } else false
+            val habitLinkEffectiveFrom = if (linkedHabitUuid != null && bundle.containsKey("draftHabitLinkEffectiveFrom")) {
+                bundle.getLong("draftHabitLinkEffectiveFrom")
+            } else null
             return TaskDraft(
                 title = title,
                 description = description,
@@ -79,6 +108,9 @@ data class TaskDraft(
                 tagIds = bundle.getStringArrayList("draftTagIds").orEmpty().toSet(),
                 important = if (bundle.containsKey("draftImportant")) bundle.getBoolean("draftImportant") else null,
                 urgent = if (bundle.containsKey("draftUrgent")) bundle.getBoolean("draftUrgent") else null,
+                linkedHabitUuid = linkedHabitUuid,
+                habitTimeAccrualEnabled = habitTimeAccrualEnabled,
+                habitLinkEffectiveFrom = habitLinkEffectiveFrom,
             )
         }
     }

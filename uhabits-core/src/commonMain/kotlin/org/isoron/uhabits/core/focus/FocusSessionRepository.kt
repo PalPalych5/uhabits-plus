@@ -41,6 +41,8 @@ interface FocusSessionRepository {
     fun getById(id: FocusSessionId): FocusSession?
     fun getAll(): List<FocusSession>
     fun getByTask(taskId: TaskId): List<FocusSession>
+    /** Returns the sum of durationMs for all finalized sessions associated with the given task as primary target, or 0 if none. */
+    fun getTotalDurationByTask(taskId: TaskId): Long
     /** Keyset page, ordered by endedAt/id. Includes late/imported facts on a new startup sweep. */
     fun getFinalizedPage(after: FocusSessionCursor?, limit: Int): List<FocusSession>
     /** Returns finalized sessions with endedAt in [startMillis, endMillis), ordered by endedAt. */

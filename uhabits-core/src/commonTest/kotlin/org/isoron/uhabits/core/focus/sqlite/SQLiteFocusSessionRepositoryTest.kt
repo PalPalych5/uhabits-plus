@@ -101,6 +101,8 @@ class SQLiteFocusSessionRepositoryTest {
             val unassigned = fact("null").copy(taskId = null, primaryTargetType = FocusPrimaryTargetType.HABIT)
             listOf(second, unassigned, earlier, first).forEach { repo.record(it) }
             assertEquals(listOf(earlier, first, second), repo.getByTask(TaskId("task-1")))
+            assertEquals(3 * 1_200_456L, repo.getTotalDurationByTask(TaskId("task-1")))
+            assertEquals(0L, repo.getTotalDurationByTask(TaskId("missing")))
             assertEquals(listOf(earlier, first, second, unassigned), repo.getAll())
             assertTrue(repo.getByTask(TaskId("missing")).isEmpty())
         } finally { db.close() }

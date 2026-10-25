@@ -41,7 +41,8 @@ object DatabaseSnapshotter {
             "id", "title", "description", "container_id", "status",
             "due_kind", "due_date", "due_time_millis", "due_zone",
             "completed_at", "parent_task_id", "sort_order", "created_at", "updated_at",
-            "planned_date", "deadline", "legacy_plan_review_pending", "important", "urgent"
+            "planned_date", "deadline", "legacy_plan_review_pending", "important", "urgent",
+            "linked_habit_uuid", "habit_time_accrual_enabled", "habit_link_effective_from"
         )
         val columns = mutableSetOf<String>()
         val stmt = db.prepareStatement("PRAGMA table_info(UserTasks)")
@@ -953,6 +954,9 @@ object DatabaseSnapshotter {
                    , $reviewExpression
                    , ${if ("important" in srcColumns) "important" else "NULL"}
                    , ${if ("urgent" in srcColumns) "urgent" else "NULL"}
+                   , ${if ("linked_habit_uuid" in srcColumns) "linked_habit_uuid" else "NULL"}
+                   , ${if ("habit_time_accrual_enabled" in srcColumns) "habit_time_accrual_enabled" else "0"}
+                   , ${if ("habit_link_effective_from" in srcColumns) "habit_link_effective_from" else "NULL"}
             FROM UserTasks
             """.trimIndent()
         } else {
@@ -969,8 +973,9 @@ object DatabaseSnapshotter {
             INSERT OR REPLACE INTO UserTasks (
                 id, title, description, container_id, status, due_kind, due_date,
                 due_time_millis, due_zone, completed_at, parent_task_id, sort_order, created_at, updated_at,
-                planned_date, deadline, legacy_plan_review_pending, important, urgent
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                planned_date, deadline, legacy_plan_review_pending, important, urgent,
+                linked_habit_uuid, habit_time_accrual_enabled, habit_link_effective_from
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """.trimIndent()
         )
         try {
@@ -1026,6 +1031,12 @@ object DatabaseSnapshotter {
                 val urgent = if (hasDueKind) select.getIntOrNull(18) else null
                 if (important == null) insert.bindNull(18) else insert.bindInt(18, important)
                 if (urgent == null) insert.bindNull(19) else insert.bindInt(19, urgent)
+                val linkedHabitUuid = if (hasDueKind) select.getTextOrNull(19) else null
+                val habitTimeAccrualEnabled = if (hasDueKind) select.getInt(20) else 0
+                val habitLinkEffectiveFrom = if (hasDueKind) select.getLongOrNull(21) else null
+                if (linkedHabitUuid != null) insert.bindText(20, linkedHabitUuid) else insert.bindNull(20)
+                insert.bindInt(21, habitTimeAccrualEnabled)
+                if (habitLinkEffectiveFrom != null) insert.bindLong(22, habitLinkEffectiveFrom) else insert.bindNull(22)
                 insert.step()
                 insert.reset()
             }

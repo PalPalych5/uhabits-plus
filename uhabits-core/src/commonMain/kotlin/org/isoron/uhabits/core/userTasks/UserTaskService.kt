@@ -33,6 +33,9 @@ interface UserTaskService {
         sortOrder: Int? = null,
         important: Boolean? = null,
         urgent: Boolean? = null,
+        linkedHabitUuid: String? = null,
+        habitTimeAccrualEnabled: Boolean = false,
+        habitLinkEffectiveFrom: Long? = null,
     ): UserTask
 
     fun updateTask(
@@ -49,6 +52,11 @@ interface UserTaskService {
         urgent: Boolean? = null,
         clearImportant: Boolean = false,
         clearUrgent: Boolean = false,
+        linkedHabitUuid: String? = null,
+        clearLinkedHabit: Boolean = false,
+        habitTimeAccrualEnabled: Boolean? = null,
+        habitLinkEffectiveFrom: Long? = null,
+        clearHabitLinkEffectiveFrom: Boolean = false,
     ): UserTask
 
     fun toggleComplete(id: TaskId): UserTask

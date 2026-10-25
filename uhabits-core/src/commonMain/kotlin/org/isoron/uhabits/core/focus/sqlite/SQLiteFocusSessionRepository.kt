@@ -23,6 +23,7 @@ import org.isoron.platform.io.Database
 import org.isoron.platform.io.PreparedStatement
 import org.isoron.platform.io.StepResult
 import org.isoron.platform.io.queryLong
+import org.isoron.platform.io.querySingle
 import org.isoron.platform.io.run
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.HabitRef
@@ -56,6 +57,12 @@ class SQLiteFocusSessionRepository(private val db: Database) : FocusSessionRepos
         query("WHERE id = ?") { bindText(1, id.value) }.firstOrNull()
 
     override fun getAll(): List<FocusSession> = query("")
+
+    override fun getTotalDurationByTask(taskId: TaskId): Long =
+        db.querySingle(
+            "SELECT COALESCE(SUM(duration_ms), 0) FROM FocusSessions WHERE task_id = ? AND (primary_target_type = 'TASK' OR primary_target_type IS NULL)",
+            taskId.value
+        ) { it.getLong(0) } ?: 0L
 
     override fun getByTask(taskId: TaskId): List<FocusSession> =
         query("WHERE task_id = ?") { bindText(1, taskId.value) }

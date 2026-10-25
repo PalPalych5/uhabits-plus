@@ -4,6 +4,7 @@ package org.isoron.uhabits.focus
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import org.isoron.platform.io.run
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.HabitRef
@@ -29,14 +30,17 @@ import java.util.UUID
 
 /** Dataset-owned main-thread bridge. No repository escapes into a worker or another dataset. */
 class FocusCreditController(
-    db: AndroidDatabase,
+    private val db: AndroidDatabase,
     private val habits: HabitList,
     private val organization: HabitOrganizationFacade,
     private val preferences: Preferences,
     private val syncManager: org.isoron.uhabits.core.sync.SyncManager? = null,
+    userTaskRepository: org.isoron.uhabits.core.userTasks.UserTaskRepository? = null,
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val rules: SQLiteSourceRuleRepository
+    private val tasks: org.isoron.uhabits.core.userTasks.UserTaskRepository
+    private val attribution: SourceRuleAttributionService
     private val reconciler: FocusCreditReconciler
     private val contributions: SQLiteContributionRepository
     val configuration: SourceRuleConfigurationService
@@ -50,19 +54,21 @@ class FocusCreditController(
         FocusSessionSchema.createSchema(db)
         ContributionSchema.createSchema(db)
         SourceRuleSchema.createSchema(db)
+        org.isoron.uhabits.core.userTasks.sqlite.UserTaskSchema.createSchema(db)
         rules = SQLiteSourceRuleRepository(db)
         contributions = SQLiteContributionRepository(db)
+        tasks = userTaskRepository ?: org.isoron.uhabits.core.userTasks.sqlite.SQLiteUserTaskRepository(db)
         configuration = SourceRuleConfigurationService(rules) { SourceRuleId(UUID.randomUUID().toString()) }
-        val attribution = SourceRuleAttributionService(rules, contributions, sourceEligibility = { rule, fact ->
+        attribution = SourceRuleAttributionService(rules, contributions, sourceEligibility = { rule, fact ->
             val queries = organization.containerQueries
             val source = queries?.find(rule.sourceContainerId, includeDeleted = true)
             source != null && (source.deletedAt?.let { fact.endedAt < it }
                 ?: !queries.isEffectivelyArchived(rule.sourceContainerId))
-        }) { ref ->
+        }, habitResolver = { ref ->
             habits.getByUUID(ref.uuid)?.takeUnless { it.isArchived }?.let {
-                TargetHabitInfo(it.isNumerical, it.unit, it.name)
+                TargetHabitInfo(it.isNumerical, it.unit, it.name, it.isArchived)
             }
-        }
+        }, taskResolver = { id -> tasks.getById(id) })
         reconciler = FocusCreditReconciler(SQLiteFocusSessionRepository(db), attribution)
     }
 
@@ -111,33 +117,74 @@ class FocusCreditController(
         return result
     }
 
-    /** Facts commit first. Credit errors never roll back or prevent timer journal advancement. */
+    /**
+     * For task sessions: atomic live capture inside a single DB savepoint.
+     * Credit errors roll back the fact and throw, allowing the timer to restore its state.
+     * For non-task sessions: facts commit first, asynchronous reconciler with retry queue.
+     */
     fun captureStore(delegate: FocusCaptureStore): FocusCaptureStore = object : FocusCaptureStore {
         override fun load() = delegate.load()
         override fun commit(journal: FocusCaptureJournal, facts: List<FocusSession>) {
             check(!disposed)
-            delegate.commit(journal, facts)
-            if (facts.isEmpty()) return
-            facts.forEach { fact -> syncManager?.enqueueFocusSession(fact) }
-            runCatching {
-                closeUnavailableRules()
-                facts.forEach { fact ->
-                    runCatching {
-                        val outcomes = reconciler.reconcileSession(fact.id, System.currentTimeMillis())
-                        outcomes.forEach { outcome ->
-                            if (outcome is org.isoron.uhabits.core.rules.AttributionOutcome.Attributed && outcome.wasInserted) {
-                                syncManager?.enqueueContribution(outcome.contribution)
+            val hasTaskFact = facts.any {
+                it.primaryTargetType == org.isoron.uhabits.core.focus.FocusPrimaryTargetType.TASK ||
+                    (it.primaryTargetType == null && it.taskId != null)
+            }
+            if (hasTaskFact) {
+                val insertedContributions = mutableListOf<org.isoron.uhabits.core.contribution.Contribution>()
+                db.run("SAVEPOINT live_task_capture_commit")
+                try {
+                    delegate.commit(journal, facts)
+                    val now = System.currentTimeMillis()
+                    facts.forEach { fact ->
+                        if (fact.primaryTargetType == org.isoron.uhabits.core.focus.FocusPrimaryTargetType.TASK ||
+                            (fact.primaryTargetType == null && fact.taskId != null)
+                        ) {
+                            val outcomes = attribution.attributeSession(fact, now, isLiveCapture = true)
+                            outcomes.forEach { outcome ->
+                                if (outcome is org.isoron.uhabits.core.rules.AttributionOutcome.Attributed && outcome.wasInserted) {
+                                    insertedContributions.add(outcome.contribution)
+                                }
                             }
                         }
                     }
-                        .onFailure { pending.add(fact.id); Log.w(TAG, "Focus credit deferred until recovery", it) }
+                    db.run("RELEASE SAVEPOINT live_task_capture_commit")
+                } catch (error: Throwable) {
+                    try { db.run("ROLLBACK TO SAVEPOINT live_task_capture_commit") }
+                    finally { db.run("RELEASE SAVEPOINT live_task_capture_commit") }
+                    throw error
                 }
-                notifyChanged()
-            }.onFailure {
-                pending.addAll(facts.map { fact -> fact.id })
-                Log.w(TAG, "Committed Focus credit deferred", it)
+
+                // Post-commit side effects: strictly outside rollback try.
+                // Enqueue failures or notification errors must never roll back committed facts or propagate to timer engine.
+                runCatching {
+                    facts.forEach { fact -> syncManager?.enqueueFocusSession(fact) }
+                    insertedContributions.forEach { contribution -> syncManager?.enqueueContribution(contribution) }
+                    notifyChanged()
+                }.onFailure { Log.w(TAG, "Post-commit notification failed", it) }
+            } else {
+                delegate.commit(journal, facts)
+                if (facts.isEmpty()) return
+                facts.forEach { fact -> syncManager?.enqueueFocusSession(fact) }
+                runCatching {
+                    closeUnavailableRules()
+                    facts.forEach { fact ->
+                        runCatching {
+                            val outcomes = reconciler.reconcileSession(fact.id, System.currentTimeMillis(), isLiveCapture = false)
+                            outcomes.forEach { outcome ->
+                                if (outcome is org.isoron.uhabits.core.rules.AttributionOutcome.Attributed && outcome.wasInserted) {
+                                    syncManager?.enqueueContribution(outcome.contribution)
+                                }
+                            }
+                        }.onFailure { pending.add(fact.id); Log.w(TAG, "Focus credit deferred until recovery", it) }
+                    }
+                    notifyChanged()
+                }.onFailure {
+                    pending.addAll(facts.map { fact -> fact.id })
+                    Log.w(TAG, "Committed Focus credit deferred", it)
+                }
+                if (pending.isNotEmpty()) { handler.removeCallbacks(retry); handler.postDelayed(retry, 1000) }
             }
-            if (pending.isNotEmpty()) { handler.removeCallbacks(retry); handler.postDelayed(retry, 1000) }
         }
     }
 

@@ -36,14 +36,35 @@ class SQLiteUserTaskRepository(
     private val db: Database
 ) : UserTaskRepository {
 
-    companion object {
-        private const val SELECT_COLUMNS =
-            "id, title, description, container_id, status, due_kind, due_date, due_time_millis, due_zone, completed_at, parent_task_id, sort_order, created_at, updated_at, planned_date, legacy_plan_review_pending, important, urgent"
+    private val hasClassification: Boolean
+    private val hasLinkFields: Boolean
+    private val selectColumns: String
+
+    init {
+        val columns = mutableSetOf<String>()
+        val stmt = db.prepareStatement("PRAGMA table_info(UserTasks)")
+        try {
+            while (stmt.step() == StepResult.ROW) {
+                columns.add(stmt.getText(1))
+            }
+        } finally {
+            stmt.finalize()
+        }
+        hasClassification = "important" in columns && "urgent" in columns
+        hasLinkFields = "linked_habit_uuid" in columns && "habit_time_accrual_enabled" in columns && "habit_link_effective_from" in columns
+
+        val importantExpr = if ("important" in columns) "important" else "NULL AS important"
+        val urgentExpr = if ("urgent" in columns) "urgent" else "NULL AS urgent"
+        val linkedHabitExpr = if ("linked_habit_uuid" in columns) "linked_habit_uuid" else "NULL AS linked_habit_uuid"
+        val accrualExpr = if ("habit_time_accrual_enabled" in columns) "habit_time_accrual_enabled" else "0 AS habit_time_accrual_enabled"
+        val effectiveExpr = if ("habit_link_effective_from" in columns) "habit_link_effective_from" else "NULL AS habit_link_effective_from"
+
+        selectColumns = "id, title, description, container_id, status, due_kind, due_date, due_time_millis, due_zone, completed_at, parent_task_id, sort_order, created_at, updated_at, planned_date, legacy_plan_review_pending, $importantExpr, $urgentExpr, $linkedHabitExpr, $accrualExpr, $effectiveExpr"
     }
 
     override fun getById(id: TaskId): UserTask? {
         val stmt = db.prepareStatement(
-            "SELECT $SELECT_COLUMNS FROM UserTasks WHERE id = ?"
+            "SELECT $selectColumns FROM UserTasks WHERE id = ?"
         )
         return try {
             stmt.bindText(1, id.value)
@@ -59,7 +80,7 @@ class SQLiteUserTaskRepository(
 
     override fun getAll(): List<UserTask> {
         val stmt = db.prepareStatement(
-            "SELECT $SELECT_COLUMNS FROM UserTasks ORDER BY sort_order ASC, created_at ASC"
+            "SELECT $selectColumns FROM UserTasks ORDER BY sort_order ASC, created_at ASC"
         )
         val list = mutableListOf<UserTask>()
         return try {
@@ -74,7 +95,7 @@ class SQLiteUserTaskRepository(
 
     override fun getRoots(): List<UserTask> {
         val stmt = db.prepareStatement(
-            "SELECT $SELECT_COLUMNS FROM UserTasks WHERE parent_task_id IS NULL ORDER BY sort_order ASC, created_at ASC"
+            "SELECT $selectColumns FROM UserTasks WHERE parent_task_id IS NULL ORDER BY sort_order ASC, created_at ASC"
         )
         val list = mutableListOf<UserTask>()
         return try {
@@ -89,7 +110,7 @@ class SQLiteUserTaskRepository(
 
     override fun getByContainer(containerId: ContainerId): List<UserTask> {
         val stmt = db.prepareStatement(
-            "SELECT $SELECT_COLUMNS FROM UserTasks WHERE container_id = ? ORDER BY sort_order ASC, created_at ASC"
+            "SELECT $selectColumns FROM UserTasks WHERE container_id = ? ORDER BY sort_order ASC, created_at ASC"
         )
         val list = mutableListOf<UserTask>()
         return try {
@@ -105,7 +126,7 @@ class SQLiteUserTaskRepository(
 
     override fun getSubtasks(parentTaskId: TaskId): List<UserTask> {
         val stmt = db.prepareStatement(
-            "SELECT $SELECT_COLUMNS FROM UserTasks WHERE parent_task_id = ? ORDER BY sort_order ASC, created_at ASC"
+            "SELECT $selectColumns FROM UserTasks WHERE parent_task_id = ? ORDER BY sort_order ASC, created_at ASC"
         )
         val list = mutableListOf<UserTask>()
         return try {
@@ -141,7 +162,17 @@ class SQLiteUserTaskRepository(
     }
 
     override fun save(task: UserTask) {
-        UserTaskSqlWriter.upsert(db, task.id.value, writeClassification = true, important = task.important, urgent = task.urgent) {
+        UserTaskSqlWriter.upsert(
+            db = db,
+            taskId = task.id.value,
+            writeClassification = hasClassification,
+            important = task.important,
+            urgent = task.urgent,
+            writeLinkFields = hasLinkFields,
+            linkedHabitUuid = task.linkedHabitUuid,
+            habitTimeAccrualEnabled = task.habitTimeAccrualEnabled,
+            habitLinkEffectiveFrom = task.habitLinkEffectiveFrom,
+        ) {
             bindTask(this, task)
         }
     }
@@ -235,6 +266,9 @@ class SQLiteUserTaskRepository(
         val createdAt = stmt.getLong(12)
         val updatedAt = stmt.getLong(13)
         val legacyPlanDate = stmt.getTextOrNull(14)
+        val linkedHabitUuid = stmt.getTextOrNull(18)
+        val habitTimeAccrualEnabled = stmt.getIntOrNull(19)?.let { it != 0 } ?: false
+        val habitLinkEffectiveFrom = stmt.getLongOrNull(20)
 
         return UserTask(
             id = id,
@@ -252,6 +286,9 @@ class SQLiteUserTaskRepository(
             sortOrder = sortOrder,
             createdAt = createdAt,
             updatedAt = updatedAt,
+            linkedHabitUuid = linkedHabitUuid,
+            habitTimeAccrualEnabled = habitTimeAccrualEnabled,
+            habitLinkEffectiveFrom = habitLinkEffectiveFrom,
         )
     }
 }

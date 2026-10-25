@@ -133,7 +133,8 @@ abstract class HabitsApplicationComponent(
     val focusCreditController: org.isoron.uhabits.focus.FocusCreditController? by lazy {
         if (session.isNextArchitecture) org.isoron.uhabits.focus.FocusCreditController(
             providedDb, habitList, organizationFacade, preferences,
-            syncManager = if (session.capabilities.syncEnabled && !session.isExperimental) sqlModelFactory.syncManager else null
+            syncManager = if (session.capabilities.syncEnabled && !session.isExperimental) sqlModelFactory.syncManager else null,
+            userTaskRepository = userTaskRepository
         ) else null
     }
 

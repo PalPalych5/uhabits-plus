@@ -29,6 +29,8 @@ import org.isoron.uhabits.core.focus.FocusSession
 import org.isoron.uhabits.core.focus.FocusSessionId
 import org.isoron.uhabits.core.focus.FocusSessionSource
 import org.isoron.uhabits.core.rules.memory.MemorySourceRuleRepository
+import org.isoron.uhabits.core.userTasks.TaskId
+import org.isoron.uhabits.core.userTasks.UserTask
 import kotlin.test.*
 
 class SourceRuleAttributionServiceTest {
@@ -41,19 +43,44 @@ class SourceRuleAttributionServiceTest {
         "h-study" to TargetHabitInfo(isNumerical = true, unit = "минуты", name = "Study"),
         "h-boolean" to TargetHabitInfo(isNumerical = false, unit = "min", name = "Boolean Habit"),
         "h-steps" to TargetHabitInfo(isNumerical = true, unit = "steps", name = "Steps Habit"),
+        "h-archived" to TargetHabitInfo(isNumerical = true, unit = "min", name = "Archived Habit", isArchived = true),
     )
 
-    private fun createService(repository: SourceRuleRepository = ruleRepo) = SourceRuleAttributionService(
+    private val tasks = mutableMapOf<String, UserTask>()
+
+    private fun createService(
+        repository: SourceRuleRepository = ruleRepo,
+        taskResolver: ((TaskId) -> UserTask?)? = { tasks[it.value] },
+    ) = SourceRuleAttributionService(
         ruleRepository = repository,
         contributionRepository = contribRepo,
         habitResolver = { habits[it.uuid] },
+        taskResolver = taskResolver,
     )
 
     @BeforeTest
     fun setup() {
         ruleRepo = MemorySourceRuleRepository()
         contribRepo = MemoryContributionRepository()
+        tasks.clear()
     }
+
+    private fun makeTask(
+        id: String,
+        containerId: String? = null,
+        linkedHabitUuid: String? = null,
+        habitTimeAccrualEnabled: Boolean = false,
+        habitLinkEffectiveFrom: Long? = null,
+    ) = UserTask(
+        id = TaskId(id),
+        title = "Task " + id,
+        containerId = containerId?.let(::ContainerId),
+        linkedHabitUuid = linkedHabitUuid,
+        habitTimeAccrualEnabled = habitTimeAccrualEnabled,
+        habitLinkEffectiveFrom = habitLinkEffectiveFrom,
+        createdAt = 1000L,
+        updatedAt = 1000L,
+    )
 
     private fun makeRule(
         id: String,
@@ -465,5 +492,682 @@ class SourceRuleAttributionServiceTest {
         val focusDurationMs = 15 * 60 * 1000L
         val computedFocusValue = HabitTimeValueConverter.convertFocusDurationToHabitValue(focusDurationMs)
         assertEquals(manualValue, computedFocusValue)
+    }
+
+    @Test
+    fun testTaskSessionWithActiveHabitLinkAttributesDuration() {
+        val task = makeTask(
+            id = "task-active",
+            containerId = "c-work",
+            linkedHabitUuid = "h-deep-work",
+            habitTimeAccrualEnabled = true,
+            habitLinkEffectiveFrom = 10_000L,
+        )
+        tasks[task.id.value] = task
+
+        val session = FocusSession(
+            id = FocusSessionId("fs-task-1"),
+            startedAt = 20_000L,
+            endedAt = 50_000L,
+            durationMs = 30_000L, // 30 seconds -> rounds to 1 min (1000L) or let's test minutes
+            source = FocusSessionSource.TIMER,
+            taskId = task.id,
+            containerId = ContainerId("c-work"),
+            createdAt = 20_000L,
+            updatedAt = 50_000L,
+        )
+
+        val service = createService()
+        val outcomes = service.attributeSession(session, isLiveCapture = true)
+        assertEquals(1, outcomes.size)
+        val attributed = outcomes.single() as AttributionOutcome.Attributed
+        assertTrue(attributed.wasInserted)
+        assertEquals("h-deep-work", attributed.contribution.targetHabit.uuid)
+        assertEquals(HabitTimeValueConverter.convertFocusDurationToHabitValue(30_000L), attributed.contribution.contributedValue)
+        assertNull(attributed.contribution.sourceRuleId)
+        assertEquals(SourceRuleAttributionService.deterministicContributionId("fs-task-1", "h-deep-work"), attributed.contribution.id)
+        assertEquals(1, contribRepo.getAll().size)
+    }
+
+    @Test
+    fun testTaskSessionReattributionIsIdempotentAndDeduplicated() {
+        val task = makeTask(
+            id = "task-idempotent",
+            linkedHabitUuid = "h-deep-work",
+            habitTimeAccrualEnabled = true,
+            habitLinkEffectiveFrom = 10_000L,
+        )
+        tasks[task.id.value] = task
+
+        val session = FocusSession(
+            id = FocusSessionId("fs-task-dedupe"),
+            startedAt = 100_000L,
+            endedAt = 160_000L,
+            durationMs = 60_000L, // 1 minute -> 1000L
+            source = FocusSessionSource.TIMER,
+            taskId = task.id,
+            createdAt = 100_000L,
+            updatedAt = 160_000L,
+        )
+
+        val service = createService()
+        val firstOutcomes = service.attributeSession(session, isLiveCapture = true)
+        assertEquals(1, firstOutcomes.size)
+        val first = firstOutcomes.single() as AttributionOutcome.Attributed
+        assertTrue(first.wasInserted)
+        assertEquals(1000L, first.contribution.contributedValue)
+
+        // Repeat attribution for the same session (even in background recovery sweep)
+        val secondOutcomes = service.attributeSession(session, isLiveCapture = false)
+        assertEquals(1, secondOutcomes.size)
+        val second = secondOutcomes.single() as AttributionOutcome.Attributed
+        assertFalse(second.wasInserted)
+        assertEquals(first.contribution.id, second.contribution.id)
+        assertEquals(1, contribRepo.getAll().size)
+    }
+
+    @Test
+    fun testTaskSessionNonRetroactivityRejectsSessionsBeforeEffectiveFrom() {
+        val task = makeTask(
+            id = "task-non-retro",
+            linkedHabitUuid = "h-deep-work",
+            habitTimeAccrualEnabled = true,
+            habitLinkEffectiveFrom = 100_000L,
+        )
+        tasks[task.id.value] = task
+
+        // Session starting BEFORE habitLinkEffectiveFrom (startedAt = 50_000L < 100_000L)
+        val pastSession = FocusSession(
+            id = FocusSessionId("fs-past"),
+            startedAt = 50_000L,
+            endedAt = 80_000L,
+            durationMs = 30_000L,
+            source = FocusSessionSource.TIMER,
+            taskId = task.id,
+            createdAt = 50_000L,
+            updatedAt = 80_000L,
+        )
+
+        val service = createService()
+        val pastOutcomes = service.attributeSession(pastSession, isLiveCapture = true)
+        assertEquals(1, pastOutcomes.size)
+        val ineligible = pastOutcomes.single() as AttributionOutcome.Ineligible
+        assertNull(ineligible.ruleId)
+        assertTrue(contribRepo.getAll().isEmpty())
+
+        // Session starting BEFORE cutoff even if endedAt >= cutoff (startedAt = 90_000L < 100_000L, endedAt = 110_000L)
+        // Must be rejected under strict START >= cutoff rule!
+        val straddlingSession = FocusSession(
+            id = FocusSessionId("fs-straddle"),
+            startedAt = 90_000L,
+            endedAt = 110_000L,
+            durationMs = 20_000L,
+            source = FocusSessionSource.TIMER,
+            taskId = task.id,
+            createdAt = 90_000L,
+            updatedAt = 110_000L,
+        )
+        val straddleOutcomes = service.attributeSession(straddlingSession, isLiveCapture = true)
+        assertEquals(1, straddleOutcomes.size)
+        assertTrue(straddleOutcomes.single() is AttributionOutcome.Ineligible)
+        assertTrue(contribRepo.getAll().isEmpty())
+
+        // Session starting AT OR AFTER habitLinkEffectiveFrom (startedAt = 100_000L >= 100_000L)
+        val validSession = FocusSession(
+            id = FocusSessionId("fs-valid"),
+            startedAt = 100_000L,
+            endedAt = 110_000L,
+            durationMs = 10_000L,
+            source = FocusSessionSource.TIMER,
+            taskId = task.id,
+            createdAt = 100_000L,
+            updatedAt = 110_000L,
+        )
+
+        val validOutcomes = service.attributeSession(validSession, isLiveCapture = true)
+        assertEquals(1, validOutcomes.size)
+        assertTrue(validOutcomes.single() is AttributionOutcome.Attributed)
+        assertEquals(1, contribRepo.getAll().size)
+    }
+
+    @Test
+    fun testTaskSessionWithAccrualDisabledRecordsNoContributions() {
+        val task = makeTask(
+            id = "task-disabled",
+            linkedHabitUuid = "h-deep-work",
+            habitTimeAccrualEnabled = false,
+            habitLinkEffectiveFrom = 10_000L,
+        )
+        tasks[task.id.value] = task
+
+        val session = FocusSession(
+            id = FocusSessionId("fs-disabled"),
+            startedAt = 20_000L,
+            endedAt = 50_000L,
+            durationMs = 30_000L,
+            source = FocusSessionSource.TIMER,
+            taskId = task.id,
+            createdAt = 20_000L,
+            updatedAt = 50_000L,
+        )
+
+        val service = createService()
+        val outcomes = service.attributeSession(session)
+        assertTrue(outcomes.isEmpty())
+        assertTrue(contribRepo.getAll().isEmpty())
+    }
+
+    @Test
+    fun testTaskSessionDisallowsAutomaticContainerRuleAttribution() {
+        // Container rule configured for c-work targeting h-study
+        ruleRepo.record(makeRule(
+            id = "rule-c-work",
+            containerId = "c-work",
+            habitUuid = "h-study",
+            includeDescendants = true,
+        ))
+
+        // Task in c-work without explicit habit link
+        val unlinkedTask = makeTask(
+            id = "task-unlinked",
+            containerId = "c-work",
+            linkedHabitUuid = null,
+            habitTimeAccrualEnabled = false,
+        )
+        tasks[unlinkedTask.id.value] = unlinkedTask
+
+        val sessionUnlinked = FocusSession(
+            id = FocusSessionId("fs-unlinked"),
+            startedAt = 10_000L,
+            endedAt = 70_000L,
+            durationMs = 60_000L,
+            source = FocusSessionSource.TIMER,
+            taskId = unlinkedTask.id,
+            containerId = ContainerId("c-work"),
+            createdAt = 10_000L,
+            updatedAt = 70_000L,
+        )
+
+        val service = createService()
+        val outcomesUnlinked = service.attributeSession(sessionUnlinked)
+        // Automatic container rule attribution MUST NOT apply to task sessions
+        assertTrue(outcomesUnlinked.isEmpty())
+        assertTrue(contribRepo.getAll().isEmpty())
+
+        // Task in c-work WITH explicit habit link to h-deep-work
+        val linkedTask = makeTask(
+            id = "task-explicit-link",
+            containerId = "c-work",
+            linkedHabitUuid = "h-deep-work",
+            habitTimeAccrualEnabled = true,
+            habitLinkEffectiveFrom = 0L,
+        )
+        tasks[linkedTask.id.value] = linkedTask
+
+        val sessionLinked = FocusSession(
+            id = FocusSessionId("fs-explicit-link"),
+            startedAt = 10_000L,
+            endedAt = 70_000L,
+            durationMs = 60_000L,
+            source = FocusSessionSource.TIMER,
+            taskId = linkedTask.id,
+            containerId = ContainerId("c-work"),
+            createdAt = 10_000L,
+            updatedAt = 70_000L,
+        )
+
+        val outcomesLinked = service.attributeSession(sessionLinked, isLiveCapture = true)
+        assertEquals(1, outcomesLinked.size)
+        val attributed = outcomesLinked.single() as AttributionOutcome.Attributed
+        // Must attribute to explicitly linked habit (h-deep-work), NEVER container rule (h-study)
+        assertEquals("h-deep-work", attributed.contribution.targetHabit.uuid)
+        assertNull(attributed.contribution.sourceRuleId)
+        assertEquals(1, contribRepo.getAll().size)
+    }
+
+    @Test
+    fun testTaskSessionWithIncompatibleTargetHabitReturnsIncompatibleTarget() {
+        val taskBoolean = makeTask(
+            id = "task-boolean",
+            linkedHabitUuid = "h-boolean",
+            habitTimeAccrualEnabled = true,
+            habitLinkEffectiveFrom = 0L,
+        )
+        val taskSteps = makeTask(
+            id = "task-steps",
+            linkedHabitUuid = "h-steps",
+            habitTimeAccrualEnabled = true,
+            habitLinkEffectiveFrom = 0L,
+        )
+        tasks[taskBoolean.id.value] = taskBoolean
+        tasks[taskSteps.id.value] = taskSteps
+
+        val sessionBool = FocusSession(
+            id = FocusSessionId("fs-bool"),
+            startedAt = 10_000L,
+            endedAt = 70_000L,
+            durationMs = 60_000L,
+            source = FocusSessionSource.TIMER,
+            taskId = taskBoolean.id,
+            createdAt = 10_000L,
+            updatedAt = 70_000L,
+        )
+        val sessionSteps = FocusSession(
+            id = FocusSessionId("fs-steps"),
+            startedAt = 10_000L,
+            endedAt = 70_000L,
+            durationMs = 60_000L,
+            source = FocusSessionSource.TIMER,
+            taskId = taskSteps.id,
+            createdAt = 10_000L,
+            updatedAt = 70_000L,
+        )
+
+        val service = createService()
+        val outcomesBool = service.attributeSession(sessionBool, isLiveCapture = true)
+        assertEquals(1, outcomesBool.size)
+        assertTrue(outcomesBool.single() is AttributionOutcome.IncompatibleTarget)
+
+        val outcomesSteps = service.attributeSession(sessionSteps, isLiveCapture = true)
+        assertEquals(1, outcomesSteps.size)
+        assertTrue(outcomesSteps.single() is AttributionOutcome.IncompatibleTarget)
+
+        assertTrue(contribRepo.getAll().isEmpty())
+    }
+
+    @Test
+    fun testRecoverySweepDoesNotDeriveNewTaskContributions() {
+        val task = makeTask(
+            id = "task-recovery",
+            linkedHabitUuid = "h-deep-work",
+            habitTimeAccrualEnabled = true,
+            habitLinkEffectiveFrom = 10_000L,
+        )
+        tasks[task.id.value] = task
+
+        val session = FocusSession(
+            id = FocusSessionId("fs-recovery"),
+            startedAt = 20_000L,
+            endedAt = 80_000L,
+            durationMs = 60_000L,
+            source = FocusSessionSource.TIMER,
+            taskId = task.id,
+            createdAt = 20_000L,
+            updatedAt = 80_000L,
+        )
+
+        val service = createService()
+        // During background recovery sweep (isLiveCapture = false), task sessions NEVER derive new contributions
+        val outcomes = service.attributeSession(session, isLiveCapture = false)
+        assertTrue(outcomes.isEmpty())
+        assertTrue(contribRepo.getAll().isEmpty())
+    }
+
+    @Test
+    fun testTargetSwitchPreventsDoubleAccrualAcrossHabits() {
+        val task = makeTask(
+            id = "task-switch",
+            linkedHabitUuid = "h-deep-work",
+            habitTimeAccrualEnabled = true,
+            habitLinkEffectiveFrom = 10_000L,
+        )
+        tasks[task.id.value] = task
+
+        val session = FocusSession(
+            id = FocusSessionId("fs-switch"),
+            startedAt = 20_000L,
+            endedAt = 80_000L,
+            durationMs = 60_000L,
+            source = FocusSessionSource.TIMER,
+            taskId = task.id,
+            createdAt = 20_000L,
+            updatedAt = 80_000L,
+        )
+
+        val service = createService()
+        // 1. Live capture credits h-deep-work
+        val outcomes1 = service.attributeSession(session, isLiveCapture = true)
+        assertEquals(1, outcomes1.size)
+        assertTrue(outcomes1.single() is AttributionOutcome.Attributed)
+        assertEquals(1, contribRepo.getAll().size)
+        assertEquals("h-deep-work", contribRepo.getAll().single().targetHabit.uuid)
+
+        // 2. Task is later switched to h-study
+        val switchedTask = task.copy(
+            linkedHabitUuid = "h-study",
+            habitLinkEffectiveFrom = 90_000L,
+        )
+        tasks[task.id.value] = switchedTask
+
+        // 3. Re-evaluating the same session must be blocked: existing source credit prevents attributing to new target
+        val outcomes2 = service.attributeSession(session, isLiveCapture = true)
+        assertEquals(1, outcomes2.size)
+        val ineligible = outcomes2.single() as AttributionOutcome.Ineligible
+        assertTrue(ineligible.reason.contains("already attributed"))
+
+        // Ledger must still contain ONLY the original single contribution to h-deep-work
+        assertEquals(1, contribRepo.getAll().size)
+        assertEquals("h-deep-work", contribRepo.getAll().single().targetHabit.uuid)
+    }
+
+    @Test
+    fun testTaskSessionWithNullEffectiveCutoffFailsClosed() {
+        val task = makeTask(
+            id = "task-null-cutoff",
+            linkedHabitUuid = "h-deep-work",
+            habitTimeAccrualEnabled = true,
+            habitLinkEffectiveFrom = null, // null cutoff
+        )
+        tasks[task.id.value] = task
+
+        val session = FocusSession(
+            id = FocusSessionId("fs-null-cutoff"),
+            startedAt = 20_000L,
+            endedAt = 80_000L,
+            durationMs = 60_000L,
+            source = FocusSessionSource.TIMER,
+            taskId = task.id,
+            createdAt = 20_000L,
+            updatedAt = 80_000L,
+        )
+
+        val service = createService()
+        val outcomes = service.attributeSession(session, isLiveCapture = true)
+        assertEquals(1, outcomes.size)
+        val ineligible = outcomes.single() as AttributionOutcome.Ineligible
+        assertTrue(ineligible.reason.contains("cutoff is not set"))
+        assertTrue(contribRepo.getAll().isEmpty())
+    }
+
+    @Test
+    fun testReEnableInactiveGapPreventsAccrualDuringDisabledPeriod() {
+        // Accrual was disabled during t=10_000 to t=100_000. Re-enabled at t=100_000 with fresh cutoff.
+        val task = makeTask(
+            id = "task-gap",
+            linkedHabitUuid = "h-deep-work",
+            habitTimeAccrualEnabled = true,
+            habitLinkEffectiveFrom = 100_000L,
+        )
+        tasks[task.id.value] = task
+
+        // Session occurred during the disabled gap at t=50_000
+        val gapSession = FocusSession(
+            id = FocusSessionId("fs-gap"),
+            startedAt = 50_000L,
+            endedAt = 80_000L,
+            durationMs = 30_000L,
+            source = FocusSessionSource.TIMER,
+            taskId = task.id,
+            createdAt = 50_000L,
+            updatedAt = 80_000L,
+        )
+
+        val service = createService()
+        val outcomes = service.attributeSession(gapSession, isLiveCapture = true)
+        assertEquals(1, outcomes.size)
+        assertTrue(outcomes.single() is AttributionOutcome.Ineligible)
+        assertTrue(contribRepo.getAll().isEmpty())
+    }
+
+    @Test
+    fun testArchivedOrDeletedHabitRejectsAttribution() {
+        val taskArchived = makeTask(
+            id = "task-archived-target",
+            linkedHabitUuid = "h-archived",
+            habitTimeAccrualEnabled = true,
+            habitLinkEffectiveFrom = 10_000L,
+        )
+        val taskDeleted = makeTask(
+            id = "task-deleted-target",
+            linkedHabitUuid = "h-nonexistent",
+            habitTimeAccrualEnabled = true,
+            habitLinkEffectiveFrom = 10_000L,
+        )
+        tasks[taskArchived.id.value] = taskArchived
+        tasks[taskDeleted.id.value] = taskDeleted
+
+        val session1 = FocusSession(
+            id = FocusSessionId("fs-archived"),
+            startedAt = 20_000L,
+            endedAt = 80_000L,
+            durationMs = 60_000L,
+            source = FocusSessionSource.TIMER,
+            taskId = taskArchived.id,
+            createdAt = 20_000L,
+            updatedAt = 80_000L,
+        )
+        val session2 = FocusSession(
+            id = FocusSessionId("fs-deleted"),
+            startedAt = 20_000L,
+            endedAt = 80_000L,
+            durationMs = 60_000L,
+            source = FocusSessionSource.TIMER,
+            taskId = taskDeleted.id,
+            createdAt = 20_000L,
+            updatedAt = 80_000L,
+        )
+
+        val service = createService()
+        val outcomes1 = service.attributeSession(session1, isLiveCapture = true)
+        assertEquals(1, outcomes1.size)
+        assertTrue(outcomes1.single() is AttributionOutcome.IncompatibleTarget)
+
+        val outcomes2 = service.attributeSession(session2, isLiveCapture = true)
+        assertEquals(1, outcomes2.size)
+        assertTrue(outcomes2.single() is AttributionOutcome.IncompatibleTarget)
+
+        assertTrue(contribRepo.getAll().isEmpty())
+    }
+
+    @Test
+    fun testNonTaskPrimaryTargetTypeWithTaskIdDoesNotAccrueToHabitLink() {
+        val task = makeTask(
+            id = "task-context-only",
+            linkedHabitUuid = "h-deep-work",
+            habitTimeAccrualEnabled = true,
+            habitLinkEffectiveFrom = 10_000L,
+        )
+        tasks[task.id.value] = task
+
+        // Session with habit as primary target type, but taskId attached as context
+        val habitSessionWithTaskContext = FocusSession(
+            id = FocusSessionId("fs-habit-primary"),
+            startedAt = 20_000L,
+            endedAt = 80_000L,
+            durationMs = 60_000L,
+            taskId = task.id,
+            habit = HabitRef("h-study"),
+            primaryTargetType = org.isoron.uhabits.core.focus.FocusPrimaryTargetType.HABIT,
+            source = FocusSessionSource.TIMER,
+            createdAt = 20_000L,
+            updatedAt = 80_000L,
+        )
+
+        val service = createService()
+        val outcomes = service.attributeSession(habitSessionWithTaskContext, isLiveCapture = true)
+        // Must attribute directly to h-study (direct habit attribution), NOT to task's linked habit (h-deep-work)
+        assertEquals(1, outcomes.size)
+        val attributed = outcomes.single() as AttributionOutcome.Attributed
+        assertEquals("h-study", attributed.contribution.targetHabit.uuid)
+    }
+
+    @Test
+    fun testActiveTimerLinkChangesConservativeNonRetroactiveSemantics() {
+        val taskId = "task-active-link-change"
+        val service = createService()
+
+        // 1. Initial state: Task unlinked / accrual disabled
+        tasks[taskId] = makeTask(
+            id = taskId,
+            linkedHabitUuid = null,
+            habitTimeAccrualEnabled = false,
+            habitLinkEffectiveFrom = null,
+        )
+
+        // Session 1 started at t=10_000. While running at t=20_000, user links habit A.
+        // Timer finishes at t=30_000.
+        tasks[taskId] = makeTask(
+            id = taskId,
+            linkedHabitUuid = "h-deep-work",
+            habitTimeAccrualEnabled = true,
+            habitLinkEffectiveFrom = 20_000L,
+        )
+        val session1 = FocusSession(
+            id = FocusSessionId("fs-mid-enable"),
+            startedAt = 10_000L,
+            endedAt = 30_000L,
+            durationMs = 20_000L,
+            taskId = org.isoron.uhabits.core.userTasks.TaskId(taskId),
+            source = FocusSessionSource.TIMER,
+            createdAt = 10_000L,
+            updatedAt = 30_000L,
+        )
+        val outcome1 = service.attributeSession(session1, isLiveCapture = true)
+        assertEquals(1, outcome1.size)
+        assertTrue(outcome1.single() is AttributionOutcome.Ineligible)
+        val reason1 = (outcome1.single() as AttributionOutcome.Ineligible).reason
+        assertTrue(reason1.contains("Session started before task habit link became effective"))
+        assertTrue(contribRepo.getAll().isEmpty(), "No credit accrued for session started before habit link activation")
+
+        // 2. Session 2 started at t=30_000 while habit A is active (effectiveFrom=20_000).
+        // While running at t=40_000, user disables accrual.
+        // Timer finishes at t=50_000.
+        tasks[taskId] = makeTask(
+            id = taskId,
+            linkedHabitUuid = "h-deep-work",
+            habitTimeAccrualEnabled = false,
+            habitLinkEffectiveFrom = 20_000L,
+        )
+        val session2 = FocusSession(
+            id = FocusSessionId("fs-mid-disable"),
+            startedAt = 30_000L,
+            endedAt = 50_000L,
+            durationMs = 20_000L,
+            taskId = org.isoron.uhabits.core.userTasks.TaskId(taskId),
+            source = FocusSessionSource.TIMER,
+            createdAt = 30_000L,
+            updatedAt = 50_000L,
+        )
+        val outcome2 = service.attributeSession(session2, isLiveCapture = true)
+        assertTrue(outcome2.isEmpty(), "No credit accrued when accrual was disabled before completion")
+        assertTrue(contribRepo.getAll().isEmpty())
+
+        // 3. Re-enable habit A at t=50_000. Session 3 started at t=50_000.
+        // While running at t=60_000, user switches link to habit B (h-study) with fresh effectiveFrom=60_000.
+        // Timer finishes at t=70_000.
+        tasks[taskId] = makeTask(
+            id = taskId,
+            linkedHabitUuid = "h-study",
+            habitTimeAccrualEnabled = true,
+            habitLinkEffectiveFrom = 60_000L,
+        )
+        val session3 = FocusSession(
+            id = FocusSessionId("fs-mid-switch"),
+            startedAt = 50_000L,
+            endedAt = 70_000L,
+            durationMs = 20_000L,
+            taskId = org.isoron.uhabits.core.userTasks.TaskId(taskId),
+            source = FocusSessionSource.TIMER,
+            createdAt = 50_000L,
+            updatedAt = 70_000L,
+        )
+        val outcome3 = service.attributeSession(session3, isLiveCapture = true)
+        assertEquals(1, outcome3.size)
+        assertTrue(outcome3.single() is AttributionOutcome.Ineligible)
+        val reason3 = (outcome3.single() as AttributionOutcome.Ineligible).reason
+        assertTrue(reason3.contains("Session started before task habit link became effective"))
+        assertTrue(contribRepo.getAll().isEmpty(), "Target B must not receive credit for session started before switch")
+
+        // 4. Fresh session started at t=70_000 AFTER switch to habit B (effectiveFrom=60_000).
+        // Timer finishes at t=90_000.
+        val session4 = FocusSession(
+            id = FocusSessionId("fs-after-switch"),
+            startedAt = 70_000L,
+            endedAt = 90_000L,
+            durationMs = 20_000L,
+            taskId = org.isoron.uhabits.core.userTasks.TaskId(taskId),
+            source = FocusSessionSource.TIMER,
+            createdAt = 70_000L,
+            updatedAt = 90_000L,
+        )
+        val outcome4 = service.attributeSession(session4, isLiveCapture = true)
+        assertEquals(1, outcome4.size)
+        assertTrue(outcome4.single() is AttributionOutcome.Attributed)
+        val attributed = outcome4.single() as AttributionOutcome.Attributed
+        assertEquals("h-study", attributed.contribution.targetHabit.uuid)
+        assertEquals(1, contribRepo.getAll().size)
+    }
+
+    @Test
+    fun testMultipleShortSessionsFractionalMinutesAndNoDoubleAccrual() {
+        val taskId = "task-short-sessions"
+        tasks[taskId] = makeTask(
+            id = taskId,
+            linkedHabitUuid = "h-deep-work",
+            habitTimeAccrualEnabled = true,
+            habitLinkEffectiveFrom = 1_000L,
+        )
+        val service = createService()
+
+        // 3 short sessions of 15s (15_000ms), 30s (30_000ms), 45s (45_000ms)
+        // With x1000 fixed point:
+        // 15_000ms -> 250L (0.250 min)
+        // 30_000ms -> 500L (0.500 min)
+        // 45_000ms -> 750L (0.750 min)
+        val s1 = FocusSession(
+            id = FocusSessionId("fs-short-1"),
+            startedAt = 10_000L,
+            endedAt = 25_000L,
+            durationMs = 15_000L,
+            taskId = org.isoron.uhabits.core.userTasks.TaskId(taskId),
+            source = FocusSessionSource.TIMER,
+            createdAt = 10_000L,
+            updatedAt = 25_000L,
+        )
+        val s2 = FocusSession(
+            id = FocusSessionId("fs-short-2"),
+            startedAt = 30_000L,
+            endedAt = 60_000L,
+            durationMs = 30_000L,
+            taskId = org.isoron.uhabits.core.userTasks.TaskId(taskId),
+            source = FocusSessionSource.TIMER,
+            createdAt = 30_000L,
+            updatedAt = 60_000L,
+        )
+        val s3 = FocusSession(
+            id = FocusSessionId("fs-short-3"),
+            startedAt = 70_000L,
+            endedAt = 115_000L,
+            durationMs = 45_000L,
+            taskId = org.isoron.uhabits.core.userTasks.TaskId(taskId),
+            source = FocusSessionSource.TIMER,
+            createdAt = 70_000L,
+            updatedAt = 115_000L,
+        )
+
+        val out1 = service.attributeSession(s1, isLiveCapture = true)
+        val out2 = service.attributeSession(s2, isLiveCapture = true)
+        val out3 = service.attributeSession(s3, isLiveCapture = true)
+
+        assertEquals(250L, (out1.single() as AttributionOutcome.Attributed).contribution.contributedValue)
+        assertEquals(500L, (out2.single() as AttributionOutcome.Attributed).contribution.contributedValue)
+        assertEquals(750L, (out3.single() as AttributionOutcome.Attributed).contribution.contributedValue)
+
+        val allContribs = contribRepo.getAll()
+        assertEquals(3, allContribs.size)
+        val totalContributedValue = allContribs.sumOf { it.contributedValue }
+        assertEquals(1500L, totalContributedValue) // Exactly 1.500 minutes in aggregate
+
+        // Idempotency: re-evaluating each session must not duplicate or alter ledger
+        val reeval1 = service.attributeSession(s1, isLiveCapture = true)
+        val reeval2 = service.attributeSession(s2, isLiveCapture = true)
+        val reeval3 = service.attributeSession(s3, isLiveCapture = true)
+
+        assertFalse((reeval1.single() as AttributionOutcome.Attributed).wasInserted)
+        assertFalse((reeval2.single() as AttributionOutcome.Attributed).wasInserted)
+        assertFalse((reeval3.single() as AttributionOutcome.Attributed).wasInserted)
+
+        assertEquals(3, contribRepo.getAll().size, "No duplicate contributions created on re-evaluation")
+        assertEquals(1500L, contribRepo.getAll().sumOf { it.contributedValue }, "Total aggregate value remains identical")
     }
 }

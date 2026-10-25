@@ -310,4 +310,39 @@ class FocusCapturingTimerTest {
         timer.tick()
         assertEquals(listOf(1_000L, 200L), store.repository.getAll().map { it.durationMs })
     }
+
+    @Test fun testCommitFailureRestoresTimerStateWithStableIdentity() {
+        var failCommit = false
+        val failingStore = object : FocusCaptureStore {
+            override fun load() = store.load()
+            override fun commit(journal: FocusCaptureJournal, facts: List<FocusSession>) {
+                if (failCommit) throw IllegalStateException("Simulated DB failure")
+                store.commit(journal, facts)
+            }
+        }
+        val timer = timer(failingStore)
+        assertTrue(timer.start(1, "Task"))
+        now += 500
+        val snapshotBefore = timer.snapshot()
+        val journalBefore = store.load()
+        assertNotNull(journalBefore?.active)
+        val originalSessionId = journalBefore.active!!.id
+
+        failCommit = true
+        assertFailsWith<IllegalStateException> {
+            timer.finish(1)
+        }
+
+        // Timer engine state must be restored to state before failure
+        val restoredSnapshot = timer.snapshot()
+        assertEquals(snapshotBefore.isRunning, restoredSnapshot.isRunning)
+        assertEquals(snapshotBefore.elapsedMillis, restoredSnapshot.elapsedMillis)
+        assertEquals(target, timer.currentTarget)
+
+        // When commit failure clears, next finish succeeds
+        failCommit = false
+        now += 500
+        timer.finish(1)
+        assertEquals(1, store.repository.getAll().size)
+    }
 }

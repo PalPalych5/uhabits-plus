@@ -52,6 +52,9 @@ data class UserTask(
     val updatedAt: Long,
     val important: Boolean? = null,
     val urgent: Boolean? = null,
+    val linkedHabitUuid: String? = null,
+    val habitTimeAccrualEnabled: Boolean = false,
+    val habitLinkEffectiveFrom: Long? = null,
 ) {
     val isCompleted: Boolean get() = status == TaskStatus.COMPLETED
     val hasPendingLegacyPlan: Boolean get() = legacyPlanReviewPending && legacyPlanDate != null

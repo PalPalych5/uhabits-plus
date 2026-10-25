@@ -170,6 +170,8 @@ class FocusSessionDomainTest {
         val sameStart = session("a").copy(taskId = task)
         listOf(newContext, oldContext, session("unrelated"), sameStart).forEach { repo.record(it) }
         assertEquals(listOf(sameStart, oldContext, newContext), repo.getByTask(task))
+        assertEquals(3 * 45_000L, repo.getTotalDurationByTask(task))
+        assertEquals(0L, repo.getTotalDurationByTask(TaskId("unknown")))
         assertEquals(emptyList(), repo.getByTask(TaskId("unknown")))
         assertEquals(ContainerId("old-location"), repo.getById(oldContext.id)?.containerId)
     }

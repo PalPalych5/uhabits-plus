@@ -444,10 +444,125 @@
                     android:id="@+id/tvDetailFocus"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="0 мин"
+                    android:text="Затрачено: 0 мин"
                     android:textSize="12sp"
                     android:fontFamily="sans-serif" />
             </LinearLayout>
+        </LinearLayout>
+
+        <!-- 6. Habit Link Section -->
+        <LinearLayout
+            android:id="@+id/cardHabitLink"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="12dp"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="8dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:id="@+id/rowHabitLinkHeader"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:clickable="true"
+                android:focusable="true">
+
+                <FrameLayout
+                    android:id="@+id/layoutHabitLinkIcon"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:layout_marginEnd="12dp">
+
+                    <ImageView
+                        android:id="@+id/ivHabitLinkIcon"
+                        android:layout_width="18dp"
+                        android:layout_height="18dp"
+                        android:layout_gravity="center"
+                        android:src="@drawable/ic_nav_habits" />
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/tvHabitLinkTitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Привязка к привычке"
+                        android:textSize="14sp"
+                        android:fontFamily="sans-serif-medium" />
+
+                    <TextView
+                        android:id="@+id/tvHabitLinkSubtitle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Не привязана"
+                        android:textSize="12sp"
+                        android:fontFamily="sans-serif" />
+                </LinearLayout>
+
+                <Button
+                    android:id="@+id/btnHabitLinkAction"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="0dp"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp"
+                    android:text="Привязать"
+                    android:textSize="12sp" />
+
+                <ImageButton
+                    android:id="@+id/btnHabitUnlink"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:padding="8dp"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Отвязать привычку"
+                    android:src="@drawable/ic_close"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/rowHabitAccrualToggle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginTop="8dp"
+                android:paddingTop="6dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/tvHabitAccrualLabel"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Учитывать время в привычке"
+                    android:textSize="13sp"
+                    android:fontFamily="sans-serif" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/switchHabitAccrual"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvHabitLinkSyncNotice"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:textSize="11sp"
+                android:fontFamily="sans-serif"
+                android:text="Связь сохраняется только на этом устройстве"
+                android:visibility="gone" />
         </LinearLayout>
 
         <!-- Legacy Plan Decision (if needed in Edit mode) -->

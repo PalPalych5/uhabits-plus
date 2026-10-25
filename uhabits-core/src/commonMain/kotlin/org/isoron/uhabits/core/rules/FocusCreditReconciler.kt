@@ -52,6 +52,10 @@ class FocusCreditReconciler(
         )
     }
 
-    fun reconcileSession(id: FocusSessionId, now: Long): List<AttributionOutcome> =
-        sessions.getById(id)?.let { attribution.attributeSession(it, now) } ?: emptyList()
+    fun reconcileSession(
+        id: FocusSessionId,
+        now: Long,
+        isLiveCapture: Boolean = false,
+    ): List<AttributionOutcome> =
+        sessions.getById(id)?.let { attribution.attributeSession(it, now, isLiveCapture) } ?: emptyList()
 }

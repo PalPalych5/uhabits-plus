@@ -53,6 +53,15 @@ class MemoryFocusSessionRepository : FocusSessionRepository {
 
     override fun getAll(): List<FocusSession> = sessions.values.sortedWith(order)
 
+    override fun getTotalDurationByTask(taskId: TaskId): Long = sessions.values
+        .filter {
+            it.taskId == taskId && (
+                it.primaryTargetType == org.isoron.uhabits.core.focus.FocusPrimaryTargetType.TASK ||
+                    it.primaryTargetType == null
+            )
+        }
+        .sumOf { it.durationMs }
+
     override fun getByTask(taskId: TaskId): List<FocusSession> = sessions.values
         .filter { it.taskId == taskId }
         .sortedWith(order)

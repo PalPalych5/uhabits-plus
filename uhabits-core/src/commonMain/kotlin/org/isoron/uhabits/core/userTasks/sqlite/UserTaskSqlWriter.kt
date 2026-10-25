@@ -10,6 +10,10 @@ object UserTaskSqlWriter {
     fun upsert(
         db: Database, taskId: String, writeClassification: Boolean = false,
         important: Boolean? = null, urgent: Boolean? = null,
+        writeLinkFields: Boolean = false,
+        linkedHabitUuid: String? = null,
+        habitTimeAccrualEnabled: Boolean = false,
+        habitLinkEffectiveFrom: Long? = null,
         bind: PreparedStatement.() -> Unit,
     ) {
         db.runInTransaction {
@@ -40,6 +44,16 @@ object UserTaskSqlWriter {
                     classification.bindText(3, taskId)
                     classification.step()
                 } finally { classification.finalize() }
+            }
+            if (writeLinkFields) {
+                val linkStmt = db.prepareStatement("UPDATE UserTasks SET linked_habit_uuid=?, habit_time_accrual_enabled=?, habit_link_effective_from=? WHERE id=?")
+                try {
+                    if (linkedHabitUuid != null) linkStmt.bindText(1, linkedHabitUuid) else linkStmt.bindNull(1)
+                    linkStmt.bindInt(2, if (habitTimeAccrualEnabled) 1 else 0)
+                    if (habitLinkEffectiveFrom != null) linkStmt.bindLong(3, habitLinkEffectiveFrom) else linkStmt.bindNull(3)
+                    linkStmt.bindText(4, taskId)
+                    linkStmt.step()
+                } finally { linkStmt.finalize() }
             }
         }
     }

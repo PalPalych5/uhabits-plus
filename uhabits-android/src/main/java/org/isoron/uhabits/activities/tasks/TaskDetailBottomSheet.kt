@@ -116,6 +116,24 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     private lateinit var etNewSubtask: EditText
     private lateinit var btnAddSubtask: ImageButton
 
+    // Habit Link
+    private lateinit var cardHabitLink: View
+    private lateinit var rowHabitLinkHeader: View
+    private lateinit var layoutHabitLinkIcon: View
+    private lateinit var ivHabitLinkIcon: ImageView
+    private lateinit var tvHabitLinkTitle: TextView
+    private lateinit var tvHabitLinkSubtitle: TextView
+    private lateinit var btnHabitLinkAction: Button
+    private lateinit var btnHabitUnlink: ImageButton
+    private lateinit var rowHabitAccrualToggle: View
+    private lateinit var tvHabitAccrualLabel: TextView
+    private lateinit var switchHabitAccrual: androidx.appcompat.widget.SwitchCompat
+    private lateinit var tvHabitLinkSyncNotice: TextView
+
+    private var selectedLinkedHabitUuid: String? = null
+    private var selectedHabitTimeAccrualEnabled: Boolean = false
+    private var selectedHabitLinkEffectiveFrom: Long? = null
+
     // Focus & Legacy Plan
     private lateinit var rowFocus: View
     private lateinit var cardLegacyPlanDecision: View
@@ -155,6 +173,9 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                 selectedContainerId = it.containerId
                 selectedDue = it.due
                 isCompleted = it.isCompleted
+                selectedLinkedHabitUuid = it.linkedHabitUuid
+                selectedHabitTimeAccrualEnabled = it.habitTimeAccrualEnabled
+                selectedHabitLinkEffectiveFrom = it.habitLinkEffectiveFrom
             }
         } else {
             isCreateMode = true
@@ -167,6 +188,9 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             isCompleted = false
             draftSubtasks.clear()
             draftSubtasks.addAll(initialDraft.subtasks)
+            selectedLinkedHabitUuid = initialDraft.linkedHabitUuid
+            selectedHabitTimeAccrualEnabled = if (initialDraft.linkedHabitUuid != null) initialDraft.habitTimeAccrualEnabled else false
+            selectedHabitLinkEffectiveFrom = if (initialDraft.linkedHabitUuid != null) initialDraft.habitLinkEffectiveFrom else null
         }
     }
 
@@ -186,6 +210,20 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             etTitle.setText(restored.getString("detailTitle", etTitle.text.toString()))
             etDescription.setText(restored.getString("detailNotes", etDescription.text.toString()))
             etNewSubtask.setText(restored.getString("detailSubtask", ""))
+            if (restored.containsKey("detailLinkedHabitUuid")) {
+                selectedLinkedHabitUuid = restored.getString("detailLinkedHabitUuid")
+            }
+            if (selectedLinkedHabitUuid != null) {
+                if (restored.containsKey("detailHabitTimeAccrualEnabled")) {
+                    selectedHabitTimeAccrualEnabled = restored.getBoolean("detailHabitTimeAccrualEnabled")
+                }
+                if (restored.containsKey("detailHabitLinkEffectiveFrom")) {
+                    selectedHabitLinkEffectiveFrom = restored.getLong("detailHabitLinkEffectiveFrom").takeIf { it > 0L }
+                }
+            } else {
+                selectedHabitTimeAccrualEnabled = false
+                selectedHabitLinkEffectiveFrom = null
+            }
             if (isCreateMode && restored.containsKey("draftBundle")) {
                 val restoredDraft = TaskDraft.fromBundle(restored.getBundle("draftBundle"))
                 selectedImportant = restoredDraft.important
@@ -196,10 +234,14 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                 selectedDue = restoredDraft.due
                 draftSubtasks.clear()
                 draftSubtasks.addAll(restoredDraft.subtasks)
+                selectedLinkedHabitUuid = restoredDraft.linkedHabitUuid
+                selectedHabitTimeAccrualEnabled = if (restoredDraft.linkedHabitUuid != null) restoredDraft.habitTimeAccrualEnabled else false
+                selectedHabitLinkEffectiveFrom = if (restoredDraft.linkedHabitUuid != null) restoredDraft.habitLinkEffectiveFrom else null
                 updateDueDisplay()
                 updateContainerDisplay()
                 refreshSubtasks()
             }
+            updateHabitLinkDisplay()
         }
 
         setupClassificationControls()
@@ -277,27 +319,52 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         return view
     }
 
+    private var timerActiveForTask = false
+    private val focusCreditObserver = {
+        activity?.runOnUiThread {
+            if (isAdded && viewReady && !isCreateMode) {
+                refreshFocusSummary()
+            }
+        } ?: Unit
+    }
+    private val timerListener = org.isoron.uhabits.activities.habits.show.timer.TimerSessionManager.Listener {
+        activity?.runOnUiThread {
+            if (!isAdded || !viewReady || isCreateMode) return@runOnUiThread
+            val id = taskId ?: return@runOnUiThread
+            val manager = launchComponent.timerSessionManager
+            val active = manager.snapshot()
+            val isNowActive = active.hasActiveSession && manager.isCurrentTask(id)
+            if (timerActiveForTask && !isNowActive) {
+                refreshFocusSummary()
+            }
+            timerActiveForTask = isNowActive
+        }
+    }
+
     private fun refreshFocusSummary(root: View? = view) {
-        if (!launchComponent.session.isNextArchitecture || isCreateMode) return
+        if (!::launchComponent.isInitialized || !launchComponent.session.isNextArchitecture || isCreateMode) return
         val id = taskId ?: return
         launchComponent.taskRunner.execute(object : org.isoron.uhabits.core.tasks.Task {
             private var duration = 0L
             override suspend fun doInBackground() {
-                duration = org.isoron.uhabits.core.focus.sqlite.SQLiteFocusSessionRepository(launchComponent.db)
-                    .getByTask(id).sumOf { it.durationMs }
+                val repo = launchComponent.focusSessionRepository
+                    ?: org.isoron.uhabits.core.focus.sqlite.SQLiteFocusSessionRepository(launchComponent.db)
+                duration = repo.getTotalDurationByTask(id)
             }
             override fun onPostExecute() {
                 if (!isAdded || root !== view || (requireContext().applicationContext as HabitsApplication).component !== launchComponent)
                     return
-                val seconds = duration / 1000
-                val formatted = when {
-                    seconds >= 3600 -> "${seconds / 3600} ч ${seconds / 60 % 60} мин"
-                    seconds >= 60 -> "${seconds / 60} мин ${seconds % 60} с"
-                    else -> "$seconds с"
+                val minutes = duration / 60_000L
+                val formatted = if (minutes >= 60) {
+                    val h = minutes / 60
+                    val m = minutes % 60
+                    "Затрачено: $h ч $m мин"
+                } else {
+                    "Затрачено: $minutes мин"
                 }
                 root?.findViewById<TextView>(R.id.tvDetailFocus)?.apply {
                     maxLines = 2
-                    text = "всего $formatted"
+                    text = formatted
                 }
             }
         })
@@ -305,6 +372,14 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
     override fun onStart() {
         super.onStart()
+        if (!isCreateMode && ::launchComponent.isInitialized && launchComponent.session.isNextArchitecture) {
+            val id = taskId
+            timerActiveForTask = id != null && launchComponent.timerSessionManager.snapshot().let {
+                it.hasActiveSession && launchComponent.timerSessionManager.isCurrentTask(id)
+            }
+            launchComponent.timerSessionManager.addListener(timerListener)
+            launchComponent.focusCreditController?.addObserver(focusCreditObserver)
+        }
         (dialog as? BottomSheetDialog)?.let { sheet ->
             sheet.dismissWithAnimation = true
             sheet.behavior.skipCollapsed = true
@@ -345,6 +420,21 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (!isCreateMode && viewReady && ::launchComponent.isInitialized && launchComponent.session.isNextArchitecture) {
+            refreshFocusSummary()
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (::launchComponent.isInitialized) {
+            launchComponent.timerSessionManager.removeListener(timerListener)
+            launchComponent.focusCreditController?.removeObserver(focusCreditObserver)
+        }
+    }
+
     private fun bindViews(view: View) {
         topBarCreate = view.findViewById(R.id.topBarCreate)
         topBarEdit = view.findViewById(R.id.topBarEdit)
@@ -380,6 +470,19 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         tvLegacyPlanPrompt = view.findViewById(R.id.tvLegacyPlanPrompt)
         btnAcceptLegacyPlan = view.findViewById(R.id.btnAcceptLegacyPlan)
         btnDismissLegacyPlan = view.findViewById(R.id.btnDismissLegacyPlan)
+
+        cardHabitLink = view.findViewById(R.id.cardHabitLink)
+        rowHabitLinkHeader = view.findViewById(R.id.rowHabitLinkHeader)
+        layoutHabitLinkIcon = view.findViewById(R.id.layoutHabitLinkIcon)
+        ivHabitLinkIcon = view.findViewById(R.id.ivHabitLinkIcon)
+        tvHabitLinkTitle = view.findViewById(R.id.tvHabitLinkTitle)
+        tvHabitLinkSubtitle = view.findViewById(R.id.tvHabitLinkSubtitle)
+        btnHabitLinkAction = view.findViewById(R.id.btnHabitLinkAction)
+        btnHabitUnlink = view.findViewById(R.id.btnHabitUnlink)
+        rowHabitAccrualToggle = view.findViewById(R.id.rowHabitAccrualToggle)
+        tvHabitAccrualLabel = view.findViewById(R.id.tvHabitAccrualLabel)
+        switchHabitAccrual = view.findViewById(R.id.switchHabitAccrual)
+        tvHabitLinkSyncNotice = view.findViewById(R.id.tvHabitLinkSyncNotice)
     }
 
     private fun dp(value: Float): Float = TaskThemeUtils.dp(requireContext(), value)
@@ -462,6 +565,19 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         tvLegacyPlanPrompt.setTextColor(palette.onSurface)
         btnDismissLegacyPlan.setTextColor(palette.onSurfaceVariant)
         btnAcceptLegacyPlan.setTextColor(palette.accent)
+
+        // Habit link theme
+        cardHabitLink.background = GradientDrawable().apply {
+            cornerRadius = dp(16f)
+            setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.04f))
+            setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.2f))
+        }
+        tvHabitLinkTitle.setTextColor(palette.onSurface)
+        tvHabitLinkSubtitle.setTextColor(palette.onSurfaceVariant)
+        btnHabitLinkAction.setTextColor(palette.accent)
+        btnHabitUnlink.setColorFilter(palette.onSurfaceVariant)
+        tvHabitAccrualLabel.setTextColor(palette.onSurface)
+        tvHabitLinkSyncNotice.setTextColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.75f))
     }
 
     private fun populateData() {
@@ -497,6 +613,9 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             updateDueDisplay()
             setupSubtasks()
         }
+
+        cardHabitLink.visibility = if (launchComponent.session.isNextArchitecture) View.VISIBLE else View.GONE
+        updateHabitLinkDisplay()
     }
 
     private fun setupClassificationControls() {
@@ -572,7 +691,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                                 }
                             }
                             dialog.dismiss()
-                        }.setNegativeButton(R.string.containers_cancel, null).show()
+                        }.setNegativeButton(getCancelButtonText(requireContext()), null).show()
                 }
             }
             val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
@@ -900,6 +1019,198 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                 saveChanges(forceDue = true)
             }
         }
+
+        rowHabitLinkHeader.setOnClickListener {
+            val app = requireContext().applicationContext as? HabitsApplication
+            if (app?.component !== launchComponent || taskDeleted) return@setOnClickListener
+            showHabitPicker()
+        }
+
+        btnHabitLinkAction.setOnClickListener {
+            val app = requireContext().applicationContext as? HabitsApplication
+            if (app?.component !== launchComponent || taskDeleted) return@setOnClickListener
+            showHabitPicker()
+        }
+
+        btnHabitUnlink.setOnClickListener {
+            val app = requireContext().applicationContext as? HabitsApplication
+            if (app?.component !== launchComponent || taskDeleted) return@setOnClickListener
+            selectedLinkedHabitUuid = null
+            selectedHabitTimeAccrualEnabled = false
+            selectedHabitLinkEffectiveFrom = null
+            updateHabitLinkDisplay()
+            if (!isCreateMode) {
+                saveChanges()
+            }
+        }
+
+        switchHabitAccrual.setOnCheckedChangeListener { _, isChecked ->
+            onAccrualToggleChanged(isChecked)
+        }
+    }
+
+    private fun onAccrualToggleChanged(isChecked: Boolean) {
+        val app = requireContext().applicationContext as? HabitsApplication
+        if (app?.component !== launchComponent || taskDeleted) return
+        if (selectedHabitTimeAccrualEnabled != isChecked) {
+            selectedHabitTimeAccrualEnabled = isChecked
+            if (isChecked) {
+                selectedHabitLinkEffectiveFrom = System.currentTimeMillis()
+            }
+            updateHabitLinkDisplay()
+            if (!isCreateMode) {
+                saveChanges()
+            }
+        }
+    }
+
+    private fun updateHabitLinkDisplay() {
+        if (!::cardHabitLink.isInitialized) return
+        val linkedUuid = selectedLinkedHabitUuid
+        val habit = linkedUuid?.let { launchComponent.habitList.getByUUID(it) }
+
+        tvHabitLinkSyncNotice.visibility = if (linkedUuid == null) View.GONE else View.VISIBLE
+
+        when {
+            linkedUuid == null -> {
+                tvHabitLinkTitle.text = "Привязка к привычке"
+                tvHabitLinkSubtitle.text = "Не привязана"
+                btnHabitLinkAction.text = "Привязать"
+                btnHabitUnlink.visibility = View.GONE
+                rowHabitAccrualToggle.visibility = View.GONE
+
+                layoutHabitLinkIcon.background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.12f))
+                }
+                ivHabitLinkIcon.setColorFilter(palette.onSurfaceVariant)
+            }
+            habit == null -> {
+                tvHabitLinkTitle.text = "Привычка недоступна"
+                tvHabitLinkSubtitle.text = "Связанная привычка удалена · Учёт времени недоступен"
+                btnHabitLinkAction.text = "Сменить"
+                btnHabitUnlink.visibility = View.VISIBLE
+                rowHabitAccrualToggle.visibility = View.GONE
+
+                layoutHabitLinkIcon.background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.15f))
+                }
+                ivHabitLinkIcon.setColorFilter(palette.onSurfaceVariant)
+            }
+            habit.isArchived -> {
+                tvHabitLinkTitle.text = habit.name
+                tvHabitLinkSubtitle.text = "Привычка в архиве · Учёт времени недоступен"
+                btnHabitLinkAction.text = "Сменить"
+                btnHabitUnlink.visibility = View.VISIBLE
+                rowHabitAccrualToggle.visibility = View.GONE
+
+                val habitColor = TaskThemeUtils.resolvePaletteColor(requireContext(), habit.color, palette.accent)
+                layoutHabitLinkIcon.background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.15f))
+                }
+                ivHabitLinkIcon.setColorFilter(MainTabsThemeBridge.withAlpha(habitColor, 0.5f))
+            }
+            !isCompatibleHabit(habit) -> {
+                tvHabitLinkTitle.text = habit.name
+                val displayUnit = habit.unit.ifBlank { "без ед." }
+                tvHabitLinkSubtitle.text = "$displayUnit · Несовместимая единица · Учёт времени недоступен"
+                btnHabitLinkAction.text = "Сменить"
+                btnHabitUnlink.visibility = View.VISIBLE
+                rowHabitAccrualToggle.visibility = View.GONE
+
+                val habitColor = TaskThemeUtils.resolvePaletteColor(requireContext(), habit.color, palette.accent)
+                layoutHabitLinkIcon.background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(MainTabsThemeBridge.withAlpha(habitColor, 0.15f))
+                }
+                ivHabitLinkIcon.setColorFilter(habitColor)
+            }
+            else -> {
+                tvHabitLinkTitle.text = habit.name
+                val accrualText = if (selectedHabitTimeAccrualEnabled) {
+                    "Учёт времени включён"
+                } else {
+                    "Учёт времени отключён"
+                }
+                tvHabitLinkSubtitle.text = "${habit.unit} · $accrualText"
+                btnHabitLinkAction.text = "Сменить"
+                btnHabitUnlink.visibility = View.VISIBLE
+                rowHabitAccrualToggle.visibility = View.VISIBLE
+
+                switchHabitAccrual.setOnCheckedChangeListener(null)
+                switchHabitAccrual.isChecked = selectedHabitTimeAccrualEnabled
+                switchHabitAccrual.setOnCheckedChangeListener { _, isChecked ->
+                    onAccrualToggleChanged(isChecked)
+                }
+
+                val habitColor = TaskThemeUtils.resolvePaletteColor(requireContext(), habit.color, palette.accent)
+                layoutHabitLinkIcon.background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(MainTabsThemeBridge.withAlpha(habitColor, 0.15f))
+                }
+                ivHabitLinkIcon.setColorFilter(habitColor)
+            }
+        }
+    }
+
+    private fun showHabitPicker() {
+        val app = requireContext().applicationContext as? HabitsApplication
+        if (app?.component !== launchComponent || taskDeleted) return
+
+        val eligibleHabits = launchComponent.habitList.filter { habit ->
+            !habit.isArchived && isCompatibleHabit(habit)
+        }
+
+        val selectedLocale = TaskDueDisplayFormatter.selectedLocale(requireContext())
+        val ru = selectedLocale.language == "ru"
+        val cancelText = getCancelButtonText(requireContext())
+
+        if (eligibleHabits.isEmpty()) {
+            AlertDialog.Builder(requireContext())
+                .setTitle(if (ru) "Привязка к привычке" else "Link to habit")
+                .setMessage(if (ru) "Нет доступных числовых привычек с минутами. Создайте числовую привычку с единицей измерения «мин» или «минуты»."
+                    else "No numerical minute habits available. Create a numerical habit with unit 'min' or 'minutes'.")
+                .setPositiveButton(android.R.string.ok, null)
+                .show()
+            return
+        }
+
+        val habitNames = eligibleHabits.map { "${it.name} (${it.unit})" }.toTypedArray()
+        val currentIndex = eligibleHabits.indexOfFirst { it.uuid == selectedLinkedHabitUuid }
+
+        AlertDialog.Builder(requireContext())
+            .setTitle(if (ru) "Выберите привычку" else "Select habit")
+            .setSingleChoiceItems(habitNames, currentIndex) { dialog, which ->
+                val chosen = eligibleHabits[which]
+                val habitChanged = chosen.uuid != selectedLinkedHabitUuid
+                selectedLinkedHabitUuid = chosen.uuid
+                selectedHabitTimeAccrualEnabled = true
+                if (habitChanged || selectedHabitLinkEffectiveFrom == null) {
+                    selectedHabitLinkEffectiveFrom = System.currentTimeMillis()
+                }
+                updateHabitLinkDisplay()
+                if (!isCreateMode) {
+                    saveChanges()
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton(cancelText, null)
+            .apply {
+                if (selectedLinkedHabitUuid != null) {
+                    setNeutralButton(if (ru) "Отвязать" else "Unlink") { _, _ ->
+                        selectedLinkedHabitUuid = null
+                        selectedHabitTimeAccrualEnabled = false
+                        selectedHabitLinkEffectiveFrom = null
+                        updateHabitLinkDisplay()
+                        if (!isCreateMode) {
+                            saveChanges()
+                        }
+                    }
+                }
+            }
+            .show()
     }
 
     private fun submitCreateTask() {
@@ -919,6 +1230,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         val subtasksSnapshot = draftSubtasks.toList()
 
         try { launchComponent.db.runInTransaction {
+            val hasLink = selectedLinkedHabitUuid != null
             val mainTask = taskService.createTask(
                 title = title,
                 description = description,
@@ -926,6 +1238,9 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                 due = due,
                 important = selectedImportant,
                 urgent = selectedUrgent,
+                linkedHabitUuid = selectedLinkedHabitUuid,
+                habitTimeAccrualEnabled = if (hasLink) selectedHabitTimeAccrualEnabled else false,
+                habitLinkEffectiveFrom = if (hasLink) selectedHabitLinkEffectiveFrom else null,
             )
             launchComponent.taskTagRepository.setTags(mainTask.id, selectedTagIds)
             for (sub in subtasksSnapshot) {
@@ -1000,9 +1315,12 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
         val importantChanged = selectedImportant != task.important
         val urgentChanged = selectedUrgent != task.urgent
+        val linkChanged = selectedLinkedHabitUuid != task.linkedHabitUuid ||
+            selectedHabitTimeAccrualEnabled != task.habitTimeAccrualEnabled ||
+            selectedHabitLinkEffectiveFrom != task.habitLinkEffectiveFrom
         val propertiesChanged = newTitle != task.title || newDesc != task.description ||
             selectedContainerId != task.containerId || selectedDue != task.due || forceDue ||
-            importantChanged || urgentChanged
+            importantChanged || urgentChanged || linkChanged
         if (!propertiesChanged && isCompleted == task.isCompleted) {
             tvDetailSaveStatus.text = "Изменения сохранены"
             tvDetailSaveStatus.alpha = 1f
@@ -1010,24 +1328,40 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         }
 
         var savedTask = task
-        if (propertiesChanged) savedTask = taskService.updateTask(
-            id = task.id,
-            title = newTitle,
-            description = newDesc,
-            containerId = selectedContainerId,
-            clearContainer = selectedContainerId == null,
-            important = if (importantChanged && selectedImportant != null) selectedImportant else null,
-            urgent = if (urgentChanged && selectedUrgent != null) selectedUrgent else null,
-            clearImportant = importantChanged && selectedImportant == null,
-            clearUrgent = urgentChanged && selectedUrgent == null,
-            due = selectedDue.takeIf { forceDue || it != task.due },
-        )
+        if (propertiesChanged) {
+            val habitUuidChanged = selectedLinkedHabitUuid != task.linkedHabitUuid
+            val accrualChanged = selectedHabitTimeAccrualEnabled != task.habitTimeAccrualEnabled
+            val effectiveFromChanged = selectedHabitLinkEffectiveFrom != task.habitLinkEffectiveFrom
+            val unlinking = habitUuidChanged && selectedLinkedHabitUuid == null
+
+            savedTask = taskService.updateTask(
+                id = task.id,
+                title = newTitle,
+                description = newDesc,
+                containerId = selectedContainerId,
+                clearContainer = selectedContainerId == null,
+                important = if (importantChanged && selectedImportant != null) selectedImportant else null,
+                urgent = if (urgentChanged && selectedUrgent != null) selectedUrgent else null,
+                clearImportant = importantChanged && selectedImportant == null,
+                clearUrgent = urgentChanged && selectedUrgent == null,
+                due = selectedDue.takeIf { forceDue || it != task.due },
+                linkedHabitUuid = if (linkChanged && !unlinking) selectedLinkedHabitUuid.takeIf { habitUuidChanged } else null,
+                clearLinkedHabit = unlinking,
+                habitTimeAccrualEnabled = if (unlinking) false else selectedHabitTimeAccrualEnabled.takeIf { accrualChanged || habitUuidChanged },
+                habitLinkEffectiveFrom = if (unlinking) null else selectedHabitLinkEffectiveFrom.takeIf { effectiveFromChanged || habitUuidChanged },
+                clearHabitLinkEffectiveFrom = unlinking || (effectiveFromChanged && selectedHabitLinkEffectiveFrom == null),
+            )
+        }
 
         if (isCompleted != task.isCompleted) {
             savedTask = taskService.setCompleted(task.id, isCompleted)
         }
 
         currentTask = savedTask
+        selectedLinkedHabitUuid = savedTask.linkedHabitUuid
+        selectedHabitTimeAccrualEnabled = savedTask.habitTimeAccrualEnabled
+        selectedHabitLinkEffectiveFrom = savedTask.habitLinkEffectiveFrom
+        updateHabitLinkDisplay()
         val rebasedImportant = savedTask.important
         val rebasedUrgent = savedTask.urgent
         val controlsNeedUpdate = rebasedImportant != selectedImportant || rebasedUrgent != selectedUrgent
@@ -1057,6 +1391,11 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             outState.putString("detailTitle", etTitle.text.toString())
             outState.putString("detailNotes", etDescription.text.toString())
             outState.putString("detailSubtask", etNewSubtask.text.toString())
+            if (selectedLinkedHabitUuid != null) {
+                outState.putString("detailLinkedHabitUuid", selectedLinkedHabitUuid)
+                outState.putBoolean("detailHabitTimeAccrualEnabled", selectedHabitTimeAccrualEnabled)
+                selectedHabitLinkEffectiveFrom?.let { outState.putLong("detailHabitLinkEffectiveFrom", it) }
+            }
             if (isCreateMode) {
                 val currentDraft = buildCurrentDraft()
                 outState.putBundle("draftBundle", currentDraft.toBundle())
@@ -1066,6 +1405,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun buildCurrentDraft(): TaskDraft {
+        val hasLink = selectedLinkedHabitUuid != null
         return TaskDraft(
             title = if (::etTitle.isInitialized) etTitle.text?.toString().orEmpty() else "",
             description = if (::etDescription.isInitialized) etDescription.text?.toString().orEmpty() else "",
@@ -1074,7 +1414,10 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             urgent = selectedUrgent,
             due = selectedDue,
             containerId = selectedContainerId,
-            subtasks = draftSubtasks.toList()
+            subtasks = draftSubtasks.toList(),
+            linkedHabitUuid = selectedLinkedHabitUuid,
+            habitTimeAccrualEnabled = if (hasLink) selectedHabitTimeAccrualEnabled else false,
+            habitLinkEffectiveFrom = if (hasLink) selectedHabitLinkEffectiveFrom else null,
         )
     }
 
@@ -1113,6 +1456,24 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
         private const val ARG_TASK_ID = "task_id"
         private const val ARG_TASK_DRAFT = "task_draft"
+
+        val MINUTE_UNITS = setOf("min", "mins", "minute", "minutes", "min.", "мин", "минута", "минуты", "минут", "мин.")
+
+        fun isCompatibleHabit(habit: org.isoron.uhabits.core.models.Habit): Boolean {
+            return habit.isNumerical && habit.unit.trim().lowercase() in MINUTE_UNITS
+        }
+
+        fun getCancelButtonText(context: android.content.Context): String {
+            val selectedLocale = TaskDueDisplayFormatter.selectedLocale(context)
+            val ru = selectedLocale.language == "ru"
+            val localeForRes = if (ru && selectedLocale.country.isEmpty()) java.util.Locale("ru", "RU") else selectedLocale
+            return runCatching {
+                val config = android.content.res.Configuration(context.resources.configuration).apply {
+                    setLocale(localeForRes)
+                }
+                context.createConfigurationContext(config).getString(R.string.containers_cancel)
+            }.getOrDefault(if (ru) "Отмена" else "Cancel")
+        }
 
         fun newInstance(taskId: TaskId): TaskDetailBottomSheet {
             return TaskDetailBottomSheet().apply {

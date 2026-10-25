@@ -21,7 +21,10 @@ package org.isoron.uhabits.core.rules
 
 import org.isoron.uhabits.core.containers.HabitRef
 import org.isoron.uhabits.core.contribution.*
+import org.isoron.uhabits.core.focus.FocusPrimaryTargetType
 import org.isoron.uhabits.core.focus.FocusSession
+import org.isoron.uhabits.core.userTasks.TaskId
+import org.isoron.uhabits.core.userTasks.UserTask
 
 /**
  * Metadata descriptor for validating a target habit's suitability for time attribution.
@@ -30,6 +33,7 @@ data class TargetHabitInfo(
     val isNumerical: Boolean,
     val unit: String,
     val name: String? = null,
+    val isArchived: Boolean = false,
 )
 
 class AmbiguousAttributionException(
@@ -44,7 +48,7 @@ class TargetHabitNotFoundException(
 
 sealed class AttributionOutcome {
     data class Attributed(val contribution: Contribution, val wasInserted: Boolean) : AttributionOutcome()
-    data class Ineligible(val ruleId: SourceRuleId, val reason: String) : AttributionOutcome()
+    data class Ineligible(val ruleId: SourceRuleId? = null, val reason: String) : AttributionOutcome()
     data class IncompatibleTarget(val habitRef: HabitRef, val reason: String) : AttributionOutcome()
     data class Ambiguous(val conflictingRules: List<SourceRuleId>, val message: String) : AttributionOutcome()
 }
@@ -79,6 +83,7 @@ class SourceRuleAttributionService(
     private val ruleRepository: SourceRuleRepository,
     private val contributionRepository: ContributionRepository,
     private val sourceEligibility: ((SourceRule, FocusSession) -> Boolean)? = null,
+    private val taskResolver: ((TaskId) -> UserTask?)? = null,
     private val habitResolver: ((HabitRef) -> TargetHabitInfo?)? = null,
 ) {
 
@@ -87,7 +92,18 @@ class SourceRuleAttributionService(
      *
      * @return list of [AttributionOutcome] for each rule evaluation or direct habit attribution.
      */
-    fun attributeSession(session: FocusSession, now: Long = session.endedAt): List<AttributionOutcome> {
+    fun attributeSession(
+        session: FocusSession,
+        now: Long = session.endedAt,
+        isLiveCapture: Boolean = false,
+    ): List<AttributionOutcome> {
+        // Task focus session attribution: attribute task sessions only if task has explicit link
+        // with habitTimeAccrualEnabled=true and session.startedAt >= habitLinkEffectiveFrom,
+        // disallowing automatic container rule attribution for tasks.
+        if (session.primaryTargetType == FocusPrimaryTargetType.TASK || (session.primaryTargetType == null && session.taskId != null)) {
+            return attributeTaskSession(session, now, isLiveCapture)
+        }
+
         // Direct habit attribution: when the session was recorded directly for a habit,
         // attribute it to that habit without requiring an explicit container rule.
         if (session.habit != null) {
@@ -151,7 +167,7 @@ class SourceRuleAttributionService(
             // Validate target habit compatibility if resolver is configured
             if (habitResolver != null) {
                 val habitInfo = habitResolver.invoke(targetHabit)
-                if (habitInfo == null) {
+                if (habitInfo == null || habitInfo.isArchived) {
                     outcomes.add(AttributionOutcome.IncompatibleTarget(targetHabit, "Target habit unavailable"))
                     continue
                 }
@@ -220,6 +236,124 @@ class SourceRuleAttributionService(
         return outcomes
     }
 
+    private fun attributeTaskSession(
+        session: FocusSession,
+        now: Long,
+        isLiveCapture: Boolean,
+    ): List<AttributionOutcome> {
+        val taskId = session.taskId ?: return emptyList()
+        val task = taskResolver?.invoke(taskId) ?: return emptyList()
+        val linkedHabitUuid = task.linkedHabitUuid ?: return emptyList()
+
+        val targetHabit = HabitRef(linkedHabitUuid)
+
+        // Existing attribution is historical, including an explicit correction tombstone.
+        // Also check if this session was already attributed to ANY habit from FOCUS_SESSION source.
+        val existingBySource = contributionRepository.getBySource(
+            ContributionSourceType.FOCUS_SESSION, session.id.value, includeRemoved = true,
+        )
+        if (existingBySource.isNotEmpty()) {
+            val historicalForTarget = existingBySource.firstOrNull { it.targetHabit == targetHabit }
+            if (historicalForTarget != null) {
+                return if (historicalForTarget.isActive) {
+                    listOf(AttributionOutcome.Attributed(historicalForTarget, wasInserted = false))
+                } else {
+                    emptyList()
+                }
+            } else {
+                // Existing source credit blocks new target!
+                return listOf(
+                    AttributionOutcome.Ineligible(
+                        ruleId = null,
+                        reason = "Session already attributed to a different habit",
+                    )
+                )
+            }
+        }
+
+        // Recovery / background sweep: NEVER derive new task contributions from raw historical facts or mutable task config
+        if (!isLiveCapture) {
+            return emptyList()
+        }
+
+        if (!task.habitTimeAccrualEnabled) {
+            return emptyList()
+        }
+
+        // Non-retroactivity: session.startedAt must be >= habitLinkEffectiveFrom. Null cutoff fails closed.
+        val effectiveFrom = task.habitLinkEffectiveFrom
+            ?: return listOf(
+                AttributionOutcome.Ineligible(
+                    ruleId = null,
+                    reason = "Task habit link effective cutoff is not set",
+                )
+            )
+        if (session.startedAt < effectiveFrom) {
+            return listOf(
+                AttributionOutcome.Ineligible(
+                    ruleId = null,
+                    reason = "Session started before task habit link became effective",
+                )
+            )
+        }
+
+        // Validate target habit compatibility if resolver is configured
+        if (habitResolver != null) {
+            val habitInfo = habitResolver.invoke(targetHabit)
+            if (habitInfo == null || habitInfo.isArchived) {
+                return listOf(AttributionOutcome.IncompatibleTarget(targetHabit, "Target habit unavailable"))
+            }
+            try {
+                HabitTimeValueConverter.validateTargetHabit(
+                    isNumerical = habitInfo.isNumerical,
+                    unit = habitInfo.unit,
+                    name = habitInfo.name,
+                    uuid = targetHabit.uuid,
+                )
+            } catch (e: IncompatibleTargetHabitException) {
+                return listOf(AttributionOutcome.IncompatibleTarget(targetHabit, e.message ?: "Incompatible target"))
+            }
+        }
+
+        val habitValue = HabitTimeValueConverter.convertFocusDurationToHabitValue(session.durationMs)
+        val contributionId = deterministicContributionId(session.id.value, targetHabit.uuid)
+
+        val existingContribution = contributionRepository.getById(contributionId)
+        if (existingContribution != null) {
+            if (existingContribution.isActive &&
+                existingContribution.sourceRuleId == null &&
+                existingContribution.contributedValue == habitValue
+            ) {
+                return listOf(AttributionOutcome.Attributed(existingContribution, wasInserted = false))
+            }
+        }
+
+        val contribution = Contribution(
+            id = contributionId,
+            targetHabit = targetHabit,
+            sourceType = ContributionSourceType.FOCUS_SESSION,
+            sourceId = session.id.value,
+            contributedValue = habitValue,
+            effectiveTimestamp = session.endedAt,
+            createdAt = existingContribution?.createdAt ?: now,
+            updatedAt = now,
+            sourceRuleId = null,
+        )
+
+        val recordResult = try {
+            contributionRepository.record(contribution)
+        } catch (error: ContributionConflictException) {
+            val winner = contributionRepository.getById(contributionId) ?: throw error
+            if (winner.targetHabit != contribution.targetHabit || winner.sourceType != contribution.sourceType ||
+                winner.sourceId != contribution.sourceId || winner.contributedValue != contribution.contributedValue ||
+                winner.effectiveTimestamp != contribution.effectiveTimestamp || winner.sourceRuleId != contribution.sourceRuleId) throw error
+            return if (winner.isActive) listOf(AttributionOutcome.Attributed(winner, wasInserted = false)) else emptyList()
+        }
+        val inserted = recordResult == ContributionRecordResult.INSERTED
+        val finalContribution = if (inserted) contribution else (contributionRepository.getById(contributionId) ?: contribution)
+        return listOf(AttributionOutcome.Attributed(finalContribution, wasInserted = inserted))
+    }
+
     private fun attributeDirectHabitSession(session: FocusSession, now: Long): List<AttributionOutcome> {
         val targetHabit = session.habit ?: return emptyList()
 
@@ -236,7 +370,7 @@ class SourceRuleAttributionService(
 
         if (habitResolver != null) {
             val habitInfo = habitResolver.invoke(targetHabit)
-            if (habitInfo == null) {
+            if (habitInfo == null || habitInfo.isArchived) {
                 return listOf(AttributionOutcome.IncompatibleTarget(targetHabit, "Target habit unavailable"))
             }
             try {
