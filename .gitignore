@@ -19,6 +19,9 @@ node_modules
 crowdin.yml
 kotlin-js-store
 *.md
+!README.md
+!NOTICE.md
+!THIRD_PARTY_NOTICES.md
 !docs/UHABIT_NEXT_HANDOFF.md
 !docs/UHABIT_TASKS_IA.md
 !ia_navigation_spike/adaptive/README.md
@@ -26,14 +29,25 @@ kotlin-js-store
 !docs/UHabit_Next_Spec.md
 !docs/uhabit-next-foundation-plan.md
 !docs/UHABIT_PR23_FINAL_ACCEPTANCE.md
+!docs/TASK_DUE_CONTRACT_PR2.md
+!docs/TASK_PLANNED_DATE_SYNC_PR21.md
 !tools/qa/README.md
 .kotlin
 docs/design/*
 .tmp_visual/
 repomix-output.xml
 
-# Local emulator fixtures, benchmark evidence and isolated build copies.
+# Local emulator fixtures, benchmark evidence, logs and isolated build copies.
 /scratch/
 /tools/qa/__pycache__/
 .codex/
+.gemini/
 debug.log
+*.log
+captures/
+*.apk
+*.aab
+*.keystore
+*.jks
+*.pyc
+__pycache__/

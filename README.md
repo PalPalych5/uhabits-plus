@@ -5,46 +5,66 @@
   <img alt="Platform" src="https://img.shields.io/badge/Platform-Android-green.svg" />
   <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-2.3.20-purple.svg" />
   <img alt="AGP" src="https://img.shields.io/badge/AGP-8.13.2-orange.svg" />
+  <img alt="Database" src="https://img.shields.io/badge/SQLite-Schema%20v35-informational.svg" />
 </p>
 
-**UHabit Next** is an enhanced, open-source personal productivity application for Android. Building upon the elegant, privacy-first foundation of [Loop Habit Tracker](https://github.com/iSoron/uhabits), UHabit Next unifies habit formation, task management, hierarchical organizational containers, and in-depth performance analytics into a single native experience.
+**UHabit Next** is an enhanced, open-source personal productivity and habit-tracking application for Android. Building upon the elegant, privacy-first foundation of [Loop Habit Tracker](https://github.com/iSoron/uhabits), UHabit Next unifies habit formation, structured task execution, focus sessions, organizational containers, and multi-domain analytics into a single native experience.
 
 ---
 
 ## Capabilities
 
-### 1. Habit Tracking & Consistency
-* **Advanced Habit Scoring**: Scientifically grounded formula calculates habit strength over time. Every completion builds momentum; occasional missed days decrease strength smoothly rather than resetting progress completely.
-* **Flexible Schedules & Target Values**: Supports daily, weekly (e.g., 3 times per week), periodic schedules, and numerical targets (with customizable units like minutes, pages, or milliliters).
-* **Reliable Reminders**: Customizable per-habit reminders with direct check-in notifications.
-* **Home Screen Widgets**: Quick-check widgets to log repetitions directly from your home screen.
+### 1. Habit Tracking & Strength
+* **Scientifically Grounded Scoring**: Habit strength is computed over time using an exponential formula. Every completion builds momentum; occasional missed days decrease strength smoothly rather than abruptly resetting progress.
+* **Flexible Schedules & Numerical Targets**: Supports daily cadences, weekly goals (e.g., 3 times per week), periodic schedules, and numerical targets (with customizable units like minutes, pages, or milliliters).
+* **Reminders & Home Screen Widgets**: Customizable per-habit notifications and home screen widgets to log repetitions directly.
 
-### 2. Native Task Management
+### 2. Task Management & Prioritization
 * **Task Lifecycle & Hierarchy**: Plan, track, and complete discrete action items alongside recurring habits.
-* **Subtasks & Parent Relationships**: Break down larger initiatives into actionable steps with ordered subtasks.
-* **Planning Dates & Deadlines**: Assign planned execution dates and strict deadlines with chronological sorting and overdue identification.
-* **Integrated Calendar Events**: View upcoming deadlines and scheduled tasks across daily and monthly calendar projections.
+* **Subtasks & Parent Relationships**: Break complex initiatives into ordered subtasks with clear execution status.
+* **Priority Classification & Eisenhower Matrix**: Organize tasks into Urgent/Important quadrants for focused daily planning.
+* **Task Drafts & Tagging**: Capture thoughts quickly into task drafts and categorize tasks with flexible, searchable tags.
+* **Deadlines & Planned Dates**: Assign planned execution dates and strict deadlines with overdue warnings and chronological sorting.
 
-### 3. Organizational Containers
-* **Hierarchical Workspaces**: Group habits and tasks into structured containers (projects, areas, spheres of responsibility).
-* **Scoped Views & Filtering**: Focus on specific containers or browse aggregate lists with recursive subtree aggregation.
-* **Custom Visual Cues**: Assign distinct colors and icons to containers for instant orientation.
+### 3. Focus Tracking & Habit Linkage
+* **Pomodoro & Stopwatch Modes**: Integrated focus timers with custom intervals, breaks, and session labels.
+* **Automatic Habit Time Accrual**: Link tasks directly to numerical minute habits; completed focus sessions automatically accrue tracked time toward your habit goals under strict non-retroactive attribution rules.
+* **Process Resilience**: Active sessions survive background pauses, process recreation, and device configuration changes without data loss.
 
-### 4. In-Depth Statistics & Analytics
-* **Habit Strength Trends**: Visualize long-term habit formation progress with smooth historical curves.
-* **Completion Calendars & Frequency Heatmaps**: Inspect historical performance and monthly completion grids at a glance.
-* **Optimized Computation Engine**: Fast, memoized evaluation for multi-year histories without UI stutter.
+### 4. Multi-Scale Planning & History Calendar
+* **Planning Calendar**: Visualize upcoming deadlines, scheduled tasks, and habit commitments across Month, Week, and Day views.
+* **History Calendar**: Review past focus session execution timelines with daily aggregations and non-overlapping interval geometry.
+* **Timezone & Boundary Safety**: Accurate handling of midnight transitions, daily distribution, and daylight saving time (DST) shifts.
 
-### 5. Privacy-First & Offline Architecture
-* **Works offline**: Core habit and task tracking work without an internet connection; optional online features may require connectivity.
-* **Data Ownership**: Full export and import support for spreadsheets (CSV) and raw database backups (SQLite).
+### 5. Hierarchical Organizational Containers
+* **Structured Workspaces**: Group habits and tasks into nested containers (projects, areas, spheres of life).
+* **Scoped Views & Filtering**: Focus on an individual container or browse aggregate views with recursive subtree calculations.
+* **Custom Styling**: Assign distinct colors and icons to containers for quick visual recognition.
+
+### 6. Unified Statistics & Analytics
+* **Four Dedicated Analytical Tabs**:
+  * **Overview**: Combined high-level summary of habit strength, completed tasks, and total focus time.
+  * **Habits**: Completion rates, ongoing cycle status, streaks, and responsive multi-cadence bar charts.
+  * **Tasks**: Completion cohorts, urgency/importance breakdown, and drill-down into finished items.
+  * **Focus**: Total focus duration, session frequency, and chronological session lists.
+* **Interactive Filtering & Drill-Downs**: Filter analytics by timeframe (7 days, 30 days, 90 days, or custom ranges) and container scope. Tap any cohort or cycle to inspect contributing records.
+
+### 7. Modern Adaptive UI & Accessibility
+* **Theme Support**: Polished styling in Light, Dark, and true AMOLED themes.
+* **Accessibility-First**: All interactive controls maintain minimum 48×48 dp touch target geometries, with robust layout resilience under 200% system font scaling and narrow screen widths (down to 320 dp).
+* **Modern Settings**: Redesigned, card-based preferences architecture.
+
+### 8. Privacy-First & Offline Architecture
+* **100% Local Storage**: Operates entirely offline without requiring user accounts or third-party cloud backends.
+* **Schema Reliability**: SQLite Schema v35 with safe, backward-compatible automated migrations.
+* **Complete Data Ownership**: Export and import full database archives (JSON v4 snapshots) and spreadsheet-compatible CSV records at any time.
 
 ---
 
 ## Screenshots
 
 > [!NOTE]
-> The screenshots below illustrate the core habit-tracking interface inherited from the upstream Loop Habit Tracker project. Updated screenshots featuring UHabit Next task management, organizational containers, and adaptive navigation will be added in a future release.
+> The screenshots below illustrate the core habit-tracking interface inherited from the upstream Loop Habit Tracker project. Updated gallery screenshots featuring UHabit Next task management, calendars, focus tracking, and unified statistics will be added in upcoming releases.
 
 <p align="center">
   <img src="screenshots/1.png" alt="Main habit list" width="28%" />
@@ -66,14 +86,14 @@
 
 ## Technology Stack & Requirements
 
-* **Architecture**: Kotlin Multiplatform (`uhabits-core` domain & logic, `uhabits-android` presentation & platform integration)
+* **Architecture**: Kotlin Multiplatform (`uhabits-core` domain logic, `uhabits-android` presentation and system integration)
 * **Language**: Kotlin 2.3.20
 * **Build System**: Gradle 8.13 with Gradle Wrapper
 * **Android Gradle Plugin (AGP)**: 8.13.2
 * **Compilation Target**: `compileSdk 36`, `minSdk 28`
 * **Java Development Kit (JDK)**: JDK 17 (e.g., Eclipse Temurin 17)
 * **Code Shrinking & Optimization**: R8 8.13.19 (bundled with AGP)
-* **Database**: SQLite (via native KMP IO abstractions)
+* **Database**: SQLite (via Kotlin Multiplatform IO abstractions), Schema v35
 
 ---
 
@@ -106,7 +126,7 @@ cd uhabits-plus
 ./gradlew :uhabits-core:jvmTest :uhabits-android:testDebugUnitTest :uhabits-android:testReleaseUnitTest
 ```
 
-Generated APKs will be located in:
+Generated APKs are located in:
 * Debug APK: `uhabits-android/build/outputs/apk/debug/uhabits-android-debug.apk`
 * Release APK: `uhabits-android/build/outputs/apk/release/uhabits-android-release-unsigned.apk`
 
@@ -117,9 +137,9 @@ For additional setup and troubleshooting details, see [docs/BUILD.md](docs/BUILD
 ## Project Status & Upstream Relationship
 
 * **Development Fork**: This repository (`PalPalych5/uhabits-plus`) is an independent, active development fork advancing the UHabit Next initiative.
-* **Upstream Attribution**: UHabit Next is derived from [Loop Habit Tracker](https://github.com/iSoron/uhabits), created by **Álinson Santos Xavier** and contributors. We acknowledge and appreciate the excellent engineering and design of the original project.
-* **Non-Affiliation Notice**: UHabit Next is not the official upstream Loop Habit Tracker release. Upstream Loop binaries distributed on Google Play or F-Droid do not contain UHabit Next task-management, container, or architectural enhancements.
-* **Distribution**: Prebuilt binaries are not currently published to app stores. Users and contributors are invited to compile directly from source or follow the repository's GitHub releases.
+* **Upstream Attribution**: UHabit Next is derived from [Loop Habit Tracker](https://github.com/iSoron/uhabits), created by **Álinson Santos Xavier** and contributors. We acknowledge and appreciate the foundational engineering and design of the original project.
+* **Non-Affiliation Notice**: UHabit Next is not the official upstream Loop Habit Tracker release. Upstream Loop binaries distributed on Google Play or F-Droid do not contain UHabit Next task management, focus tracking, or architectural extensions.
+* **Third-Party Components**: Third-party notices and licenses (including Tabler Icons under MIT) are documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [NOTICE.md](NOTICE.md).
 
 ---
 
