@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
+  ~
+  ~ This file is part of Loop Habit Tracker.
+  ~
+  ~ Loop Habit Tracker is free software: you can redistribute it and/or modify
+  ~ it under the terms of the GNU General Public License as published by the
+  ~ Free Software Foundation, either version 3 of the License, or (at your
+  ~ option) any later version.
+  -->
+<resources>
+    <!-- Screen and Navigation -->
+    <string name="unified_statistics_title">Statistics</string>
+    <string name="unified_statistics_tab_overview">Overview</string>
+    <string name="unified_statistics_tab_habits">Habits</string>
+    <string name="unified_statistics_tab_tasks">Tasks</string>
+    <string name="unified_statistics_tab_focus">Focus</string>
+
+    <!-- Periods -->
+    <string name="unified_statistics_period_day">Day</string>
+    <string name="unified_statistics_period_week">Week</string>
+    <string name="unified_statistics_period_month">Month</string>
+    <string name="unified_statistics_period_year">Year</string>
+    <string name="unified_statistics_period_all">All</string>
+    <string name="unified_statistics_prev_period">Previous period</string>
+    <string name="unified_statistics_next_period">Next period</string>
+    <string name="unified_statistics_since_date">Since %1$s</string>
+
+    <!-- Section Scope -->
+    <string name="unified_statistics_scope_all">All sections</string>
+    <string name="unified_statistics_scope_unassigned">Unassigned</string>
+    <string name="unified_statistics_scope_subtree_format">%1$s (subtree)</string>
+    <string name="unified_statistics_scope_here_format">%1$s (this section)</string>
+    <string name="unified_statistics_scope_mode_subtree">Subtree</string>
+    <string name="unified_statistics_scope_mode_here">This section</string>
+    <string name="unified_statistics_filters_title">Statistics scope</string>
+    <string name="unified_statistics_filters_apply">Apply</string>
+    <string name="unified_statistics_filters_reset">Reset</string>
+
+    <!-- States & Refreshing -->
+    <string name="unified_statistics_state_loading">Loading statistics…</string>
+    <string name="unified_statistics_state_refreshing">Refreshing…</string>
+    <string name="unified_statistics_state_failed">Failed to calculate statistics</string>
+    <string name="unified_statistics_state_retry">Retry</string>
+    <string name="unified_statistics_state_partial">Partial data</string>
+    <string name="unified_statistics_state_empty">No data recorded for this period</string>
+    <string name="unified_statistics_domain_failed">Calculation unavailable</string>
+    <string name="unified_statistics_overflow">Overflow (unavailable)</string>
+    <string name="unified_statistics_charts_future_notice">Charts and dynamics will be available in a future update</string>
+
+    <!-- Overview Domain Cards -->
+    <string name="unified_statistics_overview_habits_title">Habit goals</string>
+    <string name="unified_statistics_overview_habits_subtitle">Cycles ended in period</string>
+    <string name="unified_statistics_overview_tasks_title">Completed tasks</string>
+    <string name="unified_statistics_overview_focus_title">Focus recorded</string>
+    <string name="unified_statistics_overview_focus_sessions_format">%1$d sessions</string>
+
+    <!-- Habits Cadence & Results -->
+    <string name="unified_statistics_cadence_daily">Daily</string>
+    <string name="unified_statistics_cadence_weekly">Weekly</string>
+    <string name="unified_statistics_cadence_monthly">Monthly</string>
+    <string name="unified_statistics_cadence_unsupported">Other</string>
+    <string name="unified_statistics_cadence_result_format">%1$d of %2$d satisfied</string>
+    <string name="unified_statistics_cadence_result_with_unknown">%1$d of %2$d satisfied · %3$d without data</string>
+    <string name="unified_statistics_cadence_no_closed_cycles">No closed cycles</string>
+    <string name="unified_statistics_habits_ongoing_context_title">Ongoing cycles</string>
+    <string name="unified_statistics_habits_ongoing_count_format">%1$d ongoing cycle(s) on cutoff date</string>
+    <string name="unified_statistics_habits_list_title">Habits</string>
+    <string name="unified_statistics_habits_empty">No habits in this section</string>
+
+    <!-- Tasks Cohorts & Results -->
+    <string name="unified_statistics_tasks_completed_count">Completed in period: %1$d</string>
+    <string name="unified_statistics_tasks_created_count">Created in period: %1$d</string>
+    <string name="unified_statistics_tasks_due_cohort_title">With due date in period</string>
+    <string name="unified_statistics_tasks_due_total_format">Total: %1$d</string>
+    <string name="unified_statistics_tasks_due_breakdown_format">Completed: %1$d · Overdue: %2$d · Pending: %3$d</string>
+    <string name="unified_statistics_tasks_nodue_cohort_title">No due date · Created in period</string>
+    <string name="unified_statistics_tasks_nodue_total_format">Total: %1$d</string>
+    <string name="unified_statistics_tasks_nodue_breakdown_format">Completed: %1$d · Pending: %2$d</string>
+    <string name="unified_statistics_tasks_empty">No tasks in this section</string>
+
+    <!-- Focus Results & Breakdown -->
+    <string name="unified_statistics_focus_total_duration_title">Total focus duration</string>
+    <string name="unified_statistics_focus_sessions_count_title">Finished sessions</string>
+    <string name="unified_statistics_focus_by_section_title">By section</string>
+    <string name="unified_statistics_focus_by_target_title">By target type</string>
+    <string name="unified_statistics_focus_target_habits">Habits: %1$s (%2$d sessions)</string>
+    <string name="unified_statistics_focus_target_tasks">Tasks: %1$s (%2$d sessions)</string>
+    <string name="unified_statistics_focus_target_containers">Sections: %1$s (%2$d sessions)</string>
+    <string name="unified_statistics_focus_target_unassigned">Unassigned: %1$s (%2$d sessions)</string>
+    <string name="unified_statistics_focus_empty">No focus sessions recorded in this period</string>
+
+    <!-- Legacy / Classic Report Action -->
+    <string name="unified_statistics_action_legacy_report">Classic statistics</string>
+    <string name="unified_statistics_action_refresh">Refresh</string>
+
+    <!-- Scoped Entry from ContainerStatisticsActivity -->
+    <string name="container_statistics_action_open_unified">Open in Unified Statistics</string>
+
+    <!-- Time formatting helpers -->
+    <string name="unified_statistics_duration_hours_minutes">%1$d h %2$d min</string>
+    <string name="unified_statistics_duration_minutes_only">%1$d min</string>
+    <string name="unified_statistics_duration_seconds_only">%1$d s</string>
+    <string name="unified_statistics_duration_zero">0 min</string>
+    <string name="unified_statistics_calendar_offset">Habits: day starts at %1$02d:00; tasks and focus: 00:00</string>
+    <string name="unified_statistics_excluded_count">Excluded cycles: %1$d</string>
+    <string name="unified_statistics_unsupported_count">Special schedules outside cycle totals: %1$d</string>
+
+    <!-- PR14.3 Tasks & Focus Charts, Cohorts and Drilldown -->
+    <string name="unified_statistics_tasks_chart_title">Completed tasks by day (pcs)</string>
+    <string name="unified_statistics_focus_chart_title">Focus by day (min)</string>
+    <string name="unified_statistics_focus_chart_subtitle">By session completion date</string>
+    <string name="unified_statistics_due_state_completed">Completed</string>
+    <string name="unified_statistics_due_state_overdue">Overdue</string>
+    <string name="unified_statistics_due_state_pending">Pending</string>
+    <string name="unified_statistics_nodue_state_completed">Completed</string>
+    <string name="unified_statistics_nodue_state_pending">Open</string>
+    <string name="unified_statistics_tasks_due_state_now">State now · %1$s</string>
+    <string name="unified_statistics_tasks_due_disclaimer">Editing due date changes cohort composition</string>
+    <string name="unified_statistics_why_no_ontime_button">Why is there no \"On-time\" metric?</string>
+    <string name="unified_statistics_why_no_ontime_title">Why is there no \"On-time\" indicator?</string>
+    <string name="unified_statistics_why_no_ontime_body">Loop Habit Tracker stores only the task\'s current due date, not a historical snapshot of due date at completion time. Changing a deadline or reopening a task retroactively updates past cohorts. Therefore, rather than showing a misleading pseudo-on-time percentage, the app provides exact completion counts and current overdue state.</string>
+    <string name="unified_statistics_focus_calendar_mode">View on calendar</string>
+    <string name="unified_statistics_focus_show_all_sections">All sections (%1$d)</string>
+    <string name="unified_statistics_focus_target_unnamed">Unnamed</string>
+    <string name="unified_statistics_entity_deleted_task">Deleted task (%1$s)</string>
+    <string name="unified_statistics_entity_deleted_habit">Deleted habit (%1$s)</string>
+    <string name="unified_statistics_entity_deleted_container">Deleted section (%1$s)</string>
+    <string name="unified_statistics_drilldown_completed_day_title">Completed on %1$s</string>
+    <string name="unified_statistics_drilldown_due_cohort_title">Due date in period</string>
+    <string name="unified_statistics_drilldown_nodue_cohort_title">No due date</string>
+    <string name="unified_statistics_drilldown_focus_day_title">Focus on %1$s</string>
+    <string name="unified_statistics_drilldown_section_title">Section: %1$s</string>
+    <string name="unified_statistics_drilldown_target_title">Target: %1$s</string>
+    <string name="unified_statistics_drilldown_calendar_title">Calendar allocation: %1$s</string>
+    <string name="unified_statistics_drilldown_load_more">Show more</string>
+    <string name="unified_statistics_drilldown_empty">No items matching selection</string>
+    <string name="unified_statistics_drilldown_tasks_count">%1$d tasks</string>
+    <string name="unified_statistics_drilldown_sessions_count">%1$d sessions</string>
+    <string name="unified_statistics_session_detail_title">Focus Session</string>
+    <string name="unified_statistics_session_timing_label">Time interval</string>
+    <string name="unified_statistics_session_active_duration_label">Active duration</string>
+    <string name="unified_statistics_session_elapsed_label">Elapsed interval</string>
+    <string name="unified_statistics_session_allocation_estimated">≈ Estimated daily allocation (paused session)</string>
+    <string name="unified_statistics_session_primary_target_label">Primary target</string>
+    <string name="unified_statistics_session_frozen_path_label">Section at session time</string>
+    <string name="unified_statistics_session_path_none">No section</string>
+    <string name="unified_statistics_session_path_missing">Historical section path not recorded</string>
+    <string name="unified_statistics_session_contributions_label">Habit contributions</string>
+    <string name="unified_statistics_session_no_contributions">No habit contributions recorded</string>
+    <string name="unified_statistics_session_contribution_active">Active credit: +%1$s into %2$s</string>
+    <string name="unified_statistics_session_contribution_tombstone">Revoked (Tombstone): %1$s on %2$s</string>
+
+    <!-- PR14.4 Habits & Overview Strings -->
+    <string name="unified_statistics_habits_chart_title">Goal results</string>
+    <string name="unified_statistics_habits_chart_daily">Daily goals</string>
+    <string name="unified_statistics_habits_chart_weekly">Weekly goals</string>
+    <string name="unified_statistics_habits_chart_monthly">Monthly goals</string>
+    <string name="unified_statistics_habits_chart_legend">Satisfied %1$d · Not satisfied %2$d · Without data %3$d</string>
+    <string name="unified_statistics_habits_chart_empty">No closed cycles in period</string>
+
+    <string name="unified_statistics_habits_ongoing_title">Ongoing cycles</string>
+    <string name="unified_statistics_habits_historical_cycles_title">Cycles at period end</string>
+    <string name="unified_statistics_habits_historical_cycle_status">Cycle was not complete at the selected date</string>
+    <string name="unified_statistics_habits_ongoing_reached">Goal reached · cycle ongoing</string>
+    <string name="unified_statistics_habits_ongoing_in_progress">Cycle ongoing</string>
+    <string name="unified_statistics_habits_ongoing_over_limit">Limit exceeded · cycle ongoing</string>
+    <string name="unified_statistics_habits_ongoing_within_limit">Currently within limit</string>
+    <string name="unified_statistics_habits_ongoing_context_format">%1$s · records up to %2$s</string>
+    <string name="unified_statistics_habits_ongoing_see_all">All ongoing cycles (%1$d) ›</string>
+
+    <string name="unified_statistics_habits_preview_title">Habits</string>
+    <string name="unified_statistics_habits_search_hint">Search habits…</string>
+    <string name="unified_statistics_habits_search_button">Search</string>
+    <string name="unified_statistics_habits_all_button">All habits (%1$d) ›</string>
+    <string name="unified_statistics_habits_all_button_no_count">All habits ›</string>
+    <string name="unified_statistics_habits_archived_badge">Archived</string>
+    <string name="unified_statistics_action_compare_habits">Compare habits</string>
+
+    <string name="unified_statistics_cycle_detail_title">Cycle details</string>
+    <string name="unified_statistics_cycle_dates_label">Cycle boundaries</string>
+    <string name="unified_statistics_cycle_goal_label">Goal and version</string>
+    <string name="unified_statistics_cycle_target_format">Target: %1$s</string>
+    <string name="unified_statistics_cycle_progress_label">Progress and outcome</string>
+    <string name="unified_statistics_cycle_manual_entries">Manual entries</string>
+    <string name="unified_statistics_cycle_contributions">Linked contributions</string>
+    <string name="unified_statistics_cycle_no_contributions">No linked contributions</string>
+    <string name="unified_statistics_cycle_open_habit">Open habit</string>
+    <string name="unified_statistics_cycle_unfiltered_warning_title">Notice</string>
+    <string name="unified_statistics_cycle_unfiltered_warning_body">This habit details screen shows full historical habit data and is not filtered by the selected statistics period.</string>
+    <string name="unified_statistics_cycle_unfiltered_warning_continue">Continue to habit</string>
+    <string name="unified_statistics_cycle_unfiltered_warning_cancel">Cancel</string>
+    <string name="unified_statistics_cycle_outcome_satisfied">Satisfied</string>
+    <string name="unified_statistics_cycle_outcome_not_satisfied">Not satisfied</string>
+    <string name="unified_statistics_cycle_outcome_unknown">Insufficient data</string>
+    <string name="unified_statistics_cycle_outcome_exempt">Exempt (all SKIP)</string>
+    <string name="unified_statistics_cycle_outcome_capacity_excluded">Not evaluated: insufficient days</string>
+    <string name="unified_statistics_cycle_outcome_unavailable">Unavailable</string>
+    <string name="unified_statistics_cycle_lifecycle_partial">Initial partial cycle</string>
+    <string name="unified_statistics_cycle_lifecycle_transition">Transition cycle (goal change)</string>
+    <string name="unified_statistics_cycle_lifecycle_ongoing">Cycle still ongoing</string>
+    <string name="unified_statistics_cycle_habit_deleted">Habit was deleted</string>
+
+    <string name="unified_statistics_overview_dynamics_title">Period dynamics</string>
+    <string name="unified_statistics_overview_dynamics_subtitle">Daily goals, tasks and focus on a shared timeline</string>
+    <string name="unified_statistics_overview_dynamics_habits">Daily goals</string>
+    <string name="unified_statistics_overview_dynamics_tasks">Completions (pcs)</string>
+    <string name="unified_statistics_overview_dynamics_focus">Focus (min)</string>
+    <string name="unified_statistics_overview_dynamics_unknown_notice">There are days without entries or with incomplete data</string>
+    <string name="unified_statistics_drilldown_cycles_count">%1$d cycles</string>
+
+    <!-- Cadence Breakdown Strings (no mixed category, no false zero) -->
+    <string name="unified_statistics_cadence_breakdown">Achieved: %1$d · Failed: %2$d</string>
+    <string name="unified_statistics_cadence_breakdown_with_unknown">Achieved: %1$d · Failed: %2$d · Unknown: %3$d</string>
+    <string name="unified_statistics_cadence_exempt_and_capacity">Exempt: %1$d · Capacity: %2$d</string>
+    <string name="unified_statistics_cadence_exempt_only">Exempt: %1$d</string>
+    <string name="unified_statistics_cadence_capacity_only">Capacity: %1$d</string>
+    <string name="unified_statistics_cadence_partial_and_transition">Partial: %1$d · Transition: %2$d</string>
+    <string name="unified_statistics_cadence_partial_only">Partial: %1$d</string>
+    <string name="unified_statistics_cadence_transition_only">Transition: %1$d</string>
+    <string name="unified_statistics_cadence_ongoing_count">Ongoing: %1$d</string>
+    <string name="unified_statistics_cadence_historical_count">At period end: %1$d</string>
+    <string name="unified_statistics_cadence_unavailable_count">Unavailable: %1$d</string>
+
+    <!-- Ongoing Preview Strings -->
+    <string name="unified_statistics_habits_ongoing_actual_format">Actual: %1$s</string>
+    <string name="unified_statistics_habits_ongoing_coverage_warning">Incomplete coverage (%1$d days without data)</string>
+    <string name="unified_statistics_habits_ongoing_coverage_warning_generic">Incomplete coverage (contains days without data)</string>
+
+    <!-- Cycle Detail Pagination & Contribution Classification Strings -->
+    <string name="unified_statistics_pagination_page_format">Page %1$d of %2$d (%3$d–%4$d of %5$d)</string>
+    <string name="unified_statistics_pagination_prev">‹ Previous</string>
+    <string name="unified_statistics_pagination_next">Next ›</string>
+    <string name="unified_statistics_cycle_contribution_active">Active credit: +%1$s (%2$s)</string>
+    <string name="unified_statistics_cycle_contribution_excluded">Excluded (SKIP/not included): +%1$s (%2$s)</string>
+    <string name="unified_statistics_cycle_contribution_revoked">Revoked (Tombstone): -%1$s (%2$s)</string>
+</resources>
