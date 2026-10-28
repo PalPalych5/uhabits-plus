@@ -34,6 +34,7 @@ import org.isoron.uhabits.activities.habits.edit.HabitTypeDialog
 import org.isoron.uhabits.activities.habits.list.ListHabitsDisplayMode
 import org.isoron.uhabits.activities.habits.list.ListHabitsFragment
 import org.isoron.uhabits.activities.statistics.StatisticsFragment
+import org.isoron.uhabits.activities.statistics.UnifiedStatisticsFragment
 import org.isoron.uhabits.activities.settings.SettingsSectionFragment
 import org.isoron.uhabits.activities.settings.AccentColorManager
 import org.isoron.uhabits.core.preferences.Preferences
@@ -75,6 +76,32 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     private val experimentalWide: Boolean
         get() = appComponent.session.isNextArchitecture && resources.configuration.screenWidthDp >= 600
 
+    private var activeMidnightTimer: org.isoron.uhabits.core.utils.MidnightTimer? = null
+    private val datasetListener: () -> Unit = {
+        val app = application as? HabitsApplication
+        if (app != null && !app.isDatasetRebuilding) {
+            if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                startMidnightTimer()
+            }
+        } else if (app?.isDatasetRebuilding == true) {
+            stopMidnightTimer()
+        }
+    }
+
+    private fun startMidnightTimer() {
+        val timer = appComponent.midnightTimer
+        if (activeMidnightTimer !== timer) {
+            activeMidnightTimer?.onPause()
+            activeMidnightTimer = timer
+            timer.onResume()
+        }
+    }
+
+    private fun stopMidnightTimer() {
+        activeMidnightTimer?.onPause()
+        activeMidnightTimer = null
+    }
+
     private val permissionLauncher = registerForActivityResult(RequestPermission()) { granted ->
         if (granted) scheduleReminders()
         else Log.i("MainActivity", "POST_NOTIFICATIONS denied")
@@ -89,6 +116,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         currentTheme = prefs.theme
         currentResolvedNightMode = themeSwitcher.isNightMode
         prefs.addListener(this)
+        (application as? HabitsApplication)?.addDatasetListener(datasetListener)
         BaseExceptionHandler.install(this)
 
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -250,7 +278,21 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         val fragment = when (destination) {
             MainDestination.HABITS, MainDestination.ARCHIVE -> ListHabitsFragment()
             MainDestination.TASKS -> TasksFragment()
-            MainDestination.STATISTICS -> StatisticsFragment()
+            MainDestination.STATISTICS -> {
+                if (appComponent.session.isNextArchitecture) {
+                    val cid = intent.getStringExtra(EXTRA_STATISTICS_CONTAINER_ID)?.takeIf { it.isNotBlank() }
+                    val incDesc = intent.getBooleanExtra(EXTRA_STATISTICS_INCLUDE_DESCENDANTS, true)
+                    if (cid != null) {
+                        intent.removeExtra(EXTRA_STATISTICS_CONTAINER_ID)
+                        intent.removeExtra(EXTRA_STATISTICS_INCLUDE_DESCENDANTS)
+                        UnifiedStatisticsFragment.newInstance(cid, incDesc)
+                    } else {
+                        UnifiedStatisticsFragment()
+                    }
+                } else {
+                    StatisticsFragment()
+                }
+            }
             MainDestination.SETTINGS -> SettingsSectionFragment.mainTab()
         }
         configureWorkspaceFragment(fragment)
@@ -309,6 +351,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         val slide = dp(slideDistance) * if (direction >= 0) 1f else -1f
         isBottomTabTransitionRunning = true
         (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionStarted()
+        (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? UnifiedStatisticsFragment)?.onTabTransitionStarted()
         updateBottomSelection(destination, animate = true, previous = source)
 
         if (target is ListHabitsFragment) {
@@ -355,6 +398,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                     if (tabTransitionToken == token) {
                         isBottomTabTransitionRunning = false
                         (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionEnded()
+                        (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? UnifiedStatisticsFragment)?.onTabTransitionEnded()
                     }
                 }
 
@@ -377,6 +421,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                     resetFragmentRoot(targetView)
                     isBottomTabTransitionRunning = false
                     (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionEnded()
+                    (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? UnifiedStatisticsFragment)?.onTabTransitionEnded()
                 }
             })
             .start()
@@ -663,13 +708,22 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
             }
             navigate(destination)
         }
+        val statsContainerId = intent.getStringExtra(EXTRA_STATISTICS_CONTAINER_ID)?.takeIf { it.isNotBlank() }
+        val statsIncludeDescendants = intent.getBooleanExtra(EXTRA_STATISTICS_INCLUDE_DESCENDANTS, true)
+        if (statsContainerId != null) {
+            intent.removeExtra(EXTRA_STATISTICS_CONTAINER_ID)
+            intent.removeExtra(EXTRA_STATISTICS_INCLUDE_DESCENDANTS)
+            (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? UnifiedStatisticsFragment)?.applyScopedContainer(
+                org.isoron.uhabits.core.containers.ContainerId(statsContainerId), statsIncludeDescendants
+            )
+        }
         if (intent.action != null) habitsFragment().handleIntent(intent)
         intent.action = null
     }
 
     override fun onResume() {
         super.onResume()
-        appComponent.midnightTimer.onResume()
+        startMidnightTimer()
         requestNotificationPermissionAndSchedule()
         appComponent.taskRunner.run {
             try {
@@ -714,7 +768,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     override fun onPause() {
-        appComponent.midnightTimer.onPause()
+        stopMidnightTimer()
         super.onPause()
     }
 
@@ -726,6 +780,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     override fun onDestroy() {
         tabTransitionToken++
         cancelTabTransitionAnimations()
+        (application as? HabitsApplication)?.removeDatasetListener(datasetListener)
         prefs.removeListener(this)
         super.onDestroy()
     }
@@ -800,6 +855,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                 )
                 (supportFragmentManager.findFragmentByTag(TAG_TASKS) as? TasksFragment)?.refresh()
                 (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.refresh()
+                (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? UnifiedStatisticsFragment)?.refresh()
 
                 prefs.syncLastUiRefreshReason = reason
                 prefs.syncLastUiRefreshAt = System.currentTimeMillis()
@@ -996,6 +1052,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
             }
         }
         (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionEnded()
+        (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? UnifiedStatisticsFragment)?.onTabTransitionEnded()
     }
 
     private fun resetFragmentRoot(view: View?) {
@@ -1030,14 +1087,23 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         private const val ARCHIVE_PUSH_MS = 280L
         private const val ARCHIVE_POP_MS = 250L
 
+        const val EXTRA_STATISTICS_CONTAINER_ID = "org.isoron.uhabits.STATISTICS_CONTAINER_ID"
+        const val EXTRA_STATISTICS_INCLUDE_DESCENDANTS = "org.isoron.uhabits.STATISTICS_INCLUDE_DESCENDANTS"
+
         fun intent(
             context: Context,
             destination: MainDestination,
-            showRestoreSuccess: Boolean = false
+            showRestoreSuccess: Boolean = false,
+            statisticsContainerId: String? = null,
+            statisticsIncludeDescendants: Boolean = true,
         ): Intent =
             Intent(context, MainActivity::class.java).apply {
                 putExtra(EXTRA_DESTINATION, destination.name)
                 putExtra(EXTRA_RESTORE_SUCCESS, showRestoreSuccess)
+                if (statisticsContainerId != null) {
+                    putExtra(EXTRA_STATISTICS_CONTAINER_ID, statisticsContainerId)
+                    putExtra(EXTRA_STATISTICS_INCLUDE_DESCENDANTS, statisticsIncludeDescendants)
+                }
                 addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             }
     }

@@ -683,7 +683,26 @@ class ContainerStatisticsActivity : AppCompatActivity() {
         }
     }
 
+    override fun onCreateOptionsMenu(menu: android.view.Menu): Boolean {
+        if (appComponent.session.isNextArchitecture) {
+            menu.add(0, MENU_OPEN_UNIFIED, 0, R.string.container_statistics_action_open_unified)
+                .setIcon(R.drawable.ic_nav_reports)
+                .setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER)
+        }
+        return super.onCreateOptionsMenu(menu)
+    }
+
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        if (item.itemId == MENU_OPEN_UNIFIED) {
+            val intent = org.isoron.uhabits.activities.main.MainActivity.intent(
+                this,
+                org.isoron.uhabits.activities.main.MainDestination.STATISTICS,
+                statisticsContainerId = targetContainerId.value,
+                statisticsIncludeDescendants = (currentScope == ContainerScopeMode.SUBTREE)
+            )
+            startActivity(intent)
+            return true
+        }
         if (item.itemId == android.R.id.home) {
             finish()
             return true
@@ -692,6 +711,7 @@ class ContainerStatisticsActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val MENU_OPEN_UNIFIED = 0x5101
         const val EXTRA_CONTAINER_ID = "org.isoron.uhabits.CONTAINER_ID"
 
         fun start(context: Context, containerId: ContainerId) {

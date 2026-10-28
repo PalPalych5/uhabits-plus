@@ -47,6 +47,14 @@ import java.io.File
  */
 class HabitsApplication : Application() {
 
+    private val datasetListeners = java.util.concurrent.CopyOnWriteArraySet<() -> Unit>()
+    @Volatile var isDatasetRebuilding = false
+        private set
+
+    fun addDatasetListener(listener: () -> Unit) { datasetListeners.add(listener) }
+    fun removeDatasetListener(listener: () -> Unit) { datasetListeners.remove(listener) }
+    private fun notifyDatasetListeners() { datasetListeners.forEach { runCatching { it() } } }
+
     private lateinit var context: Context
     private var widgetUpdater: WidgetUpdater? = null
     private var reminderScheduler: ReminderScheduler? = null
@@ -115,6 +123,8 @@ class HabitsApplication : Application() {
     }
 
     fun shutdownForDatabaseRestoreRestart() {
+        isDatasetRebuilding = true
+        notifyDatasetListeners()
         // A destructive DB restore invalidates every open SQLite/repository/cache handle in the
         // process, so we must shut down and relaunch instead of trying to hot-reload state.
         stopServices()
@@ -170,6 +180,8 @@ class HabitsApplication : Application() {
     }
 
     fun rebuildComponent(session: DatasetSession = sessionManager.resolvedSession()) {
+        isDatasetRebuilding = true
+        notifyDatasetListeners()
         org.isoron.uhabits.utils.HabitsStartupTrace.mark("component.rebuild.begin")
         stopServices()
 
@@ -245,6 +257,8 @@ class HabitsApplication : Application() {
             }
         }
         org.isoron.uhabits.utils.HabitsStartupTrace.mark("component.rebuild.end")
+        isDatasetRebuilding = false
+        notifyDatasetListeners()
     }
 
     private fun stopServices() {
@@ -257,6 +271,7 @@ class HabitsApplication : Application() {
         notificationTray = null
         if (isComponentInitialized) {
             component.widgetRenderer.shutdown()
+            runCatching { component.midnightTimer.onPause() }
             runCatching { component.effectiveHabitReads?.dispose() }
             runCatching { component.focusCreditController?.dispose() }
             runCatching { component.syncCoordinator.dispose() }
