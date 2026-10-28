@@ -50,6 +50,7 @@ open class MidnightTimer(
     @Synchronized
     open fun onPause(): MutableList<Runnable>? {
         logger.info("Pausing timer")
+        if (!::executor.isInitialized) return null
         return executor.shutdownNow()
     }
 
@@ -58,6 +59,9 @@ open class MidnightTimer(
         delayOffsetInMillis: Long = DateUtils.SECOND_LENGTH,
         testExecutor: ScheduledExecutorService? = null
     ) {
+        if (::executor.isInitialized && !executor.isShutdown) {
+            executor.shutdownNow()
+        }
         executor = testExecutor ?: Executors.newSingleThreadScheduledExecutor()
         val initialDelay = DateUtils.millisecondsUntilTomorrowWithOffset(preferences.midnightDelayHours, 0) + delayOffsetInMillis
         logger.info("Scheduling refresh for $initialDelay ms from now")

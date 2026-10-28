@@ -76,6 +76,8 @@ class EffectiveHabitValueService(
     private val hourOffset: Int = 0,
     private val minuteOffset: Int = 0,
     private val firstWeekday: DayOfWeek = DayOfWeek.entries[getFirstWeekdayNumberAccordingToLocale() - 1],
+    private val dateAt: (Long) -> LocalDate = { localDateAt(it, hourOffset, minuteOffset) },
+    private val dayStart: (LocalDate) -> Long = { startOfLocalDay(it, hourOffset, minuteOffset) },
 ) {
     fun valueForDay(habit: Habit, date: LocalDate): EffectiveHabitDay =
         valueForRange(habit, date, date).days.single()
@@ -113,14 +115,14 @@ class EffectiveHabitValueService(
         // A configured offset inside a DST overlap can make the existing Habit date label
         // briefly move backwards. Fetch a one-day envelope and bucket with the canonical
         // function, rather than assuming each label is always one contiguous UTC interval.
-        val start = startOfLocalDay(from.minus(1), hourOffset, minuteOffset)
-        val end = startOfLocalDay(to.plus(2), hourOffset, minuteOffset)
+        val start = dayStart(from.minus(1))
+        val end = dayStart(to.plus(2))
         val allFacts = repository.getByHabitsInRange(byRef.keys, start, end - 1, includeRemoved = true)
         val facts = allFacts.filter { it.isActive }.groupBy { it.targetHabit }
         val tombstonedFacts = allFacts.filter { !it.isActive }.groupBy { it.targetHabit }
         return byRef.mapValues { (ref, habit) ->
-            val byDay = facts[ref].orEmpty().groupBy { localDateAt(it.effectiveTimestamp, hourOffset, minuteOffset) }
-            val tombstonedByDay = tombstonedFacts[ref].orEmpty().groupBy { localDateAt(it.effectiveTimestamp, hourOffset, minuteOffset) }
+            val byDay = facts[ref].orEmpty().groupBy { dateAt(it.effectiveTimestamp) }
+            val tombstonedByDay = tombstonedFacts[ref].orEmpty().groupBy { dateAt(it.effectiveTimestamp) }
             val days = habit.originalEntries.getByInterval(from, to).map { entry ->
                 projectDay(habit, entry, byDay[entry.date].orEmpty(), tombstonedByDay[entry.date].orEmpty())
             }.sortedBy { it.manualEntry.date }

@@ -57,4 +57,11 @@ class MidnightTimerTest : BaseUnitTest() {
             assertEquals(true, suspendedListener)
         }
     }
+
+    @Test
+    fun testMidnightTimer_onPause_safeWithoutResume() {
+        val timer = MidnightTimer(StandardLogging(), mock<Preferences>())
+        val result = timer.onPause()
+        kotlin.test.assertNull(result)
+    }
 }
