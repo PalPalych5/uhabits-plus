@@ -1,5 +1,13 @@
 # Changelog
 
+## UHabit Next — Active Development (Unreleased)
+
+UHabit Next is an experimental fork with no stable public release. Development includes task management, containers, planning, focus sessions and unified statistics. Features and data formats may change.
+
+## Loop Habit Tracker — Historical Changelog
+
+The entries below are inherited from Loop Habit Tracker and do not describe UHabit Next releases.
+
 ## [Unreleased]
 
 ### Added

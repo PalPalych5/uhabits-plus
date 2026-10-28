@@ -1,56 +1,9 @@
-# Developer Guidelines
+# Contributing to UHabit Next
 
-## Communication Channels
+UHabit Next is an independent, experimental fork of Loop Habit Tracker. It has no stable public release; features and data formats may change.
 
-* Our source code is [hosted on GitHub](https://github.com/iSoron/uhabits) and this is where all the main development takes place. We use [GitHub Issues](https://github.com/iSoron/uhabits/issues) for keeping track of open bugs and open development tasks.
-* Regular users are encouraged to post feature requests and support questions under [GitHub Discussions](https://github.com/iSoron/uhabits/discussions). This is also where major announcements about the project are made.
+Use this repository's issues and pull requests for UHabit Next changes. Describe the problem or motivation, relevant reproduction steps, the proposed behavior and checks performed. For a substantial feature, data-model change or interface redesign, open an issue or draft pull request first to discuss the approach. Keep changes focused and preserve upstream attribution and license notices.
 
-* There is also a "Technical Discussion" section on GitHub Discussions for general technical issues (e.g., project fails to build). For technical discussions related to the implementation of a particular feature, please open a draft pull request instead.
+Target the repository's current default branch (`main`) unless a maintainer requests otherwise. Avoid including secrets, private data, generated APKs, emulator data, local paths or test evidence in a pull request.
 
-* Translations are managed in a [separate translation platform](https://translate.loophabits.org/).
-
-## Building and Testing the Project
-
-Please see `docs/BUILD.md` and `docs/TEST.md`
-
-## Branching Policy
-
-This repository uses the [git-flow branching model](https://nvie.com/posts/a-successful-git-branching-model/). Basically, there are two main branches, `dev` and `master`. All the development takes place in the `dev` branch. After the new features have been implemented and tested, they are merged into the `master` branch and a new version of the app is released. Please submit your pull requests against the `dev` branch.
-
-## Submitting Code
-
-Proposed code changes should be submitted to the project through [GitHub pull requests](https://github.com/iSoron/uhabits/pulls). For the basic steps of creating a pull request, see [GitHub's documentation](https://docs.github.com/en/free-pro-team@latest/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request). The following suggestions will help your pull request get merged quickly and with few changes.
-
-* **Write a clear description of your proposed code changes:** Although it may look obvious to you, it's not always clear to others what your pull request is trying to accomplish. Please always describe what problem your pull request is trying to solve, and how it solves it (on a very high level). If you are fixing a bug that has not been reported before, please describe it first, including the steps to reproduce it.
-
-* If your pull request implements a completely new feature or contains large amounts of code, please **discuss it with other developers before writing it**. You are welcome to open a draft pull request outlining how you are planning to solve the problem. The draft pull request may not even contain any code.
-
-* If your pull request involves changes to the user interface, **please work on a mockup first and submit a draft pull request with your proposed UI changes** before writing the code to make it functional, to gather feedback from other developers and users. [Inkscape](https://inkscape.org/) and [Figma](https://www.figma.com/) are good tools that you can use.
-
-* **Keep your pull requests small.** Small pull requests are easy to review and can be quickly merged. The larger your pull request is, the longer it will take for others to review it and for it to get merged. Instead of submitting one large pull request that contains fixes for three separate issues, please submit three small pull requests instead.
-
-* **Keep your pull requests independent.** If you submit multiple pull requests, please make sure that each one can be merged independently of the others. If one of the pull requests needs to be rewritten, the other ones can be merged.
-
-* **Keep refactoring separate.** While implementing bug fixes and new features, you will certainly realize that other parts of our existing code could be improved. Please do not change it yet. Get your bug fix or new feature merged first, then submit a separate pull request for improving the existing code. Avoid renaming classes, removing unnecessary statements, or doing any other refactoring work on pull requests that propose bug fixes or new functionality.
-
-* **AI-assisted pull requests are welcome**, however, since they typically require additional review time to ensure code quality, they should follow the project guidelines even more strictly. In particular, keep them small, and discuss new features with other developers before writing any AI-assisted code. Large (500+ line) AI-assisted pull requests from first-time contributors that implement new features without prior discussion will be closed without consideration.
-
-Further resources:
-
-* [*How to Make Your Code Reviewer Fall in Love with You*](https://mtlynch.io/code-review-love), by Michael Lynch.
-
-## Code Style
-
-For Kotlin, we follow [ktlint](https://ktlint.github.io/) style with default settings. This code style is enforced by our automated build pipeline. To make sure that IntelliJ and Android Studio are configured according to ktlint, run `./gradlew ktlintApplyToIdea`. To check that all code is properly formatted, run `./gradlew ktlintCheck`. You can install a Git pre-commit hook to ensure that the code is properly formatted when you commit using `./gradlew addKtlintFormatGitPreCommitHook`. See more details in [ktlint-gradle](https://github.com/jlleitschuh/ktlint-gradle).
-
-For legacy Java code, we don't have strict guidelines. Please follow a code style similar to the file you are modifying. Note that new classes should be written in Kotlin. Pull requests converting existing Java code to Kotlin are also welcome.
-
-## Release Process
-
-The project loosely follows [semantic versioning](https://semver.org/), adapted for applications. Suppose, for example, that version `1.2.3` has just been released. The next version would be:
-* `1.2.4` if a bug is being fixed.
-* `1.3.0` if minor new features are being introduced.
-* `2.0.0` if major new features are being introduced.
-
-Releases are first made available to beta testers on Google Play and to all F-Droid users. After no bugs are found, they are rolled out to the remaining users. Releases are also made available on [GitHub Releases](https://github.com/iSoron/uhabits/releases).
-
+See [BUILD.md](BUILD.md) for setup and test commands. For user-interface changes, report device or emulator checks separately from build and JVM results. Follow the conventions of the surrounding Kotlin or Java code.
