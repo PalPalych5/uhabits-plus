@@ -26,6 +26,7 @@ kotlin-js-store
 !docs/UHabit_Next_Spec.md
 !docs/uhabit-next-foundation-plan.md
 !docs/UHABIT_PR23_FINAL_ACCEPTANCE.md
+!tools/qa/README.md
 .kotlin
 docs/design/*
 .tmp_visual/
@@ -33,4 +34,6 @@ repomix-output.xml
 
 # Local emulator fixtures, benchmark evidence and isolated build copies.
 /scratch/
-/tools/qa/__pycache__/
+/tools/qa/__pycache__/
+.codex/
+debug.log
