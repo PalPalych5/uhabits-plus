@@ -59,10 +59,6 @@ class SyncCoordinatorTest {
         if (!migrationsDir.exists()) {
             migrationsDir = File("uhabits-core/assets/main/migrations")
         }
-        if (!migrationsDir.exists()) {
-            migrationsDir = File("c:/Users/Pavel/source/repos/uhabits-plus/uhabits-core/assets/main/migrations")
-        }
-
         db.migrateTo(DATABASE_VERSION) { v ->
             val file = File(migrationsDir, "%02d.sql".format(v))
             if (!file.exists()) {

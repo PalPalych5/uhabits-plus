@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$Output,
     [int]$Samples = 5,
-    [string]$Sdk = 'C:\Users\Pavel\AppData\Local\Android\Sdk'
+    [string]$Sdk = $env:ANDROID_HOME
 )
 $ErrorActionPreference = 'Stop'
 $qaAdb = Join-Path $Sdk 'platform-tools\adb.exe'
