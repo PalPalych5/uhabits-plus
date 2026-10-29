@@ -345,4 +345,65 @@ class FocusCapturingTimerTest {
         timer.finish(1)
         assertEquals(1, store.repository.getAll().size)
     }
+@Test
+    fun overtimeTransitionToBreakIsIdempotentAndDoesNotDuplicateFacts() {
+        val timer = timer()
+        timer.configurePomodoro(1, "Task", 1_000, 400)
+        timer.switchMode(1, "Task", TimerMode.POMODORO)
+        timer.isAutoSwitch = false
+        timer.start(1, "Task")
+        now += 1_000
+        assertEquals(PomodoroCompletion.FOCUS, timer.tick())
+        assertEquals(listOf(1_000L), store.repository.getAll().map { it.durationMs })
+
+        now += 300 // 300ms overtime
+        assertTrue(timer.transitionToBreakManually())
+        assertEquals(PomodoroPhase.BREAK, timer.snapshot().phase)
+        assertFalse(timer.snapshot().isRunning)
+        assertEquals(listOf(1_000L, 300L), store.repository.getAll().map { it.durationMs })
+        assertNull(store.load()!!.active)
+
+        // Idempotent: repeated calls do nothing and record no extra facts
+        assertFalse(timer.transitionToBreakManually())
+        assertEquals(PomodoroPhase.BREAK, timer.snapshot().phase)
+        assertEquals(listOf(1_000L, 300L), store.repository.getAll().map { it.durationMs })
+    }
+
+    @Test
+    fun overtimeCaptureAndRestorationPreservesBreakPhaseAndTarget() {
+        val timer1 = timer()
+        timer1.configurePomodoro(1, "Task", 1_000, 400)
+        timer1.switchMode(1, "Task", TimerMode.POMODORO)
+        timer1.isAutoSwitch = false
+        timer1.start(1, "Task")
+        now += 1_000
+        assertEquals(PomodoroCompletion.FOCUS, timer1.tick())
+        now += 250 // overtime
+
+        // Process killed and restored during overtime
+        val timer2 = timer()
+        assertEquals(target, timer2.currentTarget)
+        assertTrue(timer2.snapshot().isOvertime)
+        assertEquals(1_250L, timer2.snapshot().elapsedMillis)
+
+        // Taking break finalizes overtime from restored segment
+        assertTrue(timer2.transitionToBreakManually())
+        assertEquals(PomodoroPhase.BREAK, timer2.snapshot().phase)
+        assertEquals(listOf(1_000L, 250L), store.repository.getAll().map { it.durationMs })
+        assertNull(store.load()!!.active)
+
+        // Starting break countdown
+        assertTrue(timer2.start(1, "Task"))
+        assertTrue(timer2.snapshot().isRunning)
+        assertEquals(PomodoroPhase.BREAK, timer2.snapshot().phase)
+        now += 200
+
+        // Process killed and restored during running break
+        val timer3 = timer()
+        assertEquals(PomodoroPhase.BREAK, timer3.snapshot().phase)
+        assertTrue(timer3.snapshot().isRunning)
+        assertNull(store.load()!!.active)
+        // Break elapsed does not add any focus facts
+        assertEquals(listOf(1_000L, 250L), store.repository.getAll().map { it.durationMs })
+    }
 }

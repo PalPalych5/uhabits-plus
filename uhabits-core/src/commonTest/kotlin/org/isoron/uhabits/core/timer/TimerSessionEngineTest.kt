@@ -235,4 +235,92 @@ class TimerSessionEngineTest {
 
         assertEquals(TimerSessionEngine.FOCUS_MILLIS + 16_000, engine.finish(1))
     }
+@Test
+    fun transitionToBreakManuallyIsIdempotentAndDoesNotToggleBackToFocus() {
+        engine.isAutoSwitch = false
+        engine.switchMode(1, "Reading", TimerMode.POMODORO)
+        engine.start(1, "Reading")
+        now += TimerSessionEngine.FOCUS_MILLIS + 10_000
+        engine.tick()
+
+        assertTrue(engine.transitionToBreakManually())
+        assertEquals(PomodoroPhase.BREAK, engine.snapshot().phase)
+        assertFalse(engine.snapshot().isRunning)
+
+        // Repeated calls must be no-ops (idempotent) and never flip phase back to FOCUS
+        assertFalse(engine.transitionToBreakManually())
+        assertEquals(PomodoroPhase.BREAK, engine.snapshot().phase)
+        assertFalse(engine.transitionToBreakManually())
+        assertEquals(PomodoroPhase.BREAK, engine.snapshot().phase)
+    }
+
+    @Test
+    fun breakCanBeStartedAndCountsDownAfterOvertimeTransition() {
+        engine.isAutoSwitch = false
+        engine.configurePomodoro(1, "Reading", 60_000, 30_000)
+        engine.switchMode(1, "Reading", TimerMode.POMODORO)
+        engine.start(1, "Reading")
+        now += 70_000 // 10s overtime
+        engine.tick()
+        assertTrue(engine.snapshot().isOvertime)
+
+        assertTrue(engine.transitionToBreakManually())
+        assertEquals(PomodoroPhase.BREAK, engine.snapshot().phase)
+        assertEquals(30_000, engine.snapshot().displayMillis)
+
+        // Starting break initiates countdown
+        assertTrue(engine.start(1, "Reading"))
+        assertTrue(engine.snapshot().isRunning)
+        assertEquals(PomodoroPhase.BREAK, engine.snapshot().phase)
+
+        now += 10_000
+        assertEquals(20_000, engine.snapshot().displayMillis)
+        assertEquals(null, engine.tick())
+
+        now += 20_000
+        assertEquals(PomodoroCompletion.BREAK, engine.tick())
+    }
+
+    @Test
+    fun restoresRunningAndStoppedBreakWithoutAlteringSequence() {
+        // Stopped break restore
+        engine.restore(
+            habitId = 1L,
+            habitName = "Study",
+            mode = TimerMode.POMODORO,
+            phase = PomodoroPhase.BREAK,
+            isRunning = false,
+            accumulatedMillis = 5_000,
+            startedAtMillis = 0L,
+            focusDurationMillis = 50_000,
+            breakDurationMillis = 20_000,
+            completionTriggered = false
+        )
+        val stopped = engine.snapshot()
+        assertEquals(PomodoroPhase.BREAK, stopped.phase)
+        assertFalse(stopped.isRunning)
+        assertEquals(15_000, stopped.displayMillis)
+
+        // Idempotence holds on restored break
+        assertFalse(engine.transitionToBreakManually())
+        assertEquals(PomodoroPhase.BREAK, engine.snapshot().phase)
+
+        // Running break restore
+        engine.restore(
+            habitId = 1L,
+            habitName = "Study",
+            mode = TimerMode.POMODORO,
+            phase = PomodoroPhase.BREAK,
+            isRunning = true,
+            accumulatedMillis = 5_000,
+            startedAtMillis = now - 5_000,
+            focusDurationMillis = 50_000,
+            breakDurationMillis = 20_000,
+            completionTriggered = false
+        )
+        val running = engine.snapshot()
+        assertEquals(PomodoroPhase.BREAK, running.phase)
+        assertTrue(running.isRunning)
+        assertEquals(10_000, running.displayMillis)
+    }
 }

@@ -325,11 +325,23 @@ class TimerSessionManager(
         if (disposed) return
         val state = runtime.snapshot()
         val id = state.habitId ?: return
-        if (id != GENERIC_TARGET_ID) habitList.getById(id)?.let { takeBreakManually(it); return }
+        if (id != GENERIC_TARGET_ID) {
+            habitList.getById(id)?.let {
+                takeBreakManually(it)
+                return
+            }
+        }
         if (!session.isNextArchitecture || captureStore == null || state.mode != TimerMode.POMODORO || state.phase != PomodoroPhase.FOCUS) return
-        runtime.transitionToBreakManually()
-        clearCompletionDisplay()
-        refreshRuntimePresentation()
+        if (runtime.transitionToBreakManually()) {
+            val target = runtime.currentTarget
+            if (target != null) {
+                runtime.start(id, state.habitName, target)
+            } else {
+                runtime.start(id, state.habitName)
+            }
+            clearCompletionDisplay()
+            refreshRuntimePresentation()
+        }
     }
 
     private fun refreshRuntimePresentation() {
@@ -352,13 +364,15 @@ class TimerSessionManager(
             state.elapsedMillis
         }
         saveElapsed(id, unrecorded)
-        runtime.transitionToBreakManually()
-
-        restartTickerIfNeeded()
-        persistState()
-        refreshAlarm()
-        syncForegroundService()
-        notifyListeners()
+        if (runtime.transitionToBreakManually()) {
+            runtime.start(id, habit.name)
+            clearCompletionDisplay()
+            restartTickerIfNeeded()
+            persistState()
+            refreshAlarm()
+            syncForegroundService()
+            notifyListeners()
+        }
     }
 
     fun finish(habit: Habit) {

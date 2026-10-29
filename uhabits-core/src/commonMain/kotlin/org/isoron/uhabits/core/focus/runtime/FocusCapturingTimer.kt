@@ -124,10 +124,23 @@ class FocusCapturingTimer(
         result
     }
 
-    fun transitionToBreakManually() = transitionToNextPhaseManually()
+    fun transitionToBreakManually(): Boolean {
+        val current = engine.snapshot()
+        if (current.mode != TimerMode.POMODORO || current.phase != PomodoroPhase.FOCUS) return false
+        if (store == null) return engine.transitionToBreakManually()
+        return mutate { facts ->
+            finalizeFocus(current, facts, includeOvertime = recordsOvertime())
+            val transitioned = engine.transitionToBreakManually()
+            active = null
+            transitioned
+        }
+    }
 
     fun transitionToNextPhaseManually() = mutate { facts ->
-        finalizeFocus(engine.snapshot(), facts, includeOvertime = recordsOvertime())
+        val current = engine.snapshot()
+        if (current.phase == PomodoroPhase.FOCUS) {
+            finalizeFocus(current, facts, includeOvertime = recordsOvertime())
+        }
         engine.transitionToNextPhaseManually()
         active = null
     }

@@ -174,8 +174,10 @@ class TimerSessionEngine(private val clock: () -> Long) {
         return true
     }
 
-    fun transitionToBreakManually() {
+    fun transitionToBreakManually(): Boolean {
+        if (mode != TimerMode.POMODORO || phase != PomodoroPhase.FOCUS) return false
         transitionToNextPhaseManually()
+        return true
     }
 
     fun transitionToNextPhaseManually() {

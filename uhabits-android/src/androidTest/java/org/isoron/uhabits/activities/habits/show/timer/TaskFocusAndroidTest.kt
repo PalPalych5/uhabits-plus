@@ -207,6 +207,10 @@ class TaskFocusAndroidTest {
             Thread.sleep(120)
             f.main { timer.takeBreakCurrent() }
             assertEquals(PomodoroPhase.BREAK, timer.snapshot().phase)
+            assertTrue(timer.snapshot().isRunning)
+            f.main { timer.takeBreakCurrent() }
+            assertEquals(PomodoroPhase.BREAK, timer.snapshot().phase)
+            assertTrue(timer.snapshot().isRunning)
             val fact = facts.getAll().single { it.taskId == task.id }
             assertTrue(fact.durationMs > 0)
             Thread.sleep(120)

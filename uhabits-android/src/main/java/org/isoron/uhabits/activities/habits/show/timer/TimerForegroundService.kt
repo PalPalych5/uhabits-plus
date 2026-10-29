@@ -76,7 +76,7 @@ class TimerForegroundService : Service() {
             TimerNotificationAction.START_BREAK -> {
                 if (state.isOvertime && state.phase == PomodoroPhase.FOCUS) {
                     manager.takeBreakCurrent()
-                } else {
+                } else if (state.mode == TimerMode.POMODORO && state.phase == PomodoroPhase.BREAK && !state.isRunning && state.elapsedMillis == 0L) {
                     manager.pauseOrResumeCurrent()
                 }
             }
