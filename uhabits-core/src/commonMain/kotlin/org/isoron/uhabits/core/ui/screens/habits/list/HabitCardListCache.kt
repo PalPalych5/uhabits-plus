@@ -361,6 +361,16 @@ class HabitCardListCache(
         val notes: MutableMap<Long?, Array<String>>
 
         @Synchronized
+        fun copyMetadataFrom(oldData: CacheData) {
+            for (id in idToHabit.keys) {
+                val meta = oldData.metadata[id]
+                if (meta != null) {
+                    metadata[id] = meta
+                }
+            }
+        }
+
+        @Synchronized
         fun copyCheckmarksFrom(oldData: CacheData) {
             val empty = IntArray(checkmarkCount)
             for (id in idToHabit.keys) {
@@ -546,7 +556,7 @@ class HabitCardListCache(
         private val requestedPrimary = primaryOrder
         private val requestedSecondary = secondaryOrder
         private val requestedCheckmarkCount = checkmarkCount
-        private val requestedOrganization = (allHabits as? MemoryHabitList)?.organizationFacade
+        private val requestedOrganization = allHabits.organizationFacade
         private val newData: CacheData
         private val targetId: Long?
         @Volatile
@@ -626,6 +636,7 @@ class HabitCardListCache(
             newData.copyScoresFrom(previous)
             newData.copyCheckmarksFrom(previous)
             newData.copyNoteIndicatorsFrom(previous)
+            newData.copyMetadataFrom(previous)
             val today = getToday()
             val dateFrom = today.minus(requestedCheckmarkCount - 1)
             for (position in newData.habits.indices) {

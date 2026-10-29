@@ -129,8 +129,23 @@ class EffectiveHabitReadSnapshot internal constructor(
     fun dayOrNull(date: LocalDate): EffectiveHabitDay? = byDate[date]
 
     /** PR15 calendar achievement, intentionally distinct from legacy rolling score and completion. */
-    fun goalAchievementOn(date: LocalDate): GoalPeriodAchievement =
-        GoalPeriodAchievement(service.goalProgressOn(captured, date, days))
+    fun goalAchievementOn(date: LocalDate): GoalPeriodAchievement {
+        val goal = captured.goalAt(date)
+        val start = when (goal.frequency.denominator) {
+            7 -> date.startOfWeek(calendar.firstWeekday)
+            30 -> date.startOfMonth()
+            else -> date
+        }
+        val end = when (goal.frequency.denominator) {
+            7 -> start.plus(6)
+            30 -> start.plus(start.monthLength - 1)
+            else -> date
+        }
+        val first = start.daysSince2000 - from.daysSince2000
+        val last = end.daysSince2000 - from.daysSince2000
+        require(first >= 0 && last < days.size) { "Date outside snapshot goal period" }
+        return GoalPeriodAchievement(service.goalProgressOn(captured, date, days.subList(first, last + 1)))
+    }
 
     /** Same compatibility definition before/after insert or final tombstone, with typed coverage. */
     fun compatibilityCompletionOn(date: LocalDate): CompatibilityCompletion {

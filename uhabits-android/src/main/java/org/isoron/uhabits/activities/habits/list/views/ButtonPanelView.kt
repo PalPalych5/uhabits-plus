@@ -36,7 +36,7 @@ abstract class ButtonPanelView<T : View>(
 
     var buttonCount = 0
         set(value) {
-            if (field == value) return
+            if (field == value && buttons.size == value) return
             field = value
             inflateButtons()
         }

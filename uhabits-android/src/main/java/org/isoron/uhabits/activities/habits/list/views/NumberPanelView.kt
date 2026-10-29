@@ -108,7 +108,17 @@ class NumberPanelView(
                     if (date < snapshot.from || date > snapshot.to) null else snapshot.day(date)
                 }
                 button.effectiveCompletion = effectiveSnapshot?.let { snapshot ->
-                    if (date < snapshot.from || date > snapshot.to) null else snapshot.compatibilityCompletionOn(date).status
+                    val goal = h?.goalAt(date)
+                    when {
+                        date < snapshot.from || date > snapshot.to -> null
+                        goal?.targetType == NumericalHabitType.AT_MOST -> try {
+                            snapshot.goalAchievementOn(date).status
+                        } catch (_: org.isoron.uhabits.core.models.projection.HabitProjectionIntegrityException) {
+                            org.isoron.uhabits.core.models.projection.HabitGoalStatus.UNKNOWN
+                        }
+                        snapshot.hasContributions -> snapshot.compatibilityCompletionOn(date).status
+                        else -> null
+                    }
                 }
                 button.value = when {
                     index + dataOffset < values.size -> values[index + dataOffset]

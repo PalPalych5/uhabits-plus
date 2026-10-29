@@ -169,9 +169,18 @@ class ShowHabitPresenter(
             val today = getToday()
             val oldest = habit.effectiveStatisticsStartDate() ?: snapshot.observedFrom ?: today
             val historyDates = readHabit.computedEntries.getByInterval(oldest, today).map { it.date }
-            val history = if (habit.isNumerical && snapshot.hasContributions) base.history.copy(
-                series = historyDates.map { date ->
-                    when (snapshot.compatibilityCompletionOn(date).status) {
+            val history = if (habit.isNumerical) base.history.copy(
+                series = historyDates.mapIndexed { index, date ->
+                    val status = if (habit.goalAt(date).targetType == org.isoron.uhabits.core.models.NumericalHabitType.AT_MOST) {
+                        try { snapshot.goalAchievementOn(date).status } catch (_: HabitProjectionIntegrityException) {
+                            return@mapIndexed base.history.series[index]
+                        }
+                    } else if (snapshot.hasContributions) {
+                        snapshot.compatibilityCompletionOn(date).status
+                    } else {
+                        return@mapIndexed base.history.series[index]
+                    }
+                    when (status) {
                         HabitGoalStatus.SATISFIED -> HistoryChart.Square.ON
                         HabitGoalStatus.NOT_SATISFIED -> HistoryChart.Square.GREY
                         HabitGoalStatus.SKIPPED -> HistoryChart.Square.HATCHED

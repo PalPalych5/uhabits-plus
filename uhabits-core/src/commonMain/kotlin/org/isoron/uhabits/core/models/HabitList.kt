@@ -28,6 +28,8 @@ import org.isoron.platform.time.LocalDate
 abstract class HabitList : Iterable<Habit> {
     open val observable: ModelObservable = ModelObservable()
 
+    open var organizationFacade: org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade? = null
+
     open var filter: HabitMatcher = HabitMatcher(isArchivedAllowed = true)
         internal set
 

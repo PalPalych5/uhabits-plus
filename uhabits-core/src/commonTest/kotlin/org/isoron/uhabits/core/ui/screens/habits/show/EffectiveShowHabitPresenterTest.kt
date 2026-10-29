@@ -60,6 +60,42 @@ class EffectiveShowHabitPresenterTest : BaseUnitTest() {
         assertTrue(h.originalEntries.getKnown().isEmpty())
     }
 
+    @Test fun weeklyLimitHistoryUsesCalendarCoverageWithoutInventingZeroes() {
+        val h = habit().apply {
+            frequency = Frequency.WEEKLY
+            targetType = NumericalHabitType.AT_MOST
+            targetValue = 180.0
+            originalEntries.add(Entry(getToday(), 30000))
+            recompute()
+        }
+        val state = ShowHabitPresenter.buildState(h, Preferences(MemoryStorage()), LightTheme(), snapshot(h, MemoryContributionRepository()))
+        assertEquals(HabitGoalStatus.UNKNOWN, state.goalAchievement!!.status)
+        assertEquals(org.isoron.uhabits.core.ui.views.HistoryChart.Square.GREY, state.history.series.first())
+    }
+
+    @Test fun weeklyLimitHistoryFollowsSnapshotFirstWeekday() {
+        val sunday = LocalDate(2015, 1, 25)
+        setToday(sunday)
+        val h = habit().apply {
+            frequency = Frequency.WEEKLY
+            targetType = NumericalHabitType.AT_MOST
+            targetValue = 180.0
+            statisticsStartDate = sunday.minus(6)
+            for (offset in -6..6) originalEntries.add(Entry(sunday.plus(offset), 0))
+            originalEntries.add(Entry(sunday.minus(6), 200000))
+            originalEntries.add(Entry(sunday, 30000))
+            recompute()
+        }
+        val provider = EffectiveHabitReadSnapshotProvider(MemoryContributionRepository())
+        fun history(first: DayOfWeek): org.isoron.uhabits.core.ui.views.HistoryChart.Square {
+            val read = provider.prepare(listOf(h), sunday.minus(6), sunday, "test", 0,
+                EffectiveReadCalendarContext("UTC", first, 0, 0)).getValue(HabitRef(h.uuid!!))
+            return ShowHabitPresenter.buildState(h, Preferences(MemoryStorage()), LightTheme(), read).history.series.first()
+        }
+        assertEquals(org.isoron.uhabits.core.ui.views.HistoryChart.Square.GREY, history(DayOfWeek.MONDAY))
+        assertEquals(org.isoron.uhabits.core.ui.views.HistoryChart.Square.ON, history(DayOfWeek.SUNDAY))
+    }
+
     @Test fun manualHistoricalUnitBoundaryOnlyGatesCalendarGoal() {
         val h = habit(); h.frequency = Frequency(1, 7); h.targetValue = 300.0
         h.goalHistory.add(HabitGoal(getToday().minus(6), Frequency(1, 7), NumericalHabitType.AT_LEAST, 300.0, "pages"))

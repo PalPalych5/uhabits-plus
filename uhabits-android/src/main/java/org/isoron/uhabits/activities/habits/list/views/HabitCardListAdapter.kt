@@ -149,6 +149,11 @@ class HabitCardListAdapter(
                 habit != null && card.habit === habit && listView != null
             ) {
                 val id = requireNotNull(habit.id)
+                listView?.let { lv ->
+                    if (card.buttonCount != lv.checkmarkCount && lv.checkmarkCount > 0) {
+                        card.buttonCount = lv.checkmarkCount
+                    }
+                }
                 HabitFrameTiming.measure("habit.card.entry.bind", card) {
                     card.bindEntryData(
                         cache.getScore(id),

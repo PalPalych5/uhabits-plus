@@ -21,6 +21,8 @@ package org.isoron.uhabits.activities.habits.list.views
 
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.view.View
+import android.view.ViewGroup
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
 import org.isoron.platform.time.LocalDate
@@ -29,6 +31,17 @@ import org.isoron.uhabits.BaseViewTest
 import org.isoron.uhabits.R
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.PaletteColor
+import org.isoron.uhabits.core.models.Entry
+import org.isoron.uhabits.core.models.Frequency
+import org.isoron.uhabits.core.models.HabitType
+import org.isoron.uhabits.core.models.NumericalHabitType
+import org.isoron.uhabits.core.containers.HabitRef
+import org.isoron.uhabits.core.contribution.memory.MemoryContributionRepository
+import org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshotProvider
+import org.isoron.uhabits.core.models.projection.EffectiveReadCalendarContext
+import org.isoron.uhabits.core.models.projection.HabitGoalStatus
+import org.isoron.platform.time.DayOfWeek
+import org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale
 import org.junit.Test
 import org.junit.Assert.assertEquals
 import org.junit.runner.RunWith
@@ -36,6 +49,40 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @MediumTest
 class HabitCardViewTest : BaseViewTest() {
+
+    @Test
+    fun manualWeeklyLimitUsesWholeWeekInsteadOfDailyFraction() {
+        val date = getToday()
+        val first = DayOfWeek.entries[getFirstWeekdayNumberAccordingToLocale() - 1]
+        val weekStart = date.startOfWeek(first)
+        val h = fixtures.createEmptyHabit().apply {
+            uuid = "manual-weekly-limit-qa"
+            type = HabitType.NUMERICAL
+            unit = "min"
+            frequency = Frequency.WEEKLY
+            targetType = NumericalHabitType.AT_MOST
+            targetValue = 180.0
+            for (offset in 0..6) originalEntries.add(Entry(weekStart.plus(offset), 0))
+            originalEntries.add(Entry(date, 30000))
+            recompute()
+        }
+        val provider = EffectiveHabitReadSnapshotProvider(MemoryContributionRepository())
+        val calendar = EffectiveReadCalendarContext("UTC", first, 0, 0)
+        fun snapshot() = provider.prepare(listOf(h), date, date, "test", 1, calendar).getValue(HabitRef(h.uuid!!))
+        fun findPanel(v: View): NumberPanelView? {
+            if (v is NumberPanelView) return v
+            if (v is ViewGroup) for (i in 0 until v.childCount) findPanel(v.getChildAt(i))?.let { return it }
+            return null
+        }
+        view.habit = h
+        view.buttonCount = 1
+        view.effectiveSnapshot = snapshot()
+        val panel = requireNotNull(findPanel(view))
+        assertEquals(HabitGoalStatus.SATISFIED, panel.buttons.single().effectiveCompletion)
+        h.originalEntries.add(Entry(date, 200000)); h.recompute()
+        view.effectiveSnapshot = snapshot()
+        assertEquals(HabitGoalStatus.NOT_SATISFIED, panel.buttons.single().effectiveCompletion)
+    }
 
     val PATH = "habits/list/HabitCardView"
     private lateinit var view: HabitCardView

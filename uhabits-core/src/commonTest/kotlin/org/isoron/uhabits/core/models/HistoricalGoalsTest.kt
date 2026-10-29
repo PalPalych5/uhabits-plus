@@ -11,6 +11,27 @@ import kotlin.test.assertTrue
 
 class HistoricalGoalsTest : BaseUnitTest() {
 
+    @Test
+    fun futureGoalTypeChangeDoesNotRewriteEarlierScores() {
+        val start = LocalDate(2015, 1, 5)
+        for (initial in NumericalHabitType.entries) {
+            val later = NumericalHabitType.entries.first { it != initial }
+            val h = modelFactory.buildHabit().apply {
+                type = HabitType.NUMERICAL
+                targetType = initial
+                targetValue = 60.0
+                unit = "min"
+                goalHistory = mutableListOf(HabitGoal(start, Frequency.DAILY, initial, 60.0, "min"))
+                originalEntries.add(Entry(start, 30000))
+                recompute()
+            }
+            val before = h.scores[start].value
+            h.goalHistory.add(HabitGoal(start.plus(2), Frequency.WEEKLY, later, 180.0, "min"))
+            h.recompute()
+            assertEquals(before, h.scores[start].value, "A later goal must not change an earlier score")
+        }
+    }
+
     @BeforeTest
     override fun setUp() {
         super.setUp()

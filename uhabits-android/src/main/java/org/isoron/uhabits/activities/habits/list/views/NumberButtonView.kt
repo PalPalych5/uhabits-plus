@@ -187,7 +187,7 @@ class NumberButtonView(
 
             val activeColor = when {
                 isUnknown -> lowContrast
-                effectiveCompletion == org.isoron.uhabits.core.models.projection.HabitGoalStatus.SATISFIED -> color
+                effectiveCompletion != null -> if (effectiveCompletion == org.isoron.uhabits.core.models.projection.HabitGoalStatus.SATISFIED) color else mediumContrast
                 (targetType == AT_LEAST) && (value >= threshold) -> color
                 (targetType == AT_MOST) && (value <= threshold) -> color
                 else -> mediumContrast

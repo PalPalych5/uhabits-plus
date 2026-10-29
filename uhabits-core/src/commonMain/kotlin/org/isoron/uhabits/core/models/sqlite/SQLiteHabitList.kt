@@ -68,7 +68,7 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
             syncManager.authorityMode = value
         }
 
-    var organizationFacade: HabitOrganizationFacade? = null
+    override var organizationFacade: HabitOrganizationFacade? = null
         set(value) {
             field = value
             list.organizationFacade = value

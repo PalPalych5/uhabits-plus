@@ -65,6 +65,13 @@ class HabitCardListView(
 ) : RecyclerView(context, null, R.attr.scrollableRecyclerViewStyle) {
 
     var checkmarkCount: Int = 0
+        set(value) {
+            if (field == value) return
+            field = value
+            attachedHolders
+                .map { it.itemView as HabitCardView }
+                .forEach { it.buttonCount = value }
+        }
     private var insetDecorationsAdded: Boolean = false
 
     var dataOffset: Int = 0
@@ -183,7 +190,10 @@ class HabitCardListView(
     }
 
     fun attachCardView(holder: HabitCardViewHolder) {
-        (holder.itemView as HabitCardView).dataOffset = dataOffset
+        (holder.itemView as HabitCardView).apply {
+            buttonCount = checkmarkCount
+            dataOffset = this@HabitCardListView.dataOffset
+        }
         attachedHolders.add(holder)
     }
 

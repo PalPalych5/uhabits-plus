@@ -170,6 +170,30 @@ class EffectiveHabitValueServiceTest : BaseUnitTest() {
         assertEquals(HabitGoalStatus.SATISFIED, service.goalProgressOn(h, monday).status)
     }
 
+    @Test fun dailyToWeeklyLimitAndMovingEntryRecomputeBothWeeks() {
+        val h = habit(frequency = Frequency.WEEKLY, target = 180.0, type = NumericalHabitType.AT_MOST)
+        h.goalHistory = mutableListOf(
+            HabitGoal(monday.minus(7), Frequency.DAILY, NumericalHabitType.AT_MOST, 60.0, "min"),
+            HabitGoal(monday, Frequency.WEEKLY, NumericalHabitType.AT_MOST, 180.0, "min")
+        )
+        manual(h, 80000, monday.minus(1))
+        for (offset in 0..13) manual(h, 0, monday.plus(offset))
+        manual(h, 90000, monday)
+        manual(h, 100000, monday.plus(1))
+        assertEquals(HabitGoalStatus.NOT_SATISFIED, service.goalProgressOn(h, monday.minus(1)).status)
+        assertEquals(190000L, service.goalProgressOn(h, monday).value.totalValue)
+        assertEquals(HabitGoalStatus.NOT_SATISFIED, service.goalProgressOn(h, monday).status)
+
+        h.originalEntries.remove(monday.plus(1))
+        manual(h, 100000, monday.plus(7))
+        assertEquals(90000L, service.goalProgressOn(h, monday).value.totalValue)
+        assertEquals(HabitGoalStatus.UNKNOWN, service.goalProgressOn(h, monday).status)
+        manual(h, 0, monday.plus(1))
+        assertEquals(HabitGoalStatus.SATISFIED, service.goalProgressOn(h, monday).status)
+        assertEquals(100000L, service.goalProgressOn(h, monday.plus(7)).value.totalValue)
+        assertEquals(HabitGoalStatus.SATISFIED, service.goalProgressOn(h, monday.plus(7)).status)
+    }
+
     @Test fun booleanWithoutCreditUsesExistingCompletion() {
         val h = habit().apply { type = HabitType.YES_NO }
         manual(h, Entry.YES_MANUAL); h.recompute()
@@ -320,5 +344,19 @@ class EffectiveHabitValueServiceTest : BaseUnitTest() {
         credit(h, 20000, timestamp = startOfLocalDay(monday))
         val value = service.valueForRange(h, monday.minus(1), monday)
         assertEquals(listOf(10000L, 20000L), value.days.map { it.totalValue })
+    }
+
+    @Test fun atMostInclusiveEvaluationMatchesBoundaryRules() {
+        val h1 = habit(target = 60.0, type = NumericalHabitType.AT_MOST); manual(h1, 0); credit(h1, 59000)
+        assertEquals(HabitGoalStatus.SATISFIED, service.goalProgressOn(h1, monday).status)
+
+        val h2 = habit(target = 60.0, type = NumericalHabitType.AT_MOST); manual(h2, 0); credit(h2, 60000)
+        assertEquals(HabitGoalStatus.SATISFIED, service.goalProgressOn(h2, monday).status)
+
+        val h3 = habit(target = 60.0, type = NumericalHabitType.AT_MOST); manual(h3, 0); credit(h3, 80000)
+        assertEquals(HabitGoalStatus.NOT_SATISFIED, service.goalProgressOn(h3, monday).status)
+
+        val h4 = habit(target = 60.0, type = NumericalHabitType.AT_MOST); manual(h4, 0); credit(h4, 100000)
+        assertEquals(HabitGoalStatus.NOT_SATISFIED, service.goalProgressOn(h4, monday).status)
     }
 }

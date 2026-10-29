@@ -70,7 +70,7 @@ class ScoreList {
         to: LocalDate
     ) {
         map.clear()
-        var previousValue = if (habit.isNumerical && habit.targetType == NumericalHabitType.AT_MOST) 1.0 else 0.0
+        var previousValue = if (habit.isNumerical && habit.goalAt(from).targetType == NumericalHabitType.AT_MOST) 1.0 else 0.0
         var date = from
         while (!date.isNewerThan(to)) {
             val goal = habit.goalAt(date)

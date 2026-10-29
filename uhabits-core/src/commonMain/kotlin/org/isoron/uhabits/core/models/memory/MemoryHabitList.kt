@@ -37,7 +37,7 @@ open class MemoryHabitList : HabitList {
     private val list = mutableListOf<Habit>()
     private val blocksList = mutableListOf<HabitBlock>()
 
-    var organizationFacade: HabitOrganizationFacade? = null
+    override var organizationFacade: HabitOrganizationFacade? = null
         set(value) {
             if (field === value) return
             field = value

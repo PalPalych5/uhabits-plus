@@ -15,6 +15,8 @@ import org.isoron.uhabits.core.containers.IconRef
 import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade
 import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import org.isoron.uhabits.core.models.memory.MemoryHabitList
+import org.isoron.uhabits.core.models.sqlite.SQLModelFactory
+import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 import org.isoron.uhabits.core.tasks.Task
 import org.isoron.uhabits.core.tasks.TaskRunner
 import kotlin.test.Test
@@ -118,5 +120,73 @@ class HabitCardListMetadataTest : BaseUnitTest() {
         oldTask.onPostExecute()
         assertEquals(icon, cache.getMetadata(habit.id!!).iconRef)
         assertEquals(root, cache.getMetadata(habit.id!!).rootGroupKey)
+    }
+
+    @Test
+    fun habitListOrganizationFacadeIsResolvedFromHabitListDirectly() {
+        val habit = fixtures.createShortHabit().apply { blockId = 99 }
+        val customList = object : MemoryHabitList() {}
+        customList.add(habit)
+        val facade = mock<HabitOrganizationFacade>()
+        every { facade.mode } returns OrganizationAuthorityMode.CONTAINER_LOCAL
+        every { facade.getHabitVisualIdentity(any()) } returns null
+        every { facade.getRootGroupKey(habit.uuid!!, 99L) } returns "root-container-xyz"
+        customList.organizationFacade = facade
+        val runner = QueuedRunner()
+        val cache = HabitCardListCache(customList, commandRunner, runner, mock())
+        cache.setCheckmarkCount(10)
+        cache.refreshAllHabits(); runner.finish()
+        assertEquals("root-container-xyz", cache.getMetadata(habit.id!!).rootGroupKey)
+    }
+
+    @Test
+    fun sqliteWrapperSuppliesOrganizationMetadataDuringFullAndTargetedRefresh() = runBlocking {
+        val db = buildMemoryDatabase()
+        try {
+            val factory = SQLModelFactory(db)
+            val list = SQLiteHabitList(factory)
+            val first = factory.buildHabit().apply { name = "First" }
+            val second = factory.buildHabit().apply { name = "Second" }
+            list.add(first)
+            list.add(second)
+            val facade = mock<HabitOrganizationFacade>()
+            every { facade.mode } returns OrganizationAuthorityMode.CONTAINER_LOCAL
+            every { facade.getHabitVisualIdentity(any()) } returns null
+            every { facade.getRootGroupKey(any(), any()) } returns "shared-root"
+            list.organizationFacade = facade
+            val runner = QueuedRunner()
+            val cache = HabitCardListCache(list, commandRunner, runner, mock())
+            cache.setCheckmarkCount(10)
+            cache.refreshAllHabits(); runner.finish()
+            assertEquals("shared-root", cache.getMetadata(first.id!!).rootGroupKey)
+            assertEquals("shared-root", cache.getMetadata(second.id!!).rootGroupKey)
+            cache.refreshHabit(first.id!!); runner.finish()
+            assertEquals("shared-root", cache.getMetadata(first.id!!).rootGroupKey)
+            assertEquals("shared-root", cache.getMetadata(second.id!!).rootGroupKey)
+        } finally { db.close() }
+    }
+
+    @Test
+    fun targetedRefreshPreservesMetadataForOtherHabits() {
+        val first = fixtures.createShortHabit(); habitList.add(first)
+        val second = fixtures.createShortHabit(); habitList.add(second)
+        val roots = mutableMapOf(first.uuid!! to "root-1", second.uuid!! to "root-2")
+        val facade = mock<HabitOrganizationFacade>()
+        every { facade.mode } returns OrganizationAuthorityMode.CONTAINER_LOCAL
+        every { facade.getHabitVisualIdentity(any()) } returns null
+        every { facade.getRootGroupKey(first.uuid!!, any()) } calls { roots[first.uuid!!] }
+        every { facade.getRootGroupKey(second.uuid!!, any()) } calls { roots[second.uuid!!] }
+        habitList.organizationFacade = facade
+        val runner = QueuedRunner()
+        val cache = HabitCardListCache(habitList, commandRunner, runner, mock())
+        cache.setCheckmarkCount(10)
+        cache.refreshAllHabits(); runner.finish()
+        assertEquals("root-1", cache.getMetadata(first.id!!).rootGroupKey)
+        assertEquals("root-2", cache.getMetadata(second.id!!).rootGroupKey)
+
+        roots[first.uuid!!] = "root-1-updated"
+        cache.refreshHabit(first.id!!); runner.finish()
+        assertEquals("root-1-updated", cache.getMetadata(first.id!!).rootGroupKey)
+        assertEquals("root-2", cache.getMetadata(second.id!!).rootGroupKey)
     }
 }

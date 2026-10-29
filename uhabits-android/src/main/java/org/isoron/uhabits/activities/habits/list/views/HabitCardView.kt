@@ -121,6 +121,12 @@ class HabitCardView(
         get() = checkmarkPanel.values
         set(values) {
             checkmarkPanel.values = values
+            val goal = habit?.goalAt(org.isoron.platform.time.getToday())
+            if (goal != null) {
+                numberPanel.units = goal.unit
+                numberPanel.targetType = goal.targetType
+                numberPanel.threshold = goal.targetValue / goal.frequency.denominator
+            }
             numberPanel.values = values.map { it / 1000.0 }.toDoubleArray()
         }
 
@@ -139,7 +145,7 @@ class HabitCardView(
 
     var effectiveSnapshot: org.isoron.uhabits.core.models.projection.EffectiveHabitReadSnapshot?
         get() = numberPanel.effectiveSnapshot
-        set(value) { numberPanel.effectiveSnapshot = value?.takeIf { it.hasContributions } }
+        set(value) { numberPanel.effectiveSnapshot = value }
 
     /** Entry-only publication leaves card identity, grouping, goals and styling intact. */
     fun bindEntryData(
@@ -152,9 +158,24 @@ class HabitCardView(
         checkmarkPanel.values = values
         checkmarkPanel.notes = notes
         if (habit?.isNumerical == true) {
+            val goal = habit?.goalAt(org.isoron.platform.time.getToday())
+            if (goal != null) {
+                numberPanel.units = goal.unit
+                numberPanel.targetType = goal.targetType
+                numberPanel.threshold = goal.targetValue / goal.frequency.denominator
+            }
             numberPanel.values = values.map { it / 1000.0 }.toDoubleArray()
             numberPanel.notes = notes
             effectiveSnapshot = snapshot
+            if (numberPanel.visibility != VISIBLE) {
+                numberPanel.visibility = VISIBLE
+                checkmarkPanel.visibility = GONE
+            }
+        } else {
+            if (checkmarkPanel.visibility != VISIBLE) {
+                checkmarkPanel.visibility = VISIBLE
+                numberPanel.visibility = GONE
+            }
         }
     }
 
