@@ -27,6 +27,8 @@ import org.isoron.platform.time.computeToday
 import org.isoron.platform.time.setToday
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.core.ui.widgets.WidgetBehavior
+import org.isoron.uhabits.core.commands.CreateRepetitionCommand
+import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.inject.HabitsApplicationComponent
 import org.isoron.uhabits.intents.IntentParser.CheckmarkIntentData
 
@@ -54,6 +56,7 @@ class WidgetReceiver : BroadcastReceiver() {
         val parser = app.component.intentParser
         val controller = component.widgetController
         val prefs = app.component.preferences
+        setToday(computeToday(prefs.midnightDelayHours, 0))
         val widgetUpdater = app.component.widgetUpdater
         Log.i(TAG, String.format("Received intent: %s", intent.toString()))
         lastReceivedIntent = intent
@@ -78,10 +81,16 @@ class WidgetReceiver : BroadcastReceiver() {
                             data.date
                         )
                     )
-                    controller.onAddRepetition(
-                        data.habit,
-                        data.date
-                    )
+                    val item = data!!
+                    val entry = item.habit.originalEntries.get(item.date)
+                    val command = CreateRepetitionCommand(app.component.habitList, item.habit, item.date, Entry.YES_MANUAL, entry.notes)
+                    val pending = goAsync()
+                    app.component.commandRunner.runWithCompletion(command) { error ->
+                        try {
+                            if (error == null) app.component.notificationTray.cancel(item.habit)
+                            else Log.e(TAG, "Could not save reminder action", error)
+                        } finally { pending.finish() }
+                    }
                 }
                 ACTION_TOGGLE_REPETITION -> {
                     Log.d(
@@ -106,10 +115,16 @@ class WidgetReceiver : BroadcastReceiver() {
                             data.date
                         )
                     )
-                    controller.onRemoveRepetition(
-                        data.habit,
-                        data.date
-                    )
+                    val item = data!!
+                    val entry = item.habit.originalEntries.get(item.date)
+                    val command = CreateRepetitionCommand(app.component.habitList, item.habit, item.date, Entry.NO, entry.notes)
+                    val pending = goAsync()
+                    app.component.commandRunner.runWithCompletion(command) { error ->
+                        try {
+                            if (error == null) app.component.notificationTray.cancel(item.habit)
+                            else Log.e(TAG, "Could not save reminder action", error)
+                        } finally { pending.finish() }
+                    }
                 }
                 ACTION_UPDATE_WIDGETS_VALUE -> {
                     setToday(computeToday(prefs.midnightDelayHours, 0))

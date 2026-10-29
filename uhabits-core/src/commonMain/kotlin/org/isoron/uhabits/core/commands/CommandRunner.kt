@@ -38,12 +38,28 @@ open class CommandRunner(
 
     @Synchronized
     open fun run(command: Command, trace: HabitEditTrace? = null) {
+        enqueue(command, trace, null)
+    }
+
+    @Synchronized
+    fun runWithCompletion(command: Command, completion: (Throwable?) -> Unit) {
+        enqueue(command, null, completion)
+    }
+
+    private fun enqueue(command: Command, trace: HabitEditTrace?, completion: ((Throwable?) -> Unit)?) {
         trace?.event("command.accepted")
         val requested = TimeSource.Monotonic.markNow()
         val previous = pendingCommand
         val completed = CompletableDeferred<Unit>()
         pendingCommand = completed
         trace?.event("command.enqueued")
+        var completionDelivered = false
+        fun finish(cause: Throwable?) {
+            val deliver = synchronized(completed) {
+                if (completionDelivered) false else { completionDelivered = true; true }
+            }
+            if (deliver) completion?.invoke(cause)
+        }
         try { taskRunner.execute(
             object : Task {
                 override suspend fun doInBackground() {
@@ -80,14 +96,18 @@ open class CommandRunner(
                     }
                 }
                 override fun onCompletion(cause: Throwable?) {
+                    completed.complete(Unit)
                     trace?.finish(when (cause) {
                         is kotlinx.coroutines.CancellationException -> "command.cancelled"
                         null -> "command.finished"
                         else -> "command.failed"
                     })
+                    finish(cause)
                 }
             }
         ) } catch (t: Throwable) {
+            completed.complete(Unit)
+            finish(t)
             trace?.finish(if (t is kotlinx.coroutines.CancellationException) "command.cancelled" else "command.failed")
             throw t
         }

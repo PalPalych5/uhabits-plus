@@ -26,7 +26,11 @@ import android.os.Build
 import android.os.Build.VERSION.SDK_INT
 import android.util.Log
 import org.isoron.platform.time.LocalDate
+import org.isoron.platform.time.computeToday
 import org.isoron.platform.time.getToday
+import org.isoron.platform.time.setToday
+import org.isoron.uhabits.core.commands.CreateRepetitionCommand
+import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.core.models.Habit
 
@@ -41,6 +45,7 @@ class ReminderReceiver : BroadcastReceiver() {
         if (intent.action == null) return
         val app = context.applicationContext as HabitsApplication
         val appComponent = app.component
+        setToday(computeToday(appComponent.preferences.midnightDelayHours, 0))
         if (!appComponent.session.capabilities.remindersEnabled) {
             Log.i(TAG, "Reminders disabled in active session, ignoring intent")
             return
@@ -101,6 +106,36 @@ class ReminderReceiver : BroadcastReceiver() {
                         )
                     }
                 }
+                ACTION_ADD_REPETITION, WidgetReceiver.ACTION_ADD_REPETITION -> {
+                    if (habit == null) return
+                    val date = LocalDate.fromUnixTime(timestamp)
+                    Log.d("ReminderReceiver", "onAddRepetition habit=${habit.id} date=$date")
+                    val entry = habit.originalEntries.get(date)
+                    val pending = goAsync()
+                    appComponent.commandRunner.runWithCompletion(
+                        CreateRepetitionCommand(habits, habit, date, Entry.YES_MANUAL, entry.notes)
+                    ) { error ->
+                        try {
+                            if (error == null) appComponent.notificationTray.cancel(habit)
+                            else Log.e(TAG, "Could not save reminder action", error)
+                        } finally { pending.finish() }
+                    }
+                }
+                ACTION_REMOVE_REPETITION, WidgetReceiver.ACTION_REMOVE_REPETITION -> {
+                    if (habit == null) return
+                    val date = LocalDate.fromUnixTime(timestamp)
+                    Log.d("ReminderReceiver", "onRemoveRepetition habit=${habit.id} date=$date")
+                    val entry = habit.originalEntries.get(date)
+                    val pending = goAsync()
+                    appComponent.commandRunner.runWithCompletion(
+                        CreateRepetitionCommand(habits, habit, date, Entry.NO, entry.notes)
+                    ) { error ->
+                        try {
+                            if (error == null) appComponent.notificationTray.cancel(habit)
+                            else Log.e(TAG, "Could not save reminder action", error)
+                        } finally { pending.finish() }
+                    }
+                }
                 Intent.ACTION_BOOT_COMPLETED -> {
                     Log.d("ReminderReceiver", "onBootCompleted")
                     reminderController.onBootCompleted()
@@ -112,6 +147,8 @@ class ReminderReceiver : BroadcastReceiver() {
     }
 
     companion object {
+        const val ACTION_ADD_REPETITION = "org.isoron.uhabits.ACTION_ADD_REPETITION"
+        const val ACTION_REMOVE_REPETITION = "org.isoron.uhabits.ACTION_REMOVE_REPETITION"
         const val ACTION_DISMISS_REMINDER = "org.isoron.uhabits.ACTION_DISMISS_REMINDER"
         const val ACTION_SHOW_REMINDER = "org.isoron.uhabits.ACTION_SHOW_REMINDER"
         const val ACTION_SNOOZE_REMINDER = "org.isoron.uhabits.ACTION_SNOOZE_REMINDER"

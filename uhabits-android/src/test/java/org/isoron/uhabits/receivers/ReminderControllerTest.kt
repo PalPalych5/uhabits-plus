@@ -18,9 +18,10 @@
  */
 package org.isoron.uhabits.receivers
 
+import dev.mokkery.answering.returns
+import dev.mokkery.every
 import dev.mokkery.mock
 import dev.mokkery.verify
-import dev.mokkery.verifyNoMoreCalls
 import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.BaseAndroidJVMTest
 import org.isoron.uhabits.core.preferences.Preferences
@@ -47,12 +48,21 @@ class ReminderControllerTest : BaseAndroidJVMTest() {
 
     @Test
     @Throws(Exception::class)
-    fun testOnDismiss() {
-        verifyNoMoreCalls(reminderScheduler)
-        verifyNoMoreCalls(notificationTray)
-        verifyNoMoreCalls(preferences)
+    fun testOnDismiss_whenNotSticky_cancelsNotification() {
+        val habit = fixtures.createEmptyHabit()
+        every { preferences.shouldMakeNotificationsSticky() } returns false
+        controller.onDismiss(habit)
+        verify { notificationTray.cancel(habit) }
     }
 
+    @Test
+    @Throws(Exception::class)
+    fun testOnDismiss_whenSticky_reshowsNotification() {
+        val habit = fixtures.createEmptyHabit()
+        every { preferences.shouldMakeNotificationsSticky() } returns true
+        controller.onDismiss(habit)
+        verify { notificationTray.reshow(habit) }
+    }
     @Test
     @Throws(Exception::class)
     fun testOnShowReminder() {

@@ -289,8 +289,7 @@
         </receiver>
 
         <receiver android:name=".receivers.WidgetReceiver"
-            android:exported="true"
-            android:permission="false">
+            android:exported="true">
             <intent-filter>
                 <category android:name="android.intent.category.DEFAULT" />
                 <action android:name="org.isoron.uhabits.ACTION_SET_NUMERICAL_VALUE" />

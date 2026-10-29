@@ -47,6 +47,49 @@ class NotificationsEffectiveAndroidTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context = ApplicationProvider.getApplicationContext<Context>()
 
+    @Test
+    fun notificationActionsPersistAndDefaultNotificationIsDismissible() {
+        val app = context.applicationContext as HabitsApplication
+        val original = HabitsApplication.component.session
+        val suffix = UUID.randomUUID().toString().take(8)
+        val session = original.copy(
+            datasetId = "action-$suffix",
+            databaseFilename = "uhabits-test-action-$suffix.db",
+            preferencesNamespace = "uhabits-test-action-$suffix",
+            mode = DatasetMode.CONTAINER_LOCAL_EXPERIMENTAL,
+            organizationAuthority = OrganizationAuthorityMode.CONTAINER_LOCAL,
+            capabilities = DatasetCapabilities.EXPERIMENTAL.copy(remindersEnabled = true, widgetsEnabled = true),
+        )
+        instrumentation.runOnMainSync { app.rebuildComponent(session) }
+        try {
+            val component = HabitsApplication.component
+            val habit = component.modelFactory.buildHabit().apply { name = "Action QA"; type = HabitType.YES_NO }
+            component.habitList.add(habit)
+            val date = getToday()
+            val notification = component.androidNotificationTray.buildNotification(habit, 1000L, date)
+            assertEquals(0, notification.flags and android.app.Notification.FLAG_ONGOING_EVENT)
+            assertTrue(notification.actions.size >= 2)
+            fun awaitValue(expected: Int) {
+                val deadline = android.os.SystemClock.elapsedRealtime() + 10000
+                while (android.os.SystemClock.elapsedRealtime() < deadline) {
+                    instrumentation.waitForIdleSync()
+                    if (habit.originalEntries.get(date).value == expected) return
+                    Thread.sleep(100)
+                }
+                assertEquals(expected, habit.originalEntries.get(date).value)
+            }
+            notification.actions[0].actionIntent.send()
+            awaitValue(Entry.YES_MANUAL)
+            notification.actions[1].actionIntent.send()
+            awaitValue(Entry.NO)
+            notification.actions[1].actionIntent.send()
+            awaitValue(Entry.NO)
+        } finally {
+            instrumentation.runOnMainSync { app.rebuildComponent(original) }
+            instrumentation.waitForIdleSync()
+        }
+    }
+
     private fun captureEvidence(name: String) {
         instrumentation.waitForIdleSync()
         Thread.sleep(300)

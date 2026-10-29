@@ -24,6 +24,7 @@ import android.content.Intent
 import android.net.Uri
 import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.time.LocalDate
+import org.isoron.platform.time.computeToday
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.core.AppScope
 import org.isoron.uhabits.core.models.Habit
@@ -54,13 +55,17 @@ class IntentParser(
     private fun parseDate(intent: Intent): LocalDate {
         val todayMillis = getToday().unixTime
         var timestamp = intent.getLongExtra("timestamp", todayMillis)
-        timestamp = LocalDate.fromUnixTime(timestamp).unixTime
+        val date = LocalDate.fromUnixTime(timestamp)
+        timestamp = date.unixTime
 
-        if (timestamp < 0 || timestamp > todayMillis) {
+        val calendarTodayMillis = computeToday(0, 0).unixTime
+        val maxAllowedMillis = maxOf(todayMillis, calendarTodayMillis)
+
+        if (timestamp < 0 || timestamp > maxAllowedMillis) {
             throw IllegalArgumentException("timestamp is not valid")
         }
 
-        return LocalDate.fromUnixTime(timestamp)
+        return date
     }
 
     class CheckmarkIntentData(var habit: Habit, var date: LocalDate)

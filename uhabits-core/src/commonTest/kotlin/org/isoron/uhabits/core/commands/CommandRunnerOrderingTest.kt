@@ -44,4 +44,35 @@ class CommandRunnerOrderingTest {
         tasks.tasks[1].doInBackground()
         assertEquals(true, persisted)
     }
+
+    @Test fun completionIsDeliveredOnceAfterTaskFinishes() = runTest {
+        val tasks = CapturingRunner()
+        val runner = CommandRunner(tasks)
+        var persisted = false
+        val results = mutableListOf<Throwable?>()
+        runner.runWithCompletion(object : Command { override fun run() { persisted = true } }) { results.add(it) }
+        assertEquals(0, results.size)
+        tasks.tasks.single().doInBackground()
+        assertEquals(true, persisted)
+        assertEquals(0, results.size)
+        tasks.tasks.single().onPostExecute()
+        tasks.tasks.single().onCompletion(null)
+        tasks.tasks.single().onCompletion(null)
+        assertEquals(listOf<Throwable?>(null), results)
+    }
+
+    @Test fun cancellationBeforeExecutionReleasesQueueAndReportsFailure() = runTest {
+        val tasks = CapturingRunner()
+        val runner = CommandRunner(tasks)
+        val failure = IllegalStateException("cancelled")
+        val results = mutableListOf<Throwable?>()
+        runner.runWithCompletion(object : Command { override fun run() {} }) { results.add(it) }
+        var persisted = false
+        runner.run(object : Command { override fun run() { persisted = true } })
+        tasks.tasks[0].onCompletion(failure)
+        tasks.tasks[0].onCompletion(null)
+        tasks.tasks[1].doInBackground()
+        assertEquals(listOf<Throwable?>(failure), results)
+        assertEquals(true, persisted)
+    }
 }
