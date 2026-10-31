@@ -31,6 +31,7 @@ import org.isoron.uhabits.activities.AndroidThemeSwitcher
 import org.isoron.uhabits.core.commands.Command
 import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.models.ModelObservable
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.ui.screens.habits.show.views.HistoryCardPresenter
 import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitPresenter
@@ -41,11 +42,13 @@ import org.isoron.uhabits.core.ui.views.OnDateClickedListener
 import java.util.Locale
 import kotlin.math.min
 
-class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener {
+class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener, ModelObservable.Listener {
 
     private lateinit var commandRunner: CommandRunner
     private lateinit var habit: Habit
     private lateinit var preferences: Preferences
+    private var initialDatasetId: String? = null
+    internal var habitBinding: HistoryEditorHabitBinding? = null
     private var effectiveReads: EffectiveHabitReadController? = null
     private val onEffectiveChange: () -> Unit = {
         if (::dataView.isInitialized) dataView.post { if (isResumed) refreshData() }
@@ -59,7 +62,16 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener {
         clearCurrentDialog()
         val component = (requireActivity().application as HabitsApplication).component
         commandRunner = component.commandRunner
-        habit = component.habitList.getById(requireArguments().getLong("habit"))!!
+        initialDatasetId = component.session.datasetId
+        val habitId = requireArguments().getLong("habit")
+        val initialHabit = component.habitList.getById(habitId)
+        if (initialHabit == null) {
+            dismissAllowingStateLoss()
+            return Dialog(requireContext())
+        }
+        habit = initialHabit
+        habitBinding = HistoryEditorHabitBinding(component.habitList)
+        habitBinding?.initialize(initialHabit)
         preferences = component.preferences
         effectiveReads = component.effectiveHabitReads
 
@@ -99,6 +111,8 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener {
 
     override fun onResume() {
         super.onResume()
+        val component = (activity?.application as? HabitsApplication)?.component
+        component?.habitList?.observable?.addListener(this)
         commandRunner.addListener(this)
         effectiveReads?.revision?.addListener(onEffectiveChange)
         effectiveReads?.revision?.addRollbackListener(onEffectiveChange)
@@ -106,10 +120,16 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener {
     }
 
     override fun onPause() {
+        val component = (activity?.application as? HabitsApplication)?.component
+        component?.habitList?.observable?.removeListener(this)
         commandRunner.removeListener(this)
         effectiveReads?.revision?.removeListener(onEffectiveChange)
         effectiveReads?.revision?.removeRollbackListener(onEffectiveChange)
         super.onPause()
+    }
+
+    override fun onModelChange() {
+        if (::dataView.isInitialized) dataView.post { if (isResumed) refreshData() }
     }
 
     fun setOnDateClickedListener(listener: OnDateClickedListener) {
@@ -118,6 +138,30 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener {
     }
 
     private fun refreshData() {
+        val app = activity?.application as? HabitsApplication
+        val component = app?.component
+        if (habitBinding != null) {
+            val resolution = habitBinding!!.resolve(
+                habitId = arguments?.getLong("habit") ?: (if (::habit.isInitialized) habit.id else null),
+                habitUuid = if (::habit.isInitialized) habit.uuid else null,
+                isDatasetRebuilding = app?.isDatasetRebuilding == true,
+                currentSessionDatasetId = component?.session?.datasetId,
+                initialDatasetId = initialDatasetId
+            )
+            when (resolution) {
+                is HistoryEditorResolutionResult.SessionMismatched,
+                is HistoryEditorResolutionResult.HabitDeleted -> {
+                    dismissAllowingStateLoss()
+                    return
+                }
+                is HistoryEditorResolutionResult.Rebound -> {
+                    habit = resolution.habit
+                    if (resolution.habitChanged) {
+                        chart?.paletteColor = resolution.habit.color
+                    }
+                }
+            }
+        }
         // Only the presentation is projected. Date clicks retain the parent's presenter,
         // whose numerical editor reads canonical manual entries from the real Habit.
         val model = runCatching {

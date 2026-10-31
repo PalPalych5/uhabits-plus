@@ -105,6 +105,8 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
     private var popupJob: Job? = null
     private val refreshGeneration = HabitDetailReadGeneration()
     private val popupGeneration = HabitDetailReadGeneration()
+    private var initialDatasetId: String? = null
+    internal lateinit var habitBinding: ShowHabitHabitBinding
     private lateinit var presenter: ShowHabitPresenter
     private val screen = Screen()
     private var pendingTimerStart: (() -> Unit)? = null
@@ -143,6 +145,7 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
             return
         }
         habit = selectedHabit
+        initialDatasetId = appComponent.session.datasetId
         preferences = appComponent.preferences
         commandRunner = appComponent.commandRunner
         widgetUpdater = appComponent.widgetUpdater
@@ -152,13 +155,14 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
         themeSwitcher = AndroidThemeSwitcher(this, preferences)
         themeSwitcher.apply()
 
-        presenter = ShowHabitPresenter(
+        habitBinding = ShowHabitHabitBinding(
             commandRunner = commandRunner,
-            habit = habit,
             habitList = habitList,
             preferences = preferences,
             screen = screen
         )
+        habitBinding.initialize(habit, this, isResumed = false)
+        presenter = habitBinding.presenter!!
 
         view = ShowHabitView(this)
 
@@ -248,6 +252,9 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
         }
         dismissCurrentDialog()
         commandRunner.removeListener(this)
+        if (::habitBinding.isInitialized) {
+            habitBinding.detach(this)
+        }
         habit.observable.removeListener(this)
         habitList.observable.removeListener(this)
         focusCredit?.removeObserver(focusObserver)
@@ -328,11 +335,61 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
                 refreshJob = kotlinx.coroutines.currentCoroutineContext()[Job]
                 val revision = effectiveReads?.revision?.value
                 val theme = themeSwitcher.currentTheme
+
+                val app = applicationContext as? HabitsApplication
+                val appComponent = app?.component
+                if (::habitBinding.isInitialized) {
+                    val resolution = habitBinding.resolve(
+                        isDatasetRebuilding = app?.isDatasetRebuilding == true,
+                        currentSessionDatasetId = appComponent?.session?.datasetId,
+                        initialDatasetId = initialDatasetId,
+                        listener = this@ShowHabitActivity,
+                        isResumed = readsActive
+                    )
+                    when (resolution) {
+                        is HabitResolutionResult.SessionMismatched,
+                        is HabitResolutionResult.HabitDeleted -> {
+                            finish()
+                            return@launch
+                        }
+                        is HabitResolutionResult.Rebound -> {
+                            habit = resolution.habit
+                            presenter = resolution.presenter
+                            if (resolution.habitChanged) {
+                                view.setListener(presenter)
+                                view.updateHabit(habit)
+                                val menuPresenter = ShowHabitMenuPresenter(
+                                    commandRunner = commandRunner,
+                                    habit = habit,
+                                    habitList = habitList,
+                                    screen = screen,
+                                    system = HabitsDirFinder(AndroidDirFinder(this@ShowHabitActivity)),
+                                    taskRunner = appComponent?.taskRunner ?: (applicationContext as HabitsApplication).component.taskRunner
+                                )
+                                if (effectiveReads != null) {
+                                    menuPresenter.effectiveSnapshotProvider = { habits, from, to ->
+                                        effectiveReads?.snapshots(habits, from, to).orEmpty()
+                                    }
+                                }
+                                menu = ShowHabitMenu(
+                                    activity = this@ShowHabitActivity,
+                                    presenter = menuPresenter,
+                                    preferences = preferences
+                                )
+                                supportFragmentManager.findFragmentByTag("historyEditor")?.let {
+                                    (it as? HistoryEditorDialog)?.setOnDateClickedListener(presenter.historyCardPresenter)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                val currentHabit = habit
                 val loaded = withContext(Dispatchers.IO) {
                     runCatching {
-                        val snapshot = effectiveReads?.snapshot(habit)
+                        val snapshot = effectiveReads?.snapshot(currentHabit)
                         ShowHabitPresenter.buildState(
-                            habit = habit,
+                            habit = currentHabit,
                             preferences = preferences,
                             theme = theme,
                             snapshot = snapshot,
@@ -349,14 +406,14 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
                 view.setState(state)
                 val controller = focusCredit
                 val eligible = controller != null && runCatching {
-                    org.isoron.uhabits.core.rules.HabitTimeValueConverter.validateTargetHabit(habit)
+                    org.isoron.uhabits.core.rules.HabitTimeValueConverter.validateTargetHabit(currentHabit)
                 }.isSuccess
                 if (eligible) {
                     if (state.goalAchievementUnavailable) view.setFocusProgress(null, true)
                     else {
                         val progress = withContext(Dispatchers.IO) {
                             runCatching {
-                                FocusProgressPresentation.from(state.goalAchievement?.progress ?: controller!!.goalProgress(habit))
+                                FocusProgressPresentation.from(state.goalAchievement?.progress ?: controller!!.goalProgress(currentHabit))
                             }
                         }
                         if (!refreshGeneration.accepts(generation) || isFinishing || isDestroyed ||

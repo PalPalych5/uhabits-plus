@@ -37,6 +37,7 @@ import org.isoron.platform.gui.toInt
 import androidx.appcompat.app.AlertDialog
 import org.isoron.uhabits.R
 import android.view.View
+import org.isoron.uhabits.activities.habits.show.views.TimerCardView
 
 class ShowHabitView(context: Context) : FrameLayout(context) {
     private val binding = ShowHabitBinding.inflate(LayoutInflater.from(context))
@@ -126,6 +127,14 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
         binding.timerCard.setNotificationPermissionRequester(requestNotificationPermission)
         binding.timerCard.setAlertHealth(completionNotifier::health, onFixAlertIssue)
         binding.timerCard.setHabit(habit, manager)
+    }
+
+    val timerCard: TimerCardView get() = binding.timerCard
+
+    fun updateHabit(habit: Habit) {
+        habitUnit = habit.unit
+        isTimerEnabled = habit.timerEnabled
+        binding.timerCard.updateHabit(habit)
     }
 
     fun refreshTimerAlertHealth() = binding.timerCard.refreshAlertHealth()

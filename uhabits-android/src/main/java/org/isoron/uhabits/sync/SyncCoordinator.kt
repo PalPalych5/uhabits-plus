@@ -7,6 +7,7 @@ import org.isoron.uhabits.core.database.EntryData
 import org.isoron.uhabits.core.database.HabitBlockData
 import org.isoron.uhabits.core.database.HabitData
 import org.isoron.uhabits.core.database.HabitExtensionData
+import org.isoron.uhabits.core.database.HabitGoalCollisionException
 import org.isoron.uhabits.core.database.HabitGoalData
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
@@ -1837,26 +1838,87 @@ class SyncCoordinator(
             )
             return false
         }
+        val effectiveTimestamp = payload.requiredLong("effective_timestamp", event)
         val existing = modelFactory.habitGoalRepository.findByUuid(event.entityUuid)
+        if (existing != null && (existing.habitId != habit.id!! || existing.effectiveTimestamp != effectiveTimestamp)) {
+            deferRemoteEvent(
+                SyncInboxRecord(
+                    logId = event.logId,
+                    deviceId = event.deviceId,
+                    opUuid = event.opUuid,
+                    entityType = event.entityType,
+                    entityUuid = event.entityUuid,
+                    operationType = event.operationType,
+                    payloadJson = event.payloadJson,
+                    createdAt = event.createdAt,
+                    receivedAt = System.currentTimeMillis(),
+                    deferredReason = "GOAL_COLLISION",
+                    status = "PENDING"
+                )
+            )
+            return false
+        }
         if (!shouldApply(existing?.updatedAt ?: 0L, existing?.deletedAt, event)) {
             modelFactory.syncInboxRepository.deleteByLogId(event.logId)
             return true
         }
-        modelFactory.habitGoalRepository.upsert(
-            HabitGoalData(
-                id = existing?.id,
-                habitId = habit.id!!,
-                uuid = event.entityUuid,
-                effectiveTimestamp = payload.requiredLong("effective_timestamp", event),
-                freqNum = payload.requiredInt("freq_num", event),
-                freqDen = payload.requiredInt("freq_den", event),
-                targetType = payload.requiredInt("target_type", event),
-                targetValue = payload.requiredDouble("target_value", event),
-                unit = payload.optString("unit"),
-                updatedAt = event.createdAt,
-                deletedAt = if (event.operationType == "delete") event.createdAt else null
-            )
+        val targetUuid = event.entityUuid.ifBlank { "${habit.id}:goal:$effectiveTimestamp" }
+        val conflicting = modelFactory.habitGoalRepository.findByHabitAndTimestamp(
+            habit.id!!,
+            effectiveTimestamp
         )
+        if (conflicting != null && conflicting.uuid != targetUuid) {
+            deferRemoteEvent(
+                SyncInboxRecord(
+                    logId = event.logId,
+                    deviceId = event.deviceId,
+                    opUuid = event.opUuid,
+                    entityType = event.entityType,
+                    entityUuid = event.entityUuid,
+                    operationType = event.operationType,
+                    payloadJson = event.payloadJson,
+                    createdAt = event.createdAt,
+                    receivedAt = System.currentTimeMillis(),
+                    deferredReason = "GOAL_COLLISION",
+                    status = "PENDING"
+                )
+            )
+            return false
+        }
+        try {
+            modelFactory.habitGoalRepository.upsert(
+                HabitGoalData(
+                    id = existing?.id,
+                    habitId = habit.id!!,
+                    uuid = event.entityUuid,
+                    effectiveTimestamp = effectiveTimestamp,
+                    freqNum = payload.requiredInt("freq_num", event),
+                    freqDen = payload.requiredInt("freq_den", event),
+                    targetType = payload.requiredInt("target_type", event),
+                    targetValue = payload.requiredDouble("target_value", event),
+                    unit = payload.optString("unit"),
+                    updatedAt = event.createdAt,
+                    deletedAt = if (event.operationType == "delete") event.createdAt else null
+                )
+            )
+        } catch (e: HabitGoalCollisionException) {
+            deferRemoteEvent(
+                SyncInboxRecord(
+                    logId = event.logId,
+                    deviceId = event.deviceId,
+                    opUuid = event.opUuid,
+                    entityType = event.entityType,
+                    entityUuid = event.entityUuid,
+                    operationType = event.operationType,
+                    payloadJson = event.payloadJson,
+                    createdAt = event.createdAt,
+                    receivedAt = System.currentTimeMillis(),
+                    deferredReason = "GOAL_COLLISION",
+                    status = "PENDING"
+                )
+            )
+            return false
+        }
         modelFactory.syncInboxRepository.deleteByLogId(event.logId)
         return true
     }

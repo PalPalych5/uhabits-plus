@@ -49,6 +49,8 @@ class TimerCardView : LinearLayout {
     private var isPrimaryIconTransitioning: Boolean = false
     private var isCollapsingRow: Boolean = false
     private var habit: Habit? = null
+    val currentHabit: Habit?
+        get() = habit
     private var taskId: TaskId? = null
     private var taskTitle: String = ""
     private var manager: TimerSessionManager? = null
@@ -260,6 +262,16 @@ class TimerCardView : LinearLayout {
         this.manager = manager
         manager.prepare(habit)
         if (isAttachedToWindow) manager.addListener(listener)
+        updateUIState()
+    }
+
+    fun updateHabit(habit: Habit) {
+        this.habit = habit
+        this.taskId = null
+        manager?.prepare(habit)
+        if (isEditingDuration && !transitionInProgress) {
+            showEditorPhase(isEditingBreak)
+        }
         updateUIState()
     }
 
