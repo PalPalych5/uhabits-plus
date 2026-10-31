@@ -19,6 +19,7 @@
 package org.isoron.uhabits.core.models
 
 import org.isoron.platform.time.LocalDate
+import kotlin.math.roundToInt
 
 data class Entry(
     val date: LocalDate,
@@ -62,6 +63,42 @@ data class Entry(
          * Value indicating that no data is available for the given timestamp.
          */
         const val UNKNOWN = -1
+
+        /**
+         * Maximum user-facing numerical quantity representable as a 32-bit scaled integer.
+         * Int.MAX_VALUE (2,147,483,647) / 1000.0 = 2,147,483.647.
+         */
+        const val MAX_NUMERICAL_VALUE: Double = Int.MAX_VALUE / 1000.0
+
+        /**
+         * Maximum scaled integer value stored in repetitions.value.
+         */
+        const val MAX_SCALED_VALUE: Int = Int.MAX_VALUE
+
+        /**
+         * Validates and converts a raw numerical habit value into its x1000 scaled integer representation.
+         *
+         * Rejects non-finite values (NaN, Inf), negative values (except UNKNOWN sentinel -0.001),
+         * and out-of-range values (> 2,147,483.647) by throwing [IllegalArgumentException]
+         * rather than silently clamping or wrapping around.
+         */
+        fun toScaledValue(value: Double): Int {
+            if (!value.isFinite()) {
+                throw IllegalArgumentException("Numerical value must be finite, was: $value")
+            }
+            if (value == UNKNOWN.toDouble() / 1000.0) return UNKNOWN
+            if (value == SKIP.toDouble() / 1000.0) return SKIP
+            if (value < 0.0) {
+                throw IllegalArgumentException("Numerical value must be non-negative, was: $value")
+            }
+            val scaled = value * 1000.0
+            if (scaled > MAX_SCALED_VALUE.toDouble()) {
+                throw IllegalArgumentException(
+                    "Numerical value exceeds maximum representable entry ($MAX_NUMERICAL_VALUE): $value"
+                )
+            }
+            return scaled.roundToInt()
+        }
 
         fun nextToggleValue(
             value: Int,

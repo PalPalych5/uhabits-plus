@@ -606,7 +606,10 @@ class EditHabitActivity : AppCompatActivity() {
             habit.blockId = blockId
         }
         if (habitType == HabitType.NUMERICAL) {
-            val parsedTarget = binding.targetInput.text.toString().trim().replace(',', '.').toDoubleOrNull() ?: 1.0
+            val parsedTarget = when (val res = org.isoron.uhabits.activities.common.dialogs.NumericalInputValidator.validateTargetValue(binding.targetInput.text.toString())) {
+                is org.isoron.uhabits.activities.common.dialogs.NumericalInputValidator.ValidationResult.Valid -> res.value
+                else -> 1.0
+            }
             habit.targetValue = parsedTarget
             habit.targetType = targetType
             habit.unit = binding.unitInput.text.trim().toString()
@@ -665,11 +668,21 @@ class EditHabitActivity : AppCompatActivity() {
             isValid = false
         }
         if (habitType == HabitType.NUMERICAL) {
-            val targetStr = binding.targetInput.text.toString().trim().replace(',', '.')
-            val parsed = targetStr.toDoubleOrNull()
-            if (targetStr.isEmpty() || parsed == null || parsed <= 0.0) {
-                binding.targetInput.error = getString(R.string.validation_cannot_be_blank)
-                isValid = false
+            val targetStr = binding.targetInput.text.toString()
+            when (org.isoron.uhabits.activities.common.dialogs.NumericalInputValidator.validateTargetValue(targetStr)) {
+                is org.isoron.uhabits.activities.common.dialogs.NumericalInputValidator.ValidationResult.Valid -> {}
+                is org.isoron.uhabits.activities.common.dialogs.NumericalInputValidator.ValidationResult.OutOfRange -> {
+                    binding.targetInput.error = getString(R.string.validation_number_out_of_range)
+                    isValid = false
+                }
+                is org.isoron.uhabits.activities.common.dialogs.NumericalInputValidator.ValidationResult.InvalidFormat -> {
+                    binding.targetInput.error = if (targetStr.trim().isEmpty()) {
+                        getString(R.string.validation_cannot_be_blank)
+                    } else {
+                        getString(R.string.validation_invalid_number_format)
+                    }
+                    isValid = false
+                }
             }
         }
         return isValid

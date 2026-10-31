@@ -130,13 +130,20 @@ class HistoryCardPresenter(
     private fun showNumberPopup(date: LocalDate) {
         val entry = if (habit.originalEntries.isLoaded) habit.originalEntries.get(date) else null
         val oldValue = entry?.value ?: Entry.UNKNOWN
+        val seedNotes = entry?.notes ?: ""
         screen.showNumberPopup(
             value = if (oldValue != Entry.UNKNOWN) oldValue / 1000.0 else 0.0,
-            notes = entry?.notes ?: "",
+            notes = seedNotes,
             habit = habit,
             date = date,
         ) { newValue: Double, newNotes: String ->
-            val thousands = (newValue * 1000).roundToInt()
+            val thousands = if (oldValue != Entry.UNKNOWN && newValue == oldValue / 1000.0) {
+                oldValue
+            } else if (oldValue == Entry.UNKNOWN && (newValue == Entry.UNKNOWN.toDouble() / 1000.0 || (newValue == 0.0 && seedNotes == newNotes))) {
+                oldValue
+            } else {
+                Entry.toScaledValue(newValue)
+            }
             commandRunner.run(
                 CreateRepetitionCommand(
                     habitList,

@@ -291,7 +291,7 @@ object StatisticsCompletionPolicy {
                 return completion(habit, start, skipped = skipped)
             }
 
-            val actual = knownValues.sumOf { kotlin.math.max(0, it.value) } / 1000.0
+            val actual = knownValues.sumOf { kotlin.math.max(0L, it.value.toLong()) } / 1000.0
             val completed = actual <= targetValue
             return completion(
                 habit = habit,

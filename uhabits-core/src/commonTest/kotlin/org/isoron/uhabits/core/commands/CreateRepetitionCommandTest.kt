@@ -26,6 +26,7 @@ import org.isoron.uhabits.core.models.Habit
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class CreateRepetitionCommandTest : BaseUnitTest() {
     private lateinit var command: CreateRepetitionCommand
@@ -59,5 +60,25 @@ class CreateRepetitionCommandTest : BaseUnitTest() {
         command.run()
         entry = entries.get(today)
         assertEquals(100, entry.value.toLong())
+    }
+
+    @Test
+    fun testNumericalRejectsNewOutOfBoundsRepetitionValue() {
+        val numHabit = fixtures.createNumericalHabit()
+        habitList.add(numHabit)
+        assertFailsWith<IllegalArgumentException> {
+            CreateRepetitionCommand(habitList, numHabit, today, -5, "").run()
+        }
+    }
+
+    @Test
+    fun testNumericalPreservesPreExistingAcceptedRepetitionOnNoteUpdate() {
+        val numHabit = fixtures.createNumericalHabit()
+        habitList.add(numHabit)
+        numHabit.originalEntries.add(Entry(today, 2_000_000_000, "old note"))
+        numHabit.recompute()
+        CreateRepetitionCommand(habitList, numHabit, today, 2_000_000_000, "new note").run()
+        assertEquals("new note", numHabit.originalEntries.get(today).notes)
+        assertEquals(2_000_000_000, numHabit.originalEntries.get(today).value)
     }
 }

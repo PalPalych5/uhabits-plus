@@ -62,7 +62,14 @@ open class ListHabitsBehavior(
             val seedValue = if (entry != null && entry.value != Entry.UNKNOWN) entry.value.toDouble() / 1000.0 else 0.0
             val seedNotes = entry?.notes ?: ""
             screen.showNumberPopup(seedValue, seedNotes, habit, date) { newValue: Double, newNotes: String ->
-                val value = (newValue * 1000).roundToInt()
+                val prevVal = entry?.value ?: Entry.UNKNOWN
+                val value = if (prevVal != Entry.UNKNOWN && newValue == prevVal.toDouble() / 1000.0) {
+                    prevVal
+                } else if (prevVal == Entry.UNKNOWN && (newValue == Entry.UNKNOWN.toDouble() / 1000.0 || (newValue == 0.0 && seedNotes == newNotes))) {
+                    prevVal
+                } else {
+                    Entry.toScaledValue(newValue)
+                }
                 val oldValue = (entry?.value ?: Entry.UNKNOWN).toDouble() / 1000.0
                 if (newValue != oldValue) {
                     if (

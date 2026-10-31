@@ -13,6 +13,7 @@ import org.isoron.uhabits.core.models.projection.EffectiveReadDatabase
 import org.isoron.uhabits.core.models.projection.EffectiveReadRevision
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class AddNumericalEntryOpIsolationTest {
     @Test
@@ -51,6 +52,25 @@ class AddNumericalEntryOpIsolationTest {
             AddNumericalEntryOpCommand(habits, habit, date, 10000, "manual").run()
             assertEquals(50000, habit.originalEntries.get(date).value)
             assertEquals(50000L, db.queryLong("SELECT value FROM Repetitions WHERE habit = ${habit.id} AND deleted_at IS NULL"))
+        } finally { db.close() }
+    }
+
+    @Test
+    fun accumulationRejectsIntegerWrapOverflow() = runTest {
+        setToday(LocalDate(2026, 10, 6))
+        val revision = EffectiveReadRevision("overflow-isolation")
+        val db = EffectiveReadDatabase(TestDatabaseHelper.createEmptyDatabase(), revision)
+        try {
+            val factory = SQLModelFactory(db)
+            val habits = factory.buildHabitList()
+            val habit = factory.buildHabit().apply { type = HabitType.NUMERICAL }
+            habits.add(habit)
+            val date = LocalDate(2026, 10, 6)
+            habit.originalEntries.add(Entry(date, 2_000_000_000, "base"))
+            habit.recompute()
+            assertFailsWith<IllegalArgumentException> {
+                AddNumericalEntryOpCommand(habits, habit, date, 200_000_000, "overflow").run()
+            }
         } finally { db.close() }
     }
 }

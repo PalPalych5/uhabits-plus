@@ -52,6 +52,11 @@ data class CreateRepetitionCommand(
             trace?.event("repetition.noop")
             return
         }
+        if (habit.isNumerical && value != previous.value) {
+            require(value == Entry.UNKNOWN || value == Entry.SKIP || (value in 0..Entry.MAX_SCALED_VALUE)) {
+                "Numerical habit repetition value out of bounds: $value"
+            }
+        }
         timed("repetition.sqliteWrite") {
             val entry = Entry(date, value, notes)
             val habitUuid = habit.uuid

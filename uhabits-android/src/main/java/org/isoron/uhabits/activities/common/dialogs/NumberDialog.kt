@@ -24,8 +24,6 @@ import org.isoron.uhabits.utils.requestFocusWithKeyboard
 import org.isoron.uhabits.utils.sres
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
-import java.text.NumberFormat
-import java.text.ParseException
 
 class NumberDialog : AppCompatDialogFragment() {
 
@@ -134,13 +132,17 @@ class NumberDialog : AppCompatDialogFragment() {
             save()
         }
         view.skipBtnNumber.setOnClickListener {
-            view.value.setText(DecimalFormat("#.###").format((Entry.SKIP.toDouble() / 1000)))
-            save()
+            dismissedViaSaveAction = true
+            val notes = view.notes.text.toString().trim()
+            onToggle(Entry.SKIP.toDouble() / 1000.0, notes)
+            requireDialog().dismiss()
         }
 
         view.unknownBtnNumber.setOnClickListener {
-            view.value.setText(DecimalFormat("#.###").format((Entry.UNKNOWN.toDouble() / 1000)))
-            save()
+            dismissedViaSaveAction = true
+            val notes = view.notes.text.toString().trim()
+            onToggle(Entry.UNKNOWN.toDouble() / 1000.0, notes)
+            requireDialog().dismiss()
         }
 
         view.notes.setOnEditorActionListener { _, _, _ ->
@@ -163,10 +165,11 @@ class NumberDialog : AppCompatDialogFragment() {
 
         val text = view.value.text.toString().trim()
         val parsedManual: Double? = if (text.isNotEmpty()) {
-            try {
-                NumberFormat.getInstance().parse(text)?.toDouble()
-            } catch (e: ParseException) {
-                null
+            when (val res = NumericalInputValidator.validateEntryInput(text)) {
+                is NumericalInputValidator.ValidationResult.Valid -> {
+                    if (res.value >= 0.0) res.value else null
+                }
+                else -> null
             }
         } else {
             if (hasManualEntry && originalValue >= 0.0) originalValue else null
@@ -213,7 +216,11 @@ class NumberDialog : AppCompatDialogFragment() {
         if (!dismissedViaSaveAction) {
             val currentNotes = view.notes.text.toString().trim()
             if (currentNotes != originalNotes) {
-                onToggle(originalValue, currentNotes)
+                try {
+                    onToggle(originalValue, currentNotes)
+                } catch (e: Exception) {
+                    // Pre-existing accepted data or dismissal must not throw on note update
+                }
             }
         }
         onDismiss()
@@ -234,21 +241,22 @@ class NumberDialog : AppCompatDialogFragment() {
     }
 
     fun save() {
-        dismissedViaSaveAction = true
-        var value = originalValue
-        try {
-            val numberFormat = NumberFormat.getInstance()
-            val valueStr = view.value.text.toString()
-            value = if (valueStr.isNotEmpty()) {
-                numberFormat.parse(valueStr)!!.toDouble()
-            } else {
-                Entry.UNKNOWN.toDouble() / 1000
+        val valueStr = view.value.text.toString()
+        when (val result = NumericalInputValidator.validateEntryInput(valueStr)) {
+            is NumericalInputValidator.ValidationResult.Valid -> {
+                dismissedViaSaveAction = true
+                val notes = view.notes.text.toString().trim()
+                onToggle(result.value, notes)
+                requireDialog().dismiss()
             }
-        } catch (e: ParseException) {
-            // NOP
+            is NumericalInputValidator.ValidationResult.OutOfRange -> {
+                view.value.error = getString(R.string.validation_number_out_of_range)
+                view.value.requestFocus()
+            }
+            is NumericalInputValidator.ValidationResult.InvalidFormat -> {
+                view.value.error = getString(R.string.validation_invalid_number_format)
+                view.value.requestFocus()
+            }
         }
-        val notes = view.notes.text.toString().trim()
-        onToggle(value, notes)
-        requireDialog().dismiss()
     }
 }

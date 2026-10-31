@@ -33,6 +33,16 @@ data class BatchCreateRepetitionCommand(
     val notes: String
 ) : Command {
     override fun run() {
+        for (habit in habits) {
+            if (habit.isNumerical) {
+                val previous = habit.originalEntries.get(date)
+                if (value != previous.value) {
+                    require(value == Entry.UNKNOWN || value == Entry.SKIP || (value in 0..Entry.MAX_SCALED_VALUE)) {
+                        "Numerical habit repetition value out of bounds: $value"
+                    }
+                }
+            }
+        }
         val firstSQLiteEntryList = habits.firstOrNull()?.originalEntries as? SQLiteEntryList
         val repository = firstSQLiteEntryList?.repository
         val scope = habits.mapNotNull { it.uuid?.let { u -> org.isoron.uhabits.core.containers.HabitRef(u) } }.toSet()

@@ -20,7 +20,11 @@ data class AddNumericalEntryOpCommand(
         val entries = habit.originalEntries as? SQLiteEntryList ?: return
         val current = habit.originalEntries.get(date)
         val oldValue = if (current.value == Entry.UNKNOWN || current.value == Entry.SKIP) 0 else current.value
-        val newValue = oldValue + deltaValue
+        val sum = oldValue.toLong() + deltaValue.toLong()
+        require(sum in 0L..Entry.MAX_SCALED_VALUE.toLong()) {
+            "Numerical entry accumulation out of range: $sum (oldValue=$oldValue, deltaValue=$deltaValue)"
+        }
+        val newValue = sum.toInt()
         val habitUuid = habit.uuid
         val scope = habitUuid?.let { setOf(org.isoron.uhabits.core.containers.HabitRef(it)) }
         if (scope != null) {
