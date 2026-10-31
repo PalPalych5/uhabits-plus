@@ -13,9 +13,25 @@ class PomodoroAlarmReceiver : BroadcastReceiver() {
         val component = (context.applicationContext as HabitsApplication).component
         if (!component.timerSessionManager.acceptsDatasetCallback(intent.getStringExtra(EXTRA_DATASET_ID))) return
         when (intent.action) {
-            ACTION_PHASE_COMPLETE -> component.timerSessionManager.onAlarm(
-                intent.getLongExtra(EXTRA_REVISION, -1L)
-            )
+            ACTION_PHASE_COMPLETE -> {
+                val pending = goAsync()
+                try {
+                    component.timerSessionManager.onAlarm(
+                        intent.getLongExtra(EXTRA_REVISION, -1L)
+                    ) {
+                        try {
+                            pending?.finish()
+                        } catch (_: Exception) {
+                        }
+                    }
+                } catch (t: Throwable) {
+                    try {
+                        pending?.finish()
+                    } catch (_: Exception) {
+                    }
+                    throw t
+                }
+            }
             ACTION_START_NEXT -> {
                 val completion = runCatching {
                     PomodoroCompletion.valueOf(intent.getStringExtra(EXTRA_COMPLETION).orEmpty())

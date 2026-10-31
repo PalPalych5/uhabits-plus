@@ -40,13 +40,13 @@ enum class PomodoroAlertIssue {
     EXACT_ALARMS_DISABLED
 }
 
-class PomodoroCompletionNotifier(
+open class PomodoroCompletionNotifier(
     private val context: Context,
     private val habitList: HabitList,
     private val alarmScheduler: PomodoroAlarmScheduler,
     private val datasetId: String = "production"
 ) {
-    private val notificationManager = context.getSystemService(NotificationManager::class.java)
+    private val notificationManager by lazy { context.getSystemService(NotificationManager::class.java) }
     @Volatile private var channelEnsured = false
 
     fun ensureChannel() {
@@ -76,7 +76,7 @@ class PomodoroCompletionNotifier(
         notificationManager.createNotificationChannel(channel)
     }
 
-    fun health(): PomodoroAlertHealth {
+    open fun health(): PomodoroAlertHealth {
         ensureChannel()
         val channel = notificationManager.getNotificationChannel(CHANNEL_ID)
         return PomodoroAlertHealth(
@@ -88,18 +88,18 @@ class PomodoroCompletionNotifier(
         )
     }
 
-    fun canPostCompletion(): Boolean {
+    open fun canPostCompletion(): Boolean {
         ensureChannel()
         val channel = notificationManager.getNotificationChannel(CHANNEL_ID)
         return NotificationManagerCompat.from(context).areNotificationsEnabled() &&
             channel != null && channel.importance != NotificationManager.IMPORTANCE_NONE
     }
 
-    fun isCompletionVisible(): Boolean =
+    open fun isCompletionVisible(): Boolean =
         notificationManager.activeNotifications.any { it.id == COMPLETION_NOTIFICATION_ID }
 
     @SuppressLint("MissingPermission")
-    fun showCompletion(event: PomodoroCompletionEvent) {
+    open fun showCompletion(event: PomodoroCompletionEvent) {
         ensureChannel()
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val isFocus = event.completion == PomodoroCompletion.FOCUS
@@ -140,7 +140,7 @@ class PomodoroCompletionNotifier(
     }
 
     @SuppressLint("MissingPermission")
-    fun showTestNotification() {
+    open fun showTestNotification() {
         ensureChannel()
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val notification = baseBuilder(
@@ -150,7 +150,7 @@ class PomodoroCompletionNotifier(
         NotificationManagerCompat.from(context).notify(TEST_NOTIFICATION_ID, notification)
     }
 
-    fun cancelCompletion() {
+    open fun cancelCompletion() {
         NotificationManagerCompat.from(context).cancel(COMPLETION_NOTIFICATION_ID)
     }
 

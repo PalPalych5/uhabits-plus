@@ -6,10 +6,10 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 
-class PomodoroAlarmScheduler(private val context: Context, private val datasetId: String = "production") {
-    private val alarmManager = context.getSystemService(AlarmManager::class.java)
+open class PomodoroAlarmScheduler(private val context: Context, private val datasetId: String = "production") {
+    private val alarmManager by lazy { context.getSystemService(AlarmManager::class.java) }
 
-    fun schedule(triggerAtMillis: Long, revision: Long) {
+    open fun schedule(triggerAtMillis: Long, revision: Long) {
         val intent = PomodoroAlarmReceiver.alarmPendingIntent(context, revision, datasetId)
         if (canScheduleExactAlarms()) {
             alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, intent)
@@ -18,11 +18,11 @@ class PomodoroAlarmScheduler(private val context: Context, private val datasetId
         }
     }
 
-    fun cancel() {
+    open fun cancel() {
         alarmManager.cancel(existingPendingIntent())
     }
 
-    fun canScheduleExactAlarms(): Boolean =
+    open fun canScheduleExactAlarms(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
 
     private fun existingPendingIntent(): PendingIntent = PendingIntent.getBroadcast(

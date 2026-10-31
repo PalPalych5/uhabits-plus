@@ -1,6 +1,7 @@
 package org.isoron.uhabits.activities.habits.show.timer
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
 import androidx.preference.PreferenceManager
@@ -21,6 +22,7 @@ import org.isoron.uhabits.core.timer.TimerSessionSnapshot
 import org.isoron.uhabits.core.timer.elapsedMillisToTenthsMinutes
 import org.isoron.uhabits.core.timer.shouldShowProgressNotification
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 import java.util.UUID
 import org.isoron.uhabits.core.focus.runtime.FocusCapturingTimer
 import org.isoron.uhabits.core.focus.runtime.FocusCaptureStore
@@ -34,19 +36,20 @@ data class PomodoroDurations(
     val breakMinutes: Int = 5
 )
 
-class TimerSessionManager(
+open class TimerSessionManager(
     private val context: Context,
     private val habitList: HabitList,
     private val commandRunner: CommandRunner,
     private val appPreferences: Preferences,
     private val alarmScheduler: PomodoroAlarmScheduler,
     private val completionNotifier: PomodoroCompletionNotifier,
-    engine: TimerSessionEngine = TimerSessionEngine { System.currentTimeMillis() },
+    private val engine: TimerSessionEngine = TimerSessionEngine { System.currentTimeMillis() },
     val session: DatasetSession = DatasetSessionFactory.production(),
     private val captureStore: FocusCaptureStore? = null,
     focusTargetProvider: (Long) -> FocusCaptureTarget? = { null },
     deviceId: String? = null,
-    private val captureTargetResolver: (FocusPrimaryTargetType, String) -> Pair<String, FocusCaptureTarget>? = { _, _ -> null }
+    private val captureTargetResolver: (FocusPrimaryTargetType, String) -> Pair<String, FocusCaptureTarget>? = { _, _ -> null },
+    prefs: SharedPreferences? = null
 ) {
     private var disposed = false
     val currentTarget: FocusCaptureTarget? get() = if (disposed) null else runtime.currentTarget
@@ -106,7 +109,7 @@ class TimerSessionManager(
     private val runtime = FocusCapturingTimer(engine, captureStore, { System.currentTimeMillis() },
         { UUID.randomUUID().toString() }, deviceId, focusTargetProvider)
     private val listeners = mutableSetOf<Listener>()
-    private val statePreferences = if (session.isExperimental)
+    private val statePreferences = prefs ?: if (session.isExperimental)
         context.getSharedPreferences(session.preferencesNamespace + "_timer", Context.MODE_PRIVATE)
         else PreferenceManager.getDefaultSharedPreferences(context)
     private val handler = Handler(Looper.getMainLooper())
@@ -298,16 +301,29 @@ class TimerSessionManager(
         return changed
     }
 
-    fun finishCurrent() {
-        if (disposed) return
+    fun finishCurrent(onComplete: ((Throwable?) -> Unit)? = null) {
+        if (disposed) {
+            onComplete?.invoke(null)
+            return
+        }
         val state = runtime.snapshot()
-        val id = state.habitId ?: return
-        if (id != GENERIC_TARGET_ID) habitList.getById(id)?.let { finish(it); return }
-        if (!session.isNextArchitecture || captureStore == null) return
+        val id = state.habitId
+        if (id == null) {
+            onComplete?.invoke(null)
+            return
+        }
+        if (id != GENERIC_TARGET_ID) {
+            habitList.getById(id)?.let { finish(it, onComplete); return }
+        }
+        if (!session.isNextArchitecture || captureStore == null) {
+            onComplete?.invoke(null)
+            return
+        }
         runtime.finish(id)
         handler.removeCallbacks(ticker)
         clearCompletionDisplay()
         refreshRuntimePresentation()
+        onComplete?.invoke(null)
     }
 
     fun resetCurrent() {
@@ -321,17 +337,27 @@ class TimerSessionManager(
         refreshRuntimePresentation()
     }
 
-    fun takeBreakCurrent() {
-        if (disposed) return
+    fun takeBreakCurrent(onComplete: ((Throwable?) -> Unit)? = null) {
+        if (disposed) {
+            onComplete?.invoke(null)
+            return
+        }
         val state = runtime.snapshot()
-        val id = state.habitId ?: return
+        val id = state.habitId
+        if (id == null) {
+            onComplete?.invoke(null)
+            return
+        }
         if (id != GENERIC_TARGET_ID) {
             habitList.getById(id)?.let {
-                takeBreakManually(it)
+                takeBreakManually(it, onComplete)
                 return
             }
         }
-        if (!session.isNextArchitecture || captureStore == null || state.mode != TimerMode.POMODORO || state.phase != PomodoroPhase.FOCUS) return
+        if (!session.isNextArchitecture || captureStore == null || state.mode != TimerMode.POMODORO || state.phase != PomodoroPhase.FOCUS) {
+            onComplete?.invoke(null)
+            return
+        }
         if (runtime.transitionToBreakManually()) {
             val target = runtime.currentTarget
             if (target != null) {
@@ -342,6 +368,7 @@ class TimerSessionManager(
             clearCompletionDisplay()
             refreshRuntimePresentation()
         }
+        onComplete?.invoke(null)
     }
 
     private fun refreshRuntimePresentation() {
@@ -352,18 +379,28 @@ class TimerSessionManager(
         notifyListeners()
     }
 
-    fun takeBreakManually(habit: Habit) {
-        if (disposed || !session.capabilities.timerEnabled) return
+    fun takeBreakManually(habit: Habit, onComplete: ((Throwable?) -> Unit)? = null) {
+        if (disposed || !session.capabilities.timerEnabled) {
+            onComplete?.invoke(null)
+            return
+        }
         val id = habit.id!!
         val state = runtime.snapshot()
-        if (state.habitId != id || state.mode != TimerMode.POMODORO || state.phase != PomodoroPhase.FOCUS) return
+        if (state.habitId != id || state.mode != TimerMode.POMODORO || state.phase != PomodoroPhase.FOCUS) {
+            onComplete?.invoke(null)
+            return
+        }
 
         val unrecorded = if (state.completionTriggered) {
             (state.elapsedMillis - state.focusDurationMillis).coerceAtLeast(0L)
         } else {
             state.elapsedMillis
         }
-        saveElapsed(id, unrecorded)
+        try {
+            saveElapsed(id, unrecorded, onComplete)
+        } catch (t: Throwable) {
+            return
+        }
         if (runtime.transitionToBreakManually()) {
             runtime.start(id, habit.name)
             clearCompletionDisplay()
@@ -375,10 +412,16 @@ class TimerSessionManager(
         }
     }
 
-    fun finish(habit: Habit) {
-        if (disposed || !session.capabilities.timerEnabled) return
+    fun finish(habit: Habit, onComplete: ((Throwable?) -> Unit)? = null) {
+        if (disposed || !session.capabilities.timerEnabled) {
+            onComplete?.invoke(null)
+            return
+        }
         val state = runtime.snapshot()
-        if (state.habitId != habit.id) return
+        if (state.habitId != habit.id) {
+            onComplete?.invoke(null)
+            return
+        }
         val elapsed = runtime.finish(habit.id!!)
         handler.removeCallbacks(ticker)
         clearCompletionDisplay()
@@ -387,7 +430,15 @@ class TimerSessionManager(
         } else {
             elapsed
         }
-        if (unrecorded > 0) saveElapsed(habit.id!!, unrecorded)
+        if (unrecorded > 0) {
+            try {
+                saveElapsed(habit.id!!, unrecorded, onComplete)
+            } catch (t: Throwable) {
+                // error already delivered to onComplete
+            }
+        } else {
+            onComplete?.invoke(null)
+        }
         persistState()
         refreshAlarm()
         syncForegroundService()
@@ -421,10 +472,37 @@ class TimerSessionManager(
         if (session.capabilities.timerEnabled && runtime.snapshot().isRunning) handler.post(ticker)
     }
 
-    fun onAlarm(revision: Long) {
-        if (disposed || !session.capabilities.timerEnabled) return
-        if (revision != alarmRevision) return
-        if (!completeIfDue(revision)) refreshAlarm()
+    fun onAlarm(revision: Long, onComplete: ((Throwable?) -> Unit)? = null) {
+        if (disposed || !session.capabilities.timerEnabled) {
+            onComplete?.invoke(null)
+            return
+        }
+        if (revision != alarmRevision) {
+            onComplete?.invoke(null)
+            return
+        }
+        var delivered = false
+        val guardedCallback: ((Throwable?) -> Unit)? = onComplete?.let { cb ->
+            { err ->
+                if (!delivered) {
+                    delivered = true
+                    cb(err)
+                }
+            }
+        }
+        var completed = false
+        try {
+            completed = completeIfDue(revision, guardedCallback)
+            if (!completed) {
+                refreshAlarm()
+                guardedCallback?.invoke(null)
+            }
+        } catch (t: Throwable) {
+            if (!completed) {
+                guardedCallback?.invoke(t)
+            }
+            throw t
+        }
     }
 
     fun rescheduleAlarmFromSystem() {
@@ -500,11 +578,45 @@ class TimerSessionManager(
     }
 
     @Synchronized
-    private fun completeIfDue(expectedRevision: Long? = null): Boolean {
+    private fun completeIfDue(
+        expectedRevision: Long? = null,
+        onComplete: ((Throwable?) -> Unit)? = null
+    ): Boolean {
         if (disposed || !session.capabilities.timerEnabled) return false
         if (expectedRevision != null && expectedRevision != alarmRevision) return false
         val before = runtime.snapshot()
         val completion = runtime.tick() ?: return false
+
+        val completedHabitId = before.habitId
+        val completedDurationMillis = if (completion == PomodoroCompletion.FOCUS) {
+            before.focusDurationMillis
+        } else {
+            before.breakDurationMillis
+        }
+
+        try {
+            if (completion == PomodoroCompletion.FOCUS && completedHabitId != null) {
+                saveElapsed(completedHabitId, before.focusDurationMillis, onComplete)
+            } else {
+                onComplete?.invoke(null)
+            }
+        } catch (t: Throwable) {
+            // Pending durable write failed! Revert engine to before-snapshot to prevent advancing state
+            engine.restore(
+                habitId = before.habitId ?: -1L,
+                habitName = before.habitName,
+                mode = before.mode,
+                phase = before.phase,
+                isRunning = before.isRunning,
+                accumulatedMillis = before.accumulatedMillis,
+                startedAtMillis = before.startedAtMillis,
+                focusDurationMillis = before.focusDurationMillis,
+                breakDurationMillis = before.breakDurationMillis,
+                completionTriggered = before.completionTriggered
+            )
+            refreshAlarm()
+            return false
+        }
 
         alarmScheduler.cancel()
         alarmRevision++
@@ -513,19 +625,10 @@ class TimerSessionManager(
             PomodoroCompletion.FOCUS -> appPreferences.isPomodoroFocusAlertEnabled
             PomodoroCompletion.BREAK -> appPreferences.isPomodoroBreakAlertEnabled
         }
-        val completedHabitId = before.habitId
-        val completedDurationMillis = if (completion == PomodoroCompletion.FOCUS) {
-            before.focusDurationMillis
-        } else {
-            before.breakDurationMillis
-        }
         completionDisplayActive = alertsEnabled && completedHabitId != null &&
             completionNotifier.canPostCompletion()
-        persistState(commit = true)
 
-        if (completion == PomodoroCompletion.FOCUS) {
-            completedHabitId?.let { saveElapsed(it, before.focusDurationMillis) }
-        }
+        persistState(commit = true)
         syncForegroundService()
         if (completionDisplayActive && completedHabitId != null) {
             val overtimeStartedAtMillis = if (runtime.snapshot().completionTriggered) {
@@ -549,23 +652,172 @@ class TimerSessionManager(
         return true
     }
 
-    private fun saveElapsed(habitId: Long, elapsedMillis: Long) {
+    private val saveElapsedLock = Any()
+    private val inFlightHabits = mutableSetOf<Long>()
+    private val pendingSaveCallbacks = mutableMapOf<Long, MutableList<(Throwable?) -> Unit>>()
+
+    private fun saveElapsed(
+        habitId: Long,
+        elapsedMillis: Long,
+        onComplete: ((Throwable?) -> Unit)? = null
+    ) {
         // Preserve legacy accrual. Next architecture work facts are captured in Focus journal.
-        if (session.isNextArchitecture) return
-        val minutes = elapsedMillisToTenthsMinutes(elapsedMillis)
-        if (minutes <= 0.0) return
-        val habit = habitList.getById(habitId) ?: return
+        if (session.isNextArchitecture) {
+            onComplete?.invoke(null)
+            return
+        }
+        val habit = habitList.getById(habitId)
+        if (habit == null || !habit.isNumerical) {
+            onComplete?.invoke(null)
+            return
+        }
+
+        synchronized(saveElapsedLock) {
+            if (onComplete != null) {
+                pendingSaveCallbacks.getOrPut(habitId) { mutableListOf() }.add(onComplete)
+            }
+
+            val key = unrecordedKey(habitId)
+            if (elapsedMillis > 0L) {
+                val previouslyUnrecorded = statePreferences.getLong(key, 0L)
+                val totalMillis = try {
+                    Math.addExact(previouslyUnrecorded, elapsedMillis)
+                } catch (e: ArithmeticException) {
+                    val overflowEx = ArithmeticException(
+                        "Elapsed time accumulation overflowed Long: $previouslyUnrecorded + $elapsedMillis"
+                    )
+                    pendingSaveCallbacks.remove(habitId)?.forEach { it.invoke(overflowEx) }
+                    throw overflowEx
+                }
+
+                // Synchronously commit pending elapsed time before timer state transition
+                val committed = statePreferences.edit().putLong(key, totalMillis).commit()
+                if (!committed) {
+                    val commitEx = java.io.IOException(
+                        "Failed to commit unrecorded elapsed time ($totalMillis ms) to SharedPreferences for habit $habitId"
+                    )
+                    pendingSaveCallbacks.remove(habitId)?.forEach { it.invoke(commitEx) }
+                    throw commitEx
+                }
+            }
+
+            if (inFlightHabits.contains(habitId)) {
+                // A persistence operation is already executing for this habit.
+                // The in-flight callback will drain newly accumulated pending time upon completion.
+                return
+            }
+
+            inFlightHabits.add(habitId)
+            drainUnrecordedElapsedLocked(habitId)
+        }
+    }
+
+    private fun drainUnrecordedElapsedLocked(habitId: Long) {
+        if (disposed) {
+            inFlightHabits.remove(habitId)
+            val callbacks = pendingSaveCallbacks.remove(habitId).orEmpty()
+            callbacks.forEach { it.invoke(null) }
+            return
+        }
+        val habit = habitList.getById(habitId)
+        if (habit == null || !habit.isNumerical || session.isNextArchitecture) {
+            inFlightHabits.remove(habitId)
+            val callbacks = pendingSaveCallbacks.remove(habitId).orEmpty()
+            callbacks.forEach { it.invoke(null) }
+            return
+        }
+
+        val key = unrecordedKey(habitId)
+        val totalMillis = statePreferences.getLong(key, 0L)
+        val minutes = elapsedMillisToTenthsMinutes(totalMillis)
+        if (minutes <= 0.0) {
+            inFlightHabits.remove(habitId)
+            val callbacks = pendingSaveCallbacks.remove(habitId).orEmpty()
+            callbacks.forEach { it.invoke(null) }
+            return
+        }
+
+        val deltaValue: Int
+        try {
+            deltaValue = Entry.toScaledValue(minutes)
+        } catch (t: Throwable) {
+            // Out of bounds / overflow: leave totalMillis durable in preferences and report error
+            inFlightHabits.remove(habitId)
+            val callbacks = pendingSaveCallbacks.remove(habitId).orEmpty()
+            callbacks.forEach { it.invoke(t) }
+            return
+        }
+
+        val attemptingToCreditMillis = (minutes * 60_000.0).roundToLong()
         val today = getToday()
         val entry = habit.originalEntries.get(today)
-        commandRunner.run(
+
+        commandRunner.runWithCompletion(
             AddNumericalEntryOpCommand(
                 habitList = habitList,
                 habit = habit,
                 date = today,
-                deltaValue = (minutes * 1000.0).roundToInt(),
+                deltaValue = deltaValue,
                 notes = entry.notes
             )
-        )
+        ) { error ->
+            synchronized(saveElapsedLock) {
+                if (error != null) {
+                    // Command failed: totalMillis remains durable in SharedPreferences
+                    inFlightHabits.remove(habitId)
+                    val callbacks = pendingSaveCallbacks.remove(habitId).orEmpty()
+                    callbacks.forEach { it.invoke(error) }
+                } else {
+                    // Deduct credited milliseconds from durable preferences
+                    val currentStored = statePreferences.getLong(key, 0L)
+                    val remainingMillis = (currentStored - attemptingToCreditMillis).coerceAtLeast(0L)
+                    val editor = statePreferences.edit()
+                    if (remainingMillis > 0L) {
+                        editor.putLong(key, remainingMillis)
+                    } else {
+                        editor.remove(key)
+                    }
+                    val committed = editor.commit()
+                    if (!committed) {
+                        val syncError = java.io.IOException(
+                            "Database repetition write succeeded, but clearing unrecorded time from SharedPreferences failed. " +
+                            "Atomicity limitation: cross-process duplicate replay risk exists without SQLite journal table."
+                        )
+                        inFlightHabits.remove(habitId)
+                        val callbacks = pendingSaveCallbacks.remove(habitId).orEmpty()
+                        callbacks.forEach { it.invoke(syncError) }
+                        return@synchronized
+                    }
+
+                    // If more elapsed time accumulated while this command was executing, drain again!
+                    val nextMinutes = elapsedMillisToTenthsMinutes(remainingMillis)
+                    if (nextMinutes > 0.0) {
+                        drainUnrecordedElapsedLocked(habitId)
+                    } else {
+                        inFlightHabits.remove(habitId)
+                        val callbacks = pendingSaveCallbacks.remove(habitId).orEmpty()
+                        callbacks.forEach { it.invoke(null) }
+                    }
+                }
+            }
+        }
+    }
+
+    fun unrecordedKey(habitId: Long): String = "pref_timer_unrecorded_elapsed_millis_$habitId"
+
+    fun getUnrecordedElapsedMillis(habitId: Long): Long =
+        synchronized(saveElapsedLock) {
+            statePreferences.getLong(unrecordedKey(habitId), 0L)
+        }
+
+    fun clearUnrecordedElapsedMillis(habitId: Long) {
+        synchronized(saveElapsedLock) {
+            statePreferences.edit().remove(unrecordedKey(habitId)).commit()
+        }
+    }
+
+    fun flushUnrecordedElapsed(habitId: Long, onComplete: ((Throwable?) -> Unit)? = null) {
+        saveElapsed(habitId, 0L, onComplete)
     }
 
     private fun notifyListeners() = listeners.toList().forEach { it.onTimerChanged() }
