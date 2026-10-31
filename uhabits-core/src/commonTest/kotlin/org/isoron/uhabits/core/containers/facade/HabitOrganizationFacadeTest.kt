@@ -31,6 +31,11 @@ import org.isoron.uhabits.core.containers.OrganizationServiceImpl
 import org.isoron.uhabits.core.containers.PlaceHabit
 import org.isoron.uhabits.core.containers.TreePolicy
 import org.isoron.uhabits.core.containers.memory.MemoryOrganizationStore
+import kotlinx.coroutines.test.runTest
+import org.isoron.platform.io.TestDatabaseHelper
+import org.isoron.platform.io.run
+import org.isoron.uhabits.core.database.HabitBlockData
+import org.isoron.uhabits.core.database.HabitBlockRepository
 import org.isoron.uhabits.core.models.HabitBlock
 import org.isoron.uhabits.core.models.PaletteColor
 import kotlin.test.Test
@@ -105,6 +110,81 @@ class HabitOrganizationFacadeTest {
         assertEquals(7L, facade.getRootGroupKey("habit-2", 7L))
         assertNull(facade.getRootGroupKey("habit-3", null))
         assertEquals("Health", facade.getRootGroupName("habit-1", 1L))
+    }
+
+    @Test
+    fun `legacy mode - root group key resolves missing legacy block to unassigned null`() {
+        val facade = HabitOrganizationFacadeImpl(
+            mode = OrganizationAuthorityMode.LEGACY,
+            blocksProvider = { legacyBlocks }
+        )
+
+        // Existing active block returns block ID
+        assertEquals(1L, facade.getRootGroupKey("habit-1", 1L))
+        assertEquals("Health", facade.getRootGroupName("habit-1", 1L))
+        assertFalse(facade.getPlacementInfo("habit-1", 1L).isUnassigned)
+
+        // Missing block ID (not in blocksProvider) must resolve to null (unassigned key),
+        // consistently with getRootGroupName (null) and getPlacementInfo (isUnassigned = true)
+        assertNull(facade.getRootGroupKey("habit-missing", 999L))
+        assertNull(facade.getRootGroupName("habit-missing", 999L))
+        assertTrue(facade.getPlacementInfo("habit-missing", 999L).isUnassigned)
+    }
+
+    @Test
+    fun `legacy mode - soft deleted block in repository resolves to unassigned null and restores cleanly`() = runTest {
+        val db = TestDatabaseHelper.createEmptyDatabase()
+        try {
+            db.run("DELETE FROM HabitBlocks")
+            val repo = HabitBlockRepository(db)
+            val facade = HabitOrganizationFacadeImpl(
+                mode = OrganizationAuthorityMode.LEGACY,
+                habitBlockRepository = repo
+            )
+
+            val activeId = repo.insert(HabitBlockData(name = "Active", color = 1, uuid = "b-active"))
+            val archivedId = repo.insert(HabitBlockData(name = "Archived", color = 2, isArchived = true, uuid = "b-archived"))
+            val deleteTargetId = repo.insert(HabitBlockData(name = "To Delete", color = 3, uuid = "b-delete"))
+
+            // Verify active block
+            assertEquals(activeId, facade.getRootGroupKey("h-active", activeId))
+            assertEquals("Active", facade.getRootGroupName("h-active", activeId))
+            assertFalse(facade.getPlacementInfo("h-active", activeId).isUnassigned)
+
+            // Verify archived block remains valid group
+            assertEquals(archivedId, facade.getRootGroupKey("h-archived", archivedId))
+            assertEquals("Archived", facade.getRootGroupName("h-archived", archivedId))
+            assertFalse(facade.getPlacementInfo("h-archived", archivedId).isUnassigned)
+
+            // Verify target block before soft deletion
+            assertEquals(deleteTargetId, facade.getRootGroupKey("h-target", deleteTargetId))
+            assertEquals("To Delete", facade.getRootGroupName("h-target", deleteTargetId))
+            assertFalse(facade.getPlacementInfo("h-target", deleteTargetId).isUnassigned)
+
+            // Soft-delete the block (sets deleted_at)
+            repo.softDelete(deleteTargetId, deletedAt = 5000L)
+
+            // Soft-deleted block must resolve root group key to null (unassigned key),
+            // consistently with getRootGroupName (null) and getPlacementInfo (isUnassigned = true)
+            assertNull(facade.getRootGroupKey("h-target", deleteTargetId))
+            assertNull(facade.getRootGroupName("h-target", deleteTargetId))
+            assertTrue(facade.getPlacementInfo("h-target", deleteTargetId).isUnassigned)
+
+            // Missing block also resolves to null
+            assertNull(facade.getRootGroupKey("h-missing", 99999L))
+            assertNull(facade.getRootGroupName("h-missing", 99999L))
+            assertTrue(facade.getPlacementInfo("h-missing", 99999L).isUnassigned)
+
+            // Restore block: un-delete (simulating sync/restore or user undo)
+            db.run("UPDATE HabitBlocks SET deleted_at = NULL WHERE id = $deleteTargetId")
+
+            // Restored block resolves back to deleteTargetId automatically without data cleanup
+            assertEquals(deleteTargetId, facade.getRootGroupKey("h-target", deleteTargetId))
+            assertEquals("To Delete", facade.getRootGroupName("h-target", deleteTargetId))
+            assertFalse(facade.getPlacementInfo("h-target", deleteTargetId).isUnassigned)
+        } finally {
+            db.close()
+        }
     }
 
     @Test

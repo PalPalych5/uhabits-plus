@@ -99,7 +99,10 @@ class HabitOrganizationFacadeImpl(
             val cQueries = containerQueries ?: return null
             return cQueries.rootId(containerId)?.value
         } else {
-            return legacyBlockId
+            if (legacyBlockId == null) return null
+            val exists = blocksProvider?.invoke()?.any { it.id == legacyBlockId }
+                ?: (habitBlockRepository?.findById(legacyBlockId) != null)
+            return legacyBlockId.takeIf { exists }
         }
     }
 
