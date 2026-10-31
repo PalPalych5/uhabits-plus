@@ -3,46 +3,84 @@ package org.isoron.uhabits.qa
 
 import android.content.Context
 import android.content.Intent
+import android.database.sqlite.SQLiteDatabase
 import android.os.SystemClock
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import androidx.lifecycle.Lifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import org.isoron.platform.io.queryLong
+import org.isoron.platform.time.DayOfWeek
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.HabitsApplication
+import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.habits.list.views.CheckmarkPanelView
 import org.isoron.uhabits.activities.habits.list.views.HabitCardListAdapter
 import org.isoron.uhabits.activities.habits.list.views.HabitCardListView
 import org.isoron.uhabits.activities.habits.list.views.HabitCardView
 import org.isoron.uhabits.activities.habits.list.views.NumberPanelView
+import org.isoron.uhabits.activities.habits.show.ShowHabitActivity
 import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
+import org.isoron.uhabits.activities.statistics.unifiedStatisticsReadSource
+import org.isoron.uhabits.core.commands.ArchiveHabitsCommand
+import org.isoron.uhabits.core.commands.UnarchiveHabitsCommand
+import org.isoron.uhabits.core.containers.Container
+import org.isoron.uhabits.core.containers.ContainerId
+import org.isoron.uhabits.core.containers.CreateContainer
+import org.isoron.uhabits.core.containers.OrganizationRevision
+import org.isoron.uhabits.core.containers.backup.BackupCreationResult
+import org.isoron.uhabits.core.containers.backup.ContainerBackupService
+import org.isoron.uhabits.core.containers.backup.ContainerRestoreService
+import org.isoron.uhabits.core.containers.backup.RestoreResult
 import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import org.isoron.uhabits.core.containers.session.DatasetCapabilities
 import org.isoron.uhabits.core.containers.session.DatasetMode
+import org.isoron.uhabits.core.containers.sqlite.SQLiteOrganizationStore
+import org.isoron.uhabits.core.focus.FocusSession
+import org.isoron.uhabits.core.focus.FocusSessionId
+import org.isoron.uhabits.core.focus.FocusSessionSource
+import org.isoron.uhabits.core.focus.sqlite.SQLiteFocusSessionRepository
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.models.HabitGoal
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.HabitType
 import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.PaletteColor
 import org.isoron.uhabits.core.models.Reminder
 import org.isoron.uhabits.core.models.WeekdayList
+import org.isoron.uhabits.core.models.sqlite.SQLModelFactory
+import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
+import org.isoron.uhabits.core.statistics.StatisticsQueryContext
+import org.isoron.uhabits.core.statistics.StatisticsReadIdentity
 import org.isoron.uhabits.core.timer.PomodoroPhase
 import org.isoron.uhabits.core.timer.TimerMode
+import org.isoron.uhabits.core.ui.ThemeSwitcher
+import org.isoron.uhabits.core.userTasks.TaskId
+import org.isoron.uhabits.core.userTasks.TaskStatus
+import org.isoron.uhabits.core.userTasks.UserTask
+import org.isoron.uhabits.core.userTasks.sqlite.SQLiteUserTaskRepository
+import org.isoron.uhabits.database.AndroidDatabase
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
+import java.util.TimeZone
 import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * Targeted Android instrumentation QA suite verifying:
@@ -51,6 +89,8 @@ import java.util.UUID
  * 3. Notification button persistence and non-ongoing tray dismissal policy.
  * 4. Pomodoro overtime-to-break transitions and idempotent break execution.
  * 5. Process / Activity recreation state preservation.
+ * 6. Phase D Screen 1 stress: 150 habits list rapid scroll recycling and live mutations.
+ * 7. Phase D Screens 2-10 & lifecycle: detail, unified statistics, tasks, settings, backup & restore.
  */
 @RunWith(AndroidJUnit4::class)
 class TargetedHabitInteractionAndroidTest {
@@ -65,6 +105,11 @@ class TargetedHabitInteractionAndroidTest {
     }
 
     private inline fun withIsolatedDataset(block: (HabitsApplication) -> Unit) {
+        runCatching {
+            instrumentation.uiAutomation.executeShellCommand("svc power stayon true").close()
+            instrumentation.uiAutomation.executeShellCommand("input keyevent KEYCODE_WAKEUP").close()
+            instrumentation.uiAutomation.executeShellCommand("wm dismiss-keyguard").close()
+        }
         val app = context.applicationContext as HabitsApplication
         val original = HabitsApplication.component.session
         val suffix = UUID.randomUUID().toString().take(8)
@@ -388,6 +433,495 @@ class TargetedHabitInteractionAndroidTest {
                     .firstOrNull()
                 assertNotNull("HabitCardListView must survive recreation", listView)
             }
+        }
+    }
+
+    private data class SeededHabitInfo(val habit: Habit, val sphere: Long)
+
+    @Test
+    fun testLargeScaleHabitListScrollRecyclingAndLiveMutations() = withIsolatedDataset {
+        val component = HabitsApplication.component
+        component.preferences.isHabitSpheresEnabled = true
+        component.preferences.areHabitGroupSeparatorsEnabled = true
+        component.preferences.defaultPrimaryOrder = HabitList.Order.BY_SPHERE
+
+        val today = getToday()
+        val spheres = listOf(10L, 20L, 30L, 40L)
+        val seededHabits = mutableListOf<SeededHabitInfo>()
+
+        // Create sphere containers so grouping metadata is authoritative
+        val sphereContainers = spheres.associateWith { s ->
+            val cId = ContainerId("sphere-container-$s")
+            component.organizationFacade.organizationService?.create(
+                CreateContainer(name = "Sphere $s", explicitId = cId, color = PaletteColor((s / 10).toInt()))
+            )
+            cId
+        }
+
+        // Seed 150 active habits across 4 spheres, mixed boolean and numerical, with multi-month entry history
+        for (i in 0 until 150) {
+            val sphere = spheres[i % 4]
+            val isNum = i % 2 == 1
+            val isWeekly = i % 3 == 0
+            val targetType = if (i % 4 == 1) NumericalHabitType.AT_LEAST else NumericalHabitType.AT_MOST
+            val h = component.modelFactory.buildHabit().apply {
+                name = if (isNum) "Numerical Habit $i" else "Boolean Habit $i"
+                type = if (isNum) HabitType.NUMERICAL else HabitType.YES_NO
+                this.targetType = targetType
+                targetValue = if (isNum) (10.0 + (i % 50)) else 1.0
+                unit = if (isNum) (if (i % 2 == 1) "min" else "km") else ""
+                frequency = if (isWeekly) Frequency(3, 7) else Frequency.DAILY
+                color = PaletteColor(i % 10)
+                blockId = sphere
+            }
+            component.habitList.add(h)
+            val cId = sphereContainers[sphere]
+            if (cId != null && h.uuid != null) {
+                component.organizationFacade.placeHabit(h.uuid!!, cId)
+            }
+
+            // Multi-month entry history
+            val entryVal1 = if (isNum) 30_000 else Entry.YES_MANUAL
+            val entryVal2 = if (isNum) 60_000 else Entry.YES_MANUAL
+            h.originalEntries.add(Entry(today, entryVal1))
+            h.originalEntries.add(Entry(today.minus(15), entryVal2))
+            h.originalEntries.add(Entry(today.minus(45), entryVal1))
+            h.originalEntries.add(Entry(today.minus(75), entryVal2))
+            h.recompute()
+            seededHabits.add(SeededHabitInfo(h, sphere))
+        }
+
+        // Seed 5 archived habits so both active and archived exist
+        for (i in 0 until 5) {
+            val sphere = spheres[i % 4]
+            val h = component.modelFactory.buildHabit().apply {
+                name = "Archived Habit $i"
+                type = HabitType.YES_NO
+                blockId = sphere
+                isArchived = true
+            }
+            component.habitList.add(h)
+            h.originalEntries.add(Entry(today, Entry.YES_MANUAL))
+            h.originalEntries.add(Entry(today.minus(30), Entry.YES_MANUAL))
+            h.recompute()
+        }
+        assertEquals(155, component.habitList.size())
+
+        // Pre-warm habitCardListCache
+        val cache = component.habitCardListCache
+        cache.setCheckmarkCount(5)
+        instrumentation.runOnMainSync { cache.refreshAllHabits() }
+        val warmDeadline = SystemClock.elapsedRealtime() + 25000
+        while (cache.habitCount < 150 && SystemClock.elapsedRealtime() < warmDeadline) {
+            Thread.sleep(100)
+        }
+        assertEquals(150, cache.habitCount)
+
+        // Capture sphere root grouping keys
+        val habitIdToSphere = seededHabits.associate { it.habit.id!! to it.sphere }
+        val sphereRootKeys = spheres.associateWith { s ->
+            val sample = seededHabits.first { it.sphere == s }.habit
+            cache.getMetadata(sample.id!!).rootGroupKey
+        }
+
+        // Launch MainActivity and measure habit list open & initial render latency
+        val openStart = SystemClock.elapsedRealtime()
+        ActivityScenario.launch<MainActivity>(MainActivity.intent(context, MainDestination.HABITS)).use { scenario ->
+            val deadline = SystemClock.elapsedRealtime() + 25000
+            var loaded = false
+            var initialRenderMs = -1L
+            while (!loaded && SystemClock.elapsedRealtime() < deadline) {
+                scenario.onActivity { activity ->
+                    val listView = descendants(activity.window.decorView)
+                        .filterIsInstance<HabitCardListView>()
+                        .firstOrNull()
+                    val adapter = listView?.adapter as? HabitCardListAdapter
+                    if (adapter != null && adapter.itemCount >= 150) {
+                        loaded = true
+                        initialRenderMs = SystemClock.elapsedRealtime() - openStart
+                    }
+                }
+                if (!loaded) Thread.sleep(50)
+            }
+            assertTrue("Adapter item count must load 150 habits asynchronously", loaded)
+            Log.i("SPRINT03_ANDROID_PERF", "HABIT_LIST_OPEN_RENDER_MS=$initialRenderMs")
+
+            // Rapid scrolling across the 150-item list measuring scroll/rebind latency
+            val scrollPositions = listOf(0, 50, 100, 149, 75, 0)
+            val scrollTotalStart = SystemClock.elapsedRealtime()
+            for (targetPos in scrollPositions) {
+                val jumpStart = SystemClock.elapsedRealtime()
+                scenario.onActivity { activity ->
+                    val listView = descendants(activity.window.decorView)
+                        .filterIsInstance<HabitCardListView>()
+                        .first()
+                    val layoutManager = listView.layoutManager as LinearLayoutManager
+                    layoutManager.scrollToPositionWithOffset(targetPos, 0)
+                }
+                instrumentation.waitForIdleSync()
+                val jumpMs = SystemClock.elapsedRealtime() - jumpStart
+                Log.i("SPRINT03_ANDROID_PERF", "SCROLL_JUMP_POS_${targetPos}_MS=$jumpMs")
+
+                // Wait for visible cards to be rendered at the new position
+                var cardViews = emptyList<HabitCardView>()
+                val scrollRenderDeadline = SystemClock.elapsedRealtime() + 5000
+                while (cardViews.isEmpty() && SystemClock.elapsedRealtime() < scrollRenderDeadline) {
+                    scenario.onActivity { activity ->
+                        val listView = descendants(activity.window.decorView).filterIsInstance<HabitCardListView>().firstOrNull()
+                        if (listView != null) {
+                            cardViews = descendants(listView).filterIsInstance<HabitCardView>().toList()
+                        }
+                    }
+                    if (cardViews.isEmpty()) Thread.sleep(50)
+                }
+                assertTrue("Cards must be rendered at scroll position $targetPos", cardViews.isNotEmpty())
+
+                scenario.onActivity { activity ->
+                    val listView = descendants(activity.window.decorView)
+                        .filterIsInstance<HabitCardListView>()
+                        .first()
+                    val currentCards = descendants(listView).filterIsInstance<HabitCardView>().toList()
+                    for (card in currentCards) {
+                        val cardHabit = card.habit
+                        assertNotNull("Visible card must have a bound habit", cardHabit)
+                        assertEquals("Card buttonCount must match listView.checkmarkCount",
+                            listView.checkmarkCount, card.buttonCount)
+
+                        if (cardHabit!!.isNumerical) {
+                            val numPanel = descendants(card).filterIsInstance<NumberPanelView>().firstOrNull()
+                            assertNotNull("Numerical card must render NumberPanelView", numPanel)
+                            assertEquals("Buttons size must match checkmarkCount",
+                                listView.checkmarkCount, numPanel!!.buttons.size)
+                        } else {
+                            val checkPanel = descendants(card).filterIsInstance<CheckmarkPanelView>().firstOrNull()
+                            assertNotNull("Boolean card must render CheckmarkPanelView", checkPanel)
+                            assertEquals("Buttons size must match checkmarkCount",
+                                listView.checkmarkCount, checkPanel!!.buttons.size)
+                        }
+
+                        // No cross-card data bleed
+                        val habitInDb = component.habitList.getById(cardHabit.id!!)
+                        assertNotNull("Bound habit must exist in habitList", habitInDb)
+                        assertEquals("Habit name must match", habitInDb!!.name, cardHabit.name)
+                        assertEquals("Habit type must match", habitInDb.type, cardHabit.type)
+                        assertEquals("Habit unit must match", habitInDb.unit, cardHabit.unit)
+
+                        // Sphere/group boundary metadata consistency
+                        val meta = cache.getMetadata(cardHabit.id!!)
+                        val expectedSphereId = habitIdToSphere[cardHabit.id!!]
+                        val expectedSphereKey = sphereRootKeys[expectedSphereId]
+                        assertNotNull("Sphere root key must not be null", expectedSphereKey)
+                        assertEquals("Sphere metadata must match habit sphere", expectedSphereKey, meta.rootGroupKey)
+                    }
+                }
+            }
+            val scrollTotalMs = SystemClock.elapsedRealtime() - scrollTotalStart
+            Log.i("SPRINT03_ANDROID_PERF", "HABIT_LIST_SCROLL_TOTAL_MS=$scrollTotalMs")
+
+            // Live entry mutation on a visible habit
+            var targetHabit: Habit? = null
+            val targetDeadline = SystemClock.elapsedRealtime() + 5000
+            while (targetHabit == null && SystemClock.elapsedRealtime() < targetDeadline) {
+                scenario.onActivity { activity ->
+                    val listView = descendants(activity.window.decorView).filterIsInstance<HabitCardListView>().firstOrNull()
+                    targetHabit = listView?.let { descendants(it).filterIsInstance<HabitCardView>().firstOrNull()?.habit }
+                }
+                if (targetHabit == null) Thread.sleep(50)
+            }
+            assertNotNull("Target habit for live mutation must be visible", targetHabit)
+            val habitToMutate = targetHabit!!
+            val habitId = habitToMutate.id!!
+            val isNum = habitToMutate.isNumerical
+            val newEntryVal = if (isNum) 99_000 else Entry.YES_MANUAL
+            habitToMutate.originalEntries.add(Entry(today, newEntryVal))
+            habitToMutate.recompute()
+            instrumentation.runOnMainSync {
+                cache.refreshHabit(habitId)
+            }
+            val mutateDeadline = SystemClock.elapsedRealtime() + 5000
+            while (cache.getCheckmarks(habitId)[0] != newEntryVal && SystemClock.elapsedRealtime() < mutateDeadline) {
+                Thread.sleep(50)
+            }
+            assertEquals("Cache checkmark must reflect live entry mutation", newEntryVal, cache.getCheckmarks(habitId)[0])
+
+            // Archive habit via ArchiveHabitsCommand
+            val countBeforeArchive = cache.habitCount
+            val archiveCmd = ArchiveHabitsCommand(component.habitList, listOf(habitToMutate))
+            instrumentation.runOnMainSync {
+                component.commandRunner.run(archiveCmd)
+            }
+            val archiveDeadline = SystemClock.elapsedRealtime() + 5000
+            while (cache.habitCount == countBeforeArchive && SystemClock.elapsedRealtime() < archiveDeadline) {
+                Thread.sleep(50)
+            }
+            assertEquals("Cache habit count must decrement after archiving", countBeforeArchive - 1, cache.habitCount)
+            assertTrue("Habit must be marked archived", habitToMutate.isArchived)
+
+            // Verify adapter matches
+            var adapterItemCount = -1
+            val adapterDeadline = SystemClock.elapsedRealtime() + 5000
+            while (adapterItemCount != countBeforeArchive - 1 && SystemClock.elapsedRealtime() < adapterDeadline) {
+                scenario.onActivity { activity ->
+                    val listView = descendants(activity.window.decorView).filterIsInstance<HabitCardListView>().firstOrNull()
+                    val adapter = listView?.adapter as? HabitCardListAdapter
+                    adapterItemCount = adapter?.itemCount ?: -1
+                }
+                if (adapterItemCount != countBeforeArchive - 1) Thread.sleep(50)
+            }
+            assertEquals(countBeforeArchive - 1, adapterItemCount)
+
+            // Unarchive habit via UnarchiveHabitsCommand
+            val unarchiveCmd = UnarchiveHabitsCommand(component.habitList, listOf(habitToMutate))
+            instrumentation.runOnMainSync {
+                component.commandRunner.run(unarchiveCmd)
+            }
+            val unarchiveDeadline = SystemClock.elapsedRealtime() + 5000
+            while (cache.habitCount < countBeforeArchive && SystemClock.elapsedRealtime() < unarchiveDeadline) {
+                Thread.sleep(50)
+            }
+            assertEquals("Cache habit count must restore after unarchiving", countBeforeArchive, cache.habitCount)
+            assertFalse("Habit must no longer be marked archived", habitToMutate.isArchived)
+
+            var unarchiveAdapterCount = -1
+            val unarchiveAdapterDeadline = SystemClock.elapsedRealtime() + 5000
+            while (unarchiveAdapterCount != countBeforeArchive && SystemClock.elapsedRealtime() < unarchiveAdapterDeadline) {
+                scenario.onActivity { activity ->
+                    val listView = descendants(activity.window.decorView).filterIsInstance<HabitCardListView>().firstOrNull()
+                    val adapter = listView?.adapter as? HabitCardListAdapter
+                    unarchiveAdapterCount = adapter?.itemCount ?: -1
+                }
+                if (unarchiveAdapterCount != countBeforeArchive) Thread.sleep(50)
+            }
+            assertEquals(countBeforeArchive, unarchiveAdapterCount)
+        }
+    }
+
+    @Test
+    fun testMultiScreenJourneysDetailStatisticsTasksSettingsAndBackupRestore() = withIsolatedDataset {
+        val component = HabitsApplication.component
+        val today = getToday()
+        val now = System.currentTimeMillis()
+
+        // 1. Seed habits: boolean + numerical with goal history
+        val boolHabit = component.modelFactory.buildHabit().apply {
+            name = "Journey Boolean Habit"
+            type = HabitType.YES_NO
+            color = PaletteColor(1)
+        }
+        component.habitList.add(boolHabit)
+        boolHabit.originalEntries.add(Entry(today, Entry.YES_MANUAL))
+        boolHabit.recompute()
+
+        val numHabit = component.modelFactory.buildHabit().apply {
+            name = "Journey Numerical Habit"
+            type = HabitType.NUMERICAL
+            targetType = NumericalHabitType.AT_LEAST
+            targetValue = 60.0
+            unit = "min"
+            color = PaletteColor(2)
+        }
+        component.habitList.add(numHabit)
+        numHabit.originalEntries.add(Entry(today, 60_000))
+        numHabit.originalEntries.add(Entry(today.minus(1), 45_000))
+        numHabit.goalHistory.add(HabitGoal(
+            effectiveDate = today.minus(30),
+            frequency = Frequency.DAILY,
+            targetType = NumericalHabitType.AT_LEAST,
+            targetValue = 60.0,
+            unit = "min"
+        ))
+        numHabit.recompute()
+
+        // 2. Seed Container in organizationStore and assign habit placements
+        val containerId = ContainerId("container-journey-${UUID.randomUUID().toString().take(6)}")
+        component.organizationFacade.organizationService?.create(
+            CreateContainer(
+                name = "Journey Container",
+                explicitId = containerId,
+                color = PaletteColor(3),
+            )
+        )
+        if (boolHabit.uuid != null) {
+            component.organizationFacade.placeHabit(boolHabit.uuid!!, containerId)
+        }
+        if (numHabit.uuid != null) {
+            component.organizationFacade.placeHabit(numHabit.uuid!!, containerId)
+        }
+
+        // 3. Seed UserTask in userTaskRepository
+        val taskId = TaskId("task-journey-${UUID.randomUUID().toString().take(6)}")
+        val userTask = UserTask(
+            id = taskId,
+            title = "Journey User Task",
+            description = "Journey description",
+            containerId = containerId,
+            status = TaskStatus.PENDING,
+            createdAt = now,
+            updatedAt = now,
+        )
+        component.userTaskRepository.save(userTask)
+
+        // 4. Seed FocusSession in focusSessionRepository
+        val focusSessionId = FocusSessionId("focus-journey-${UUID.randomUUID().toString().take(6)}")
+        val focusSession = FocusSession(
+            id = focusSessionId,
+            startedAt = now - 60_000,
+            endedAt = now,
+            durationMs = 60_000,
+            taskId = taskId,
+            source = FocusSessionSource.TIMER,
+            createdAt = now,
+            updatedAt = now,
+        )
+        component.focusSessionRepository?.record(focusSession)
+
+        // 5. Launch ShowHabitActivity for numerical habit and measure detail screen open latency
+        val detailStart = SystemClock.elapsedRealtime()
+        val intent = component.intentFactory.startShowHabitActivity(context, numHabit)
+        ActivityScenario.launch<ShowHabitActivity>(intent).use { scenario ->
+            instrumentation.waitForIdleSync()
+            val detailOpenMs = SystemClock.elapsedRealtime() - detailStart
+            Log.i("SPRINT03_ANDROID_PERF", "HABIT_DETAIL_OPEN_MS=$detailOpenMs")
+
+            scenario.onActivity { activity ->
+                assertTrue("ShowHabitActivity must be active", activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
+                assertFalse("Activity must not be finishing", activity.isFinishing)
+                assertNotNull("Overview card must exist", activity.findViewById<View>(R.id.overviewCard))
+                assertNotNull("Target card must exist", activity.findViewById<View>(R.id.targetCard))
+                assertNotNull("Score card must exist", activity.findViewById<View>(R.id.scoreCard))
+                assertNotNull("History card must exist", activity.findViewById<View>(R.id.historyCard))
+            }
+        }
+
+        // 6. Verify UnifiedStatisticsService computes non-empty statistics
+        val statsService = component.unifiedStatisticsReadSource()
+        val queryContext = StatisticsQueryContext(
+            from = today.minus(30),
+            to = today,
+            timezoneId = TimeZone.getDefault().id,
+            firstWeekday = component.preferences.firstWeekday,
+            datasetId = component.session.datasetId,
+            revision = 1L,
+            now = now
+        )
+        val statsStart = SystemClock.elapsedRealtime()
+        val report = statsService.read(queryContext, { StatisticsReadIdentity(component.session.datasetId, 1L) })
+        val statsCalcMs = SystemClock.elapsedRealtime() - statsStart
+        Log.i("SPRINT03_ANDROID_PERF", "UNIFIED_STATS_CALC_MS=$statsCalcMs")
+
+        assertNotNull("UnifiedStatisticsReport must not be null", report)
+        assertNotNull("Habit statistics must be computed", report.habits)
+        assertNotNull("Task statistics must be computed", report.tasks)
+        assertNotNull("Focus statistics must be computed", report.focus)
+
+        // 7. Test theme/preference switches + Activity.recreate() + background/foreground on MainActivity
+        ActivityScenario.launch<MainActivity>(MainActivity.intent(context, MainDestination.HABITS)).use { scenario ->
+            instrumentation.waitForIdleSync()
+            scenario.onActivity { activity ->
+                activity.window.addFlags(
+                    WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+                    WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                    WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+                )
+                assertTrue("Activity must be active upon launch", activity.lifecycle.currentState.isAtLeast(Lifecycle.State.CREATED))
+                assertFalse("Activity must not be finishing", activity.isFinishing)
+            }
+
+            // Background -> Foreground lifecycle transitions
+            scenario.moveToState(Lifecycle.State.CREATED)
+            instrumentation.waitForIdleSync()
+
+            val executor = Executors.newSingleThreadScheduledExecutor()
+            executor.schedule({
+                val bringToFront = MainActivity.intent(context, MainDestination.HABITS)
+                    .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(bringToFront)
+            }, 400, TimeUnit.MILLISECONDS)
+
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            executor.shutdown()
+            instrumentation.waitForIdleSync()
+            scenario.onActivity { activity ->
+                assertTrue("Activity must be active after background/foreground", activity.lifecycle.currentState.isAtLeast(Lifecycle.State.CREATED))
+                assertFalse("Activity must not be finishing after resume", activity.isFinishing)
+            }
+
+            // Theme/preference switches + recreate
+            instrumentation.runOnMainSync {
+                component.preferences.theme = ThemeSwitcher.THEME_DARK
+                val testPrefs = context.getSharedPreferences("uhabits_prefs_${component.session.preferencesNamespace}", Context.MODE_PRIVATE)
+                val newFirstWeekday = if (component.preferences.firstWeekday == DayOfWeek.MONDAY) "1" else "2"
+                testPrefs.edit().putString("pref_first_weekday", newFirstWeekday).commit()
+            }
+            scenario.onActivity { activity ->
+                activity.recreate()
+            }
+            instrumentation.waitForIdleSync()
+            scenario.onActivity { activity ->
+                assertNotNull("Activity must exist after recreation", activity)
+                assertFalse("Activity must not be finishing after recreation", activity.isFinishing)
+                assertTrue("Activity must be active after recreation", activity.lifecycle.currentState.isAtLeast(Lifecycle.State.CREATED))
+            }
+        }
+
+        // 8. In-app SQLite ContainerBackupService.createBackup + ContainerRestoreService.restore roundtrip
+        val backupStart = SystemClock.elapsedRealtime()
+        val suffix = UUID.randomUUID().toString().take(6)
+        val backupFile = File(context.cacheDir, "test-backup-$suffix.db")
+        val stageFile = File(context.cacheDir, "test-stage-$suffix.db")
+        val destFile = File(context.cacheDir, "test-dest-$suffix.db")
+
+        val backupSqlite = SQLiteDatabase.openOrCreateDatabase(backupFile, null)
+        val stageSqlite = SQLiteDatabase.openOrCreateDatabase(stageFile, null)
+        val destSqlite = SQLiteDatabase.openOrCreateDatabase(destFile, null)
+
+        val backupDb = AndroidDatabase(backupSqlite)
+        val stageDb = AndroidDatabase(stageSqlite)
+        val destDb = AndroidDatabase(destSqlite)
+
+        try {
+            val backupResult = ContainerBackupService.createBackup(
+                sourceDb = component.db,
+                targetDb = backupDb,
+                timestamp = System.currentTimeMillis(),
+                preferences = mapOf("theme" to "dark", "first_day_of_week" to "1")
+            )
+            assertTrue("Container backup must succeed", backupResult is BackupCreationResult.Success)
+
+            val restoreResult = ContainerRestoreService.restore(
+                backupDb = backupDb,
+                stagingDb = stageDb,
+                destinationDb = destDb
+            )
+            assertTrue("Container restore must succeed: $restoreResult", restoreResult is RestoreResult.Success)
+            val backupRestoreMs = SystemClock.elapsedRealtime() - backupStart
+            Log.i("SPRINT03_ANDROID_PERF", "BACKUP_RESTORE_ROUNDTRIP_MS=$backupRestoreMs")
+
+            // Verify habit count, entries, tasks, and focus sessions remain 100% intact
+            val sourceHabitCount = component.db.queryLong("SELECT count(*) FROM Habits WHERE deleted_at IS NULL")
+            val destHabitCount = destDb.queryLong("SELECT count(*) FROM Habits WHERE deleted_at IS NULL")
+            assertEquals("Restored habit count must match source", sourceHabitCount, destHabitCount)
+            assertEquals("Restored habit count must match component", component.habitList.size().toLong(), destHabitCount)
+
+            val sourceEntriesCount = component.db.queryLong("SELECT count(*) FROM Repetitions")
+            val destEntriesCount = destDb.queryLong("SELECT count(*) FROM Repetitions")
+            assertEquals("Restored entries count must match", sourceEntriesCount, destEntriesCount)
+
+            val destTasks = SQLiteUserTaskRepository(destDb)
+            assertEquals("Restored task count must match", component.userTaskRepository.getAll().size, destTasks.getAll().size)
+
+            val destFocus = SQLiteFocusSessionRepository(destDb)
+            assertEquals("Restored focus sessions count must match",
+                component.focusSessionRepository?.getAll()?.size ?: 0,
+                destFocus.getAll().size)
+        } finally {
+            backupSqlite.close()
+            stageSqlite.close()
+            destSqlite.close()
+            backupFile.delete()
+            stageFile.delete()
+            destFile.delete()
         }
     }
 }
