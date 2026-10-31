@@ -37,6 +37,12 @@ class StreakList {
     }
 
     @Synchronized
+    fun setAllFrom(streaks: List<Streak>) {
+        list.clear()
+        list.addAll(streaks)
+    }
+
+    @Synchronized
     fun recompute(
         habit: Habit,
         computedEntries: EntryList,
@@ -44,28 +50,28 @@ class StreakList {
         to: LocalDate
     ) {
         list.clear()
-        val dates = computedEntries
-            .getByInterval(from, to)
-            .filter {
-                habit.isCompletedOn(it.date)
-            }
-            .map { it.date }
-            .toTypedArray()
+        if (from.isNewerThan(to)) return
 
-        if (dates.isEmpty()) return
-
-        var begin = dates[0]
-        var end = dates[0]
-        for (i in 1 until dates.size) {
-            val current = dates[i]
-            if (current == begin.minus(1)) {
-                begin = current
-            } else {
-                list.add(Streak(begin, end))
-                begin = current
-                end = current
+        var begin: LocalDate? = null
+        var end: LocalDate? = null
+        var current = to
+        while (!current.isOlderThan(from)) {
+            if (habit.isCompletedOn(current)) {
+                if (begin == null) {
+                    begin = current
+                    end = current
+                } else if (current == begin.minus(1)) {
+                    begin = current
+                } else {
+                    list.add(Streak(begin, end!!))
+                    begin = current
+                    end = current
+                }
             }
+            current = current.minus(1)
         }
-        list.add(Streak(begin, end))
+        if (begin != null && end != null) {
+            list.add(Streak(begin, end))
+        }
     }
 }

@@ -123,9 +123,16 @@ class EffectiveHabitValueService(
         return byRef.mapValues { (ref, habit) ->
             val byDay = facts[ref].orEmpty().groupBy { dateAt(it.effectiveTimestamp) }
             val tombstonedByDay = tombstonedFacts[ref].orEmpty().groupBy { dateAt(it.effectiveTimestamp) }
-            val days = habit.originalEntries.getByInterval(from, to).map { entry ->
-                projectDay(habit, entry, byDay[entry.date].orEmpty(), tombstonedByDay[entry.date].orEmpty())
-            }.sortedBy { it.manualEntry.date }
+            val count = to.daysSince2000 - from.daysSince2000 + 1
+            val days = ArrayList<EffectiveHabitDay>(count)
+            habit.originalEntries.withLoadedEntries { entriesMap ->
+                var current = from
+                while (current <= to) {
+                    val entry = entriesMap[current] ?: Entry(current, Entry.UNKNOWN)
+                    days.add(projectDay(habit, entry, byDay[current].orEmpty(), tombstonedByDay[current].orEmpty()))
+                    current = current.plus(1)
+                }
+            }
             days
         }
     }
@@ -154,8 +161,23 @@ class EffectiveHabitValueService(
         val goal = goalAt(habit, date)
         val from = when (goal.frequency.denominator) { 7 -> date.startOfWeek(firstWeekday); 30 -> date.startOfMonth(); else -> date }
         val to = when (goal.frequency.denominator) { 7 -> from.plus(6); 30 -> from.plus(from.monthLength - 1); else -> date }
-        val days = preloadedDays.filter { it.manualEntry.date >= from && it.manualEntry.date <= to }
-        require(days.size == to.daysSince2000 - from.daysSince2000 + 1) { "Preloaded values must cover the entire goal period" }
+        val expectedSize = to.daysSince2000 - from.daysSince2000 + 1
+        val days = if (preloadedDays.isNotEmpty() &&
+            preloadedDays.size == preloadedDays.last().manualEntry.date.daysSince2000 - preloadedDays.first().manualEntry.date.daysSince2000 + 1 &&
+            from >= preloadedDays.first().manualEntry.date &&
+            to <= preloadedDays.last().manualEntry.date
+        ) {
+            val firstIdx = from.daysSince2000 - preloadedDays.first().manualEntry.date.daysSince2000
+            val sub = preloadedDays.subList(firstIdx, firstIdx + expectedSize)
+            if (sub.first().manualEntry.date == from && sub.last().manualEntry.date == to) {
+                sub
+            } else {
+                preloadedDays.filter { it.manualEntry.date >= from && it.manualEntry.date <= to }
+            }
+        } else {
+            preloadedDays.filter { it.manualEntry.date >= from && it.manualEntry.date <= to }
+        }
+        require(days.size == expectedSize) { "Preloaded values must cover the entire goal period" }
         val value = aggregate(days)
         if (habit.isNumerical && value.days.any {
             it.includedInStatistics && !it.isSkipped && it.totalValue != null &&
@@ -243,23 +265,42 @@ class EffectiveHabitValueService(
         }
     }
 
-    private fun unitKey(unit: String): String = try {
-        HabitTimeValueConverter.validateTargetHabit(isNumerical = true, unit = unit)
-        "minute"
-    } catch (_: IncompatibleTargetHabitException) {
-        unit.trim().lowercase()
-    }
+    private fun unitKey(unit: String): String = HabitTimeValueConverter.normalizeUnitKey(unit)
 
     /** Match legacy normalization without Habit.goalAt's in-memory goalHistory mutations. */
     private fun goalAt(habit: Habit, date: LocalDate): HabitGoal {
-        val history = when (habit.goalHistory.size) {
-            0 -> listOf(habit.currentGoal())
-            1 -> listOf(habit.goalHistory.single().copy(
-                frequency = habit.frequency, targetType = habit.targetType,
-                targetValue = habit.targetValue, unit = habit.unit,
-            ))
-            else -> habit.goalHistory.toList()
-        }.groupBy { it.effectiveDate }.values.map { it.last() }.sortedBy { it.effectiveDate }
-        return history.lastOrNull { it.effectiveDate <= date } ?: history.first()
+        val raw = habit.goalHistory
+        when (raw.size) {
+            0 -> return habit.currentGoal()
+            1 -> {
+                val single = raw[0]
+                if (single.frequency == habit.frequency && single.targetType == habit.targetType &&
+                    single.targetValue == habit.targetValue && single.unit == habit.unit
+                ) {
+                    return single
+                }
+                return single.copy(
+                    frequency = habit.frequency, targetType = habit.targetType,
+                    targetValue = habit.targetValue, unit = habit.unit,
+                )
+            }
+            else -> {
+                var isStrictlySorted = true
+                for (i in 0 until raw.size - 1) {
+                    if (!raw[i].effectiveDate.isOlderThan(raw[i + 1].effectiveDate)) {
+                        isStrictlySorted = false
+                        break
+                    }
+                }
+                if (isStrictlySorted) {
+                    for (i in raw.size - 1 downTo 0) {
+                        if (raw[i].effectiveDate <= date) return raw[i]
+                    }
+                    return raw[0]
+                }
+                val history = raw.toList().groupBy { it.effectiveDate }.values.map { it.last() }.sortedBy { it.effectiveDate }
+                return history.lastOrNull { it.effectiveDate <= date } ?: history.first()
+            }
+        }
     }
 }

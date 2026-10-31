@@ -62,7 +62,7 @@ class ScoreCardPresenter(
             val bucketSize = BUCKET_SIZES[spinnerPosition]
             val today = getToday()
             val oldest = habit.effectiveStatisticsStartDate()
-                ?: habit.computedEntries.getKnown().lastOrNull()?.date
+                ?: habit.computedEntries.getEarliestDate()
                 ?: today
 
             val scores = habit.scores.getByInterval(oldest, today).groupBy { score ->

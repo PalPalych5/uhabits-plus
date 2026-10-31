@@ -27,7 +27,17 @@ data class CompatibilityCompletion(val status: HabitGoalStatus) {
     val isCompleted: Boolean get() = status == HabitGoalStatus.SATISFIED
 }
 data class EffectiveScoreResult(val scores: List<Score>?, val exactness: EffectiveReadExactness) {
-    fun on(date: LocalDate): Double? = scores?.firstOrNull { it.date == date }?.value
+    fun on(date: LocalDate): Double? {
+        val list = scores ?: return null
+        if (list.isEmpty()) return null
+        val firstDate = list.first().date
+        val idx = firstDate.daysSince2000 - date.daysSince2000
+        if (idx in list.indices) {
+            val candidate = list[idx]
+            if (candidate.date == date) return candidate.value
+        }
+        return list.firstOrNull { it.date == date }?.value
+    }
 }
 data class EffectiveStreakResult(val streaks: List<Streak>?, val exactness: EffectiveReadExactness)
 
@@ -53,17 +63,25 @@ class EffectiveHabitReadSnapshot internal constructor(
     precomputedScoreResult: EffectiveScoreResult? = null,
     precomputedStreakResult: EffectiveStreakResult? = null,
     precomputedScoreStreakComputeDurationMs: Double? = null,
+    precomputedHasContributions: Boolean? = null,
+    precomputedHasHistoricalContributions: Boolean? = null,
+    precomputedCanUseLegacyEntryAdapter: Boolean? = null,
+    precomputedScoreIncomplete: Boolean? = null,
+    precomputedStreakIncomplete: Boolean? = null,
 ) {
-    private val byDate = days.associateBy { it.manualEntry.date }
-    val hasContributions: Boolean = days.any { it.contributions.isNotEmpty() }
-    val hasHistoricalContributions: Boolean get() = days.any { it.contributions.isNotEmpty() || it.tombstonedContributions.isNotEmpty() }
-    val canUseLegacyEntryAdapter: Boolean = !hasContributions || (
-        service.hasUniformObservationUnits(captured, days) && legacyQuantitiesRepresentable(days))
+    val hasContributions: Boolean = precomputedHasContributions ?: days.any { it.contributions.isNotEmpty() }
+    private val cachedHasHistoricalContributions: Boolean = precomputedHasHistoricalContributions
+        ?: (hasContributions || days.any { it.tombstonedContributions.isNotEmpty() })
+    val hasHistoricalContributions: Boolean get() = cachedHasHistoricalContributions
+    val canUseLegacyEntryAdapter: Boolean = precomputedCanUseLegacyEntryAdapter ?: (!hasContributions || (
+        service.hasUniformObservationUnits(captured, days) && legacyQuantitiesRepresentable(days)))
     private val representable get() = canUseLegacyEntryAdapter
     // Legacy UNKNOWN-as-zero remains an explicitly named compatibility result only when no credit exists.
     // Once automatic observations exist, a missing manual log cannot be made exact by an Int adapter.
-    private val scoreIncomplete = hasContributions && representable && hasIncompleteAlgorithmInputs(resultTo, true)
-    private val streakIncomplete = hasContributions && representable && hasIncompleteAlgorithmInputs(compatibilityTo, false)
+    private val scoreIncomplete: Boolean = precomputedScoreIncomplete
+        ?: (hasContributions && representable && hasIncompleteAlgorithmInputs(resultTo, true))
+    private val streakIncomplete: Boolean = precomputedStreakIncomplete
+        ?: (hasContributions && representable && hasIncompleteAlgorithmInputs(compatibilityTo, false))
     val scoreResult: EffectiveScoreResult
     val streakResult: EffectiveStreakResult
     val scoreStreakComputeDurationMs: Double
@@ -86,7 +104,7 @@ class EffectiveHabitReadSnapshot internal constructor(
             } else {
                 val projected = detachedPresentation()
                 val start = projected.effectiveStatisticsStartDate()
-                    ?: projected.computedEntries.getKnown().lastOrNull()?.date ?: from
+                    ?: projected.computedEntries.getEarliestDate() ?: from
                 val safe = !hasContributions || rollingWindowsRepresentable(projected, start, resultTo)
                 scoreResult = when {
                     !safe -> EffectiveScoreResult(null, EffectiveReadExactness.UNREPRESENTABLE)
@@ -123,10 +141,25 @@ class EffectiveHabitReadSnapshot internal constructor(
             precomputedScoreResult = scoreResult,
             precomputedStreakResult = streakResult,
             precomputedScoreStreakComputeDurationMs = scoreStreakComputeDurationMs,
+            precomputedHasContributions = hasContributions,
+            precomputedHasHistoricalContributions = cachedHasHistoricalContributions,
+            precomputedCanUseLegacyEntryAdapter = canUseLegacyEntryAdapter,
+            precomputedScoreIncomplete = scoreIncomplete,
+            precomputedStreakIncomplete = streakIncomplete,
         )
     }
-    fun day(date: LocalDate): EffectiveHabitDay = requireNotNull(byDate[date]) { "Date outside snapshot" }
-    fun dayOrNull(date: LocalDate): EffectiveHabitDay? = byDate[date]
+
+    private fun findDay(date: LocalDate): EffectiveHabitDay? {
+        val idx = date.daysSince2000 - from.daysSince2000
+        if (idx in days.indices) {
+            val candidate = days[idx]
+            if (candidate.manualEntry.date == date) return candidate
+        }
+        return days.firstOrNull { it.manualEntry.date == date }
+    }
+
+    fun day(date: LocalDate): EffectiveHabitDay = requireNotNull(findDay(date)) { "Date outside snapshot" }
+    fun dayOrNull(date: LocalDate): EffectiveHabitDay? = findDay(date)
 
     /** PR15 calendar achievement, intentionally distinct from legacy rolling score and completion. */
     fun goalAchievementOn(date: LocalDate): GoalPeriodAchievement {
@@ -171,14 +204,22 @@ class EffectiveHabitReadSnapshot internal constructor(
         return detachedPresentation().also { projected ->
             if (scoreResult.scores != null) {
                 val start = projected.effectiveStatisticsStartDate()
-                    ?: projected.computedEntries.getKnown().lastOrNull()?.date ?: from
-                projected.scores.recompute(projected, projected.computedEntries, start, resultTo)
+                    ?: projected.computedEntries.getEarliestDate() ?: from
+                if (start >= from) {
+                    projected.scores.setAllFrom(scoreResult.scores)
+                } else {
+                    projected.scores.recompute(projected, projected.computedEntries, start, resultTo)
+                }
             }
             // Legacy StreakList still calls Habit's completion helper. Typed streakResult is authoritative.
             if (streakResult.streaks != null) {
                 val start = projected.effectiveStatisticsStartDate()
-                    ?: projected.computedEntries.getKnown().lastOrNull()?.date ?: from
-                projected.streaks.recompute(projected, projected.computedEntries, minOf(start, compatibilityTo), compatibilityTo)
+                    ?: projected.computedEntries.getEarliestDate() ?: from
+                if (!hasContributions) {
+                    projected.streaks.setAllFrom(streakResult.streaks)
+                } else {
+                    projected.streaks.recompute(projected, projected.computedEntries, minOf(start, compatibilityTo), compatibilityTo)
+                }
             }
         }
     }
@@ -197,14 +238,14 @@ class EffectiveHabitReadSnapshot internal constructor(
     private fun hasIncompleteAlgorithmInputs(end: LocalDate, includeRolling: Boolean): Boolean {
         var date = captured.effectiveStatisticsStartDate() ?: observedFrom ?: from
         while (date <= end) {
-            val current = byDate[date]
+            val current = findDay(date)
             if (captured.isDateIncludedInStatistics(date) && current?.isSkipped != true) {
                 if (current?.hasCompleteCoverage != true) return true
                 val goal = captured.goalAt(date)
                 for (offset in 0 until (if (includeRolling) goal.frequency.denominator else 0)) {
                     val inputDate = date.minus(offset)
                     if (captured.isDateIncludedInStatistics(inputDate)) {
-                        val input = byDate[inputDate]
+                        val input = findDay(inputDate)
                         if (input?.isSkipped != true && input?.hasCompleteCoverage != true) return true
                     }
                 }
@@ -284,8 +325,8 @@ class EffectiveHabitReadSnapshotProvider(private val repository: ContributionRep
         val copyStart = TimeSource.Monotonic.markNow()
         val frozen = habits.map(::copyDetached)
         val copyDuration = copyStart.elapsedNow()
-        val copiedOriginal = frozen.sumOf { it.originalEntries.getKnown().size }
-        val copiedComputed = frozen.sumOf { it.computedEntries.getKnown().size }
+        val copiedOriginal = frozen.sumOf { it.originalEntries.knownSize() }
+        val copiedComputed = frozen.sumOf { it.computedEntries.knownSize() }
 
         val refs = frozen.map { HabitRef(requireNotNull(it.uuid)) }.toSet()
         require(refs.size == frozen.size) { "Duplicate Habit identities" }
@@ -296,21 +337,47 @@ class EffectiveHabitReadSnapshotProvider(private val repository: ContributionRep
         val contributions = rawContributions.groupBy { it.targetHabit }
 
         val domainStart = TimeSource.Monotonic.markNow()
-        val domains = frozen.associate { habit ->
+        var globalMin: LocalDate? = null
+        var globalMax: LocalDate? = null
+        val domainBounds = HashMap<HabitRef, Pair<LocalDate?, LocalDate?>>(frozen.size)
+        for (habit in frozen) {
             val ref = HabitRef(requireNotNull(habit.uuid))
-            val dates = habit.originalEntries.getKnown().map { it.date } + contributions[ref].orEmpty().map {
-                localDateAt(it.effectiveTimestamp, calendar.hourOffset, calendar.minuteOffset)
+            val statStart = habit.effectiveStatisticsStartDate()
+            if (statStart != null) {
+                if (globalMin == null || statStart < globalMin!!) globalMin = statStart
             }
-            ref to dates.filter { habit.isDateIncludedInStatistics(it) }
+            var hMin: LocalDate? = null
+            var hMax: LocalDate? = null
+            habit.originalEntries.withLoadedEntries { map ->
+                for (entry in map.values) {
+                    val d = entry.date
+                    if (statStart == null || !d.isOlderThan(statStart)) {
+                        if (hMin == null || d < hMin!!) hMin = d
+                        if (hMax == null || d > hMax!!) hMax = d
+                    }
+                }
+            }
+            val contribs = contributions[ref]
+            if (contribs != null) {
+                for (c in contribs) {
+                    val d = localDateAt(c.effectiveTimestamp, calendar.hourOffset, calendar.minuteOffset)
+                    if (statStart == null || !d.isOlderThan(statStart)) {
+                        if (hMin == null || d < hMin!!) hMin = d
+                        if (hMax == null || d > hMax!!) hMax = d
+                    }
+                }
+            }
+            domainBounds[ref] = hMin to hMax
+            if (hMin != null && (globalMin == null || hMin!! < globalMin!!)) globalMin = hMin
+            if (hMax != null && (globalMax == null || hMax!! > globalMax!!)) globalMax = hMax
         }
-        val allKnown = domains.values.flatten() + frozen.mapNotNull { it.effectiveStatisticsStartDate() }
-        val earliest = if (allKnown.isNotEmpty()) {
-            if (from.year < 2000) allKnown.minOrNull()!! else minOf(allKnown.minOrNull()!!, from)
+        val earliest = if (globalMin != null) {
+            if (from.year < 2000) globalMin!! else minOf(globalMin!!, from)
         } else {
             if (from.year < 2000) getToday() else from
         }
         val compatibilityTo = getToday().plus(30)
-        val latest = (domains.values.flatten() + to + compatibilityTo).maxOrNull()!!
+        val latest = maxOf(globalMax ?: to, to, compatibilityTo)
         // Complete week/month envelope also supplies periods at historical goal boundaries.
         val maximumWindow = frozen.maxOf { habit ->
             maxOf(habit.frequency.denominator, habit.goalHistory.maxOfOrNull { it.frequency.denominator } ?: 1)
@@ -333,9 +400,13 @@ class EffectiveHabitReadSnapshotProvider(private val repository: ContributionRep
         val result = frozen.associate { habit ->
             val ref = HabitRef(requireNotNull(habit.uuid))
             val raw = values.getValue(ref)
-            val days = raw.map { it.copy(contributions = it.contributions.toList(), tombstonedContributions = it.tombstonedContributions.toList()) }.toList()
+            val days = raw.map {
+                if (it.contributions.isEmpty() && it.tombstonedContributions.isEmpty()) it
+                else it.copy(contributions = it.contributions.toList(), tombstonedContributions = it.tombstonedContributions.toList())
+            }.toList()
+            val bounds = domainBounds.getValue(ref)
             val snapshot = EffectiveHabitReadSnapshot(datasetId, revision, calendar, ref, loadFrom, loadTo,
-                domains.getValue(ref).minOrNull(), domains.getValue(ref).maxOrNull(), to, compatibilityTo, habit, days, service, compatibilityService)
+                bounds.first, bounds.second, to, compatibilityTo, habit, days, service, compatibilityService)
             totalScoresStreaksDuration += snapshot.scoreStreakComputeDurationMs
             ref to snapshot
         }
@@ -366,11 +437,10 @@ class EffectiveHabitReadSnapshotProvider(private val repository: ContributionRep
 
 private fun copyDetached(habit: Habit): Habit = habit.copy(
     goalHistory = habit.goalHistory.toMutableList(),
-    originalEntries = EntryList().also { list -> habit.originalEntries.getKnown().forEach(list::add) },
-    computedEntries = EntryList().also { list -> habit.computedEntries.getKnown().forEach(list::add) },
+    originalEntries = EntryList().also { it.copyEntriesFrom(habit.originalEntries) },
+    computedEntries = EntryList().also { it.copyEntriesFrom(habit.computedEntries) },
     scores = ScoreList(), streaks = StreakList(),
 )
-
 
 
 

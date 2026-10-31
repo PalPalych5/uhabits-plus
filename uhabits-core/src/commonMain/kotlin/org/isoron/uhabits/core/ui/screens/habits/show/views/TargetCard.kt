@@ -19,6 +19,7 @@
 
 package org.isoron.uhabits.core.ui.screens.habits.show.views
 
+import org.isoron.platform.time.DayOfWeek
 import org.isoron.platform.time.TruncateField
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.core.models.Habit
@@ -45,9 +46,12 @@ class TargetCardPresenter {
         ): TargetCardState {
             val today = getToday()
             val oldest = habit.effectiveStatisticsStartDate()
-                ?: habit.computedEntries.getKnown().lastOrNull()?.date
+                ?: habit.computedEntries.getEarliestDate()
                 ?: today
-            val entries = habit.statisticsEntries(oldest, today)
+            val firstWeekdayEnum = DayOfWeek.values()[firstWeekday - 1]
+            val currentPeriodsStart = minOf(today.startOfYear(), today.startOfWeek(firstWeekdayEnum))
+            val boundedOldest = maxOf(oldest, currentPeriodsStart)
+            val entries = habit.statisticsEntries(boundedOldest, today)
 
             val valueToday = entries.groupedSum(
                 truncateField = TruncateField.DAY,

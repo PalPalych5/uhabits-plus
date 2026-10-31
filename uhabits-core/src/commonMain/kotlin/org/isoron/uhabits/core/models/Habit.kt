@@ -137,14 +137,17 @@ data class Habit(
         if (goalHistory.size == 1) {
             val single = goalHistory[0]
             if (single.frequency == frequency && single.targetType == targetType &&
-                single.targetValue == targetValue && single.unit == unit &&
-                !single.effectiveDate.isNewerThan(date)
+                single.targetValue == targetValue && single.unit == unit
             ) {
                 return single
             }
         }
         val history = normalizedGoalHistory()
-        return history.lastOrNull { !it.effectiveDate.isNewerThan(date) } ?: history.first()
+        for (i in history.size - 1 downTo 0) {
+            val g = history[i]
+            if (!g.effectiveDate.isNewerThan(date)) return g
+        }
+        return history.first()
     }
 
     fun effectiveStatisticsStartDate(): LocalDate? {
@@ -190,21 +193,32 @@ data class Habit(
                 val firstWeekdayNum = getFirstWeekdayNumberAccordingToLocale()
                 val start = date.startOfWeek(org.isoron.platform.time.DayOfWeek.entries[firstWeekdayNum - 1])
                 val end = start.plus(6)
-                statisticsEntries(start, end).groupedSum(
-                    truncateField = TruncateField.WEEK_NUMBER,
-                    firstWeekday = firstWeekdayNum,
-                    isNumerical = true
-                ).firstOrNull()?.value?.div(1000.0) ?: 0.0
+                sumNumericalInterval(start, end) / 1000.0
             }
             30 -> {
                 val start = date.startOfMonth()
                 val end = start.plus(date.monthLength - 1)
-                statisticsEntries(start, end).groupedSum(
-                    truncateField = TruncateField.MONTH,
-                    isNumerical = true
-                ).firstOrNull()?.value?.div(1000.0) ?: 0.0
+                sumNumericalInterval(start, end) / 1000.0
             }
             else -> entry.value / 1000.0
+        }
+    }
+
+    private fun sumNumericalInterval(from: LocalDate, to: LocalDate): Int {
+        val statsStart = effectiveStatisticsStartDate()
+        val effectiveFrom = if (statsStart != null && statsStart.isNewerThan(from)) statsStart else from
+        if (effectiveFrom.isNewerThan(to)) return 0
+        return computedEntries.withLoadedEntries { map ->
+            var sum = 0
+            var current = effectiveFrom
+            while (!current.isNewerThan(to)) {
+                val entry = map[current]
+                if (entry != null && entry.value != Entry.SKIP && entry.value > 0) {
+                    sum += entry.value
+                }
+                current = current.plus(1)
+            }
+            sum
         }
     }
 
@@ -229,8 +243,7 @@ data class Habit(
 
         val today = getToday()
         val to = today.plus(30)
-        val entries = computedEntries.getKnown()
-        var from = effectiveStatisticsStartDate() ?: entries.lastOrNull()?.date ?: today
+        var from = effectiveStatisticsStartDate() ?: computedEntries.getEarliestDate() ?: today
         if (from.isNewerThan(to)) from = to
 
         scores.recompute(

@@ -31,6 +31,11 @@ object HabitTimeValueConverter {
     // Explicit time labels only. Bare "m" may mean metres in a user-defined unit.
     private val minuteUnits = setOf("min", "mins", "minute", "minutes", "min.", "мин", "минута", "минуты", "минут", "мин.")
 
+    fun normalizeUnitKey(unit: String): String {
+        val normalized = unit.trim().lowercase()
+        return if (normalized in minuteUnits) "minute" else normalized
+    }
+
     /**
      * Converts a duration in milliseconds to Habit-native numerical value (x1000 scale) for minute-based habits.
      *

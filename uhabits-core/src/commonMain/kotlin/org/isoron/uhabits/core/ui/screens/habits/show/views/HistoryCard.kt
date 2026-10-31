@@ -44,7 +44,6 @@ import org.isoron.uhabits.core.ui.views.HistoryChart.Square.OFF
 import org.isoron.uhabits.core.ui.views.HistoryChart.Square.ON
 import org.isoron.uhabits.core.ui.views.OnDateClickedListener
 import org.isoron.uhabits.core.ui.views.Theme
-import kotlin.math.roundToInt
 
 data class HistoryCardState(
     val color: PaletteColor,
@@ -168,10 +167,9 @@ class HistoryCardPresenter(
         ): HistoryCardState {
             val today = getToday()
             val oldest = habit.effectiveStatisticsStartDate()
-                ?: habit.computedEntries.getKnown().lastOrNull()?.date
+                ?: habit.computedEntries.getEarliestDate()
                 ?: today
             val entries = habit.computedEntries.getByInterval(oldest, today)
-            val firstWeekdayNum = firstWeekday.daysSinceSunday + 1
             val series = if (habit.isNumerical) {
                 entries.map {
                     val value = it.value

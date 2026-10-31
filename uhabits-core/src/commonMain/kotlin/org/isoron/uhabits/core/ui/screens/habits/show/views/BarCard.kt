@@ -59,7 +59,7 @@ class BarCardPresenter(
             }
             val today = getToday()
             val oldest = habit.effectiveStatisticsStartDate()
-                ?: habit.computedEntries.getKnown().lastOrNull()?.date
+                ?: habit.computedEntries.getEarliestDate()
                 ?: today
             val entries = habit.computedEntries.getByInterval(oldest, today).groupedSum(
                 truncateField = ScoreCardPresenter.getTruncateField(bucketSize),

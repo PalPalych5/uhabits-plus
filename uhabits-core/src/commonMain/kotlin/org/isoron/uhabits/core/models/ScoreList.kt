@@ -59,6 +59,14 @@ class ScoreList {
         return result
     }
 
+    @Synchronized
+    fun setAllFrom(scores: List<Score>) {
+        map.clear()
+        for (score in scores) {
+            map[score.date] = score
+        }
+    }
+
     /**
      * Recomputes all scores between the provided [from] and [to] dates.
      */
@@ -70,74 +78,85 @@ class ScoreList {
         to: LocalDate
     ) {
         map.clear()
-        var previousValue = if (habit.isNumerical && habit.goalAt(from).targetType == NumericalHabitType.AT_MOST) 1.0 else 0.0
-        var date = from
-        while (!date.isNewerThan(to)) {
-            val goal = habit.goalAt(date)
-            val entry = computedEntries.get(date)
-            if (!habit.isDateIncludedInStatistics(date)) {
-                map[date] = Score(date, 0.0)
-                previousValue = 0.0
-                date = date.plus(1)
-                continue
+        if (from.isNewerThan(to)) return
+        val isNumerical = habit.isNumerical
+        val statsStart = habit.effectiveStatisticsStartDate()
+        val history = habit.normalizedGoalHistory()
+
+        fun resolveGoal(date: LocalDate): HabitGoal {
+            if (history.size == 1) return history[0]
+            for (i in history.size - 1 downTo 0) {
+                val g = history[i]
+                if (!g.effectiveDate.isNewerThan(date)) return g
             }
+            return history[0]
+        }
 
-            var numerator = goal.frequency.numerator
-            var denominator = goal.frequency.denominator
-            val freq = goal.frequency.toDouble()
+        computedEntries.withLoadedEntries { entriesMap ->
+            var previousValue = if (isNumerical && resolveGoal(from).targetType == NumericalHabitType.AT_MOST) 1.0 else 0.0
+            var date = from
+            while (!date.isNewerThan(to)) {
+                if (statsStart != null && date.isOlderThan(statsStart)) {
+                    map[date] = Score(date, 0.0)
+                    previousValue = 0.0
+                    date = date.plus(1)
+                    continue
+                }
 
-            if (!habit.isNumerical && freq < 1.0) {
-                numerator *= 2
-                denominator *= 2
-            }
+                val goal = resolveGoal(date)
+                val entryValue = entriesMap[date]?.value ?: Entry.UNKNOWN
+                var numerator = goal.frequency.numerator
+                var denominator = goal.frequency.denominator
+                val freq = goal.frequency.toDouble()
 
-            if (entry.value != Entry.SKIP) {
-                val percentageCompleted = if (habit.isNumerical) {
-                    val rollingSum = sumNumericalWindow(habit, computedEntries, date, denominator)
-                    val normalizedRollingSum = rollingSum / 1000.0
-                    if (goal.targetType == NumericalHabitType.AT_MOST) {
-                        if (goal.targetValue > 0) {
-                            (1 - ((normalizedRollingSum - goal.targetValue) / goal.targetValue))
-                                .coerceIn(0.0, 1.0)
+                if (!isNumerical && freq < 1.0) {
+                    numerator *= 2
+                    denominator *= 2
+                }
+
+                if (entryValue != Entry.SKIP) {
+                    val percentageCompleted = if (isNumerical) {
+                        var rollingSum = 0
+                        for (offset in 0 until denominator) {
+                            val day = date.minus(offset)
+                            if (statsStart == null || !day.isOlderThan(statsStart)) {
+                                val v = entriesMap[day]?.value ?: Entry.UNKNOWN
+                                if (v > 0) rollingSum += v
+                            }
+                        }
+                        val normalizedRollingSum = rollingSum / 1000.0
+                        if (goal.targetType == NumericalHabitType.AT_MOST) {
+                            if (goal.targetValue > 0) {
+                                (1 - ((normalizedRollingSum - goal.targetValue) / goal.targetValue))
+                                    .coerceIn(0.0, 1.0)
+                            } else {
+                                if (normalizedRollingSum > 0) 0.0 else 1.0
+                            }
                         } else {
-                            if (normalizedRollingSum > 0) 0.0 else 1.0
+                            if (goal.targetValue > 0) {
+                                min(1.0, normalizedRollingSum / goal.targetValue)
+                            } else {
+                                1.0
+                            }
                         }
                     } else {
-                        if (goal.targetValue > 0) {
-                            min(1.0, normalizedRollingSum / goal.targetValue)
-                        } else {
-                            1.0
+                        var rollingSum = 0.0
+                        for (offset in 0 until denominator) {
+                            val day = date.minus(offset)
+                            if ((statsStart == null || !day.isOlderThan(statsStart)) &&
+                                entriesMap[day]?.value == Entry.YES_MANUAL
+                            ) {
+                                rollingSum += 1.0
+                            }
                         }
+                        min(1.0, rollingSum / numerator)
                     }
-                } else {
-                    val rollingSum = sumBooleanWindow(habit, computedEntries, date, denominator)
-                    min(1.0, rollingSum / numerator)
+                    previousValue = compute(freq, previousValue, percentageCompleted)
                 }
-                previousValue = compute(freq, previousValue, percentageCompleted)
-            }
 
-            map[date] = Score(date, previousValue)
-            date = date.plus(1)
-        }
-    }
-
-    private fun sumNumericalWindow(habit: Habit, computedEntries: EntryList, date: LocalDate, denominator: Int): Int {
-        var sum = 0
-        for (offset in 0 until denominator) {
-            val day = date.minus(offset)
-            if (habit.isDateIncludedInStatistics(day)) sum += max(0, computedEntries.get(day).value)
-        }
-        return sum
-    }
-
-    private fun sumBooleanWindow(habit: Habit, computedEntries: EntryList, date: LocalDate, denominator: Int): Double {
-        var sum = 0.0
-        for (offset in 0 until denominator) {
-            val day = date.minus(offset)
-            if (habit.isDateIncludedInStatistics(day) && computedEntries.get(day).value == Entry.YES_MANUAL) {
-                sum += 1.0
+                map[date] = Score(date, previousValue)
+                date = date.plus(1)
             }
         }
-        return sum
     }
 }

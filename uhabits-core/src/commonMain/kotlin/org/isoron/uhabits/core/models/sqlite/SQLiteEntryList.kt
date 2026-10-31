@@ -112,6 +112,16 @@ class SQLiteEntryList(
         return super.getEarliestDate()
     }
 
+    override fun <T> withLoadedEntries(action: (HashMap<LocalDate, Entry>) -> T): T {
+        loadRecords()
+        return super.withLoadedEntries(action)
+    }
+
+    override fun knownSize(): Int {
+        loadRecords()
+        return super.knownSize()
+    }
+
     override fun recomputeFrom(
         originalEntries: EntryList,
         frequency: Frequency,

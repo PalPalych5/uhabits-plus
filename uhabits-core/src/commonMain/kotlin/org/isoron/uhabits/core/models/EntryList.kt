@@ -37,6 +37,22 @@ open class EntryList {
 
     private val entriesByDate: HashMap<LocalDate, Entry> = HashMap()
 
+    @Synchronized
+    internal fun copyEntriesFrom(other: EntryList) {
+        other.withLoadedEntries { sourceMap ->
+            entriesByDate.clear()
+            entriesByDate.putAll(sourceMap)
+        }
+    }
+
+    @Synchronized
+    internal open fun <T> withLoadedEntries(action: (HashMap<LocalDate, Entry>) -> T): T {
+        return action(entriesByDate)
+    }
+
+    @Synchronized
+    open fun knownSize(): Int = entriesByDate.size
+
     /**
      * Returns the entry corresponding to the given date. If no entry with such date
      * has been previously added, returns Entry(date, UNKNOWN).
@@ -113,11 +129,11 @@ open class EntryList {
         isNumerical: Boolean,
         goalHistory: List<HabitGoal> = emptyList()
     ) {
-        clear()
-        val original = originalEntries.getKnown()
         if (isNumerical) {
-            original.forEach { add(it) }
+            copyEntriesFrom(originalEntries)
         } else {
+            clear()
+            val original = originalEntries.getKnown()
             val history = if (goalHistory.isEmpty()) {
                 listOf(
                     HabitGoal(
