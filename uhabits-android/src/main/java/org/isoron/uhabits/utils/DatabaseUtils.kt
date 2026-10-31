@@ -370,6 +370,33 @@ object DatabaseUtils {
         return org.isoron.uhabits.backup.BackupArchiveValidator.validate(file, targetVersion)
     }
 
+    internal fun computeRequiredRestoreBytes(databaseSizeBytes: Long): Long {
+        if (databaseSizeBytes < 0L) {
+            throw org.isoron.uhabits.backup.BackupRestoreException.CorruptedArchiveException(
+                "Invalid negative database size in backup: $databaseSizeBytes"
+            )
+        }
+        return try {
+            val multiplied = Math.multiplyExact(databaseSizeBytes, 3L)
+            Math.addExact(multiplied, 10 * 1024 * 1024L)
+        } catch (_: ArithmeticException) {
+            throw org.isoron.uhabits.backup.BackupRestoreException.InsufficientStorageException(
+                "Database size causes calculation overflow: $databaseSizeBytes"
+            )
+        }
+    }
+
+    internal fun checkRestoreFreeSpace(
+        availableBytes: Long,
+        requiredBytes: Long
+    ) {
+        if (availableBytes < requiredBytes) {
+            throw org.isoron.uhabits.backup.BackupRestoreException.InsufficientStorageException(
+                "Insufficient storage space for restore: required $requiredBytes bytes, available $availableBytes bytes"
+            )
+        }
+    }
+
     fun validateRawSqliteBackup(file: File): org.isoron.uhabits.backup.BackupValidationResult {
         if (!file.exists() || file.length() <= 0L) {
             return org.isoron.uhabits.backup.BackupValidationResult(
@@ -557,12 +584,9 @@ object DatabaseUtils {
         val parent = requireNotNull(dbFile.parentFile)
 
         // Phase 3: Verify sufficient disk space and accessible restore destination
-        val requiredBytes = (validation.manifest?.databaseSizeBytes ?: stagedBackupFile.length()) * 3 + 10 * 1024 * 1024L
-        if (parent.usableSpace in 1 until requiredBytes) {
-            throw org.isoron.uhabits.backup.BackupRestoreException.InsufficientStorageException(
-                "Insufficient storage space for restore: required $requiredBytes bytes, available ${parent.usableSpace} bytes"
-            )
-        }
+        val databaseSizeBytes = validation.manifest?.databaseSizeBytes ?: stagedBackupFile.length()
+        val requiredBytes = computeRequiredRestoreBytes(databaseSizeBytes)
+        checkRestoreFreeSpace(parent.usableSpace, requiredBytes)
 
         if (restoreFailureInjection == RestoreFailureInjection.BEFORE_STAGING) {
             throw IOException("Injected failure before restore staging")
