@@ -1,7 +1,8 @@
 param(
-    [string]$Sdk = "$env:LOCALAPPDATA\Android\Sdk",
-    [string]$Output = "$PSScriptRoot\..\..\scratch\ui-review\runs\$(Get-Date -Format yyyyMMdd-HHmmss)",
+    [string]$Sdk = $(if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" }),
+    [string]$Output = "$(if ($env:TEST_ARTIFACTS_HOME) { $env:TEST_ARTIFACTS_HOME } else { 'D:\DevData\TestArtifacts' })\ui-review\runs\$(Get-Date -Format yyyyMMdd-HHmmss)",
     [switch]$SkipBuild,
+    [switch]$ProvisionQaAvd,
     [switch]$MeasurePerformance,
     [string]$VerifiedFunctionalRun
 )
@@ -11,7 +12,7 @@ $avdName = 'UHabit_UI_Review_Disposable_20261011'
 $serial = 'emulator-5580'
 $adb = Join-Path $Sdk 'platform-tools\adb.exe'
 if (Test-Path $Output) { throw 'Output already exists; choose a fresh run directory to preserve previous evidence.' }
-$avdHome = Join-Path $repo 'scratch\ui-review\avd-home-api35'
+$avdHome = if ($env:ANDROID_AVD_HOME) { $env:ANDROID_AVD_HOME } else { 'D:\DevData\Android\avd' }
 function Adb {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments)
     $result = & $adb -s $serial @Arguments
@@ -24,7 +25,15 @@ function ProbeAdb {
     try { $ErrorActionPreference = 'Continue'; & $adb -s $serial @Arguments 2>$null }
     finally { $ErrorActionPreference = $previousErrorAction }
 }
+# Share the lifecycle wrapper's device/port leases; simultaneous QA runs fail closed.
+$leaseRoot = if ($env:ANDROID_AVD_LEASE_HOME) { $env:ANDROID_AVD_LEASE_HOME } else { 'D:\DevData\Android\leases' }
+New-Item -ItemType Directory -Force -Path $leaseRoot | Out-Null
+$qaLease = [IO.File]::Open((Join-Path $leaseRoot "$avdName.lease"), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+$qaPortLease = $null
+try {
+    $qaPortLease = [IO.File]::Open((Join-Path $leaseRoot 'port-5580.lease'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
 if (!(Test-Path (Join-Path $avdHome "$avdName.ini"))) {
+    if (!$ProvisionQaAvd) { throw 'Persistent synthetic QA guest is missing. Explicit -ProvisionQaAvd is required; ordinary development uses UHabit_Next_Dev_API35.' }
     New-Item -ItemType Directory -Force $avdHome | Out-Null
     $env:ANDROID_AVD_HOME = $avdHome
     'no' | & (Join-Path $Sdk 'cmdline-tools\latest\bin\avdmanager.bat') create avd -n $avdName -k 'system-images;android-35;google_apis;x86_64' --device pixel_6
@@ -155,3 +164,8 @@ if (!(Test-Path (Join-Path $Output 'ux-issues.md'))) { '# UX issues: pending vis
 $zip = Join-Path (Split-Path $Output) 'UHabit_Next_UI_Review.zip'
 Compress-Archive -Path "$Output\*" -DestinationPath $zip -Force
 Write-Output $zip
+
+} finally {
+    if ($qaPortLease) { $qaPortLease.Dispose() }
+    $qaLease.Dispose()
+}

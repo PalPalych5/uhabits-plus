@@ -1,57 +1,25 @@
+"""Launch the persistent QA guest through the shared device/port lease guard."""
 import os
+from pathlib import Path
 import subprocess
-import time
 import sys
 
-repo = os.path.abspath(".")
-avd_home = os.path.join(repo, "scratch", "ui-review", "avd-home-api35")
-sdk = os.environ.get("LOCALAPPDATA", "") + r"\Android\Sdk"
-emulator_exe = os.path.join(sdk, "emulator", "emulator.exe")
-adb_exe = os.path.join(sdk, "platform-tools", "adb.exe")
-serial = "emulator-5580"
-avd_name = "UHabit_UI_Review_Disposable_20261011"
-
+wrapper = Path(__file__).resolve().with_name("with-avd.ps1")
 env = os.environ.copy()
-env["ANDROID_AVD_HOME"] = avd_home
-
-# Check if emulator is already running
-try:
-    res = subprocess.run([adb_exe, "-s", serial, "emu", "avd", "name"], capture_output=True, text=True, timeout=5)
-    if avd_name in res.stdout:
-        print(f"AVD {avd_name} already running on {serial}")
-        sys.exit(0)
-except Exception:
-    pass
-
-print(f"Starting emulator {avd_name} on {serial}...")
-cmd = [
-    emulator_exe,
-    "-avd", avd_name,
-    "-port", "5580",
-    "-no-snapshot",
-    "-no-audio",
-    "-no-window",
-    "-gpu", "swiftshader"
-]
-
-proc = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-# Poll for boot_completed
-print("Waiting for boot completion...")
-deadline = time.time() + 180
-booted = False
-while time.time() < deadline:
-    time.sleep(3)
-    try:
-        res = subprocess.run([adb_exe, "-s", serial, "shell", "-n", "-T", "getprop sys.boot_completed"], capture_output=True, text=True, timeout=5)
-        if res.stdout.strip() == "1":
-            booted = True
-            break
-    except Exception:
-        pass
-
-if not booted:
-    print("ERROR: Boot timed out!")
-    sys.exit(1)
-
-print(f"Emulator {avd_name} successfully booted on {serial}!")
+env["ANDROID_HOME"] = env.get("ANDROID_HOME") or os.path.join(
+    env["LOCALAPPDATA"], "Android", "Sdk"
+)
+env.setdefault("ANDROID_AVD_HOME", r"D:\DevData\Android\avd")
+powershell = os.path.join(
+    env["SYSTEMROOT"], "System32", "WindowsPowerShell", "v1.0", "powershell.exe"
+)
+# Only the local script path is interpolated; escape PowerShell single quotes.
+script_path = str(wrapper).replace("'", "''")
+command = (
+    f"& '{script_path}' -AvdName UHabit_UI_Review_Disposable_20261011 "
+    "-Port 5580 -Headless -Action { param($serial) "
+    "Write-Output \"QA AVD ready on $serial\" }"
+)
+sys.exit(subprocess.call(
+    [powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned", "-Command", command], env=env
+))

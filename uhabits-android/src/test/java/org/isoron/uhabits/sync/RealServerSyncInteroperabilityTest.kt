@@ -82,6 +82,8 @@ class RealServerSyncInteroperabilityTest {
         if (!migrationsDir.exists()) {
             migrationsDir = File("uhabits-core/assets/main/migrations")
         }
+
+
         db.migrateTo(DATABASE_VERSION) { v ->
             val file = File(migrationsDir, "%02d.sql".format(v))
             if (!file.exists()) {

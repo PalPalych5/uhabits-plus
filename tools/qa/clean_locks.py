@@ -1,16 +1,9 @@
+"""Report emulator locks; never remove them while ownership is uncertain."""
 import os
-import shutil
+from pathlib import Path
 
-lock_dir = r"scratch\ui-review\avd-home-api35\UHabit_UI_Review_Disposable_20261011.avd"
-if os.path.exists(lock_dir):
-    for name in os.listdir(lock_dir):
-        if name.endswith(".lock"):
-            full_path = os.path.join(lock_dir, name)
-            if os.path.isdir(full_path):
-                shutil.rmtree(full_path, ignore_errors=True)
-            else:
-                try:
-                    os.remove(full_path)
-                except Exception:
-                    pass
-            print(f"Removed {full_path}")
+avd_home = Path(os.environ.get("ANDROID_AVD_HOME", r"D:\DevData\Android\avd"))
+lock_dir = avd_home / "UHabit_UI_Review_Disposable_20261011.avd"
+for lock in lock_dir.glob("*.lock"):
+    print(f"Preserved lock: {lock}")
+print("No locks removed. Close the owning emulator and verify ownership before manual recovery.")

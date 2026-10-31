@@ -1,12 +1,19 @@
 param(
     [Parameter(Mandatory=$true)][string]$Output,
     [int]$Samples = 5,
-    [string]$Sdk = $env:ANDROID_HOME
+    [string]$Sdk = $(if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { "$env:LOCALAPPDATA\Android\Sdk" })
 )
 $ErrorActionPreference = 'Stop'
 $qaAdb = Join-Path $Sdk 'platform-tools\adb.exe'
 $serial = 'emulator-5580'
 $avd = 'UHabit_UI_Review_Disposable_20261011'
+# Serialize with UI QA and the lifecycle wrapper before force-stop or measurement.
+$leaseRoot = if ($env:ANDROID_AVD_LEASE_HOME) { $env:ANDROID_AVD_LEASE_HOME } else { 'D:\DevData\Android\leases' }
+New-Item -ItemType Directory -Force -Path $leaseRoot | Out-Null
+$qaLease = [IO.File]::Open((Join-Path $leaseRoot "$avd.lease"), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+$qaPortLease = $null
+try {
+    $qaPortLease = [IO.File]::Open((Join-Path $leaseRoot 'port-5580.lease'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
 if ((& $qaAdb -s $serial emu avd name | Select-Object -First 1).Trim() -ne $avd) { throw 'Wrong disposable AVD' }
 if (Test-Path -LiteralPath $Output) { throw 'Preserve old measurements; choose a fresh output folder' }
 New-Item -ItemType Directory -Path $Output | Out-Null
@@ -49,3 +56,8 @@ for ($i = 0; $i -lt $Samples; $i++) {
 }
 Get-FileHash 'uhabits-android/build/outputs/apk/debug/uhabits-android-debug.apk' |
     ConvertTo-Json | Set-Content (Join-Path $Output 'apk-hash.json')
+
+} finally {
+    if ($qaPortLease) { $qaPortLease.Dispose() }
+    $qaLease.Dispose()
+}
