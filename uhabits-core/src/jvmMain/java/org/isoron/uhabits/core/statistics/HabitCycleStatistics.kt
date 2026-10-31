@@ -1,7 +1,6 @@
 /* Copyright (C) 2026 Álinson Santos Xavier and contributors. GPL-3.0-or-later. */
 package org.isoron.uhabits.core.statistics
 
-import org.isoron.platform.time.DayOfWeek
 import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
@@ -9,7 +8,6 @@ import org.isoron.uhabits.core.models.HabitGoal
 import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.projection.EffectiveHabitDay
 import org.isoron.uhabits.core.rules.HabitTimeValueConverter
-import org.isoron.uhabits.core.rules.IncompatibleTargetHabitException
 import java.math.BigDecimal
 import java.math.RoundingMode
 
@@ -190,19 +188,27 @@ object HabitCycleStatisticsAggregator {
 
         val allEvaluatedCycles = mutableListOf<HabitCycle>()
         val allIssues = mutableListOf<StatisticsIssue>()
+        val cutoffLimit = minOf(context.to, context.habitToday)
 
         for (habitInput in habits) {
             val evaluated = evaluateHabit(context, habitInput)
             // A cycle starting after the report's observation cutoff has not started.
-            allEvaluatedCycles.addAll(evaluated.cycles.filter { it.startDate <= minOf(context.to, context.habitToday) })
+            for (cycle in evaluated.cycles) {
+                if (cycle.startDate <= cutoffLimit) {
+                    allEvaluatedCycles.add(cycle)
+                }
+            }
             allIssues.addAll(evaluated.issues)
         }
 
-        val closedCycles = allEvaluatedCycles.filter {
-            !it.isContextual && it.lifecycle == HabitCycleLifecycle.CLOSED
-        }
-        val ongoingCycles = allEvaluatedCycles.filter {
-            it.isContextual || it.lifecycle == HabitCycleLifecycle.ONGOING
+        val closedCycles = ArrayList<HabitCycle>(allEvaluatedCycles.size)
+        val ongoingCycles = ArrayList<HabitCycle>()
+        for (cycle in allEvaluatedCycles) {
+            if (!cycle.isContextual && cycle.lifecycle == HabitCycleLifecycle.CLOSED) {
+                closedCycles.add(cycle)
+            } else if (cycle.isContextual || cycle.lifecycle == HabitCycleLifecycle.ONGOING) {
+                ongoingCycles.add(cycle)
+            }
         }
 
         val dailyAggregate = buildCadenceAggregate(HabitCadence.DAILY, allEvaluatedCycles)
@@ -254,13 +260,28 @@ object HabitCycleStatisticsAggregator {
         val habitUuid = habit.uuid ?: ""
         val habitName = habit.name
         val normalizedGoals = normalizeGoals(habit)
+        val unitKeysByGoal = normalizedGoals.map { unitKey(it.unit) }
+        val versionKeysByGoal = normalizedGoals.mapIndexed { idx, g ->
+            "${g.effectiveDate}_${g.frequency.numerator}over${g.frequency.denominator}_${g.targetType}_${g.targetValue}_${unitKeysByGoal[idx]}"
+        }
+        val targetNativeByGoal = if (habit.isNumerical) {
+            normalizedGoals.map { safeScaledTargetNative(it.targetValue, it.targetType) }
+        } else {
+            emptyList()
+        }
         val candidateIntervals = generateCandidateIntervals(context, normalizedGoals)
 
-        val cycles = mutableListOf<HabitCycle>()
+        val cycles = ArrayList<HabitCycle>(candidateIntervals.size)
         val issues = mutableListOf<StatisticsIssue>()
         issues.addAll(habitInput.issues)
 
-        val daysByDate = habitInput.days.associateBy { it.manualEntry.date }
+        val inputDays = habitInput.days
+        val isContiguous = inputDays.isNotEmpty() &&
+            inputDays.size == inputDays.last().manualEntry.date.daysSince2000 - inputDays.first().manualEntry.date.daysSince2000 + 1 &&
+            inputDays.indices.all { i -> inputDays[i].manualEntry.date.daysSince2000 == inputDays[0].manualEntry.date.daysSince2000 + i }
+        val daysByDate = if (isContiguous) null else inputDays.associateBy { it.manualEntry.date }
+        val startCutoff = habit.effectiveStatisticsStartDate() ?: habitInput.observationStart
+        val contextLimit = minOf(context.to, context.habitToday)
 
         for (interval in candidateIntervals) {
             val cycle = evaluateCycle(
@@ -269,8 +290,15 @@ object HabitCycleStatisticsAggregator {
                 habitUuid = habitUuid,
                 habitName = habitName,
                 normalizedGoals = normalizedGoals,
+                unitKeysByGoal = unitKeysByGoal,
+                versionKeysByGoal = versionKeysByGoal,
+                targetNativeByGoal = targetNativeByGoal,
                 interval = interval,
+                inputDays = inputDays,
+                isContiguous = isContiguous,
                 daysByDate = daysByDate,
+                startCutoff = startCutoff,
+                contextLimit = contextLimit,
             )
             cycles.add(cycle)
             for (issue in cycle.issues) {
@@ -283,7 +311,8 @@ object HabitCycleStatisticsAggregator {
             val cadence = cadenceOf(goal)
             val startDate = context.from
             val endDate = context.to
-            val cycleKey = HabitCycleKey(habitUuid, goalVersionKey(goal), startDate, endDate)
+            val cycleKey = HabitCycleKey(habitUuid, versionKeysByGoal[0], startDate, endDate)
+            val targetNative = if (habit.isNumerical) targetNativeByGoal[0] else null
             val unavailableCycle = HabitCycle(
                 key = cycleKey,
                 habitUuid = habitUuid,
@@ -294,7 +323,7 @@ object HabitCycleStatisticsAggregator {
                 goal = goal,
                 startDate = startDate,
                 endDate = endDate,
-                quantity = computeQuantity(habit, goal, emptyList(), 0).quantity,
+                quantity = computeQuantity(habit, goal, targetNative, emptyList(), 0).quantity,
                 days = emptyList(),
                 issues = habitInput.issues,
             )
@@ -370,7 +399,7 @@ object HabitCycleStatisticsAggregator {
             }
         }
 
-        return intervals.distinctBy { Triple(it.startDate, it.endDate, it.cadence) }
+        return if (normalizedGoals.size <= 1) intervals else intervals.distinctBy { Triple(it.startDate, it.endDate, it.cadence) }
     }
 
     private fun evaluateCycle(
@@ -379,35 +408,71 @@ object HabitCycleStatisticsAggregator {
         habitUuid: String,
         habitName: String,
         normalizedGoals: List<HabitGoal>,
+        unitKeysByGoal: List<String>,
+        versionKeysByGoal: List<String>,
+        targetNativeByGoal: List<Long?>,
         interval: CandidateInterval,
-        daysByDate: Map<LocalDate, EffectiveHabitDay>,
+        inputDays: List<EffectiveHabitDay>,
+        isContiguous: Boolean,
+        daysByDate: Map<LocalDate, EffectiveHabitDay>?,
+        startCutoff: LocalDate?,
+        contextLimit: LocalDate,
     ): HabitCycle {
         val startDate = interval.startDate
         val endDate = interval.endDate
         val cadence = interval.cadence
         val habit = habitInput.habit
-        val issues = mutableListOf<StatisticsIssue>()
-        issues.addAll(habitInput.issues)
+        val issues = if (habitInput.issues.isEmpty()) mutableListOf() else habitInput.issues.toMutableList()
 
         val endsInP = endDate >= context.from && endDate <= context.to
         val isClosedByDate = endDate < context.habitToday
+        val expectedDaysCount = endDate.daysSince2000 - startDate.daysSince2000 + 1
 
         // Check midcycle goal transitions
-        val datesInCycle = enumerateDates(startDate, endDate)
-        val goalsInCycle = datesInCycle.map { goalAtDate(normalizedGoals, it) }
-        val hasGoalTransition = goalsInCycle.any { g ->
-            g.frequency != goalsInCycle[0].frequency ||
-                g.targetType != goalsInCycle[0].targetType ||
-                g.targetValue != goalsInCycle[0].targetValue ||
-                unitKey(g.unit) != unitKey(goalsInCycle[0].unit)
+        val firstGoalIdx: Int
+        val representativeGoalIdx: Int
+        val hasGoalTransition: Boolean
+        if (normalizedGoals.size == 1) {
+            firstGoalIdx = 0
+            representativeGoalIdx = 0
+            hasGoalTransition = false
+        } else if (startDate == endDate) {
+            firstGoalIdx = goalIndexAtDate(normalizedGoals, startDate)
+            representativeGoalIdx = firstGoalIdx
+            hasGoalTransition = false
+        } else {
+            firstGoalIdx = goalIndexAtDate(normalizedGoals, startDate)
+            val firstGoal = normalizedGoals[firstGoalIdx]
+            val firstUnitKey = unitKeysByGoal[firstGoalIdx]
+            var lastIdx = firstGoalIdx
+            var transitionFound = false
+            var d = startDate.plus(1)
+            while (d <= endDate) {
+                val idx = goalIndexAtDate(normalizedGoals, d)
+                lastIdx = idx
+                if (!transitionFound && idx != firstGoalIdx) {
+                    val g = normalizedGoals[idx]
+                    if (g.frequency != firstGoal.frequency ||
+                        g.targetType != firstGoal.targetType ||
+                        g.targetValue != firstGoal.targetValue ||
+                        unitKeysByGoal[idx] != firstUnitKey
+                    ) {
+                        transitionFound = true
+                    }
+                }
+                d = d.plus(1)
+            }
+            representativeGoalIdx = lastIdx
+            hasGoalTransition = transitionFound
         }
+        val firstGoal = normalizedGoals[firstGoalIdx]
+        val representativeGoal = normalizedGoals[representativeGoalIdx]
 
         // Check initial cutoff / observation start:
         // Canonical C1 specifies explicit effectiveStatisticsStartDate has priority,
         // otherwise observationStart is the lower bound.
         // Any cycle starting before startCutoff (wholly before or intersecting cutoff)
         // is marked PARTIAL and excluded from closed outcomes (never S/F/U).
-        val startCutoff = habit.effectiveStatisticsStartDate() ?: habitInput.observationStart
         val isPartial = startCutoff != null && startDate < startCutoff
 
         val lifecycle = when {
@@ -416,7 +481,7 @@ object HabitCycleStatisticsAggregator {
                     StatisticsIssue(
                         code = StatisticsIssueCode.UNSUPPORTED_FREQUENCY,
                         entityId = habitUuid,
-                        message = "Unsupported frequency denominator: ${goalsInCycle[0].frequency.denominator}",
+                        message = "Unsupported frequency denominator: ${firstGoal.frequency.denominator}",
                     )
                 )
                 HabitCycleLifecycle.UNSUPPORTED
@@ -431,54 +496,72 @@ object HabitCycleStatisticsAggregator {
         // Non-closed cycles (ONGOING, PARTIAL, TRANSITION, UNSUPPORTED) that extend past
         // minOf(context.to, context.habitToday) must truncate their loaded days to that limit,
         // preventing future leak into quantities.
-        val contextLimit = minOf(context.to, context.habitToday)
         val isContextual = lifecycle == HabitCycleLifecycle.ONGOING || endDate > contextLimit
         val contextTruncatedTo = if (isContextual || endDate > contextLimit) contextLimit else null
 
-        val representativeGoal = goalsInCycle.last()
         val goalVersionKey = if (hasGoalTransition) {
             "transition_${startDate}_$endDate"
         } else {
-            goalVersionKey(representativeGoal)
+            versionKeysByGoal[representativeGoalIdx]
         }
         val cycleKey = HabitCycleKey(habitUuid, goalVersionKey, startDate, endDate)
 
-        val effectiveDays = if (contextTruncatedTo != null) {
-            datesInCycle.filter { it <= contextTruncatedTo }.map { date ->
-                daysByDate[date] ?: EffectiveHabitDay(
-                    manualEntry = Entry(date, Entry.UNKNOWN),
-                    manualValue = null,
-                    contributionValue = 0L,
-                    totalValue = null,
-                    contributions = emptyList(),
-                    isNumerical = habit.isNumerical,
-                    includedInStatistics = habit.isDateIncludedInStatistics(date),
-                )
+        val effectiveEnd = if (contextTruncatedTo != null) minOf(endDate, contextTruncatedTo) else endDate
+        val effectiveDays: List<EffectiveHabitDay> = when {
+            startDate > effectiveEnd -> emptyList()
+            isContiguous && startDate >= inputDays.first().manualEntry.date && effectiveEnd <= inputDays.last().manualEntry.date -> {
+                val baseDays = inputDays.first().manualEntry.date.daysSince2000
+                inputDays.subList(startDate.daysSince2000 - baseDays, effectiveEnd.daysSince2000 - baseDays + 1)
             }
-        } else {
-            datesInCycle.map { date ->
-                daysByDate[date] ?: EffectiveHabitDay(
-                    manualEntry = Entry(date, Entry.UNKNOWN),
-                    manualValue = null,
-                    contributionValue = 0L,
-                    totalValue = null,
-                    contributions = emptyList(),
-                    isNumerical = habit.isNumerical,
-                    includedInStatistics = habit.isDateIncludedInStatistics(date),
-                )
+            else -> {
+                val span = effectiveEnd.daysSince2000 - startDate.daysSince2000 + 1
+                val list = ArrayList<EffectiveHabitDay>(span)
+                val baseDays = if (isContiguous) inputDays.first().manualEntry.date.daysSince2000 else 0
+                var d = startDate
+                while (d <= effectiveEnd) {
+                    val found = if (isContiguous) {
+                        val idx = d.daysSince2000 - baseDays
+                        if (idx in inputDays.indices) inputDays[idx] else null
+                    } else {
+                        daysByDate?.get(d)
+                    }
+                    list.add(
+                        found ?: EffectiveHabitDay(
+                            manualEntry = Entry(d, Entry.UNKNOWN),
+                            manualValue = null,
+                            contributionValue = 0L,
+                            totalValue = null,
+                            contributions = emptyList(),
+                            isNumerical = habit.isNumerical,
+                            includedInStatistics = habit.isDateIncludedInStatistics(d),
+                        )
+                    )
+                    d = d.plus(1)
+                }
+                list
             }
         }
 
         // Numerical validation & scaled target representation
         // Note: No type history: current Habit.type only, cannot reconstruct historical type edits.
-        if (!habit.isNumerical && (representativeGoal.frequency.numerator < 0 || effectiveDays.any {
-                it.manualEntry.value !in setOf(Entry.UNKNOWN, Entry.NO, Entry.YES_AUTO, Entry.YES_MANUAL, Entry.SKIP)
-            })) {
-            issues.add(StatisticsIssue(StatisticsIssueCode.INVALID_OBSERVATION, habitUuid,
-                "Invalid boolean quota or observation"))
+        if (!habit.isNumerical) {
+            var invalidObs = representativeGoal.frequency.numerator < 0
+            if (!invalidObs) {
+                for (day in effectiveDays) {
+                    val v = day.manualEntry.value
+                    if (v != Entry.UNKNOWN && v != Entry.NO && v != Entry.YES_AUTO && v != Entry.YES_MANUAL && v != Entry.SKIP) {
+                        invalidObs = true
+                        break
+                    }
+                }
+            }
+            if (invalidObs) {
+                issues.add(StatisticsIssue(StatisticsIssueCode.INVALID_OBSERVATION, habitUuid,
+                    "Invalid boolean quota or observation"))
+            }
         }
+        val targetNative = if (habit.isNumerical) targetNativeByGoal[representativeGoalIdx] else null
         if (habit.isNumerical) {
-            val targetNative = safeScaledTargetNative(representativeGoal.targetValue, representativeGoal.targetType)
             if (targetNative == null) {
                 issues.add(
                     StatisticsIssue(
@@ -488,22 +571,35 @@ object HabitCycleStatisticsAggregator {
                     )
                 )
             }
-            val observedUnits = effectiveDays
-                .filter { it.includedInStatistics && !it.isSkipped && it.totalValue != null }
-                .map { unitKey(goalAtDate(normalizedGoals, it.manualEntry.date).unit) }
-                .distinct()
-            if (observedUnits.size > 1 || (observedUnits.isNotEmpty() && observedUnits.single() != unitKey(representativeGoal.unit))) {
-                issues.add(
-                    StatisticsIssue(
-                        code = StatisticsIssueCode.INCOMPATIBLE_UNIT,
-                        entityId = habitUuid,
-                        message = "Incompatible units in cycle: observed $observedUnits, goal unit ${representativeGoal.unit}",
+            if (normalizedGoals.size > 1) {
+                val repUnitKey = unitKeysByGoal[representativeGoalIdx]
+                var hasIncompatible = false
+                for (day in effectiveDays) {
+                    if (day.includedInStatistics && !day.isSkipped && day.totalValue != null) {
+                        val uKey = unitKeysByGoal[goalIndexAtDate(normalizedGoals, day.manualEntry.date)]
+                        if (uKey != repUnitKey) {
+                            hasIncompatible = true
+                            break
+                        }
+                    }
+                }
+                if (hasIncompatible) {
+                    val observedUnits = effectiveDays
+                        .filter { it.includedInStatistics && !it.isSkipped && it.totalValue != null }
+                        .map { unitKeysByGoal[goalIndexAtDate(normalizedGoals, it.manualEntry.date)] }
+                        .distinct()
+                    issues.add(
+                        StatisticsIssue(
+                            code = StatisticsIssueCode.INCOMPATIBLE_UNIT,
+                            entityId = habitUuid,
+                            message = "Incompatible units in cycle: observed $observedUnits, goal unit ${representativeGoal.unit}",
+                        )
                     )
-                )
+                }
             }
         }
 
-        val quantityResult = computeQuantity(habit, representativeGoal, effectiveDays, datesInCycle.size)
+        val quantityResult = computeQuantity(habit, representativeGoal, targetNative, effectiveDays, expectedDaysCount)
         val quantity = quantityResult.quantity
         if (quantityResult.hasOverflow) {
             issues.add(
@@ -590,22 +686,38 @@ object HabitCycleStatisticsAggregator {
     private fun computeQuantity(
         habit: Habit,
         goal: HabitGoal,
+        targetNative: Long?,
         days: List<EffectiveHabitDay>,
         expectedDaysCount: Int,
     ): QuantityResult {
         val isNumerical = habit.isNumerical
         val totalDays = expectedDaysCount
-        val skippedDays = days.count { it.isSkipped }
-        val excludedDays = days.count { !it.includedInStatistics }
-
-        val activeDays = days.filter { it.includedInStatistics && !it.isSkipped }
 
         if (!isNumerical) {
-            val booleanManual = activeDays.count { it.manualEntry.value == Entry.YES_MANUAL }
-            val booleanUnknown = activeDays.count { it.manualEntry.value == Entry.UNKNOWN }
+            var skippedDays = 0
+            var excludedDays = 0
+            var booleanManual = 0
+            var booleanUnknown = 0
+            var knownDays = 0
+            for (d in days) {
+                if (d.isSkipped) {
+                    skippedDays++
+                } else if (!d.includedInStatistics) {
+                    excludedDays++
+                } else {
+                    val v = d.manualEntry.value
+                    if (v == Entry.YES_MANUAL) {
+                        booleanManual++
+                        knownDays++
+                    } else if (v == Entry.UNKNOWN) {
+                        booleanUnknown++
+                    } else {
+                        knownDays++
+                    }
+                }
+            }
             val booleanCapacity = expectedDaysCount - skippedDays - excludedDays
             val booleanUpper = booleanManual + booleanUnknown
-            val knownDays = activeDays.count { it.manualEntry.value != Entry.UNKNOWN }
 
             return QuantityResult(
                 quantity = HabitCycleQuantity(
@@ -632,10 +744,29 @@ object HabitCycleStatisticsAggregator {
                 hasOverflow = false,
             )
         } else {
+            var skippedDays = 0
+            var excludedDays = 0
+            var activeDaysCount = 0
+            var unknownDays = 0
+            var knownDays = 0
+            for (d in days) {
+                if (d.isSkipped) {
+                    skippedDays++
+                }
+                if (!d.includedInStatistics) {
+                    excludedDays++
+                }
+                if (d.includedInStatistics && !d.isSkipped) {
+                    activeDaysCount++
+                    if (d.manualValue == null) unknownDays++ else knownDays++
+                }
+            }
+
             var hasOverflow = false
 
             var manualSum = 0L
-            for (d in activeDays) {
+            for (d in days) {
+                if (!d.includedInStatistics || d.isSkipped) continue
                 val mv = d.manualValue ?: continue
                 try {
                     manualSum = Math.addExact(manualSum, mv)
@@ -646,7 +777,8 @@ object HabitCycleStatisticsAggregator {
             }
 
             var activeContribSum = 0L
-            for (d in activeDays) {
+            for (d in days) {
+                if (!d.includedInStatistics || d.isSkipped) continue
                 try {
                     activeContribSum = Math.addExact(activeContribSum, d.contributionValue)
                 } catch (_: ArithmeticException) {
@@ -656,7 +788,8 @@ object HabitCycleStatisticsAggregator {
             }
 
             var excludedContribSum = 0L
-            for (d in days.filter { !it.includedInStatistics || it.isSkipped }) {
+            for (d in days) {
+                if (d.includedInStatistics && !d.isSkipped) continue
                 try {
                     excludedContribSum = Math.addExact(excludedContribSum, d.contributionValue)
                 } catch (_: ArithmeticException) {
@@ -684,10 +817,6 @@ object HabitCycleStatisticsAggregator {
                 }
             }
 
-            val unknownDays = activeDays.count { it.manualValue == null }
-            val knownDays = activeDays.count { it.manualValue != null }
-            val targetNative = safeScaledTargetNative(goal.targetValue, goal.targetType)
-
             return QuantityResult(
                 quantity = HabitCycleQuantity(
                     isNumerical = true,
@@ -702,7 +831,7 @@ object HabitCycleStatisticsAggregator {
                     booleanManualCount = 0,
                     booleanUnknownDays = 0,
                     booleanUpperBound = 0,
-                    booleanCapacity = activeDays.size,
+                    booleanCapacity = activeDaysCount,
                     totalDays = totalDays,
                     knownDays = knownDays,
                     unknownDays = unknownDays,
@@ -769,20 +898,41 @@ object HabitCycleStatisticsAggregator {
         cadence: HabitCadence,
         allCycles: List<HabitCycle>,
     ): HabitCadenceAggregate {
-        val cadenceCycles = allCycles.filter { it.cadence == cadence }
-        val closed = cadenceCycles.filter { !it.isContextual && it.lifecycle == HabitCycleLifecycle.CLOSED }
+        val closed = mutableListOf<HabitCycle>()
+        var satisfiedCount = 0
+        var notSatisfiedCount = 0
+        var unknownCount = 0
+        var exemptCount = 0
+        var capacityExcludedCount = 0
+        var unavailableCount = 0
+        var partialCount = 0
+        var transitionCount = 0
+        var unsupportedCount = 0
+        var ongoingCount = 0
 
-        val satisfiedCount = closed.count { it.outcome == HabitCycleOutcome.SATISFIED }
-        val notSatisfiedCount = closed.count { it.outcome == HabitCycleOutcome.NOT_SATISFIED }
-        val unknownCount = closed.count { it.outcome == HabitCycleOutcome.UNKNOWN }
-        val exemptCount = closed.count { it.outcome == HabitCycleOutcome.EXEMPT }
-        val capacityExcludedCount = closed.count { it.outcome == HabitCycleOutcome.CAPACITY_EXCLUDED }
-        val unavailableCount = closed.count { it.outcome == HabitCycleOutcome.UNAVAILABLE }
-
-        val partialCount = cadenceCycles.count { it.lifecycle == HabitCycleLifecycle.PARTIAL }
-        val transitionCount = cadenceCycles.count { it.lifecycle == HabitCycleLifecycle.TRANSITION }
-        val unsupportedCount = cadenceCycles.count { it.lifecycle == HabitCycleLifecycle.UNSUPPORTED }
-        val ongoingCount = cadenceCycles.count { it.isContextual || it.lifecycle == HabitCycleLifecycle.ONGOING }
+        for (cycle in allCycles) {
+            if (cycle.cadence != cadence) continue
+            if (!cycle.isContextual && cycle.lifecycle == HabitCycleLifecycle.CLOSED) {
+                closed.add(cycle)
+                when (cycle.outcome) {
+                    HabitCycleOutcome.SATISFIED -> satisfiedCount++
+                    HabitCycleOutcome.NOT_SATISFIED -> notSatisfiedCount++
+                    HabitCycleOutcome.UNKNOWN -> unknownCount++
+                    HabitCycleOutcome.EXEMPT -> exemptCount++
+                    HabitCycleOutcome.CAPACITY_EXCLUDED -> capacityExcludedCount++
+                    HabitCycleOutcome.UNAVAILABLE -> unavailableCount++
+                }
+            }
+            when (cycle.lifecycle) {
+                HabitCycleLifecycle.PARTIAL -> partialCount++
+                HabitCycleLifecycle.TRANSITION -> transitionCount++
+                HabitCycleLifecycle.UNSUPPORTED -> unsupportedCount++
+                else -> {}
+            }
+            if (cycle.isContextual || cycle.lifecycle == HabitCycleLifecycle.ONGOING) {
+                ongoingCount++
+            }
+        }
 
         return HabitCadenceAggregate(
             cadence = cadence,
@@ -834,14 +984,29 @@ object HabitCycleStatisticsAggregator {
 
             val byCadence = habitCycles.groupBy { it.cadence }
             for ((cadence, cyclesInCadence) in byCadence) {
-                val closed = cyclesInCadence.filter { !it.isContextual && it.lifecycle == HabitCycleLifecycle.CLOSED }
-                val satisfied = closed.count { it.outcome == HabitCycleOutcome.SATISFIED }
-                val notSatisfied = closed.count { it.outcome == HabitCycleOutcome.NOT_SATISFIED }
-                val unknown = closed.count { it.outcome == HabitCycleOutcome.UNKNOWN }
-                val exempt = closed.count { it.outcome == HabitCycleOutcome.EXEMPT }
-                val capacityExcluded = closed.count { it.outcome == HabitCycleOutcome.CAPACITY_EXCLUDED }
-                val partial = cyclesInCadence.count { it.lifecycle == HabitCycleLifecycle.PARTIAL }
-                val transition = cyclesInCadence.count { it.lifecycle == HabitCycleLifecycle.TRANSITION }
+                val closed = ArrayList<HabitCycle>(cyclesInCadence.size)
+                var satisfied = 0
+                var notSatisfied = 0
+                var unknown = 0
+                var exempt = 0
+                var capacityExcluded = 0
+                var partial = 0
+                var transition = 0
+                for (c in cyclesInCadence) {
+                    if (!c.isContextual && c.lifecycle == HabitCycleLifecycle.CLOSED) {
+                        closed.add(c)
+                        when (c.outcome) {
+                            HabitCycleOutcome.SATISFIED -> satisfied++
+                            HabitCycleOutcome.NOT_SATISFIED -> notSatisfied++
+                            HabitCycleOutcome.UNKNOWN -> unknown++
+                            HabitCycleOutcome.EXEMPT -> exempt++
+                            HabitCycleOutcome.CAPACITY_EXCLUDED -> capacityExcluded++
+                            HabitCycleOutcome.UNAVAILABLE -> {}
+                        }
+                    }
+                    if (c.lifecycle == HabitCycleLifecycle.PARTIAL) partial++
+                    else if (c.lifecycle == HabitCycleLifecycle.TRANSITION) transition++
+                }
 
                 summaries.add(
                     HabitSummary(
@@ -877,12 +1042,23 @@ object HabitCycleStatisticsAggregator {
             val bucketDates = if (cadence == HabitCadence.DAILY) dates else dates.filter { it in byEndDate }
             val buckets = bucketDates.map { date ->
                 val cycles = byEndDate[date].orEmpty()
+                var satisfied = 0
+                var notSatisfied = 0
+                var unknown = 0
+                for (c in cycles) {
+                    when (c.outcome) {
+                        HabitCycleOutcome.SATISFIED -> satisfied++
+                        HabitCycleOutcome.NOT_SATISFIED -> notSatisfied++
+                        HabitCycleOutcome.UNKNOWN -> unknown++
+                        else -> {}
+                    }
+                }
                 HabitCycleDateBucket(
                     date = date,
                     cadence = cadence,
-                    satisfiedCount = cycles.count { it.outcome == HabitCycleOutcome.SATISFIED },
-                    notSatisfiedCount = cycles.count { it.outcome == HabitCycleOutcome.NOT_SATISFIED },
-                    unknownCount = cycles.count { it.outcome == HabitCycleOutcome.UNKNOWN },
+                    satisfiedCount = satisfied,
+                    notSatisfiedCount = notSatisfied,
+                    unknownCount = unknown,
                     cycles = cycles,
                 )
             }
@@ -927,8 +1103,11 @@ object HabitCycleStatisticsAggregator {
         return deduped
     }
 
-    private fun goalAtDate(normalizedGoals: List<HabitGoal>, date: LocalDate): HabitGoal {
-        return normalizedGoals.lastOrNull { !it.effectiveDate.isNewerThan(date) } ?: normalizedGoals.first()
+    private fun goalIndexAtDate(normalizedGoals: List<HabitGoal>, date: LocalDate): Int {
+        for (i in normalizedGoals.size - 1 downTo 0) {
+            if (!normalizedGoals[i].effectiveDate.isNewerThan(date)) return i
+        }
+        return 0
     }
 
     private fun cadenceOf(goal: HabitGoal): HabitCadence {
@@ -940,23 +1119,5 @@ object HabitCycleStatisticsAggregator {
         }
     }
 
-    private fun goalVersionKey(goal: HabitGoal): String {
-        val unit = unitKey(goal.unit)
-        return "${goal.effectiveDate}_${goal.frequency.numerator}over${goal.frequency.denominator}_${goal.targetType}_${goal.targetValue}_$unit"
-    }
-
-    private fun unitKey(unit: String): String = try {
-        HabitTimeValueConverter.validateTargetHabit(isNumerical = true, unit = unit)
-        "minute"
-    } catch (_: IncompatibleTargetHabitException) {
-        unit.trim().lowercase()
-    }
-
-    private fun enumerateDates(from: LocalDate, to: LocalDate): List<LocalDate> = buildList {
-        var date = from
-        while (date <= to) {
-            add(date)
-            date = date.plus(1)
-        }
-    }
+    private fun unitKey(unit: String): String = HabitTimeValueConverter.normalizeUnitKey(unit)
 }

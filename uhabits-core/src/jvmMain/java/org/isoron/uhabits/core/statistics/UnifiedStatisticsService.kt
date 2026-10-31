@@ -5,6 +5,7 @@ import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.containers.ContainerQueries
 import org.isoron.uhabits.core.containers.HabitPlacementQueries
 import org.isoron.uhabits.core.containers.HabitRef
+import org.isoron.uhabits.core.containers.OrganizationStore
 import org.isoron.uhabits.core.contribution.Contribution
 import org.isoron.uhabits.core.contribution.ContributionRepository
 import org.isoron.uhabits.core.focus.FocusSessionRepository
@@ -89,9 +90,36 @@ class UnifiedStatisticsService(
             FocusStatisticsAggregator.aggregate(context, focus.getByTimeRange(context.startMillis, context.endMillis), containers)
         }
         val habitResult = readDomain("habits") {
-            val habits = habitList.toList().filter { habit ->
-                context.sectionScope.includesCurrent(placements.current(HabitRef(requireNotNull(habit.uuid)))?.containerId)
-            }.map(::detachedHabit)
+            val from = context.from.startOfMonth().startOfWeek(context.firstWeekday)
+            val endMonth = context.to.startOfMonth()
+            val to = endMonth.plus(endMonth.monthLength - 1).plus(7)
+            val allHabits = habitList.toList()
+            val placementByHabit = if (context.sectionScope is StatisticsSectionScope.All) {
+                null
+            } else if (placements is OrganizationStore) {
+                placements.getAllHabitPlacements().associateBy { it.habit }
+            } else {
+                null
+            }
+            val earliestEntryDates = HashMap<HabitRef, LocalDate?>(allHabits.size)
+            val habits = allHabits.filter { habit ->
+                val ref = HabitRef(requireNotNull(habit.uuid))
+                when (context.sectionScope) {
+                    is StatisticsSectionScope.All -> true
+                    else -> {
+                        val containerId = if (placementByHabit != null) {
+                            placementByHabit[ref]?.containerId
+                        } else {
+                            placements.current(ref)?.containerId
+                        }
+                        context.sectionScope.includesCurrent(containerId)
+                    }
+                }
+            }.map { habit ->
+                val ref = HabitRef(requireNotNull(habit.uuid))
+                earliestEntryDates[ref] = habit.originalEntries.getEarliestDate()
+                detachedHabitInWindow(habit, from, to)
+            }
             checkCurrent()
             // One ledger snapshot includes correction tombstones and the earliest
             // observation. No rule/link re-evaluation or repository write occurs.
@@ -106,10 +134,19 @@ class UnifiedStatisticsService(
                     fromTimestamp: Long,
                     toTimestamp: Long,
                     includeRemoved: Boolean,
-                ): List<Contribution> = targetHabits.flatMap { byHabit[it].orEmpty() }.filter {
-                    it.effectiveTimestamp in fromTimestamp..toTimestamp &&
-                        (includeRemoved || it.isActive)
-                }.sortedWith(compareBy({ it.effectiveTimestamp }, { it.id.value }))
+                ): List<Contribution> {
+                    if (targetHabits.size == 1) {
+                        val singleList = byHabit[targetHabits.first()] ?: return emptyList()
+                        return singleList.filter {
+                            it.effectiveTimestamp in fromTimestamp..toTimestamp &&
+                                (includeRemoved || it.isActive)
+                        }
+                    }
+                    return targetHabits.flatMap { byHabit[it].orEmpty() }.filter {
+                        it.effectiveTimestamp in fromTimestamp..toTimestamp &&
+                            (includeRemoved || it.isActive)
+                    }.sortedWith(compareBy({ it.effectiveTimestamp }, { it.id.value }))
+                }
             }
             val projection = EffectiveHabitValueService(
                 repository = snapshotRepository,
@@ -119,16 +156,15 @@ class UnifiedStatisticsService(
                 dateAt = context::habitDateAt,
                 dayStart = context::habitDayStart,
             )
-            val from = context.from.startOfMonth().startOfWeek(context.firstWeekday)
-            val endMonth = context.to.startOfMonth()
-            val to = endMonth.plus(endMonth.monthLength - 1).plus(7)
             val inputs = habits.map { habit ->
                 checkCurrent()
                 val ref = HabitRef(requireNotNull(habit.uuid))
-                val observed = listOfNotNull(
-                    habit.originalEntries.getEarliestDate(),
-                    byHabit[ref]?.minOfOrNull { context.habitDateAt(it.effectiveTimestamp) },
-                ).minOrNull()
+                val earliestEntry = earliestEntryDates[ref]
+                val earliestContrib = byHabit[ref]?.minOfOrNull { context.habitDateAt(it.effectiveTimestamp) }
+                val observed = when {
+                    earliestEntry != null && earliestContrib != null -> minOf(earliestEntry, earliestContrib)
+                    else -> earliestEntry ?: earliestContrib
+                }
                 try {
                     StatisticsHabitInput(habit, projection.daysForRange(listOf(habit), from, to).getValue(ref), observed)
                 } catch (error: HabitProjectionIntegrityException) {
@@ -149,10 +185,27 @@ class UnifiedStatisticsService(
     }
 }
 
-private fun detachedHabit(habit: Habit): Habit = habit.copy(
+private fun detachedHabitInWindow(habit: Habit, from: LocalDate, to: LocalDate): Habit = habit.copy(
     frequency = habit.frequency.copy(),
     goalHistory = habit.goalHistory.map { it.copy(frequency = it.frequency.copy()) }.toMutableList(),
-    originalEntries = EntryList().also { list -> habit.originalEntries.getKnown().forEach(list::add) },
+    originalEntries = EntryList().also { list ->
+        habit.originalEntries.withLoadedEntries { entriesMap ->
+            val span = to.daysSince2000 - from.daysSince2000 + 1
+            if (span <= entriesMap.size) {
+                var d = from
+                while (d <= to) {
+                    entriesMap[d]?.let { list.add(it) }
+                    d = d.plus(1)
+                }
+            } else {
+                for (entry in entriesMap.values) {
+                    if (entry.date >= from && entry.date <= to) {
+                        list.add(entry)
+                    }
+                }
+            }
+        }
+    },
     computedEntries = EntryList(),
     scores = ScoreList(),
     streaks = StreakList(),
