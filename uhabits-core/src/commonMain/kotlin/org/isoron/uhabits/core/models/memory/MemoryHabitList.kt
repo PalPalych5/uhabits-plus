@@ -441,7 +441,15 @@ open class MemoryHabitList : HabitList {
         org.isoron.uhabits.core.io.HabitResortDiagnostics.count("memory.sortedHabitVisits", list.size.toLong())
         sphereComparator.clearCache()
         org.isoron.uhabits.core.io.HabitResortDiagnostics.measure("memory.sort", this) {
-            if (comparator != null) list.sortWith(comparator!!)
+            val comp = comparator
+            if (comp != null) {
+                val facadeImpl = organizationFacade as? org.isoron.uhabits.core.containers.facade.HabitOrganizationFacadeImpl
+                if (facadeImpl != null && list.size > 1 && (primaryOrder === Order.BY_SPHERE || secondaryOrder === Order.BY_SPHERE)) {
+                    facadeImpl.withBatchReadScope { list.sortWith(comp) }
+                } else {
+                    list.sortWith(comp)
+                }
+            }
         }
         org.isoron.uhabits.core.io.HabitResortDiagnostics.measure("memory.notify", this) { observable.notifyListeners() }
     }

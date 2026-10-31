@@ -637,10 +637,23 @@ class HabitCardListCache(
             newData.copyCheckmarksFrom(previous)
             newData.copyNoteIndicatorsFrom(previous)
             newData.copyMetadataFrom(previous)
+            val facadeImpl = requestedOrganization as? org.isoron.uhabits.core.containers.facade.HabitOrganizationFacadeImpl
+            if (targetId == null && facadeImpl != null && newData.habits.size > 1) {
+                if (!facadeImpl.withBatchReadScope { populateRows() }) return
+            } else {
+                if (!populateRows()) return
+            }
+            backgroundComplete = true
+            trace("cache.background.end")
+            HabitStartupTiming.mark("cache.cards.ready", generation)
+            timingObserver?.invoke("cache.background", started.elapsedNow().inWholeNanoseconds / 1e6)
+        }
+
+        private fun populateRows(): Boolean {
             val today = getToday()
             val dateFrom = today.minus(requestedCheckmarkCount - 1)
             for (position in newData.habits.indices) {
-                if (!isCurrent()) { trace("cache.superseded"); return }
+                if (!isCurrent()) { trace("cache.superseded"); return false }
                 val habit = newData.habits[position]
                 if (targetId != null && targetId != habit.id) continue
                 val snapshot = newData.snapshots[habit.id]
@@ -675,10 +688,7 @@ class HabitCardListCache(
                 newData.checkmarks[habit.id] = checkmarkList.toIntArray()
                 newData.notes[habit.id] = noteList.toTypedArray()
             }
-            backgroundComplete = true
-            trace("cache.background.end")
-            HabitStartupTiming.mark("cache.cards.ready", generation)
-            timingObserver?.invoke("cache.background", started.elapsedNow().inWholeNanoseconds / 1e6)
+            return true
         }
 
         @Synchronized
@@ -796,7 +806,11 @@ class HabitCardListCache(
         private fun processPosition(currentPosition: Int) {
             val habit = newData.habits[currentPosition]
             val id = habit.id
-            val prevPosition = data.habits.indexOfFirst { it.id == id }
+            val prevPosition = if (currentPosition < data.habits.size && data.habits[currentPosition].id == id) {
+                currentPosition
+            } else {
+                data.habits.indexOfFirst { it.id == id }
+            }
             if (prevPosition < 0) {
                 performInsert(habit, currentPosition)
             } else {

@@ -36,6 +36,8 @@ open class EntryList {
     open val isLoaded: Boolean get() = true
 
     private val entriesByDate: HashMap<LocalDate, Entry> = HashMap()
+    private var cachedEarliestDate: LocalDate? = null
+    private var earliestDateValid: Boolean = true
 
     @Synchronized
     internal fun copyEntriesFrom(other: EntryList) {
@@ -43,6 +45,8 @@ open class EntryList {
             entriesByDate.clear()
             entriesByDate.putAll(sourceMap)
         }
+        cachedEarliestDate = other.getEarliestDate()
+        earliestDateValid = true
     }
 
     @Synchronized
@@ -86,11 +90,20 @@ open class EntryList {
     @Synchronized
     open fun add(entry: Entry) {
         entriesByDate[entry.date] = entry
+        if (earliestDateValid) {
+            val prev = cachedEarliestDate
+            if (prev == null || entry.date < prev) {
+                cachedEarliestDate = entry.date
+            }
+        }
     }
 
     @Synchronized
     open fun remove(date: LocalDate) {
-        entriesByDate.remove(date)
+        val removed = entriesByDate.remove(date)
+        if (removed != null && cachedEarliestDate == date) {
+            earliestDateValid = false
+        }
     }
 
     /**
@@ -108,7 +121,11 @@ open class EntryList {
      */
     @Synchronized
     open fun getEarliestDate(): LocalDate? {
-        return entriesByDate.keys.minOrNull()
+        if (!earliestDateValid) {
+            cachedEarliestDate = entriesByDate.keys.minOrNull()
+            earliestDateValid = true
+        }
+        return cachedEarliestDate
     }
 
     /**
@@ -162,11 +179,12 @@ open class EntryList {
                 }
                 if (start.isNewerThan(end)) return@forEachIndexed
 
-                val segmentOriginal = original
-                    .filter { !it.date.isOlderThan(start) && !it.date.isNewerThan(end) }
-                val intervals = buildIntervals(goal.frequency, segmentOriginal)
+                val segment = original.filter { !it.date.isOlderThan(start) && !it.date.isNewerThan(end) }
+                if (segment.isEmpty()) return@forEachIndexed
+
+                val intervals = buildIntervals(goal.frequency, segment)
                 snapIntervalsTogether(intervals)
-                val computed = buildEntriesFromInterval(segmentOriginal, intervals)
+                val computed = buildEntriesFromInterval(segment, intervals)
                 computed
                     .filter { !it.date.isOlderThan(start) && !it.date.isNewerThan(end) }
                     .filter { it.value != UNKNOWN || it.notes.isNotEmpty() }
@@ -181,6 +199,8 @@ open class EntryList {
     @Synchronized
     open fun clear() {
         entriesByDate.clear()
+        cachedEarliestDate = null
+        earliestDateValid = true
     }
 
     /**

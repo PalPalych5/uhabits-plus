@@ -206,6 +206,26 @@ class SQLiteOrganizationStore(
         return result
     }
 
+    fun getAllContainerParentLinks(): Map<String, String?> {
+        val stmt = db.prepareStatement(
+            """
+            SELECT c.uuid, p.uuid
+            FROM Containers c
+            LEFT JOIN Containers p ON c.parent_id = p.id
+            WHERE c.deleted_at IS NULL
+            """.trimIndent()
+        )
+        try {
+            val map = HashMap<String, String?>()
+            while (stmt.step() == StepResult.ROW) {
+                map[stmt.getText(0)] = stmt.getTextOrNull(1)
+            }
+            return map
+        } finally {
+            stmt.finalize()
+        }
+    }
+
     override fun getAllHabitPlacements(): List<HabitPlacement> {
         val stmt = db.prepareStatement(
             """

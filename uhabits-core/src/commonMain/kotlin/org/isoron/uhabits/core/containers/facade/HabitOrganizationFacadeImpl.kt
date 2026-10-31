@@ -19,7 +19,9 @@
 
 package org.isoron.uhabits.core.containers.facade
 
+import org.isoron.platform.ThreadLocalState
 import org.isoron.uhabits.core.containers.ArchiveContainer
+import org.isoron.uhabits.core.containers.sqlite.SQLiteOrganizationStore
 import org.isoron.uhabits.core.containers.Container
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.ContainerQueries
@@ -55,6 +57,53 @@ class HabitOrganizationFacadeImpl(
     private val blocksProvider: (() -> List<HabitBlock>)? = null,
     private val allHabitsProvider: (() -> List<Habit>)? = null
 ) : HabitOrganizationFacade {
+
+    private class BatchReadContext {
+        var visualIdentities: Map<String, IconRef>? = null
+        var rootKeysByHabitUuid: Map<String, String?>? = null
+    }
+
+    private val batchContextStack = ThreadLocalState { mutableListOf<BatchReadContext>() }
+
+    fun <T> withBatchReadScope(action: () -> T): T {
+        val stack = batchContextStack.get()
+        stack.add(BatchReadContext())
+        try {
+            return action()
+        } finally {
+            if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex)
+        }
+    }
+
+    private fun buildBatchRootKeys(
+        pStore: SQLiteOrganizationStore,
+        cStore: SQLiteOrganizationStore
+    ): Map<String, String?> {
+        val placements = pStore.getAllHabitPlacements()
+        if (placements.isEmpty()) return emptyMap()
+        val parentLinks = cStore.getAllContainerParentLinks()
+        val rootByContainer = HashMap<String, String>()
+        val result = HashMap<String, String?>(placements.size)
+        for (placement in placements) {
+            val cid = placement.containerId?.value
+            if (cid == null) {
+                result[placement.habit.uuid] = null
+            } else {
+                val root = rootByContainer.getOrPut(cid) {
+                    var current: String? = cid
+                    var terminal: String = cid
+                    val visited = HashSet<String>()
+                    while (current != null && visited.add(current)) {
+                        terminal = current
+                        current = parentLinks[current]
+                    }
+                    terminal
+                }
+                result[placement.habit.uuid] = root
+            }
+        }
+        return result
+    }
 
     override fun getPlacementInfo(habitUuid: String, legacyBlockId: Long?): HabitPlacementInfo {
         if (mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
@@ -93,6 +142,15 @@ class HabitOrganizationFacadeImpl(
 
     override fun getRootGroupKey(habitUuid: String, legacyBlockId: Long?): Any? {
         if (mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            val batchCtx = batchContextStack.get().lastOrNull()
+            val pStore = habitPlacementQueries as? SQLiteOrganizationStore
+            val cStore = containerQueries as? SQLiteOrganizationStore
+            if (batchCtx != null && pStore != null && cStore != null) {
+                val map = batchCtx.rootKeysByHabitUuid ?: buildBatchRootKeys(pStore, cStore).also {
+                    batchCtx.rootKeysByHabitUuid = it
+                }
+                return map[habitUuid]
+            }
             val queries = habitPlacementQueries ?: return null
             val placement = queries.current(HabitRef(habitUuid)) ?: return null
             val containerId = placement.containerId ?: return null
@@ -295,7 +353,13 @@ class HabitOrganizationFacadeImpl(
 
     override fun getHabitVisualIdentity(habitUuid: String): HabitVisualIdentity? {
         val store = visualIdentityStore ?: return null
-        val iconRef = store.get(habitUuid) ?: return null
+        val batchCtx = batchContextStack.get().lastOrNull()
+        val iconRef = if (batchCtx != null) {
+            val map = batchCtx.visualIdentities ?: store.getAll().also { batchCtx.visualIdentities = it }
+            map[habitUuid]
+        } else {
+            store.get(habitUuid)
+        } ?: return null
         return HabitVisualIdentity(habitUuid, iconRef)
     }
 
