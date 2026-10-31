@@ -286,6 +286,8 @@
     <string name="measurable_units_example">e.g. miles</string>
     <string name="every_month">Every month</string>
     <string name="validation_cannot_be_blank">Cannot be blank</string>
+    <string name="validation_number_out_of_range">Value is out of range</string>
+    <string name="validation_invalid_number_format">Invalid number format</string>
     <string name="today">Today</string>
     <string name="today_summary_completed">Completed: %1$d/%2$d</string>
     <string name="today_summary_focus_minutes">Focus time: %1$s min</string>
@@ -784,6 +786,9 @@
     <string name="settings_reminder_test_summary">Send a test notification for a habit with a reminder</string>
     <string name="settings_reminder_test_unavailable">Enable the habit reminder notification channel first</string>
     <string name="settings_reminder_test_no_habit">Add a reminder to a habit first</string>
+    <string name="pref_reminder_exact_alarm_title">Exact reminder timing</string>
+    <string name="pref_reminder_exact_alarm_enabled">Reminders arrive on time</string>
+    <string name="pref_reminder_exact_alarm_disabled">Allow alarms and reminders; without permission, reminder timing can be delayed</string>
     <string name="settings_subsection_pomodoro_completion">Pomodoro completion</string>
     <string name="settings_pomodoro_channel_title">Completion signal settings</string>
     <string name="settings_pomodoro_test_title">Test completion signal</string>

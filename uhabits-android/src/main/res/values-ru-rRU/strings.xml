@@ -335,6 +335,8 @@
     <string name="measurable_units_example">напр.: км</string>
     <string name="every_month">Каждый месяц</string>
     <string name="validation_cannot_be_blank">Не может быть пустым</string>
+    <string name="validation_number_out_of_range">Значение вне допустимого диапазона</string>
+    <string name="validation_invalid_number_format">Неверный формат числа</string>
     <string name="today">Сегодня</string>
     <string name="today_summary_completed">Выполнено: %1$d/%2$d</string>
     <string name="today_summary_focus_minutes">Фокус-время: %1$s мин</string>
@@ -794,6 +796,9 @@
     <string name="settings_reminder_test_summary">Отправить тестовое уведомление для привычки с напоминанием</string>
     <string name="settings_reminder_test_unavailable">Сначала включите канал напоминаний о привычках</string>
     <string name="settings_reminder_test_no_habit">Сначала добавьте напоминание к привычке</string>
+    <string name="pref_reminder_exact_alarm_title">Точное время напоминаний</string>
+    <string name="pref_reminder_exact_alarm_enabled">Напоминания приходят вовремя</string>
+    <string name="pref_reminder_exact_alarm_disabled">Разрешите будильники и напоминания; без разрешения время доставки может задерживаться</string>
     <string name="settings_subsection_pomodoro_completion">Завершение Помодоро</string>
     <string name="settings_pomodoro_channel_title">Настройки сигнала</string>
     <string name="settings_pomodoro_test_title">Проверить сигнал</string>

@@ -28,6 +28,7 @@ import android.graphics.BitmapFactory.decodeResource
 import android.os.Build
 import android.os.Build.VERSION.SDK_INT
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat.Action
 import androidx.core.app.NotificationCompat.Builder
 import androidx.core.app.NotificationCompat.WearableExtender
@@ -48,9 +49,25 @@ class AndroidNotificationTray(
     @AppContext private val context: Context,
     private val pendingIntents: PendingIntentFactory,
     private val preferences: Preferences,
-    private val ringtoneManager: RingtoneManager
+    private val ringtoneManager: RingtoneManager? = null
 ) : NotificationTray.SystemTray {
     private var active = HashSet<Int>()
+
+    @VisibleForTesting
+    internal var notificationPoster: (Int, Notification) -> Unit = { id, notification ->
+        NotificationManagerCompat.from(context).notify(id, notification)
+    }
+
+    @VisibleForTesting
+    internal var notificationBuilder: (Habit, Long, LocalDate, Boolean, Boolean) -> Notification =
+        { habit, reminderTime, date, disableSound, isTest ->
+            buildNotification(habit, reminderTime, date, disableSound, isTest)
+        }
+
+    @VisibleForTesting
+    internal var channelCreator: (Context) -> Unit = {
+        createAndroidNotificationChannel(it)
+    }
 
     override fun log(msg: String) {
         Log.d("AndroidNotificationTray", msg)
@@ -68,40 +85,70 @@ class AndroidNotificationTray(
         date: LocalDate,
         reminderTime: Long
     ) {
-        notify(habit, notificationId, date, reminderTime, isTest = false)
-        active.add(notificationId)
+        val posted = notify(habit, notificationId, date, reminderTime, isTest = false)
+        if (posted) {
+            active.add(notificationId)
+        }
     }
 
     fun showTestNotification(habit: Habit, date: LocalDate, reminderTime: Long) {
         notify(habit, TEST_NOTIFICATION_ID, date, reminderTime, isTest = true)
     }
 
-    private fun notify(
+    @VisibleForTesting
+    internal fun isNotificationActive(notificationId: Int): Boolean = active.contains(notificationId)
+
+    @VisibleForTesting
+    internal fun notify(
         habit: Habit,
         notificationId: Int,
         date: LocalDate,
         reminderTime: Long,
         isTest: Boolean
-    ) {
-        val notificationManager = NotificationManagerCompat.from(context)
-        val notification = buildNotification(habit, reminderTime, date, isTest = isTest)
-        createAndroidNotificationChannel(context)
-        try {
-            notificationManager.notify(notificationId, notification)
+    ): Boolean {
+        val notification = notificationBuilder(habit, reminderTime, date, false, isTest)
+        channelCreator(context)
+        return try {
+            notificationPoster(notificationId, notification)
+            true
+        } catch (e: SecurityException) {
+            Log.w(
+                "AndroidNotificationTray",
+                "Failed to show notification. Permission denied.",
+                e
+            )
+            false
         } catch (e: RuntimeException) {
             // Some Xiaomi phones produce a RuntimeException if custom notification sounds are used.
             Log.i(
                 "AndroidNotificationTray",
                 "Failed to show notification. Retrying without sound."
             )
-            val n = buildNotification(
+            val n = notificationBuilder(
                 habit,
                 reminderTime,
                 date,
-                disableSound = true,
-                isTest = isTest
+                true,
+                isTest
             )
-            notificationManager.notify(notificationId, n)
+            try {
+                notificationPoster(notificationId, n)
+                true
+            } catch (retryException: SecurityException) {
+                Log.w(
+                    "AndroidNotificationTray",
+                    "Failed to show notification on soundless retry. Permission denied.",
+                    retryException
+                )
+                false
+            } catch (retryException: RuntimeException) {
+                Log.w(
+                    "AndroidNotificationTray",
+                    "Failed to show notification even without sound.",
+                    retryException
+                )
+                false
+            }
         }
     }
 
@@ -168,7 +215,7 @@ class AndroidNotificationTray(
             builder.extend(wearableExtender)
         }
 
-        if (!disableSound) {
+        if (!disableSound && ringtoneManager != null) {
             builder.setSound(ringtoneManager.getURI())
         }
 

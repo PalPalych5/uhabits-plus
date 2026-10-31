@@ -27,6 +27,7 @@ import android.content.Context
 import android.content.Context.ALARM_SERVICE
 import android.os.Build
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.time.DateFormats
 import org.isoron.uhabits.core.AppScope
@@ -40,14 +41,59 @@ import kotlin.math.min
 @Inject
 @AppScope
 open class IntentScheduler(
-    @AppContext context: Context,
+    @AppContext private val context: Context,
     private val pendingIntents: PendingIntentFactory
 ) : SystemScheduler {
 
-    private val manager =
-        context.getSystemService(ALARM_SERVICE) as? AlarmManager
+    interface AlarmDelegate {
+        fun isAvailable(): Boolean = true
+        fun canScheduleExactAlarms(): Boolean
+        fun setExactAndAllowWhileIdle(alarmType: Int, triggerAtMillis: Long, operation: PendingIntent)
+        fun setAndAllowWhileIdle(alarmType: Int, triggerAtMillis: Long, operation: PendingIntent)
+    }
 
-    private fun schedule(timestamp: Long, intent: PendingIntent, alarmType: Int): SchedulerResult {
+    class DefaultAlarmDelegate(private val context: Context) : AlarmDelegate {
+        private val manager: AlarmManager?
+            get() = context.getSystemService(ALARM_SERVICE) as? AlarmManager
+
+        override fun isAvailable(): Boolean = manager != null
+
+        override fun canScheduleExactAlarms(): Boolean {
+            val mgr = manager ?: return false
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                mgr.canScheduleExactAlarms()
+            } else {
+                true
+            }
+        }
+
+        override fun setExactAndAllowWhileIdle(
+            alarmType: Int,
+            triggerAtMillis: Long,
+            operation: PendingIntent
+        ) {
+            val mgr = manager ?: throw IllegalStateException("AlarmManager is not available.")
+            mgr.setExactAndAllowWhileIdle(alarmType, triggerAtMillis, operation)
+        }
+
+        override fun setAndAllowWhileIdle(
+            alarmType: Int,
+            triggerAtMillis: Long,
+            operation: PendingIntent
+        ) {
+            val mgr = manager ?: throw IllegalStateException("AlarmManager is not available.")
+            mgr.setAndAllowWhileIdle(alarmType, triggerAtMillis, operation)
+        }
+    }
+
+    @VisibleForTesting
+    open var alarmDelegate: AlarmDelegate = DefaultAlarmDelegate(context)
+
+    open fun canScheduleExactAlarms(): Boolean {
+        return alarmDelegate.isAvailable() && alarmDelegate.canScheduleExactAlarms()
+    }
+
+    open fun schedule(timestamp: Long, intent: PendingIntent?, alarmType: Int): SchedulerResult {
         val now = System.currentTimeMillis()
         Log.d("IntentScheduler", "timestamp=$timestamp now=$now")
         if (timestamp < now) {
@@ -57,15 +103,50 @@ open class IntentScheduler(
             )
             return SchedulerResult.IGNORED
         }
-        val mgr = manager ?: return SchedulerResult.IGNORED
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !mgr.canScheduleExactAlarms()) {
-            Log.e("IntentScheduler", "No permission to schedule exact alarms")
+        if (intent == null) {
+            Log.e("IntentScheduler", "PendingIntent is null; cannot schedule alarm.")
             return SchedulerResult.IGNORED
         }
-        mgr.setExactAndAllowWhileIdle(alarmType, timestamp, intent)
-        return SchedulerResult.OK
-    }
+        if (!alarmDelegate.isAvailable()) {
+            Log.e("IntentScheduler", "AlarmManager is not available.")
+            return SchedulerResult.IGNORED
+        }
 
+        if (alarmDelegate.canScheduleExactAlarms()) {
+            try {
+                alarmDelegate.setExactAndAllowWhileIdle(alarmType, timestamp, intent)
+                Log.d("IntentScheduler", "Scheduled exact alarm at $timestamp")
+                return SchedulerResult.OK
+            } catch (e: SecurityException) {
+                Log.w(
+                    "IntentScheduler",
+                    "SecurityException scheduling exact alarm; falling back to inexact alarm (exact delivery time not guaranteed)",
+                    e
+                )
+            }
+        } else {
+            Log.w(
+                "IntentScheduler",
+                "No permission to schedule exact alarms; falling back to inexact alarm (exact delivery time not guaranteed)"
+            )
+        }
+
+        return try {
+            alarmDelegate.setAndAllowWhileIdle(alarmType, timestamp, intent)
+            Log.d(
+                "IntentScheduler",
+                "Scheduled inexact fallback alarm at $timestamp (exact delivery time not guaranteed)"
+            )
+            SchedulerResult.OK
+        } catch (e: SecurityException) {
+            Log.e(
+                "IntentScheduler",
+                "SecurityException scheduling inexact fallback alarm at $timestamp",
+                e
+            )
+            SchedulerResult.IGNORED
+        }
+    }
 
     override fun scheduleShowReminder(
         reminderTime: Long,

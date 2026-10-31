@@ -471,6 +471,7 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             subsection("notifications_general", getString(R.string.settings_subsection_habit_reminders)),
             settingSwitch("pref_sticky_notifications", R.drawable.ic_settings_notification, getString(R.string.sticky_notifications), getString(R.string.sticky_notifications_description), prefs.shouldMakeNotificationsSticky()) { prefs.setNotificationsSticky(it) },
             navigation("reminderCustomize", R.drawable.ic_settings_bell_cog, getString(R.string.settings_reminder_channel_title), notificationChannelSummary(), showIcon = true) { openReminderChannelSettings() },
+            navigation("reminderExactAlarm", R.drawable.ic_settings_clock, getString(R.string.pref_reminder_exact_alarm_title), reminderExactAlarmSummary()) { openExactAlarmSettings() },
             navigation("reminderTest", R.drawable.ic_settings_bell_check, getString(R.string.settings_reminder_test_title), getString(R.string.settings_reminder_test_summary)) { testHabitReminder() },
             subsection("notifications_pomodoro", getString(R.string.settings_subsection_pomodoro_completion)),
             settingSwitch("pref_pomodoro_focus_alert", R.drawable.ic_settings_pomodoro_focus, getString(R.string.pref_pomodoro_focus_alert_title), null, prefs.isPomodoroFocusAlertEnabled) { prefs.isPomodoroFocusAlertEnabled = it },
@@ -827,6 +828,20 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             health.hasSound -> getString(R.string.pref_pomodoro_alert_sound_only)
             health.hasVibration -> getString(R.string.pref_pomodoro_alert_vibration_only)
             else -> getString(R.string.pref_pomodoro_alert_silent)
+        }
+    }
+
+    private fun reminderExactAlarmSummary(): String {
+        val canScheduleExact = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val alarmManager = requireContext().getSystemService(android.content.Context.ALARM_SERVICE) as? android.app.AlarmManager
+            alarmManager?.canScheduleExactAlarms() == true
+        } else {
+            true
+        }
+        return if (canScheduleExact) {
+            getString(R.string.pref_reminder_exact_alarm_enabled)
+        } else {
+            getString(R.string.pref_reminder_exact_alarm_disabled)
         }
     }
 
