@@ -102,7 +102,7 @@ class EffectiveHabitReadSnapshot internal constructor(
                 scoreResult = EffectiveScoreResult(null, baseExactness)
                 streakResult = EffectiveStreakResult(null, baseExactness)
             } else {
-                val projected = detachedPresentation()
+                val projected = if (hasContributions && captured.isNumerical) detachedPresentation() else captured
                 val start = projected.effectiveStatisticsStartDate()
                     ?: projected.computedEntries.getEarliestDate() ?: from
                 val safe = !hasContributions || rollingWindowsRepresentable(projected, start, resultTo)
@@ -225,7 +225,7 @@ class EffectiveHabitReadSnapshot internal constructor(
     }
 
     private fun detachedPresentation(): Habit = copyDetached(captured).also { projected ->
-        if (captured.isNumerical) days.forEach { day ->
+        if (hasContributions && captured.isNumerical) days.forEach { day ->
             val number = day.totalValue
             if (number != null) {
                 check(number <= Int.MAX_VALUE) { "Effective observation exceeds legacy Int representation" }
