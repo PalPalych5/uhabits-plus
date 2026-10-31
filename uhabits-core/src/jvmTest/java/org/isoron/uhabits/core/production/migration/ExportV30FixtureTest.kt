@@ -12,7 +12,6 @@ import org.isoron.uhabits.core.containers.migration.SemanticMigrationFixtures
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.io.File
 
 class ExportV30FixtureTest {
 
@@ -20,9 +19,8 @@ class ExportV30FixtureTest {
 
     @Test
     fun exportV30FixtureForEmulator() = runBlocking {
-        val targetFile = File("D:/DevData/Temp/v30_dev_test.db")
-        if (targetFile.exists()) targetFile.delete()
-        targetFile.parentFile.mkdirs()
+        val targetFile = java.nio.file.Files.createTempFile("v30-dev-test-", ".db").toFile()
+        println("Synthetic v30 fixture: ${targetFile.absolutePath}")
 
         val db = opener.open(targetFile.absolutePath)
         try {
