@@ -1,5 +1,6 @@
 [versions]
 agp = "8.13.2"
+compose-bom = "2025.10.00"
 benchmark = "1.4.1"
 profileinstaller = "1.4.1"
 annotation = "1.9.1"
@@ -35,6 +36,9 @@ documentfile = "1.0.1"
 securityCrypto = "1.1.0-alpha06"
 
 [libraries]
+compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
+compose-ui = { module = "androidx.compose.ui:ui" }
+compose-foundation = { module = "androidx.compose.foundation:foundation" }
 benchmark-macro-junit4 = { module = "androidx.benchmark:benchmark-macro-junit4", version.ref = "benchmark" }
 profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "profileinstaller" }
 annotation = { group = "androidx.annotation", name = "annotation", version.ref = "annotation" }
@@ -77,6 +81,7 @@ documentfile = { group = "androidx.documentfile", name = "documentfile", version
 security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 
 [plugins]
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 agp = { id = "com.android.application", version.ref = "agp" }
 agp-test = { id = "com.android.test", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

@@ -20,6 +20,7 @@
 plugins {
     alias(libs.plugins.agp)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.compose.compiler)
     alias(libs.plugins.ksp)
     alias(libs.plugins.ktlint.plugin)
     alias(libs.plugins.mokkery)
@@ -52,6 +53,21 @@ val prepareAndroidCoreAssets by tasks.registering(Sync::class) {
     into(layout.buildDirectory.dir("generated/coreAssets"))
 }
 
+// Narrow, explicitly opt-in smoke APK. Normal androidTest keeps the complete suite.
+val calendarSmoke = providers.gradleProperty("calendarSmokeSources").orNull == "true"
+val prepareCalendarSmokeSources by tasks.registering(Sync::class) {
+    from("src/androidTest/java") {
+        include("**/TaskDraftQaRunner.kt", "**/TaskDraftLifecycleTest.kt", "**/TaskListVisualTest.kt", "**/TaskCalendarVisualTest.kt")
+    }
+    into(layout.buildDirectory.dir("generated/calendarSmokeSources"))
+}
+if (calendarSmoke) {
+    require(providers.gradleProperty("taskDraftQaTest").orNull == "true") { "Calendar smoke requires TaskDraftQaRunner" }
+    tasks.matching { it.name == "compileDebugAndroidTestKotlin" || it.name == "compileDebugAndroidTestJavaWithJavac" || it.name == "kspDebugAndroidTestKotlin" }.configureEach {
+        dependsOn(prepareCalendarSmokeSources)
+    }
+}
+
 android {
     namespace = "org.isoron.uhabits"
     compileSdk = 36
@@ -60,6 +76,7 @@ android {
         getByName("main") {
             assets.srcDirs("src/main/assets", prepareAndroidCoreAssets)
         }
+        if (calendarSmoke) getByName("androidTest").java.setSrcDirs(listOf(layout.buildDirectory.dir("generated/calendarSmokeSources")))
     }
 
     defaultConfig {
@@ -126,6 +143,7 @@ android {
         }
     }
     buildFeatures.viewBinding = true
+    buildFeatures.compose = true
     lint.abortOnError = false
     testOptions {
         unitTests.isReturnDefaultValues = true
@@ -143,6 +161,9 @@ mokkery {
 }
 
 dependencies {
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.foundation)
     "benchmarkImplementation"(libs.profileinstaller)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(libs.appIntro)
