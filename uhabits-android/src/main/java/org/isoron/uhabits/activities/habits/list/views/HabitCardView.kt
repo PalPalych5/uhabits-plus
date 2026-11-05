@@ -39,6 +39,23 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp as composeDp
+import androidx.compose.ui.unit.sp
 import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.gui.toInt
 import org.isoron.platform.time.LocalDate
@@ -47,6 +64,8 @@ import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.icons.IconPack
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.common.views.RingView
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
 import org.isoron.uhabits.core.containers.IconRef
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.ModelObservable
@@ -91,6 +110,82 @@ class HabitCardView(
             numberPanel.dataOffset = value
         }
 
+    var groupHeading: String? = null
+        set(value) {
+            field = value
+            updateLabelContentDescription()
+        }
+
+    private var headingText by mutableStateOf("")
+    private var headingColors by mutableStateOf<UHabitComposeColors?>(null)
+    private var headingView: ComposeView? = null
+
+    var composeGroupHeading: String? = null
+        set(value) {
+            field = value
+            val gap = if (value == null) 0 else headingGap()
+            (innerFrame.layoutParams as FrameLayout.LayoutParams).let {
+                if (it.topMargin != gap) {
+                    it.topMargin = gap
+                    innerFrame.layoutParams = it
+                }
+            }
+            if (value != null) {
+                headingText = value
+                headingColors = UHabitComposeColors.fromPalette(palette)
+                if (headingView == null) {
+                    headingView = ComposeView(context).apply {
+                        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
+                        setOnTouchListener { _, _ -> true }
+                        setContent {
+                            val colors = headingColors ?: return@setContent
+                            UHabitComposeTheme(colors) {
+                                Box(Modifier.fillMaxSize().padding(start = 13.composeDp, end = 13.composeDp, bottom = 8.composeDp), contentAlignment = Alignment.BottomStart) {
+                                    BasicText(headingText, style = TextStyle(color = Color(colors.secondary), fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.26.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                        this@HabitCardView.addView(this, FrameLayout.LayoutParams(MATCH_PARENT, gap, Gravity.TOP))
+                    }
+                }
+                headingView?.let { view ->
+                    if (view.layoutParams.height != gap) {
+                        view.layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, gap, Gravity.TOP)
+                    }
+                }
+            }
+            headingView?.visibility = if (value == null) GONE else VISIBLE
+        }
+
+    private fun headingGap(): Int {
+        val paint = android.text.TextPaint().apply {
+            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            textSize = 13f * resources.displayMetrics.scaledDensity
+        }
+        val height = paint.fontMetrics.let { it.descent - it.ascent }
+        return maxOf(dp(34f), height + dp(18f)).toInt()
+    }
+
+    private fun updateLabelContentDescription() {
+        val habitName = habit?.name.orEmpty()
+        val heading = groupHeading
+        label.contentDescription = if (!heading.isNullOrBlank()) {
+            "$heading, $habitName"
+        } else {
+            habitName
+        }
+    }
+
+    override fun onInitializeAccessibilityNodeInfo(info: android.view.accessibility.AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        groupHeading?.let { heading ->
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                info.stateDescription = heading
+            }
+        }
+    }
+
     var habit: Habit? = null
         set(newHabit) {
             if (isAttachedToWindow) {
@@ -98,7 +193,7 @@ class HabitCardView(
                 newHabit?.observable?.addListener(this)
             }
             field = newHabit
-            label.contentDescription = newHabit?.name
+            updateLabelContentDescription()
             if (newHabit != null) copyAttributesFrom(newHabit)
         }
 
@@ -277,7 +372,7 @@ class HabitCardView(
         innerFrame = LinearLayout(context).apply {
             gravity = Gravity.CENTER_VERTICAL
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
             elevation = dp(1f)
 
             addView(scoreRing)
@@ -348,7 +443,7 @@ class HabitCardView(
         }
         return PointF(
             containerLocation[0].toFloat() + relButtonLocation.x - xInset,
-            containerLocation[1].toFloat() + relButtonLocation.y - yInset
+            containerLocation[1].toFloat() + innerFrame.top + relButtonLocation.y - yInset
         )
     }
 
@@ -363,6 +458,7 @@ class HabitCardView(
     }
 
     private fun copyAttributesFrom(h: Habit) {
+        if (headingView != null) headingColors = UHabitComposeColors.fromPalette(palette)
         fun getActiveColor(habit: Habit): Int {
             return currentTheme().color(habit.color).toInt()
         }
@@ -396,6 +492,7 @@ class HabitCardView(
         }
         updateBackground(isSelected)
         updateIconTile()
+        updateLabelContentDescription()
     }
 
     private fun updateIconTile() {

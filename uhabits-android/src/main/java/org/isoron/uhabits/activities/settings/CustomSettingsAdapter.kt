@@ -142,7 +142,8 @@ sealed class SettingItem {
 class CustomSettingsAdapter(
     private val context: Context,
     private val prefs: Preferences,
-    private var items: List<SettingItem>
+    private var items: List<SettingItem>,
+    private val composePomodoro: Boolean = false
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     private var paletteSignature = currentPaletteSignature()
 
@@ -216,6 +217,7 @@ class CustomSettingsAdapter(
         private const val TYPE_SEGMENTED = 2
         private const val TYPE_SUBSECTION = 3
         private const val TYPE_STATUS = 4
+        private const val TYPE_COMPOSE = 5
     }
 
     private enum class ChangePayload {
@@ -264,6 +266,7 @@ class CustomSettingsAdapter(
     }
 
     override fun getItemViewType(position: Int): Int {
+        if (composePomodoro && (items[position] is SettingItem.Subsection || items[position] is SettingItem.Navigation || items[position] is SettingItem.Switch)) return TYPE_COMPOSE
         return when (items[position]) {
             is SettingItem.Section -> TYPE_SECTION
             is SettingItem.Subsection -> TYPE_SUBSECTION
@@ -276,6 +279,10 @@ class CustomSettingsAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         val inflater = LayoutInflater.from(context)
         return when (viewType) {
+            TYPE_COMPOSE -> ComposeSettingsHolder(androidx.compose.ui.platform.ComposeView(context).apply {
+                layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                setViewCompositionStrategy(androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            })
             TYPE_SECTION -> {
                 val view = inflater.inflate(R.layout.item_settings_section, parent, false)
                 SectionViewHolder(view)
@@ -299,6 +306,13 @@ class CustomSettingsAdapter(
         val palette = SettingsThemePaletteResolver.resolve(context, prefs)
 
         when (holder) {
+            is ComposeSettingsHolder -> {
+                applyCardDecoration(holder.itemView, position)
+                val colors = org.isoron.uhabits.compose.UHabitComposeColors.fromPalette(palette)
+                (holder.itemView as androidx.compose.ui.platform.ComposeView).setContent {
+                    PomodoroSettingsRow(item, colors)
+                }
+            }
             is SectionViewHolder -> {
                 bindSection(holder, item as SettingItem.Section)
                 applyCardDecoration(holder.itemView, position)

@@ -94,6 +94,13 @@
 
         <SwitchPreferenceCompat
                 android:defaultValue="true"
+                android:key="pref_show_sphere_names"
+                android:summary="@string/pref_show_sphere_names_summary"
+                android:title="@string/pref_show_sphere_names_title"
+                app:iconSpaceReserved="false" />
+
+        <SwitchPreferenceCompat
+                android:defaultValue="true"
                 android:key="pref_enable_day_tiers"
                 android:summary="@string/pref_enable_day_tiers_summary"
                 android:title="@string/pref_enable_day_tiers_title"

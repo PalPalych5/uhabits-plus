@@ -217,7 +217,7 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             insets
         }
 
-        adapter = CustomSettingsAdapter(requireContext(), prefs, emptyList())
+        adapter = CustomSettingsAdapter(requireContext(), prefs, emptyList(), detailSectionId() == SettingsSectionId.POMODORO)
         recyclerView.adapter = adapter
     }
 
@@ -434,7 +434,10 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             buildList {
                 add(subsection("habits_spheres", getString(R.string.settings_subsection_spheres)))
                 add(settingSwitch("pref_enable_habit_spheres", R.drawable.ic_settings_spheres, getString(R.string.pref_enable_habit_spheres_title), getString(R.string.pref_enable_habit_spheres_summary), prefs.isHabitSpheresEnabled) { prefs.isHabitSpheresEnabled = it })
-                if (prefs.isHabitSpheresEnabled) add(navigation("configureSpheres", R.drawable.ic_settings_configure_spheres, getString(R.string.configure_spheres), getString(R.string.configure_spheres_summary), showIcon = true) { actionHandler().onSettingsAction(SettingsAction.MANAGE_SPHERES) })
+                if (prefs.isHabitSpheresEnabled) {
+                    add(navigation("configureSpheres", R.drawable.ic_settings_configure_spheres, getString(R.string.configure_spheres), getString(R.string.configure_spheres_summary), showIcon = true) { actionHandler().onSettingsAction(SettingsAction.MANAGE_SPHERES) })
+                    add(settingSwitch("pref_show_sphere_names", R.drawable.ic_settings_squares, getString(R.string.pref_show_sphere_names_title), getString(R.string.pref_show_sphere_names_summary), prefs.isShowSphereNamesEnabled) { prefs.isShowSphereNamesEnabled = it })
+                }
                 add(subsection("habits_tiers", getString(R.string.settings_subsection_day_tiers)))
                 add(settingSwitch("pref_enable_day_tiers", R.drawable.ic_settings_tiers, getString(R.string.pref_enable_day_tiers_title), getString(R.string.pref_enable_day_tiers_summary), prefs.isDayTiersEnabled) { prefs.isDayTiersEnabled = it })
                 if (prefs.isDayTiersEnabled) add(navigation("pref_day_tier_sort_order", R.drawable.ic_settings_arrows_sort, getString(R.string.pref_day_tier_sort_order_title), dayTierSortOrderSummary()) { showDayTierSortOrderDialog() })

@@ -17,6 +17,7 @@ object SettingsIconRegistry {
         "configureSpheres" to R.drawable.ic_settings_configure_spheres,
         "pref_enable_day_tiers" to R.drawable.ic_settings_tiers,
         "pref_day_tier_sort_order" to R.drawable.ic_settings_arrows_sort,
+        "pref_show_sphere_names" to R.drawable.ic_settings_squares,
         "pref_habit_group_separators" to R.drawable.ic_settings_separator_horizontal,
         "pref_short_toggle" to R.drawable.ic_settings_check,
         "pref_checkmark_reverse_order" to R.drawable.ic_settings_reverse,
