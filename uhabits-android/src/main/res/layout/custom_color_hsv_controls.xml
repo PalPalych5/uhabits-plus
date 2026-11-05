@@ -21,12 +21,13 @@
             android:valueTo="360"
             app:haloRadius="@dimen/color_picker_slider_halo_radius"
             app:labelBehavior="gone"
-            app:thumbRadius="@dimen/color_picker_slider_thumb_radius"
-            app:thumbStrokeColor="?attr/colorPickerSliderThumbStroke"
-            app:thumbStrokeWidth="1dp"
+            app:thumbRadius="9dp"
+            app:thumbStrokeColor="@android:color/white"
+            app:thumbStrokeWidth="2dp"
+            app:thumbElevation="2dp"
             app:tickVisible="false"
             app:trackColorInactive="?attr/colorPickerSliderInactive"
-            app:trackHeight="3dp" />
+            app:trackHeight="4dp" />
         <EditText
             android:id="@+id/custom_color_hue_value"
             android:layout_width="56dp"
@@ -64,12 +65,13 @@
             android:valueTo="100"
             app:haloRadius="@dimen/color_picker_slider_halo_radius"
             app:labelBehavior="gone"
-            app:thumbRadius="@dimen/color_picker_slider_thumb_radius"
-            app:thumbStrokeColor="?attr/colorPickerSliderThumbStroke"
-            app:thumbStrokeWidth="1dp"
+            app:thumbRadius="9dp"
+            app:thumbStrokeColor="@android:color/white"
+            app:thumbStrokeWidth="2dp"
+            app:thumbElevation="2dp"
             app:tickVisible="false"
             app:trackColorInactive="?attr/colorPickerSliderInactive"
-            app:trackHeight="3dp" />
+            app:trackHeight="4dp" />
         <EditText
             android:id="@+id/custom_color_saturation_value"
             android:layout_width="56dp"
@@ -106,12 +108,13 @@
             android:valueTo="100"
             app:haloRadius="@dimen/color_picker_slider_halo_radius"
             app:labelBehavior="gone"
-            app:thumbRadius="@dimen/color_picker_slider_thumb_radius"
-            app:thumbStrokeColor="?attr/colorPickerSliderThumbStroke"
-            app:thumbStrokeWidth="1dp"
+            app:thumbRadius="9dp"
+            app:thumbStrokeColor="@android:color/white"
+            app:thumbStrokeWidth="2dp"
+            app:thumbElevation="2dp"
             app:tickVisible="false"
             app:trackColorInactive="?attr/colorPickerSliderInactive"
-            app:trackHeight="3dp" />
+            app:trackHeight="4dp" />
         <EditText
             android:id="@+id/custom_color_value_value"
             android:layout_width="56dp"

@@ -1,245 +1,280 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="@drawable/color_picker_sheet_background"
-    android:clipToPadding="false"
-    android:fillViewport="true"
-    android:paddingStart="24dp"
-    android:paddingTop="8dp"
-    android:paddingEnd="24dp"
-    android:paddingBottom="20dp"
-    android:scrollbars="none">
+    android:orientation="vertical">
 
-    <LinearLayout
+    <View
+        android:id="@+id/custom_color_handle"
+        android:layout_width="36dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="10dp"
+        android:background="@drawable/color_picker_sheet_handle" />
+
+    <androidx.core.widget.NestedScrollView
+        android:id="@+id/custom_color_scroll"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical">
-
-        <View
-            android:layout_width="36dp"
-            android:layout_height="4dp"
-            android:layout_gravity="center_horizontal"
-            android:layout_marginBottom="16dp"
-            android:background="@drawable/color_picker_sheet_handle" />
-
-        <com.google.android.material.card.MaterialCardView
-            android:id="@+id/custom_color_preview"
-            android:layout_width="match_parent"
-            android:layout_height="62dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="12dp"
-            app:cardCornerRadius="16dp"
-            app:cardElevation="0dp">
-
-            <TextView
-                android:id="@+id/custom_color_preview_value"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="start|bottom"
-                android:layout_margin="8dp"
-                android:background="@drawable/color_picker_hex_badge"
-                android:fontFamily="monospace"
-                android:paddingHorizontal="8dp"
-                android:paddingVertical="3dp"
-                android:textColor="@android:color/white"
-                android:textSize="14sp"
-                android:textStyle="bold" />
-        </com.google.android.material.card.MaterialCardView>
-
-        <FrameLayout
-            android:id="@+id/custom_color_tabs"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:layout_marginBottom="12dp"
-            android:background="@drawable/color_picker_segment_container"
-            android:padding="4dp">
-
-            <!-- Tab indicator container for sliding pill -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:orientation="horizontal"
-                android:weightSum="3">
-
-                <View
-                    android:id="@+id/custom_color_tab_indicator"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:background="@drawable/color_picker_segment_selected" />
-
-                <View
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:visibility="invisible" />
-
-                <View
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:visibility="invisible" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:orientation="horizontal"
-                android:weightSum="3">
-
-                <TextView
-                    android:id="@+id/custom_color_tab_hex"
-                    style="@style/ColorPicker.TabText"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:gravity="center"
-                    android:text="@string/custom_color_tab_hex"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:background="@null" />
-
-                <TextView
-                    android:id="@+id/custom_color_tab_hsv"
-                    style="@style/ColorPicker.TabText"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:gravity="center"
-                    android:text="@string/custom_color_tab_hsv"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:background="@null" />
-
-                <TextView
-                    android:id="@+id/custom_color_tab_rgb"
-                    style="@style/ColorPicker.TabText"
-                    android:layout_width="0dp"
-                    android:layout_height="match_parent"
-                    android:layout_weight="1"
-                    android:gravity="center"
-                    android:text="@string/custom_color_tab_rgb"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:background="@null" />
-            </LinearLayout>
-        </FrameLayout>
-
-        <FrameLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp">
-
-            <LinearLayout
-                android:id="@+id/custom_color_hex_panel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="2dp"
-                    android:layout_marginBottom="8dp"
-                    android:text="@string/custom_color_code"
-                    android:textColor="?attr/colorPickerOnSurfaceVariant"
-                    android:textSize="13sp" />
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/custom_color_hex_layout"
-                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:hint=""
-                    app:boxBackgroundColor="?attr/colorPickerSurface"
-                    app:boxStrokeColor="?attr/colorPickerBorder"
-                    app:errorTextColor="?attr/colorPickerDanger"
-                    app:hintEnabled="false">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/custom_color_hex_input"
-                        android:layout_width="match_parent"
-                        android:layout_height="46dp"
-                        android:gravity="center_vertical|start"
-                        android:paddingStart="16dp"
-                        android:paddingEnd="16dp"
-                        android:paddingTop="8dp"
-                        android:paddingBottom="8dp"
-                        android:includeFontPadding="false"
-                        android:digits="0123456789ABCDEFabcdef#"
-                        android:fontFamily="monospace"
-                        android:inputType="textCapCharacters|textNoSuggestions"
-                        android:maxLength="7"
-                        android:singleLine="true"
-                        android:imeOptions="actionDone"
-                        android:textColor="?attr/colorPickerOnSurface"
-                        android:textSize="16sp"
-                        android:textAppearance="?attr/textAppearanceSubtitle1" />
-                </com.google.android.material.textfield.TextInputLayout>
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/custom_color_hsv_panel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <include layout="@layout/custom_color_hsv_controls" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/custom_color_rgb_panel"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone">
-
-                <include layout="@layout/custom_color_rgb_controls" />
-            </LinearLayout>
-        </FrameLayout>
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:clipToPadding="false"
+        android:scrollbars="none">
 
         <LinearLayout
+            android:id="@+id/custom_color_scroll_content"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:orientation="horizontal">
+            android:orientation="vertical"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:paddingBottom="4dp">
 
-            <TextView
-                android:id="@+id/custom_color_cancel"
-                android:layout_width="0dp"
-                android:layout_height="52dp"
-                android:layout_weight="1"
-                android:alpha="1"
-                android:background="@null"
-                android:clickable="true"
-                android:focusable="true"
-                android:fontFamily="sans-serif-medium"
-                android:gravity="center"
-                android:letterSpacing="0"
-                android:text="@string/color_picker_cancel"
-                android:textAllCaps="false"
-                android:textColor="?attr/colorPickerOnSurface"
-                android:textSize="16sp"
-                android:textStyle="bold" />
+            <org.isoron.uhabits.activities.common.dialogs.SatValView
+                android:id="@+id/custom_color_sat_val"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:contentDescription="@string/custom_color_field_description"
+                android:importantForAccessibility="no" />
 
-            <androidx.appcompat.widget.AppCompatButton
-                android:id="@+id/custom_color_done"
-                android:layout_width="0dp"
-                android:layout_height="52dp"
-                android:layout_marginStart="12dp"
-                android:layout_weight="1"
-                android:background="@null"
-                android:elevation="0dp"
-                android:fontFamily="sans-serif-medium"
-                android:stateListAnimator="@null"
-                android:text="@string/pomodoro_done"
-                android:textAllCaps="false"
-                android:textSize="16sp"
-                android:textStyle="bold"
-                android:translationZ="0dp" />
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="6dp">
+
+                <View
+                    android:id="@+id/custom_color_hue_spectrum"
+                    android:layout_width="match_parent"
+                    android:layout_height="6dp"
+                    android:layout_gravity="center"
+                    android:layout_marginHorizontal="10dp" />
+
+                <com.google.android.material.slider.Slider
+                    android:id="@+id/custom_color_hue_control"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:layout_gravity="center"
+                    android:contentDescription="@string/custom_color_hue_description"
+                    android:valueFrom="0"
+                    android:valueTo="360"
+                    app:trackColor="@android:color/transparent"
+                    app:trackColorActive="@android:color/transparent"
+                    app:trackColorInactive="@android:color/transparent"
+                    app:trackHeight="6dp"
+                    app:thumbRadius="9dp"
+                    app:thumbStrokeWidth="2dp"
+                    app:thumbStrokeColor="@android:color/white"
+                    app:thumbElevation="2dp"
+                    app:haloRadius="15dp"
+                    app:labelBehavior="gone"
+                    app:tickVisible="false" />
+            </FrameLayout>
+
+            <FrameLayout
+                android:id="@+id/custom_color_tabs"
+                android:layout_width="match_parent"
+                android:layout_height="42dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:background="@drawable/color_picker_segment_container"
+                android:padding="3dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="horizontal"
+                    android:weightSum="3">
+
+                    <View
+                        android:id="@+id/custom_color_tab_indicator"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:background="@drawable/color_picker_segment_selected" />
+
+                    <View
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:visibility="invisible" />
+
+                    <View
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:visibility="invisible" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="horizontal"
+                    android:weightSum="3">
+
+                    <TextView
+                        android:id="@+id/custom_color_tab_hex"
+                        style="@style/ColorPicker.TabText"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:gravity="center"
+                        android:text="@string/custom_color_tab_hex"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:background="@null" />
+
+                    <TextView
+                        android:id="@+id/custom_color_tab_hsv"
+                        style="@style/ColorPicker.TabText"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:gravity="center"
+                        android:text="@string/custom_color_tab_hsv"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:background="@null" />
+
+                    <TextView
+                        android:id="@+id/custom_color_tab_rgb"
+                        style="@style/ColorPicker.TabText"
+                        android:layout_width="0dp"
+                        android:layout_height="match_parent"
+                        android:layout_weight="1"
+                        android:gravity="center"
+                        android:text="@string/custom_color_tab_rgb"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:background="@null" />
+                </LinearLayout>
+            </FrameLayout>
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp">
+
+                <LinearLayout
+                    android:id="@+id/custom_color_hex_panel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="2dp"
+                        android:layout_marginBottom="6dp"
+                        android:text="@string/custom_color_code"
+                        android:textColor="?attr/colorPickerOnSurfaceVariant"
+                        android:textSize="13sp" />
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/custom_color_hex_layout"
+                        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint=""
+                        app:boxCornerRadiusTopStart="12dp"
+                        app:boxCornerRadiusTopEnd="12dp"
+                        app:boxCornerRadiusBottomStart="12dp"
+                        app:boxCornerRadiusBottomEnd="12dp"
+                        app:boxBackgroundColor="?attr/colorPickerSurface"
+                        app:boxStrokeColor="?attr/colorPickerBorder"
+                        app:errorTextColor="?attr/colorPickerDanger"
+                        app:hintEnabled="false">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/custom_color_hex_input"
+                            android:layout_width="match_parent"
+                            android:layout_height="48dp"
+                            android:gravity="center_vertical|start"
+                            android:paddingStart="16dp"
+                            android:paddingEnd="16dp"
+                            android:paddingTop="8dp"
+                            android:paddingBottom="8dp"
+                            android:includeFontPadding="false"
+                            android:digits="0123456789ABCDEFabcdef#"
+                            android:fontFamily="monospace"
+                            android:inputType="textCapCharacters|textNoSuggestions"
+                            android:maxLength="7"
+                            android:singleLine="true"
+                            android:imeOptions="actionDone"
+                            android:textColor="?attr/colorPickerOnSurface"
+                            android:textSize="16sp"
+                            android:textAppearance="?attr/textAppearanceSubtitle1" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/custom_color_hsv_panel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <include layout="@layout/custom_color_hsv_controls" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/custom_color_rgb_panel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <include layout="@layout/custom_color_rgb_controls" />
+                </LinearLayout>
+            </FrameLayout>
         </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+
+    <LinearLayout
+        android:id="@+id/custom_color_footer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="16dp">
+
+        <TextView
+            android:id="@+id/custom_color_cancel"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:alpha="1"
+            android:background="@null"
+            android:clickable="true"
+            android:focusable="true"
+            android:fontFamily="sans-serif-medium"
+            android:gravity="center"
+            android:letterSpacing="0"
+            android:text="@string/color_picker_cancel"
+            android:textAllCaps="false"
+            android:textColor="?attr/colorPickerOnSurface"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <androidx.appcompat.widget.AppCompatButton
+            android:id="@+id/custom_color_done"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:background="@null"
+            android:elevation="0dp"
+            android:fontFamily="sans-serif-medium"
+            android:stateListAnimator="@null"
+            android:text="@string/pomodoro_done"
+            android:textAllCaps="false"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:translationZ="0dp" />
     </LinearLayout>
-</androidx.core.widget.NestedScrollView>
+</LinearLayout>

@@ -18,6 +18,7 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.DatePicker
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -266,6 +267,8 @@ object CustomDialogs {
         isDestructive: Boolean,
         positiveText: CharSequence = context.getString(android.R.string.ok),
         negativeText: CharSequence = context.getString(android.R.string.cancel),
+        @androidx.annotation.DrawableRes iconRes: Int? = null,
+        @androidx.annotation.ColorInt iconTint: Int? = null,
         onConfirm: () -> Unit
     ): AlertDialog {
         val builder = MaterialAlertDialogBuilder(context, R.style.CustomTransparentDialogTheme)
@@ -274,10 +277,21 @@ object CustomDialogs {
 
         val view = LayoutInflater.from(dialogContext)
             .inflate(R.layout.dialog_custom_confirm, null)
+        val dialogIcon    = view.findViewById<ImageView>(R.id.dialog_icon)
         val dialogTitle   = view.findViewById<TextView>(R.id.dialog_title)
         val dialogMessage = view.findViewById<TextView>(R.id.dialog_message)
         val btnNegative   = view.findViewById<Button>(R.id.button_negative)
         val btnPositive   = view.findViewById<Button>(R.id.button_positive)
+
+        if (iconRes != null && dialogIcon != null) {
+            dialogIcon.visibility = View.VISIBLE
+            dialogIcon.setImageResource(iconRes)
+            if (iconTint != null) {
+                dialogIcon.setColorFilter(iconTint)
+            }
+        } else {
+            dialogIcon?.visibility = View.GONE
+        }
 
         dialogTitle.text   = title
         dialogMessage.text = message

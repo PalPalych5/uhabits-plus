@@ -490,6 +490,8 @@
     <string name="custom_color">Свой цвет</string>
     <string name="reset_to_default_color">Сбросить на цвет по умолчанию</string>
     <string name="custom_color_picker_title">Свой цвет</string>
+    <string name="custom_color_field_description">Насыщенность и яркость. Для точного выбора используйте настройки HSV.</string>
+    <string name="custom_color_hue_description">Оттенок</string>
     <string name="custom_color_red">Красный</string>
     <string name="custom_color_green">Зелёный</string>
     <string name="custom_color_blue">Синий</string>
@@ -528,6 +530,8 @@
     <string name="custom_color_percent">%1$d%%</string>
     <string name="pref_habit_group_separators_title">Разделители групп</string>
     <string name="pref_habit_group_separators_summary">Добавлять легкие визуальные интервалы между группами в списке привычек</string>
+    <string name="pref_show_sphere_names_title">Показывать названия сфер</string>
+    <string name="pref_show_sphere_names_summary">Отображать заголовки сфер между группами в списке привычек</string>
     <string name="pref_day_tier_sort_order_title">Порядок уровней</string>
     <string name="move_up">Выше</string>
     <string name="move_down">Ниже</string>
@@ -888,7 +892,7 @@
     <string name="containers_title">Разделы</string>
     <string name="containers_subsections">Подразделы</string>
     <string name="containers_habits">Привычки</string>
-    <string name="containers_system_section">СИСТЕМНЫЕ</string>
+    <string name="containers_system_section">Системные</string>
     <string name="containers_unassigned">Без раздела</string>
     <string name="containers_unassigned_summary">Привычек требуют распределения: %d</string>
     <string name="containers_unassigned_empty">Все привычки распределены по разделам</string>
@@ -943,4 +947,44 @@
     <string name="containers_location">Расположение</string>
     <string name="containers_preview">Предпросмотр</string>
     <string name="containers_save">Сохранить</string>
+    <!-- Containers / Compose management (Wave 06 UX) -->
+    <string name="containers_back">Назад</string>
+    <string name="containers_close">Закрыть</string>
+    <string name="containers_more">Ещё</string>
+    <string name="containers_search_action">Поиск</string>
+    <string name="containers_add_short_subsection">Подраздел</string>
+    <string name="containers_add_short_habit">Привычка</string>
+    <string name="containers_assign">Назначить</string>
+    <string name="containers_name_hint">Например: Здоровье, Работа…</string>
+    <string name="containers_in_section">В разделе «%s»</string>
+    <string name="containers_no_sections">Пока нет разделов</string>
+    <string name="containers_in_archive">В архиве</string>
+    <string name="containers_unassigned_habits_suffix">без раздела</string>
+    <string name="containers_in_archive_suffix">в архиве</string>
+    <string name="containers_add_sphere_action">Новый раздел</string>
+    <string name="containers_no_active_spheres">Нет активных разделов</string>
+    <string name="containers_nothing_found">Ничего не найдено</string>
+    <string name="containers_all_habits_placed">Все привычки распределены</string>
+    <string name="containers_archive_empty_subtitle">Архив пуст</string>
+    <string name="containers_hierarchy_title">Иерархия разделов</string>
+    <string name="containers_root_all">Все разделы</string>
+    <string name="containers_action_failed">Не удалось выполнить действие</string>
+    <plurals name="containers_subsections_count">
+        <item quantity="one">%d подраздел</item>
+        <item quantity="few">%d подраздела</item>
+        <item quantity="many">%d подразделов</item>
+        <item quantity="other">%d подраздела</item>
+    </plurals>
+    <plurals name="containers_habits_count">
+        <item quantity="one">%d привычка</item>
+        <item quantity="few">%d привычки</item>
+        <item quantity="many">%d привычек</item>
+        <item quantity="other">%d привычки</item>
+    </plurals>
+    <plurals name="containers_sections_count">
+        <item quantity="one">%d раздел</item>
+        <item quantity="few">%d раздела</item>
+        <item quantity="many">%d разделов</item>
+        <item quantity="other">%d раздела</item>
+    </plurals>
 </resources>

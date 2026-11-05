@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <dimen name="custom_color_field_size">160dp</dimen>
+    <dimen name="custom_color_preview_height">62dp</dimen>
+</resources>

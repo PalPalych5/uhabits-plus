@@ -57,7 +57,7 @@ fun PaletteColor.toFixedAndroidColor(): Int {
 }
 
 fun Int.toPaletteColor(context: Context): PaletteColor {
-    val palette = StyledResources(context).getPalette()
-    val index = palette.indexOf(this)
+    val palette = runCatching { StyledResources(context).getPalette() }.getOrNull()
+    val index = palette?.indexOf(this) ?: -1
     return if (index >= 0) PaletteColor(index) else PaletteColor(this)
 }

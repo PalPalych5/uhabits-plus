@@ -25,6 +25,8 @@ import android.widget.GridLayout
 import android.widget.TextView
 import androidx.annotation.AttrRes
 import androidx.appcompat.app.AppCompatDialogFragment
+import androidx.appcompat.view.ContextThemeWrapper
+import org.isoron.uhabits.activities.tasks.TaskDueDisplayFormatter
 import androidx.appcompat.widget.Toolbar
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.Insets
@@ -108,6 +110,28 @@ class ColorPickerDialog : AppCompatDialogFragment() {
         draftColor = color
     }
 
+    override fun onGetLayoutInflater(savedInstanceState: Bundle?): LayoutInflater {
+        val superInflater = super.onGetLayoutInflater(savedInstanceState)
+        val currentThemeMode = arguments?.getInt(ARG_THEME, THEME_LIGHT) ?: themeMode
+        val selectedLocale = TaskDueDisplayFormatter.selectedLocale(requireContext())
+        val config = android.content.res.Configuration(requireContext().resources.configuration).apply {
+            setLocale(selectedLocale)
+        }
+        val configContext = requireContext().createConfigurationContext(config)
+        val themeRes = when (currentThemeMode) {
+            THEME_AMOLED -> R.style.ColorPickerFullScreenTheme_Amoled
+            THEME_DARK -> R.style.ColorPickerFullScreenTheme_Dark
+            else -> R.style.ColorPickerFullScreenTheme
+        }
+        val themed = ContextThemeWrapper(configContext, themeRes)
+        themedContext = themed
+        return superInflater.cloneInContext(themed)
+    }
+
+    override fun getContext(): Context? {
+        return if (this::themedContext.isInitialized) themedContext else super.getContext()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         themeMode = arguments?.getInt(ARG_THEME, THEME_LIGHT) ?: THEME_LIGHT
@@ -159,8 +183,11 @@ class ColorPickerDialog : AppCompatDialogFragment() {
         cancelButton = view.findViewById(R.id.color_picker_cancel)
         applyButton = view.findViewById(R.id.color_picker_apply)
 
+        toolbar.title = getString(R.string.color_picker_title)
         toolbar.setNavigationOnClickListener { dismiss() }
         toolbar.navigationContentDescription = getString(R.string.color_picker_back)
+        cancelButton.text = getString(R.string.color_picker_cancel)
+        applyButton.text = getString(R.string.color_picker_apply)
         view.findViewById<TextView>(R.id.color_picker_preview_name).text =
             arguments?.getString(ARG_PREVIEW_NAME)
                 ?.takeIf { it.isNotBlank() }
@@ -170,7 +197,11 @@ class ColorPickerDialog : AppCompatDialogFragment() {
         setupPalette(view.findViewById(R.id.color_picker_palette))
 
         view.findViewById<View>(R.id.custom_color_row).setOnClickListener {
-            CustomColorBottomSheet.newInstance(draftColor, arguments?.getInt(ARG_THEME, THEME_LIGHT) ?: THEME_LIGHT)
+            CustomColorBottomSheet.newInstance(
+                draftColor,
+                arguments?.getInt(ARG_THEME, THEME_LIGHT) ?: THEME_LIGHT,
+                arguments?.getString(ARG_PREVIEW_NAME)
+            )
                 .show(childFragmentManager, "customColorPicker")
         }
         view.findViewById<View>(R.id.color_picker_reset).setOnClickListener {
@@ -278,13 +309,26 @@ class ColorPickerDialog : AppCompatDialogFragment() {
     private fun updateApplyButton() {
         styleCancelButton()
         val borderColor = resolveColor(R.attr.colorPickerBorder)
-        val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(draftColor)
-        val textColor = if (luminance > 0.5) 0xFF1C1B1F.toInt() else Color.WHITE
+        val darkText = 0xFF1C1B1F.toInt()
+        val lightText = Color.WHITE
+        val contrastWithDark = androidx.core.graphics.ColorUtils.calculateContrast(darkText, draftColor)
+        val contrastWithLight = androidx.core.graphics.ColorUtils.calculateContrast(lightText, draftColor)
+        val textColor = if (contrastWithDark >= contrastWithLight) darkText else lightText
         applyButton.setTextColor(textColor)
+        applyButton.text = getString(R.string.color_picker_apply)
         applyButton.typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+
+        val surfaceColor = resolveColor(R.attr.colorPickerSurface)
+        val contrastWithSurface = androidx.core.graphics.ColorUtils.calculateContrast(draftColor, surfaceColor)
+        val effectiveStrokeColor = if (contrastWithSurface < 1.6) {
+            if (themeMode == THEME_AMOLED) 0x66FFFFFF.toInt()
+            else borderColor
+        } else {
+            borderColor
+        }
         applyButton.background = createActionButtonBackground(
             fillColor = draftColor,
-            strokeColor = borderColor,
+            strokeColor = effectiveStrokeColor,
             rippleColor = rippleColorFor(textColor)
         )
         applyButton.stateListAnimator = null

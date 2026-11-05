@@ -512,6 +512,8 @@
     <string name="custom_color">Custom color</string>
     <string name="reset_to_default_color">Reset to default color</string>
     <string name="custom_color_picker_title">Custom color</string>
+    <string name="custom_color_field_description">Saturation and brightness. Use the HSV controls for precise values.</string>
+    <string name="custom_color_hue_description">Hue</string>
     <string name="custom_color_red">Red</string>
     <string name="custom_color_green">Green</string>
     <string name="custom_color_blue">Blue</string>
@@ -545,11 +547,20 @@
     <string name="custom_color_tab_hex">HEX</string>
     <string name="custom_color_tab_hsv">HSV</string>
     <string name="custom_color_tab_rgb">RGB</string>
+    <string name="color_picker_title_plural">Colors</string>
+    <string name="color_picker_mode_grid">Grid</string>
+    <string name="color_picker_mode_spectrum">Spectrum</string>
+    <string name="color_picker_mode_sliders">Sliders</string>
+    <string name="custom_color_saturation">Saturation</string>
+    <string name="custom_color_brightness">Brightness</string>
+    <string name="custom_color_restore_original">Restore original color</string>
     <string name="custom_color_invalid_hex_detail">Enter exactly 6 HEX characters, for example #55B868</string>
     <string name="custom_color_degrees">%1$d°</string>
     <string name="custom_color_percent">%1$d%%</string>
     <string name="pref_habit_group_separators_title">Group separators</string>
     <string name="pref_habit_group_separators_summary">Add subtle visual spacing between groups in the Habits list</string>
+    <string name="pref_show_sphere_names_title">Show sphere names</string>
+    <string name="pref_show_sphere_names_summary">Show sphere headings between groups in the habits list</string>
     <string name="pref_day_tier_sort_order_title">Level sort order</string>
     <string name="move_up">Up</string>
     <string name="move_down">Down</string>
@@ -878,7 +889,7 @@
     <string name="containers_title">Sections</string>
     <string name="containers_subsections">Subsections</string>
     <string name="containers_habits">Habits</string>
-    <string name="containers_system_section">SYSTEM</string>
+    <string name="containers_system_section">System</string>
     <string name="containers_unassigned">Unassigned</string>
     <string name="containers_unassigned_summary">%d habits require assignment</string>
     <string name="containers_unassigned_empty">All habits are assigned to sections</string>
@@ -933,4 +944,49 @@
     <string name="containers_location">Location</string>
     <string name="containers_preview">Preview</string>
     <string name="containers_save">Save</string>
+    <!-- Containers / Compose management (Wave 06 UX) -->
+    <string name="containers_back">Back</string>
+    <string name="containers_close">Close</string>
+    <string name="containers_more">More actions</string>
+    <string name="containers_search_action">Search</string>
+    <string name="containers_add_short_subsection">Subsection</string>
+    <string name="containers_add_short_habit">Habit</string>
+    <string name="containers_assign">Assign</string>
+    <string name="containers_name_hint">e.g. Health, Work…</string>
+    <string name="containers_in_section">In «%s»</string>
+    <string name="containers_no_sections">No sections yet</string>
+    <string name="containers_in_archive">Archived</string>
+    <string name="containers_unassigned_habits_suffix">unassigned</string>
+    <string name="containers_in_archive_suffix">in archive</string>
+    <string name="containers_add_sphere_action">New section</string>
+    <string name="containers_no_active_spheres">No active sections</string>
+    <string name="containers_nothing_found">Nothing found</string>
+    <string name="containers_all_habits_placed">All habits are assigned</string>
+    <string name="containers_archive_empty_subtitle">Archive is empty</string>
+    <string name="containers_hierarchy_title">Section hierarchy</string>
+    <string name="containers_root_all">All sections</string>
+    <string name="containers_action_failed">Could not complete the action</string>
+    <plurals name="containers_subsections_count">
+        <item quantity="one">%d subsection</item>
+        <item quantity="other">%d subsections</item>
+    </plurals>
+    <plurals name="containers_habits_count">
+        <item quantity="one">%d habit</item>
+        <item quantity="other">%d habits</item>
+    </plurals>
+    <plurals name="containers_sections_count">
+        <item quantity="one">%d section</item>
+        <item quantity="other">%d sections</item>
+    </plurals>
+    <!-- Tasks Calendar -->
+    <string name="task_calendar_show_habits">Habits</string>
+    <string name="task_calendar_menu_show_habits">Show habits</string>
+    <string name="task_calendar_show_habits_on">Show habits: on</string>
+    <string name="task_calendar_show_habits_off">Show habits: off</string>
+    <string name="task_calendar_no_tasks">No planned tasks</string>
+    <string name="task_calendar_no_tasks_day">No tasks planned for this day</string>
+    <string name="task_calendar_empty_agenda">No planned tasks or habits</string>
+    <string name="task_calendar_empty_day">Nothing planned for this day</string>
+    <string name="task_calendar_no_sessions_date">No work sessions recorded for this date</string>
+    <string name="task_calendar_no_sessions_day">No work sessions recorded for this day</string>
 </resources>
