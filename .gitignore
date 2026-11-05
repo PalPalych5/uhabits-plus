@@ -18,33 +18,26 @@ node_modules
 *.sketch
 crowdin.yml
 kotlin-js-store
-# Local agent and investigation notes (public Markdown is tracked normally).
-/.agents/
-/ANTIGRAVITY.md
-/docs/UHABIT_PRODUCTION_SCHEMA_CONVERSION.md
-/docs/architecture-uhabits.md
-/docs/codex-project-context.md
-/docs/container-code-audit-2026-10-03.md
-/docs/container-commercial-analogues-2026-10-03.md
-/docs/container-open-source-analogues-2026-10-03.md
-/docs/container-redesign-research-2026-10-03.md
-/docs/development/
+*.md
+!docs/UHABIT_NEXT_HANDOFF.md
+!docs/UHABIT_TASKS_IA.md
+!docs/UHabit_Next_Spec.md
+!docs/uhabit-next-foundation-plan.md
+!docs/UHABIT_PR23_FINAL_ACCEPTANCE.md
+!tools/qa/README.md
 .kotlin
 docs/design/*
 .tmp_visual/
 repomix-output.xml
 
-# Local emulator fixtures, benchmark evidence, logs and isolated build copies.
+# Local emulator fixtures, benchmark evidence and isolated build copies.
 /scratch/
 /tools/qa/__pycache__/
 .codex/
-.gemini/
 debug.log
-*.log
-captures/
+
+# Local Android packages and signing material.
 *.apk
 *.aab
-*.keystore
 *.jks
-*.pyc
-__pycache__/
+*.keystore

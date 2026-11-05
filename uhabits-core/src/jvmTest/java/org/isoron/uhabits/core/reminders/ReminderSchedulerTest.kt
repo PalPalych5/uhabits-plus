@@ -146,6 +146,25 @@ class ReminderSchedulerTest : BaseUnitTest() {
         reminderScheduler.schedule(habit)
     }
 
+    @Test
+    fun testSchedule_withSpecificWeekday() {
+        // 2015-01-25 was Sunday (month is 0-indexed in Calendar: 0 = January)
+        val now = unixTime(2015, 0, 25, 13, 0)
+        setFixedLocalTime(now)
+        // Monday-only reminder at 8:00 AM (in GMT-4 timezone set in setUp -> UTC 12:00)
+        val mondayOnly = WeekdayList(booleanArrayOf(false, false, true, false, false, false, false))
+        habit.reminder = Reminder(8, 0, mondayOnly)
+        val expectedCheckmarkTime = unixTime(2015, 0, 26, 0, 0)
+        val expectedReminderTime = unixTime(2015, 0, 26, 12, 0)
+        scheduleAndVerify(null, expectedCheckmarkTime, expectedReminderTime)
+    }
+
+    @Test
+    fun testSchedule_withEmptyDays_doesNotSchedule() {
+        habit.reminder = Reminder(8, 0, WeekdayList(0))
+        reminderScheduler.schedule(habit)
+    }
+
     private fun scheduleAndVerify(
         atTime: Long?,
         expectedCheckmarkTime: Long,

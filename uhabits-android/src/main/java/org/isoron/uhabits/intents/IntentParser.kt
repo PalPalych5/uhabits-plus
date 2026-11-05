@@ -23,6 +23,7 @@ import android.content.ContentUris.parseId
 import android.content.Intent
 import android.net.Uri
 import me.tatarka.inject.annotations.Inject
+import org.isoron.platform.time.DateUtils
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.computeToday
 import org.isoron.platform.time.getToday
@@ -59,7 +60,7 @@ class IntentParser(
         timestamp = date.unixTime
 
         val calendarTodayMillis = computeToday(0, 0).unixTime
-        val maxAllowedMillis = maxOf(todayMillis, calendarTodayMillis)
+        val maxAllowedMillis = maxOf(todayMillis, calendarTodayMillis) + DateUtils.DAY_LENGTH
 
         if (timestamp < 0 || timestamp > maxAllowedMillis) {
             throw IllegalArgumentException("timestamp is not valid")

@@ -189,4 +189,45 @@ class HabitCardListMetadataTest : BaseUnitTest() {
         assertEquals("root-1-updated", cache.getMetadata(first.id!!).rootGroupKey)
         assertEquals("root-2", cache.getMetadata(second.id!!).rootGroupKey)
     }
+
+    @Test
+    fun rootGroupNameIsPopulatedInMetadataFromOrganizationFacade() {
+        val habit = fixtures.createShortHabit().apply { blockId = 42 }
+        habitList.add(habit)
+        val facade = mock<HabitOrganizationFacade>()
+        every { facade.mode } returns OrganizationAuthorityMode.CONTAINER_LOCAL
+        every { facade.getHabitVisualIdentity(any()) } returns null
+        every { facade.getRootGroupKey(any(), any()) } returns "root-container-1"
+        every { facade.getRootGroupName(any(), any()) } returns "Health Sphere"
+        (habitList as MemoryHabitList).organizationFacade = facade
+        val runner = QueuedRunner()
+        val cache = HabitCardListCache(habitList, commandRunner, runner, mock())
+        cache.setCheckmarkCount(10)
+        cache.refreshAllHabits()
+        runner.finish()
+        assertEquals("root-container-1", cache.getMetadata(habit.id!!).rootGroupKey)
+        assertEquals("Health Sphere", cache.getMetadata(habit.id!!).rootGroupName)
+    }
+
+    @Test
+    fun rootGroupNameResolvesFromLegacyBlocksWhenFacadeIsNull() {
+        val habit = fixtures.createShortHabit().apply { blockId = 42L }
+        val block = org.isoron.uhabits.core.models.HabitBlock(
+            id = 42L,
+            name = "Fitness Legacy Block",
+            color = org.isoron.uhabits.core.models.PaletteColor(0)
+        )
+        (habitList as MemoryHabitList).setBlocks(listOf(block))
+        (habitList as MemoryHabitList).organizationFacade = null
+        habitList.add(habit)
+
+        val runner = QueuedRunner()
+        val cache = HabitCardListCache(habitList, commandRunner, runner, mock())
+        cache.setCheckmarkCount(10)
+        cache.refreshAllHabits()
+        runner.finish()
+
+        assertEquals(42L, cache.getMetadata(habit.id!!).rootGroupKey)
+        assertEquals("Fitness Legacy Block", cache.getMetadata(habit.id!!).rootGroupName)
+    }
 }

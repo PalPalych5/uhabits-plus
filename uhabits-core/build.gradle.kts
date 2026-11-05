@@ -93,6 +93,10 @@ kotlin {
     }
 }
 
+tasks.withType<Test> {
+    maxHeapSize = "2048m"
+}
+
 mokkery {
     defaultMockMode.set(dev.mokkery.MockMode.autofill)
     // CommandRunner exposes a final read-only listener diagnostic. Widget mocks

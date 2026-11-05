@@ -65,6 +65,15 @@ foreach ($key in @('ANDROID_AVD_HOME', 'TEMP', 'TMP')) { $saved[$key] = [Environ
 $record = [ordered]@{ runId = $runId; avd = $AvdName; home = $AvdHome; temporary = [bool]$Temporary; port = $Port; ownerPid = $PID; ownerStartedUtc = (Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o'); status = 'leased'; emulatorPid = $null }
 function Save-Manifest { $record | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding UTF8 }
 function Invoke-Adb([string[]]$Arguments) {
+    if ($Arguments.Length -gt 0 -and $Arguments[0] -eq 'shell') {
+        $cleanArgs = @('shell', '-n', '-T')
+        for ($i = 1; $i -lt $Arguments.Length; $i++) {
+            if ($Arguments[$i] -ne '-n' -and $Arguments[$i] -ne '-T') {
+                $cleanArgs += $Arguments[$i]
+            }
+        }
+        $Arguments = $cleanArgs
+    }
     $result = & $adb -s "emulator-$Port" @Arguments 2>&1
     if ($LASTEXITCODE -ne 0) { throw "ADB failed: $($result -join ' ')" }
     return $result
@@ -158,13 +167,19 @@ try {
         $record.status = 'booting'; Save-Manifest
     }
     $deadline = (Get-Date).AddSeconds($BootTimeoutSeconds)
+    $bootAttempts = 0
     do {
-        if ((Get-Date) -gt $deadline) { throw 'Emulator boot timeout.' }
         Start-Sleep -Seconds 2
+        $bootAttempts++
+        if ($bootAttempts -gt 5) {
+            $matching = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^(emulator|qemu-system.*)\.exe$' -and $_.CommandLine -match [regex]::Escape($AvdName) })
+            if ($matching.Count -eq 0) { throw "Emulator process for $AvdName exited prematurely." }
+        }
+        if ((Get-Date) -gt $deadline) { throw 'Emulator boot timeout.' }
         $previousErrorAction = $ErrorActionPreference
         try {
             $ErrorActionPreference = 'Continue'
-            $boot = & $adb -s "emulator-$Port" shell getprop sys.boot_completed 2>$null
+            $boot = & $adb -s "emulator-$Port" shell -n -T getprop sys.boot_completed 2>$null
             $bootExit = $LASTEXITCODE
         } finally { $ErrorActionPreference = $previousErrorAction }
     } until ($bootExit -eq 0 -and ($boot -join '').Trim() -eq '1')

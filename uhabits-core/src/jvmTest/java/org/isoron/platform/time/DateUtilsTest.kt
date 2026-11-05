@@ -108,6 +108,28 @@ class DateUtilsTest {
         assertEquals(expected, DateUtils.getUpcomingTimeInMillis(10, 1))
     }
 
+    @Test
+    fun testGetUpcomingTimeInMillis_withWeekdayFilter() {
+        // 2015-01-25 was Sunday
+        val fixedTime = unixTime(2015, Calendar.JANUARY, 25, 8, 0)
+        DateUtils.setFixedLocalTime(fixedTime)
+        DateUtils.setFixedTimeZone(TimeZone.getTimeZone("GMT"))
+
+        // Monday-only (Sat=0, Sun=1, Mon=2, Tue=3, Wed=4, Thu=5, Fri=6)
+        val mondayOnly = booleanArrayOf(false, false, true, false, false, false, false)
+        val expectedMonday = unixTime(2015, Calendar.JANUARY, 26, 8, 0)
+        assertEquals(expectedMonday, DateUtils.getUpcomingTimeInMillis(8, 0, mondayOnly))
+
+        // All days disabled returns 0
+        val noDays = BooleanArray(7) { false }
+        assertEquals(0L, DateUtils.getUpcomingTimeInMillis(8, 0, noDays))
+
+        // Sunday reminder scheduled at 8:00 AM while it is currently 8:00 AM moves to next Sunday
+        val sundayOnly = booleanArrayOf(false, true, false, false, false, false, false)
+        val nextSunday = unixTime(2015, Calendar.FEBRUARY, 1, 8, 0)
+        assertEquals(nextSunday, DateUtils.getUpcomingTimeInMillis(8, 0, sundayOnly))
+    }
+
     // ---------------------------------------------------------------
     // millisecondsUntilTomorrowWithOffset
     // ---------------------------------------------------------------

@@ -40,8 +40,8 @@ import kotlin.test.assertTrue
 class DatasetPerformanceBenchmarkTest {
 
     private val baseDate = LocalDate(2026, 10, 31)
-    private val tempDir = java.nio.file.Files.createTempDirectory("uhabit-benchmark-").toFile()
-    private val reportFile = File(tempDir, "sprint03-jvm-perf-metrics.txt")
+    private val reportFile = File("D:/DevData/TestArtifacts/sprint03-jvm-perf-metrics.txt")
+    private val tempDir = File("D:/DevData/Temp")
 
     enum class StatefulTestLevel(
         val seedsCount: Int,

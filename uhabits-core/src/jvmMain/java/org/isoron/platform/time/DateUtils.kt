@@ -64,7 +64,7 @@ object DateUtils {
         hourOffset: Int,
         minuteOffset: Int,
         tz: TimeZone = fixedTimeZone ?: TimeZone.getDefault()
-    ): Long = getUpcomingTimeInMillis(hourOffset, minuteOffset, tz)
+    ): Long = getUpcomingTimeInMillis(hourOffset, minuteOffset, null, tz)
 
     fun millisecondsUntilTomorrowWithOffset(
         hourOffset: Int,
@@ -78,21 +78,42 @@ object DateUtils {
     fun getUpcomingTimeInMillis(
         hour: Int,
         minute: Int,
+        days: BooleanArray? = null,
         tz: TimeZone = fixedTimeZone ?: TimeZone.getDefault()
     ): Long {
+        if (days != null && days.none { it }) return 0L
         val localTime = getLocalTime(tz)
         val startOfToday = getStartOfDay(localTime)
-        val calendar = GregorianCalendar(TimeZone.getTimeZone("GMT"))
-        calendar.timeInMillis = startOfToday
-        calendar.set(Calendar.HOUR_OF_DAY, hour)
-        calendar.set(Calendar.MINUTE, minute)
-        calendar.set(Calendar.SECOND, 0)
-        var time = calendar.timeInMillis
+        val today = LocalDate.fromUnixTime(startOfToday)
 
-        if (localTime > time) {
-            time += DAY_LENGTH
+        for (dayOffset in 0..7) {
+            val candidateStartOfDay = startOfToday + dayOffset * DAY_LENGTH
+            if (days != null) {
+                val candidateDate = today.plus(dayOffset)
+                val weekdayIndex = (candidateDate.dayOfWeek.daysSinceSunday + 1) % 7
+                if (!days[weekdayIndex]) continue
+            }
+
+            val calendar = GregorianCalendar(TimeZone.getTimeZone("GMT"))
+            calendar.timeInMillis = candidateStartOfDay
+            calendar.set(Calendar.HOUR_OF_DAY, hour)
+            calendar.set(Calendar.MINUTE, minute)
+            calendar.set(Calendar.SECOND, 0)
+            val time = calendar.timeInMillis
+
+            if (dayOffset == 0 && localTime >= time) {
+                continue
+            }
+
+            return applyTimezone(time, tz)
         }
 
-        return applyTimezone(time, tz)
+        return 0L
     }
+
+    fun getUpcomingTimeInMillis(
+        hour: Int,
+        minute: Int,
+        tz: TimeZone
+    ): Long = getUpcomingTimeInMillis(hour, minute, null, tz)
 }

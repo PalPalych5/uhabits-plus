@@ -63,10 +63,19 @@ open class ReminderScheduler(
             sys.log("ReminderScheduler", "habit=" + habit.id + " has no reminder. Skipping.")
             return
         }
+        if (habit.reminder!!.days.isEmpty) {
+            sys.log("ReminderScheduler", "habit=" + habit.id + " has empty reminder days. Skipping.")
+            return
+        }
         var reminderTime = DateUtils.getUpcomingTimeInMillis(
             habit.reminder!!.hour,
-            habit.reminder!!.minute
+            habit.reminder!!.minute,
+            habit.reminder!!.days.toArray()
         )
+        if (reminderTime == 0L) {
+            sys.log("ReminderScheduler", "habit=" + habit.id + " has no upcoming reminder time. Skipping.")
+            return
+        }
         val snoozeReminderTime = widgetPreferences.getSnoozeTime(habit.id!!)
         if (snoozeReminderTime != 0L) {
             val now = DateUtils.applyTimezone(DateUtils.getLocalTime())
