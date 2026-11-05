@@ -88,7 +88,7 @@ internal data class TaskListSections(
                     }
                     (if (inbox.isEmpty()) emptyList() else listOf(Group("inbox", label(locale, "Входящие", "Inbox"), inbox))) +
                         availableContainers.mapNotNull { item -> byContainer[item.key]?.let {
-                            Group("container:${item.key}", item.path ?: item.name, it)
+                            Group("container:${item.key}", compactContainerPath(item.path, item.name), it)
                         } } +
                         (if (unavailable.isEmpty()) emptyList() else listOf(Group("container:unavailable", label(locale, "Другой раздел", "Other section"), unavailable)))
                 }
@@ -104,6 +104,19 @@ internal data class TaskListSections(
                 else -> emptyList()
             }
             return TaskListSections(active, overdue, completed, groups)
+        }
+
+        internal fun compactContainerPath(path: String?, name: String, maxLen: Int = 36): String {
+            if (path.isNullOrBlank()) return name
+            val segments = path.split(" / ").filter { it.isNotBlank() }
+            if (segments.size <= 1) return name
+            val leaf = segments.last()
+            val parent = segments[segments.size - 2]
+            val candidate = if (segments.size > 2) "… / $parent / $leaf" else "$parent / $leaf"
+            if (candidate.length <= maxLen) return candidate
+            val rootAndLeaf = if (segments.size > 2) "${segments.first()} / … / $leaf" else candidate
+            if (rootAndLeaf.length <= maxLen) return rootAndLeaf
+            return if (segments.size > 1) "… / $leaf" else leaf
         }
 
         private fun label(locale: Locale, ru: String, en: String) = if (locale.language == "ru") ru else en

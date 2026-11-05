@@ -23,7 +23,7 @@
             android:layout_weight="1"
             android:text="@string/tasks_title"
             android:textSize="22sp"
-            android:maxLines="1"
+            android:maxLines="2"
             android:ellipsize="end"
             android:fontFamily="sans-serif-medium"
             android:includeFontPadding="false" />

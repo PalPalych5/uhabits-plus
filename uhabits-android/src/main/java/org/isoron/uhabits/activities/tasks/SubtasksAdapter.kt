@@ -38,6 +38,7 @@ class SubtasksAdapter(
     private var palette: SettingsThemePalette,
     private val onToggleComplete: (SubtaskItem) -> Unit,
     private val onDeleteSubtask: (SubtaskItem) -> Unit,
+    private val onEditSubtask: ((SubtaskItem) -> Unit)? = null,
 ) : RecyclerView.Adapter<SubtasksAdapter.SubtaskViewHolder>() {
 
     data class SubtaskItem(
@@ -82,9 +83,11 @@ class SubtasksAdapter(
             tvTitle.text = subtask.title
             if (isCompleted) {
                 tvTitle.setTextColor(palette.onSurfaceVariant)
+                tvTitle.alpha = 0.62f
                 tvTitle.paintFlags = tvTitle.paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
             } else {
                 tvTitle.setTextColor(palette.onSurface)
+                tvTitle.alpha = 1.0f
                 tvTitle.paintFlags = tvTitle.paintFlags and Paint.STRIKE_THRU_TEXT_FLAG.inv()
             }
 
@@ -106,13 +109,27 @@ class SubtasksAdapter(
                 ivCheckmark.visibility = View.GONE
             }
 
+            btnCheck.contentDescription = if (isCompleted) {
+                "Возобновить подзадачу: ${subtask.title}"
+            } else {
+                "Завершить подзадачу: ${subtask.title}"
+            }
             btnCheck.setOnClickListener {
                 onToggleComplete(subtask)
             }
 
             btnDelete.setColorFilter(palette.onSurfaceVariant)
+            btnDelete.contentDescription = "Удалить подзадачу: ${subtask.title}"
             btnDelete.setOnClickListener {
                 onDeleteSubtask(subtask)
+            }
+
+            if (onEditSubtask != null) {
+                tvTitle.setOnClickListener {
+                    onEditSubtask.invoke(subtask)
+                }
+            } else {
+                tvTitle.setOnClickListener(null)
             }
         }
     }

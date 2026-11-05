@@ -105,6 +105,8 @@ class SharedPreferencesStorage(
             "pref_unknown_enabled" -> {
                 preferences.areQuestionMarksEnabled = getBoolean(key, false)
             }
+            "pref_show_sphere_names" ->
+                preferences.isShowSphereNamesEnabled = getBoolean(key, true)
             "pref_habit_group_separators" ->
                 preferences.areHabitGroupSeparatorsEnabled = getBoolean(key, false)
             "pref_show_habit_card_borders" ->

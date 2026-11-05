@@ -19,6 +19,10 @@
 
 package org.isoron.uhabits.activities.tasks
 
+import android.app.Dialog
+import android.graphics.drawable.ColorDrawable
+import android.view.Window
+
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -44,9 +48,17 @@ import androidx.appcompat.widget.PopupMenu
 import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.recyclerview.widget.ItemTouchHelper
 import org.isoron.uhabits.activities.habits.show.ShowHabitActivity
 import org.isoron.uhabits.core.containers.facade.OrganizationalItem
+import org.isoron.uhabits.activities.common.icons.IconPack
+import org.isoron.uhabits.activities.common.views.CompactPopupMenu
+import org.isoron.uhabits.activities.containers.CreateContainerDialog
+import org.isoron.uhabits.activities.containers.DrillDownMoveDialog
+import org.isoron.uhabits.core.containers.Container
+import org.isoron.uhabits.core.containers.IconRef
+import org.isoron.uhabits.utils.currentTheme
 import org.isoron.uhabits.core.models.Habit
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -112,6 +124,7 @@ class TasksFragment : Fragment() {
     private var drawerScroll: ScrollView? = null
     private var localTreeRoot: ContainerId? = null
     private val collapsedContainers = mutableSetOf<String>()
+    private var smartViewsExpanded = false
     private var calendarMode = false
     private var matrixMode = false
     private var calendarScale = CalendarScale.MONTH
@@ -119,6 +132,7 @@ class TasksFragment : Fragment() {
     private var activeHabits: List<Habit> = emptyList()
     private var historyFocusSessions: List<org.isoron.uhabits.core.focus.FocusSession> = emptyList()
     private var calendarViewController: TaskCalendarViewController? = null
+    private var calendarShowHabits: Boolean? = null
     private var quickImportant: Boolean? = null
     private var quickUrgent: Boolean? = null
     private var renderedCalendarMonth: String? = null
@@ -235,12 +249,16 @@ class TasksFragment : Fragment() {
             calendarViewMode = it.getString("calendarViewMode")?.let { name ->
                 try { CalendarMode.valueOf(name) } catch (e: Exception) { CalendarMode.PLANNING }
             } ?: CalendarMode.PLANNING
+            if (it.containsKey("calendarShowHabits")) {
+                calendarShowHabits = it.getBoolean("calendarShowHabits")
+            }
             quickImportant = if (it.containsKey("quickImportant")) it.getBoolean("quickImportant") else null
             quickUrgent = if (it.containsKey("quickUrgent")) it.getBoolean("quickUrgent") else null
             selectedDay = LocalDate(it.getInt("selectedDay", getToday().daysSince2000))
             calendarMonth.timeInMillis = it.getLong("calendarMonth", calendarMonth.timeInMillis)
             localTreeRoot = it.getString("localTreeRoot")?.let(::ContainerId)
             collapsedContainers.addAll(it.getStringArrayList("collapsedContainers").orEmpty())
+            smartViewsExpanded = it.getBoolean("smartViewsExpanded", false)
             selectedTaskIds.clear()
             it.getStringArrayList("selectedTaskIds")?.mapTo(selectedTaskIds, ::TaskId)
             pendingActionTaskIds.clear()
@@ -372,12 +390,18 @@ class TasksFragment : Fragment() {
         outState.putBoolean("matrixMode", matrixMode)
         outState.putString("calendarScale", calendarScale.name)
         outState.putString("calendarViewMode", calendarViewMode.name)
+        calendarViewController?.let {
+            outState.putBoolean("calendarShowHabits", it.showHabits)
+        } ?: calendarShowHabits?.let {
+            outState.putBoolean("calendarShowHabits", it)
+        }
         quickImportant?.let { outState.putBoolean("quickImportant", it) }
         quickUrgent?.let { outState.putBoolean("quickUrgent", it) }
         outState.putInt("selectedDay", selectedDay.daysSince2000)
         outState.putLong("calendarMonth", calendarMonth.timeInMillis)
         outState.putString("localTreeRoot", localTreeRoot?.value)
         outState.putStringArrayList("collapsedContainers", ArrayList(collapsedContainers))
+        outState.putBoolean("smartViewsExpanded", smartViewsExpanded)
         outState.putStringArrayList("selectedTaskIds", ArrayList(selectedTaskIds.map { it.value }))
         outState.putStringArrayList("pendingActionTaskIds", ArrayList(pendingActionTaskIds.map { it.value }))
         outState.putStringArrayList("pendingDeleteConfirmationIds", ArrayList(pendingDeleteConfirmationIds.map { it.value }))
@@ -556,19 +580,44 @@ class TasksFragment : Fragment() {
 
         btnTasksOverflow.setOnClickListener {
             val popup = PopupMenu(requireContext(), btnTasksOverflow)
-            popup.menu.add(0, 1, 0, "Все задачи")
-            popup.menu.add(0, 2, 1, "Завершённые")
-            popup.menu.add(0, 6, 2, "Фильтр по тегам")
-            if (selectedTagFilter.isNotEmpty()) {
-                popup.menu.add(0, 7, 3, "Сбросить фильтр по тегам")
+            if (calendarMode) {
+                val prefs = TaskCalendarPreferences(requireContext())
+                val isShown = calendarViewController?.showHabits ?: (calendarShowHabits ?: prefs.showHabits)
+                val ru = TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru"
+                val habitsTitle = if (ru) "Показывать привычки" else getString(R.string.task_calendar_menu_show_habits)
+                val habitsItem = popup.menu.add(0, 10, 0, habitsTitle)
+                habitsItem.isCheckable = true
+                habitsItem.isChecked = isShown
+                popup.menu.add(0, 6, 1, "Фильтр по тегам")
+                if (selectedTagFilter.isNotEmpty()) {
+                    popup.menu.add(0, 7, 2, "Сбросить фильтр по тегам")
+                }
+                popup.menu.add(0, 3, 3, "Настройки")
+            } else {
+                popup.menu.add(0, 1, 0, "Все задачи")
+                popup.menu.add(0, 2, 1, "Завершённые")
+                popup.menu.add(0, 6, 2, "Фильтр по тегам")
+                if (selectedTagFilter.isNotEmpty()) {
+                    popup.menu.add(0, 7, 3, "Сбросить фильтр по тегам")
+                }
+                popup.menu.add(0, 3, 4, "Настройки")
+                if (selectedContainerFilter != null) {
+                    popup.menu.add(0, 4, 5, getString(R.string.container_statistics_title))
+                }
+                popup.menu.add(0, 5, 6, getString(R.string.today_eval_menu_item))
             }
-            popup.menu.add(0, 3, 4, "Настройки")
-            if (selectedContainerFilter != null) {
-                popup.menu.add(0, 4, 5, getString(R.string.container_statistics_title))
-            }
-            popup.menu.add(0, 5, 6, getString(R.string.today_eval_menu_item))
             popup.setOnMenuItemClickListener { item ->
                 when (item.itemId) {
+                    10 -> {
+                        val prefs = TaskCalendarPreferences(requireContext())
+                        val current = calendarViewController?.showHabits ?: (calendarShowHabits ?: prefs.showHabits)
+                        val next = !current
+                        prefs.showHabits = next
+                        calendarShowHabits = next
+                        calendarViewController?.showHabits = next
+                        calendarViewController?.render()
+                        true
+                    }
                     1 -> {
                         clearSelection()
                         selectedContainerFilter = null
@@ -1384,6 +1433,7 @@ class TasksFragment : Fragment() {
         if (localTreeRoot?.value?.let { it !in visibleContainerIds } == true) {
             localTreeRoot = null
         }
+        applyVisibilitySelection(snapshot)
         val availableTagIds = snapshot.availableTags.mapTo(mutableSetOf()) { it.id }
         selectedTagFilter = selectedTagFilter.intersect(availableTagIds)
         quickTagIds = quickTagIds.intersect(availableTagIds)
@@ -1454,6 +1504,10 @@ class TasksFragment : Fragment() {
         updateSelectionBarUi()
 
         val containerItemMap = availableContainers.associateBy { ContainerId(it.key) }
+        val shouldHideContainer = selectedContainerFilter != null || activeSmartView == TaskSmartView.INBOX
+        adapter.hideContainerContext = shouldHideContainer
+        overdueAdapter.hideContainerContext = shouldHideContainer
+        completedAdapter.hideContainerContext = shouldHideContainer
 
         adapter.updateData(
             newTasks = if (sections.groups.isEmpty()) sections.active else emptyList(),
@@ -1472,6 +1526,7 @@ class TasksFragment : Fragment() {
                 }
                 header.update(true, true, palette, group.title)
                 rows.updatePalette(palette)
+                rows.hideContainerContext = true
                 rows.updateData(group.tasks, subtaskMap, containerItemMap, today, nowMillis, currentSelection, taskTagMap)
                 listOf(header, rows)
             })
@@ -1485,11 +1540,17 @@ class TasksFragment : Fragment() {
         // Subtitle count and info row visibility
         layoutListInfo.visibility = if (calendarMode) View.GONE else View.VISIBLE
         if (!calendarMode) {
-            val activeCount = when {
-                activeSmartView == TaskSmartView.TODAY -> sections.active.size
-                else -> sections.active.size + sections.overdue.size
+            val overdueCount = sections.overdue.size
+            val activeCount = sections.active.size
+            val totalPending = activeCount + overdueCount
+            tvSubtitle.text = when {
+                activeSmartView == TaskSmartView.TODAY && overdueCount > 0 && activeCount > 0 ->
+                    "$totalPending ${pluralTasks(totalPending)} · $overdueCount просрочено"
+                activeSmartView == TaskSmartView.TODAY && overdueCount > 0 && activeCount == 0 ->
+                    "$overdueCount просрочено"
+                else ->
+                    "$totalPending ${pluralTasks(totalPending)}"
             }
-            tvSubtitle.text = "$activeCount ${pluralTasks(activeCount)}"
             tvSubtitle.visibility = if (!matrixMode && activeSmartView == TaskSmartView.COMPLETED) View.GONE else View.VISIBLE
 
             // Date indicator on the right (shown in TODAY mode)
@@ -1679,11 +1740,14 @@ class TasksFragment : Fragment() {
         }
         calendarPanel = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
         (rvTasks.parent as ViewGroup).addView(calendarPanel, ViewGroup.LayoutParams(-1, -1))
-        if (!wide) drawerScroll = navigationScroll
+        if (!wide) {
+            drawerScroll = navigationScroll
+            drawerScroll?.isVerticalScrollBarEnabled = false
+        }
         renderNavigation()
     }
 
-    private fun openNavigation() {
+    fun openNavigation() {
         if (wide || drawerScrim != null) return
         etQuickAddTitle.clearFocus()
         (requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
@@ -1699,11 +1763,12 @@ class TasksFragment : Fragment() {
         }
         shellRoot.addView(drawerScrim, FrameLayout.LayoutParams(-1, -1))
         shellRoot.addView(drawerScroll, FrameLayout.LayoutParams(dpInt(300f), -1, Gravity.START))
+        drawerScroll?.isVerticalScrollBarEnabled = false
         drawerScroll?.let { androidx.core.view.ViewCompat.requestApplyInsets(it) }
         navigationColumn.getChildAt(0)?.requestFocus()
     }
 
-    private fun closeNavigation() {
+    fun closeNavigation() {
         if (drawerScrim != null) (activity as? MainNavigationHost)?.setBottomNavigationVisible(true, false)
         drawerScrim?.let { shellRoot.removeView(it) }
         drawerScrim = null
@@ -1741,6 +1806,9 @@ class TasksFragment : Fragment() {
         count: Int? = null,
         selected: Boolean = false,
         depth: Int = 0,
+        customIconRef: org.isoron.uhabits.core.containers.IconRef? = null,
+        iconTint: Int? = null,
+        longClickAction: (() -> Boolean)? = null,
         action: () -> Unit,
     ): LinearLayout = LinearLayout(requireContext()).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -1758,10 +1826,35 @@ class TasksFragment : Fragment() {
         isFocusable = true
         isSelected = selected
         setOnClickListener { action() }
-        addView(ImageView(requireContext()).apply {
-            setImageResource(icon); setColorFilter(if (selected) palette.accent else palette.onSurfaceVariant)
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }, LinearLayout.LayoutParams(dpInt(20f), dpInt(20f)).apply { marginEnd = dpInt(12f) })
+        if (longClickAction != null) {
+            setOnLongClickListener { longClickAction() }
+        }
+
+        when (customIconRef) {
+            is org.isoron.uhabits.core.containers.IconRef.Emoji -> {
+                addView(TextView(requireContext()).apply {
+                    text = customIconRef.value
+                    textSize = 15f
+                    gravity = Gravity.CENTER
+                }, LinearLayout.LayoutParams(dpInt(20f), dpInt(20f)).apply { marginEnd = dpInt(12f) })
+            }
+            is org.isoron.uhabits.core.containers.IconRef.Vector -> {
+                val res = org.isoron.uhabits.activities.common.icons.IconPack.getDrawableRes(customIconRef.key, icon)
+                addView(ImageView(requireContext()).apply {
+                    setImageResource(res)
+                    setColorFilter(iconTint ?: (if (selected) palette.accent else palette.onSurfaceVariant))
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                }, LinearLayout.LayoutParams(dpInt(20f), dpInt(20f)).apply { marginEnd = dpInt(12f) })
+            }
+            else -> {
+                addView(ImageView(requireContext()).apply {
+                    setImageResource(icon)
+                    setColorFilter(iconTint ?: (if (selected) palette.accent else palette.onSurfaceVariant))
+                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                }, LinearLayout.LayoutParams(dpInt(20f), dpInt(20f)).apply { marginEnd = dpInt(12f) })
+            }
+        }
+
         addView(TextView(requireContext()).apply {
             text = label; textSize = 14f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(if (selected) palette.accent else palette.onSurface)
@@ -1804,75 +1897,296 @@ class TasksFragment : Fragment() {
             setPaddingRelative(dpInt(16f), dpInt(8f), dpInt(16f), dpInt(12f))
         })
         val roots = snapshot.roots
-        val smartIcons = listOf(
-            R.drawable.ic_cat_calendar,
-            R.drawable.ic_cat_flag,
-            R.drawable.ic_cat_folder_open,
-            R.drawable.ic_cat_calendar_clock,
-            R.drawable.ic_cat_list_todo,
-            R.drawable.ic_tasks_completed,
+        val smartIcons = mapOf(
+            TaskSmartView.TODAY to R.drawable.ic_cat_calendar,
+            TaskSmartView.OVERDUE to R.drawable.ic_cat_flag,
+            TaskSmartView.INBOX to R.drawable.ic_cat_folder_open,
+            TaskSmartView.UPCOMING to R.drawable.ic_cat_calendar_clock,
+            TaskSmartView.ALL to R.drawable.ic_cat_list_todo,
+            TaskSmartView.COMPLETED to R.drawable.ic_tasks_completed,
         )
-        TaskSmartView.entries.forEachIndexed { index, smart ->
-            val count = roots.count { smart.matches(it, getToday(), System.currentTimeMillis()) }
-            navigationColumn.addView(navigationRow(
-                smart.displayName,
-                smartIcons[index],
-                count.takeUnless { smart == TaskSmartView.COMPLETED },
-                selectedContainerFilter == null && activeSmartView == smart,
-            ) {
-                clearSelection()
-                selectedContainerFilter = null
-                activeSmartView = smart
-                closeNavigation()
-                loadTasks()
-            })
-        }
-        divider()
-        navigationColumn.addView(navText("Разделы").apply { textSize = 12f; minHeight = dpInt(32f); setTextColor(palette.onSurfaceVariant) })
-        if (snapshot.containers.isNotEmpty()) {
-            localTreeRoot?.let { id ->
-                navigationColumn.addView(navigationRow(
-                    snapshot.containers[id]?.parentId?.let { snapshot.containers[it]?.name } ?: "Все разделы",
-                    R.drawable.ic_tasks_parent,
-                ) { localTreeRoot = snapshot.containers[id]?.parentId; renderNavigation() })
+
+        val primaryViews = listOf(TaskSmartView.TODAY, TaskSmartView.INBOX)
+        val visibleSmartViews = if (smartViewsExpanded) {
+            TaskSmartView.entries
+        } else {
+            if (activeSmartView !in primaryViews && selectedContainerFilter == null) {
+                primaryViews + activeSmartView
+            } else {
+                primaryViews
             }
-            fun addContainer(item: org.isoron.uhabits.core.containers.Container, depth: Int) {
-                val children = snapshot.children[item.id].orEmpty()
-                val count = snapshot.pendingCounts[item.id] ?: 0
-                val row = LinearLayout(requireContext()).apply { orientation = LinearLayout.HORIZONTAL }
-                row.addView(navigationRow(
-                    item.name,
-                    if (depth == 0) R.drawable.ic_cat_folder else R.drawable.ic_cat_list_todo,
-                    count,
-                    selectedContainerFilter == item.id,
-                    depth,
-                ) {
+        }
+
+        visibleSmartViews.forEach { smart ->
+            val count = roots.count { smart.matches(it, getToday(), System.currentTimeMillis()) }
+            val iconRes = smartIcons[smart] ?: R.drawable.ic_cat_list_todo
+            navigationColumn.addView(navigationRow(
+                label = smart.displayName,
+                icon = iconRes,
+                count = count.takeUnless { smart == TaskSmartView.COMPLETED },
+                selected = selectedContainerFilter == null && activeSmartView == smart,
+                action = {
                     clearSelection()
-                    selectedContainerFilter = item.id
-                    activeSmartView = TaskSmartView.ALL
+                    selectedContainerFilter = null
+                    activeSmartView = smart
                     closeNavigation()
                     loadTasks()
+                }
+            ))
+        }
+
+        val toggleSmartViewsRow = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dpInt(34f)
+            setPaddingRelative(dpInt(16f), 0, dpInt(16f), 0)
+            val ripple = android.util.TypedValue()
+            requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
+            setBackgroundResource(ripple.resourceId)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                smartViewsExpanded = !smartViewsExpanded
+                renderNavigation()
+            }
+            addView(ImageView(requireContext()).apply {
+                setImageResource(R.drawable.ic_tabler_chevron_down)
+                rotation = if (smartViewsExpanded) 180f else 0f
+                setColorFilter(palette.onSurfaceVariant)
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            }, LinearLayout.LayoutParams(dpInt(16f), dpInt(16f)).apply { marginEnd = dpInt(8f) })
+            addView(TextView(requireContext()).apply {
+                text = if (smartViewsExpanded) "Меньше представлений" else "Ещё представления..."
+                textSize = 12f
+                setTextColor(palette.onSurfaceVariant)
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+        }
+        navigationColumn.addView(toggleSmartViewsRow)
+        divider()
+
+        val sectionsHeader = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dpInt(44f)
+            setPaddingRelative(dpInt(16f), 0, 0, 0)
+        }
+        sectionsHeader.addView(TextView(requireContext()).apply {
+            text = sectionString(R.string.containers_title).uppercase()
+            textSize = 12f
+            typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
+            setTextColor(palette.onSurfaceVariant)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+
+        sectionsHeader.addView(ImageButton(requireContext()).apply {
+            tag = "manage_hidden_sections_btn"
+            setImageResource(R.drawable.ic_tabler_dots_vertical)
+            setColorFilter(palette.onSurfaceVariant)
+            val ripple = android.util.TypedValue()
+            requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)
+            setBackgroundResource(ripple.resourceId)
+            setPadding(dpInt(14f), dpInt(14f), dpInt(14f), dpInt(14f))
+            contentDescription = sectionString(R.string.section_header_actions)
+            setOnClickListener {
+                CompactPopupMenu.show(this, listOf(CompactPopupMenu.Entry.Item(
+                    1, sectionString(R.string.section_hidden_sections), R.drawable.ic_tabler_eye_off
+                ))) { showSectionVisibilityDialog() }
+            }
+        }, LinearLayout.LayoutParams(dpInt(48f), dpInt(48f)))
+
+        sectionsHeader.addView(ImageButton(requireContext()).apply {
+            tag = "add_section_btn"
+            setImageResource(R.drawable.ic_tabler_plus)
+            setColorFilter(palette.onSurfaceVariant)
+            val ripple = android.util.TypedValue()
+            requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)
+            setBackgroundResource(ripple.resourceId)
+            setPadding(dpInt(14f), dpInt(14f), dpInt(14f), dpInt(14f))
+            contentDescription = sectionString(R.string.containers_create_section)
+            setOnClickListener { showCreateSectionDialog(parentId = null) }
+        }, LinearLayout.LayoutParams(dpInt(48f), dpInt(48f)))
+
+        navigationColumn.addView(sectionsHeader)
+
+        val taskVisibility = taskVisibility(snapshot)
+        if (snapshot.containers.isEmpty()) {
+            navigationColumn.addView(LinearLayout(requireContext()).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                minimumHeight = dpInt(44f)
+                setPaddingRelative(dpInt(16f), 0, dpInt(16f), 0)
+                val ripple = android.util.TypedValue()
+                requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
+                setBackgroundResource(ripple.resourceId)
+                setOnClickListener { showCreateSectionDialog(parentId = null) }
+                addView(ImageView(requireContext()).apply {
+                    setImageResource(R.drawable.ic_tabler_plus)
+                    setColorFilter(palette.accent)
+                }, LinearLayout.LayoutParams(dpInt(18f), dpInt(18f)).apply { marginEnd = dpInt(12f) })
+                addView(TextView(requireContext()).apply {
+                    text = sectionString(R.string.containers_create_section)
+                    textSize = 14f
+                    setTextColor(palette.accent)
+                })
+            })
+        } else {
+            localTreeRoot?.let { id ->
+                navigationColumn.addView(navigationRow(
+                    label = snapshot.containers[id]?.parentId?.let { snapshot.containers[it]?.name } ?: "Все разделы",
+                    icon = R.drawable.ic_tasks_parent,
+                    action = { localTreeRoot = snapshot.containers[id]?.parentId; renderNavigation() }
+                ))
+            }
+            fun addContainer(item: org.isoron.uhabits.core.containers.Container, depth: Int) {
+                if (!taskVisibility.isVisible(item.id.value)) return
+                val children = snapshot.children[item.id].orEmpty().filter { taskVisibility.isVisible(it.id.value) }
+                val count = snapshot.pendingCounts[item.id] ?: 0
+                val iconRef = org.isoron.uhabits.core.containers.IconRef.fromString(item.icon)
+                val itemColor = item.color?.let { TaskThemeUtils.resolvePaletteColor(requireContext(), it, palette.accent) }
+                val isSelected = (selectedContainerFilter == item.id)
+
+                val row = LinearLayout(requireContext()).apply {
+                    tag = "container_row_" + item.id.value
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    minimumHeight = dpInt(48f)
+                    setPaddingRelative(dpInt(8f + depth * 14f), 0, dpInt(4f), 0)
+
+                    val ripple = android.util.TypedValue()
+                    requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
+                    setBackgroundResource(ripple.resourceId)
+                    if (isSelected) {
+                        background = android.graphics.drawable.RippleDrawable(
+                            android.content.res.ColorStateList.valueOf(MainTabsThemeBridge.withAlpha(palette.accent, .16f)),
+                            GradientDrawable().apply {
+                                cornerRadius = dp(8f)
+                                setColor(MainTabsThemeBridge.withAlpha(palette.accent, .09f))
+                            },
+                            null
+                        )
+                    }
+                    isFocusable = true
+                    this.isSelected = isSelected
+
+                    setOnClickListener {
+                        clearSelection()
+                        selectedContainerFilter = item.id
+                        activeSmartView = TaskSmartView.ALL
+                        closeNavigation()
+                        loadTasks()
+                    }
+                    setOnLongClickListener {
+                        showSectionContextMenu(this, item)
+                        true
+                    }
+                    androidx.core.view.ViewCompat.addAccessibilityAction(
+                        this, sectionString(R.string.section_actions_description, item.name)
+                    ) { view, _ -> showSectionContextMenu(view, item); true }
+                    contentDescription = item.name + (if (count > 0) ", $count ${pluralTasks(count)}" else "")
+                }
+
+                // Chevron or spacer
+                val chevronColWidth = dpInt(32f)
+                if (children.isNotEmpty()) {
+                    val isCollapsed = (depth >= 2 || item.id.value in collapsedContainers)
+                    val expandBtn = ImageView(requireContext()).apply {
+                        setImageResource(if (isCollapsed) R.drawable.ic_tabler_chevron_right else R.drawable.ic_tabler_chevron_down)
+                        setColorFilter(palette.onSurfaceVariant)
+                        val ripple = android.util.TypedValue()
+                        requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)
+                        setBackgroundResource(ripple.resourceId)
+                        scaleType = ImageView.ScaleType.CENTER_INSIDE
+                        setPadding(dpInt(7f), dpInt(15f), dpInt(7f), dpInt(15f))
+                        contentDescription = sectionString(
+                            when {
+                                depth >= 2 -> R.string.section_open_children_description
+                                item.id.value in collapsedContainers -> R.string.section_expand_description
+                                else -> R.string.section_collapse_description
+                            }, item.name
+                        )
+                        setOnClickListener {
+                            if (depth >= 2) localTreeRoot = item.id
+                            else if (!collapsedContainers.add(item.id.value)) collapsedContainers.remove(item.id.value)
+                            renderNavigation()
+                        }
+                    }
+                    row.addView(expandBtn, LinearLayout.LayoutParams(chevronColWidth, dpInt(48f)).apply {
+                        marginEnd = dpInt(4f)
+                    })
+                } else {
+                    val indentSpacer = View(requireContext())
+                    row.addView(indentSpacer, LinearLayout.LayoutParams(chevronColWidth, dpInt(48f)).apply {
+                        marginEnd = dpInt(4f)
+                    })
+                }
+
+                // Section Icon
+                when (iconRef) {
+                    is org.isoron.uhabits.core.containers.IconRef.Emoji -> {
+                        row.addView(TextView(requireContext()).apply {
+                            text = iconRef.value
+                            textSize = 15f
+                            gravity = Gravity.CENTER
+                        }, LinearLayout.LayoutParams(dpInt(20f), dpInt(20f)).apply { marginEnd = dpInt(8f) })
+                    }
+                    is org.isoron.uhabits.core.containers.IconRef.Vector -> {
+                        val res = org.isoron.uhabits.activities.common.icons.IconPack.getDrawableRes(iconRef.key, R.drawable.ic_tabler_folder)
+                        row.addView(ImageView(requireContext()).apply {
+                            setImageResource(res)
+                            setColorFilter(itemColor ?: (if (isSelected) palette.accent else palette.onSurfaceVariant))
+                            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                        }, LinearLayout.LayoutParams(dpInt(20f), dpInt(20f)).apply { marginEnd = dpInt(8f) })
+                    }
+                    else -> {
+                        row.addView(ImageView(requireContext()).apply {
+                            setImageResource(if (depth == 0) R.drawable.ic_tabler_folder else R.drawable.ic_cat_list_todo)
+                            setColorFilter(itemColor ?: (if (isSelected) palette.accent else palette.onSurfaceVariant))
+                            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                        }, LinearLayout.LayoutParams(dpInt(20f), dpInt(20f)).apply { marginEnd = dpInt(8f) })
+                    }
+                }
+
+                // Section Title
+                row.addView(TextView(requireContext()).apply {
+                    text = item.name
+                    textSize = 14f
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setTextColor(if (isSelected) palette.accent else palette.onSurface)
+                    if (isSelected) typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
                 }, LinearLayout.LayoutParams(0, -2, 1f))
-                if (children.isNotEmpty()) row.addView(ImageButton(requireContext()).apply {
-                    setImageResource(if (depth >= 2 || item.id.value in collapsedContainers) R.drawable.ic_chevron_right else R.drawable.ic_chevron_down)
-                    setColorFilter(palette.onSurfaceVariant)
+
+                // Section task count
+                if (count > 0) {
+                    row.addView(TextView(requireContext()).apply {
+                        text = count.toString()
+                        textSize = 12f
+                        setTextColor(palette.onSurfaceVariant)
+                        fontFeatureSettings = "tnum"
+                        setPaddingRelative(dpInt(6f), 0, dpInt(4f), 0)
+                    }, LinearLayout.LayoutParams(-2, -2))
+                }
+
+                // Actions button: visible on selected row
+                val moreBtn = ImageButton(requireContext()).apply {
+                    tag = "container_more_" + item.id.value
+                    setImageResource(R.drawable.ic_tabler_dots_vertical)
+                    setColorFilter(if (isSelected) palette.accent else palette.onSurfaceVariant)
                     val ripple = android.util.TypedValue()
                     requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)
                     setBackgroundResource(ripple.resourceId)
                     setPadding(dpInt(14f), dpInt(14f), dpInt(14f), dpInt(14f))
-                    contentDescription = "Раскрыть раздел " + item.name
-                    setOnClickListener {
-                        if (depth >= 2) localTreeRoot = item.id
-                        else if (!collapsedContainers.add(item.id.value)) collapsedContainers.remove(item.id.value)
-                        renderNavigation()
-                    }
-                }, LinearLayout.LayoutParams(dpInt(48f), dpInt(48f)))
+                    contentDescription = sectionString(R.string.section_actions_description, item.name)
+                    visibility = if (isSelected) View.VISIBLE else View.GONE
+                    setOnClickListener { showSectionContextMenu(this, item) }
+                }
+                row.addView(moreBtn, LinearLayout.LayoutParams(dpInt(48f), dpInt(48f)))
+
                 navigationColumn.addView(row)
                 if (depth < 2 && item.id.value !in collapsedContainers) children.forEach { addContainer(it, depth + 1) }
             }
-                val local = localTreeRoot?.let { snapshot.containers[it] }
-                if (local != null) addContainer(local, 0) else snapshot.children[null].orEmpty().forEach { addContainer(it, 0) }
-            }
+            val local = localTreeRoot?.let { snapshot.containers[it] }
+            if (local != null) addContainer(local, 0) else snapshot.children[null].orEmpty().forEach { addContainer(it, 0) }
+        }
             if (snapshot.availableTags.isNotEmpty()) {
                 divider()
                 navigationColumn.addView(navText("Теги").apply { textSize = 12f; minHeight = dpInt(32f); setTextColor(palette.onSurfaceVariant) })
@@ -1941,9 +2255,13 @@ class TasksFragment : Fragment() {
             onModeChanged = { newMode ->
                 calendarViewMode = newMode
                 loadTasks()
+            },
+            onShowHabitsChanged = { shown ->
+                calendarShowHabits = shown
             }
         ).also { calendarViewController = it }
 
+        calendarShowHabits?.let { controller.showHabits = it }
         controller.selectedDay = selectedDay
         controller.scale = calendarScale
         controller.mode = calendarViewMode
@@ -2023,5 +2341,313 @@ class TasksFragment : Fragment() {
     companion object {
         internal const val REQUEST_KEY_ACTION_DUE = "taskActionDue"
         internal const val REQUEST_KEY_ACTION_CONTAINER = "taskActionContainer"
+    }
+
+    private fun showCreateSectionDialog(parentId: ContainerId?) {
+        val dialog = CreateContainerDialog().apply {
+            initialParentId = parentId
+            initialParentName = parentId?.let { workspaceSnapshot?.containers?.get(it)?.name }
+            containerQueries = orgFacade.containerQueries
+            onSaveWithIcon = { name, parent, color, icon ->
+                System.err.println("DEBUG_SECTIONS: onSaveWithIcon invoked with name='$name', parent=$parent, color=$color, icon=$icon")
+                val res = orgFacade.createContainer(
+                    name = name,
+                    parentId = parent,
+                    color = color,
+                    icon = org.isoron.uhabits.core.containers.IconRef.toStorageString(icon)
+                )
+                System.err.println("DEBUG_SECTIONS: createContainer returned res=$res")
+                if (res.isSuccess) {
+                    if (parent != null) {
+                        collapsedContainers.remove(parent.value)
+                    } else {
+                        res.getOrNull()?.let { selectedContainerFilter = it.id }
+                    }
+                    loadTasks()
+                } else {
+                    Toast.makeText(requireContext(), "Не удалось создать раздел", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        dialog.show(parentFragmentManager, "create_section_dialog")
+    }
+
+    private fun showEditSectionDialog(container: Container) {
+        val dialog = CreateContainerDialog().apply {
+            containerToEdit = container
+            containerQueries = orgFacade.containerQueries
+            onSaveWithIcon = { name, parent, color, icon ->
+                val editRes = orgFacade.editContainer(
+                    id = container.id,
+                    name = name,
+                    color = color,
+                    icon = org.isoron.uhabits.core.containers.IconRef.toStorageString(icon)
+                )
+                if (parent != container.parentId) {
+                    orgFacade.moveContainer(container.id, parent)
+                }
+                if (editRes.isSuccess) {
+                    loadTasks()
+                } else {
+                    Toast.makeText(requireContext(), "Не удалось обновить раздел", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        dialog.show(parentFragmentManager, "edit_section_dialog")
+    }
+
+    private fun showMoveSectionDialog(container: Container) {
+        val dialog = DrillDownMoveDialog().apply {
+            itemName = container.name
+            movingContainerId = container.id
+            isParentPickerOnly = true
+            containerQueries = orgFacade.containerQueries
+            onTargetSelected = { targetId ->
+                val res = orgFacade.moveContainer(container.id, targetId)
+                if (res.isSuccess) {
+                    if (targetId != null) collapsedContainers.remove(targetId.value)
+                    loadTasks()
+                } else {
+                    Toast.makeText(requireContext(), sectionString(R.string.section_move_failed), Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+        dialog.show(parentFragmentManager, "move_section_dialog")
+    }
+
+    private fun sectionResources(): android.content.res.Resources {
+        val context = requireContext()
+        val config = android.content.res.Configuration(context.resources.configuration).apply {
+            setLocale(TaskDueDisplayFormatter.selectedLocale(context))
+        }
+        return context.createConfigurationContext(config).resources
+    }
+
+    private fun sectionString(id: Int, vararg args: Any): String =
+        sectionResources().getString(id, *args)
+
+    private fun visibilityPrefs() = requireContext().getSharedPreferences(
+        "task_section_visibility_" + component.session.datasetId, Context.MODE_PRIVATE
+    )
+
+    private fun hiddenSections(): Set<String> =
+        visibilityPrefs().getStringSet("hidden", emptySet()).orEmpty().toSet()
+
+    private fun taskVisibility(snapshot: TasksWorkspaceSnapshot, hidden: Set<String> = hiddenSections()) =
+        org.isoron.uhabits.core.containers.TaskContainerVisibility(
+            snapshot.containers.values.associate { it.id.value to it.parentId?.value }, hidden
+        )
+
+    private fun saveHiddenSections(hidden: Set<String>): Boolean =
+        visibilityPrefs().edit().putStringSet("hidden", hidden.toSet()).commit()
+
+    private fun applyVisibilitySelection(snapshot: TasksWorkspaceSnapshot) {
+        val visibility = taskVisibility(snapshot)
+        val current = selectedContainerFilter
+        if (current != null && !visibility.isVisible(current.value)) {
+            selectedContainerFilter = visibility.nearestVisibleAncestor(current.value)?.let(::ContainerId)
+            activeSmartView = TaskSmartView.ALL
+        }
+        if (localTreeRoot?.let { !visibility.isVisible(it.value) } == true) localTreeRoot = null
+        if (quickContainer?.let { !visibility.isVisible(it.value) } == true) {
+            quickContainer = visibility.nearestVisibleAncestor(quickContainer!!.value)?.let(::ContainerId)
+        }
+    }
+
+    private fun showHideSectionDialog(container: Container) {
+        val snapshot = workspaceSnapshot ?: return
+        if (!saveHiddenSections(hiddenSections() + container.id.value)) {
+            Toast.makeText(requireContext(), sectionString(R.string.section_hide_failed), Toast.LENGTH_SHORT).show()
+            return
+        }
+        applyVisibilitySelection(snapshot)
+        closeNavigation()
+        loadTasks()
+        val datasetId = component.session.datasetId
+        activeSnackbar?.dismiss()
+        activeSnackbar = Snackbar.make(shellRoot, sectionString(R.string.section_hidden), Snackbar.LENGTH_LONG)
+            .setAction(sectionString(R.string.section_visibility_undo)) {
+                if (component.session.datasetId == datasetId &&
+                    saveHiddenSections(hiddenSections() - container.id.value)) {
+                    workspaceSnapshot?.let(::applyVisibilitySelection)
+                    loadTasks()
+                }
+            }.also { it.show() }
+    }
+
+    private fun showSectionVisibilityDialog() {
+        val snapshot = workspaceSnapshot ?: return
+        val datasetId = component.session.datasetId
+        val themeRes = when {
+            palette.isPureBlack -> R.style.ColorPickerFullScreenTheme_Amoled
+            palette.isDark -> R.style.ColorPickerFullScreenTheme_Dark
+            else -> R.style.ColorPickerFullScreenTheme
+        }
+        val dialog = androidx.activity.ComponentDialog(requireContext(), themeRes).apply { requestWindowFeature(Window.FEATURE_NO_TITLE) }
+        val pageRoot = FrameLayout(requireContext()).apply { setBackgroundColor(palette.background) }
+        pageRoot.setViewTreeViewModelStoreOwner(this)
+
+        fun path(item: Container): List<Container> {
+            val result = mutableListOf<Container>()
+            val visited = mutableSetOf<ContainerId>()
+            var node: Container? = item
+            while (node != null && visited.add(node.id)) {
+                result.add(node)
+                node = node.parentId?.let { snapshot.containers[it] }
+            }
+            return result.reversed()
+        }
+        val ordered = mutableListOf<Container>()
+        fun collect(parent: ContainerId?) {
+            snapshot.children[parent].orEmpty().forEach { ordered.add(it); collect(it.id) }
+        }
+        collect(null)
+        val composeRevision = androidx.compose.runtime.mutableIntStateOf(0)
+        val composeView = androidx.compose.ui.platform.ComposeView(requireContext())
+        pageRoot.addView(composeView, FrameLayout.LayoutParams(-1, -1))
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(pageRoot) { view, insets ->
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
+            view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
+            insets
+        }
+        composeView.setContent {
+            composeRevision.intValue
+            val current = taskVisibility(snapshot)
+            val composeRows = ordered.filter { !current.isVisible(it.id.value) }.map { item ->
+                HiddenSectionRow(item.id.value, item.name, path(item).dropLast(1).joinToString(" / ") { it.name },
+                    current.hiddenAncestors(item.id.value).any { it != item.id.value }, item.icon,
+                    item.color?.let { TaskThemeUtils.resolvePaletteColor(requireContext(), it, palette.accent) } ?: palette.onSurfaceVariant)
+            }
+            HiddenSectionsCompose(composeRows, org.isoron.uhabits.compose.UHabitComposeColors(
+                palette.background, palette.onSurface, palette.onSurfaceVariant, palette.accent),
+                sectionString(R.string.section_hidden_sections), sectionString(R.string.section_hidden_search),
+                sectionString(R.string.section_back), sectionString(R.string.clear), sectionString(R.string.section_hidden_empty),
+                sectionString(R.string.section_hidden_no_results), sectionString(R.string.section_show), sectionString(R.string.section_show_path),
+                onBack = { dialog.dismiss() }, onShow = { id ->
+                    if (component !== HabitsApplication.component || component.session.datasetId != datasetId) {
+                        dialog.dismiss()
+                    } else {
+                        val before = hiddenSections()
+                        val after = taskVisibility(snapshot, before).showPath(id)
+                        if (saveHiddenSections(after)) {
+                            applyVisibilitySelection(snapshot)
+                            composeRevision.intValue++; loadTasks()
+                            activeSnackbar?.dismiss()
+                            activeSnackbar = Snackbar.make(pageRoot, sectionString(R.string.section_shown), Snackbar.LENGTH_LONG)
+                                .setAction(sectionString(R.string.section_visibility_undo)) {
+                                    if (component === HabitsApplication.component && component.session.datasetId == datasetId && saveHiddenSections(before)) {
+                                        applyVisibilitySelection(snapshot); composeRevision.intValue++; loadTasks()
+                                    }
+                                }.also { it.show() }
+                        } else Toast.makeText(requireContext(), sectionString(R.string.section_hide_failed), Toast.LENGTH_SHORT).show()
+                    }
+                })
+        }
+        dialog.setContentView(pageRoot)
+        dialog.setOnDismissListener {
+            composeView.disposeComposition()
+            if (isAdded && component === HabitsApplication.component) { renderNavigation(); loadTasks() }
+        }
+        dialog.window?.let { androidx.core.view.WindowCompat.setDecorFitsSystemWindows(it, false) }
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        dialog.show()
+        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        dialog.window?.let { window ->
+            val controller = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+            controller.isAppearanceLightStatusBars = !palette.isDark
+            controller.isAppearanceLightNavigationBars = !palette.isDark
+        }
+    }
+
+    private fun showDeleteSectionDialog(container: Container) {
+        val snapshot = workspaceSnapshot
+        val taskCount = snapshot?.roots.orEmpty().count { it.containerId == container.id }
+        val habitCount = orgFacade.getHabitUuidsForContainer(container.id.value, subtree = false).size
+        val childCount = snapshot?.children?.get(container.id).orEmpty().size
+
+        if (taskCount > 0 || habitCount > 0 || childCount > 0) {
+            val parts = mutableListOf<String>()
+            if (taskCount > 0) parts.add(sectionResources().getQuantityString(R.plurals.section_tasks_count, taskCount, taskCount))
+            if (habitCount > 0) parts.add(sectionResources().getQuantityString(R.plurals.section_habits_count, habitCount, habitCount))
+            if (childCount > 0) parts.add(sectionResources().getQuantityString(R.plurals.section_children_count, childCount, childCount))
+
+            org.isoron.uhabits.activities.common.dialogs.CustomDialogs.showConfirmDialog(
+                context = requireContext(),
+                title = sectionString(R.string.section_not_empty),
+                message = sectionString(R.string.section_not_empty_message, container.name, parts.joinToString(", ")),
+                isDestructive = false,
+                positiveText = sectionString(R.string.section_hide_action),
+                negativeText = sectionString(R.string.containers_cancel),
+                iconRes = R.drawable.ic_tabler_alert_triangle,
+                iconTint = androidx.core.content.ContextCompat.getColor(requireContext(), R.color.amber_500)
+            ) { showHideSectionDialog(container) }
+            return
+        }
+
+        org.isoron.uhabits.activities.common.dialogs.CustomDialogs.showConfirmDialog(
+            context = requireContext(),
+            title = sectionString(R.string.section_delete_title),
+            message = sectionString(R.string.section_delete_message, container.name),
+            isDestructive = true,
+            positiveText = sectionString(R.string.delete),
+            negativeText = sectionString(R.string.containers_cancel),
+            iconRes = R.drawable.ic_tabler_trash,
+            iconTint = androidx.core.content.ContextCompat.getColor(requireContext(), R.color.red_600)
+        ) {
+            val service = orgFacade.organizationService
+            val res = service?.deleteEmpty(container.id, container.revision)
+            if (res != null && res.isSuccess) {
+                if (selectedContainerFilter == container.id) {
+                    selectedContainerFilter = null
+                    activeSmartView = TaskSmartView.ALL
+                }
+                loadTasks()
+                Toast.makeText(requireContext(), sectionString(R.string.section_deleted), Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(requireContext(), sectionString(R.string.section_delete_failed), Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun showSectionContextMenu(anchor: View, container: Container) {
+        val entries = listOf(
+            CompactPopupMenu.Entry.Item(
+                id = 1,
+                title = sectionString(R.string.containers_create_subsection),
+                iconRes = R.drawable.ic_tabler_folder_plus
+            ),
+            CompactPopupMenu.Entry.Item(
+                id = 2,
+                title = sectionString(R.string.containers_edit_section),
+                iconRes = R.drawable.ic_tabler_pencil
+            ),
+            CompactPopupMenu.Entry.Item(
+                id = 3,
+                title = sectionString(R.string.containers_move),
+                iconRes = R.drawable.ic_tabler_folder_share
+            ),
+            CompactPopupMenu.Entry.Divider,
+            CompactPopupMenu.Entry.Item(
+                id = 4,
+                title = sectionString(R.string.section_hide_from_tasks),
+                iconRes = R.drawable.ic_tabler_eye_off
+            ),
+            CompactPopupMenu.Entry.Item(
+                id = 5,
+                title = sectionString(R.string.delete),
+                iconRes = R.drawable.ic_tabler_trash,
+                destructive = true
+            )
+        )
+        CompactPopupMenu.show(anchor, entries, minWidthDp = 160, maxWidthDp = 220) { actionId ->
+            when (actionId) {
+                1 -> showCreateSectionDialog(parentId = container.id)
+                2 -> showEditSectionDialog(container)
+                3 -> showMoveSectionDialog(container)
+                4 -> showHideSectionDialog(container)
+                5 -> showDeleteSectionDialog(container)
+            }
+        }
     }
 }

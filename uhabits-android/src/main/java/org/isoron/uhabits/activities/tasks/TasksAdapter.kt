@@ -25,6 +25,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.text.Spannable
 import android.text.SpannableStringBuilder
+import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
 import android.text.style.ImageSpan
 import android.view.LayoutInflater
@@ -35,6 +36,10 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.appcompat.widget.TooltipCompat
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
@@ -42,6 +47,8 @@ import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.settings.SettingsThemePalette
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.facade.OrganizationalItem
 import org.isoron.uhabits.core.userTasks.TaskId
@@ -60,7 +67,13 @@ class TasksAdapter(
     private val onChangeDue: ((UserTask) -> Unit)? = null,
     private val onMoveContainer: ((UserTask) -> Unit)? = null,
     private val onShowContextMenu: ((UserTask) -> Unit)? = null,
+    var hideContainerContext: Boolean = false,
 ) : RecyclerView.Adapter<TasksAdapter.TaskViewHolder>() {
+
+    companion object {
+        /** Internal toggle for comparison between modern Compose task row and legacy Views. */
+        var useComposeTaskRow: Boolean = true
+    }
 
     private var tasks: List<UserTask> = emptyList()
     private var subtaskCounts: Map<TaskId, Pair<Int, Int>> = emptyMap() // taskId -> (completed, total)
@@ -138,14 +151,25 @@ class TasksAdapter(
     inner class TaskViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         var currentTask: UserTask? = null
             private set
-        private val btnCheck: FrameLayout = itemView.findViewById(R.id.btnTaskCheck)
-        private val viewCheckCircle: View = itemView.findViewById(R.id.viewCheckCircle)
-        private val ivCheckmark: ImageView = itemView.findViewById(R.id.ivCheckmark)
-        private val tvTitle: TextView = itemView.findViewById(R.id.tvTaskTitle)
-        private val layoutTaskMeta: LinearLayout = itemView.findViewById(R.id.layoutTaskMeta)
-        private val tvTaskContext: TextView = itemView.findViewById(R.id.tvTaskContext)
-        private val tvTaskMeta: TextView = itemView.findViewById(R.id.tvTaskMeta)
+
+        private val composeView: ComposeView? = itemView.findViewById(R.id.composeTaskRow)
+        private val layoutLegacy: View? = itemView.findViewById(R.id.layoutLegacyTaskRow)
+        private val btnCheck: FrameLayout? = itemView.findViewById(R.id.btnTaskCheck)
+        private val viewCheckCircle: View? = itemView.findViewById(R.id.viewCheckCircle)
+        private val ivCheckmark: ImageView? = itemView.findViewById(R.id.ivCheckmark)
+        private val tvTitle: TextView? = itemView.findViewById(R.id.tvTaskTitle)
+        private val layoutTaskMeta: LinearLayout? = itemView.findViewById(R.id.layoutTaskMeta)
+        private val tvTaskContext: TextView? = itemView.findViewById(R.id.tvTaskContext)
+        private val tvTaskMeta: TextView? = itemView.findViewById(R.id.tvTaskMeta)
+        private val btnTaskMore: FrameLayout? = itemView.findViewById(R.id.btnTaskMore)
+        private val ivTaskMore: ImageView? = itemView.findViewById(R.id.ivTaskMore)
         private val accessibilityActionIds = mutableListOf<Int>()
+
+        init {
+            composeView?.setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool
+            )
+        }
 
         fun bind(task: UserTask) {
             currentTask = task
@@ -153,11 +177,72 @@ class TasksAdapter(
             val isCompleted = task.isCompleted
             val isSelected = task.id in selectedIds
             val selectionActive = selectedIds.isNotEmpty()
+
+            // Keep legacy test proxies populated
+            tvTitle?.text = task.title
+            btnCheck?.setOnClickListener { onToggleComplete(task) }
+
+            if (useComposeTaskRow && composeView != null) {
+                layoutLegacy?.visibility = View.GONE
+                composeView.visibility = View.VISIBLE
+                itemView.setBackgroundColor(palette.background)
+
+                val danger = ContextCompat.getColor(
+                    itemView.context,
+                    if (palette.isDark) R.color.color_picker_danger_dark else R.color.color_picker_danger_light
+                )
+                val warning = if (palette.isDark) Color.parseColor("#FFB74D") else Color.parseColor("#B45309")
+                val composeColors = UHabitComposeColors.fromPalette(palette, danger, warning)
+
+                val containerItem = task.containerId?.let { containers[it] }
+                val containerName = if (hideContainerContext) null else {
+                    containerItem?.name ?: if (task.isCompleted) null else "Входящие"
+                }
+                val containerColor = containerItem?.color?.let {
+                    TaskThemeUtils.resolvePaletteColor(itemView.context, it, palette.accent)
+                }
+
+                composeView.setContent {
+                    UHabitComposeTheme(composeColors) {
+                        TaskRowCompose(
+                            task = task,
+                            isCompleted = isCompleted,
+                            isSelected = isSelected,
+                            selectionActive = selectionActive,
+                            subtaskCount = subtaskCounts[task.id],
+                            containerName = containerName,
+                            containerColor = containerColor,
+                            tags = taskTags[task.id].orEmpty(),
+                            today = today,
+                            nowMillis = nowMillis,
+                            colors = composeColors,
+                            onTaskClicked = { onTaskClicked(task) },
+                            onToggleComplete = { onToggleComplete(task) },
+                            onTaskLongClicked = { onTaskLongClicked(task, itemView) },
+                            onShowContextMenu = { onShowContextMenu?.invoke(task) ?: onTaskLongClicked(task, itemView) },
+                            onChangeDue = onChangeDue?.let { cb -> { cb(task) } },
+                            onMoveContainer = onMoveContainer?.let { cb -> { cb(task) } }
+                        )
+                    }
+                }
+            } else {
+                composeView?.visibility = View.GONE
+                layoutLegacy?.visibility = View.VISIBLE
+                bindLegacy(task, isCompleted, isSelected, selectionActive)
+            }
+        }
+
+        private fun bindLegacy(
+            task: UserTask,
+            isCompleted: Boolean,
+            isSelected: Boolean,
+            selectionActive: Boolean,
+        ) {
             applyRowProfile()
             applySelectionBackground(isSelected)
             itemView.isActivated = isSelected
             ViewCompat.setStateDescription(itemView, if (isSelected) "Выбрано" else null)
-            btnCheck.contentDescription = when {
+            btnCheck?.contentDescription = when {
                 selectionActive && isSelected -> "Снять выделение: ${task.title}"
                 selectionActive -> "Выбрать: ${task.title}"
                 isCompleted -> "Возобновить: ${task.title}"
@@ -165,46 +250,71 @@ class TasksAdapter(
             }
 
             // 1. Title & Strikethrough
-            tvTitle.text = task.title
-            if (isCompleted) {
-                tvTitle.setTextColor(palette.onSurfaceVariant)
-                tvTitle.paintFlags = tvTitle.paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
-            } else {
-                tvTitle.setTextColor(palette.onSurface)
-                tvTitle.paintFlags = tvTitle.paintFlags and Paint.STRIKE_THRU_TEXT_FLAG.inv()
+            tvTitle?.let { titleView ->
+                titleView.text = task.title
+                if (isCompleted) {
+                    titleView.setTextColor(palette.onSurfaceVariant)
+                    titleView.paintFlags = titleView.paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
+                } else {
+                    titleView.setTextColor(palette.onSurface)
+                    titleView.paintFlags = titleView.paintFlags and Paint.STRIKE_THRU_TEXT_FLAG.inv()
+                }
             }
 
-            // Completion / Selection affordance stays inside a 48dp target.
+            // Completion / Selection affordance inside 48dp target
             val circleDrawable = GradientDrawable()
             circleDrawable.shape = GradientDrawable.OVAL
 
             if (isSelected) {
                 circleDrawable.setColor(palette.accent)
                 circleDrawable.setStroke(dp(1.5f), palette.accent)
-                viewCheckCircle.background = circleDrawable
-                ivCheckmark.setImageResource(R.drawable.ic_action_check)
-                ivCheckmark.visibility = View.VISIBLE
-                ivCheckmark.setColorFilter(if (palette.isDark) Color.parseColor("#102638") else Color.WHITE)
+                viewCheckCircle?.background = circleDrawable
+                ivCheckmark?.setImageResource(R.drawable.ic_action_check)
+                ivCheckmark?.visibility = View.VISIBLE
+                ivCheckmark?.setColorFilter(if (palette.isDark) Color.parseColor("#102638") else Color.WHITE)
             } else if (isCompleted) {
                 circleDrawable.setColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.12f))
                 circleDrawable.setStroke(dp(1f), palette.onSurfaceVariant)
-                viewCheckCircle.background = circleDrawable
-                ivCheckmark.setImageResource(R.drawable.ic_action_check)
-                ivCheckmark.visibility = View.VISIBLE
-                ivCheckmark.setColorFilter(palette.onSurfaceVariant)
+                viewCheckCircle?.background = circleDrawable
+                ivCheckmark?.setImageResource(R.drawable.ic_action_check)
+                ivCheckmark?.visibility = View.VISIBLE
+                ivCheckmark?.setColorFilter(palette.onSurfaceVariant)
             } else {
                 circleDrawable.setColor(Color.TRANSPARENT)
                 val strokeWidth = TaskThemeUtils.dpInt(itemView.context, 1.5f)
                 circleDrawable.setStroke(strokeWidth, MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.7f))
-                viewCheckCircle.background = circleDrawable
-                ivCheckmark.visibility = View.GONE
+                viewCheckCircle?.background = circleDrawable
+                ivCheckmark?.visibility = View.GONE
             }
 
-            btnCheck.setOnClickListener {
+            btnCheck?.setOnClickListener {
                 onToggleComplete(task)
             }
+            btnCheck?.setOnLongClickListener {
+                onTaskLongClicked(task, it)
+                true
+            }
 
-            // Secondary property lines; dates remain independent and may wrap.
+            // Quick action overflow trigger (48dp touch target)
+            btnTaskMore?.let { btn ->
+                if (selectionActive) {
+                    btn.visibility = View.GONE
+                } else {
+                    btn.visibility = View.VISIBLE
+                    btn.contentDescription = "Действия с задачей: ${task.title}"
+                    TooltipCompat.setTooltipText(btn, "Действия")
+                    ivTaskMore?.setColorFilter(palette.onSurfaceVariant)
+                    btn.setOnClickListener {
+                        onShowContextMenu?.invoke(task) ?: onTaskLongClicked(task, it)
+                    }
+                    btn.setOnLongClickListener {
+                        onTaskLongClicked(task, it)
+                        true
+                    }
+                }
+            }
+
+            // Secondary property lines with hierarchy
             bindMetadata(task)
 
             // Click & Long Click
@@ -262,78 +372,99 @@ class TasksAdapter(
                 }
                 if (id != View.NO_ID) accessibilityActionIds.add(id)
             }
+
+            val toggleLabel = if (task.isCompleted) "Возобновить задачу" else "Завершить задачу"
+            val toggleId = ViewCompat.addAccessibilityAction(itemView, toggleLabel) { _, _ ->
+                onToggleComplete(task)
+                true
+            }
+            if (toggleId != View.NO_ID) accessibilityActionIds.add(toggleId)
         }
 
         private fun applyRowProfile() {
-            itemView.setPaddingRelative(dp(8f), dp(8f), dp(16f), dp(8f))
-            tvTitle.textSize = 16f
-            tvTitle.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
-            tvTaskContext.textSize = 12f
-            tvTaskMeta.textSize = 12f
-            (layoutTaskMeta.layoutParams as LinearLayout.LayoutParams).apply { topMargin = dp(4f) }
-            (tvTaskMeta.layoutParams as LinearLayout.LayoutParams).apply { topMargin = 0 }
-            viewCheckCircle.layoutParams = (viewCheckCircle.layoutParams as FrameLayout.LayoutParams).apply {
-                width = dp(20f)
-                height = dp(20f)
-                topMargin = dp(2f)
+            itemView.setPaddingRelative(dp(6f), dp(8f), dp(4f), dp(8f))
+            tvTitle?.let { titleView ->
+                titleView.textSize = 15.5f
+                titleView.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+                titleView.maxLines = 4
+                titleView.ellipsize = TextUtils.TruncateAt.END
+                titleView.setLineSpacing(dp(2.5f).toFloat(), 1.12f)
             }
-            ivCheckmark.layoutParams = (ivCheckmark.layoutParams as FrameLayout.LayoutParams).apply {
-                topMargin = dp(6f)
+            tvTaskContext?.textSize = 12f
+            tvTaskMeta?.let { metaView ->
+                metaView.textSize = 12f
+                metaView.maxLines = 3
+                metaView.ellipsize = TextUtils.TruncateAt.END
+                metaView.setLineSpacing(dp(1.5f).toFloat(), 1.08f)
+            }
+            layoutTaskMeta?.let {
+                (it.layoutParams as? LinearLayout.LayoutParams)?.apply { topMargin = dp(4f) }
+            }
+            tvTaskMeta?.let {
+                (it.layoutParams as? LinearLayout.LayoutParams)?.apply { topMargin = 0 }
+            }
+            viewCheckCircle?.let {
+                it.layoutParams = (it.layoutParams as? FrameLayout.LayoutParams)?.apply {
+                    width = dp(20f)
+                    height = dp(20f)
+                    topMargin = dp(2f)
+                } ?: it.layoutParams
+            }
+            ivCheckmark?.let {
+                it.layoutParams = (it.layoutParams as? FrameLayout.LayoutParams)?.apply {
+                    topMargin = dp(6f)
+                } ?: it.layoutParams
             }
         }
 
         private fun dp(value: Float) = TaskThemeUtils.dpInt(itemView.context, value)
 
         private fun SpannableStringBuilder.appendProperty(icon: Int, label: String, color: Int) {
-            if (isNotEmpty()) append("   ")
+            if (isNotEmpty()) append("  ·  ")
             val start = length
-            val drawable = AppCompatResources.getDrawable(itemView.context, icon)!!.mutate().apply {
+            val drawable = AppCompatResources.getDrawable(itemView.context, icon)?.mutate()?.apply {
                 setTint(color)
-                val size = dp(12f)
+                val size = dp(12.5f)
                 setBounds(0, 0, size, size)
             }
-            append("\uFFFC ")
-            setSpan(ImageSpan(drawable, ImageSpan.ALIGN_BOTTOM), start, start + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (drawable != null) {
+                append("\uFFFC ")
+                setSpan(ImageSpan(drawable, ImageSpan.ALIGN_BOTTOM), start, start + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
             append(label)
             setSpan(ForegroundColorSpan(color), start, length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
 
         private fun bindMetadata(task: UserTask) {
-            val context = SpannableStringBuilder()
-            val containerName = task.containerId?.let { containers[it]?.name ?: "Раздел" } ?: if (task.isCompleted) "Без раздела" else "Входящие"
-            context.appendProperty(R.drawable.ic_cat_folder, containerName, palette.onSurfaceVariant)
-            val counts = subtaskCounts[task.id]
-            if (counts != null && counts.second > 0) {
-                context.appendProperty(R.drawable.ic_cat_list_todo, "${counts.first}/${counts.second}", palette.onSurfaceVariant)
-            }
-            val tags = taskTags[task.id].orEmpty()
-            if (tags.isNotEmpty()) {
-                val visibleTags = tags.take(2)
-                val extraCount = tags.size - visibleTags.size
-                val tagText = buildString {
-                    append(visibleTags.joinToString("  ") { "#${it.name}" })
-                    if (extraCount > 0) append(" +$extraCount")
-                }
-                context.append("   ")
-                val tagStart = context.length
-                context.append(tagText)
-                val tagColor = if (task.isCompleted) palette.onSurfaceVariant else MainTabsThemeBridge.withAlpha(palette.accent, 0.9f)
-                context.setSpan(ForegroundColorSpan(tagColor), tagStart, context.length, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-            val spokenContext = "Раздел: " + containerName +
-                (if (counts != null && counts.second > 0) "; подзадачи: ${counts.first} из ${counts.second}" else "") +
-                (if (tags.isNotEmpty()) "; теги: ${tags.joinToString(", ") { it.name }}" else "")
-            tvTaskContext.visibility = View.GONE
+            val meta = SpannableStringBuilder()
+            val spokenParts = mutableListOf<String>()
 
-            val dates = SpannableStringBuilder()
-            val spokenDates = mutableListOf<String>()
+            // 1. Priority Hierarchy (Eisenhower matrix: Important & Urgent)
+            if (!task.isCompleted) {
+                when {
+                    task.important == true && task.urgent == true -> {
+                        meta.appendProperty(R.drawable.ic_cat_flame, "Срочно и важно", dangerColor())
+                        spokenParts.add("Приоритет: срочно и важно")
+                    }
+                    task.important == true -> {
+                        meta.appendProperty(R.drawable.ic_cat_star, "Важно", warningColor())
+                        spokenParts.add("Приоритет: важно")
+                    }
+                    task.urgent == true -> {
+                        meta.appendProperty(R.drawable.ic_cat_flame, "Срочно", warningColor())
+                        spokenParts.add("Приоритет: срочно")
+                    }
+                }
+            }
+
+            // 2. Dates / Completion Status
             if (!task.isCompleted) {
                 when (val due = task.due) {
                     is TaskDue.None -> {
                         if (task.hasPendingLegacyPlan) {
                             val label = "План: ${task.legacyPlanDate}"
-                            dates.appendProperty(R.drawable.ic_cat_calendar, label, palette.onSurfaceVariant)
-                            spokenDates.add(label)
+                            meta.appendProperty(R.drawable.ic_cat_calendar, label, palette.onSurfaceVariant)
+                            spokenParts.add(label)
                         }
                     }
                     is TaskDue.Day -> {
@@ -351,8 +482,8 @@ class TasksAdapter(
                             isToday -> palette.accent
                             else -> palette.onSurfaceVariant
                         }
-                        dates.appendProperty(R.drawable.ic_cat_calendar, label, color)
-                        spokenDates.add(label)
+                        meta.appendProperty(R.drawable.ic_cat_calendar, label, color)
+                        spokenParts.add(label)
                     }
                     is TaskDue.Timed -> {
                         val overdue = task.isOverdue(today, nowMillis)
@@ -369,27 +500,74 @@ class TasksAdapter(
                             isToday -> palette.accent
                             else -> palette.onSurfaceVariant
                         }
-                        dates.appendProperty(R.drawable.ic_cat_calendar_clock, label, color)
-                        spokenDates.add(label)
+                        meta.appendProperty(R.drawable.ic_cat_calendar_clock, label, color)
+                        spokenParts.add(label)
                     }
                 }
             }
+
             val completedAt = task.completedAt
             if (task.isCompleted && completedAt != null && completedAt > 0L) {
                 val label = "Выполнено " + SimpleDateFormat("d MMM", TaskDueDisplayFormatter.selectedLocale(itemView.context)).format(Date(completedAt))
-                dates.appendProperty(R.drawable.ic_action_check, label, palette.onSurfaceVariant)
-                spokenDates.add(label)
+                meta.appendProperty(R.drawable.ic_action_check, label, palette.onSurfaceVariant)
+                spokenParts.add(label)
             }
-            if (dates.isNotEmpty()) dates.append("  ·  ")
-            dates.append(context)
-            tvTaskMeta.text = dates
-            tvTaskMeta.contentDescription = (spokenDates + spokenContext).joinToString("; ")
-            tvTaskMeta.setTextColor(palette.onSurfaceVariant)
-            tvTaskMeta.visibility = if (dates.isEmpty()) View.GONE else View.VISIBLE
-            layoutTaskMeta.visibility = View.VISIBLE
+
+            // 3. Organizational Container Context (suppressed if context matches)
+            if (!hideContainerContext) {
+                val containerName = task.containerId?.let { containers[it]?.name ?: "Раздел" } ?: if (task.isCompleted) "Без раздела" else "Входящие"
+                meta.appendProperty(R.drawable.ic_cat_folder, containerName, palette.onSurfaceVariant)
+                spokenParts.add("Раздел: $containerName")
+            }
+
+            // 4. Subtasks Progress
+            val counts = subtaskCounts[task.id]
+            if (counts != null && counts.second > 0) {
+                val icon = if (counts.first == counts.second) R.drawable.ic_cat_check_square else R.drawable.ic_cat_list_todo
+                val subtaskColor = if (counts.first == counts.second && !task.isCompleted) palette.accent else palette.onSurfaceVariant
+                meta.appendProperty(icon, "${counts.first}/${counts.second}", subtaskColor)
+                spokenParts.add("подзадачи: ${counts.first} из ${counts.second}")
+            }
+
+            // 5. Tags
+            val tags = taskTags[task.id].orEmpty()
+            if (tags.isNotEmpty()) {
+                val visibleTags = tags.take(2)
+                val extraCount = tags.size - visibleTags.size
+                val tagText = buildString {
+                    append(visibleTags.joinToString("  ") { "#${it.name}" })
+                    if (extraCount > 0) append(" +$extraCount")
+                }
+                val tagColor = if (task.isCompleted) palette.onSurfaceVariant else MainTabsThemeBridge.withAlpha(palette.accent, 0.9f)
+                meta.appendProperty(R.drawable.ic_cat_tag, tagText, tagColor)
+                spokenParts.add("теги: ${tags.joinToString(", ") { it.name }}")
+            }
+
+            // 6. Notes indicator (hierarchy hint)
+            if (task.description.isNotBlank()) {
+                meta.appendProperty(R.drawable.ic_cat_file_text, "Заметка", palette.onSurfaceVariant)
+                spokenParts.add("есть заметка")
+            }
+
+            // 7. Linked Habit indicator (hierarchy hint)
+            if (task.linkedHabitUuid != null) {
+                meta.appendProperty(R.drawable.ic_cat_repeat, "Привычка", palette.onSurfaceVariant)
+                spokenParts.add("связана с привычкой")
+            }
+
+            tvTaskContext?.visibility = View.GONE
+            tvTaskMeta?.let { metaView ->
+                metaView.text = meta
+                metaView.contentDescription = spokenParts.joinToString("; ")
+                metaView.setTextColor(palette.onSurfaceVariant)
+                metaView.visibility = if (meta.isEmpty()) View.GONE else View.VISIBLE
+            }
+            layoutTaskMeta?.visibility = if (meta.isEmpty()) View.GONE else View.VISIBLE
         }
 
-        private fun dangerColor() = androidx.core.content.ContextCompat.getColor(itemView.context,
+        private fun dangerColor() = ContextCompat.getColor(itemView.context,
             if (palette.isDark) R.color.color_picker_danger_dark else R.color.color_picker_danger_light)
+
+        private fun warningColor() = if (palette.isDark) Color.parseColor("#FFB74D") else Color.parseColor("#B45309")
     }
 }

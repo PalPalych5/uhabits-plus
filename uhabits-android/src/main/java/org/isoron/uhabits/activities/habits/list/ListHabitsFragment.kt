@@ -185,6 +185,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
         activateToolbar()
         adapter.refresh()
         screen.onAttached()
+        adapter.notifyDataSetChanged()
         rootView.postInvalidate()
         (activity as? MainNavigationHost)?.setHabitCreationAvailable(
             displayMode == ListHabitsDisplayMode.NORMAL

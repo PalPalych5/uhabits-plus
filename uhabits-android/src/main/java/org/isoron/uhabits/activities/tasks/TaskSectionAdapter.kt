@@ -37,7 +37,8 @@ internal class TaskSectionAdapter(
             gravity = Gravity.CENTER_VERTICAL
             setPaddingRelative(TaskThemeUtils.dpInt(context, 24f), TaskThemeUtils.dpInt(context, 8f), TaskThemeUtils.dpInt(context, 16f), TaskThemeUtils.dpInt(context, 8f))
             textSize = 13f
-            maxLines = Int.MAX_VALUE
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
             typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
             if (onToggle != null) {
                 val value = android.util.TypedValue()
@@ -50,6 +51,7 @@ internal class TaskSectionAdapter(
     override fun onBindViewHolder(holder: Holder, position: Int) {
         (holder.itemView as TextView).apply {
             text = title
+            contentDescription = "Раздел: $title"
             val chevron = if (onToggle == null) null else androidx.appcompat.content.res.AppCompatResources.getDrawable(context,
                 if (expanded) org.isoron.uhabits.R.drawable.ic_chevron_up else org.isoron.uhabits.R.drawable.ic_chevron_down)?.mutate()?.apply {
                 setTint(palette.onSurfaceVariant)

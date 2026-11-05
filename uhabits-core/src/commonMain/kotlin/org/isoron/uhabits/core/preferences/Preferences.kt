@@ -159,6 +159,13 @@ open class Preferences(private val storage: Storage) {
             notifyHabitListAppearanceChanged()
         }
 
+    open var isShowSphereNamesEnabled: Boolean
+        get() = storage.getBoolean("pref_show_sphere_names", true)
+        set(enabled) {
+            storage.putBoolean("pref_show_sphere_names", enabled)
+            notifyHabitListAppearanceChanged()
+        }
+
     open var areHabitGroupSeparatorsEnabled: Boolean
         get() = storage.getBoolean("pref_habit_group_separators", false)
         set(enabled) {

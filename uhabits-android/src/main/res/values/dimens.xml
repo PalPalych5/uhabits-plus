@@ -73,7 +73,7 @@
     <dimen name="color_picker_reset_height">44dp</dimen>
     <dimen name="color_picker_action_padding">10dp</dimen>
     <dimen name="color_picker_action_height">52dp</dimen>
-    <dimen name="color_picker_action_radius">16dp</dimen>
+    <dimen name="color_picker_action_radius">14dp</dimen>
     <dimen name="color_picker_action_stroke">2dp</dimen>
     <dimen name="color_picker_slider_thumb_radius">9dp</dimen>
     <dimen name="color_picker_slider_thumb_radius_pressed">10dp</dimen>

@@ -40,6 +40,7 @@ object CompactPopupMenu {
         data class Item(
             val id: Int,
             val title: CharSequence,
+            val iconRes: Int? = null,
             val selected: Boolean = false,
             val destructive: Boolean = false,
             val visible: Boolean = true,
@@ -51,8 +52,8 @@ object CompactPopupMenu {
     fun show(
         anchor: View,
         entries: List<Entry>,
-        minWidthDp: Int = 132,
-        maxWidthDp: Int = 156,
+        minWidthDp: Int = 144,
+        maxWidthDp: Int = 220,
         onDismiss: (() -> Unit)? = null,
         onItemClick: (Int) -> Unit,
     ) {
@@ -92,18 +93,28 @@ object CompactPopupMenu {
 
                 is Entry.Item -> content.addView(TextView(context).apply {
                     text = entry.title
-                    textSize = 15f
+                    textSize = 14f
                     gravity = Gravity.CENTER_VERTICAL
                     includeFontPadding = false
-                    minHeight = px(40)
-                    setPadding(px(14), 0, px(14), 0)
-                    setTextColor(
-                        when {
-                            entry.destructive -> destructive
-                            entry.selected -> accent
-                            else -> sres.getColor(R.attr.contrast100)
-                        },
-                    )
+                    minHeight = px(48)
+                    setPadding(px(12), 0, px(14), 0)
+                    val itemColor = when {
+                        entry.destructive -> destructive
+                        entry.selected -> accent
+                        else -> sres.getColor(R.attr.contrast100)
+                    }
+                    setTextColor(itemColor)
+                    if (entry.iconRes != null) {
+                        val d = ContextCompat.getDrawable(context, entry.iconRes)?.mutate()
+                        d?.setTint(itemColor)
+                        val iconPx = px(20)
+                        d?.setBounds(0, 0, iconPx, iconPx)
+                        setCompoundDrawablesRelative(d, null, null, null)
+                        compoundDrawablePadding = px(12)
+                    }
+                    val ripple = android.util.TypedValue()
+                    context.theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
+                    setBackgroundResource(ripple.resourceId)
                     if (entry.selected) {
                         background = GradientDrawable().apply {
                             setColor(palette.divider)
@@ -116,7 +127,7 @@ object CompactPopupMenu {
                     }
                 }, LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    px(40),
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
                 ))
             }
         }

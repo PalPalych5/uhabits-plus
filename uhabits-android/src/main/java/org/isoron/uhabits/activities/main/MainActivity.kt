@@ -868,6 +868,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     override fun onNavigationPreferencesChanged() = Unit
 
     fun recreateForThemeChange() {
+        appComponent.habitCardListCache.invalidateStyles()
         currentTheme = prefs.theme
         pureBlack = prefs.isPureBlackEnabled
         currentResolvedNightMode = AndroidThemeSwitcher(this, prefs).isNightMode

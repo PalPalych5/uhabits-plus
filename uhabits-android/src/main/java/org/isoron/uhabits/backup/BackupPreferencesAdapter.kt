@@ -93,6 +93,9 @@ object BackupPreferencesAdapter {
         PreferenceDefinition("pref_enable_day_tiers", PreferenceValueType.BOOLEAN) {
             it is Boolean
         },
+        PreferenceDefinition("pref_show_sphere_names", PreferenceValueType.BOOLEAN) {
+            it is Boolean
+        },
         PreferenceDefinition("pref_habit_group_separators", PreferenceValueType.BOOLEAN) {
             it is Boolean
         },

@@ -35,7 +35,14 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import org.isoron.uhabits.compose.UHabitComposeColors
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.ColorUtils
+import androidx.core.view.AccessibilityDelegateCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import org.isoron.platform.time.DayOfWeek
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
@@ -72,8 +79,18 @@ class TaskCalendarViewController(
     private val onHabitClicked: (PlannedHabit) -> Unit,
     private val onDateChanged: (LocalDate) -> Unit,
     private val onScaleChanged: (CalendarScale) -> Unit,
-    private val onModeChanged: (CalendarMode) -> Unit = {}
+    private val onModeChanged: (CalendarMode) -> Unit = {},
+    private val onShowHabitsChanged: ((Boolean) -> Unit)? = null
 ) {
+    val calendarPreferences = TaskCalendarPreferences(context)
+    var showHabits: Boolean = calendarPreferences.showHabits
+        set(value) {
+            if (field != value) {
+                field = value
+                calendarPreferences.showHabits = value
+            }
+        }
+
     var selectedDay: LocalDate = getToday()
         set(value) {
             field = value
@@ -120,18 +137,23 @@ class TaskCalendarViewController(
         container.removeAllViews()
         container.setBackgroundColor(palette.background)
 
-        // 1. Navigation & Period Header
-        val navHeader = buildNavigationHeader()
-        container.addView(navHeader)
-
-        // 2. Control Bar (Mode Switcher: Планирование/История & Scale Switcher: Месяц/Неделя/День)
-        val controlBar = buildControlBar()
-        container.addView(controlBar)
-
-        // Divider
-        container.addView(View(context).apply {
-            setBackgroundColor(palette.divider)
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dpInt(1f)))
+        val compactRow = (wide || context.resources.configuration.screenWidthDp >= 320) &&
+            context.resources.configuration.fontScale <= 1.15f
+        container.addView(ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
+            setContent {
+                TaskCalendarControlsCompose(
+                    colors = UHabitComposeColors.fromPalette(palette), title = getPeriodTitle(),
+                    today = selectedDay == getToday(), ru = locale.language == "ru",
+                    compactPhone = compactRow && !wide,
+                    mode = mode, scale = scale,
+                    onPrevious = { navigatePeriod(-1) }, onNext = { navigatePeriod(1) },
+                    onToday = { selectedDay = getToday(); onDateChanged(selectedDay); render() },
+                    onMode = { if (mode != it) { mode = it; onModeChanged(mode); render() } },
+                    onScale = { if (scale != it) { scale = it; onScaleChanged(scale); render() } }
+                )
+            }
+        })
 
         // 3. Body according to current mode and scale
         if (mode == CalendarMode.PLANNING) {
@@ -152,93 +174,6 @@ class TaskCalendarViewController(
     // -----------------------------------------------------------------------------------------
     // Top Navigation Header
     // -----------------------------------------------------------------------------------------
-    private fun buildNavigationHeader(): View {
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPaddingRelative(dpInt(8f), dpInt(4f), dpInt(8f), dpInt(4f))
-            minimumHeight = dpInt(48f)
-        }
-
-        val btnPrev = TextView(context).apply {
-            text = "‹"
-            textSize = 24f
-            gravity = Gravity.CENTER
-            setTextColor(palette.onSurface)
-            setPadding(dpInt(12f), dpInt(4f), dpInt(12f), dpInt(4f))
-            contentDescription = "Предыдущий период"
-            setSelectableBackground()
-            setOnClickListener {
-                navigatePeriod(-1)
-            }
-        }
-        row.addView(btnPrev, LinearLayout.LayoutParams(dpInt(44f), dpInt(44f)))
-
-        val titleText = getPeriodTitle()
-        val tvTitle = TextView(context).apply {
-            text = titleText
-            textSize = 16f
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            setTextColor(palette.onSurface)
-            gravity = Gravity.CENTER
-            setSelectableBackground()
-            setOnClickListener {
-                // Clicking title jumps to today
-                selectedDay = getToday()
-                onDateChanged(selectedDay)
-                render()
-            }
-        }
-        row.addView(tvTitle, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-
-        val btnNext = TextView(context).apply {
-            text = "›"
-            textSize = 24f
-            gravity = Gravity.CENTER
-            setTextColor(palette.onSurface)
-            setPadding(dpInt(12f), dpInt(4f), dpInt(12f), dpInt(4f))
-            contentDescription = "Следующий период"
-            setSelectableBackground()
-            setOnClickListener {
-                navigatePeriod(1)
-            }
-        }
-        row.addView(btnNext, LinearLayout.LayoutParams(dpInt(44f), dpInt(44f)))
-
-        // "Сегодня" / Today button
-        val isTodaySelected = selectedDay == getToday()
-        val btnToday = TextView(context).apply {
-            text = if (locale.language == "ru") "Сегодня" else "Today"
-            textSize = 12f
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            setTextColor(if (isTodaySelected) palette.accent else palette.onSurfaceVariant)
-            gravity = Gravity.CENTER
-            setPaddingRelative(dpInt(10f), dpInt(6f), dpInt(10f), dpInt(6f))
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dpInt(16f).toFloat()
-                if (isTodaySelected) {
-                    setColor(palette.surfaceVariant)
-                    setStroke(dpInt(1f), palette.accent)
-                } else {
-                    setColor(palette.surface)
-                    setStroke(dpInt(1f), palette.border)
-                }
-            }
-            setOnClickListener {
-                selectedDay = getToday()
-                onDateChanged(selectedDay)
-                render()
-            }
-        }
-        val todayParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            marginStart = dpInt(4f)
-        }
-        row.addView(btnToday, todayParams)
-
-        return row
-    }
-
     private fun getPeriodTitle(): String {
         return when (scale) {
             CalendarScale.MONTH -> {
@@ -294,133 +229,11 @@ class TaskCalendarViewController(
     // -----------------------------------------------------------------------------------------
     // Control Bar: Mode Switcher (Планирование/История) & Scale Switcher (Месяц/Неделя/День)
     // -----------------------------------------------------------------------------------------
-    private fun buildControlBar(): View {
-        val root = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPaddingRelative(dpInt(16f), dpInt(2f), dpInt(16f), dpInt(6f))
-        }
-
-        val ru = locale.language == "ru"
-
-        // 1. Mode Switcher (Планирование / История)
-        val modeContainer = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dpInt(8f).toFloat()
-                setColor(palette.surface)
-                setStroke(dpInt(1f), palette.border)
-            }
-            setPadding(dpInt(2f), dpInt(2f), dpInt(2f), dpInt(2f))
-        }
-
-        val modeItems = listOf(
-            CalendarMode.PLANNING to if (ru) "Планирование" else "Planning",
-            CalendarMode.HISTORY to if (ru) "История" else "History"
-        )
-        for ((targetMode, label) in modeItems) {
-            val isSelected = mode == targetMode
-            val tab = TextView(context).apply {
-                text = label
-                textSize = 13f
-                typeface = if (isSelected) Typeface.create("sans-serif-medium", Typeface.NORMAL) else Typeface.DEFAULT
-                setTextColor(if (isSelected) Color.WHITE else palette.onSurfaceVariant)
-                gravity = Gravity.CENTER
-                setPaddingRelative(dpInt(16f), dpInt(6f), dpInt(16f), dpInt(6f))
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    cornerRadius = dpInt(6f).toFloat()
-                    if (isSelected) {
-                        setColor(palette.accent)
-                    } else {
-                        setColor(Color.TRANSPARENT)
-                    }
-                }
-                setOnClickListener {
-                    if (mode != targetMode) {
-                        mode = targetMode
-                        onModeChanged(mode)
-                        render()
-                    }
-                }
-            }
-            modeContainer.addView(tab, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        }
-
-        root.addView(modeContainer, LinearLayout.LayoutParams(if (wide) dpInt(360f) else ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            bottomMargin = dpInt(6f)
-        })
-
-        // 2. Scale Switcher (Месяц / Неделя / День)
-        val scaleSwitcher = buildScaleSwitcher()
-        root.addView(scaleSwitcher)
-
-        return root
-    }
-
-    private fun buildScaleSwitcher(): View {
-        val containerCard = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dpInt(8f).toFloat()
-                setColor(palette.surface)
-                setStroke(dpInt(1f), palette.border)
-            }
-            setPadding(dpInt(2f), dpInt(2f), dpInt(2f), dpInt(2f))
-        }
-
-        val ru = locale.language == "ru"
-        val scaleItems = listOf(
-            CalendarScale.MONTH to if (ru) "Месяц" else "Month",
-            CalendarScale.WEEK to if (ru) "Неделя" else "Week",
-            CalendarScale.DAY to if (ru) "День" else "Day"
-        )
-
-        for ((targetScale, label) in scaleItems) {
-            val isSelected = scale == targetScale
-            val tab = TextView(context).apply {
-                text = label
-                textSize = 13f
-                typeface = if (isSelected) Typeface.create("sans-serif-medium", Typeface.NORMAL) else Typeface.DEFAULT
-                setTextColor(if (isSelected) Color.WHITE else palette.onSurfaceVariant)
-                gravity = Gravity.CENTER
-                setPaddingRelative(dpInt(16f), dpInt(6f), dpInt(16f), dpInt(6f))
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    cornerRadius = dpInt(6f).toFloat()
-                    if (isSelected) {
-                        setColor(palette.accent)
-                    } else {
-                        setColor(Color.TRANSPARENT)
-                    }
-                }
-                setOnClickListener {
-                    if (scale != targetScale) {
-                        scale = targetScale
-                        onScaleChanged(scale)
-                        render()
-                    }
-                }
-            }
-            containerCard.addView(tab, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        }
-
-        val wrapper = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
-        wrapper.addView(containerCard, LinearLayout.LayoutParams(if (wide) dpInt(360f) else ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        return wrapper
-    }
-
-    // -----------------------------------------------------------------------------------------
-    // MONTH VIEW
-    // -----------------------------------------------------------------------------------------
     private fun renderMonthView() {
         val scroll = ScrollView(context).apply {
             isFillViewport = true
+            clipToPadding = false
+            setPadding(0, 0, 0, dpInt(24f))
         }
         val content = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -458,7 +271,7 @@ class TaskCalendarViewController(
         val taskEvents = TaskCalendarEvents.from(tasks)
         val startMonthDate = LocalDate(year, month, 1)
         val endMonthDate = LocalDate(year, month, daysInMonth)
-        val monthPlannedHabits = PlannedHabitProjector.projectForRange(habits, startMonthDate, endMonthDate)
+        val monthPlannedHabits = if (showHabits) PlannedHabitProjector.projectForRange(habits, startMonthDate, endMonthDate) else emptyList()
 
         val totalCells = offset + daysInMonth
         val weeksCount = (totalCells + 6) / 7
@@ -495,11 +308,15 @@ class TaskCalendarViewController(
                     val isToday = day == getToday()
 
                     val fontScale = context.resources.configuration.fontScale
-                    val circleSize = dpInt(maxOf(26f, 22f * fontScale))
+                    val maxCircleDp = if (wide) 36f else 32f
+                    val circleSize = dpInt(minOf(maxCircleDp, maxOf(24f, 20f * fontScale)))
 
                     val tvDay = TextView(context).apply {
                         text = dayNum.toString()
                         textSize = 13f
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        includeFontPadding = false
                         gravity = Gravity.CENTER
                         typeface = if (isSelected || isToday) Typeface.create("sans-serif-medium", Typeface.NORMAL) else Typeface.DEFAULT
                         setTextColor(if (isSelected) Color.WHITE else if (isToday) palette.accent else palette.onSurface)
@@ -577,7 +394,8 @@ class TaskCalendarViewController(
     }
 
     private fun renderSelectedDayAgenda(parent: LinearLayout) {
-        val agenda = TaskCalendarEvents.buildAgendaForDay(tasks, habits, selectedDay)
+        val agendaHabits = if (showHabits) habits else emptyList()
+        val agenda = TaskCalendarEvents.buildAgendaForDay(tasks, agendaHabits, selectedDay)
 
         val headerRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -599,8 +417,12 @@ class TaskCalendarViewController(
 
         if (!agenda.hasItems) {
             parent.addView(TextView(context).apply {
-                text = if (locale.language == "ru") "Нет запланированных задач и привычек" else "No planned tasks or habits"
+                text = context.getString(
+                    if (showHabits) R.string.task_calendar_empty_agenda
+                    else R.string.task_calendar_no_tasks
+                )
                 textSize = 13f
+                includeFontPadding = false
                 setTextColor(palette.onSurfaceVariant)
                 setPaddingRelative(dpInt(16f), dpInt(8f), dpInt(16f), dpInt(24f))
             })
@@ -639,7 +461,7 @@ class TaskCalendarViewController(
         val weekDays = (0..6).map { weekStart.plus(it) }
 
         val taskEvents = TaskCalendarEvents.from(tasks)
-        val weekPlannedHabits = PlannedHabitProjector.projectForRange(habits, weekStart, weekDays.last())
+        val weekPlannedHabits = if (showHabits) PlannedHabitProjector.projectForRange(habits, weekStart, weekDays.last()) else emptyList()
 
         val ru = locale.language == "ru"
         val weekdayAbbreviations = if (ru) {
@@ -651,9 +473,19 @@ class TaskCalendarViewController(
         val timeColWidth = dpInt(48f)
         val hourSlotHeight = dpInt(56f)
 
-        // Column width: on wide screen fit all 7 columns evenly; on phone use readable 104dp columns
-        val dayColWidth = if (wide) 0 else dpInt(104f)
+        // Wider phone columns leave room for event titles; header and timeline scroll together.
+        val dayColWidth = if (wide) 0 else dpInt(144f)
         val dayColWeight = if (wide) 1f else 0f
+
+        // Each hour shares a height across all columns and the time labels.
+        val itemHeight = dpInt(maxOf(56f, 56f * context.resources.configuration.fontScale))
+        val hourHeights = (0..23).map { hour ->
+            val count = weekDays.maxOf { day ->
+                taskEvents.count { it.isTimed && it.day == day && it.hour == hour } +
+                    weekPlannedHabits.count { !it.isAllDay && it.date == day && it.reminderHour == hour }
+            }
+            maxOf(hourSlotHeight, count * itemHeight + dpInt(4f))
+        }
 
         val hasAnyAllDay = weekDays.any { d ->
             taskEvents.any { it.isAllDay && it.day == d } || weekPlannedHabits.any { it.isAllDay && it.date == d }
@@ -735,10 +567,14 @@ class TaskCalendarViewController(
 
             // Date number ("24") with circular/rounded background
             val fontScale = context.resources.configuration.fontScale
-            val circleSize = dpInt(maxOf(26f, 22f * fontScale))
+            val maxCircleDp = if (wide) 36f else 32f
+            val circleSize = dpInt(minOf(maxCircleDp, maxOf(24f, 20f * fontScale)))
             val tvDayNum = TextView(context).apply {
                 text = day.day.toString()
                 textSize = 13f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                includeFontPadding = false
                 gravity = Gravity.CENTER
                 typeface = if (isSelected || isToday) Typeface.create("sans-serif-medium", Typeface.NORMAL) else Typeface.DEFAULT
                 setTextColor(if (isSelected) Color.WHITE else if (isToday) palette.accent else palette.onSurface)
@@ -792,6 +628,8 @@ class TaskCalendarViewController(
         // 2. SCROLLABLE TIMELINE
         val verticalScroll = ScrollView(context).apply {
             isFillViewport = true
+            clipToPadding = false
+            setPadding(0, 0, 0, dpInt(360f))
         }
 
         val timelineRow = LinearLayout(context).apply {
@@ -801,7 +639,6 @@ class TaskCalendarViewController(
         // Left Time Labels Column (00:00 to 23:00)
         val timeLabelCol = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPaddingRelative(dpInt(4f), 0, dpInt(4f), 0)
         }
         for (h in 0..23) {
             val tvHour = TextView(context).apply {
@@ -812,7 +649,7 @@ class TaskCalendarViewController(
                 minimumHeight = hourSlotHeight
                 setPaddingRelative(0, dpInt(2f), dpInt(4f), 0)
             }
-            timeLabelCol.addView(tvHour, LinearLayout.LayoutParams(timeColWidth, hourSlotHeight))
+            timeLabelCol.addView(tvHour, LinearLayout.LayoutParams(timeColWidth, hourHeights[h]))
         }
         timelineRow.addView(timeLabelCol)
 
@@ -847,6 +684,7 @@ class TaskCalendarViewController(
             for (hour in 0..23) {
                 val hourCell = FrameLayout(context).apply {
                     minimumHeight = hourSlotHeight
+                    clipChildren = true
                 }
 
                 // Top divider for each hour
@@ -867,20 +705,21 @@ class TaskCalendarViewController(
 
                 val itemsLayout = LinearLayout(context).apply {
                     orientation = LinearLayout.VERTICAL
+                    clipChildren = true
                     setPadding(dpInt(2f), dpInt(2f), dpInt(2f), dpInt(2f))
                 }
 
                 for (event in hourTasks) {
-                    itemsLayout.addView(buildCompactTimelineTask(event))
+                    itemsLayout.addView(buildCompactTimelineTask(event), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, itemHeight))
                 }
                 for (habit in hourHabits) {
-                    itemsLayout.addView(buildCompactTimelineHabit(habit))
+                    itemsLayout.addView(buildCompactTimelineHabit(habit), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, itemHeight))
                 }
                 hourCell.addView(itemsLayout, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
                 // Current time indicator line if today and this hour
                 if (isToday && hour == currentHour) {
-                    val lineTop = (currentMinute / 60f * hourSlotHeight).toInt()
+                    val lineTop = (currentMinute / 60f * hourHeights[hour]).toInt()
                     val indicator = View(context).apply {
                         setBackgroundColor(0xFFE53935.toInt()) // Red accent line
                     }
@@ -890,7 +729,7 @@ class TaskCalendarViewController(
                     hourCell.addView(indicator, params)
                 }
 
-                dayCol.addView(hourCell, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, hourSlotHeight))
+                dayCol.addView(hourCell, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, hourHeights[hour]))
             }
 
             timelineColumnsLayout.addView(dayCol, LinearLayout.LayoutParams(dayColWidth, ViewGroup.LayoutParams.WRAP_CONTENT, dayColWeight))
@@ -930,7 +769,12 @@ class TaskCalendarViewController(
 
         // Scroll vertically to current hour or 08:00
         verticalScroll.post {
-            val scrollTarget = maxOf(0, (if (weekDays.contains(getToday())) currentHour - 1 else 8) * hourSlotHeight)
+            val neededBottom = maxOf(dpInt(360f), verticalScroll.height)
+            if (verticalScroll.paddingBottom < neededBottom) {
+                verticalScroll.setPadding(0, 0, 0, neededBottom)
+            }
+            val targetHour = (if (weekDays.contains(getToday())) currentHour - 1 else 8).coerceAtLeast(0)
+            val scrollTarget = hourHeights.take(targetHour).sum()
             verticalScroll.scrollTo(0, scrollTarget)
         }
     }
@@ -939,7 +783,7 @@ class TaskCalendarViewController(
         val chip = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dpInt(26f)
+            minimumHeight = dpInt(48f)
             setPaddingRelative(dpInt(4f), dpInt(2f), dpInt(4f), dpInt(2f))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
@@ -962,7 +806,7 @@ class TaskCalendarViewController(
         chip.addView(TextView(context).apply {
             text = task.title
             textSize = 9f
-            maxLines = 1
+            maxLines = 3
             ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(if (task.isCompleted) palette.onSurfaceVariant else palette.onSurface)
             if (task.isCompleted) {
@@ -978,7 +822,7 @@ class TaskCalendarViewController(
         val chip = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dpInt(26f)
+            minimumHeight = dpInt(48f)
             setPaddingRelative(dpInt(4f), dpInt(2f), dpInt(4f), dpInt(2f))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
@@ -1003,7 +847,7 @@ class TaskCalendarViewController(
         chip.addView(TextView(context).apply {
             text = habit.name
             textSize = 9f
-            maxLines = 1
+            maxLines = 3
             ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(palette.onSurface)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -1013,8 +857,9 @@ class TaskCalendarViewController(
 
     private fun buildCompactTimelineTask(event: TaskCalendarEvent): View {
         val root = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
+            clipToOutline = true
             setPaddingRelative(dpInt(4f), dpInt(2f), dpInt(4f), dpInt(2f))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
@@ -1024,27 +869,30 @@ class TaskCalendarViewController(
             }
             setSelectableBackground()
             setOnClickListener { onTaskClicked(event.task) }
+            setOnLongClickListener {
+                onTaskQuickMenu(event.task)
+                true
+            }
         }
 
         val timeStr = String.format(Locale.getDefault(), "%02d:%02d", event.hour ?: 0, event.minute ?: 0)
         root.addView(TextView(context).apply {
             text = timeStr
-            textSize = 9f
+            textSize = 11f
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setTextColor(palette.accent)
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         root.addView(TextView(context).apply {
             text = event.task.title
-            textSize = 10f
-            maxLines = 1
+            textSize = 12f
+            maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(if (event.task.isCompleted) palette.onSurfaceVariant else palette.onSurface)
             if (event.task.isCompleted) {
                 paintFlags = paintFlags or Paint.STRIKE_THRU_TEXT_FLAG
             }
-            setPaddingRelative(dpInt(4f), 0, 0, 0)
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         return root
     }
@@ -1077,8 +925,8 @@ class TaskCalendarViewController(
 
         root.addView(TextView(context).apply {
             text = habit.name
-            textSize = 10f
-            maxLines = 1
+            textSize = 12f
+            maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(palette.onSurface)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -1090,7 +938,8 @@ class TaskCalendarViewController(
     // DAY VIEW
     // -----------------------------------------------------------------------------------------
     private fun renderDayView() {
-        val agenda = TaskCalendarEvents.buildAgendaForDay(tasks, habits, selectedDay)
+        val agendaHabits = if (showHabits) habits else emptyList()
+        val agenda = TaskCalendarEvents.buildAgendaForDay(tasks, agendaHabits, selectedDay)
 
         val ru = locale.language == "ru"
 
@@ -1126,6 +975,8 @@ class TaskCalendarViewController(
         // 2. 24-Hour Timeline inside vertical ScrollView
         val verticalScroll = ScrollView(context).apply {
             isFillViewport = true
+            clipToPadding = false
+            setPadding(0, 0, 0, dpInt(360f))
         }
         val content = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -1192,6 +1043,11 @@ class TaskCalendarViewController(
                     topMargin = lineTop
                 }
                 cellFrame.addView(lineIndicator, lineParams)
+                cellFrame.post {
+                    val params = lineIndicator.layoutParams as FrameLayout.LayoutParams
+                    params.topMargin = (currentMinute / 60f * cellFrame.height).toInt().coerceAtMost(maxOf(0, cellFrame.height - dpInt(6f)))
+                    lineIndicator.layoutParams = params
+                }
             }
 
             // Items in this hour
@@ -1222,8 +1078,12 @@ class TaskCalendarViewController(
         // Empty state check for entire day
         if (!agenda.hasItems) {
             content.addView(TextView(context).apply {
-                text = if (ru) "На этот день ничего не запланировано" else "Nothing planned for this day"
+                text = context.getString(
+                    if (showHabits) R.string.task_calendar_empty_day
+                    else R.string.task_calendar_no_tasks_day
+                )
                 textSize = 13f
+                includeFontPadding = false
                 setTextColor(palette.onSurfaceVariant)
                 gravity = Gravity.CENTER
                 setPadding(dpInt(16f), dpInt(32f), dpInt(16f), dpInt(32f))
@@ -1238,7 +1098,12 @@ class TaskCalendarViewController(
 
         // Initial scroll to current hour or 08:00
         verticalScroll.post {
-            val scrollTarget = maxOf(0, (if (isToday) currentHour - 1 else 8) * hourSlotHeight)
+            val neededBottom = maxOf(dpInt(360f), verticalScroll.height)
+            if (verticalScroll.paddingBottom < neededBottom) {
+                verticalScroll.setPadding(0, 0, 0, neededBottom)
+            }
+            val targetHour = (if (isToday) currentHour - 1 else 8).coerceAtLeast(0)
+            val scrollTarget = timelineLayout.getChildAt(targetHour).top
             verticalScroll.scrollTo(0, scrollTarget)
         }
     }
@@ -1298,7 +1163,7 @@ class TaskCalendarViewController(
         val tvTitle = TextView(context).apply {
             text = event.task.title
             textSize = 14f
-            maxLines = 2
+            maxLines = 3
             ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(if (event.task.isCompleted) palette.onSurfaceVariant else palette.onSurface)
             if (event.task.isCompleted) {
@@ -1396,7 +1261,12 @@ class TaskCalendarViewController(
         val tags = taskTags[task.id].orEmpty()
 
         val subtext = buildString {
-            if (timeStr != null) append("Срок · $timeStr") else append("Срок: весь день")
+            val ru = locale.language == "ru"
+            if (timeStr != null) {
+                append(if (ru) "Срок · $timeStr" else "Due · $timeStr")
+            } else {
+                append(if (ru) "Срок: весь день" else "Due: all day")
+            }
             if (containerName != null) append(" · $containerName")
             if (tags.isNotEmpty()) append(" · ").append(tags.joinToString(" ") { "#${it.name}" })
         }
@@ -1504,6 +1374,8 @@ class TaskCalendarViewController(
     private fun renderHistoryMonthView() {
         val scroll = ScrollView(context).apply {
             isFillViewport = true
+            clipToPadding = false
+            setPadding(0, 0, 0, dpInt(24f))
         }
         val content = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -1570,11 +1442,15 @@ class TaskCalendarViewController(
                     val isSelected = day == selectedDay
                     val isToday = day == getToday()
                     val fontScale = context.resources.configuration.fontScale
-                    val circleSize = dpInt(maxOf(26f, 22f * fontScale))
+                    val maxCircleDp = if (wide) 36f else 32f
+                    val circleSize = dpInt(minOf(maxCircleDp, maxOf(24f, 20f * fontScale)))
 
                     val tvDay = TextView(context).apply {
                         text = dayNum.toString()
                         textSize = 13f
+                        maxLines = 1
+                        ellipsize = android.text.TextUtils.TruncateAt.END
+                        includeFontPadding = false
                         gravity = Gravity.CENTER
                         typeface = if (isSelected || isToday) Typeface.create("sans-serif-medium", Typeface.NORMAL) else Typeface.DEFAULT
                         setTextColor(if (isSelected) Color.WHITE else if (isToday) palette.accent else palette.onSurface)
@@ -1669,8 +1545,9 @@ class TaskCalendarViewController(
 
         if (summary.sessionCount == 0) {
             parent.addView(TextView(context).apply {
-                text = if (ru) "За эту дату нет записей работы" else "No work sessions recorded for this date"
+                text = context.getString(R.string.task_calendar_no_sessions_date)
                 textSize = 13f
+                includeFontPadding = false
                 setTextColor(palette.onSurfaceVariant)
                 setPaddingRelative(dpInt(16f), dpInt(8f), dpInt(16f), dpInt(24f))
             })
@@ -1890,6 +1767,8 @@ class TaskCalendarViewController(
         // 2. TIMELINE WITH COLUMNS (Elapsed axis for 23/24/25 hour days)
         val verticalScroll = ScrollView(context).apply {
             isFillViewport = true
+            clipToPadding = false
+            setPadding(0, 0, 0, dpInt(24f))
         }
 
         val timelineRow = LinearLayout(context).apply {
@@ -2084,6 +1963,10 @@ class TaskCalendarViewController(
         }
 
         verticalScroll.post {
+            val neededBottom = maxOf(dpInt(360f), verticalScroll.height)
+            if (verticalScroll.paddingBottom < neededBottom) {
+                verticalScroll.setPadding(0, 0, 0, neededBottom)
+            }
             val scrollTarget = maxOf(0, (if (weekDays.contains(getToday())) currentHour - 1 else 8) * hourSlotHeight)
             verticalScroll.scrollTo(0, scrollTarget)
         }
@@ -2140,6 +2023,8 @@ class TaskCalendarViewController(
         // 2. Timeline inside vertical ScrollView (Elapsed axis for 23/24/25 hour days)
         val verticalScroll = ScrollView(context).apply {
             isFillViewport = true
+            clipToPadding = false
+            setPadding(0, 0, 0, dpInt(360f))
         }
 
         val hourSlotHeight = dpInt(56f)
@@ -2308,8 +2193,9 @@ class TaskCalendarViewController(
 
         if (summary.sessionCount == 0) {
             scrollContent.addView(TextView(context).apply {
-                text = if (ru) "За этот день нет записей работы" else "No work sessions recorded for this day"
+                text = context.getString(R.string.task_calendar_no_sessions_day)
                 textSize = 13f
+                includeFontPadding = false
                 setTextColor(palette.onSurfaceVariant)
                 gravity = Gravity.CENTER
                 setPadding(dpInt(16f), dpInt(32f), dpInt(16f), dpInt(32f))
@@ -2806,6 +2692,8 @@ class TaskCalendarViewController(
 
         val scroll = ScrollView(context).apply {
             isFillViewport = true
+            clipToPadding = false
+            setPadding(0, 0, 0, dpInt(24f))
         }
         val listLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL

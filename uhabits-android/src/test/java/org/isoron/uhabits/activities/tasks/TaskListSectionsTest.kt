@@ -202,7 +202,7 @@ class TaskListSectionsTest {
         assertEquals(listOf("inbox", "container:p", "container:d", "container:unavailable"), result.groups.map { it.key })
         assertEquals(listOf("none"), result.groups.first().tasks.ids())
         assertTrue(result.groups.first().tasks.all { it.containerId == null })
-        assertEquals("Parent / Child / Third / Fourth", result.groups[2].title)
+        assertEquals("… / Third / Fourth", result.groups[2].title)
         assertEquals("Другой раздел", result.groups.last().title)
         assertEquals(listOf("missing"), result.groups.last().tasks.ids())
         assertEquals(ContainerId("missing"), result.groups.last().tasks.single().containerId)

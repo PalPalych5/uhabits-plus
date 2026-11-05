@@ -43,7 +43,15 @@ import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.ui.screens.habits.list.HabitCardListCache
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Typeface
+import android.text.TextPaint
+import android.text.TextUtils
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
+import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.inject.ActivityContext
+import org.isoron.uhabits.utils.isRTL
 
 @Inject
 class HabitCardListViewFactory(
@@ -71,6 +79,9 @@ class HabitCardListView(
             attachedHolders
                 .map { it.itemView as HabitCardView }
                 .forEach { it.buttonCount = value }
+            if (value > 0) {
+                adapter.notifyDataSetChanged()
+            }
         }
     private var insetDecorationsAdded: Boolean = false
 
@@ -114,8 +125,6 @@ class HabitCardListView(
     private val touchHelper = ItemTouchHelper(TouchHelperCallback()).apply {
         attachToRecyclerView(this@HabitCardListView)
     }
-
-
 
     init {
         id = R.id.habitCardList
@@ -162,13 +171,14 @@ class HabitCardListView(
         checkmarks: IntArray,
         notes: Array<String>,
         selected: Boolean,
-        metadata: HabitCardListCache.RowMetadata
+        metadata: HabitCardListCache.RowMetadata,
+        position: Int
     ): View {
         val cardView = holder.itemView as HabitCardView
         cardView.habit = habit
         cardView.isSelected = selected
         cardView.values = checkmarks
-        cardView.buttonCount = checkmarkCount
+        if (checkmarkCount > 0) cardView.buttonCount = checkmarkCount
         cardView.dataOffset = dataOffset
         cardView.score = score
         val goal = habit.goalAt(org.isoron.platform.time.getToday())
@@ -176,6 +186,12 @@ class HabitCardListView(
         cardView.threshold = goal.targetValue / goal.frequency.denominator
         cardView.notes = notes
         cardView.iconRef = metadata.iconRef
+
+        val isGroupStart = position != RecyclerView.NO_POSITION &&
+            hasSeparatorBefore(position) &&
+            shouldShowHeading()
+        cardView.groupHeading = if (isGroupStart) getHeadingText(metadata) else null
+        cardView.composeGroupHeading = if (useComposeSphereHeading()) cardView.groupHeading else null
 
         if (holder.gestureDetector == null) {
             val detector = GestureDetector(context, CardViewGestureDetector(holder))
@@ -191,7 +207,7 @@ class HabitCardListView(
 
     fun attachCardView(holder: HabitCardViewHolder) {
         (holder.itemView as HabitCardView).apply {
-            buttonCount = checkmarkCount
+            if (this@HabitCardListView.checkmarkCount > 0) buttonCount = this@HabitCardListView.checkmarkCount
             dataOffset = this@HabitCardListView.dataOffset
         }
         attachedHolders.add(holder)
@@ -283,6 +299,16 @@ class HabitCardListView(
 
     private inner class GroupSeparatorDecoration : ItemDecoration() {
         private val topGap = dp(22f).toInt()
+        private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+            typeface = Typeface.DEFAULT_BOLD
+            letterSpacing = 0.02f
+        }
+
+        private fun getHeadingGap(): Int {
+            textPaint.textSize = 13f * resources.displayMetrics.scaledDensity
+            val textHeight = textPaint.fontMetrics.let { it.descent - it.ascent }
+            return maxOf(dp(34f), textHeight + dp(18f)).toInt()
+        }
 
         override fun getItemOffsets(
             outRect: Rect,
@@ -292,18 +318,80 @@ class HabitCardListView(
         ) {
             HabitFrameTiming.measure("habit.separator.offset", view) {
                 val position = parent.getChildAdapterPosition(view)
-                if (hasSeparatorBefore(position)) outRect.top = topGap
+                if (hasSeparatorBefore(position)) {
+                    outRect.top = if (shouldShowHeading()) {
+                        if (useComposeSphereHeading()) 0 else getHeadingGap()
+                    } else topGap
+                }
             }
         }
 
-        private fun hasSeparatorBefore(position: Int): Boolean {
-            if (!preferences.areHabitGroupSeparatorsEnabled) return false
-            if (!adapter.primaryOrder.isGroupedOrder()) return false
-            if (position <= 0 || position >= adapter.itemCount) return false
-            val previous = adapter.getMetadata(position - 1) ?: return false
-            val current = adapter.getMetadata(position) ?: return false
-            return previous.groupKey(adapter.primaryOrder) != current.groupKey(adapter.primaryOrder)
+        override fun onDraw(c: Canvas, parent: RecyclerView, state: State) {
+            super.onDraw(c, parent, state)
+            if (!shouldShowHeading() || useComposeSphereHeading()) return
+
+            val palette = MainTabsThemeBridge.resolve(context)
+            textPaint.color = palette.onSurfaceVariant
+            textPaint.textSize = 13f * resources.displayMetrics.scaledDensity
+
+            val rtl = isRTL()
+            val leftMargin = dp(16f)
+            val rightMargin = parent.width - dp(16f)
+            val maxAvailableWidth = (parent.width - dp(32f)).coerceAtLeast(0f)
+            textPaint.textAlign = if (rtl) Paint.Align.RIGHT else Paint.Align.LEFT
+
+            val childCount = parent.childCount
+            for (i in 0 until childCount) {
+                val child = parent.getChildAt(i)
+                val position = parent.getChildAdapterPosition(child)
+                if (position == RecyclerView.NO_POSITION || !hasSeparatorBefore(position)) continue
+                val metadata = adapter.getMetadata(position) ?: continue
+                val rawHeading = getHeadingText(metadata) ?: continue
+
+                val headingText = if (textPaint.measureText(rawHeading) > maxAvailableWidth && maxAvailableWidth > 0f) {
+                    TextUtils.ellipsize(rawHeading, textPaint, maxAvailableWidth, TextUtils.TruncateAt.END).toString()
+                } else {
+                    rawHeading
+                }
+
+                val bottom = child.top + child.translationY
+                val y = bottom - dp(8f) - textPaint.fontMetrics.descent
+                val x = if (rtl) rightMargin else leftMargin
+                c.drawText(headingText, x, y, textPaint)
+            }
         }
+    }
+
+    private fun shouldShowHeading(): Boolean {
+        return adapter.primaryOrder == HabitList.Order.BY_SPHERE &&
+            preferences.isHabitSpheresEnabled &&
+            preferences.isShowSphereNamesEnabled
+    }
+
+    // Keep the established Canvas path for RTL and large text until those layouts are validated.
+    private fun useComposeSphereHeading(): Boolean =
+        shouldShowHeading() && !isRTL() && resources.configuration.fontScale <= 1.3f
+
+    private fun hasSeparatorBefore(position: Int): Boolean {
+        if (!adapter.primaryOrder.isGroupedOrder()) return false
+        if (position < 0 || position >= adapter.itemCount) return false
+
+        if (position == 0) {
+            return shouldShowHeading()
+        }
+
+        val previous = adapter.getMetadata(position - 1) ?: return false
+        val current = adapter.getMetadata(position) ?: return false
+        if (previous.groupKey(adapter.primaryOrder) == current.groupKey(adapter.primaryOrder)) return false
+
+        return shouldShowHeading() ||
+            adapter.primaryOrder == HabitList.Order.BY_SPHERE ||
+            preferences.areHabitGroupSeparatorsEnabled
+    }
+
+    private fun getHeadingText(metadata: HabitCardListCache.RowMetadata): String? {
+        if (!shouldShowHeading()) return null
+        return metadata.rootGroupName ?: context.getString(R.string.habit_block_unassigned)
     }
 
     private fun HabitCardListCache.RowMetadata.groupKey(order: HabitList.Order): Any? {

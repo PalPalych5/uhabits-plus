@@ -136,7 +136,7 @@ class HabitCardListAdapter(
             val checkmarks = cache.getCheckmarks(habit.id!!)
             val notes = cache.getNotes(habit.id!!)
             val selected = selected.contains(habit)
-            val card = listView!!.bindCardView(holder, habit, score, checkmarks, notes, selected, cache.getMetadata(habit.id!!)) as HabitCardView
+            val card = listView!!.bindCardView(holder, habit, score, checkmarks, notes, selected, cache.getMetadata(habit.id!!), position) as HabitCardView
             card.effectiveSnapshot = cache.getEffectiveSnapshot(habit.id!!)
         }
     }
@@ -194,6 +194,7 @@ class HabitCardListAdapter(
 
     override fun onItemChanged(position: Int) {
         notifyItemChanged(position)
+        notifyBoundary(position + 1)
         // A changed group's key also changes the separator on the following row.
         listView?.invalidateItemDecorations()
         observable.notifyListeners()
@@ -206,21 +207,29 @@ class HabitCardListAdapter(
 
     override fun onItemInserted(position: Int) {
         notifyItemInserted(position)
+        notifyBoundary(position + 1)
         observable.notifyListeners()
     }
 
     override fun onItemMoved(oldPosition: Int, newPosition: Int) {
         notifyItemMoved(oldPosition, newPosition)
+        setOf(oldPosition, oldPosition + 1, newPosition, newPosition + 1).forEach(::notifyBoundary)
         observable.notifyListeners()
     }
 
     override fun onItemRemoved(position: Int) {
         notifyItemRemoved(position)
+        notifyBoundary(position)
         observable.notifyListeners()
     }
 
     override fun onRefreshFinished() {
+        notifyDataSetChanged()
         observable.notifyListeners()
+    }
+
+    private fun notifyBoundary(position: Int) {
+        if (position in 0 until itemCount) notifyItemChanged(position)
     }
 
     override fun onRefreshFailed() {
