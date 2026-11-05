@@ -1,0 +1,42 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Copyright (c) Tabler Icons Contributors (MIT License) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 17.553 16.75 a 7.5 7.5 0 0 0 -10.606 0" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 18 3.804 a 6 6 0 0 0 -8.196 2.196 l 10.392 6 a 6 6 0 0 0 -2.196 -8.196" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 16.732 10 c 1.658 -2.87 2.225 -5.644 1.268 -6.196 c -0.957 -0.552 -3.075 1.326 -4.732 4.196" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 15 9 l -3 5.196" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 3 19.25 a 2.4 2.4 0 0 1 1 -0.25 a 2.4 2.4 0 0 1 2 1 a 2.4 2.4 0 0 0 2 1 a 2.4 2.4 0 0 0 2 -1 a 2.4 2.4 0 0 1 2 -1 a 2.4 2.4 0 0 1 2 1 a 2.4 2.4 0 0 0 2 1 a 2.4 2.4 0 0 0 2 -1 a 2.4 2.4 0 0 1 2 -1 a 2.4 2.4 0 0 1 1 0.25" />
+</vector>

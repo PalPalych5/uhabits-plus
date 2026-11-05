@@ -1,0 +1,28 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Copyright (c) Tabler Icons Contributors (MIT License) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 12 12 v 0.01" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 19.071 4.929 c -1.562 -1.562 -6 0.337 -9.9 4.243 c -3.905 3.905 -5.804 8.337 -4.242 9.9 c 1.562 1.561 6 -0.338 9.9 -4.244 c 3.905 -3.905 5.804 -8.337 4.242 -9.9" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 4.929 4.929 c -1.562 1.562 0.337 6 4.243 9.9 c 3.905 3.905 8.337 5.804 9.9 4.242 c 1.561 -1.562 -0.338 -6 -4.244 -9.9 c -3.905 -3.905 -8.337 -5.804 -9.9 -4.242" />
+</vector>

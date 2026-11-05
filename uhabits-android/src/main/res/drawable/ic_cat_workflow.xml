@@ -10,5 +10,19 @@
         android:strokeWidth="2"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="M 5.000,3.000 h 4.000 a 2.000,2.000 0 0 1 2.000,2.000 v 4.000 a 2.000,2.000 0 0 1 -2.000,2.000 h -4.000 a 2.000,2.000 0 0 1 -2.000,-2.000 v -4.000 a 2.000,2.000 0 0 1 2.000,-2.000 Z M7 11v4a2 2 0 0 0 2 2h4 M 15.000,13.000 h 4.000 a 2.000,2.000 0 0 1 2.000,2.000 v 4.000 a 2.000,2.000 0 0 1 -2.000,2.000 h -4.000 a 2.000,2.000 0 0 1 -2.000,-2.000 v -4.000 a 2.000,2.000 0 0 1 2.000,-2.000 Z" />
+        android:pathData="M 5.0 3.0 h 4.0 a 2.0 2.0 0 0 1 2.0 2.0 v 4.0 a 2.0 2.0 0 0 1 -2.0 2.0 h -4.0 a 2.0 2.0 0 0 1 -2.0 -2.0 v -4.0 a 2.0 2.0 0 0 1 2.0 -2.0 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 7 11 v 4 a 2 2 0 0 0 2 2 h 4" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 15.0 13.0 h 4.0 a 2.0 2.0 0 0 1 2.0 2.0 v 4.0 a 2.0 2.0 0 0 1 -2.0 2.0 h -4.0 a 2.0 2.0 0 0 1 -2.0 -2.0 v -4.0 a 2.0 2.0 0 0 1 2.0 -2.0 Z" />
 </vector>

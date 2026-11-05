@@ -10,5 +10,26 @@
         android:strokeWidth="2"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="m2.05 2.05 1.099-.028a1 1 0 0 1 1.008.815l2.69 14.347A1 1 0 0 0 7.83 18H18 M4.563 5h16.435a1 1 0 0 1 .981 1.204l-1.026 6.226A2 2 0 0 1 18.962 14H6.25 M 16.000,20.000 a 2.000,2.000 0 1,0 4.000,0 a 2.000,2.000 0 1,0 -4.000,0 M 6.000,20.000 a 2.000,2.000 0 1,0 4.000,0 a 2.000,2.000 0 1,0 -4.000,0" />
+        android:pathData="M 2.05 2.05 l 1.099 -0.028 a 1 1 0 0 1 1.008 0.815 l 2.69 14.347 A 1 1 0 0 0 7.83 18 H 18" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 4.563 5 h 16.435 a 1 1 0 0 1 0.981 1.204 l -1.026 6.226 A 2 2 0 0 1 18.962 14 H 6.25" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 18.0 18.0 a 2.0 2.0 0 1 0 0 4.0 a 2.0 2.0 0 1 0 0 -4.0" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 8.0 18.0 a 2.0 2.0 0 1 0 0 4.0 a 2.0 2.0 0 1 0 0 -4.0" />
 </vector>

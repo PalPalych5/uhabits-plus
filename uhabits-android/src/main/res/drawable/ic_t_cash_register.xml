@@ -1,0 +1,63 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Copyright (c) Tabler Icons Contributors (MIT License) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 21 15 h -2.5 c -0.398 0 -0.779 0.158 -1.061 0.439 c -0.281 0.281 -0.439 0.663 -0.439 1.061 c 0 0.398 0.158 0.779 0.439 1.061 c 0.281 0.281 0.663 0.439 1.061 0.439 h 1 c 0.398 0 0.779 0.158 1.061 0.439 c 0.281 0.281 0.439 0.663 0.439 1.061 c 0 0.398 -0.158 0.779 -0.439 1.061 c -0.281 0.281 -0.663 0.439 -1.061 0.439 h -2.5" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 19 21 v 1 m 0 -8 v 1" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 13 21 h -7 c -0.53 0 -1.039 -0.211 -1.414 -0.586 c -0.375 -0.375 -0.586 -0.884 -0.586 -1.414 v -10 c 0 -0.53 0.211 -1.039 0.586 -1.414 c 0.375 -0.375 0.884 -0.586 1.414 -0.586 h 2 m 12 3.12 v -1.12 c 0 -0.53 -0.211 -1.039 -0.586 -1.414 c -0.375 -0.375 -0.884 -0.586 -1.414 -0.586 h -2" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 16 10 v -6 c 0 -0.53 -0.211 -1.039 -0.586 -1.414 c -0.375 -0.375 -0.884 -0.586 -1.414 -0.586 h -4 c -0.53 0 -1.039 0.211 -1.414 0.586 c -0.375 0.375 -0.586 0.884 -0.586 1.414 v 6 m 8 0 h -8 m 8 0 h 1 m -9 0 h -1" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 8 14 v 0.01" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 8 17 v 0.01" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 12 13.99 v 0.01" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 12 17 v 0.01" />
+</vector>

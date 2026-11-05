@@ -10,5 +10,40 @@
         android:strokeWidth="2"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"
-        android:pathData="M 16.000,14.000 h 0.000 a 2.000,2.000 0 0 1 2.000,2.000 v 2.000 a 2.000,2.000 0 0 1 -2.000,2.000 h -0.000 a 2.000,2.000 0 0 1 -2.000,-2.000 v -2.000 a 2.000,2.000 0 0 1 2.000,-2.000 Z M 8.000,4.000 h 0.000 a 2.000,2.000 0 0 1 2.000,2.000 v 2.000 a 2.000,2.000 0 0 1 -2.000,2.000 h -0.000 a 2.000,2.000 0 0 1 -2.000,-2.000 v -2.000 a 2.000,2.000 0 0 1 2.000,-2.000 Z M6 20h4 M14 10h4 M6 14h2v6 M14 4h2v6" />
+        android:pathData="M 16.0 14.0 h 0.0 a 2.0 2.0 0 0 1 2.0 2.0 v 2.0 a 2.0 2.0 0 0 1 -2.0 2.0 h -0.0 a 2.0 2.0 0 0 1 -2.0 -2.0 v -2.0 a 2.0 2.0 0 0 1 2.0 -2.0 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 8.0 4.0 h 0.0 a 2.0 2.0 0 0 1 2.0 2.0 v 2.0 a 2.0 2.0 0 0 1 -2.0 2.0 h -0.0 a 2.0 2.0 0 0 1 -2.0 -2.0 v -2.0 a 2.0 2.0 0 0 1 2.0 -2.0 Z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 6 20 h 4" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 14 10 h 4" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 6 14 h 2 v 6" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 14 4 h 2 v 6" />
 </vector>

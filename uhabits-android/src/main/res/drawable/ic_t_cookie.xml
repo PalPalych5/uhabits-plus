@@ -1,0 +1,49 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Copyright (c) Tabler Icons Contributors (MIT License) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 8 13 v 0.01" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 12 17 v 0.01" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 12 12 v 0.01" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 16 14 v 0.01" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 11 8 v 0.01" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 13.148 3.476 l 2.667 1.104 a 4 4 0 0 0 4.656 6.14 l 0.053 0.132 a 3 3 0 0 1 0 2.296 q -0.745 1.18 -1.024 1.852 q -0.283 0.684 -0.66 2.216 a 3 3 0 0 1 -1.624 1.623 q -1.572 0.394 -2.216 0.661 q -0.712 0.295 -1.852 1.024 a 3 3 0 0 1 -2.296 0 q -1.203 -0.754 -1.852 -1.024 q -0.707 -0.292 -2.216 -0.66 a 3 3 0 0 1 -1.623 -1.624 q -0.397 -1.577 -0.661 -2.216 q -0.298 -0.718 -1.024 -1.852 a 3 3 0 0 1 0 -2.296 q 0.719 -1.116 1.024 -1.852 q 0.257 -0.62 0.66 -2.216 a 3 3 0 0 1 1.624 -1.623 q 1.547 -0.384 2.216 -0.661 q 0.687 -0.285 1.852 -1.024 a 3 3 0 0 1 2.296 0" />
+</vector>

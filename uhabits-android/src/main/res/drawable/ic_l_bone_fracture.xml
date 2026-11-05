@@ -1,0 +1,49 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Copyright (c) Lucide Contributors (ISC License) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 14 4.5 a 1 1 0 0 1 5 0 a 0.5 0.5 0 0 0 0.5 0.5 a 1 1 0 0 1 0 5 c -0.81 0 -1.8 -0.7 -2.5 0 l -1.958 1.957 a 0.15 0.15 0 0 1 -0.252 -0.072 l -0.493 -2.07 a 0.15 0.15 0 0 0 -0.111 -0.112 l -2.072 -0.494 a 0.15 0.15 0 0 1 -0.072 -0.252 L 14 7 c 0.7 -0.7 0 -1.69 0 -2.5" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 16 20 l -1 -2" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 20 16 l -2 -1" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 4 8 l 2 1" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 8 4 l 1 2" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 9.698 14.19 a 0.15 0.15 0 0 0 0.112 0.112 l 2.074 0.489 a 0.15 0.15 0 0 1 0.072 0.252 L 10 17 c -0.7 0.7 0 1.69 0 2.5 a 1 1 0 0 1 -5 0 a 0.495 0.495 0 0 0 -0.5 -0.5 a 1 1 0 0 1 0 -5 c 0.81 0 1.8 0.7 2.5 0 l 1.956 -1.957 a 0.15 0.15 0 0 1 0.252 0.072 z" />
+</vector>
