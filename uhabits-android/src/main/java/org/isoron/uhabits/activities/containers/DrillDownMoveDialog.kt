@@ -32,6 +32,7 @@ import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -49,6 +50,14 @@ import org.isoron.uhabits.utils.currentTheme
 
 class DrillDownMoveDialog : BottomSheetDialogFragment() {
 
+    private fun sectionString(id: Int, vararg args: Any): String {
+        val context = requireContext()
+        val config = android.content.res.Configuration(context.resources.configuration).apply {
+            setLocale(org.isoron.uhabits.activities.tasks.TaskDueDisplayFormatter.selectedLocale(context))
+        }
+        return context.createConfigurationContext(config).resources.getString(id, *args)
+    }
+
     var itemName: String = ""
     var movingContainerId: ContainerId? = null
     var isParentPickerOnly: Boolean = false
@@ -62,7 +71,7 @@ class DrillDownMoveDialog : BottomSheetDialogFragment() {
     private lateinit var breadcrumbText: TextView
     private lateinit var btnSelectCurrent: Button
     private lateinit var btnSelectRoot: Button
-    private lateinit var btnBack: Button
+    private lateinit var btnBack: View
     private lateinit var itemsContainer: LinearLayout
     private lateinit var searchInput: EditText
 
@@ -88,9 +97,9 @@ class DrillDownMoveDialog : BottomSheetDialogFragment() {
 
         val titleView = TextView(context).apply {
             text = if (isParentPickerOnly) {
-                getString(R.string.containers_parent)
+                sectionString(R.string.containers_parent)
             } else {
-                getString(R.string.containers_move_picker_title, itemName)
+                sectionString(R.string.containers_move_picker_title, itemName)
             }
             setTextColor(palette.onSurface)
             textSize = 18f
@@ -100,7 +109,7 @@ class DrillDownMoveDialog : BottomSheetDialogFragment() {
         root.addView(titleView)
 
         searchInput = EditText(context).apply {
-            hint = getString(R.string.containers_move_picker_search)
+            hint = sectionString(R.string.containers_move_picker_search)
             setHintTextColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.6f))
             setTextColor(palette.onSurface)
             textSize = 14f
@@ -128,11 +137,16 @@ class DrillDownMoveDialog : BottomSheetDialogFragment() {
             setPadding(0, dp(12f).toInt(), 0, dp(8f).toInt())
         }
 
-        btnBack = Button(context).apply {
-            text = "‹"
-            textSize = 18f
-            setTextColor(palette.accent)
-            setBackgroundColor(Color.TRANSPARENT)
+        btnBack = ImageView(context).apply {
+            val s = dp(32f).toInt()
+            layoutParams = LinearLayout.LayoutParams(s, s).apply { marginEnd = dp(6f).toInt() }
+            setImageResource(R.drawable.ic_tabler_chevron_left)
+            setColorFilter(palette.accent)
+            setPadding(dp(6f).toInt(), dp(6f).toInt(), dp(6f).toInt(), dp(6f).toInt())
+            val ripple = android.util.TypedValue()
+            context.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)
+            setBackgroundResource(ripple.resourceId)
+            contentDescription = "Назад"
             setOnClickListener {
                 if (navigationHistory.isNotEmpty()) {
                     currentParentId = navigationHistory.removeAt(navigationHistory.size - 1)
@@ -170,7 +184,7 @@ class DrillDownMoveDialog : BottomSheetDialogFragment() {
         actionButtons.addView(btnSelectCurrent)
 
         btnSelectRoot = Button(context).apply {
-            text = getString(R.string.containers_move_to_root)
+            text = sectionString(R.string.containers_move_to_root)
             setTextColor(palette.onSurface)
             textSize = 13f
             val bg = GradientDrawable().apply {
@@ -217,14 +231,14 @@ class DrillDownMoveDialog : BottomSheetDialogFragment() {
 
         if (query.isNotBlank()) {
             btnBack.visibility = View.GONE
-            breadcrumbText.text = getString(R.string.search)
+            breadcrumbText.text = sectionString(R.string.search)
             btnSelectCurrent.visibility = View.GONE
             btnSelectRoot.visibility = View.GONE
 
             val hits = queries.search(query)
             if (hits.isEmpty()) {
                 val empty = TextView(context).apply {
-                    text = getString(R.string.containers_search_no_results)
+                    text = sectionString(R.string.containers_search_no_results)
                     setTextColor(palette.onSurfaceVariant)
                     gravity = Gravity.CENTER
                     setPadding(0, dp(24f).toInt(), 0, 0)
@@ -258,15 +272,15 @@ class DrillDownMoveDialog : BottomSheetDialogFragment() {
         btnBack.visibility = if (navigationHistory.isNotEmpty()) View.VISIBLE else View.GONE
 
         val currentContainer = currentParentId?.let { queries.find(it) }
-        val currentName = currentContainer?.name ?: getString(R.string.containers_root_parent)
+        val currentName = currentContainer?.name ?: sectionString(R.string.containers_root_parent)
         breadcrumbText.text = currentName
 
         val isCurrentDisabled = currentParentId != null && disabledSubtreeIds.contains(currentParentId!!)
         btnSelectCurrent.isEnabled = !isCurrentDisabled
         btnSelectCurrent.text = if (isCurrentDisabled) {
-            getString(R.string.containers_move_cycle_error)
+            sectionString(R.string.containers_move_cycle_error)
         } else {
-            getString(R.string.containers_move_to_current, currentName)
+            sectionString(R.string.containers_move_to_current, currentName)
         }
 
         btnSelectCurrent.visibility = if (currentParentId != null) View.VISIBLE else View.GONE
@@ -280,7 +294,7 @@ class DrillDownMoveDialog : BottomSheetDialogFragment() {
 
         if (children.isEmpty()) {
             val empty = TextView(context).apply {
-                text = getString(R.string.containers_no_subsections)
+                text = sectionString(R.string.containers_no_subsections)
                 setTextColor(palette.onSurfaceVariant)
                 gravity = Gravity.CENTER
                 setPadding(0, dp(24f).toInt(), 0, 0)
@@ -293,9 +307,9 @@ class DrillDownMoveDialog : BottomSheetDialogFragment() {
             val isSelfOrDescendant = disabledSubtreeIds.contains(child.id)
             val subCount = queries.children(child.id, includeArchived = false).size
             val subText = if (isSelfOrDescendant) {
-                getString(R.string.containers_move_cycle_error)
+                sectionString(R.string.containers_move_cycle_error)
             } else if (subCount > 0) {
-                getString(R.string.containers_count_subsections, subCount)
+                sectionString(R.string.containers_count_subsections, subCount)
             } else {
                 null
             }
@@ -383,10 +397,11 @@ class DrillDownMoveDialog : BottomSheetDialogFragment() {
         row.addView(textCol)
 
         if (!isDisabled) {
-            val chevron = TextView(context).apply {
-                text = "›"
-                textSize = 18f
-                setTextColor(palette.onSurfaceVariant)
+            val chevron = ImageView(context).apply {
+                val s = dp(16f).toInt()
+                layoutParams = LinearLayout.LayoutParams(s, s)
+                setImageResource(R.drawable.ic_tabler_chevron_right)
+                setColorFilter(palette.onSurfaceVariant)
             }
             row.addView(chevron)
         }

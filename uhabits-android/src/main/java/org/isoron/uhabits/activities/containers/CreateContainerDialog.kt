@@ -42,11 +42,13 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.content.ContextCompat
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import org.isoron.platform.gui.toInt
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.dialogs.ColorPickerDialog
 import org.isoron.uhabits.activities.common.icons.IconPack
 import org.isoron.uhabits.activities.common.icons.IconPickerBottomSheet
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
@@ -55,9 +57,19 @@ import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.ContainerQueries
 import org.isoron.uhabits.core.containers.IconRef
 import org.isoron.uhabits.core.models.PaletteColor
+import org.isoron.uhabits.core.ui.views.DarkTheme
+import org.isoron.uhabits.core.ui.views.PureBlackTheme
 import org.isoron.uhabits.utils.currentTheme
 
 class CreateContainerDialog : BottomSheetDialogFragment() {
+
+    private fun sectionString(id: Int, vararg args: Any): String {
+        val context = requireContext()
+        val config = android.content.res.Configuration(context.resources.configuration).apply {
+            setLocale(org.isoron.uhabits.activities.tasks.TaskDueDisplayFormatter.selectedLocale(context))
+        }
+        return context.createConfigurationContext(config).resources.getString(id, *args)
+    }
 
     var containerToEdit: Container? = null
     var initialParentId: ContainerId? = null
@@ -70,25 +82,27 @@ class CreateContainerDialog : BottomSheetDialogFragment() {
     private var selectedColor: PaletteColor? = null
     private var selectedIcon: IconRef = IconRef.None
 
+    private var rootView: View? = null
     private lateinit var nameInput: EditText
-    private lateinit var previewTile: FrameLayout
-    private lateinit var previewIconView: ImageView
-    private lateinit var previewEmojiView: TextView
-    private lateinit var previewTitleView: TextView
-    private lateinit var previewLocationView: TextView
+    private lateinit var nameErrorText: TextView
 
-    private lateinit var iconRowValue: TextView
-    private lateinit var iconRowTile: FrameLayout
-    private lateinit var iconRowImageView: ImageView
-    private lateinit var iconRowEmojiView: TextView
+    private lateinit var iconBtn: FrameLayout
+    private lateinit var iconImageView: ImageView
+    private lateinit var iconEmojiView: TextView
 
     private lateinit var parentLocationValue: TextView
+    private val swatchViews = mutableListOf<View>()
+    private lateinit var customSwatchView: FrameLayout
+    private lateinit var customSwatchInner: View
+    private lateinit var customSwatchIcon: ImageView
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val dialog = super.onCreateDialog(savedInstanceState) as BottomSheetDialog
         dialog.setOnShowListener {
             val bottomSheet = dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
             if (bottomSheet != null) {
+                bottomSheet.setBackgroundColor(Color.TRANSPARENT)
+                bottomSheet.elevation = 0f
                 val behavior = BottomSheetBehavior.from(bottomSheet)
                 behavior.state = BottomSheetBehavior.STATE_EXPANDED
                 behavior.skipCollapsed = true
@@ -119,11 +133,15 @@ class CreateContainerDialog : BottomSheetDialogFragment() {
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(palette.surface)
+            background = GradientDrawable().apply {
+                setColor(palette.surface)
+                cornerRadii = floatArrayOf(dp(20f), dp(20f), dp(20f), dp(20f), 0f, 0f, 0f, 0f)
+            }
             setPadding(dp(20f).toInt(), dp(12f).toInt(), dp(20f).toInt(), dp(24f).toInt())
         }
+        rootView = root
 
-        // Top drag handle
+        // 1. Top Drag Handle
         val handle = View(context).apply {
             layoutParams = LinearLayout.LayoutParams(dp(36f).toInt(), dp(4f).toInt()).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
@@ -136,235 +154,172 @@ class CreateContainerDialog : BottomSheetDialogFragment() {
         }
         root.addView(handle)
 
-        // Dialog Title
+        // 2. Dialog Title
         val isEdit = containerToEdit != null
         val titleText = when {
-            isEdit -> getString(R.string.containers_edit_section)
-            initialParentId != null -> getString(R.string.containers_create_subsection)
-            else -> getString(R.string.containers_create_section)
+            isEdit -> sectionString(R.string.containers_edit_section)
+            initialParentId != null -> sectionString(R.string.containers_create_subsection)
+            else -> sectionString(R.string.containers_create_section)
         }
         val titleView = TextView(context).apply {
             text = titleText
             setTextColor(palette.onSurface)
             textSize = 18f
             setTypeface(typeface, Typeface.BOLD)
-            setPadding(0, 0, 0, dp(12f).toInt())
+            setPadding(0, 0, 0, dp(14f).toInt())
         }
         root.addView(titleView)
 
-        // Live Preview Card
-        val previewCard = LinearLayout(context).apply {
+        // 3. Name Input Row with Clickable Icon on the Left
+        val nameRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12f).toInt(), dp(10f).toInt(), dp(12f).toInt(), dp(10f).toInt())
-            background = GradientDrawable().apply {
-                setColor(palette.background)
-                cornerRadius = dp(12f)
-                setStroke(dp(1f).toInt(), palette.border)
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                bottomMargin = dp(6f).toInt()
             }
         }
 
-        val previewTileSize = dp(42f).toInt()
-        previewTile = FrameLayout(context).apply {
-            layoutParams = LinearLayout.LayoutParams(previewTileSize, previewTileSize).apply {
-                setMargins(0, 0, dp(12f).toInt(), 0)
+        // Clickable Icon Button on the left
+        val iconTileSize = dp(46f).toInt()
+        iconBtn = FrameLayout(context).apply {
+            tag = "container_icon_btn"
+            layoutParams = LinearLayout.LayoutParams(iconTileSize, iconTileSize).apply {
+                marginEnd = dp(12f).toInt()
             }
+            clipToOutline = true
+            val ripple = android.util.TypedValue()
+            context.theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
+            foreground = AppCompatResources.getDrawable(context, ripple.resourceId)
+            isClickable = true
+            isFocusable = true
+            contentDescription = sectionString(R.string.section_select_icon)
+            setOnClickListener { openIconPicker() }
         }
 
-        previewIconView = ImageView(context).apply {
-            layoutParams = FrameLayout.LayoutParams(dp(24f).toInt(), dp(24f).toInt(), Gravity.CENTER)
+        iconImageView = ImageView(context).apply {
+            val s = dp(24f).toInt()
+            layoutParams = FrameLayout.LayoutParams(s, s, Gravity.CENTER)
             scaleType = ImageView.ScaleType.FIT_CENTER
         }
-        previewEmojiView = TextView(context).apply {
+        iconEmojiView = TextView(context).apply {
             layoutParams = FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.CENTER)
             textSize = 20f
         }
-        previewTile.addView(previewIconView)
-        previewTile.addView(previewEmojiView)
-        previewCard.addView(previewTile)
+        iconBtn.addView(iconImageView)
+        iconBtn.addView(iconEmojiView)
+        nameRow.addView(iconBtn)
 
-        val previewTextCol = LinearLayout(context).apply {
+        // Name text input container with styled rounded outline/fill
+        val inputContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
+            background = GradientDrawable().apply {
+                setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.05f))
+                cornerRadius = dp(12f)
+                setStroke(dp(1f).toInt(), MainTabsThemeBridge.withAlpha(palette.onSurface, 0.12f))
+            }
+            setPadding(dp(14f).toInt(), dp(4f).toInt(), dp(14f).toInt(), dp(4f).toInt())
         }
-        previewTitleView = TextView(context).apply {
-            text = edit?.name?.ifBlank { null } ?: getString(R.string.containers_name)
-            setTextColor(palette.onSurface)
-            textSize = 15f
-            setTypeface(typeface, Typeface.BOLD)
-            maxLines = 1
-        }
-        previewLocationView = TextView(context).apply {
-            text = resolveParentName()
-            setTextColor(palette.onSurfaceVariant)
-            textSize = 12f
-            maxLines = 1
-        }
-        previewTextCol.addView(previewTitleView)
-        previewTextCol.addView(previewLocationView)
-        previewCard.addView(previewTextCol)
-
-        root.addView(previewCard)
-
-        // Spacer
-        root.addView(View(context).apply { layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(14f).toInt()) })
-
-        // 1. Name Input
-        val nameLabel = TextView(context).apply {
-            text = getString(R.string.containers_name)
-            setTextColor(palette.onSurfaceVariant)
-            textSize = 12f
-            setPadding(0, 0, 0, dp(4f).toInt())
-        }
-        root.addView(nameLabel)
 
         nameInput = EditText(context).apply {
-            hint = getString(R.string.containers_name)
+            tag = "container_name_input"
+            hint = sectionString(R.string.containers_name)
             setText(edit?.name ?: "")
             setSelection(text.length)
-            setHintTextColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.6f))
+            setHintTextColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.55f))
             setTextColor(palette.onSurface)
             textSize = 15f
-            val padY = dp(10f).toInt()
-            val padX = dp(12f).toInt()
-            setPadding(padX, padY, padX, padY)
-            background = GradientDrawable().apply {
-                setColor(palette.surface)
-                cornerRadius = dp(8f)
-                setStroke(dp(1f).toInt(), palette.border)
-            }
+            minHeight = dp(42f).toInt()
+            setBackgroundColor(Color.TRANSPARENT)
+            setSingleLine(true)
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                     val currentText = s?.toString()?.trim()
-                    previewTitleView.text = if (currentText.isNullOrBlank()) {
-                        getString(R.string.containers_name)
-                    } else {
-                        currentText
+                    if (!currentText.isNullOrBlank()) {
+                        nameErrorText.visibility = View.GONE
                     }
                 }
                 override fun afterTextChanged(s: Editable?) {}
             })
         }
-        root.addView(nameInput)
+        inputContainer.addView(nameInput)
+        nameRow.addView(inputContainer)
+        root.addView(nameRow)
 
-        // Spacer
-        root.addView(View(context).apply { layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(12f).toInt()) })
-
-        // 2. Icon Row Selector
-        val iconRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12f).toInt(), dp(10f).toInt(), dp(12f).toInt(), dp(10f).toInt())
-            background = GradientDrawable().apply {
-                setColor(palette.background)
-                cornerRadius = dp(8f)
-                setStroke(dp(1f).toInt(), palette.border)
-            }
-            isClickable = true
-            isFocusable = true
-            setOnClickListener {
-                openIconPicker()
-            }
+        nameErrorText = TextView(context).apply {
+            text = sectionString(R.string.containers_name)
+            setTextColor(ContextCompat.getColor(context, R.color.red_600))
+            textSize = 12f
+            visibility = View.GONE
+            setPadding(dp(58f).toInt(), 0, 0, dp(6f).toInt())
         }
+        root.addView(nameErrorText)
 
-        val iconTileSmallSize = dp(32f).toInt()
-        iconRowTile = FrameLayout(context).apply {
-            layoutParams = LinearLayout.LayoutParams(iconTileSmallSize, iconTileSmallSize).apply {
-                setMargins(0, 0, dp(10f).toInt(), 0)
-            }
-        }
-        iconRowImageView = ImageView(context).apply {
-            layoutParams = FrameLayout.LayoutParams(dp(18f).toInt(), dp(18f).toInt(), Gravity.CENTER)
-            scaleType = ImageView.ScaleType.FIT_CENTER
-        }
-        iconRowEmojiView = TextView(context).apply {
-            layoutParams = FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT, Gravity.CENTER)
-            textSize = 15f
-        }
-        iconRowTile.addView(iconRowImageView)
-        iconRowTile.addView(iconRowEmojiView)
-        iconRow.addView(iconRowTile)
-
-        val iconRowLabel = TextView(context).apply {
-            text = getString(R.string.containers_icon)
-            setTextColor(palette.onSurface)
-            textSize = 14f
-            setTypeface(typeface, Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
-        }
-        iconRow.addView(iconRowLabel)
-
-        iconRowValue = TextView(context).apply {
-            text = resolveIconLabel()
-            setTextColor(palette.onSurfaceVariant)
-            textSize = 13f
-        }
-        iconRow.addView(iconRowValue)
-
-        val iconRowChevron = TextView(context).apply {
-            text = " ›"
-            setTextColor(palette.onSurfaceVariant)
-            textSize = 16f
-        }
-        iconRow.addView(iconRowChevron)
-
-        root.addView(iconRow)
-
-        // Spacer
-        root.addView(View(context).apply { layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(12f).toInt()) })
-
-        // 3. Location / Parent Row Selector
+        // 4. Compact Location / Parent Row
         val locationRow = LinearLayout(context).apply {
+            tag = "container_location_row"
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12f).toInt(), dp(10f).toInt(), dp(12f).toInt(), dp(10f).toInt())
-            background = GradientDrawable().apply {
-                setColor(palette.background)
-                cornerRadius = dp(8f)
-                setStroke(dp(1f).toInt(), palette.border)
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(44f).toInt()).apply {
+                topMargin = dp(6f).toInt()
+                bottomMargin = dp(16f).toInt()
             }
+            background = GradientDrawable().apply {
+                setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.04f))
+                cornerRadius = dp(10f)
+            }
+            setPadding(dp(12f).toInt(), 0, dp(12f).toInt(), 0)
+            val ripple = android.util.TypedValue()
+            context.theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
+            setBackgroundResource(ripple.resourceId)
             isClickable = true
             isFocusable = true
-            setOnClickListener {
-                openLocationPicker()
-            }
+            setOnClickListener { openLocationPicker() }
         }
+
+        val locationIcon = ImageView(context).apply {
+            val iconSize = dp(18f).toInt()
+            layoutParams = LinearLayout.LayoutParams(iconSize, iconSize).apply {
+                marginEnd = dp(10f).toInt()
+            }
+            setImageResource(R.drawable.ic_tabler_hierarchy_2)
+            setColorFilter(palette.onSurfaceVariant)
+        }
+        locationRow.addView(locationIcon)
 
         val locationLabel = TextView(context).apply {
-            text = getString(R.string.containers_location)
-            setTextColor(palette.onSurface)
-            textSize = 14f
-            setTypeface(typeface, Typeface.BOLD)
-            layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
+            text = "${sectionString(R.string.section_location_label)}: "
+            setTextColor(palette.onSurfaceVariant)
+            textSize = 13f
         }
         locationRow.addView(locationLabel)
 
         parentLocationValue = TextView(context).apply {
             text = resolveParentName()
-            setTextColor(palette.onSurfaceVariant)
+            setTextColor(palette.onSurface)
             textSize = 13f
+            setTypeface(typeface, Typeface.BOLD)
             maxLines = 1
+            layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
         }
         locationRow.addView(parentLocationValue)
 
-        val locationChevron = TextView(context).apply {
-            text = " ›"
-            setTextColor(palette.onSurfaceVariant)
-            textSize = 16f
+        val locationChevron = ImageView(context).apply {
+            val iconSize = dp(16f).toInt()
+            layoutParams = LinearLayout.LayoutParams(iconSize, iconSize)
+            setImageResource(R.drawable.ic_tabler_chevron_right)
+            setColorFilter(palette.onSurfaceVariant)
         }
         locationRow.addView(locationChevron)
-
         root.addView(locationRow)
 
-        // Spacer
-        root.addView(View(context).apply { layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(14f).toInt()) })
-
-        // 4. Color Palette Selector
+        // 5. Color Section (Header: "Цвет")
         val colorLabel = TextView(context).apply {
-            text = getString(R.string.containers_color)
+            text = sectionString(R.string.section_color)
             setTextColor(palette.onSurfaceVariant)
-            textSize = 12f
+            textSize = 13f
+            setTypeface(typeface, Typeface.BOLD)
             setPadding(0, 0, 0, dp(8f).toInt())
         }
         root.addView(colorLabel)
@@ -372,97 +327,134 @@ class CreateContainerDialog : BottomSheetDialogFragment() {
         val colorScrollView = HorizontalScrollView(context).apply {
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                bottomMargin = dp(16f).toInt()
+            }
         }
         val colorRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 0, 0, dp(16f).toInt())
+            gravity = Gravity.CENTER_VERTICAL
         }
 
-        val swatchViews = mutableListOf<View>()
+        // Custom Color Button on the start of palette row
+        customSwatchView = FrameLayout(context).apply {
+            tag = "container_custom_color_btn"
+            contentDescription = sectionString(R.string.section_custom_color)
+            val touchSize = dp(44f).toInt()
+            layoutParams = LinearLayout.LayoutParams(touchSize, touchSize).apply {
+                marginEnd = dp(6f).toInt()
+            }
+            val ripple = android.util.TypedValue()
+            context.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)
+            setBackgroundResource(ripple.resourceId)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener { openColorPickerDialog() }
+        }
+
+        val customInnerSize = dp(32f).toInt()
+        customSwatchInner = View(context).apply {
+            layoutParams = FrameLayout.LayoutParams(customInnerSize, customInnerSize, Gravity.CENTER)
+        }
+        customSwatchIcon = ImageView(context).apply {
+            val iconSize = dp(18f).toInt()
+            layoutParams = FrameLayout.LayoutParams(iconSize, iconSize, Gravity.CENTER)
+            setImageResource(R.drawable.ic_tabler_palette)
+        }
+        customSwatchView.addView(customSwatchInner)
+        customSwatchView.addView(customSwatchIcon)
+        colorRow.addView(customSwatchView)
+
+        // Palette presets (0..19)
+        swatchViews.clear()
         for (i in 0 until 20) {
             val paletteColor = PaletteColor(i)
             val colorInt = root.currentTheme().color(paletteColor).toInt()
 
             val swatch = View(context).apply {
                 val size = dp(32f).toInt()
-                layoutParams = LinearLayout.LayoutParams(size, size).apply {
-                    setMargins(0, 0, dp(8f).toInt(), 0)
-                }
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(colorInt)
-                    if (selectedColor == paletteColor) {
-                        setStroke(dp(3f).toInt(), palette.onSurface)
-                    }
-                }
+                layoutParams = FrameLayout.LayoutParams(size, size, Gravity.CENTER)
+                background = createSwatchDrawable(colorInt, selectedColor == paletteColor, palette.onSurface)
+            }
+            val target = FrameLayout(context).apply {
+                tag = "container_color_swatch_$i"
+                layoutParams = LinearLayout.LayoutParams(dp(44f).toInt(), dp(44f).toInt())
+                contentDescription = "${sectionString(R.string.section_color)} ${i + 1}"
+                addView(swatch)
+                val ripple = android.util.TypedValue()
+                context.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)
+                setBackgroundResource(ripple.resourceId)
                 setOnClickListener {
                     selectedColor = paletteColor
-                    for ((idx, view) in swatchViews.withIndex()) {
-                        val cInt = root.currentTheme().color(PaletteColor(idx)).toInt()
-                        view.background = GradientDrawable().apply {
-                            shape = GradientDrawable.OVAL
-                            setColor(cInt)
-                            if (idx == i) {
-                                setStroke(dp(3f).toInt(), palette.onSurface)
-                            }
-                        }
-                    }
+                    updateColorSwatches(palette.onSurface)
                     updateVisualTiles()
                 }
             }
             swatchViews.add(swatch)
-            colorRow.addView(swatch)
+            colorRow.addView(target)
         }
+
         colorScrollView.addView(colorRow)
         root.addView(colorScrollView)
 
-        // 5. Actions: Cancel and Save/Create
+        // 6. Action Buttons: Cancel and Create / Save
         val actions = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
-            setPadding(0, dp(8f).toInt(), 0, 0)
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            setPadding(0, dp(4f).toInt(), 0, 0)
         }
 
         val cancelBtn = Button(context).apply {
-            text = getString(R.string.containers_cancel)
+            tag = "container_cancel_btn"
+            text = sectionString(R.string.containers_cancel)
             setTextColor(palette.onSurfaceVariant)
+            textSize = 14f
+            minHeight = dp(44f).toInt()
             setBackgroundColor(Color.TRANSPARENT)
+            val ripple = android.util.TypedValue()
+            context.theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
+            setBackgroundResource(ripple.resourceId)
             setOnClickListener { dismiss() }
         }
         actions.addView(cancelBtn)
 
         val saveBtn = Button(context).apply {
-            text = if (isEdit) getString(R.string.containers_save) else getString(R.string.containers_create)
+            tag = "container_save_btn"
+            text = if (isEdit) sectionString(R.string.containers_save) else sectionString(R.string.containers_create)
             setTextColor(Color.WHITE)
+            textSize = 14f
+            setTypeface(typeface, Typeface.BOLD)
+            minHeight = dp(44f).toInt()
             background = GradientDrawable().apply {
                 setColor(palette.accent)
-                cornerRadius = dp(8f)
+                cornerRadius = dp(12f)
+            }
+            setPadding(dp(20f).toInt(), 0, dp(20f).toInt(), 0)
+            layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
+                marginStart = dp(8f).toInt()
             }
             setOnClickListener {
                 val name = nameInput.text.toString().trim()
                 if (name.isBlank()) {
-                    nameInput.error = getString(R.string.containers_name)
+                    nameErrorText.visibility = View.VISIBLE
+                    nameInput.requestFocus()
                     return@setOnClickListener
                 }
-                dismiss()
                 if (onSaveWithIcon != null) {
                     onSaveWithIcon?.invoke(name, selectedParentId, selectedColor, selectedIcon)
                 } else {
                     onSave?.invoke(name, selectedParentId, selectedColor)
                 }
+                dismiss()
             }
         }
-        val saveLp = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
-            setMargins(dp(8f).toInt(), 0, 0, 0)
-        }
-        actions.addView(saveBtn, saveLp)
-
+        actions.addView(saveBtn)
         root.addView(actions)
 
-        // Initial visual updates
         updateVisualTiles()
+        updateColorSwatches(palette.onSurface)
 
-        // Autofocus name input and show keyboard
+        // Auto request focus on name input
         nameInput.post {
             nameInput.requestFocus()
             val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
@@ -472,35 +464,127 @@ class CreateContainerDialog : BottomSheetDialogFragment() {
         return root
     }
 
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        val palette = MainTabsThemeBridge.resolve(requireContext())
+        updateVisualTiles()
+        updateColorSwatches(palette.onSurface)
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        rootView = null
+    }
+
+    private fun dp(v: Float): Float = v * resources.displayMetrics.density
+
+    private fun createSwatchDrawable(color: Int, isSelected: Boolean, onSurface: Int): GradientDrawable {
+        return GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(color)
+            if (isSelected) {
+                setStroke(dp(3f).toInt(), onSurface)
+            }
+        }
+    }
+
+    private fun updateColorSwatches(onSurface: Int) {
+        val v = view ?: rootView ?: return
+        for (i in 0 until 20) {
+            val paletteColor = PaletteColor(i)
+            val colorInt = v.currentTheme().color(paletteColor).toInt()
+            if (i < swatchViews.size) {
+                swatchViews[i].background = createSwatchDrawable(
+                    color = colorInt,
+                    isSelected = selectedColor == paletteColor,
+                    onSurface = onSurface
+                )
+            }
+        }
+
+        val isCustom = selectedColor != null && selectedColor!!.paletteIndex !in 0..19
+        val activeColor = selectedColor?.let { v.currentTheme().color(it).toInt() }
+        val palette = MainTabsThemeBridge.resolve(requireContext())
+
+        customSwatchInner.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            if (isCustom && activeColor != null) {
+                setColor(activeColor)
+                setStroke(dp(2f).toInt(), onSurface)
+            } else {
+                setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.08f))
+                setStroke(dp(1f).toInt(), MainTabsThemeBridge.withAlpha(palette.onSurface, 0.2f))
+            }
+        }
+        val iconTint = if (isCustom && activeColor != null) {
+            getContrastColor(activeColor)
+        } else {
+            palette.onSurfaceVariant
+        }
+        customSwatchIcon.setColorFilter(iconTint)
+    }
+
+    private fun getContrastColor(color: Int): Int {
+        val luminance = androidx.core.graphics.ColorUtils.calculateLuminance(color)
+        return if (luminance > 0.5) 0xFF1C1B1F.toInt() else Color.WHITE
+    }
+
+    fun openColorPickerDialog() {
+        val ctx = context ?: return
+        val v = view ?: rootView
+        val currentTheme = v?.currentTheme()
+        val themeMode = when (currentTheme) {
+            is PureBlackTheme -> ColorPickerDialog.THEME_AMOLED
+            is DarkTheme -> ColorPickerDialog.THEME_DARK
+            else -> ColorPickerDialog.THEME_LIGHT
+        }
+
+        val colorInt = selectedColor?.let {
+            v?.currentTheme()?.color(it)?.toInt()
+        } ?: MainTabsThemeBridge.resolve(ctx).accent
+
+        val dialog = ColorPickerDialog.newInstance(
+            initialColor = colorInt,
+            defaultColor = colorInt,
+            previewName = nameInput.text.toString().trim().ifBlank { sectionString(R.string.containers_name) },
+            theme = themeMode
+        )
+        dialog.setListener { picked ->
+            selectedColor = picked
+            val palette = MainTabsThemeBridge.resolve(ctx)
+            updateColorSwatches(palette.onSurface)
+            updateVisualTiles()
+        }
+        dialog.show(parentFragmentManager, "container_color_picker")
+    }
+
     private fun openIconPicker() {
         val ctx = context ?: return
+        val v = view ?: rootView
         val colorInt = selectedColor?.let {
-            view?.currentTheme()?.color(it)?.toInt()
+            v?.currentTheme()?.color(it)?.toInt()
         } ?: MainTabsThemeBridge.resolve(ctx).accent
 
         val picker = IconPickerBottomSheet().apply {
             previewColor = colorInt
-            initialIconRef = selectedIcon
-            onIconSelected = { ref ->
-                selectedIcon = ref
+            initialIconRef = this@CreateContainerDialog.selectedIcon
+            onIconSelected = { iconRef ->
+                this@CreateContainerDialog.selectedIcon = iconRef
                 updateVisualTiles()
-                iconRowValue.text = resolveIconLabel()
             }
         }
-        picker.show(parentFragmentManager, "icon_picker_dialog")
+        picker.show(parentFragmentManager, "container_icon_picker")
     }
 
     private fun openLocationPicker() {
         val picker = DrillDownMoveDialog().apply {
-            itemName = getString(R.string.containers_parent)
+            itemName = sectionString(R.string.containers_parent)
             isParentPickerOnly = true
             movingContainerId = containerToEdit?.id
             this.containerQueries = this@CreateContainerDialog.containerQueries
             onTargetSelected = { targetId ->
                 selectedParentId = targetId
-                val parentName = resolveParentName()
-                parentLocationValue.text = parentName
-                previewLocationView.text = parentName
+                parentLocationValue.text = resolveParentName()
             }
         }
         picker.show(parentFragmentManager, "parent_picker")
@@ -509,73 +593,43 @@ class CreateContainerDialog : BottomSheetDialogFragment() {
     private fun resolveParentName(): String {
         return selectedParentId?.let { id ->
             containerQueries?.find(id)?.name
-        } ?: getString(R.string.containers_root_parent)
-    }
-
-    private fun resolveIconLabel(): String {
-        return when (val ref = selectedIcon) {
-            is IconRef.Vector -> IconPack.getIcon(ref.key)?.labelRu ?: ref.key
-            is IconRef.Emoji -> ref.value
-            IconRef.None -> getString(R.string.containers_no_icon)
-        }
+        } ?: sectionString(R.string.containers_root_parent)
     }
 
     private fun updateVisualTiles() {
-        val view = view ?: return
-        val context = view.context
+        val context = context ?: return
+        val v = view ?: rootView ?: return
         val palette = MainTabsThemeBridge.resolve(context)
         val activeColor = selectedColor?.let {
-            view.currentTheme().color(it).toInt()
+            v.currentTheme().color(it).toInt()
         } ?: palette.accent
 
-        val tileBg = GradientDrawable().apply {
-            setColor(MainTabsThemeBridge.withAlpha(activeColor, 0.14f))
-            cornerRadius = dp(10f)
+        iconBtn.background = GradientDrawable().apply {
+            setColor(MainTabsThemeBridge.withAlpha(activeColor, 0.16f))
+            cornerRadius = dp(12f)
+            setStroke(dp(1.5f).toInt(), MainTabsThemeBridge.withAlpha(activeColor, 0.35f))
         }
-        val tileBgSmall = GradientDrawable().apply {
-            setColor(MainTabsThemeBridge.withAlpha(activeColor, 0.14f))
-            cornerRadius = dp(8f)
-        }
-
-        previewTile.background = tileBg
-        iconRowTile.background = tileBgSmall
 
         when (val ref = selectedIcon) {
             is IconRef.Vector -> {
                 val res = IconPack.getDrawableRes(ref.key, IconPack.DEFAULT_CONTAINER_ICON_RES)
-                previewIconView.visibility = View.VISIBLE
-                previewEmojiView.visibility = View.GONE
-                previewIconView.setImageDrawable(AppCompatResources.getDrawable(context, res))
-                previewIconView.setColorFilter(activeColor)
-
-                iconRowImageView.visibility = View.VISIBLE
-                iconRowEmojiView.visibility = View.GONE
-                iconRowImageView.setImageDrawable(AppCompatResources.getDrawable(context, res))
-                iconRowImageView.setColorFilter(activeColor)
+                iconImageView.visibility = View.VISIBLE
+                iconEmojiView.visibility = View.GONE
+                iconImageView.setImageDrawable(AppCompatResources.getDrawable(context, res))
+                iconImageView.setColorFilter(activeColor)
             }
             is IconRef.Emoji -> {
-                previewIconView.visibility = View.GONE
-                previewEmojiView.visibility = View.VISIBLE
-                previewEmojiView.text = ref.value
-
-                iconRowImageView.visibility = View.GONE
-                iconRowEmojiView.visibility = View.VISIBLE
-                iconRowEmojiView.text = ref.value
+                iconImageView.visibility = View.GONE
+                iconEmojiView.visibility = View.VISIBLE
+                iconEmojiView.text = ref.value
             }
             IconRef.None -> {
                 val res = IconPack.DEFAULT_CONTAINER_ICON_RES
-                previewIconView.visibility = View.VISIBLE
-                previewEmojiView.visibility = View.GONE
-                previewIconView.setImageDrawable(AppCompatResources.getDrawable(context, res))
-                previewIconView.setColorFilter(activeColor)
-
-                iconRowImageView.visibility = View.VISIBLE
-                iconRowEmojiView.visibility = View.GONE
-                iconRowImageView.setImageDrawable(AppCompatResources.getDrawable(context, res))
-                iconRowImageView.setColorFilter(activeColor)
+                iconImageView.visibility = View.VISIBLE
+                iconEmojiView.visibility = View.GONE
+                iconImageView.setImageDrawable(AppCompatResources.getDrawable(context, res))
+                iconImageView.setColorFilter(activeColor)
             }
         }
     }
-
-    private fun dp(v: Float) = (v * resources.displayMetrics.density)
 }

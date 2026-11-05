@@ -98,7 +98,12 @@ class HabitCardListCache(
     fun getEffectiveSnapshot(habitId: Long): EffectiveHabitReadSnapshot? = data.snapshots[habitId]
 
     /** Metadata is prepared with the card generation, including absent icons/groups. */
-    data class RowMetadata(val iconRef: IconRef?, val rootGroupKey: Any?, val dayTier: DayTier)
+    data class RowMetadata(
+        val iconRef: IconRef?,
+        val rootGroupKey: Any?,
+        val dayTier: DayTier,
+        val rootGroupName: String? = null
+    )
 
     // Capture mutable Habit attributes on the worker. Comparing live Habit
     // references cannot detect a title/color/goal edit after the model changes.
@@ -117,7 +122,7 @@ class HabitCardListCache(
 
     @Synchronized
     fun getMetadata(habitId: Long): RowMetadata =
-        data.metadata[habitId] ?: RowMetadata(null, null, DayTier.NORMAL)
+        data.metadata[habitId] ?: RowMetadata(null, null, DayTier.NORMAL, null)
 
     private var checkmarkCount = 0
     private var currentFetchTask: Task? = null
@@ -270,6 +275,12 @@ class HabitCardListCache(
         pendingRefreshTasks.add(task)
         currentFetchTask = task
         taskRunner.execute(task)
+    }
+
+    @Synchronized
+    fun invalidateStyles() {
+        data.bindingStyles.clear()
+        refreshAllHabits()
     }
 
     @Synchronized
@@ -557,6 +568,7 @@ class HabitCardListCache(
         private val requestedSecondary = secondaryOrder
         private val requestedCheckmarkCount = checkmarkCount
         private val requestedOrganization = allHabits.organizationFacade
+        private val requestedBlocks = if (allHabits.organizationFacade == null) allHabits.getBlocks() else emptyList()
         private val newData: CacheData
         private val targetId: Long?
         @Volatile
@@ -652,17 +664,32 @@ class HabitCardListCache(
         private fun populateRows(): Boolean {
             val today = getToday()
             val dateFrom = today.minus(requestedCheckmarkCount - 1)
+            val legacyBlockMap = if (requestedOrganization == null) {
+                requestedBlocks.mapNotNull { b -> b.id?.let { it to b.name } }.toMap()
+            } else {
+                emptyMap()
+            }
             for (position in newData.habits.indices) {
                 if (!isCurrent()) { trace("cache.superseded"); return false }
                 val habit = newData.habits[position]
                 if (targetId != null && targetId != habit.id) continue
                 val snapshot = newData.snapshots[habit.id]
                 val facade = requestedOrganization
+                val groupName = if (facade != null) {
+                    runCatching {
+                        facade.getRootGroupName(habit.uuid ?: "", habit.blockId)
+                    }.getOrNull()
+                } else {
+                    habit.blockId?.let { legacyBlockMap[it] }
+                }
                 newData.metadata[habit.id] = RowMetadata(
                     iconRef = facade?.getHabitVisualIdentity(habit.uuid ?: "")?.iconRef,
                     rootGroupKey = if (facade == null) habit.blockId else
                         facade.getRootGroupKey(habit.uuid ?: "", habit.blockId),
                     dayTier = habit.dayTier,
+                    rootGroupName = groupName,
+
+
                 )
                 newData.bindingStyles[habit.id] = BindingStyle(
                     habit.name, habit.color, habit.type, habit.frequency, habit.targetType,

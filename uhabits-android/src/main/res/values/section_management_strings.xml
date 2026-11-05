@@ -1,0 +1,38 @@
+<resources>
+    <string name="section_header_actions">Section options</string>
+    <string name="section_hidden_sections">Hidden sections</string>
+    <string name="section_hidden_search">Search name or path</string>
+    <string name="section_hidden_empty">No hidden sections</string>
+    <string name="section_hidden_no_results">No matching sections</string>
+    <string name="section_show">Show</string>
+    <string name="section_shown">Section shown</string>
+    <string name="section_back">Back</string>
+    <string name="section_hide_title">Hide section?</string>
+    <string name="section_hide_message">Hide “%1$s” from Tasks navigation? Tasks and habits are kept.</string>
+    <string name="section_hide_action">Hide</string>
+    <string name="section_hide_from_tasks">Hide from Tasks</string>
+    <string name="section_move_failed">Could not move section</string>
+    <string name="section_actions_description">Actions for %1$s</string>
+    <string name="section_expand_description">Expand %1$s</string>
+    <string name="section_collapse_description">Collapse %1$s</string>
+    <string name="section_open_children_description">Open subsections of %1$s</string>
+    <string name="section_hidden">Section hidden</string>
+    <string name="section_hide_failed">Could not hide section</string>
+    <string name="section_not_empty">Section is not empty</string>
+    <string name="section_not_empty_message">“%1$s” contains %2$s. Only empty sections can be deleted. You can hide it without deleting data.</string>
+    <string name="section_delete_title">Delete section?</string>
+    <string name="section_delete_message">“%1$s” is empty and will be permanently deleted.</string>
+    <string name="section_deleted">Section deleted</string>
+    <string name="section_delete_failed">Could not delete section</string>
+    <string name="section_color">Color</string>
+    <string name="section_custom_color">Custom color</string>
+    <string name="section_location_label">Location</string>
+    <string name="section_select_icon">Select icon</string>
+    <plurals name="section_tasks_count"><item quantity="one">%d task</item><item quantity="other">%d tasks</item></plurals>
+    <plurals name="section_habits_count"><item quantity="one">%d habit</item><item quantity="other">%d habits</item></plurals>
+    <plurals name="section_children_count"><item quantity="one">%d subsection</item><item quantity="other">%d subsections</item></plurals>
+    <string name="section_manage_visibility">Manage task sections</string>
+    <string name="section_visibility_undo">Undo</string>
+    <string name="section_hidden_by_parent">Hidden by “%1$s”</string>
+    <string name="section_show_path">Show path</string>
+</resources>

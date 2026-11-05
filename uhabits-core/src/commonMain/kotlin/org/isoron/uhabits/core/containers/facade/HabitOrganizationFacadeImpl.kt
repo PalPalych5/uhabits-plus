@@ -61,6 +61,7 @@ class HabitOrganizationFacadeImpl(
     private class BatchReadContext {
         var visualIdentities: Map<String, IconRef>? = null
         var rootKeysByHabitUuid: Map<String, String?>? = null
+        val rootNamesByRootKey = mutableMapOf<String, String?>()
     }
 
     private val batchContextStack = ThreadLocalState { mutableListOf<BatchReadContext>() }
@@ -167,6 +168,12 @@ class HabitOrganizationFacadeImpl(
     override fun getRootGroupName(habitUuid: String, legacyBlockId: Long?): String? {
         if (mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
             val rootKey = getRootGroupKey(habitUuid, legacyBlockId) as? String ?: return null
+            val batchCtx = batchContextStack.get().lastOrNull()
+            if (batchCtx != null) {
+                return batchCtx.rootNamesByRootKey.getOrPut(rootKey) {
+                    containerQueries?.find(ContainerId(rootKey))?.name
+                }
+            }
             return containerQueries?.find(ContainerId(rootKey))?.name
         } else {
             if (legacyBlockId == null) return null

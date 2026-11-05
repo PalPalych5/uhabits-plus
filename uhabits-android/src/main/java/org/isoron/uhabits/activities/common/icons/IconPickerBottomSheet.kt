@@ -22,6 +22,7 @@ package org.isoron.uhabits.activities.common.icons
 import android.app.Dialog
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.text.Editable
@@ -30,14 +31,14 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.appcompat.content.res.AppCompatResources
-import androidx.core.view.setPadding
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -58,16 +59,21 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
     var initialIconRef: IconRef = IconRef.None
 
     private var currentTab = Tab.ICONS
-    private var selectedCategory = IconCategory.ALL
+    private var selectedCategory: IconCategory? = IconCategory.ALL
+    private var isRecentSelected = false
+    private var selectedNamespace: IconNamespace? = null
     private var searchQuery = ""
 
     private lateinit var iconsAdapter: IconsGridAdapter
     private lateinit var emojiAdapter: EmojiGridAdapter
     private lateinit var recyclerView: RecyclerView
     private lateinit var categoriesScroll: HorizontalScrollView
+    private lateinit var categoriesRow: LinearLayout
+    private lateinit var libraryFilterRow: LinearLayout
     private lateinit var tabIconsButton: TextView
     private lateinit var tabEmojiButton: TextView
     private lateinit var searchInput: EditText
+    private lateinit var clearSearchButton: ImageView
 
     enum class Tab { ICONS, EMOJI }
 
@@ -76,6 +82,7 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
         dialog.setOnShowListener {
             val bottomSheet = dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
             if (bottomSheet != null) {
+                bottomSheet.setBackgroundColor(Color.TRANSPARENT)
                 val behavior = BottomSheetBehavior.from(bottomSheet)
                 behavior.state = BottomSheetBehavior.STATE_EXPANDED
                 behavior.skipCollapsed = true
@@ -94,87 +101,162 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(palette.surface)
-            setPadding(dp(16f).toInt(), dp(12f).toInt(), dp(16f).toInt(), dp(16f).toInt())
+            background = GradientDrawable().apply {
+                setColor(palette.surface)
+                cornerRadii = floatArrayOf(dp(20f), dp(20f), dp(20f), dp(20f), 0f, 0f, 0f, 0f)
+            }
+            setPadding(dp(16f).toInt(), dp(12f).toInt(), dp(16f).toInt(), dp(20f).toInt())
         }
 
-        // 1. Header with Drag Handle, Title and "Remove icon" button
+        // 1. Top Drag Handle
         val handle = View(context).apply {
             layoutParams = LinearLayout.LayoutParams(dp(36f).toInt(), dp(4f).toInt()).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
                 bottomMargin = dp(12f).toInt()
             }
             background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
+                setColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.35f))
                 cornerRadius = dp(2f)
-                setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.2f))
             }
         }
         root.addView(handle)
 
+        // 2. Header Row: Title & Close Button
         val headerRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
                 bottomMargin = dp(12f).toInt()
             }
         }
 
         val titleView = TextView(context).apply {
-            text = "Выбрать значок"
+            text = "Выбор значка"
             textSize = 18f
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTypeface(typeface, Typeface.BOLD)
             setTextColor(palette.onSurface)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
         }
         headerRow.addView(titleView)
 
-        val clearButton = TextView(context).apply {
-            text = "Без значка"
-            textSize = 14f
-            setTextColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.6f))
-            setPadding(dp(8f).toInt(), dp(4f).toInt(), dp(8f).toInt(), dp(4f).toInt())
+        val closeBtn = ImageView(context).apply {
+            val size = dp(32f).toInt()
+            layoutParams = LinearLayout.LayoutParams(size, size)
+            setImageResource(R.drawable.ic_tabler_x)
+            setColorFilter(palette.onSurfaceVariant)
+            setPadding(dp(6f).toInt(), dp(6f).toInt(), dp(6f).toInt(), dp(6f).toInt())
+            val ripple = android.util.TypedValue()
+            context.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)
+            setBackgroundResource(ripple.resourceId)
+            contentDescription = "Закрыть"
+            setOnClickListener { dismiss() }
+        }
+        headerRow.addView(closeBtn)
+        root.addView(headerRow)
+
+        // 3. Compact Default Folder / Reset Bar
+        val isDefault = (initialIconRef is IconRef.None)
+        val defaultFolderBar = LinearLayout(context).apply {
+            tag = "icon_picker_default_folder_bar"
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(38f).toInt()
+            background = GradientDrawable().apply {
+                if (isDefault) {
+                    setColor(MainTabsThemeBridge.withAlpha(previewColor, 0.12f))
+                    cornerRadius = dp(10f)
+                    setStroke(dp(1.5f).toInt(), previewColor)
+                } else {
+                    setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.04f))
+                    cornerRadius = dp(10f)
+                    setStroke(dp(1f).toInt(), MainTabsThemeBridge.withAlpha(palette.onSurface, 0.08f))
+                }
+            }
+            setPadding(dp(12f).toInt(), dp(6f).toInt(), dp(12f).toInt(), dp(6f).toInt())
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                bottomMargin = dp(10f).toInt()
+            }
+            val ripple = android.util.TypedValue()
+            context.theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
+            isClickable = true
+            isFocusable = true
             setOnClickListener {
                 onIconSelected?.invoke(IconRef.None)
                 dismiss()
             }
         }
-        headerRow.addView(clearButton)
-        root.addView(headerRow)
 
-        // 2. Tabs: [ Иконки | Emoji ]
+        val folderIcon = ImageView(context).apply {
+            val iconSize = dp(18f).toInt()
+            layoutParams = LinearLayout.LayoutParams(iconSize, iconSize).apply {
+                marginEnd = dp(8f).toInt()
+            }
+            setImageResource(R.drawable.ic_tabler_folder)
+            setColorFilter(if (isDefault) previewColor else palette.onSurfaceVariant)
+        }
+        defaultFolderBar.addView(folderIcon)
+
+        val folderText = TextView(context).apply {
+            text = "Стандартная папка (по умолчанию)"
+            textSize = 13f
+            setTextColor(if (isDefault) previewColor else palette.onSurface)
+            if (isDefault) setTypeface(typeface, Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
+        }
+        defaultFolderBar.addView(folderText)
+
+        if (!isDefault) {
+            val resetPill = TextView(context).apply {
+                text = "Сбросить"
+                textSize = 12f
+                setTextColor(palette.accent)
+                setTypeface(typeface, Typeface.BOLD)
+                setPadding(dp(8f).toInt(), dp(4f).toInt(), dp(8f).toInt(), dp(4f).toInt())
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(6f)
+                    setColor(MainTabsThemeBridge.withAlpha(palette.accent, 0.08f))
+                }
+            }
+            defaultFolderBar.addView(resetPill)
+        } else {
+            val activeBadge = ImageView(context).apply {
+                val iconSize = dp(16f).toInt()
+                layoutParams = LinearLayout.LayoutParams(iconSize, iconSize)
+                setImageResource(R.drawable.ic_tabler_check)
+                setColorFilter(previewColor)
+            }
+            defaultFolderBar.addView(activeBadge)
+        }
+        root.addView(defaultFolderBar)
+
+        // 4. Tabs: [ Иконки (1200+) | Emoji (40+) ]
         val tabsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(36f).toInt()
-            ).apply {
-                bottomMargin = dp(12f).toInt()
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(38f).toInt()).apply {
+                bottomMargin = dp(10f).toInt()
             }
             background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(18f)
-                setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.08f))
+                cornerRadius = dp(19f)
+                setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.06f))
             }
         }
 
         tabIconsButton = TextView(context).apply {
-            text = "Иконки"
-            textSize = 14f
+            tag = "icon_picker_tab_icons"
+            text = "Иконки (1200+)"
+            textSize = 13f
             gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+            layoutParams = LinearLayout.LayoutParams(0, MATCH_PARENT, 1f)
             setOnClickListener { switchTab(Tab.ICONS) }
         }
 
         tabEmojiButton = TextView(context).apply {
+            tag = "icon_picker_tab_emoji"
             text = "Emoji"
-            textSize = 14f
+            textSize = 13f
             gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+            layoutParams = LinearLayout.LayoutParams(0, MATCH_PARENT, 1f)
             setOnClickListener { switchTab(Tab.EMOJI) }
         }
 
@@ -182,99 +264,95 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
         tabsRow.addView(tabEmojiButton)
         root.addView(tabsRow)
 
-        // 3. Search Bar
+        // 5. Search Bar & Library Filter
         val searchBox = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(42f).toInt()
-            ).apply {
-                bottomMargin = dp(10f).toInt()
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(42f).toInt()).apply {
+                bottomMargin = dp(8f).toInt()
             }
             background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
                 cornerRadius = dp(10f)
-                setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.06f))
+                setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.05f))
+                setStroke(dp(1f).toInt(), MainTabsThemeBridge.withAlpha(palette.onSurface, 0.1f))
             }
-            setPadding(dp(12f).toInt(), 0, dp(12f).toInt(), 0)
+            setPadding(dp(10f).toInt(), 0, dp(10f).toInt(), 0)
         }
 
         val searchIcon = ImageView(context).apply {
             layoutParams = LinearLayout.LayoutParams(dp(18f).toInt(), dp(18f).toInt()).apply {
                 marginEnd = dp(8f).toInt()
             }
-            setImageDrawable(AppCompatResources.getDrawable(context, R.drawable.ic_toolbar_search))
-            setColorFilter(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.5f))
+            setImageResource(R.drawable.ic_tabler_search)
+            setColorFilter(palette.onSurfaceVariant)
         }
         searchBox.addView(searchIcon)
 
         searchInput = EditText(context).apply {
-            hint = "Поиск значков..."
-            setHintTextColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.4f))
+            tag = "icon_picker_search"
+            hint = "Поиск (спорт, чтение, вода, сон...)"
+            setHintTextColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.6f))
             setTextColor(palette.onSurface)
             textSize = 14f
             background = null
             isSingleLine = true
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                     searchQuery = s?.toString().orEmpty()
+                    clearSearchButton.visibility = if (searchQuery.isNotEmpty()) View.VISIBLE else View.GONE
                     updateFilteredList()
                 }
                 override fun afterTextChanged(s: Editable?) {}
             })
         }
         searchBox.addView(searchInput)
+
+        clearSearchButton = ImageView(context).apply {
+            val btnSize = dp(20f).toInt()
+            layoutParams = LinearLayout.LayoutParams(btnSize, btnSize)
+            setImageResource(R.drawable.ic_tabler_x)
+            setColorFilter(palette.onSurfaceVariant)
+            visibility = View.GONE
+            setOnClickListener {
+                searchInput.setText("")
+            }
+        }
+        searchBox.addView(clearSearchButton)
         root.addView(searchBox)
 
-        // 4. Categories horizontal chips
+        // 6. Library Filter Pills: [ Все | Lucide | Tabler ]
+        libraryFilterRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                bottomMargin = dp(8f).toInt()
+            }
+        }
+        setupLibraryPills(libraryFilterRow)
+        root.addView(libraryFilterRow)
+
+        // 7. Categories horizontal chips (with "Недавние" chip at start)
         categoriesScroll = HorizontalScrollView(context).apply {
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = dp(10f).toInt()
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+                bottomMargin = dp(8f).toInt()
             }
         }
 
-        val categoriesRow = LinearLayout(context).apply {
+        categoriesRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-
-        for (category in IconCategory.values()) {
-            val chip = TextView(context).apply {
-                text = category.titleRu
-                textSize = 13f
-                tag = category
-                setPadding(dp(12f).toInt(), dp(6f).toInt(), dp(12f).toInt(), dp(6f).toInt())
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    marginEnd = dp(6f).toInt()
-                }
-                setOnClickListener {
-                    selectedCategory = category
-                    updateCategoryChips(categoriesRow)
-                    updateFilteredList()
-                }
-            }
-            categoriesRow.addView(chip)
-        }
+        setupCategoryChips(categoriesRow)
         categoriesScroll.addView(categoriesRow)
         root.addView(categoriesScroll)
 
-        // 5. Grid of icons
+        // 8. Grid of icons
         recyclerView = RecyclerView(context).apply {
             layoutManager = GridLayoutManager(context, 5)
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(280f).toInt()
-            )
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(270f).toInt())
             clipToPadding = false
             setPadding(0, dp(4f).toInt(), 0, dp(8f).toInt())
         }
@@ -284,6 +362,7 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
             initialIconRef = initialIconRef,
             previewColor = previewColor,
             onItemClicked = { entry ->
+                saveRecentIcon(entry.key)
                 onIconSelected?.invoke(IconRef.Vector(entry.key))
                 dismiss()
             }
@@ -292,6 +371,7 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
         emojiAdapter = EmojiGridAdapter(
             context = context,
             initialIconRef = initialIconRef,
+            previewColor = previewColor,
             onItemClicked = { emoji ->
                 onIconSelected?.invoke(IconRef.Emoji(emoji))
                 dismiss()
@@ -303,10 +383,128 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
 
         // Initial setup
         switchTab(Tab.ICONS)
-        updateCategoryChips(categoriesRow)
+        updateLibraryPills()
+        updateCategoryChips()
         updateFilteredList()
 
         return root
+    }
+
+    private fun setupLibraryPills(container: LinearLayout) {
+        val context = requireContext()
+        val options = listOf(
+            null to "Все библиотеки",
+            IconNamespace.LUCIDE to "Lucide",
+            IconNamespace.TABLER to "Tabler"
+        )
+
+        for ((ns, title) in options) {
+            val pill = TextView(context).apply {
+                text = title
+                textSize = 11f
+                tag = ns
+                setPadding(dp(10f).toInt(), dp(4f).toInt(), dp(10f).toInt(), dp(4f).toInt())
+                layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
+                    marginEnd = dp(6f).toInt()
+                }
+                setOnClickListener {
+                    selectedNamespace = ns
+                    updateLibraryPills()
+                    updateFilteredList()
+                }
+            }
+            container.addView(pill)
+        }
+    }
+
+    private fun updateLibraryPills() {
+        val palette = MainTabsThemeBridge.resolve(requireContext())
+        for (i in 0 until libraryFilterRow.childCount) {
+            val pill = libraryFilterRow.getChildAt(i) as TextView
+            val ns = pill.tag as? IconNamespace
+            val isSelected = (ns == selectedNamespace)
+
+            pill.background = GradientDrawable().apply {
+                cornerRadius = dp(12f)
+                if (isSelected) {
+                    setColor(MainTabsThemeBridge.withAlpha(previewColor, 0.16f))
+                    setStroke(dp(1f).toInt(), previewColor)
+                } else {
+                    setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.04f))
+                    setStroke(dp(1f).toInt(), MainTabsThemeBridge.withAlpha(palette.onSurface, 0.08f))
+                }
+            }
+            pill.setTextColor(if (isSelected) previewColor else MainTabsThemeBridge.withAlpha(palette.onSurface, 0.65f))
+            pill.setTypeface(null, if (isSelected) Typeface.BOLD else Typeface.NORMAL)
+        }
+    }
+
+    private fun setupCategoryChips(container: LinearLayout) {
+        val context = requireContext()
+
+        // 1. "Недавние" chip
+        val recentChip = TextView(context).apply {
+            text = "Недавние"
+            textSize = 12f
+            tag = "RECENT"
+            setPadding(dp(12f).toInt(), dp(6f).toInt(), dp(12f).toInt(), dp(6f).toInt())
+            layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
+                marginEnd = dp(6f).toInt()
+            }
+            setOnClickListener {
+                isRecentSelected = true
+                selectedCategory = null
+                updateCategoryChips()
+                updateFilteredList()
+            }
+        }
+        container.addView(recentChip)
+
+        // 2. All Category Enum chips
+        for (category in IconCategory.values()) {
+            val chip = TextView(context).apply {
+                text = category.titleRu
+                textSize = 12f
+                tag = category
+                setPadding(dp(12f).toInt(), dp(6f).toInt(), dp(12f).toInt(), dp(6f).toInt())
+                layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
+                    marginEnd = dp(6f).toInt()
+                }
+                setOnClickListener {
+                    isRecentSelected = false
+                    selectedCategory = category
+                    updateCategoryChips()
+                    updateFilteredList()
+                }
+            }
+            container.addView(chip)
+        }
+    }
+
+    private fun updateCategoryChips() {
+        val palette = MainTabsThemeBridge.resolve(requireContext())
+
+        for (i in 0 until categoriesRow.childCount) {
+            val chip = categoriesRow.getChildAt(i) as TextView
+            val tag = chip.tag
+            val isSelected = if (tag == "RECENT") {
+                isRecentSelected
+            } else {
+                !isRecentSelected && (tag == selectedCategory)
+            }
+
+            chip.background = GradientDrawable().apply {
+                cornerRadius = dp(14f)
+                if (isSelected) {
+                    setColor(MainTabsThemeBridge.withAlpha(previewColor, 0.16f))
+                    setStroke(dp(1f).toInt(), previewColor)
+                } else {
+                    setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.05f))
+                }
+            }
+            chip.setTextColor(if (isSelected) previewColor else MainTabsThemeBridge.withAlpha(palette.onSurface, 0.7f))
+            chip.setTypeface(null, if (isSelected) Typeface.BOLD else Typeface.NORMAL)
+        }
     }
 
     private fun switchTab(tab: Tab) {
@@ -315,8 +513,7 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
         val palette = MainTabsThemeBridge.resolve(context)
 
         val activeBg = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(18f)
+            cornerRadius = dp(19f)
             setColor(palette.surface)
             setStroke(dp(1f).toInt(), MainTabsThemeBridge.withAlpha(palette.onSurface, 0.12f))
         }
@@ -324,56 +521,53 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
         if (tab == Tab.ICONS) {
             tabIconsButton.background = activeBg
             tabIconsButton.setTextColor(palette.onSurface)
-            tabIconsButton.setTypeface(null, android.graphics.Typeface.BOLD)
+            tabIconsButton.setTypeface(null, Typeface.BOLD)
 
             tabEmojiButton.background = null
-            tabEmojiButton.setTextColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.5f))
-            tabEmojiButton.setTypeface(null, android.graphics.Typeface.NORMAL)
+            tabEmojiButton.setTextColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.55f))
+            tabEmojiButton.setTypeface(null, Typeface.NORMAL)
 
+            libraryFilterRow.visibility = View.VISIBLE
             categoriesScroll.visibility = View.VISIBLE
             recyclerView.adapter = iconsAdapter
         } else {
             tabEmojiButton.background = activeBg
             tabEmojiButton.setTextColor(palette.onSurface)
-            tabEmojiButton.setTypeface(null, android.graphics.Typeface.BOLD)
+            tabEmojiButton.setTypeface(null, Typeface.BOLD)
 
             tabIconsButton.background = null
-            tabIconsButton.setTextColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.5f))
-            tabIconsButton.setTypeface(null, android.graphics.Typeface.NORMAL)
+            tabIconsButton.setTextColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.55f))
+            tabIconsButton.setTypeface(null, Typeface.NORMAL)
 
+            libraryFilterRow.visibility = View.GONE
             categoriesScroll.visibility = View.GONE
             recyclerView.adapter = emojiAdapter
         }
         updateFilteredList()
     }
 
-    private fun updateCategoryChips(container: LinearLayout) {
-        val context = requireContext()
-        val palette = MainTabsThemeBridge.resolve(context)
+    private fun getRecentIcons(): List<IconEntry> {
+        val prefs = requireContext().getSharedPreferences("icon_picker_prefs", Context.MODE_PRIVATE)
+        val csv = prefs.getString("recent_icons", "") ?: ""
+        return csv.split(",").mapNotNull { IconPack.getIcon(it.trim()) }
+    }
 
-        for (i in 0 until container.childCount) {
-            val chip = container.getChildAt(i) as TextView
-            val cat = chip.tag as IconCategory
-            val isSelected = cat == selectedCategory
-
-            chip.background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(14f)
-                if (isSelected) {
-                    setColor(MainTabsThemeBridge.withAlpha(previewColor, 0.18f))
-                    setStroke(dp(1f).toInt(), previewColor)
-                } else {
-                    setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.06f))
-                }
-            }
-            chip.setTextColor(if (isSelected) previewColor else MainTabsThemeBridge.withAlpha(palette.onSurface, 0.7f))
-            chip.setTypeface(null, if (isSelected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
-        }
+    private fun saveRecentIcon(key: String) {
+        val prefs = requireContext().getSharedPreferences("icon_picker_prefs", Context.MODE_PRIVATE)
+        val current = prefs.getString("recent_icons", "")?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+        val updated = (listOf(key) + current.filter { it != key }).take(15)
+        prefs.edit().putString("recent_icons", updated.joinToString(",")).apply()
     }
 
     private fun updateFilteredList() {
         if (currentTab == Tab.ICONS) {
-            val results = IconPack.search(searchQuery, selectedCategory)
+            val results = if (isRecentSelected && searchQuery.isEmpty()) {
+                val recents = getRecentIcons()
+                if (recents.isNotEmpty()) recents else IconPack.search("", IconCategory.ALL, selectedNamespace)
+            } else {
+                val cat = selectedCategory ?: IconCategory.ALL
+                IconPack.search(searchQuery, cat, selectedNamespace)
+            }
             iconsAdapter.setItems(results)
         } else {
             val query = searchQuery.trim().lowercase()
@@ -406,17 +600,14 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
             val frame = FrameLayout(context).apply {
-                layoutParams = RecyclerView.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    context.dp(52f).toInt()
-                )
+                val size = context.dp(52f).toInt()
+                layoutParams = RecyclerView.LayoutParams(MATCH_PARENT, size)
             }
             val iconView = ImageView(context).apply {
                 val size = context.dp(44f).toInt()
-                layoutParams = FrameLayout.LayoutParams(size, size).apply {
-                    gravity = Gravity.CENTER
-                }
-                setPadding(context.dp(10f).toInt())
+                layoutParams = FrameLayout.LayoutParams(size, size, Gravity.CENTER)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                setPadding(context.dp(10f).toInt(), context.dp(10f).toInt(), context.dp(10f).toInt(), context.dp(10f).toInt())
             }
             frame.addView(iconView)
             return ViewHolder(frame, iconView)
@@ -424,18 +615,25 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
 
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             val item = items[position]
-            val isSelected = initialIconRef is IconRef.Vector && initialIconRef.key == item.key
+            val isSelected = when (initialIconRef) {
+                is IconRef.Vector -> {
+                    initialIconRef.key == item.key || (item.legacyKey != null && initialIconRef.key == item.legacyKey)
+                }
+                else -> false
+            }
+            val palette = MainTabsThemeBridge.resolve(context)
 
             holder.iconView.setImageResource(item.drawableRes)
-            holder.iconView.setColorFilter(previewColor)
+            holder.iconView.setColorFilter(if (isSelected) previewColor else palette.onSurface)
+            holder.iconView.contentDescription = item.labelRu
 
             holder.iconView.background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
                 cornerRadius = context.dp(10f)
-                val alpha = if (isSelected) 0.28f else 0.12f
-                setColor(MainTabsThemeBridge.withAlpha(previewColor, alpha))
                 if (isSelected) {
+                    setColor(MainTabsThemeBridge.withAlpha(previewColor, 0.18f))
                     setStroke(context.dp(2f).toInt(), previewColor)
+                } else {
+                    setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.04f))
                 }
             }
 
@@ -452,6 +650,7 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
     private class EmojiGridAdapter(
         private val context: Context,
         private val initialIconRef: IconRef,
+        private val previewColor: Int,
         private val onItemClicked: (String) -> Unit
     ) : RecyclerView.Adapter<EmojiGridAdapter.ViewHolder>() {
 
@@ -464,16 +663,12 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
 
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
             val frame = FrameLayout(context).apply {
-                layoutParams = RecyclerView.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    context.dp(52f).toInt()
-                )
+                val size = context.dp(52f).toInt()
+                layoutParams = RecyclerView.LayoutParams(MATCH_PARENT, size)
             }
             val textView = TextView(context).apply {
                 val size = context.dp(44f).toInt()
-                layoutParams = FrameLayout.LayoutParams(size, size).apply {
-                    gravity = Gravity.CENTER
-                }
+                layoutParams = FrameLayout.LayoutParams(size, size, Gravity.CENTER)
                 gravity = Gravity.CENTER
                 textSize = 22f
             }
@@ -484,18 +679,18 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
         override fun onBindViewHolder(holder: ViewHolder, position: Int) {
             val emoji = items[position]
             val isSelected = initialIconRef is IconRef.Emoji && initialIconRef.value == emoji
+            val palette = MainTabsThemeBridge.resolve(context)
 
             holder.textView.text = emoji
+            holder.textView.contentDescription = emoji
 
-            val palette = MainTabsThemeBridge.resolve(context)
             holder.textView.background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
                 cornerRadius = context.dp(10f)
                 if (isSelected) {
-                    setColor(MainTabsThemeBridge.withAlpha(palette.accent, 0.2f))
-                    setStroke(context.dp(2f).toInt(), palette.accent)
+                    setColor(MainTabsThemeBridge.withAlpha(previewColor, 0.18f))
+                    setStroke(context.dp(2f).toInt(), previewColor)
                 } else {
-                    setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.06f))
+                    setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.04f))
                 }
             }
 

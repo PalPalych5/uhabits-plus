@@ -212,6 +212,7 @@ object DatabaseSnapshotter {
             db.run(
                 """
                 CREATE TABLE IF NOT EXISTS Repetitions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
                     habit INTEGER NOT NULL,
                     timestamp INTEGER NOT NULL,
                     value INTEGER NOT NULL,
