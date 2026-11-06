@@ -43,15 +43,21 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.content.ContextCompat
+import androidx.activity.OnBackPressedCallback
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import org.isoron.platform.gui.toInt
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.dialogs.ColorPickerDialog
+import org.isoron.uhabits.activities.common.dialogs.UHabitColorPickerContent
 import org.isoron.uhabits.activities.common.icons.IconPack
 import org.isoron.uhabits.activities.common.icons.IconPickerBottomSheet
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
 import org.isoron.uhabits.core.containers.Container
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.ContainerQueries
@@ -96,6 +102,10 @@ class CreateContainerDialog : BottomSheetDialogFragment() {
     private lateinit var customSwatchInner: View
     private lateinit var customSwatchIcon: ImageView
 
+    private lateinit var mainHostLayout: FrameLayout
+    private lateinit var formLayout: LinearLayout
+    private lateinit var colorPickerComposeView: ComposeView
+
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val dialog = super.onCreateDialog(savedInstanceState) as BottomSheetDialog
         dialog.setOnShowListener {
@@ -108,6 +118,17 @@ class CreateContainerDialog : BottomSheetDialogFragment() {
                 behavior.skipCollapsed = true
             }
         }
+        dialog.onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (::colorPickerComposeView.isInitialized && colorPickerComposeView.visibility == View.VISIBLE) {
+                    colorPickerComposeView.visibility = View.GONE
+                    formLayout.visibility = View.VISIBLE
+                } else {
+                    isEnabled = false
+                    dialog.onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
         return dialog
     }
 
@@ -131,6 +152,11 @@ class CreateContainerDialog : BottomSheetDialogFragment() {
             selectedIcon = IconRef.None
         }
 
+        val mainHost = FrameLayout(context).apply {
+            layoutParams = ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+        }
+        mainHostLayout = mainHost
+
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
@@ -139,7 +165,23 @@ class CreateContainerDialog : BottomSheetDialogFragment() {
             }
             setPadding(dp(20f).toInt(), dp(12f).toInt(), dp(20f).toInt(), dp(24f).toInt())
         }
-        rootView = root
+        formLayout = root
+
+        colorPickerComposeView = ComposeView(context).apply {
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
+            visibility = View.GONE
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setOnTouchListener { v, event ->
+                if (event.action == android.view.MotionEvent.ACTION_DOWN) {
+                    v.parent?.requestDisallowInterceptTouchEvent(true)
+                }
+                false
+            }
+        }
+
+        mainHost.addView(formLayout)
+        mainHost.addView(colorPickerComposeView)
+        rootView = mainHost
 
         // 1. Top Drag Handle
         val handle = View(context).apply {
@@ -461,7 +503,7 @@ class CreateContainerDialog : BottomSheetDialogFragment() {
             imm?.showSoftInput(nameInput, InputMethodManager.SHOW_IMPLICIT)
         }
 
-        return root
+        return mainHost
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -530,6 +572,34 @@ class CreateContainerDialog : BottomSheetDialogFragment() {
     }
 
     fun openColorPickerDialog() {
+        val ctx = context ?: return
+        formLayout.visibility = View.GONE
+        colorPickerComposeView.visibility = View.VISIBLE
+        val palette = MainTabsThemeBridge.resolve(ctx)
+        val colors = UHabitComposeColors.fromPalette(palette)
+        colorPickerComposeView.setContent {
+            UHabitComposeTheme(colors) {
+                UHabitColorPickerContent(
+                    selectedColor = selectedColor,
+                    onApply = { picked ->
+                        selectedColor = picked
+                        updateColorSwatches(palette.onSurface)
+                        updateVisualTiles()
+                        colorPickerComposeView.disposeComposition()
+                        colorPickerComposeView.visibility = View.GONE
+                        formLayout.visibility = View.VISIBLE
+                    },
+                    onDismiss = {
+                        colorPickerComposeView.disposeComposition()
+                        colorPickerComposeView.visibility = View.GONE
+                        formLayout.visibility = View.VISIBLE
+                    }
+                )
+            }
+        }
+    }
+
+    fun openLegacyColorPickerDialog() {
         val ctx = context ?: return
         val v = view ?: rootView
         val currentTheme = v?.currentTheme()

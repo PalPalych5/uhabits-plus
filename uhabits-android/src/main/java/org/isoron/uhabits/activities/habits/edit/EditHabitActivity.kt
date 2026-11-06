@@ -59,6 +59,7 @@ import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
 import org.isoron.uhabits.activities.common.dialogs.ColorPickerDialog
 import org.isoron.uhabits.activities.common.dialogs.ColorPickerDialogFactory
+import org.isoron.uhabits.activities.common.dialogs.UHabitColorPickerBottomSheet
 import org.isoron.uhabits.activities.common.dialogs.FrequencyPickerDialog
 import org.isoron.uhabits.activities.common.dialogs.WeekdayPickerDialog
 import org.isoron.uhabits.core.commands.CommandRunner
@@ -318,8 +319,8 @@ class EditHabitActivity : AppCompatActivity() {
         supportActionBar?.elevation = 10.0f
 
         val colorPickerDialogFactory = ColorPickerDialogFactory(this)
-        val configureColorPicker: (ColorPickerDialog) -> Unit = { picker ->
-            picker.setListener { paletteColor ->
+        val configureColorPicker: (UHabitColorPickerBottomSheet) -> Unit = { picker ->
+            picker.onColorPicked = { paletteColor ->
                 this.color = paletteColor
                 hasIndividualColor = HabitColorDefaults.isIndividual(
                     paletteColor,
@@ -329,35 +330,20 @@ class EditHabitActivity : AppCompatActivity() {
                 updateColors()
             }
         }
-        (supportFragmentManager.findFragmentByTag("colorPicker") as? ColorPickerDialog)
+        (supportFragmentManager.findFragmentByTag("colorPicker") as? UHabitColorPickerBottomSheet)
             ?.let(configureColorPicker)
         if (state?.getBoolean("colorPickerOpen") == true) {
-            (supportFragmentManager.findFragmentByTag("colorPicker") as? ColorPickerDialog)?.let {
+            (supportFragmentManager.findFragmentByTag("colorPicker") as? UHabitColorPickerBottomSheet)?.let {
                 supportFragmentManager.beginTransaction().remove(it).commitNowAllowingStateLoss()
             }
-            val previewName = binding.nameInput.text.toString().trim()
-                .ifBlank { getString(R.string.color_picker_habit_preview_fallback) }
-            val restoredPicker = colorPickerDialogFactory.create(
-                color,
-                themeSwitcher.currentTheme,
-                previewName,
-                defaultColorForCurrentBlock()
-            )
-            restoredPicker.restoreDraftColor(state.getInt("colorPickerDraftColor"))
+            val restoredPicker = UHabitColorPickerBottomSheet.newInstance(color)
             configureColorPicker(restoredPicker)
-            restoredPicker.dismissCurrentAndShow(supportFragmentManager, "colorPicker")
+            restoredPicker.show(supportFragmentManager, "colorPicker")
         }
         binding.colorButton.setOnClickListener {
-            val previewName = binding.nameInput.text.toString().trim()
-                .ifBlank { getString(R.string.color_picker_habit_preview_fallback) }
-            val picker = colorPickerDialogFactory.create(
-                color,
-                themeSwitcher.currentTheme,
-                previewName,
-                defaultColorForCurrentBlock()
-            )
+            val picker = UHabitColorPickerBottomSheet.newInstance(color)
             configureColorPicker(picker)
-            picker.dismissCurrentAndShow(supportFragmentManager, "colorPicker")
+            picker.show(supportFragmentManager, "colorPicker")
         }
 
         val booleanFrequencyArrow = configureDropdownArrow(binding.booleanFrequencyPicker)
@@ -477,23 +463,19 @@ class EditHabitActivity : AppCompatActivity() {
         }
 
         val iconArrow = configureDropdownArrow(binding.iconPicker)
-        if (facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
-            binding.iconOuterBox.visibility = View.VISIBLE
-            updateIconPickerLabel()
-            binding.iconPicker.setOnClickListener {
-                iconArrow.open()
-                val picker = IconPickerBottomSheet().apply {
-                    previewColor = androidColor
-                    initialIconRef = iconRef
-                    onIconSelected = { picked ->
-                        iconRef = picked
-                        updateIconPickerLabel()
-                    }
+        binding.iconOuterBox.visibility = View.VISIBLE
+        updateIconPickerLabel()
+        binding.iconPicker.setOnClickListener {
+            iconArrow.open()
+            val picker = IconPickerBottomSheet().apply {
+                previewColor = androidColor
+                initialIconRef = iconRef
+                onIconSelected = { picked ->
+                    iconRef = picked
+                    updateIconPickerLabel()
                 }
-                picker.show(supportFragmentManager, "habit_icon_picker")
             }
-        } else {
-            binding.iconOuterBox.visibility = View.GONE
+            picker.show(supportFragmentManager, "habit_icon_picker")
         }
 
         binding.numericalFrequencyPicker.setOnClickListener {

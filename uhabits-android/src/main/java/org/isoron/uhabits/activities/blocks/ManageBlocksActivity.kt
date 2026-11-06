@@ -40,6 +40,7 @@ import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
 import org.isoron.uhabits.activities.common.dialogs.ColorPickerDialogFactory
+import org.isoron.uhabits.activities.common.dialogs.UHabitColorPickerBottomSheet
 import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import org.isoron.uhabits.activities.settings.SettingsThemePalette
 import org.isoron.uhabits.activities.settings.SettingsThemePaletteResolver
@@ -362,8 +363,8 @@ class ManageBlocksActivity : AppCompatActivity() {
         colorRow.addView(colorChevron)
 
         colorRow.setOnClickListener {
-            val colorPickerDialogFactory = ColorPickerDialogFactory(this@ManageBlocksActivity)
-            val picker = colorPickerDialogFactory.create(selectedColor, themeSwitcher.currentTheme)
+            // colorPickerDialogFactory
+            val picker = UHabitColorPickerBottomSheet.newInstance(selectedColor) // ColorPickerDialogFactory
             picker.setListener { paletteColor ->
                 selectedColor = paletteColor
                 swatch.background = GradientDrawable().apply {
@@ -372,7 +373,7 @@ class ManageBlocksActivity : AppCompatActivity() {
                     setColor(themeSwitcher.currentTheme.color(selectedColor).toInt())
                 }
             }
-            picker.dismissCurrentAndShow(supportFragmentManager, "colorPicker")
+            picker.show(supportFragmentManager, "colorPicker")
         }
 
         dialogView.addView(colorRow)
@@ -511,8 +512,8 @@ class ManageBlocksActivity : AppCompatActivity() {
         colorRow.addView(colorChevron)
 
         colorRow.setOnClickListener {
-            val colorPickerDialogFactory = ColorPickerDialogFactory(this@ManageBlocksActivity)
-            val picker = colorPickerDialogFactory.create(selectedColor, themeSwitcher.currentTheme)
+            // colorPickerDialogFactory
+            val picker = UHabitColorPickerBottomSheet.newInstance(selectedColor) // ColorPickerDialogFactory
             picker.setListener { paletteColor ->
                 selectedColor = paletteColor
                 swatch.background = GradientDrawable().apply {
@@ -521,7 +522,7 @@ class ManageBlocksActivity : AppCompatActivity() {
                     setColor(themeSwitcher.currentTheme.color(selectedColor).toInt())
                 }
             }
-            picker.dismissCurrentAndShow(supportFragmentManager, "colorPicker")
+            picker.show(supportFragmentManager, "colorPicker")
         }
 
         dialogView.addView(colorRow)

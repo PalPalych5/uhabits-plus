@@ -43,7 +43,7 @@ sealed interface IconRef {
                     val e = trimmed.removePrefix("emoji:").trim()
                     if (e.isEmpty()) None else Emoji(e)
                 }
-                trimmed.length <= 4 && trimmed.any { it.isSurrogate() || it.code > 1000 } -> Emoji(trimmed)
+                trimmed.any { it.isSurrogate() || it.code > 1000 } -> Emoji(trimmed)
                 else -> Vector(trimmed)
             }
         }

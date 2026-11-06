@@ -44,6 +44,7 @@ import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.dialogs.CheckmarkDialog
 import org.isoron.uhabits.activities.common.dialogs.ColorPickerDialogFactory
+import org.isoron.uhabits.activities.common.dialogs.UHabitColorPickerBottomSheet
 import org.isoron.uhabits.activities.common.dialogs.ConfirmDeleteDialog
 import org.isoron.uhabits.activities.common.dialogs.NumberDialog
 import org.isoron.uhabits.activities.main.MainActivity
@@ -292,9 +293,9 @@ class ListHabitsScreen(
     }
 
     override fun showColorPicker(defaultColor: PaletteColor, callback: OnColorPickedCallback) {
-        val picker = colorPickerFactory.create(defaultColor, themeSwitcher.currentTheme!!)
+        val picker = UHabitColorPickerBottomSheet.newInstance(defaultColor)
         picker.setListener(callback)
-        picker.dismissCurrentAndShow(activity.supportFragmentManager, "picker")
+        picker.show(activity.supportFragmentManager, "picker")
     }
 
     override fun showNumberPopup(

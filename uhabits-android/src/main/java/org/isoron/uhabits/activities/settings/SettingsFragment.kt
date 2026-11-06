@@ -77,6 +77,7 @@ import org.isoron.uhabits.activities.main.SettingsAction
 import org.isoron.uhabits.activities.main.SettingsActionHandler
 import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import org.isoron.uhabits.activities.common.dialogs.ColorPickerDialogFactory
+import org.isoron.uhabits.activities.common.dialogs.UHabitColorPickerBottomSheet
 import org.isoron.uhabits.activities.habits.show.timer.PomodoroCompletionNotifier
 import org.isoron.uhabits.activities.habits.show.timer.TimerForegroundService
 import org.isoron.uhabits.core.commands.ClearAllEntriesCommand
@@ -1215,12 +1216,7 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         val currentValString = AccentColorManager.getAccentColorString(prefs)
         val currentPaletteColor = AccentColorManager.toPaletteColor(currentValString)
 
-        val picker = factory.create(
-            color = currentPaletteColor,
-            theme = currentTheme,
-            previewName = "uHabits Plus",
-            defaultColor = PaletteColor(11)
-        )
+        val picker = UHabitColorPickerBottomSheet.newInstance(currentPaletteColor)
         picker.setListener { paletteColor ->
             val newAccentString = AccentColorManager.fromPaletteColor(paletteColor)
             AccentColorManager.setAccentColorString(prefs, newAccentString)
