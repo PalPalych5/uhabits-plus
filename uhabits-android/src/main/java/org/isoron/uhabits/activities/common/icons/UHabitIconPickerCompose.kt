@@ -38,9 +38,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.emoji2.emojipicker.EmojiPickerView
 import org.isoron.uhabits.R
 import org.isoron.uhabits.compose.LocalUHabitComposeColors
 import org.isoron.uhabits.core.containers.IconRef
+
+enum class CuratedComposeCategory(val title: String) {
+    CURATED("⭐ Подборка"),
+    RECENTS("🕒 Недавние"),
+    STUDY("📚 Учёба"),
+    WORK("💼 Работа"),
+    HEALTH("❤️ Здоровье"),
+    SPORT("🏃 Спорт"),
+    HOME("🏠 Дом"),
+    FINANCE("💰 Финансы"),
+    ART("🎨 Творчество"),
+    PEOPLE("👥 Отношения"),
+    LEISURE("☕ Отдых"),
+    TRAVEL("✈️ Путешествия"),
+    ALL("🌐 Все значки")
+}
 
 @Composable
 fun UHabitIconPickerContent(
@@ -55,28 +73,36 @@ fun UHabitIconPickerContent(
 
     var currentTab by remember { mutableStateOf(0) } // 0 = Icons, 1 = Emoji
     var searchQuery by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf<IconCategory?>(IconCategory.ALL) }
+    var selectedCategory by remember { mutableStateOf(CuratedComposeCategory.CURATED) }
     var selectedNamespace by remember { mutableStateOf<IconNamespace?>(null) }
-    var recentSelected by remember { mutableStateOf(false) }
     var recentKeys by remember { mutableStateOf(prefs.getString("recent_icons", "").orEmpty().split(",").filter { it.isNotBlank() }) }
 
-    val categories = remember { IconCategory.entries }
-
-    val filteredIcons = remember(searchQuery, selectedCategory, selectedNamespace, recentSelected, recentKeys) {
+    val filteredIcons = remember(searchQuery, selectedCategory, selectedNamespace, recentKeys) {
         val query = searchQuery.trim().lowercase()
-        if (recentSelected && query.isEmpty()) {
-            val recent = recentKeys.mapNotNull { IconPack.getIcon(it) }.filter { selectedNamespace == null || it.namespace == selectedNamespace }
-            recent.ifEmpty { IconPack.search("", IconCategory.ALL, selectedNamespace) }
-        } else IconPack.search(query, selectedCategory ?: IconCategory.ALL, selectedNamespace)
+        when {
+            query.isNotEmpty() -> {
+                IconPack.search(query, IconCategory.ALL, selectedNamespace)
+            }
+            selectedCategory == CuratedComposeCategory.CURATED -> {
+                val curated = IconPack.getCuratedIcons()
+                if (selectedNamespace != null) curated.filter { it.namespace == selectedNamespace } else curated
+            }
+            selectedCategory == CuratedComposeCategory.RECENTS -> {
+                val recents = recentKeys.mapNotNull { IconPack.getIcon(it) }
+                if (selectedNamespace != null) recents.filter { it.namespace == selectedNamespace } else recents
+            }
+            selectedCategory == CuratedComposeCategory.ALL -> {
+                IconPack.search("", IconCategory.ALL, selectedNamespace)
+            }
+            else -> {
+                val catIcons = IconPack.getCuratedIconsForCategory(selectedCategory.name)
+                if (selectedNamespace != null) catIcons.filter { it.namespace == selectedNamespace } else catIcons
+            }
+        }
     }
 
     val filteredEmojis = remember(searchQuery) {
-        val query = searchQuery.trim()
-        if (query.isEmpty()) {
-            IconPack.CURATED_EMOJIS
-        } else {
-            IconPack.CURATED_EMOJIS.filter { it.contains(query) }
-        }
+        EmojiCatalogData.search(searchQuery)
     }
 
     Column(
@@ -174,7 +200,7 @@ fun UHabitIconPickerContent(
                     Box(contentAlignment = Alignment.CenterStart) {
                         if (searchQuery.isEmpty()) {
                             BasicText(
-                                text = if (currentTab == 0) "Поиск значков..." else "Поиск эмодзи...",
+                                text = if (currentTab == 0) "Поиск значка..." else "Поиск эмодзи (огонь, бег, книга...)",
                                 style = TextStyle(color = Color(colors.secondary), fontSize = 14.sp)
                             )
                         }
@@ -198,18 +224,23 @@ fun UHabitIconPickerContent(
             }
         }
 
-        // Category filter chips (only for Icons tab)
-        if (currentTab == 0) {
+        // Library filter pills (only for Icons tab when ALL is selected)
+        if (currentTab == 0 && selectedCategory == CuratedComposeCategory.ALL) {
             Spacer(Modifier.height(8.dp))
             Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(null to "Все", IconNamespace.LUCIDE to "Lucide", IconNamespace.TABLER to "Tabler").forEach { (namespace, label) ->
+                listOf(null to "Все библиотеки", IconNamespace.LUCIDE to "Lucide", IconNamespace.TABLER to "Tabler").forEach { (namespace, label) ->
+                    val isSelected = selectedNamespace == namespace
                     Box(Modifier.clip(RoundedCornerShape(8.dp))
-                        .background(if (selectedNamespace == namespace) Color(colors.accent).copy(alpha = 0.2f) else Color(colors.surfaceVariant))
-                        .clickable { selectedNamespace = namespace }.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                        BasicText(label, style = TextStyle(color = Color(if (selectedNamespace == namespace) colors.accent else colors.secondary), fontSize = 12.sp))
+                        .background(if (isSelected) Color(colors.accent).copy(alpha = 0.2f) else Color(colors.surfaceVariant))
+                        .clickable { selectedNamespace = namespace }.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                        BasicText(label, style = TextStyle(color = Color(if (isSelected) colors.accent else colors.secondary), fontSize = 11.sp))
                     }
                 }
             }
+        }
+
+        // Category filter chips (only for Icons tab)
+        if (currentTab == 0) {
             Spacer(Modifier.height(8.dp))
             Row(
                 modifier = Modifier
@@ -217,13 +248,8 @@ fun UHabitIconPickerContent(
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Box(Modifier.clip(RoundedCornerShape(12.dp))
-                    .background(if (recentSelected) Color(colors.accent).copy(alpha = 0.2f) else Color(colors.foreground).copy(alpha = 0.04f))
-                    .clickable { recentSelected = true }.padding(horizontal = 10.dp, vertical = 4.dp)) {
-                    BasicText("Недавние", style = TextStyle(color = Color(if (recentSelected) colors.accent else colors.secondary), fontSize = 11.sp))
-                }
-                for (cat in categories) {
-                    val isSelected = !recentSelected && selectedCategory == cat
+                for (cat in CuratedComposeCategory.values()) {
+                    val isSelected = selectedCategory == cat
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
@@ -236,11 +262,11 @@ fun UHabitIconPickerContent(
                                 color = if (isSelected) Color(colors.accent) else Color(colors.divider),
                                 shape = RoundedCornerShape(12.dp)
                             )
-                            .clickable { selectedCategory = cat; recentSelected = false }
+                            .clickable { selectedCategory = cat }
                             .padding(horizontal = 10.dp, vertical = 4.dp)
                     ) {
                         BasicText(
-                            text = cat.titleRu,
+                            text = cat.title,
                             style = TextStyle(
                                 color = if (isSelected) Color(colors.accent) else Color(colors.secondary),
                                 fontSize = 11.sp,
@@ -256,6 +282,19 @@ fun UHabitIconPickerContent(
 
         // Grid of icons or emojis
         if (currentTab == 0) {
+            if (selectedCategory == CuratedComposeCategory.RECENTS && filteredIcons.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(240.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    BasicText(
+                        text = "Вы ещё не использовали значки",
+                        style = TextStyle(color = Color(colors.secondary), fontSize = 14.sp)
+                    )
+                }
+            } else {
             LazyVerticalGrid(
                 columns = GridCells.Fixed(5),
                 modifier = Modifier
@@ -293,36 +332,78 @@ fun UHabitIconPickerContent(
                     }
                 }
             }
+            }
         } else {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(48.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(240.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                items(filteredEmojis) { emoji ->
-                    val isSelected = selectedIcon is IconRef.Emoji && selectedIcon.value == emoji
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isSelected) Color(colors.accent).copy(alpha = 0.2f) else Color.Transparent)
-                            .border(
-                                width = if (isSelected) 2.dp else 1.dp,
-                                color = if (isSelected) Color(colors.accent) else Color(colors.divider),
-                                shape = RoundedCornerShape(8.dp)
+            // EMOJI Tab: Show AndroidX EmojiPickerView if no search query, else search grid
+            if (searchQuery.trim().isEmpty()) {
+                AndroidView(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(280.dp),
+                    factory = { ctx ->
+                        EmojiPickerView(ctx).apply {
+                            emojiGridColumns = 9
+                            setOnEmojiPickedListener { item ->
+                                val emojiPrefs = ctx.getSharedPreferences("androidx.emoji2.emojipicker.preferences", Context.MODE_PRIVATE)
+                                val current = emojiPrefs.getString("pref_key_recent_emoji", "")?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+                                val updated = (listOf(item.emoji) + current.filter { it != item.emoji }).take(30)
+                                emojiPrefs.edit().putString("pref_key_recent_emoji", updated.joinToString(",")).apply()
+                                onIconSelected(IconRef.Emoji(item.emoji))
+                            }
+                            post {
+                                val headerRv = findViewById<androidx.recyclerview.widget.RecyclerView>(androidx.emoji2.emojipicker.R.id.emoji_picker_header)
+                                val bodyRv = findViewById<androidx.recyclerview.widget.RecyclerView>(androidx.emoji2.emojipicker.R.id.emoji_picker_body)
+                                headerRv?.isNestedScrollingEnabled = false
+                                bodyRv?.isNestedScrollingEnabled = true
+                                bodyRv?.addOnItemTouchListener(object : androidx.recyclerview.widget.RecyclerView.SimpleOnItemTouchListener() {
+                                    override fun onInterceptTouchEvent(rv: androidx.recyclerview.widget.RecyclerView, e: android.view.MotionEvent): Boolean {
+                                        if (e.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+                                            rv.parent?.requestDisallowInterceptTouchEvent(true)
+                                        }
+                                        return false
+                                    }
+                                })
+                                val emojiPrefs = ctx.getSharedPreferences("androidx.emoji2.emojipicker.preferences", Context.MODE_PRIVATE)
+                                val hasRecentEmoji = !emojiPrefs.getString("pref_key_recent_emoji", null).isNullOrEmpty()
+                                if (!hasRecentEmoji) {
+                                    headerRv?.findViewHolderForAdapterPosition(1)?.itemView?.performClick()
+                                        ?: bodyRv?.scrollToPosition(1)
+                                }
+                            }
+                        }
+                    }
+                )
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(48.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(240.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(filteredEmojis) { emoji ->
+                        val isSelected = selectedIcon is IconRef.Emoji && selectedIcon.value == emoji
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isSelected) Color(colors.accent).copy(alpha = 0.2f) else Color.Transparent)
+                                .border(
+                                    width = if (isSelected) 2.dp else 1.dp,
+                                    color = if (isSelected) Color(colors.accent) else Color(colors.divider),
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .clickable {
+                                    onIconSelected(IconRef.Emoji(emoji))
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            BasicText(
+                                text = emoji,
+                                style = TextStyle(fontSize = 20.sp, textAlign = TextAlign.Center)
                             )
-                            .clickable {
-                                onIconSelected(IconRef.Emoji(emoji))
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        BasicText(
-                            text = emoji,
-                            style = TextStyle(fontSize = 20.sp, textAlign = TextAlign.Center)
-                        )
+                        }
                     }
                 }
             }

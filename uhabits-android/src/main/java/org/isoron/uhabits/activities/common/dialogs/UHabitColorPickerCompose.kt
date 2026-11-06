@@ -2,12 +2,26 @@
 package org.isoron.uhabits.activities.common.dialogs
 
 import android.graphics.Color as AndroidColor
+import android.provider.Settings
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+
 import androidx.activity.OnBackPressedCallback
 import androidx.annotation.StringRes
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -29,6 +43,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,7 +53,11 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -45,6 +65,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -95,7 +116,7 @@ fun UHabitColorPickerContent(
 
     val initialArgb = selectedColor?.toFixedAndroidColor() ?: ColorPickerUtils.DEFAULT_COLOR
 
-    var draft by rememberSaveable(initialArgb, stateSaver = ComposeColorDraft.Saver) {
+    var draft by remember(initialArgb) {
         mutableStateOf(ComposeColorDraft.fromArgb(initialArgb))
     }
     var mode by rememberSaveable { mutableStateOf(initialMode) }
@@ -115,6 +136,13 @@ fun UHabitColorPickerContent(
     }
 
     val isModified = draft.argb != initialArgb
+
+    // Hoisted Loupe state across Grid and Spectrum overlays
+    var loupeVisible by remember { mutableStateOf(false) }
+    var loupeColor by remember { mutableIntStateOf(draft.argb) }
+    var loupeAnchor by remember { mutableStateOf(Offset.Zero) }
+    var loupeSelectionCenter by remember { mutableStateOf(Offset.Zero) }
+    var loupeSelectionRadius by remember { mutableFloatStateOf(0f) }
 
     Column(
         modifier
@@ -145,6 +173,7 @@ fun UHabitColorPickerContent(
             selected = mode,
             onSelect = {
                 dismissKeyboard()
+                loupeVisible = false
                 mode = it
             },
             modifier = Modifier
@@ -155,11 +184,20 @@ fun UHabitColorPickerContent(
         Spacer(Modifier.height(12.dp))
 
         // Content Area with smooth animated transition
-        Box(
+        BoxWithConstraints(
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
         ) {
+            val contentWidth = maxWidth
+            val gridSide = contentWidth / 12
+            val gridContentHeight = gridSide * 11
+            val currentContentHeight = when (mode) {
+                ColorMode.Grid -> gridContentHeight
+                ColorMode.Spectrum -> 240.dp
+                ColorMode.Sliders -> 300.dp
+            }
+
             AnimatedContent(
                 targetState = mode,
                 transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(140)) },
@@ -168,11 +206,29 @@ fun UHabitColorPickerContent(
                 when (targetMode) {
                     ColorMode.Grid -> AppleSystemColorGrid(
                         selectedArgb = draft.argb,
-                        onColorPicked = ::updateColor
+                        onColorPicked = ::updateColor,
+                        onLoupeStateChange = { visible, color, touch, selCenter, selRadius ->
+                            loupeVisible = visible
+                            if (visible) {
+                                loupeColor = color
+                                loupeAnchor = touch
+                                loupeSelectionCenter = selCenter
+                                loupeSelectionRadius = selRadius
+                            }
+                        }
                     )
                     ColorMode.Spectrum -> AppleTrue2dSpectrum(
                         draft = draft,
-                        onDraftChange = ::updateColor
+                        onDraftChange = ::updateColor,
+                        onLoupeStateChange = { visible, color, touch, selCenter, selRadius ->
+                            loupeVisible = visible
+                            if (visible) {
+                                loupeColor = color
+                                loupeAnchor = touch
+                                loupeSelectionCenter = selCenter
+                                loupeSelectionRadius = selRadius
+                            }
+                        }
                     )
                     ColorMode.Sliders -> IosLiveSlidersView(
                         draft = draft,
@@ -197,6 +253,17 @@ fun UHabitColorPickerContent(
                     )
                 }
             }
+
+            // Shared Floating HEX Loupe - rendered OUTSIDE AnimatedContent to guarantee zero layout clipping
+            FloatingHexLoupe(
+                visible = loupeVisible,
+                color = loupeColor,
+                touchPoint = loupeAnchor,
+                selectionCenter = loupeSelectionCenter,
+                selectionRadius = loupeSelectionRadius,
+                contentWidth = contentWidth,
+                contentHeight = currentContentHeight
+            )
         }
 
         Spacer(Modifier.height(12.dp))
@@ -274,8 +341,8 @@ fun UHabitColorPickerContent(
                         .clip(RoundedCornerShape(8.dp))
                         .background(Color(draft.argb))
                         .border(
-                            if (isModified) 1.5.dp else 1.dp,
-                            Color(if (isModified) colors.accent else colors.divider),
+                            1.dp,
+                            Color(colors.divider),
                             RoundedCornerShape(8.dp)
                         )
                         .semantics { contentDescription = draftDesc }
@@ -403,40 +470,369 @@ private fun IosSegmentedControl(
     }
 }
 
-/** 12x11 Apple system mosaic with tap/drag selection and floating magnifier loupe. */
+/**
+ * Pixel-clean, mathematically circular color swatch for loupe preview.
+ * Uses direct subpixel Canvas.drawCircle rendering instead of clip/shadow/border modifiers,
+ * avoiding Skia outline approximations or jagged polygonal edges.
+ */
+@Composable
+private fun LoupeColorSwatch(
+    color: Int,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier.size(24.dp)) {
+        val r = size.minDimension / 2f
+        val c = center
+        // 1. Precise subpixel anti-aliased fill
+        drawCircle(color = Color(color), radius = r - 1.25.dp.toPx(), center = c)
+        // 2. Crisp white ring
+        drawCircle(
+            color = Color.White,
+            radius = r - 1.25.dp.toPx(),
+            center = c,
+            style = Stroke(1.5.dp.toPx())
+        )
+        // 3. Symmetrical outer dark hairline (0.5dp) for contrast on white/light backgrounds
+        drawCircle(
+            color = Color.Black.copy(alpha = 0.25f),
+            radius = r - 0.25.dp.toPx(),
+            center = c,
+            style = Stroke(0.5.dp.toPx())
+        )
+    }
+}
+
+
+/** Shared tactile spring curve for responsive physical touch feedback. */
+private val TactileSpringFloat = spring<Float>(
+    dampingRatio = 0.82f,
+    stiffness = 420f
+)
+
+internal enum class LoupePlacementMode {
+    ABOVE,
+    BELOW,
+    SIDE_RIGHT,
+    SIDE_LEFT
+}
+
+internal data class LoupePlacementResult(
+    val x: Float,
+    val y: Float,
+    val mode: LoupePlacementMode
+)
+
+/**
+ * Geometric collision-avoidance solver for the floating loupe.
+ *
+ * Considers 3 regions:
+ * 1. Finger touch point with comfortable finger clearance (~36dp).
+ * 2. Selection indicator/reticle bounds with >= 14dp clearance (never obscured).
+ * 3. Safe overlay surface bounds [6dp, host - 6dp] (never clipped).
+ *
+ * Stability:
+ * - Hysteresis deadband (~20dp) prevents flipping loops near boundaries.
+ * - Mode stickiness: maintains current mode as long as safe; reevaluates only when necessary.
+ */
+internal object LoupeCollisionSolver {
+    const val LOUPE_WIDTH_DP = 108f
+    const val LOUPE_HEIGHT_DP = 42f
+    const val MARGIN_DP = 6f
+    const val MIN_SEL_CLEARANCE_DP = 14f
+    const val FINGER_CLEARANCE_DP = 36f
+    const val HYSTERESIS_DEADBAND_DP = 20f
+
+    fun calculatePlacement(
+        touchPoint: Offset,
+        selectionCenter: Offset,
+        selectionRadius: Float,
+        contentWidthPx: Float,
+        contentHeightPx: Float,
+        density: Float,
+        currentMode: LoupePlacementMode = LoupePlacementMode.ABOVE
+    ): LoupePlacementResult {
+        val loupeWPx = LOUPE_WIDTH_DP * density
+        val loupeHPx = LOUPE_HEIGHT_DP * density
+        val marginPx = MARGIN_DP * density
+        val minSelClearancePx = MIN_SEL_CLEARANCE_DP * density
+        val fingerClearancePx = FINGER_CLEARANCE_DP * density
+        val hysteresisPx = HYSTERESIS_DEADBAND_DP * density
+
+        val maxWPx = contentWidthPx
+        val maxHPx = contentHeightPx
+
+        val selR = if (selectionRadius > 1f) selectionRadius else (14f * density)
+        val selC = if (selectionCenter != Offset.Zero) selectionCenter else touchPoint
+        val selLeft = selC.x - selR
+        val selTop = selC.y - selR
+        val selRight = selC.x + selR
+        val selBottom = selC.y + selR
+
+        // Returns true if candidate (cx, cy) is fully inside host bounds and does not intersect selection clearance
+        fun isCandidateSafe(cx: Float, cy: Float): Boolean {
+            val insideX = cx >= marginPx && (cx + loupeWPx) <= (maxWPx - marginPx)
+            val insideY = cy >= marginPx && (cy + loupeHPx) <= (maxHPx - marginPx)
+            if (!insideX || !insideY) return false
+
+            val overlapsSelection = !(
+                (cx + loupeWPx) < (selLeft - minSelClearancePx) ||
+                cx > (selRight + minSelClearancePx) ||
+                (cy + loupeHPx) < (selTop - minSelClearancePx) ||
+                cy > (selBottom + minSelClearancePx)
+            )
+            return !overlapsSelection
+        }
+
+        // Candidate 1: ABOVE (preferred)
+        val aboveX = (touchPoint.x - loupeWPx / 2f).coerceIn(marginPx, (maxWPx - loupeWPx - marginPx).coerceAtLeast(marginPx))
+        val aboveY = minOf(touchPoint.y - fingerClearancePx, selTop - minSelClearancePx) - loupeHPx
+        val isAboveSafe = isCandidateSafe(aboveX, aboveY)
+        val isAboveComfortable = isAboveSafe && (aboveY >= marginPx + hysteresisPx)
+
+        // Candidate 2: BELOW
+        val belowX = (touchPoint.x - loupeWPx / 2f).coerceIn(marginPx, (maxWPx - loupeWPx - marginPx).coerceAtLeast(marginPx))
+        val belowY = maxOf(touchPoint.y + fingerClearancePx, selBottom + minSelClearancePx)
+        val isBelowSafe = isCandidateSafe(belowX, belowY)
+
+        // Candidate 3: SIDE_RIGHT
+        val sideRightX = maxOf(touchPoint.x + fingerClearancePx, selRight + minSelClearancePx)
+        val sideRightY = (touchPoint.y - loupeHPx / 2f).coerceIn(marginPx, (maxHPx - loupeHPx - marginPx).coerceAtLeast(marginPx))
+        val isSideRightSafe = isCandidateSafe(sideRightX, sideRightY)
+
+        // Candidate 4: SIDE_LEFT
+        val sideLeftX = minOf(touchPoint.x - fingerClearancePx, selLeft - minSelClearancePx) - loupeWPx
+        val sideLeftY = (touchPoint.y - loupeHPx / 2f).coerceIn(marginPx, (maxHPx - loupeHPx - marginPx).coerceAtLeast(marginPx))
+        val isSideLeftSafe = isCandidateSafe(sideLeftX, sideLeftY)
+
+        // Select mode with stability, stickiness and hysteresis
+        val nextMode = when (currentMode) {
+            LoupePlacementMode.ABOVE -> {
+                if (isAboveSafe) LoupePlacementMode.ABOVE
+                else if (isBelowSafe) LoupePlacementMode.BELOW
+                else if (isSideRightSafe) LoupePlacementMode.SIDE_RIGHT
+                else if (isSideLeftSafe) LoupePlacementMode.SIDE_LEFT
+                else LoupePlacementMode.ABOVE
+            }
+            LoupePlacementMode.BELOW -> {
+                // Switch back to preferred ABOVE only if comfortably safe (prevents threshold oscillation)
+                if (isAboveComfortable) LoupePlacementMode.ABOVE
+                else if (isBelowSafe) LoupePlacementMode.BELOW
+                else if (isAboveSafe) LoupePlacementMode.ABOVE
+                else if (isSideRightSafe) LoupePlacementMode.SIDE_RIGHT
+                else if (isSideLeftSafe) LoupePlacementMode.SIDE_LEFT
+                else LoupePlacementMode.BELOW
+            }
+            LoupePlacementMode.SIDE_RIGHT -> {
+                if (isAboveComfortable) LoupePlacementMode.ABOVE
+                else if (isSideRightSafe) LoupePlacementMode.SIDE_RIGHT
+                else if (isBelowSafe) LoupePlacementMode.BELOW
+                else if (isAboveSafe) LoupePlacementMode.ABOVE
+                else if (isSideLeftSafe) LoupePlacementMode.SIDE_LEFT
+                else LoupePlacementMode.SIDE_RIGHT
+            }
+            LoupePlacementMode.SIDE_LEFT -> {
+                if (isAboveComfortable) LoupePlacementMode.ABOVE
+                else if (isSideLeftSafe) LoupePlacementMode.SIDE_LEFT
+                else if (isBelowSafe) LoupePlacementMode.BELOW
+                else if (isAboveSafe) LoupePlacementMode.ABOVE
+                else if (isSideRightSafe) LoupePlacementMode.SIDE_RIGHT
+                else LoupePlacementMode.SIDE_LEFT
+            }
+        }
+
+        val finalX: Float
+        val finalY: Float
+        when (nextMode) {
+            LoupePlacementMode.ABOVE -> {
+                finalX = aboveX
+                finalY = aboveY.coerceIn(marginPx, (maxHPx - loupeHPx - marginPx).coerceAtLeast(marginPx))
+            }
+            LoupePlacementMode.BELOW -> {
+                finalX = belowX
+                finalY = belowY.coerceIn(marginPx, (maxHPx - loupeHPx - marginPx).coerceAtLeast(marginPx))
+            }
+            LoupePlacementMode.SIDE_RIGHT -> {
+                finalX = sideRightX.coerceIn(marginPx, (maxWPx - loupeWPx - marginPx).coerceAtLeast(marginPx))
+                finalY = sideRightY
+            }
+            LoupePlacementMode.SIDE_LEFT -> {
+                finalX = sideLeftX.coerceIn(marginPx, (maxWPx - loupeWPx - marginPx).coerceAtLeast(marginPx))
+                finalY = sideLeftY
+            }
+        }
+
+        return LoupePlacementResult(finalX, finalY, nextMode)
+    }
+}
+
+/**
+ * Shared floating HEX magnifier loupe with collision-avoidance geometry and pure opacity fade.
+ *
+ * - Quick tap: never shown.
+ * - Hold (>=200ms) or drag: reveals smoothly with opacity-only transition (140ms).
+ * - Collision avoidance: guarantees zero overlap with selected cell/reticle and finger.
+ * - Release: fades out in-place without moving anchor or teleporting.
+ * - Controlled via persistent graphicsLayer alpha (no AnimatedVisibility layout clipping).
+ */
+@Composable
+private fun FloatingHexLoupe(
+    visible: Boolean,
+    color: Int,
+    touchPoint: Offset,
+    selectionCenter: Offset,
+    selectionRadius: Float,
+    contentWidth: androidx.compose.ui.unit.Dp,
+    contentHeight: androidx.compose.ui.unit.Dp,
+    modifier: Modifier = Modifier,
+) {
+    val colors = LocalUHabitComposeColors.current
+    val density = LocalDensity.current
+    val loupeWidth = 108.dp
+    val loupeHeight = 42.dp
+
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(durationMillis = if (visible) 140 else 160, easing = FastOutSlowInEasing),
+        label = "LoupeAlpha"
+    )
+
+    if (alpha > 0.001f) {
+        val maxWPx = with(density) { contentWidth.toPx() }
+        val maxHPx = with(density) { contentHeight.toPx() }
+
+        var activeMode by remember { mutableStateOf(LoupePlacementMode.ABOVE) }
+        LaunchedEffect(visible) {
+            if (!visible) {
+                activeMode = LoupePlacementMode.ABOVE
+            }
+        }
+
+        val placement = LoupeCollisionSolver.calculatePlacement(
+            touchPoint = touchPoint,
+            selectionCenter = selectionCenter,
+            selectionRadius = selectionRadius,
+            contentWidthPx = maxWPx,
+            contentHeightPx = maxHPx,
+            density = density.density,
+            currentMode = activeMode
+        )
+        activeMode = placement.mode
+
+        Box(
+            Modifier
+                .offset {
+                    androidx.compose.ui.unit.IntOffset(placement.x.toInt(), placement.y.toInt())
+                }
+                .size(loupeWidth, loupeHeight)
+                .graphicsLayer { this.alpha = alpha }
+                .clip(RoundedCornerShape(21.dp))
+                .background(Color(colors.surface))
+                .border(1.dp, Color(colors.divider), RoundedCornerShape(21.dp))
+                .padding(horizontal = 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                LoupeColorSwatch(color)
+                Spacer(Modifier.width(8.dp))
+                BasicText(
+                    ColorPickerUtils.toHex(color),
+                    style = TextStyle(
+                        color = Color(colors.foreground),
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                )
+            }
+        }
+    }
+}
+
+/** 12x11 Apple system mosaic with reliable sliding selection reticle. */
 @Composable
 private fun AppleSystemColorGrid(
     selectedArgb: Int,
     onColorPicked: (ComposeColorDraft) -> Unit,
+    onLoupeStateChange: (Boolean, Int, Offset, Offset, Float) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val colors = LocalUHabitComposeColors.current
     val matrix = remember { generateAppleColorMatrix() }
-    val currentPicked by rememberUpdatedState(onColorPicked)
 
-    var isHovering by remember { mutableStateOf(false) }
-    var hoverOffset by remember { mutableStateOf(Offset.Zero) }
-    var activeHoverColor by remember { mutableIntStateOf(selectedArgb) }
-
-    val currentNearest = remember(selectedArgb) { findNearestMatrixPos(matrix, selectedArgb) }
-
-    fun resolveTouch(pos: Offset, width: Float, height: Float) {
-        val totalCols = 12
-        val totalRows = matrix.size
-        val col = ((pos.x / width) * totalCols).toInt().coerceIn(0, totalCols - 1)
-        val row = ((pos.y / height) * totalRows).toInt().coerceIn(0, totalRows - 1)
-        val color = matrix[row][col]
-        activeHoverColor = color
-        hoverOffset = pos
-        isHovering = true
-        currentPicked(ComposeColorDraft.fromArgb(color))
+    val context = LocalContext.current
+    val view = LocalView.current
+    val isReducedMotion = remember {
+        try {
+            Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+        } catch (_: Exception) {
+            false
+        }
     }
 
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
+    val currentNearest = remember(selectedArgb) { findNearestMatrixPos(matrix, selectedArgb) }
+    var selectedPos by remember { mutableStateOf(currentNearest) }
+
+    val coroutineScope = rememberCoroutineScope()
+
+    BoxWithConstraints(modifier.fillMaxWidth()) {
         val totalCols = 12
         val totalRows = matrix.size
         val cellSide = maxWidth / totalCols
         val gridHeight = cellSide * totalRows
         val gridShape = RoundedCornerShape(12.dp)
+
+        val density = LocalDensity.current
+        val cellWPx = with(density) { cellSide.toPx() }
+        val cellHPx = cellWPx
+
+        val initialCenterX = (currentNearest.second + 0.5f) * cellWPx
+        val initialCenterY = (currentNearest.first + 0.5f) * cellHPx
+
+        // Single authoritative visual position for the indicator center (in pixels)
+        var curVisualX by remember { mutableFloatStateOf(initialCenterX) }
+        var curVisualY by remember { mutableFloatStateOf(initialCenterY) }
+        var activeAnimJob by remember { mutableStateOf<Job?>(null) }
+
+        LaunchedEffect(currentNearest) {
+            if (currentNearest != selectedPos) {
+                selectedPos = currentNearest
+                val targetX = (currentNearest.second + 0.5f) * cellWPx
+                val targetY = (currentNearest.first + 0.5f) * cellHPx
+                activeAnimJob?.cancel()
+                if (isReducedMotion) {
+                    curVisualX = targetX
+                    curVisualY = targetY
+                } else {
+                    val dx = targetX - curVisualX
+                    val dy = targetY - curVisualY
+                    val distCells = kotlin.math.sqrt(dx * dx + dy * dy) / cellWPx
+                    if (distCells > 0.05f) {
+                        val duration = (110 + (distCells * 6f).toInt()).coerceIn(120, 180)
+                        activeAnimJob = coroutineScope.launch {
+                            val startX = curVisualX
+                            val startY = curVisualY
+                            launch {
+                                androidx.compose.animation.core.animate(
+                                    initialValue = startX,
+                                    targetValue = targetX,
+                                    animationSpec = tween(duration, easing = FastOutSlowInEasing)
+                                ) { v, _ -> curVisualX = v }
+                            }
+                            launch {
+                                androidx.compose.animation.core.animate(
+                                    initialValue = startY,
+                                    targetValue = targetY,
+                                    animationSpec = tween(duration, easing = FastOutSlowInEasing)
+                                ) { v, _ -> curVisualY = v }
+                            }
+                        }
+                    } else {
+                        curVisualX = targetX
+                        curVisualY = targetY
+                    }
+                }
+            }
+        }
 
         Box(
             Modifier
@@ -445,118 +841,247 @@ private fun AppleSystemColorGrid(
                 .clip(gridShape)
                 .background(Color(colors.surfaceVariant))
                 .border(1.dp, Color(colors.divider), gridShape)
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onPress = { offset ->
-                            resolveTouch(offset, size.width.toFloat(), size.height.toFloat())
-                            tryAwaitRelease()
-                            isHovering = false
-                        }
-                    )
-                }
-                .pointerInput(Unit) {
-                    detectDragGestures(
-                        onDragStart = { offset ->
-                            resolveTouch(offset, size.width.toFloat(), size.height.toFloat())
-                        },
-                        onDragEnd = { isHovering = false },
-                        onDragCancel = { isHovering = false }
-                    ) { change, _ ->
-                        resolveTouch(change.position, size.width.toFloat(), size.height.toFloat())
-                        change.consume()
-                    }
-                }
         ) {
-            Column(Modifier.fillMaxSize()) {
-                matrix.forEachIndexed { r, rowColors ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(cellSide)
-                    ) {
-                        rowColors.forEachIndexed { c, cellColor ->
-                            val isSelected = currentNearest.first == r && currentNearest.second == c
-                            Box(
-                                Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .background(Color(cellColor))
-                            ) {
-                                if (isSelected) {
-                                    AppleSelectionBorder()
+            Canvas(
+                Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            down.consume()
+                            view.parent?.requestDisallowInterceptTouchEvent(true)
+
+                            val w = size.width.toFloat()
+                            val h = size.height.toFloat()
+                            val cellW = w / totalCols
+                            val cellH = h / totalRows
+
+                            val downCol = ((down.position.x / w) * totalCols).toInt().coerceIn(0, totalCols - 1)
+                            val downRow = ((down.position.y / h) * totalRows).toInt().coerceIn(0, totalRows - 1)
+                            val downPos = Pair(downRow, downCol)
+
+                            val targetCenterX = (downCol + 0.5f) * cellW
+                            val targetCenterY = (downRow + 0.5f) * cellH
+
+                            // Cancel any existing transit immediately on touch down
+                            activeAnimJob?.cancel()
+
+                            // Immediate color selection and position update
+                            selectedPos = downPos
+                            val color = matrix[downRow][downCol]
+                            onColorPicked(ComposeColorDraft.fromArgb(color))
+
+                            // Hold timer: reveal loupe ONLY if held for >= 200ms (quick tap never shows loupe!)
+                            var lastInteractionOffset = down.position
+                            var isLoupeShown = false
+                            var holdJob: Job? = coroutineScope.launch {
+                                kotlinx.coroutines.delay(200)
+                                isLoupeShown = true
+                                val selCenter = Offset(curVisualX, curVisualY)
+                                onLoupeStateChange(true, color, lastInteractionOffset, selCenter, cellWPx / 2f)
+                            }
+
+                            // Smooth transit from current visual position to target cell center (no backward snap)
+                            val startX = curVisualX
+                            val startY = curVisualY
+                            val dx = targetCenterX - startX
+                            val dy = targetCenterY - startY
+                            val distCells = kotlin.math.sqrt(dx * dx + dy * dy) / cellW
+
+                            if (distCells > 0.05f && !isReducedMotion) {
+                                val duration = (110 + (distCells * 6f).toInt()).coerceIn(120, 180)
+                                activeAnimJob = coroutineScope.launch {
+                                    launch {
+                                        androidx.compose.animation.core.animate(
+                                            initialValue = startX,
+                                            targetValue = targetCenterX,
+                                            animationSpec = tween(duration, easing = FastOutSlowInEasing)
+                                        ) { v, _ -> curVisualX = v }
+                                    }
+                                    launch {
+                                        androidx.compose.animation.core.animate(
+                                            initialValue = startY,
+                                            targetValue = targetCenterY,
+                                            animationSpec = tween(duration, easing = FastOutSlowInEasing)
+                                        ) { v, _ -> curVisualY = v }
+                                    }
+                                }
+                            } else {
+                                curVisualX = targetCenterX
+                                curVisualY = targetCenterY
+                            }
+
+                            val pointerId = down.id
+                            var isDragging = false
+                            try {
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+                                    if (!change.pressed) break
+
+                                    val moveDist = (change.position - down.position).getDistance()
+                                    // Immediate responsive cancellation on any pointer movement (zero drag lag)
+                                    if (moveDist > 2.dp.toPx()) {
+                                        if (activeAnimJob?.isActive == true) {
+                                            activeAnimJob?.cancel()
+                                        }
+                                        isDragging = true
+                                        curVisualX = change.position.x
+                                        curVisualY = change.position.y
+                                    }
+
+                                    // Deliberate drag threshold for revealing loupe before 200ms hold timer
+                                    if (moveDist > viewConfiguration.touchSlop) {
+                                        isLoupeShown = true
+                                        holdJob?.cancel()
+                                        val selCenter = Offset(curVisualX, curVisualY)
+                                        onLoupeStateChange(true, matrix[selectedPos.first][selectedPos.second], change.position, selCenter, cellWPx / 2f)
+                                    }
+
+                                    if (isDragging) {
+                                        change.consume()
+                                        lastInteractionOffset = change.position
+
+                                        val curCol = ((change.position.x / w) * totalCols).toInt().coerceIn(0, totalCols - 1)
+                                        val curRow = ((change.position.y / h) * totalRows).toInt().coerceIn(0, totalRows - 1)
+                                        val curPos = Pair(curRow, curCol)
+                                        if (curPos != selectedPos) {
+                                            selectedPos = curPos
+                                            val dragColor = matrix[curRow][curCol]
+                                            onColorPicked(ComposeColorDraft.fromArgb(dragColor))
+                                            if (isLoupeShown) {
+                                                val selCenter = Offset(curVisualX, curVisualY)
+                                                onLoupeStateChange(true, dragColor, change.position, selCenter, cellWPx / 2f)
+                                            }
+                                        } else if (isLoupeShown) {
+                                            val selCenter = Offset(curVisualX, curVisualY)
+                                            onLoupeStateChange(true, matrix[curRow][curCol], change.position, selCenter, cellWPx / 2f)
+                                        }
+                                    }
+                                }
+                            } finally {
+                                holdJob?.cancel()
+                                isLoupeShown = false
+                                // Fade out cleanly in-place without moving anchor
+                                val selCenter = Offset(curVisualX, curVisualY)
+                                onLoupeStateChange(false, matrix[selectedPos.first][selectedPos.second], lastInteractionOffset, selCenter, cellWPx / 2f)
+                                view.parent?.requestDisallowInterceptTouchEvent(false)
+                                val finalTargetX = (selectedPos.second + 0.5f) * cellW
+                                val finalTargetY = (selectedPos.first + 0.5f) * cellH
+
+                                if (isDragging) {
+                                    activeAnimJob?.cancel()
+                                    val releaseX = curVisualX
+                                    val releaseY = curVisualY
+                                    if (!isReducedMotion) {
+                                        val distCells = kotlin.math.sqrt(
+                                            (finalTargetX - releaseX) * (finalTargetX - releaseX) +
+                                            (finalTargetY - releaseY) * (finalTargetY - releaseY)
+                                        ) / cellW
+                                        if (distCells > 0.02f) {
+                                            val duration = (90 + (distCells * 30f).toInt()).coerceIn(100, 150)
+                                            activeAnimJob = coroutineScope.launch {
+                                                launch {
+                                                    androidx.compose.animation.core.animate(
+                                                        initialValue = releaseX,
+                                                        targetValue = finalTargetX,
+                                                        animationSpec = tween(duration, easing = FastOutSlowInEasing)
+                                                    ) { v, _ -> curVisualX = v }
+                                                }
+                                                launch {
+                                                    androidx.compose.animation.core.animate(
+                                                        initialValue = releaseY,
+                                                        targetValue = finalTargetY,
+                                                        animationSpec = tween(duration, easing = FastOutSlowInEasing)
+                                                    ) { v, _ -> curVisualY = v }
+                                                }
+                                            }
+                                        } else {
+                                            curVisualX = finalTargetX
+                                            curVisualY = finalTargetY
+                                        }
+                                    } else {
+                                        curVisualX = finalTargetX
+                                        curVisualY = finalTargetY
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            }
-        }
-
-        // Floating Magnifier Loupe during touch/drag
-        if (isHovering) {
-            val loupeWidth = 108.dp
-            val loupeHeight = 44.dp
-            val density = LocalDensity.current
-            val touchXDp = with(density) { hoverOffset.x.toDp() }
-            val touchYDp = with(density) { hoverOffset.y.toDp() }
-            val loupeX = (touchXDp - loupeWidth / 2).coerceIn(8.dp, (maxWidth - loupeWidth - 8.dp).coerceAtLeast(8.dp))
-            val loupeY = (touchYDp - loupeHeight - 16.dp).coerceAtLeast(8.dp)
-
-            Box(
-                Modifier
-                    .offset(x = loupeX, y = loupeY)
-                    .width(loupeWidth)
-                    .height(loupeHeight)
-                    .shadow(8.dp, RoundedCornerShape(22.dp))
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(Color(colors.surface))
-                    .border(1.dp, Color(colors.divider), RoundedCornerShape(22.dp))
-                    .padding(horizontal = 8.dp),
-                contentAlignment = Alignment.Center
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .background(Color(activeHoverColor))
-                            .border(1.5.dp, Color.White, CircleShape)
-                            .shadow(1.dp, CircleShape)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    BasicText(
-                        ColorPickerUtils.toHex(activeHoverColor),
-                        style = TextStyle(
-                            color = Color(colors.foreground),
-                            fontSize = 13.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.SemiBold
+                val cellW = size.width / totalCols
+                val cellH = size.height / totalRows
+
+                // 1. All 132 cells are fixed, seamless squares
+                for (r in 0 until totalRows) {
+                    val rowColors = matrix[r]
+                    val top = r * cellH
+                    for (c in 0 until totalCols) {
+                        drawRect(
+                            color = Color(rowColors[c]),
+                            topLeft = Offset(c * cellW, top),
+                            size = Size(cellW, cellH)
+                        )
+                    }
+                }
+
+                // 2. Continuous sliding selection contour with asymmetric outward corner radius
+                val halfW = cellW / 2f
+                val halfH = cellH / 2f
+                val clampedX = curVisualX.coerceIn(halfW, size.width - halfW)
+                val clampedY = curVisualY.coerceIn(halfH, size.height - halfH)
+
+                val colFloat = (clampedX / cellW) - 0.5f
+                val rowFloat = (clampedY / cellH) - 0.5f
+
+                // Outer container corner proximity factors [0..1]
+                val pTop = (1.0f - rowFloat).coerceIn(0f, 1f)
+                val pBottom = (1.0f - (10.0f - rowFloat)).coerceIn(0f, 1f)
+                val pLeft = (1.0f - colFloat).coerceIn(0f, 1f)
+                val pRight = (1.0f - (11.0f - colFloat)).coerceIn(0f, 1f)
+
+                val cornerFactorTL = pTop * pLeft
+                val cornerFactorTR = pTop * pRight
+                val cornerFactorBL = pBottom * pLeft
+                val cornerFactorBR = pBottom * pRight
+
+                val darkStrokePx = 1.5f.dp.toPx()
+                val whiteStrokePx = 1.0f.dp.toPx()
+                val halfStroke = darkStrokePx / 2f
+
+                val left = (clampedX - halfW) + halfStroke
+                val top = (clampedY - halfH) + halfStroke
+                val right = (clampedX + halfW) - halfStroke
+                val bottom = (clampedY + halfH) - halfStroke
+
+                val baseR = 4f.dp.toPx()
+                val containerCornerR = (12f - 0.75f).dp.toPx() // 11.25dp, concentric with 12dp outer clipped container
+
+                val rTL = baseR + (containerCornerR - baseR) * cornerFactorTL
+                val rTR = baseR + (containerCornerR - baseR) * cornerFactorTR
+                val rBL = baseR + (containerCornerR - baseR) * cornerFactorBL
+                val rBR = baseR + (containerCornerR - baseR) * cornerFactorBR
+
+                val indicatorPath = Path().apply {
+                    addRoundRect(
+                        RoundRect(
+                            left = left,
+                            top = top,
+                            right = right,
+                            bottom = bottom,
+                            topLeftCornerRadius = CornerRadius(rTL),
+                            topRightCornerRadius = CornerRadius(rTR),
+                            bottomRightCornerRadius = CornerRadius(rBR),
+                            bottomLeftCornerRadius = CornerRadius(rBL)
                         )
                     )
                 }
+
+                // Dual-contrast rendering: outer dark hairline (1.5dp, 45% alpha) + inner crisp white stroke (1.0dp, 95% alpha)
+                drawPath(indicatorPath, Color.Black.copy(alpha = 0.45f), style = Stroke(darkStrokePx))
+                drawPath(indicatorPath, Color.White.copy(alpha = 0.95f), style = Stroke(whiteStrokePx))
             }
         }
-    }
-}
-
-/** Contrast-safe white + dark selection outline for mosaic cells. */
-@Composable
-private fun BoxScope.AppleSelectionBorder() {
-    Canvas(Modifier.fillMaxSize()) {
-        val strokeW = 2.dp.toPx()
-        val inset = 1.dp.toPx()
-        drawRect(
-            color = Color.Black.copy(alpha = 0.40f),
-            topLeft = Offset(0f, 0f),
-            size = size,
-            style = Stroke(strokeW + 1.dp.toPx())
-        )
-        drawRect(
-            color = Color.White,
-            topLeft = Offset(inset, inset),
-            size = Size(size.width - 2 * inset, size.height - 2 * inset),
-            style = Stroke(strokeW)
-        )
     }
 }
 
@@ -620,13 +1145,44 @@ private fun findNearestMatrixPos(matrix: List<List<Int>>, target: Int): Pair<Int
     return Pair(bestRow, bestCol)
 }
 
-/** True Multihue 2D Spectrum with theme border and triple-contour reticle. */
+/** True Multihue 2D Spectrum with theme border, inverse projection and transient loupe. */
 @Composable
 private fun AppleTrue2dSpectrum(
     draft: ComposeColorDraft,
     onDraftChange: (ComposeColorDraft) -> Unit,
+    onLoupeStateChange: (Boolean, Int, Offset, Offset, Float) -> Unit,
 ) {
     val currentChange by rememberUpdatedState(onDraftChange)
+    val colors = LocalUHabitComposeColors.current
+    val spectrumDesc = stringResource(R.string.color_picker_mode_spectrum)
+
+    val context = LocalContext.current
+    val view = LocalView.current
+    val density = LocalDensity.current
+    val reticleRadiusPx = with(density) { 14.dp.toPx() }
+    val coroutineScope = rememberCoroutineScope()
+    val isReducedMotion = remember {
+        try {
+            Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    var isTouching by remember { mutableStateOf(false) }
+    var touchOffset by remember { mutableStateOf(Offset.Zero) }
+
+    val reticleScale by animateFloatAsState(
+        targetValue = if (isTouching) 1.16f else 1.0f,
+        animationSpec = if (isReducedMotion) snap() else TactileSpringFloat,
+        label = "ReticleScale"
+    )
+    val reticleStrokeBoostDp by animateFloatAsState(
+        targetValue = if (isTouching) 0.6f else 0f,
+        animationSpec = if (isReducedMotion) snap() else TactileSpringFloat,
+        label = "ReticleStrokeBoost"
+    )
+
     val rainbowColors = remember {
         listOf(
             Color.Red,
@@ -640,102 +1196,163 @@ private fun AppleTrue2dSpectrum(
         )
     }
 
-    fun applyTouch(p: Offset, w: Int, h: Int, inset: Float) {
+    fun applyTouch(p: Offset, w: Int, h: Int, inset: Float, isDeliberateMove: Boolean) {
+        touchOffset = p
         val clampedX = ((p.x - inset) / (w - 2 * inset).coerceAtLeast(1f)).coerceIn(0f, 1f)
         val clampedY = ((p.y - inset) / (h - 2 * inset).coerceAtLeast(1f)).coerceIn(0f, 1f)
-        val hue = clampedY * 360f
+        val hue = (clampedY * 360f).coerceIn(0f, 360f)
         val s: Float
         val v: Float
-        if (clampedX <= 0.45f) {
-            s = (clampedX / 0.45f).coerceIn(0f, 1f)
+        val mid = 0.45f
+        if (clampedX <= mid) {
+            s = (clampedX / mid).coerceIn(0f, 1f)
             v = 1.0f
         } else {
             s = 1.0f
-            v = (1.0f - (clampedX - 0.45f) / 0.55f).coerceIn(0f, 1f)
+            v = (1.0f - (clampedX - mid) / (1.0f - mid)).coerceIn(0f, 1f)
         }
-        currentChange(ComposeColorDraft(AndroidColor.HSVToColor(floatArrayOf(hue, s, v)), hue, s, v))
+        val newDraft = ComposeColorDraft(AndroidColor.HSVToColor(floatArrayOf(hue, s, v)), hue, s, v)
+        currentChange(newDraft)
+        if (isDeliberateMove) {
+            onLoupeStateChange(true, newDraft.argb, p, touchOffset, reticleRadiusPx)
+        }
     }
 
-    val colors = LocalUHabitComposeColors.current
-    val spectrumDesc = stringResource(R.string.color_picker_mode_spectrum)
-
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(240.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .border(1.dp, Color(colors.divider), RoundedCornerShape(14.dp))
-    ) {
-        Canvas(
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val totalWidth = maxWidth
+        Box(
             Modifier
-                .fillMaxSize()
-                .semantics { contentDescription = spectrumDesc }
-                .pointerInput(Unit) {
-                    detectTapGestures { applyTouch(it, size.width, size.height, 12.dp.toPx()) }
-                }
-                .pointerInput(Unit) {
-                    detectDragGestures(onDragStart = { applyTouch(it, size.width, size.height, 12.dp.toPx()) }) { change, _ ->
-                        applyTouch(change.position, size.width, size.height, 12.dp.toPx())
-                        change.consume()
-                    }
-                }
+                .fillMaxWidth()
+                .height(240.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .border(1.dp, Color(colors.divider), RoundedCornerShape(14.dp))
         ) {
-            val inset = 12.dp.toPx()
-            val corner = CornerRadius(14.dp.toPx())
+            Canvas(
+                Modifier
+                    .fillMaxSize()
+                    .semantics { contentDescription = spectrumDesc }
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            down.consume()
+                            view.parent?.requestDisallowInterceptTouchEvent(true)
+                            val inset = 12.dp.toPx()
+                            isTouching = true
+                            applyTouch(down.position, size.width, size.height, inset, isDeliberateMove = false)
 
-            drawRoundRect(
-                brush = Brush.verticalGradient(rainbowColors, startY = inset, endY = size.height - inset),
-                cornerRadius = corner
-            )
-            drawRoundRect(
-                brush = Brush.horizontalGradient(
-                    0.0f to Color.White,
-                    0.45f to Color.Transparent,
-                    1.0f to Color.Transparent,
-                    startX = inset,
-                    endX = size.width - inset
-                ),
-                cornerRadius = corner
-            )
-            drawRoundRect(
-                brush = Brush.horizontalGradient(
-                    0.0f to Color.Transparent,
-                    0.45f to Color.Transparent,
-                    1.0f to Color.Black,
-                    startX = inset,
-                    endX = size.width - inset
-                ),
-                cornerRadius = corner
-            )
-            drawRoundRect(Color(colors.divider), cornerRadius = corner, style = Stroke(1.dp.toPx()))
+                            var lastInteractionOffset = down.position
+                            var isDragging = false
+                            var isLoupeShown = false
+                            // Hold timer: reveal loupe only if held for >= 200ms (quick tap does not show loupe!)
+                            var holdJob: Job? = coroutineScope.launch {
+                                kotlinx.coroutines.delay(200)
+                                isLoupeShown = true
+                                onLoupeStateChange(true, draft.argb, lastInteractionOffset, touchOffset, reticleRadiusPx)
+                            }
 
-            val ry = inset + (draft.hue / 360f).coerceIn(0f, 1f) * (size.height - 2 * inset)
-            val rx = if (draft.saturation < 1.0f) {
-                inset + (draft.saturation * 0.45f) * (size.width - 2 * inset)
-            } else {
-                inset + (0.45f + (1.0f - draft.value) * 0.55f) * (size.width - 2 * inset)
+                            val pointerId = down.id
+                            try {
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+                                    if (!change.pressed) break
+
+                                    if (!isDragging) {
+                                        val dist = (change.position - down.position).getDistance()
+                                        if (dist > viewConfiguration.touchSlop) {
+                                            isDragging = true
+                                            isLoupeShown = true
+                                            holdJob?.cancel()
+                                            onLoupeStateChange(true, draft.argb, change.position, touchOffset, reticleRadiusPx)
+                                        }
+                                    }
+                                    if (isDragging) {
+                                        change.consume()
+                                        lastInteractionOffset = change.position
+                                        applyTouch(change.position, size.width, size.height, inset, isDeliberateMove = isLoupeShown)
+                                    }
+                                }
+                            } finally {
+                                holdJob?.cancel()
+                                isTouching = false
+                                isLoupeShown = false
+                                // Fade out cleanly in-place without moving anchor
+                                onLoupeStateChange(false, draft.argb, lastInteractionOffset, touchOffset, reticleRadiusPx)
+                                view.parent?.requestDisallowInterceptTouchEvent(false)
+                            }
+                        }
+                    }
+            ) {
+                val inset = 12.dp.toPx()
+                val corner = CornerRadius(14.dp.toPx())
+
+                drawRoundRect(
+                    brush = Brush.verticalGradient(rainbowColors, startY = inset, endY = size.height - inset),
+                    cornerRadius = corner
+                )
+                drawRoundRect(
+                    brush = Brush.horizontalGradient(
+                        0.0f to Color.White,
+                        0.45f to Color.Transparent,
+                        1.0f to Color.Transparent,
+                        startX = inset,
+                        endX = size.width - inset
+                    ),
+                    cornerRadius = corner
+                )
+                drawRoundRect(
+                    brush = Brush.horizontalGradient(
+                        0.0f to Color.Transparent,
+                        0.45f to Color.Transparent,
+                        1.0f to Color.Black,
+                        startX = inset,
+                        endX = size.width - inset
+                    ),
+                    cornerRadius = corner
+                )
+                drawRoundRect(Color(colors.divider), cornerRadius = corner, style = Stroke(1.dp.toPx()))
+
+                // Well-defined continuous inverse projection for arbitrary draft HSV colors
+                val mid = 0.45f
+                val w = (1f - draft.saturation) * draft.value
+                val b = 1f - draft.value
+                val xFrac = if (b > w) {
+                    mid + (1f - mid) * b
+                } else {
+                    mid * (1f - w)
+                }.coerceIn(0f, 1f)
+
+                val rx = inset + xFrac * (size.width - 2 * inset)
+                val ry = inset + (draft.hue / 360f).coerceIn(0f, 1f) * (size.height - 2 * inset)
+
+                val reticleRadius = 12.5.dp.toPx() * reticleScale
+                val strokeWidth = (2.0f + reticleStrokeBoostDp).dp.toPx()
+                val darkAlpha = if (isTouching) 0.45f else 0.30f
+
+                // 1. Symmetrical outer dark hairline for contrast on bright/white spectrum areas
+                drawCircle(
+                    color = Color.Black.copy(alpha = darkAlpha),
+                    radius = reticleRadius + strokeWidth / 2 + 0.5.dp.toPx(),
+                    center = Offset(rx, ry),
+                    style = Stroke(0.75.dp.toPx())
+                )
+                // 2. Crisp white ring with tactile stroke expansion
+                drawCircle(
+                    color = Color.White,
+                    radius = reticleRadius,
+                    center = Offset(rx, ry),
+                    style = Stroke(strokeWidth)
+                )
+                // 3. Symmetrical inner dark hairline for contrast on pure white/yellow
+                drawCircle(
+                    color = Color.Black.copy(alpha = darkAlpha * 0.85f),
+                    radius = (reticleRadius - strokeWidth / 2 - 0.5.dp.toPx()).coerceAtLeast(1.dp.toPx()),
+                    center = Offset(rx, ry),
+                    style = Stroke(0.75.dp.toPx())
+                )
             }
-
-            val reticleRadius = 13.dp.toPx()
-            drawCircle(
-                color = Color.Black.copy(alpha = 0.45f),
-                radius = reticleRadius + 1.25.dp.toPx(),
-                center = Offset(rx, ry + 1.dp.toPx()),
-                style = Stroke(3.5.dp.toPx())
-            )
-            drawCircle(
-                color = Color.White,
-                radius = reticleRadius,
-                center = Offset(rx, ry),
-                style = Stroke(2.5.dp.toPx())
-            )
-            drawCircle(
-                color = Color.Black.copy(alpha = 0.25f),
-                radius = reticleRadius - 1.25.dp.toPx(),
-                center = Offset(rx, ry),
-                style = Stroke(0.75.dp.toPx())
-            )
         }
+
     }
 }
 
@@ -959,23 +1576,51 @@ private fun IosLiveChannelRow(
                 contentAlignment = Alignment.Center
             ) {
                 val currentChange by rememberUpdatedState(onValueChange)
+                val context = LocalContext.current
+                val view = LocalView.current
+                val isReducedMotion = remember {
+                    try {
+                        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+                    } catch (_: Exception) {
+                        false
+                    }
+                }
+                var isDragging by remember { mutableStateOf(false) }
+                val thumbScale by animateFloatAsState(
+                    targetValue = if (isDragging) 1.15f else 1.0f,
+                    animationSpec = if (isReducedMotion) snap() else TactileSpringFloat,
+                    label = "SliderThumbScale"
+                )
+
                 Canvas(
                     Modifier
                         .fillMaxWidth()
                         .height(48.dp)
                         .pointerInput(range) {
-                            detectTapGestures { offset ->
-                                val frac = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                down.consume()
+                                view.parent?.requestDisallowInterceptTouchEvent(true)
+                                isDragging = true
+                                val frac = (down.position.x / size.width.toFloat()).coerceIn(0f, 1f)
                                 val next = range.first + ((range.last - range.first) * frac).roundToInt()
                                 currentChange(next)
-                            }
-                        }
-                        .pointerInput(range) {
-                            detectDragGestures { change, _ ->
-                                val frac = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
-                                val next = range.first + ((range.last - range.first) * frac).roundToInt()
-                                currentChange(next)
-                                change.consume()
+
+                                val pointerId = down.id
+                                try {
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull { it.id == pointerId } ?: break
+                                        if (!change.pressed) break
+                                        change.consume()
+                                        val currentFrac = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
+                                        val updatedVal = range.first + ((range.last - range.first) * currentFrac).roundToInt()
+                                        currentChange(updatedVal)
+                                    }
+                                } finally {
+                                    isDragging = false
+                                    view.parent?.requestDisallowInterceptTouchEvent(false)
+                                }
                             }
                         }
                 ) {
@@ -999,7 +1644,7 @@ private fun IosLiveChannelRow(
 
                     val cx = (fraction.coerceIn(0f, 1f) * size.width).coerceIn(15.dp.toPx(), size.width - 15.dp.toPx())
                     val cy = size.height / 2
-                    drawDualContourThumb(Offset(cx, cy), thumbColor)
+                    drawDualContourThumb(Offset(cx, cy), thumbColor, 12.5f * thumbScale)
                 }
             }
 
@@ -1052,30 +1697,39 @@ private fun IosLiveChannelRow(
     }
 }
 
-/** Dual-contour custom slider thumb with white outer ring and soft drop shadow. */
-private fun DrawScope.drawDualContourThumb(center: Offset, thumbFill: Color) {
-    val outerRadius = 14.dp.toPx()
-    val innerRadius = 11.5.dp.toPx()
+/** Dual-contour custom slider thumb with concentric crisp outlines and zero fake elevation. */
+private fun DrawScope.drawDualContourThumb(
+    center: Offset,
+    thumbFill: Color,
+    radiusDp: Float = 12.5f
+) {
+    val outerRadius = radiusDp.dp.toPx()
+    val innerRadius = (radiusDp - 2.5f).dp.toPx()
 
+    // 1. Symmetrical outer dark hairline (0.5dp) for contrast on bright tracks
     drawCircle(
-        color = Color.Black.copy(alpha = 0.30f),
-        radius = outerRadius + 1.25.dp.toPx(),
-        center = center + Offset(0f, 1.25.dp.toPx())
+        color = Color.Black.copy(alpha = 0.25f),
+        radius = outerRadius + 0.5.dp.toPx(),
+        center = center,
+        style = Stroke(0.5.dp.toPx())
     )
+    // 2. Crisp white outer ring
     drawCircle(
         color = Color.White,
         radius = outerRadius,
         center = center
     )
+    // 3. Inner filled color circle
     drawCircle(
         color = thumbFill,
         radius = innerRadius,
         center = center
     )
+    // 4. Subtle inner hairline between color and white ring
     drawCircle(
         color = Color.Black.copy(alpha = 0.15f),
         radius = innerRadius,
         center = center,
-        style = Stroke(0.75.dp.toPx())
+        style = Stroke(0.5.dp.toPx())
     )
 }

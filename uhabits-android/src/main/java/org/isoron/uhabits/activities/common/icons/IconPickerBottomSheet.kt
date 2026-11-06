@@ -39,6 +39,7 @@ import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.emoji2.emojipicker.EmojiPickerView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomsheet.BottomSheetBehavior
@@ -59,14 +60,15 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
     var initialIconRef: IconRef = IconRef.None
 
     private var currentTab = Tab.ICONS
-    private var selectedCategory: IconCategory? = IconCategory.ALL
-    private var isRecentSelected = false
+    private var selectedCategory = CuratedCategory.CURATED
     private var selectedNamespace: IconNamespace? = null
     private var searchQuery = ""
 
     private lateinit var iconsAdapter: IconsGridAdapter
     private lateinit var emojiAdapter: EmojiGridAdapter
     private lateinit var recyclerView: RecyclerView
+    private lateinit var emojiContainer: FrameLayout
+    private var emojiPickerView: EmojiPickerView? = null
     private lateinit var categoriesScroll: HorizontalScrollView
     private lateinit var categoriesRow: LinearLayout
     private lateinit var libraryFilterRow: LinearLayout
@@ -74,8 +76,25 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
     private lateinit var tabEmojiButton: TextView
     private lateinit var searchInput: EditText
     private lateinit var clearSearchButton: ImageView
+    private lateinit var emptyRecentsView: TextView
 
     enum class Tab { ICONS, EMOJI }
+
+    enum class CuratedCategory(val title: String) {
+        CURATED("⭐ Подборка"),
+        RECENTS("🕒 Недавние"),
+        STUDY("📚 Учёба"),
+        WORK("💼 Работа"),
+        HEALTH("❤️ Здоровье"),
+        SPORT("🏃 Спорт"),
+        HOME("🏠 Дом"),
+        FINANCE("💰 Финансы"),
+        ART("🎨 Творчество"),
+        PEOPLE("👥 Отношения"),
+        LEISURE("☕ Отдых"),
+        TRAVEL("✈️ Путешествия"),
+        ALL("🌐 Все значки")
+    }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val dialog = super.onCreateDialog(savedInstanceState) as BottomSheetDialog
@@ -229,7 +248,7 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
         }
         root.addView(defaultFolderBar)
 
-        // 4. Tabs: [ Иконки (1200+) | Emoji (40+) ]
+        // 4. Tabs: [ Иконки | Emoji ]
         val tabsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -244,7 +263,7 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
 
         tabIconsButton = TextView(context).apply {
             tag = "icon_picker_tab_icons"
-            text = "Иконки (1200+)"
+            text = "Иконки"
             textSize = 13f
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(0, MATCH_PARENT, 1f)
@@ -264,7 +283,7 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
         tabsRow.addView(tabEmojiButton)
         root.addView(tabsRow)
 
-        // 5. Search Bar & Library Filter
+        // 5. Search Bar
         val searchBox = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -290,7 +309,7 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
 
         searchInput = EditText(context).apply {
             tag = "icon_picker_search"
-            hint = "Поиск (спорт, чтение, вода, сон...)"
+            hint = "Поиск значка..."
             setHintTextColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.6f))
             setTextColor(palette.onSurface)
             textSize = 14f
@@ -322,18 +341,19 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
         searchBox.addView(clearSearchButton)
         root.addView(searchBox)
 
-        // 6. Library Filter Pills: [ Все | Lucide | Tabler ]
+        // 6. Library Filter Pills: [ Все библиотеки | Lucide | Tabler ] (visible only when ALL icons selected)
         libraryFilterRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
                 bottomMargin = dp(8f).toInt()
             }
+            visibility = View.GONE
         }
         setupLibraryPills(libraryFilterRow)
         root.addView(libraryFilterRow)
 
-        // 7. Categories horizontal chips (with "Недавние" chip at start)
+        // 7. Categories horizontal chips (with "⭐ Подборка" at start)
         categoriesScroll = HorizontalScrollView(context).apply {
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
@@ -349,10 +369,24 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
         categoriesScroll.addView(categoriesRow)
         root.addView(categoriesScroll)
 
-        // 8. Grid of icons
+        // 8. Content View: RecyclerView (for icons & emoji search) + EmojiPickerView
+        val contentContainer = FrameLayout(context).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(320f).toInt())
+        }
+
+        emptyRecentsView = TextView(context).apply {
+            text = "Вы ещё не использовали значки"
+            textSize = 14f
+            gravity = Gravity.CENTER
+            setTextColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.7f))
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+            visibility = View.GONE
+        }
+        contentContainer.addView(emptyRecentsView)
+
         recyclerView = RecyclerView(context).apply {
             layoutManager = GridLayoutManager(context, 5)
-            layoutParams = LinearLayout.LayoutParams(MATCH_PARENT, dp(270f).toInt())
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
             clipToPadding = false
             setPadding(0, dp(4f).toInt(), 0, dp(8f).toInt())
         }
@@ -379,7 +413,53 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
         )
 
         recyclerView.adapter = iconsAdapter
-        root.addView(recyclerView)
+        contentContainer.addView(recyclerView)
+
+        // Native AndroidX EmojiPickerView container
+        emojiContainer = FrameLayout(context).apply {
+            layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+            visibility = View.GONE
+        }
+        try {
+            val picker = EmojiPickerView(context).apply {
+                layoutParams = FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+                emojiGridColumns = 9
+                setOnEmojiPickedListener { item ->
+                    saveRecentEmoji(item.emoji)
+                    onIconSelected?.invoke(IconRef.Emoji(item.emoji))
+                    dismiss()
+                }
+            }
+            emojiPickerView = picker
+            emojiContainer.addView(picker)
+
+            picker.post {
+                val headerRv = picker.findViewById<RecyclerView>(androidx.emoji2.emojipicker.R.id.emoji_picker_header)
+                val bodyRv = picker.findViewById<RecyclerView>(androidx.emoji2.emojipicker.R.id.emoji_picker_body)
+                headerRv?.isNestedScrollingEnabled = false
+                bodyRv?.isNestedScrollingEnabled = true
+                bodyRv?.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
+                    override fun onInterceptTouchEvent(rv: RecyclerView, e: android.view.MotionEvent): Boolean {
+                        if (e.actionMasked == android.view.MotionEvent.ACTION_DOWN) {
+                            rv.parent?.requestDisallowInterceptTouchEvent(true)
+                        }
+                        return false
+                    }
+                })
+
+                val emojiPrefs = context.getSharedPreferences("androidx.emoji2.emojipicker.preferences", Context.MODE_PRIVATE)
+                val hasRecentEmoji = !emojiPrefs.getString("pref_key_recent_emoji", null).isNullOrEmpty()
+                if (!hasRecentEmoji) {
+                    headerRv?.findViewHolderForAdapterPosition(1)?.itemView?.performClick()
+                        ?: bodyRv?.scrollToPosition(1)
+                }
+            }
+        } catch (_: Throwable) {
+            // Fallback gracefully
+        }
+        contentContainer.addView(emojiContainer)
+
+        root.addView(contentContainer)
 
         // Initial setup
         switchTab(Tab.ICONS)
@@ -441,29 +521,11 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
 
     private fun setupCategoryChips(container: LinearLayout) {
         val context = requireContext()
+        container.removeAllViews()
 
-        // 1. "Недавние" chip
-        val recentChip = TextView(context).apply {
-            text = "Недавние"
-            textSize = 12f
-            tag = "RECENT"
-            setPadding(dp(12f).toInt(), dp(6f).toInt(), dp(12f).toInt(), dp(6f).toInt())
-            layoutParams = LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
-                marginEnd = dp(6f).toInt()
-            }
-            setOnClickListener {
-                isRecentSelected = true
-                selectedCategory = null
-                updateCategoryChips()
-                updateFilteredList()
-            }
-        }
-        container.addView(recentChip)
-
-        // 2. All Category Enum chips
-        for (category in IconCategory.values()) {
+        for (category in CuratedCategory.values()) {
             val chip = TextView(context).apply {
-                text = category.titleRu
+                text = category.title
                 textSize = 12f
                 tag = category
                 setPadding(dp(12f).toInt(), dp(6f).toInt(), dp(12f).toInt(), dp(6f).toInt())
@@ -471,9 +533,9 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
                     marginEnd = dp(6f).toInt()
                 }
                 setOnClickListener {
-                    isRecentSelected = false
                     selectedCategory = category
                     updateCategoryChips()
+                    updateLibraryPillsVisibility()
                     updateFilteredList()
                 }
             }
@@ -486,12 +548,8 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
 
         for (i in 0 until categoriesRow.childCount) {
             val chip = categoriesRow.getChildAt(i) as TextView
-            val tag = chip.tag
-            val isSelected = if (tag == "RECENT") {
-                isRecentSelected
-            } else {
-                !isRecentSelected && (tag == selectedCategory)
-            }
+            val cat = chip.tag as? CuratedCategory
+            val isSelected = (cat == selectedCategory)
 
             chip.background = GradientDrawable().apply {
                 cornerRadius = dp(14f)
@@ -504,6 +562,14 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
             }
             chip.setTextColor(if (isSelected) previewColor else MainTabsThemeBridge.withAlpha(palette.onSurface, 0.7f))
             chip.setTypeface(null, if (isSelected) Typeface.BOLD else Typeface.NORMAL)
+        }
+    }
+
+    private fun updateLibraryPillsVisibility() {
+        libraryFilterRow.visibility = if (currentTab == Tab.ICONS && selectedCategory == CuratedCategory.ALL) {
+            View.VISIBLE
+        } else {
+            View.GONE
         }
     }
 
@@ -527,9 +593,11 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
             tabEmojiButton.setTextColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.55f))
             tabEmojiButton.setTypeface(null, Typeface.NORMAL)
 
-            libraryFilterRow.visibility = View.VISIBLE
             categoriesScroll.visibility = View.VISIBLE
-            recyclerView.adapter = iconsAdapter
+            updateLibraryPillsVisibility()
+            searchInput.hint = "Поиск значка..."
+            recyclerView.isNestedScrollingEnabled = true
+            emojiPickerView?.findViewById<RecyclerView>(androidx.emoji2.emojipicker.R.id.emoji_picker_body)?.isNestedScrollingEnabled = false
         } else {
             tabEmojiButton.background = activeBg
             tabEmojiButton.setTextColor(palette.onSurface)
@@ -539,9 +607,12 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
             tabIconsButton.setTextColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.55f))
             tabIconsButton.setTypeface(null, Typeface.NORMAL)
 
-            libraryFilterRow.visibility = View.GONE
             categoriesScroll.visibility = View.GONE
-            recyclerView.adapter = emojiAdapter
+            libraryFilterRow.visibility = View.GONE
+            searchInput.hint = "Поиск эмодзи (огонь, бег, книга...)"
+            recyclerView.isNestedScrollingEnabled = false
+            emojiPickerView?.findViewById<RecyclerView>(androidx.emoji2.emojipicker.R.id.emoji_picker_body)?.isNestedScrollingEnabled = true
+            emojiPickerView?.findViewById<RecyclerView>(androidx.emoji2.emojipicker.R.id.emoji_picker_header)?.isNestedScrollingEnabled = false
         }
         updateFilteredList()
     }
@@ -559,24 +630,63 @@ class IconPickerBottomSheet : BottomSheetDialogFragment() {
         prefs.edit().putString("recent_icons", updated.joinToString(",")).apply()
     }
 
+    private fun saveRecentEmoji(emoji: String) {
+        val prefs = requireContext().getSharedPreferences("androidx.emoji2.emojipicker.preferences", Context.MODE_PRIVATE)
+        val current = prefs.getString("pref_key_recent_emoji", "")?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList()
+        val updated = (listOf(emoji) + current.filter { it != emoji }).take(30)
+        prefs.edit().putString("pref_key_recent_emoji", updated.joinToString(",")).apply()
+    }
+
     private fun updateFilteredList() {
         if (currentTab == Tab.ICONS) {
-            val results = if (isRecentSelected && searchQuery.isEmpty()) {
-                val recents = getRecentIcons()
-                if (recents.isNotEmpty()) recents else IconPack.search("", IconCategory.ALL, selectedNamespace)
+            recyclerView.visibility = View.VISIBLE
+            emojiContainer.visibility = View.GONE
+            recyclerView.adapter = iconsAdapter
+
+            val results = when {
+                searchQuery.isNotEmpty() -> {
+                    // Full-catalog search across all icons
+                    IconPack.search(searchQuery, IconCategory.ALL, selectedNamespace)
+                }
+                selectedCategory == CuratedCategory.CURATED -> {
+                    val curated = IconPack.getCuratedIcons()
+                    if (selectedNamespace != null) curated.filter { it.namespace == selectedNamespace } else curated
+                }
+                selectedCategory == CuratedCategory.RECENTS -> {
+                    // Strictly user-selected icons only, no fake/curated fallback
+                    val recents = getRecentIcons()
+                    if (selectedNamespace != null) recents.filter { it.namespace == selectedNamespace } else recents
+                }
+                selectedCategory == CuratedCategory.ALL -> {
+                    IconPack.search("", IconCategory.ALL, selectedNamespace)
+                }
+                else -> {
+                    val catIcons = IconPack.getCuratedIconsForCategory(selectedCategory.name)
+                    if (selectedNamespace != null) catIcons.filter { it.namespace == selectedNamespace } else catIcons
+                }
+            }
+
+            val isRecentsEmpty = (selectedCategory == CuratedCategory.RECENTS && results.isEmpty())
+            if (isRecentsEmpty) {
+                recyclerView.visibility = View.GONE
+                emptyRecentsView.visibility = View.VISIBLE
             } else {
-                val cat = selectedCategory ?: IconCategory.ALL
-                IconPack.search(searchQuery, cat, selectedNamespace)
+                recyclerView.visibility = View.VISIBLE
+                emptyRecentsView.visibility = View.GONE
             }
             iconsAdapter.setItems(results)
         } else {
-            val query = searchQuery.trim().lowercase()
-            val emojis = if (query.isEmpty()) {
-                IconPack.CURATED_EMOJIS
+            val query = searchQuery.trim()
+            if (query.isEmpty() && emojiPickerView != null) {
+                recyclerView.visibility = View.GONE
+                emojiContainer.visibility = View.VISIBLE
             } else {
-                IconPack.CURATED_EMOJIS.filter { it.contains(query) }
+                recyclerView.visibility = View.VISIBLE
+                emojiContainer.visibility = View.GONE
+                recyclerView.adapter = emojiAdapter
+                val emojis = EmojiCatalogData.search(query)
+                emojiAdapter.setItems(emojis)
             }
-            emojiAdapter.setItems(emojis)
         }
     }
 

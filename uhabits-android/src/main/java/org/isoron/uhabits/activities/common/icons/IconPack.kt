@@ -79,6 +79,74 @@ object IconPack {
         "🎮", "🎸", "🎹", "📷", "🎁", "💡", "🔑", "🚀"
     )
 
+    val CATEGORY_CURATED_KEYS: Map<String, List<String>> = mapOf(
+        "STUDY" to listOf(
+            "lucide:book", "lucide:book-open", "lucide:bookmark", "lucide:graduation-cap",
+            "lucide:school", "lucide:pencil", "lucide:library", "lucide:languages",
+            "lucide:file-text", "lucide:notebook-pen", "lucide:calculator", "lucide:atom",
+            "lucide:brain", "lucide:award"
+        ),
+        "WORK" to listOf(
+            "lucide:briefcase", "lucide:laptop", "lucide:folder", "lucide:target",
+            "lucide:calendar", "lucide:clock", "lucide:mail", "lucide:clipboard-list",
+            "lucide:check-circle-2", "lucide:building-2", "lucide:inbox", "lucide:phone",
+            "lucide:chart-pie", "lucide:chart-bar"
+        ),
+        "HEALTH" to listOf(
+            "lucide:heart", "lucide:pill", "lucide:apple", "lucide:smile",
+            "lucide:activity", "lucide:sun", "lucide:moon", "lucide:sparkles",
+            "lucide:shield-check", "lucide:droplet", "lucide:thermometer", "lucide:eye",
+            "lucide:stethoscope"
+        ),
+        "SPORT" to listOf(
+            "lucide:dumbbell", "lucide:bike", "lucide:flame", "lucide:trophy",
+            "lucide:medal", "lucide:footprints", "lucide:timer", "lucide:zap",
+            "lucide:mountain", "lucide:flag", "tabler:gymnastics", "tabler:ball-tennis",
+            "tabler:ball-volleyball", "lucide:scale"
+        ),
+        "HOME" to listOf(
+            "lucide:home", "lucide:utensils", "lucide:bed", "lucide:bath",
+            "lucide:lamp", "lucide:armchair", "lucide:key", "lucide:door-closed",
+            "lucide:wrench", "lucide:hammer", "lucide:trash-2", "lucide:shopping-bag",
+            "lucide:shopping-cart", "lucide:alarm-clock", "lucide:washing-machine", "lucide:package"
+        ),
+        "FINANCE" to listOf(
+            "lucide:wallet", "lucide:credit-card", "lucide:piggy-bank", "lucide:trending-up",
+            "lucide:coins", "lucide:dollar-sign", "lucide:receipt", "lucide:scale",
+            "lucide:banknote", "lucide:percent", "lucide:chart-pie"
+        ),
+        "ART" to listOf(
+            "lucide:palette", "lucide:brush", "lucide:music", "lucide:camera",
+            "lucide:feather", "lucide:image", "lucide:mic", "lucide:scissors",
+            "lucide:film", "lucide:guitar", "lucide:sparkles", "lucide:pen-tool"
+        ),
+        "PEOPLE" to listOf(
+            "lucide:users", "lucide:user", "lucide:user-check", "lucide:message-circle",
+            "lucide:message-square", "lucide:heart-handshake", "lucide:smile", "lucide:party-popper",
+            "lucide:gift", "lucide:phone", "lucide:baby", "lucide:contact"
+        ),
+        "LEISURE" to listOf(
+            "lucide:coffee", "lucide:gamepad-2", "lucide:headphones", "lucide:armchair",
+            "lucide:tent", "lucide:book-open", "lucide:film", "lucide:music",
+            "lucide:sun", "lucide:tree-pine", "lucide:trees", "lucide:compass",
+            "lucide:beer", "lucide:wine"
+        ),
+        "TRAVEL" to listOf(
+            "lucide:plane", "lucide:map-pin", "lucide:map", "lucide:globe",
+            "lucide:car", "lucide:train", "lucide:luggage", "lucide:compass",
+            "lucide:caravan", "lucide:cable-car", "tabler:beach", "lucide:hotel",
+            "lucide:ship"
+        )
+    )
+
+    val CURATED_ICON_KEYS: List<String> = CATEGORY_CURATED_KEYS.values.flatten().distinct()
+
+    fun getCuratedIcons(): List<IconEntry> = CURATED_ICON_KEYS.mapNotNull { getIcon(it) }
+
+    fun getCuratedIconsForCategory(categoryName: String): List<IconEntry> =
+        CATEGORY_CURATED_KEYS[categoryName]?.mapNotNull { getIcon(it) } ?: emptyList()
+
+
     val ICONS: List<IconEntry> get() = IconCatalogData.ALL_ICONS
 
     private val KEY_MAP: Map<String, IconEntry> by lazy {

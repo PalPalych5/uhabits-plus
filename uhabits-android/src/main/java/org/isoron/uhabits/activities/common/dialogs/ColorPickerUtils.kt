@@ -22,9 +22,9 @@ internal object ColorPickerUtils {
 
     fun toHex(color: Int): String = String.format(
         "#%02X%02X%02X",
-        Color.red(color),
-        Color.green(color),
-        Color.blue(color)
+        (color shr 16) and 0xFF,
+        (color shr 8) and 0xFF,
+        color and 0xFF
     )
 
     fun parseHex(value: String): Int? {

@@ -17,6 +17,8 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.agp)
     alias(libs.plugins.kotlin.android)
@@ -93,7 +95,57 @@ android {
         else "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    val localProperties = Properties().apply {
+        val localPropertiesFile = rootProject.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            localPropertiesFile.inputStream().use { load(it) }
+        }
+    }
+
+    val designatedDebugKeystorePath = if (providers.gradleProperty("uhabit.debug.keystore").isPresent) {
+        providers.gradleProperty("uhabit.debug.keystore").get().takeIf { it.isNotBlank() }
+    } else if (System.getenv("UHABIT_DEBUG_KEYSTORE") != null) {
+        System.getenv("UHABIT_DEBUG_KEYSTORE").takeIf { it.isNotBlank() }
+    } else {
+        localProperties.getProperty("uhabit.debug.keystore")?.takeIf { it.isNotBlank() }
+    }
+
     signingConfigs {
+        getByName("debug") {
+            if (!designatedDebugKeystorePath.isNullOrBlank()) {
+                val designatedFile = file(designatedDebugKeystorePath)
+                if (!designatedFile.isFile) {
+                    throw GradleException(
+                        "Designated UHabit debug keystore does not exist at: ${designatedFile.absolutePath}. " +
+                        "Verify 'uhabit.debug.keystore' in local.properties or UHABIT_DEBUG_KEYSTORE."
+                    )
+                }
+                storeFile = designatedFile
+                storePassword = localProperties.getProperty("uhabit.debug.storePassword")
+                    ?: providers.gradleProperty("uhabit.debug.storePassword").orNull
+                    ?: System.getenv("UHABIT_DEBUG_STORE_PASSWORD")
+                    ?: "android"
+                keyAlias = localProperties.getProperty("uhabit.debug.keyAlias")
+                    ?: providers.gradleProperty("uhabit.debug.keyAlias").orNull
+                    ?: System.getenv("UHABIT_DEBUG_KEY_ALIAS")
+                    ?: "androiddebugkey"
+                keyPassword = localProperties.getProperty("uhabit.debug.keyPassword")
+                    ?: providers.gradleProperty("uhabit.debug.keyPassword").orNull
+                    ?: System.getenv("UHABIT_DEBUG_KEY_PASSWORD")
+                    ?: "android"
+            } else {
+                val allowDefault = providers.gradleProperty("uhabit.allowDefaultDebugKeystore")
+                    .map { it.toBooleanStrict() }.getOrElse(false)
+                if (!allowDefault) {
+                    throw GradleException(
+                        "Designated UHabit debug keystore is not configured. " +
+                        "Set 'uhabit.debug.keystore' in local.properties or UHABIT_DEBUG_KEYSTORE environment variable. " +
+                        "Silent fallback to the machine's default debug keystore is disabled to protect installation compatibility."
+                    )
+                }
+            }
+        }
+
         if (System.getenv("LOOP_KEY_ALIAS") != null) {
             create("release") {
                 keyAlias = System.getenv("LOOP_KEY_ALIAS")
@@ -179,6 +231,7 @@ dependencies {
     implementation(libs.material)
     implementation(libs.documentfile)
     implementation(libs.security.crypto)
+    implementation("androidx.emoji2:emoji2-emojipicker:1.5.0")
     implementation(libs.opencsv)
     implementation(libs.konfetti.xml)
     implementation(project(":uhabits-core"))
