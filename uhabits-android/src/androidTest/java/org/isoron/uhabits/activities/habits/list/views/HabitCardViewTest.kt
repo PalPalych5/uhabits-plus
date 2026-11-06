@@ -20,11 +20,13 @@
 package org.isoron.uhabits.activities.habits.list.views
 
 import android.widget.LinearLayout
+import android.widget.FrameLayout
 import android.widget.TextView
 import android.view.View
 import android.view.ViewGroup
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
+import androidx.compose.ui.platform.ComposeView
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.BaseViewTest
@@ -49,6 +51,29 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @MediumTest
 class HabitCardViewTest : BaseViewTest() {
+
+    @Test
+    fun recycledSphereHeadingUpdatesAndClearsWithoutChangingCardContent() {
+        val content = view.getChildAt(0) as LinearLayout
+        val original = content.layoutParams as FrameLayout.LayoutParams
+        assertEquals(0, original.topMargin)
+
+        view.groupHeading = "First sphere"
+        view.composeGroupHeading = "First sphere"
+        val heading = (0 until view.childCount).map(view::getChildAt).filterIsInstance<ComposeView>().single()
+        org.junit.Assert.assertTrue((content.layoutParams as FrameLayout.LayoutParams).topMargin > 0)
+        assertEquals(View.VISIBLE, heading.visibility)
+
+        view.groupHeading = "Second sphere"
+        view.composeGroupHeading = "Second sphere"
+        org.junit.Assert.assertSame(heading, (0 until view.childCount).map(view::getChildAt).filterIsInstance<ComposeView>().single())
+        view.groupHeading = null
+        view.composeGroupHeading = null
+        assertEquals(View.GONE, heading.visibility)
+        assertEquals(0, (content.layoutParams as FrameLayout.LayoutParams).topMargin)
+        org.junit.Assert.assertSame(content, view.getChildAt(0))
+        org.junit.Assert.assertSame(habit1, view.habit)
+    }
 
     @Test
     fun manualWeeklyLimitUsesWholeWeekInsteadOfDailyFraction() {

@@ -57,12 +57,13 @@ class ReminderControllerTest : BaseAndroidJVMTest() {
 
     @Test
     @Throws(Exception::class)
-    fun testOnDismiss_whenSticky_reshowsNotification() {
+    fun testOnDismiss_whenSticky_cancelsNotification() {
         val habit = fixtures.createEmptyHabit()
         every { preferences.shouldMakeNotificationsSticky() } returns true
         controller.onDismiss(habit)
-        verify { notificationTray.reshow(habit) }
+        verify { notificationTray.cancel(habit) }
     }
+
     @Test
     @Throws(Exception::class)
     fun testOnShowReminder() {

@@ -70,8 +70,12 @@ class UiReviewDialogCaptureTest {
             is ViewGroup -> (0 until view.childCount).flatMap { errors(view.getChildAt(it)) }
             else -> emptyList()
         }
-        for ((variant, theme, scale) in listOf(Triple("light", 2, "1.0"), Triple("dark", 1, "1.0"), Triple("large-font", 2, "1.3"))) {
+        val variants = listOf(Triple("light", 2, "1.0"), Triple("dark", 1, "1.0"), Triple("amoled", 1, "1.0"), Triple("large-font", 2, "1.3"))
+        val requestedVariant = InstrumentationRegistry.getArguments().getString("uiReviewVariant")
+        check(requestedVariant == null || variants.any { it.first == requestedVariant })
+        for ((variant, theme, scale) in variants.filter { requestedVariant == null || it.first == requestedVariant }) {
             component.preferences.theme = theme
+            component.preferences.isPureBlackEnabled = variant == "amoled"
             device.executeShellCommand("settings put system font_scale $scale")
             val containerCount = component.organizationFacade.containerQueries!!.roots().size
             ActivityScenario.launch<ContainersActivity>(ContainersActivity.intent(context)).use { scenario ->

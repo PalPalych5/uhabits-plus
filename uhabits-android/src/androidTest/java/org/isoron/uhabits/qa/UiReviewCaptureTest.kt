@@ -2,6 +2,7 @@ package org.isoron.uhabits.qa
 
 import android.content.Intent
 import android.os.Build
+import android.provider.Settings
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -45,11 +46,44 @@ class UiReviewCaptureTest {
             val ins = InstrumentationRegistry.getInstrumentation()
             val context = ins.targetContext
             check(Build.MODEL.contains("sdk") || Build.MODEL.contains("Emulator")) { "Physical devices forbidden" }
-            check(InstrumentationRegistry.getArguments().getString("disposableAvd") == "UHabit_UI_Review_Disposable_20261011") { "Verified disposable AVD token required" }
-            check(UiDevice.getInstance(ins).executeShellCommand("getprop ro.boot.qemu.avd_name").trim() == "UHabit_UI_Review_Disposable_20261011") { "Actual AVD identity mismatch" }
+            val token = InstrumentationRegistry.getArguments().getString("disposableAvd")
+            val isTemporary = token?.matches(Regex("UHabit_Temp_[a-f0-9]{32}")) == true
+            check(token == "UHabit_UI_Review_Disposable_20261011" || isTemporary) { "Verified disposable AVD token required" }
+            check(UiDevice.getInstance(ins).executeShellCommand("getprop ro.boot.qemu.avd_name").trim() == token) { "Actual AVD identity mismatch" }
+            if (Build.VERSION.SDK_INT >= 33) {
+                try {
+                    ins.uiAutomation.grantRuntimePermission(context.packageName, android.Manifest.permission.POST_NOTIFICATIONS)
+                } catch (_: Throwable) {}
+            }
+            if (isTemporary) {
+                check(org.isoron.uhabits.BuildConfig.DEBUG)
+                check(Settings.Global.getInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, 0) == 1)
+                check(Settings.Global.getInt(context.contentResolver, Settings.Global.WIFI_ON, 0) == 0)
+            }
             UiDevice.getInstance(ins).wakeUp()
             val original = HabitsApplication.component
+            if (isTemporary) {
+                val marker = File(context.filesDir, "${DemoDataGenerator.DISPOSABLE_MARKER}-${original.session.datasetId}")
+                check(original.session.isExperimental && !original.session.capabilities.syncEnabled &&
+                    !original.session.capabilities.remoteCallsAllowed && marker.isFile &&
+                    marker.readText().trim() == original.session.databaseFilename &&
+                    original.dbFile.canonicalFile == context.getDatabasePath(original.session.databaseFilename).canonicalFile &&
+                    original.session.databaseFilename != org.isoron.uhabits.core.DATABASE_FILENAME) {
+                    "Temporary capture requires a marked isolated offline dataset"
+                }
+            }
             if (original.session.isExperimental && original.habitList.size() >= 30) return original
+            if (isTemporary) {
+                check(original.session.isExperimental && original.habitList.size() == 0) { "Temporary capture requires an empty experimental fixture" }
+                original.preferences.isFirstRun = false
+                original.preferences.isDeveloper = true
+                original.preferences.isDayTiersEnabled = true
+                original.preferences.isHabitSpheresEnabled = true
+                original.preferences.theme = 2
+                DemoDataGenerator.generate(context, original.sqlModelFactory, original.habitList, null,
+                    original.habitCardListCache, true, LocalDate(2026, 10, 11))
+                return original
+            }
             val legacySnapshot = File(context.cacheDir, "ui-review-empty-legacy.db")
             check(original.habitList.size() == 0) { "QA initialization requires an empty source dataset" }
             DatabaseUtils.createDatabaseSnapshot(context, legacySnapshot)
@@ -109,25 +143,36 @@ class UiReviewCaptureTest {
     @Test fun captureRenderedScreens() {
         val fixture = initializeFixture()
         val app = context.applicationContext as HabitsApplication
-        // Use production UI gates against the generated isolated file, with all external work disabled.
-        val qaSession = fixture.session.copy(mode = DatasetMode.PRODUCTION_NEXT,
+        // Both modes use the same disposable offline fixture; no remote/background work.
+        val mode = InstrumentationRegistry.getArguments().getString("uiReviewMode", "production")
+        check(mode == "production" || mode == "experimental")
+        val qaSession = if (mode == "production") fixture.session.copy(mode = DatasetMode.PRODUCTION_NEXT,
             capabilities = DatasetCapabilities.PRODUCTION_NEXT.copy(syncEnabled = false, remoteCallsAllowed = false,
-                backgroundJobsEnabled = false, widgetsEnabled = false, remindersEnabled = false))
+                backgroundJobsEnabled = false, widgetsEnabled = false, remindersEnabled = false)) else fixture.session
         instrumentation.runOnMainSync { app.rebuildComponent(qaSession) }
         val component = HabitsApplication.component
-        val productionRejection = runCatching {
-            DemoDataGenerator.generate(context, component.sqlModelFactory, component.habitList, null,
-                component.habitCardListCache, true, LocalDate(2026, 10, 11))
-        }.exceptionOrNull()
-        check(productionRejection is IllegalStateException) { "Generator accepted production mode" }
+        if (mode == "production") {
+            val productionRejection = runCatching {
+                DemoDataGenerator.generate(context, component.sqlModelFactory, component.habitList, null,
+                    component.habitCardListCache, true, LocalDate(2026, 10, 11))
+            }.exceptionOrNull()
+            check(productionRejection is IllegalStateException) { "Generator accepted production mode" }
+        }
         output = File(context.getExternalFilesDir(null), "ui-review").apply { mkdirs() }
-        for ((name, theme, scale) in listOf(Triple("light", 2, "1.0"), Triple("dark", 1, "1.0"), Triple("large-font", 2, "1.3"))) {
-            variant = name; component.preferences.theme = theme
+        val variants = listOf(Triple("light", 2, "1.0"), Triple("dark", 1, "1.0"), Triple("amoled", 1, "1.0"), Triple("large-font", 2, "1.3"))
+        val requestedVariant = InstrumentationRegistry.getArguments().getString("uiReviewVariant")
+        check(requestedVariant == null || variants.any { it.first == requestedVariant })
+        for ((name, theme, scale) in variants.filter { requestedVariant == null || it.first == requestedVariant }) {
+            variant = name; component.preferences.theme = theme; component.preferences.isPureBlackEnabled = name == "amoled"
             shell("settings put system font_scale $scale")
             ActivityScenario.launch<MainActivity>(Intent(context, MainActivity::class.java)).use { scenario ->
                 fun route(destination: MainDestination) { scenario.onActivity { it.navigate(destination) }; device.waitForIdle() }
                 route(MainDestination.HABITS); capture("habits", "main-list")
-                attempt("habits", "overflow") { clickDescription("Ещё"); capture("habits", "overflow"); device.pressBack() }
+                attempt("habits", "overflow") {
+                    val overflow = device.findObject(By.desc("Ещё")) ?: device.findObject(By.desc("More options"))
+                        ?: error("Overflow action unavailable")
+                    overflow.click(); device.waitForIdle(); capture("habits", "overflow"); device.pressBack()
+                }
                 attempt("habits", "details") { clickDescription("Читать книгу"); check(device.wait(androidx.test.uiautomator.Until.hasObject(By.res(java.util.regex.Pattern.compile(".*:id/action_edit_habit"))), 5000)) { "Habit details did not open" }; capture("habits", "details"); device.swipe(600, 1700, 600, 650, 20); capture("habits", "history-statistics"); device.pressBack() }
                 route(MainDestination.TASKS); capture("tasks", "today")
                 attempt("tasks", "creation") { device.findObject(By.res(context.packageName, "layoutQuickAddCollapsed")).click(); capture("tasks", "creation"); device.pressBack() }
@@ -139,15 +184,11 @@ class UiReviewCaptureTest {
                 attempt("containers", "empty") { openTaskNavigation(); clickText("Пустой раздел"); capture("containers", "empty") }
                 scenario.onActivity { TaskDetailBottomSheet.newInstance(TaskId("qa-task-1")).show(it.supportFragmentManager, "qa-task") }
                 device.waitForIdle(); capture("tasks", "detail-notes-subtasks")
-                for (label in listOf("План", "Дедлайн", "Раздел")) attempt("tasks", "$label-picker") {
+                for ((label, id) in listOf("due" to "chipDetailDue", "container" to "chipDetailContainer")) attempt("tasks", "$label-picker") {
                     QaEmulatorUi.clearSystemUiError()
-                    val id = when (label) { "План" -> "rowDetailPlannedDate"; "Дедлайн" -> "rowDetailDeadline"; else -> "rowDetailContainer" }
                     val control = device.findObject(By.res(java.util.regex.Pattern.compile(".*:id/$id")))
                         ?: error("Missing actual detail control: $id")
-                    control.click(); device.waitForIdle(); capture("tasks", "$label-picker");
-                    if (label != "Раздел") {
-                        clickText("Выбрать дату в календаре"); capture("tasks", "$label-custom-calendar"); device.pressBack()
-                    } else device.pressBack()
+                    control.click(); device.waitForIdle(); capture("tasks", "$label-picker"); device.pressBack()
                 }
                 attempt("focus", "preparation") {
                     clickTextContains("Начать фокус"); capture("focus", "preparation")
@@ -157,6 +198,8 @@ class UiReviewCaptureTest {
                     }
                     check(!component.timerSessionManager.snapshot().hasActiveSession) { "Opening Focus started a session" }
                     clickText("Начать")
+                    device.findObject(By.res("com.android.permissioncontroller:id/permission_allow_button"))?.click()
+                    device.waitForIdle()
                     instrumentation.runOnMainSync {
                         check(component.timerSessionManager.snapshot().isRunning) { "Start did not begin Focus" }
                         check(component.timerSessionManager.isCurrentTask(TaskId("qa-task-1"))) { "Wrong Focus attribution target" }
@@ -195,7 +238,7 @@ class UiReviewCaptureTest {
     private fun writeManifest() {
         val component = HabitsApplication.component
         val temporary = File(output, "capture-manifest.tmp")
-        temporary.writeText(JSONObject().put("avd", "UHabit_UI_Review_Disposable_20261011")
+        temporary.writeText(JSONObject().put("avd", InstrumentationRegistry.getArguments().getString("disposableAvd"))
             .put("seed", DemoDataGenerator.SEED).put("referenceDate", "2026-10-11").put("datasetMode", component.session.mode.name)
             .put("fixtureSource", "Generated isolated disposable experiment rendered under offline production UI gates")
             .put("appVersion", org.isoron.uhabits.BuildConfig.VERSION_NAME).put("sdk", Build.VERSION.SDK_INT)
@@ -209,7 +252,10 @@ class UiReviewCaptureTest {
         QaEmulatorUi.clearSystemUiError()
         val pattern = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote(label),
             java.util.regex.Pattern.CASE_INSENSITIVE or java.util.regex.Pattern.UNICODE_CASE)
-        val target = device.findObject(By.text(pattern)) ?: error("No text selector: $label")
+        val target = device.findObject(By.text(pattern))
+            ?: device.findObject(By.desc(pattern))
+            ?: device.findObject(By.descContains(label))
+            ?: error("No text selector: $label")
         target.click(); device.waitForIdle()
     }
     private fun clickTextContains(label: String) { QaEmulatorUi.clearSystemUiError(); val target = device.findObject(By.textContains(label)) ?: error("No textContains selector: $label"); target.click(); device.waitForIdle() }
@@ -225,7 +271,7 @@ class UiReviewCaptureTest {
         when (state) {
             "details", "history-statistics" -> check(hasControl("action_edit_habit")) { "Expected Habit detail toolbar" }
             "План-custom-calendar", "Дедлайн-custom-calendar" -> check(hasControl("mtrl_calendar_main_pane")) { "Expected Material calendar" }
-            "detail-notes-subtasks" -> check(hasControl("rowDetailPlannedDate") && hasControl("rowDetailDeadline")) { "Expected Task details" }
+            "detail-notes-subtasks" -> check(hasControl("chipDetailDue") && hasControl("chipDetailContainer")) { "Expected Task details" }
             "preparation", "pomodoro-preparation" -> check(device.findObject(By.desc("Начать фокус")) != null) { "Expected explicit Focus preparation confirmation" }
         }
         val safeState = state.replace(Regex("[^a-zA-Zа-яА-Я0-9_-]"), "-")
