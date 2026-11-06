@@ -33,8 +33,8 @@ An up-to-date UHabit Next screenshot gallery will be added later.
 Use JDK 17 and an Android SDK with platform 36. The repository includes the Gradle 8.13 wrapper; the build uses Android Gradle Plugin 8.13.2 and Kotlin 2.3.20. The app targets Android SDK 36 and requires Android 9 (API 28) or newer.
 
 ```sh
-git clone https://github.com/PalPalych5/uhabits-next-dev.git
-cd uhabits-next-dev
+git clone https://github.com/PalPalych5/uhabits-plus.git
+cd uhabits-plus
 ./gradlew :uhabits-android:assembleDebug
 ```
 

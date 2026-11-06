@@ -11,8 +11,8 @@ UHabit Next is an experimental Android project. The following commands build the
 ## Debug build
 
 ```sh
-git clone https://github.com/PalPalych5/uhabits-next-dev.git
-cd uhabits-next-dev
+git clone https://github.com/PalPalych5/uhabits-plus.git
+cd uhabits-plus
 ./gradlew :uhabits-android:assembleDebug
 ```
 
@@ -27,4 +27,4 @@ On Windows run `gradlew.bat :uhabits-android:assembleDebug`. The debug APK is lo
 
 Android instrumentation tests require an appropriately configured device or emulator. Select tests for the affected behavior and use isolated test data; the JVM tests do not establish device or visual behavior.
 
-For the private development checkout, see [QA strategy and isolation](../tools/qa/README.md). Never run destructive test setup against a physical device or a dataset containing user data.
+For testing details and QA verification guidelines, see [QA strategy and verification](../tools/qa/README.md). Never run destructive test setup against a physical device or a dataset containing user data.

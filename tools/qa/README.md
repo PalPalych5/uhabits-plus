@@ -59,9 +59,9 @@ is reserved exclusively for:
 
 ---
 
-## Agent and Orchestration Discipline (Codex / Orca / AGY)
+## Execution Discipline
 
-- The **Coordinator** is responsible for evaluating the risk profile and selecting the appropriate QA level (Level 1, 2, or 3).
-- **Subagents / Workers** must never launch independent full QA matrices or spin up uncoordinated AVDs.
+- Evaluate the risk profile and select the appropriate QA level (Level 1, 2, or 3).
+- Do not launch full QA matrices for minor fixes, documentation updates, or routine development.
 - Avoid duplicate concurrent AVD runs for the same verification scope.
-- Always cleanly stop temporary AVDs and clean up orphan resources after test sessions.
+- Always cleanly stop temporary AVDs and clean up test resources after test sessions.
