@@ -33,8 +33,8 @@ An up-to-date UHabit Next screenshot gallery will be added later.
 Use JDK 17 and an Android SDK with platform 36. The repository includes the Gradle 8.13 wrapper; the build uses Android Gradle Plugin 8.13.2 and Kotlin 2.3.20. The app targets Android SDK 36 and requires Android 9 (API 28) or newer.
 
 ```sh
-git clone https://github.com/PalPalych5/uhabits-plus.git
-cd uhabits-plus
+git clone https://github.com/PalPalych5/uhabits-next-dev.git
+cd uhabits-next-dev
 ./gradlew :uhabits-android:assembleDebug
 ```
 
@@ -44,7 +44,7 @@ On Windows, use `gradlew.bat` instead of `./gradlew`. The debug APK is written u
 
 UHabit Next is an independent fork and is not an official Loop Habit Tracker release. Loop was created by [Álinson Santos Xavier](https://github.com/iSoron) and its contributors; their work and authorship remain part of this project.
 
-The project is licensed under the [GNU General Public License, version 3 or later](LICENSE.txt). See [NOTICE](NOTICE.md) and [Third-Party Notices](THIRD_PARTY_NOTICES.md) for additional credits and licenses.
+The project is licensed under the [GNU General Public License, version 3 or later](LICENSE.txt). See [NOTICE](NOTICE.md) for additional credits and licenses.
 
 ## Contributing
 
