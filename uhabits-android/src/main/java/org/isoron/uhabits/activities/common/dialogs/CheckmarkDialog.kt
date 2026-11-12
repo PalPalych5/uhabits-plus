@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2025 Álinson Santos Xavier <git@axavier.org>
+ * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org>
  *
  * This file is part of Loop Habit Tracker.
  *
@@ -22,19 +22,28 @@ package org.isoron.uhabits.activities.common.dialogs
 import android.app.Dialog
 import android.content.DialogInterface
 import android.os.Bundle
-import android.view.LayoutInflater
-import android.view.View.GONE
-import android.view.View.VISIBLE
+import android.view.Gravity
+import android.view.ViewGroup
+import android.view.WindowManager
+import androidx.appcompat.app.AppCompatDialog
 import androidx.appcompat.app.AppCompatDialogFragment
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
-import org.isoron.uhabits.core.models.Entry.Companion.NO
-import org.isoron.uhabits.core.models.Entry.Companion.SKIP
-import org.isoron.uhabits.core.models.Entry.Companion.UNKNOWN
-import org.isoron.uhabits.core.models.Entry.Companion.YES_MANUAL
-import org.isoron.uhabits.databinding.CheckmarkPopupBinding
-import org.isoron.uhabits.utils.InterfaceUtils.getFontAwesome
-import org.isoron.uhabits.utils.sres
+import org.isoron.uhabits.activities.settings.SettingsThemePaletteResolver
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
 
 class CheckmarkDialog : AppCompatDialogFragment() {
     var onToggle: (Int, String) -> Unit = { _, _ -> }
@@ -42,59 +51,102 @@ class CheckmarkDialog : AppCompatDialogFragment() {
 
     private var dismissedViaSaveAction = false
     private var originalNotes: String = ""
+    private var currentNotes: String = ""
     private var originalValue: Int = 0
-    private lateinit var view: CheckmarkPopupBinding
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val appComponent = (requireActivity().application as HabitsApplication).component
         val prefs = appComponent.preferences
-        view = CheckmarkPopupBinding.inflate(LayoutInflater.from(context))
         val color = requireArguments().getInt("color")
-        arrayOf(view.yesBtn, view.skipBtn).forEach {
-            it.setTextColor(color)
-        }
-        arrayOf(view.noBtn, view.unknownBtn).forEach {
-            it.setTextColor(view.root.sres.getColor(R.attr.contrast60))
-        }
-        arrayOf(view.yesBtn, view.noBtn, view.skipBtn, view.unknownBtn).forEach {
-            it.typeface = getFontAwesome(requireContext())
-        }
-        originalNotes = requireArguments().getString("notes")!!
+        originalNotes = requireArguments().getString("notes", "") ?: ""
         originalValue = requireArguments().getInt("value")
-        view.notes.setText(originalNotes)
-        if (!prefs.isSkipEnabled) view.skipBtn.visibility = GONE
-        if (!prefs.areQuestionMarksEnabled) view.unknownBtn.visibility = GONE
-        view.booleanButtons.visibility = VISIBLE
-        val dialog = Dialog(requireContext())
-        dialog.setContentView(view.root)
-        dialog.window?.apply {
-            setBackgroundDrawableResource(android.R.color.transparent)
-        }
-        fun onClick(v: Int) {
-            dismissedViaSaveAction = true
-            val notes = view.notes.text.toString().trim()
-            onToggle(v, notes)
-            requireDialog().dismiss()
-        }
-        view.yesBtn.setOnClickListener { onClick(YES_MANUAL) }
-        view.noBtn.setOnClickListener { onClick(NO) }
-        view.skipBtn.setOnClickListener { onClick(SKIP) }
-        view.unknownBtn.setOnClickListener { onClick(UNKNOWN) }
-        view.notes.setOnEditorActionListener { v, actionId, event ->
-            onClick(requireArguments().getInt("value"))
-            true
+        currentNotes = originalNotes
+
+        val palette = SettingsThemePaletteResolver.resolve(requireContext(), prefs)
+        val colors = UHabitComposeColors.fromPalette(palette)
+
+        val dialog = Dialog(requireContext(), R.style.CustomTransparentDialogTheme)
+        val composeView = ComposeView(requireContext()).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                UHabitComposeTheme(colors = colors) {
+                    var notesState by remember { mutableStateOf(originalNotes) }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                dialog.dismiss()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                // Do not dismiss when clicking inside the card
+                            }
+                        ) {
+                            CheckmarkDialogContent(
+                                notes = notesState,
+                                onNotesChanged = {
+                                    notesState = it
+                                    currentNotes = it
+                                },
+                                onSaveNotesAndDismiss = {
+                                    dismissedViaSaveAction = true
+                                    onToggle(originalValue, currentNotes.trim())
+                                    dialog.dismiss()
+                                },
+                                habitColorArgb = color,
+                                isSkipEnabled = prefs.isSkipEnabled,
+                                isUnknownEnabled = prefs.areQuestionMarksEnabled,
+                                onActionSelected = { actionValue ->
+                                    dismissedViaSaveAction = true
+                                    onToggle(actionValue, currentNotes.trim())
+                                    dialog.dismiss()
+                                },
+                                colors = colors
+                            )
+                        }
+                    }
+                }
+            }
         }
 
+        dialog.setContentView(composeView)
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT)
+            setGravity(Gravity.CENTER)
+            clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+            setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        }
         return dialog
+    }
+
+    override fun onStart() {
+        super.onStart()
+        dialog?.window?.apply {
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            setGravity(Gravity.CENTER)
+        }
     }
 
     override fun onDismiss(dialog: DialogInterface) {
         super.onDismiss(dialog)
 
         if (!dismissedViaSaveAction) {
-            val currentNotes = view.notes.text.toString().trim()
-            if (currentNotes != originalNotes) {
-                onToggle(originalValue, currentNotes)
+            val currentNotesTrimmed = currentNotes.trim()
+            if (currentNotesTrimmed != originalNotes.trim()) {
+                onToggle(originalValue, currentNotesTrimmed)
             }
         }
         onDismiss()
