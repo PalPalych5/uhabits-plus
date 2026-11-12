@@ -111,6 +111,12 @@ class SharedPreferencesStorage(
                 preferences.areHabitGroupSeparatorsEnabled = getBoolean(key, false)
             "pref_show_habit_card_borders" ->
                 preferences.showHabitCardBorders = getBoolean(key, true)
+            "pref_show_score_rings" -> {
+                preferences.showScoreRings = getBoolean(key, true)
+            }
+            "pref_show_habit_icons" -> {
+                preferences.showHabitIcons = getBoolean(key, true)
+            }
             "pref_enable_day_tiers" ->
                 preferences.isDayTiersEnabled = getBoolean(key, true)
             "pref_day_tier_sort_order" ->

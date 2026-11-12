@@ -21,7 +21,11 @@ data class SettingsThemePalette(
     val onSurfaceVariant: Int,
     val accent: Int = onSurface,
     val isDark: Boolean,
-    val isPureBlack: Boolean
+    val isPureBlack: Boolean,
+    val habitsCardCornerRadius: Int = 8,
+    val statisticsCardCornerRadius: Int = 8,
+    val showHabitCardBorders: Boolean = true,
+    val isClassicSectionLayout: Boolean = false
 )
 
 object SettingsThemePaletteResolver {
@@ -32,6 +36,10 @@ object SettingsThemePaletteResolver {
     fun resolve(context: Context, prefs: Preferences): SettingsThemePalette {
         val isDark = AndroidThemeSwitcher(context, prefs).isNightMode
         val isPureBlack = isDark && prefs.isPureBlackEnabled
+        val habitsRadius = prefs.habitsCardCornerRadius
+        val statsRadius = prefs.statisticsCardCornerRadius
+        val showBorders = prefs.showHabitCardBorders
+        val isClassic = prefs.isClassicSectionLayout
 
         return when {
             isPureBlack -> SettingsThemePalette(
@@ -45,7 +53,11 @@ object SettingsThemePaletteResolver {
                 onSurfaceVariant = ContextCompat.getColor(context, R.color.theme_on_surface_variant_amoled),
                 accent = AccentColorManager.getAccentColor(context, prefs),
                 isDark = true,
-                isPureBlack = true
+                isPureBlack = true,
+                habitsCardCornerRadius = habitsRadius,
+                statisticsCardCornerRadius = statsRadius,
+                showHabitCardBorders = showBorders,
+                isClassicSectionLayout = isClassic
             )
             isDark -> SettingsThemePalette(
                 background = ContextCompat.getColor(context, R.color.theme_background_dark),
@@ -58,7 +70,11 @@ object SettingsThemePaletteResolver {
                 onSurfaceVariant = ContextCompat.getColor(context, R.color.theme_on_surface_variant_dark),
                 accent = AccentColorManager.getAccentColor(context, prefs),
                 isDark = true,
-                isPureBlack = false
+                isPureBlack = false,
+                habitsCardCornerRadius = habitsRadius,
+                statisticsCardCornerRadius = statsRadius,
+                showHabitCardBorders = showBorders,
+                isClassicSectionLayout = isClassic
             )
             else -> SettingsThemePalette(
                 background = ContextCompat.getColor(context, R.color.theme_background_light),
@@ -71,7 +87,11 @@ object SettingsThemePaletteResolver {
                 onSurfaceVariant = ContextCompat.getColor(context, R.color.theme_on_surface_variant_light),
                 accent = AccentColorManager.getAccentColor(context, prefs),
                 isDark = false,
-                isPureBlack = false
+                isPureBlack = false,
+                habitsCardCornerRadius = habitsRadius,
+                statisticsCardCornerRadius = statsRadius,
+                showHabitCardBorders = showBorders,
+                isClassicSectionLayout = isClassic
             )
         }
     }

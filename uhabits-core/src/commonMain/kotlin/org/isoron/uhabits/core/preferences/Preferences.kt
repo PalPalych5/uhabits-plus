@@ -226,6 +226,17 @@ open class Preferences(private val storage: Storage) {
             notifyCardCornersChanged()
         }
 
+    open var sectionLayoutMode: String
+        get() = storage.getString("pref_section_layout_mode", SECTION_LAYOUT_CARDS)
+        set(value) {
+            storage.putString("pref_section_layout_mode", value)
+            notifyCardCornersChanged()
+            notifyHabitListAppearanceChanged()
+        }
+
+    open val isClassicSectionLayout: Boolean
+        get() = sectionLayoutMode == SECTION_LAYOUT_CLASSIC
+
     open var isHabitSpheresEnabled: Boolean
         get() = storage.getBoolean("pref_enable_habit_spheres", true)
         set(enabled) {
@@ -279,6 +290,8 @@ open class Preferences(private val storage: Storage) {
 
     companion object {
         const val MIDNIGHT_DELAY_HOURS = 3
+        const val SECTION_LAYOUT_CARDS = "cards"
+        const val SECTION_LAYOUT_CLASSIC = "classic"
     }
 
     open fun updateLastHint(number: Int, date: LocalDate) {
@@ -536,4 +549,21 @@ open class Preferences(private val storage: Storage) {
         listeners = mutableListOf()
         storage.onAttached(this)
     }
+
+    open var showScoreRings: Boolean
+        get() = storage.getBoolean("pref_show_score_rings", true)
+        set(value) {
+            storage.putBoolean("pref_show_score_rings", value)
+            notifyHabitListAppearanceChanged()
+        }
+
+    open var showHabitIcons: Boolean
+        get() = storage.getBoolean("pref_show_habit_icons", true)
+        set(value) {
+            storage.putBoolean("pref_show_habit_icons", value)
+            notifyHabitListAppearanceChanged()
+        }
+
+
+
 }
