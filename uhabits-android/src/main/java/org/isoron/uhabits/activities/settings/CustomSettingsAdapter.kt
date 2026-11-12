@@ -162,7 +162,10 @@ class CustomSettingsAdapter(
     }
 
     private fun applyCardDecoration(view: View, position: Int) {
-        val radius = context.resources.getDimension(R.dimen.settings_card_radius)
+        val isClassic = prefs.isClassicSectionLayout
+        val showBorders = prefs.showHabitCardBorders
+        val density = context.resources.displayMetrics.density
+        val radius = if (isClassic) 0f else (prefs.habitsCardCornerRadius.coerceAtLeast(0) * density)
 
         val item = items[position]
         val cardId = cardId(position) ?: return
@@ -171,6 +174,7 @@ class CustomSettingsAdapter(
         val palette = SettingsThemePaletteResolver.resolve(context, prefs)
 
         val radii = when {
+            isClassic -> floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)
             isFirst && isLast -> floatArrayOf(radius, radius, radius, radius, radius, radius, radius, radius)
             isFirst -> floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
             isLast -> floatArrayOf(0f, 0f, 0f, 0f, radius, radius, radius, radius)
@@ -181,6 +185,9 @@ class CustomSettingsAdapter(
             shape = GradientDrawable.RECTANGLE
             cornerRadii = radii
             setColor(palette.surface)
+            if (!isClassic && (showBorders || palette.isPureBlack)) {
+                setStroke((1 * density).toInt().coerceAtLeast(1), palette.border)
+            }
         }
 
         val maskDrawable = GradientDrawable().apply {
@@ -198,12 +205,12 @@ class CustomSettingsAdapter(
         )
 
         view.background = rippleDrawable
-        view.clipToOutline = true
+        view.clipToOutline = !isClassic
 
         val lp = view.layoutParams as? ViewGroup.MarginLayoutParams
         if (lp != null) {
-            val marginHorizontal = context.resources.getDimensionPixelSize(R.dimen.settings_card_horizontal_margin)
-            val halfGap = context.resources.getDimensionPixelSize(R.dimen.settings_card_vertical_gap_half)
+            val marginHorizontal = if (isClassic) 0 else context.resources.getDimensionPixelSize(R.dimen.settings_card_horizontal_margin)
+            val halfGap = if (isClassic) 0 else context.resources.getDimensionPixelSize(R.dimen.settings_card_vertical_gap_half)
             val marginTop = if (isFirst) halfGap else 0
             val marginBottom = if (isLast) halfGap else 0
             lp.setMargins(marginHorizontal, marginTop, marginHorizontal, marginBottom)
@@ -330,7 +337,7 @@ class CustomSettingsAdapter(
                 )
                 ViewCompat.setAccessibilityHeading(holder.titleText, true)
                 holder.divider.setBackgroundColor(palette.groupDivider)
-                holder.divider.visibility = if (isLastInCard) View.GONE else View.VISIBLE
+                holder.divider.visibility = if (isLastInCard && !prefs.isClassicSectionLayout) View.GONE else View.VISIBLE
             }
             is StatusViewHolder -> {
                 val status = item as SettingItem.Status
@@ -348,7 +355,7 @@ class CustomSettingsAdapter(
                 holder.titleText.setTextColor(palette.onSurface)
                 holder.summaryText.setTextColor(palette.onSurfaceVariant)
                 holder.divider.setBackgroundColor(palette.divider)
-                holder.divider.visibility = if (isLastInCard) View.GONE else View.VISIBLE
+                holder.divider.visibility = if (isLastInCard && !prefs.isClassicSectionLayout) View.GONE else View.VISIBLE
             }
             is SegmentedViewHolder -> {
                 val segmentedItem = item as SettingItem.SegmentedTheme
@@ -391,13 +398,13 @@ class CustomSettingsAdapter(
                 holder.btnAmoled.setOnClickListener { segmentedItem.onSegmentSelected(1, true) }
 
                 holder.divider.setBackgroundColor(palette.divider)
-                holder.divider.visibility = if (isLastInCard) View.GONE else View.VISIBLE
+                holder.divider.visibility = if (isLastInCard && !prefs.isClassicSectionLayout) View.GONE else View.VISIBLE
             }
             is RowViewHolder -> {
                 // Card Decoration
                 applyCardDecoration(holder.itemView, position)
                 holder.divider.setBackgroundColor(palette.divider)
-                holder.divider.visibility = if (isLastInCard) View.GONE else View.VISIBLE
+                holder.divider.visibility = if (isLastInCard && !prefs.isClassicSectionLayout) View.GONE else View.VISIBLE
 
                 // Reset accessory visibilities
                 holder.switchComp.visibility = View.GONE

@@ -989,4 +989,11 @@
     <string name="task_calendar_empty_day">Nothing planned for this day</string>
     <string name="task_calendar_no_sessions_date">No work sessions recorded for this date</string>
     <string name="task_calendar_no_sessions_day">No work sessions recorded for this day</string>
+    <string name="settings_section_layout_mode_title">Section layout style</string>
+    <string name="settings_section_layout_cards">Cards</string>
+    <string name="settings_section_layout_classic">Classic (full-width)</string>
+    <string name="settings_show_score_rings_title">Score rings</string>
+    <string name="settings_show_score_rings_summary">Show habit strength ring in the habit list</string>
+    <string name="settings_show_habit_icons_title">Habit icons</string>
+    <string name="settings_show_habit_icons_summary">Show habit icons in habit list cards</string>
 </resources>

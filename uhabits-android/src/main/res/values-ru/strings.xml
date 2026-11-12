@@ -1005,4 +1005,11 @@
     <string name="task_calendar_empty_day">На этот день ничего не запланировано</string>
     <string name="task_calendar_no_sessions_date">За эту дату нет записей работы</string>
     <string name="task_calendar_no_sessions_day">За этот день нет записей работы</string>
+    <string name="settings_section_layout_mode_title">Стиль секций</string>
+    <string name="settings_section_layout_cards">Карточки</string>
+    <string name="settings_section_layout_classic">Классический (на всю ширину)</string>
+    <string name="settings_show_score_rings_title">Кольца прогресса</string>
+    <string name="settings_show_score_rings_summary">Показывать кольцо силы привычки слева в списке</string>
+    <string name="settings_show_habit_icons_title">Иконки привычек</string>
+    <string name="settings_show_habit_icons_summary">Показывать иконки привычек в карточках списка</string>
 </resources>

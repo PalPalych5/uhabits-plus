@@ -39,7 +39,9 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.graphics.ColorUtils
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
@@ -128,7 +130,6 @@ class HabitCardView(
     private var headingText by mutableStateOf("")
     private var headingColors by mutableStateOf<UHabitComposeColors?>(null)
     private var headingView: ComposeView? = null
-
     private var attachedTreeLifecycleOwner: LifecycleOwner? = null
     private var attachedTreeSavedStateOwner: SavedStateRegistryOwner? = null
     private var attachedCompositionContext: CompositionContext? = null
@@ -158,9 +159,11 @@ class HabitCardView(
                         setContent {
                             val colors = headingColors ?: return@setContent
                             UHabitComposeTheme(colors) {
-                                Box(Modifier.fillMaxSize().padding(start = 13.composeDp, end = 13.composeDp, bottom = 8.composeDp), contentAlignment = Alignment.BottomStart) {
-                                    BasicText(headingText, style = TextStyle(color = Color(colors.secondary), fontSize = 13.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.26.sp), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                }
+                                HabitSectionHeader(
+                                    title = headingText,
+                                    modifier = Modifier.fillMaxHeight(),
+                                    colors = colors
+                                )
                             }
                         }
                     }
@@ -247,7 +250,7 @@ class HabitCardView(
             textSize = 13f * resources.displayMetrics.scaledDensity
         }
         val height = paint.fontMetrics.let { it.descent - it.ascent }
-        return maxOf(dp(34f), height + dp(18f)).toInt()
+        return maxOf(dp(28f), height + dp(12f)).toInt()
     }
 
     private fun updateLabelContentDescription() {
@@ -283,8 +286,7 @@ class HabitCardView(
     var score
         get() = scoreRing.getPercentage().toDouble()
         set(value) {
-            // Unavailable/incomplete scores show a neutral ring placeholder, preserving title alignment.
-            scoreRing.visibility = VISIBLE
+            scoreRing.visibility = if (preferences.showScoreRings) VISIBLE else GONE
             scoreRing.setPercentage(value.toFloat())
             scoreRing.setPrecision(1.0f / 16)
         }
@@ -365,6 +367,7 @@ class HabitCardView(
     private var iconTile: FrameLayout
     private var iconImageView: ImageView
     private var iconEmojiView: TextView
+    private var bottomDivider: View
 
     var iconRef: IconRef? = null
         set(value) {
@@ -385,6 +388,7 @@ class HabitCardView(
                 gravity = Gravity.CENTER
             }
             setThickness(thickness)
+            setIsTransparencyEnabled(true)
         }
 
         val tileSize = dp(24f).toInt()
@@ -410,6 +414,9 @@ class HabitCardView(
         label = TextView(context).apply {
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
+            textSize = 14f
+            typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
+            setLineSpacing(0f, 0.95f)
             layoutParams = LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f)
             if (SDK_INT >= Build.VERSION_CODES.Q) {
                 breakStrategy = BREAK_STRATEGY_BALANCED
@@ -472,8 +479,15 @@ class HabitCardView(
 
         clipToPadding = false
         layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-        val margin = dp(3f).toInt()
-        setPadding(margin, 0, margin, margin)
+        bottomDivider = View(context).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                MATCH_PARENT,
+                dp(1f).toInt().coerceAtLeast(1),
+                Gravity.BOTTOM
+            )
+            visibility = GONE
+        }
+        addView(bottomDivider)
         addView(innerFrame)
         updateBackground(false)
     }
@@ -605,10 +619,36 @@ class HabitCardView(
         val h = habit
         val activeColor = h?.let { currentTheme().color(it.color).toInt() } ?: palette.accent
         val ref = iconRef
-        if (ref == null || ref is IconRef.None) {
+        val showRings = preferences.showScoreRings
+        scoreRing.visibility = if (showRings) VISIBLE else GONE
+        val showIcon = preferences.showHabitIcons && ref != null && ref !is IconRef.None
+
+        if (!showIcon) {
             iconTile.visibility = GONE
+            val labelStartMargin = if (showRings) 0 else dp(14f).toInt()
+            (label.layoutParams as? LinearLayout.LayoutParams)?.let {
+                if (it.leftMargin != labelStartMargin) {
+                    it.leftMargin = labelStartMargin
+                    label.layoutParams = it
+                }
+            }
             return
         }
+
+        val tileStartMargin = if (showRings) dp(2f).toInt() else dp(12f).toInt()
+        (iconTile.layoutParams as? LinearLayout.LayoutParams)?.let {
+            if (it.leftMargin != tileStartMargin) {
+                it.leftMargin = tileStartMargin
+                iconTile.layoutParams = it
+            }
+        }
+        (label.layoutParams as? LinearLayout.LayoutParams)?.let {
+            if (it.leftMargin != 0) {
+                it.leftMargin = 0
+                label.layoutParams = it
+            }
+        }
+
         iconTile.background = GradientDrawable().apply {
             setColor(MainTabsThemeBridge.withAlpha(activeColor, 0.14f))
             cornerRadius = dp(6f)
@@ -628,7 +668,7 @@ class HabitCardView(
                 iconEmojiView.visibility = VISIBLE
                 iconEmojiView.text = ref.value
             }
-            IconRef.None -> {
+            IconRef.None, null -> {
                 iconTile.visibility = GONE
             }
         }
@@ -645,20 +685,66 @@ class HabitCardView(
     }
 
     private fun updateBackground(isSelected: Boolean) {
+        val isClassic = preferences.isClassicSectionLayout
         val showBorders = preferences.showHabitCardBorders
-        val fill = when {
-            isSelected -> palette.surfaceVariant
-            showBorders -> palette.surface
-            else -> android.graphics.Color.TRANSPARENT
+        val isAmoled = palette.isPureBlack
+
+        if (isClassic) {
+            bottomDivider.visibility = VISIBLE
+            val dividerColor = when {
+                isAmoled -> 0xFF1C2028.toInt()
+                palette.isDark -> ColorUtils.setAlphaComponent(0xFFFFFFFF.toInt(), (255 * 0.08f).toInt())
+                else -> ColorUtils.setAlphaComponent(0xFF000000.toInt(), (255 * 0.08f).toInt())
+            }
+            bottomDivider.setBackgroundColor(dividerColor)
+
+            val fill = when {
+                isSelected -> MainTabsThemeBridge.withAlpha(palette.accent, 0.16f)
+                isAmoled -> android.graphics.Color.BLACK
+                else -> palette.surface
+            }
+            val contentDrawable = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 0f
+                setColor(fill)
+                if (isSelected) {
+                    setStroke(dp(1.5f).toInt().coerceAtLeast(1), palette.accent)
+                }
+            }
+            val maskDrawable = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 0f
+                setColor(0xFFFFFFFF.toInt())
+            }
+            innerFrame.background = RippleDrawable(
+                ColorStateList.valueOf(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.12f)),
+                contentDrawable,
+                maskDrawable
+            )
+            innerFrame.elevation = 0f
+            setPadding(0, 0, 0, 0)
+            return
         }
-        val stroke = if (isSelected) MainTabsThemeBridge.withAlpha(palette.accent, 0.65f) else palette.border
-        val radius = dp(preferences.habitsCardCornerRadius.toFloat())
+
+        bottomDivider.visibility = GONE
+        val fill = when {
+            isSelected -> MainTabsThemeBridge.withAlpha(palette.accent, 0.16f)
+            !showBorders -> android.graphics.Color.TRANSPARENT
+            isAmoled -> 0xFF0C0E12.toInt()
+            else -> palette.surface
+        }
+        val stroke = when {
+            isSelected -> palette.accent
+            isAmoled -> 0xFF1C2028.toInt()
+            else -> palette.border
+        }
+        val radius = dp(preferences.habitsCardCornerRadius.toFloat().coerceAtLeast(0f))
         val strokeWidth = dp(if (isSelected) 1.5f else 1f).toInt().coerceAtLeast(1)
         val contentDrawable = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = radius
             setColor(fill)
-            if (showBorders || isSelected) {
+            if (isSelected || showBorders) {
                 setStroke(strokeWidth, stroke)
             }
         }
@@ -672,7 +758,11 @@ class HabitCardView(
             contentDrawable,
             maskDrawable
         )
-        innerFrame.elevation = if (showBorders || isSelected) dp(1f) else 0f
+        innerFrame.elevation = if (isSelected || (showBorders && !isAmoled)) dp(1f) else 0f
+
+        val marginH = dp(if (showBorders) 4f else 2f).toInt()
+        val marginB = dp(if (showBorders) 3f else 2f).toInt()
+        setPadding(marginH, 0, marginH, marginB)
     }
 
     companion object {

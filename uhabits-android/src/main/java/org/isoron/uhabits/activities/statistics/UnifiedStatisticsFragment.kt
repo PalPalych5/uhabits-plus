@@ -16,6 +16,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
+import androidx.core.graphics.ColorUtils
+import org.isoron.uhabits.core.preferences.Preferences
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
@@ -82,7 +84,7 @@ import java.util.concurrent.CancellationException
  * Hosts four analytic tabs: Overview, Habits, Tasks, Focus.
  * Shared period (DAY/WEEK/MONTH/YEAR/ALL) and section scope (All/Unassigned/Container IDs).
  */
-class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener {
+class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferences.Listener {
 
     private val app: HabitsApplication
         get() = requireContext().applicationContext as HabitsApplication
@@ -312,6 +314,7 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener {
 
         // Subscribe to app dataset rebuild events
         app.addDatasetListener(datasetListener)
+        component.preferences.addListener(this)
 
         bindReadObservers(component)
 
@@ -332,6 +335,7 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener {
     override fun onStop() {
         super.onStop()
         app.removeDatasetListener(datasetListener)
+        component.preferences.removeListener(this)
 
         bindReadObservers(null)
 
@@ -717,9 +721,12 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener {
                 1f
             )
         }
+        val isClassic = component.preferences.isClassicSectionLayout
         contentContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16f), dp(8f), dp(16f), dp(24f))
+            val padH = if (isClassic) 0 else dp(16f)
+            val padT = if (isClassic) dp(4f) else dp(8f)
+            setPadding(padH, padT, padH, dp(24f))
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -2537,11 +2544,17 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener {
     // -------------------------------------------------------------------------
 
     private fun createCardView(context: Context): FrameLayout {
+        val prefs = component.preferences
+        val isClassic = prefs.isClassicSectionLayout
+        val showBorders = prefs.showHabitCardBorders
+        val isAmoled = palette.isPureBlack
+        val radius = if (isClassic) 0f else dp(prefs.statisticsCardCornerRadius.toFloat().coerceAtLeast(0f)).toFloat()
+
         return FrameLayout(context).apply {
             background = GradientDrawable().apply {
                 setColor(palette.surface)
-                cornerRadius = dp(12f).toFloat()
-                if (palette.isPureBlack) {
+                cornerRadius = radius
+                if (!isClassic && (showBorders || isAmoled)) {
                     setStroke(dp(1f), palette.border)
                 }
             }
@@ -2549,9 +2562,38 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = dp(8f)
+                topMargin = if (isClassic) 0 else dp(8f)
+            }
+            if (isClassic) {
+                val dividerColor = when {
+                    isAmoled -> 0xFF181818.toInt()
+                    palette.isDark -> ColorUtils.setAlphaComponent(0xFFFFFFFF.toInt(), (255 * 0.08f).toInt())
+                    else -> ColorUtils.setAlphaComponent(0xFF000000.toInt(), (255 * 0.08f).toInt())
+                }
+                val divider = View(context).apply {
+                    setBackgroundColor(dividerColor)
+                    layoutParams = FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        dp(1f).coerceAtLeast(1),
+                        Gravity.BOTTOM
+                    )
+                }
+                addView(divider)
             }
         }
+    }
+
+    override fun onCardCornersChanged() {
+        if (!isAdded) return
+        val isClassic = component.preferences.isClassicSectionLayout
+        val padH = if (isClassic) 0 else dp(16f)
+        val padT = if (isClassic) dp(4f) else dp(8f)
+        contentContainer.setPadding(padH, padT, padH, dp(24f))
+        renderCurrentState()
+    }
+
+    override fun onHabitListAppearanceChanged() {
+        onCardCornersChanged()
     }
 
     private fun createSectionHeader(context: Context, title: String): TextView {

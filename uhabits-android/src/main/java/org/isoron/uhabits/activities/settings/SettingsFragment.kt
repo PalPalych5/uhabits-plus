@@ -408,6 +408,12 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                     getString(R.string.widget_opacity_title),
                     opacityEntries.getOrNull(opacityValues.indexOf(opacityValue)) ?: opacityValue
                 ) { showWidgetOpacityDialog() },
+                navigation(
+                    "pref_section_layout_mode",
+                    R.drawable.ic_settings_layout_list,
+                    getString(R.string.settings_section_layout_mode_title),
+                    if (prefs.isClassicSectionLayout) getString(R.string.settings_section_layout_classic) else getString(R.string.settings_section_layout_cards)
+                ) { showSectionLayoutDialog() },
                 navigation("pref_card_rounding", R.drawable.ic_settings_corners, getString(R.string.pref_card_rounding_title), buildCardRoundingSummary()) { showCardRoundingDialog() },
                 settingSwitch(
                     "pref_show_habit_card_borders",
@@ -415,7 +421,21 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                     getString(R.string.settings_show_habit_card_borders_title),
                     getString(R.string.settings_show_habit_card_borders_summary),
                     prefs.showHabitCardBorders
-                ) { prefs.showHabitCardBorders = it }
+                ) { prefs.showHabitCardBorders = it },
+                settingSwitch(
+                    "pref_show_score_rings",
+                    R.drawable.ic_settings_layout_list,
+                    getString(R.string.settings_show_score_rings_title),
+                    getString(R.string.settings_show_score_rings_summary),
+                    prefs.showScoreRings
+                ) { prefs.showScoreRings = it },
+                settingSwitch(
+                    "pref_show_habit_icons",
+                    R.drawable.ic_cat_activity,
+                    getString(R.string.settings_show_habit_icons_title),
+                    getString(R.string.settings_show_habit_icons_summary),
+                    prefs.showHabitIcons
+                ) { prefs.showHabitIcons = it }
             )
         )
     }
@@ -1098,10 +1118,28 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         return formatCornerRadiusSummary(prefs.habitsCardCornerRadius)
     }
 
+    private fun showSectionLayoutDialog() {
+        val options = listOf(
+            getString(R.string.settings_section_layout_cards),
+            getString(R.string.settings_section_layout_classic)
+        )
+        val currentIndex = if (prefs.isClassicSectionLayout) 1 else 0
+        CustomDialogs.showSingleChoiceDialog(
+            context = requireContext(),
+            title = getString(R.string.settings_section_layout_mode_title),
+            options = options,
+            selectedIndex = currentIndex
+        ) { which ->
+            prefs.sectionLayoutMode = if (which == 1) Preferences.SECTION_LAYOUT_CLASSIC else Preferences.SECTION_LAYOUT_CARDS
+            reloadSettingsScreen()
+        }
+    }
+
     private fun showCardRoundingDialog() {
         val values = resources.getStringArray(R.array.pref_habit_card_corners_values)
         val allowedValues = values.map { it.toIntOrNull() ?: 8 }
         var habitsRadius = prefs.habitsCardCornerRadius
+        var statsRadius = prefs.statisticsCardCornerRadius
         val palette = SettingsThemePaletteResolver.resolve(requireContext(), prefs)
 
         fun sliderIndexFor(radius: Int): Float {
@@ -1177,6 +1215,14 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                     topMargin = (10 * density).toInt()
                 }
             })
+            addView(sliderBlock(getString(R.string.pref_statistics_title), statsRadius) { statsRadius = it }.apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = (16 * density).toInt()
+                }
+            })
         }
 
         CustomDialogs.showCustomViewDialog(
@@ -1185,6 +1231,7 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             contentView = content
         ) {
             prefs.habitsCardCornerRadius = habitsRadius
+            prefs.statisticsCardCornerRadius = statsRadius
             rebuildSettingsList()
         }
     }
