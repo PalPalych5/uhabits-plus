@@ -1,0 +1,4 @@
+<resources>
+    <string name="task_planned_date_needs_repair">Проверьте дату · синхронизация приостановлена</string>
+    <string name="task_planned_date_repair_hint">Неподдерживаемая дата: %1$s. Выберите дату или очистите её. До исправления изменения этой задачи остаются на устройстве.</string>
+</resources>

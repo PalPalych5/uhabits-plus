@@ -1,0 +1,5 @@
+<resources>
+    <string name="habits_loading">Загрузка привычек…</string>
+    <string name="habits_loading_error">Не удалось загрузить привычки</string>
+    <string name="habits_loading_retry">Повторить</string>
+</resources>

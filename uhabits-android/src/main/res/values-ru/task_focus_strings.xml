@@ -1,0 +1,4 @@
+<resources>
+    <string name="task_start_focus">Начать фокус</string>
+    <string name="task_focus_conflict">Таймер уже запущен для «%1$s». Завершите или сбросьте его перед началом другой задачи.</string>
+</resources>

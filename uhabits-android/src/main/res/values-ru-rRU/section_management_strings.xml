@@ -1,0 +1,38 @@
+<resources>
+    <string name="section_header_actions">Действия с разделами</string>
+    <string name="section_hidden_sections">Скрытые разделы</string>
+    <string name="section_hidden_search">Поиск по названию или пути</string>
+    <string name="section_hidden_empty">Нет скрытых разделов</string>
+    <string name="section_hidden_no_results">Разделы не найдены</string>
+    <string name="section_show">Показать</string>
+    <string name="section_shown">Раздел показан</string>
+    <string name="section_back">Назад</string>
+    <string name="section_hide_title">Скрыть раздел?</string>
+    <string name="section_hide_message">Скрыть «%1$s» из навигации задач? Задачи и привычки сохранятся.</string>
+    <string name="section_hide_action">Скрыть</string>
+    <string name="section_hide_from_tasks">Скрыть из задач</string>
+    <string name="section_move_failed">Не удалось переместить раздел</string>
+    <string name="section_actions_description">Действия с разделом %1$s</string>
+    <string name="section_expand_description">Раскрыть раздел %1$s</string>
+    <string name="section_collapse_description">Свернуть раздел %1$s</string>
+    <string name="section_open_children_description">Открыть подразделы раздела %1$s</string>
+    <string name="section_hidden">Раздел скрыт</string>
+    <string name="section_hide_failed">Не удалось скрыть раздел</string>
+    <string name="section_not_empty">Раздел не пуст</string>
+    <string name="section_not_empty_message">В разделе «%1$s»: %2$s. Удалить можно только пустой раздел. Его можно скрыть без удаления данных.</string>
+    <string name="section_delete_title">Удалить раздел?</string>
+    <string name="section_delete_message">Раздел «%1$s» пуст и будет удалён безвозвратно.</string>
+    <string name="section_deleted">Раздел удалён</string>
+    <string name="section_delete_failed">Не удалось удалить раздел</string>
+    <string name="section_color">Цвет</string>
+    <string name="section_custom_color">Свой цвет</string>
+    <string name="section_location_label">Расположение</string>
+    <string name="section_select_icon">Выбрать значок</string>
+    <plurals name="section_tasks_count"><item quantity="one">%d задача</item><item quantity="few">%d задачи</item><item quantity="many">%d задач</item><item quantity="other">%d задачи</item></plurals>
+    <plurals name="section_habits_count"><item quantity="one">%d привычка</item><item quantity="few">%d привычки</item><item quantity="many">%d привычек</item><item quantity="other">%d привычки</item></plurals>
+    <plurals name="section_children_count"><item quantity="one">%d подраздел</item><item quantity="few">%d подраздела</item><item quantity="many">%d подразделов</item><item quantity="other">%d подраздела</item></plurals>
+    <string name="section_manage_visibility">Управление разделами задач</string>
+    <string name="section_visibility_undo">Отменить</string>
+    <string name="section_hidden_by_parent">Скрыт вместе с «%1$s»</string>
+    <string name="section_show_path">Показать путь</string>
+</resources>

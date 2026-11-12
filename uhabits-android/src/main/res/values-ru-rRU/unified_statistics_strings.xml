@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
+  ~
+  ~ This file is part of Loop Habit Tracker.
+  ~
+  ~ Loop Habit Tracker is free software: you can redistribute it and/or modify
+  ~ it under the terms of the GNU General Public License as published by the
+  ~ Free Software Foundation, either version 3 of the License, or (at your
+  ~ option) any later version.
+  -->
+<resources>
+    <!-- Screen and Navigation -->
+    <string name="unified_statistics_title">Статистика</string>
+    <string name="unified_statistics_tab_overview">Обзор</string>
+    <string name="unified_statistics_tab_habits">Привычки</string>
+    <string name="unified_statistics_tab_tasks">Задачи</string>
+    <string name="unified_statistics_tab_focus">Фокус</string>
+
+    <!-- Periods -->
+    <string name="unified_statistics_period_day">День</string>
+    <string name="unified_statistics_period_week">Неделя</string>
+    <string name="unified_statistics_period_month">Месяц</string>
+    <string name="unified_statistics_period_year">Год</string>
+    <string name="unified_statistics_period_all">Весь период</string>
+    <string name="unified_statistics_prev_period">Предыдущий период</string>
+    <string name="unified_statistics_next_period">Следующий период</string>
+    <string name="unified_statistics_since_date">С %1$s</string>
+
+    <!-- Section Scope -->
+    <string name="unified_statistics_scope_all">Все разделы</string>
+    <string name="unified_statistics_scope_unassigned">Без раздела</string>
+    <string name="unified_statistics_scope_subtree_format">%1$s (подуровни)</string>
+    <string name="unified_statistics_scope_here_format">%1$s (только этот раздел)</string>
+    <string name="unified_statistics_scope_mode_subtree">Подуровни</string>
+    <string name="unified_statistics_scope_mode_here">Только этот раздел</string>
+    <string name="unified_statistics_filters_title">Раздел статистики</string>
+    <string name="unified_statistics_filters_apply">Применить</string>
+    <string name="unified_statistics_filters_reset">Сбросить</string>
+
+    <!-- States & Refreshing -->
+    <string name="unified_statistics_state_loading">Загрузка статистики…</string>
+    <string name="unified_statistics_state_refreshing">Обновление…</string>
+    <string name="unified_statistics_state_failed">Не удалось рассчитать статистику</string>
+    <string name="unified_statistics_state_retry">Повторить</string>
+    <string name="unified_statistics_state_partial">Частичные данные</string>
+    <string name="unified_statistics_state_empty">Нет данных за выбранный период</string>
+    <string name="unified_statistics_domain_failed">Расчёт недоступен</string>
+    <string name="unified_statistics_overflow">Переполнение (недоступно)</string>
+    <string name="unified_statistics_charts_future_notice">Графики и динамика появятся в следующих обновлениях</string>
+
+    <!-- Overview Domain Cards -->
+    <string name="unified_statistics_overview_habits_title">Цели привычек</string>
+    <string name="unified_statistics_overview_habits_subtitle">Циклы, закончившиеся в периоде</string>
+    <string name="unified_statistics_overview_tasks_title">Завершено задач</string>
+    <string name="unified_statistics_overview_focus_title">Учтено фокуса</string>
+    <string name="unified_statistics_overview_focus_sessions_format">%1$d сессий</string>
+
+    <!-- Habits Cadence & Results -->
+    <string name="unified_statistics_cadence_daily">Дневные</string>
+    <string name="unified_statistics_cadence_weekly">Недельные</string>
+    <string name="unified_statistics_cadence_monthly">Месячные</string>
+    <string name="unified_statistics_cadence_unsupported">Другие</string>
+    <string name="unified_statistics_cadence_result_format">%1$d из %2$d выполнено</string>
+    <string name="unified_statistics_cadence_result_with_unknown">%1$d из %2$d выполнено · %3$d без данных</string>
+    <string name="unified_statistics_cadence_no_closed_cycles">Нет закрытых циклов</string>
+    <string name="unified_statistics_habits_ongoing_context_title">Текущие циклы</string>
+    <string name="unified_statistics_habits_ongoing_count_format">Циклов продолжается на дату среза: %1$d</string>
+    <string name="unified_statistics_habits_list_title">Привычки</string>
+    <string name="unified_statistics_habits_empty">В этом разделе пока нет привычек</string>
+
+    <!-- Tasks Cohorts & Results -->
+    <string name="unified_statistics_tasks_completed_count">Завершено за период: %1$d</string>
+    <string name="unified_statistics_tasks_created_count">Создано за период: %1$d</string>
+    <string name="unified_statistics_tasks_due_cohort_title">Со сроком в периоде</string>
+    <string name="unified_statistics_tasks_due_total_format">Всего: %1$d</string>
+    <string name="unified_statistics_tasks_due_breakdown_format">Завершено: %1$d · Просрочено: %2$d · Открыто: %3$d</string>
+    <string name="unified_statistics_tasks_nodue_cohort_title">Без срока · Созданы за период</string>
+    <string name="unified_statistics_tasks_nodue_total_format">Всего: %1$d</string>
+    <string name="unified_statistics_tasks_nodue_breakdown_format">Завершено: %1$d · В работе: %2$d</string>
+    <string name="unified_statistics_tasks_empty">В этом разделе пока нет задач</string>
+
+    <!-- Focus Results & Breakdown -->
+    <string name="unified_statistics_focus_total_duration_title">Всего учтено времени</string>
+    <string name="unified_statistics_focus_sessions_count_title">Завершённых сессий</string>
+    <string name="unified_statistics_focus_by_section_title">По разделам</string>
+    <string name="unified_statistics_focus_by_target_title">По типам объектов</string>
+    <string name="unified_statistics_focus_target_habits">Привычки: %1$s (%2$d сессий)</string>
+    <string name="unified_statistics_focus_target_tasks">Задачи: %1$s (%2$d сессий)</string>
+    <string name="unified_statistics_focus_target_containers">Разделы: %1$s (%2$d сессий)</string>
+    <string name="unified_statistics_focus_target_unassigned">Без раздела: %1$s (%2$d сессий)</string>
+    <string name="unified_statistics_focus_empty">В этом периоде нет сессий фокуса</string>
+
+    <!-- Legacy / Classic Report Action -->
+    <string name="unified_statistics_action_legacy_report">Классический отчёт</string>
+    <string name="unified_statistics_action_refresh">Обновить</string>
+
+    <!-- Scoped Entry from ContainerStatisticsActivity -->
+    <string name="container_statistics_action_open_unified">Открыть в единой статистике</string>
+
+    <!-- Time formatting helpers -->
+    <string name="unified_statistics_duration_hours_minutes">%1$d ч %2$d мин</string>
+    <string name="unified_statistics_duration_minutes_only">%1$d мин</string>
+    <string name="unified_statistics_duration_seconds_only">%1$d с</string>
+    <string name="unified_statistics_duration_zero">0 мин</string>
+    <string name="unified_statistics_calendar_offset">Привычки: начало дня в %1$02d:00; задачи и фокус: в 00:00</string>
+    <string name="unified_statistics_excluded_count">Не оценивается циклов: %1$d</string>
+    <string name="unified_statistics_unsupported_count">Особые графики вне итогов циклов: %1$d</string>
+
+    <!-- PR14.3 Tasks & Focus Charts, Cohorts and Drilldown -->
+    <string name="unified_statistics_tasks_chart_title">Завершено задач по дням (шт.)</string>
+    <string name="unified_statistics_focus_chart_title">Фокус по дням (мин)</string>
+    <string name="unified_statistics_focus_chart_subtitle">По дате завершения сессии</string>
+    <string name="unified_statistics_due_state_completed">Завершено</string>
+    <string name="unified_statistics_due_state_overdue">Просрочено</string>
+    <string name="unified_statistics_due_state_pending">Срок не наступил</string>
+    <string name="unified_statistics_nodue_state_completed">Завершено</string>
+    <string name="unified_statistics_nodue_state_pending">Открыто</string>
+    <string name="unified_statistics_tasks_due_state_now">Состояние сейчас · %1$s</string>
+    <string name="unified_statistics_tasks_due_disclaimer">Редактирование срока меняет состав выборки</string>
+    <string name="unified_statistics_why_no_ontime_button">Почему нет показателя «В срок»</string>
+    <string name="unified_statistics_why_no_ontime_title">Почему нет показателя «В срок»</string>
+    <string name="unified_statistics_why_no_ontime_body">Loop Habit Tracker хранит только текущий срок задачи, а не снимок срока на момент завершения. Перенос срока или повторное открытие задачи меняет состав прошлых когорт. Поэтому вместо недостоверного показателя «выполнено в срок» приложение показывает точное число завершений и текущее состояние просрочки.</string>
+    <string name="unified_statistics_focus_calendar_mode">Посмотреть на календаре</string>
+    <string name="unified_statistics_focus_show_all_sections">Все разделы (%1$d)</string>
+    <string name="unified_statistics_focus_target_unnamed">Без названия</string>
+    <string name="unified_statistics_entity_deleted_task">Удалённая задача (%1$s)</string>
+    <string name="unified_statistics_entity_deleted_habit">Удалённая привычка (%1$s)</string>
+    <string name="unified_statistics_entity_deleted_container">Удалённый раздел (%1$s)</string>
+    <string name="unified_statistics_drilldown_completed_day_title">Завершено %1$s</string>
+    <string name="unified_statistics_drilldown_due_cohort_title">Со сроком в периоде</string>
+    <string name="unified_statistics_drilldown_nodue_cohort_title">Без срока</string>
+    <string name="unified_statistics_drilldown_focus_day_title">Фокус за %1$s</string>
+    <string name="unified_statistics_drilldown_section_title">Раздел: %1$s</string>
+    <string name="unified_statistics_drilldown_target_title">Объект: %1$s</string>
+    <string name="unified_statistics_drilldown_calendar_title">На календаре: %1$s</string>
+    <string name="unified_statistics_drilldown_load_more">Показать ещё</string>
+    <string name="unified_statistics_drilldown_empty">Нет элементов по выбранному фильтру</string>
+    <string name="unified_statistics_drilldown_tasks_count">%1$d задач</string>
+    <string name="unified_statistics_drilldown_sessions_count">%1$d сессий</string>
+    <string name="unified_statistics_session_detail_title">Сессия фокуса</string>
+    <string name="unified_statistics_session_timing_label">Время</string>
+    <string name="unified_statistics_session_active_duration_label">Учтённая длительность</string>
+    <string name="unified_statistics_session_elapsed_label">Астрономическое время</string>
+    <string name="unified_statistics_session_allocation_estimated">≈ Оценочное распределение по дням (были паузы)</string>
+    <string name="unified_statistics_session_primary_target_label">Основной объект</string>
+    <string name="unified_statistics_session_frozen_path_label">Раздел на момент сессии</string>
+    <string name="unified_statistics_session_path_none">Без раздела</string>
+    <string name="unified_statistics_session_path_missing">Исторический путь раздела не сохранён</string>
+    <string name="unified_statistics_session_contributions_label">Связанные начисления в привычки</string>
+    <string name="unified_statistics_session_no_contributions">Нет связанных начислений в привычки</string>
+    <string name="unified_statistics_session_contribution_active">Активное начисление: +%1$s в %2$s</string>
+    <string name="unified_statistics_session_contribution_tombstone">Отозвано (Tombstone): %1$s от %2$s</string>
+
+    <!-- PR14.4 Habits & Overview Strings -->
+    <string name="unified_statistics_habits_chart_title">Результаты целей</string>
+    <string name="unified_statistics_habits_chart_daily">Дневные цели</string>
+    <string name="unified_statistics_habits_chart_weekly">Недельные цели</string>
+    <string name="unified_statistics_habits_chart_monthly">Месячные цели</string>
+    <string name="unified_statistics_habits_chart_legend">Достигнута %1$d · Не достигнута %2$d · Без данных %3$d</string>
+    <string name="unified_statistics_habits_chart_empty">Нет закрытых циклов в периоде</string>
+
+    <string name="unified_statistics_habits_ongoing_title">Текущие циклы</string>
+    <string name="unified_statistics_habits_historical_cycles_title">Циклы на конец периода</string>
+    <string name="unified_statistics_habits_historical_cycle_status">Цикл не завершён на дату среза</string>
+    <string name="unified_statistics_habits_ongoing_reached">Цель уже набрана · цикл идёт</string>
+    <string name="unified_statistics_habits_ongoing_in_progress">Цикл идёт</string>
+    <string name="unified_statistics_habits_ongoing_over_limit">Лимит превышен · цикл идёт</string>
+    <string name="unified_statistics_habits_ongoing_within_limit">Пока в пределах</string>
+    <string name="unified_statistics_habits_ongoing_context_format">%1$s · записи по %2$s</string>
+    <string name="unified_statistics_habits_ongoing_see_all">Все текущие циклы (%1$d) ›</string>
+
+    <string name="unified_statistics_habits_preview_title">Привычки</string>
+    <string name="unified_statistics_habits_search_hint">Поиск привычек…</string>
+    <string name="unified_statistics_habits_search_button">Поиск</string>
+    <string name="unified_statistics_habits_all_button">Все привычки (%1$d) ›</string>
+    <string name="unified_statistics_habits_all_button_no_count">Все привычки ›</string>
+    <string name="unified_statistics_habits_archived_badge">Архив</string>
+    <string name="unified_statistics_action_compare_habits">Сравнить привычки</string>
+
+    <string name="unified_statistics_cycle_detail_title">Детали цикла</string>
+    <string name="unified_statistics_cycle_dates_label">Границы цикла</string>
+    <string name="unified_statistics_cycle_goal_label">Цель и версия</string>
+    <string name="unified_statistics_cycle_target_format">Норма: %1$s</string>
+    <string name="unified_statistics_cycle_progress_label">Прогресс и исход</string>
+    <string name="unified_statistics_cycle_manual_entries">Ручные отметки</string>
+    <string name="unified_statistics_cycle_contributions">Связанные начисления</string>
+    <string name="unified_statistics_cycle_no_contributions">Нет связанных начислений</string>
+    <string name="unified_statistics_cycle_open_habit">Открыть привычку</string>
+    <string name="unified_statistics_cycle_unfiltered_warning_title">Внимание</string>
+    <string name="unified_statistics_cycle_unfiltered_warning_body">Экран подробностей привычки показывает полную историю без фильтра по текущему периоду статистики.</string>
+    <string name="unified_statistics_cycle_unfiltered_warning_continue">Перейти к привычке</string>
+    <string name="unified_statistics_cycle_unfiltered_warning_cancel">Отмена</string>
+    <string name="unified_statistics_cycle_outcome_satisfied">Достигнута</string>
+    <string name="unified_statistics_cycle_outcome_not_satisfied">Не достигнута</string>
+    <string name="unified_statistics_cycle_outcome_unknown">Недостаточно данных</string>
+    <string name="unified_statistics_cycle_outcome_exempt">Освобождён (все дни SKIP)</string>
+    <string name="unified_statistics_cycle_outcome_capacity_excluded">Не оценивается: недостаточно доступных дней</string>
+    <string name="unified_statistics_cycle_outcome_unavailable">Недоступно</string>
+    <string name="unified_statistics_cycle_lifecycle_partial">Начальный неполный цикл</string>
+    <string name="unified_statistics_cycle_lifecycle_transition">Переходный цикл (изменение цели)</string>
+    <string name="unified_statistics_cycle_lifecycle_ongoing">Цикл ещё не завершён</string>
+    <string name="unified_statistics_cycle_habit_deleted">Привычка удалена</string>
+
+    <string name="unified_statistics_overview_dynamics_title">Динамика периода</string>
+    <string name="unified_statistics_overview_dynamics_subtitle">Дневные цели, задачи и фокус на одной временной шкале</string>
+    <string name="unified_statistics_overview_dynamics_habits">Дневные цели</string>
+    <string name="unified_statistics_overview_dynamics_tasks">Завершения (шт.)</string>
+    <string name="unified_statistics_overview_dynamics_focus">Фокус (мин)</string>
+    <string name="unified_statistics_overview_dynamics_unknown_notice">Есть дни без записей или с неполными данными</string>
+    <string name="unified_statistics_drilldown_cycles_count">%1$d циклов</string>
+
+    <!-- Cadence Breakdown Strings (no mixed category, no false zero) -->
+    <string name="unified_statistics_cadence_breakdown">Достигнуто: %1$d · Не достигнуто: %2$d</string>
+    <string name="unified_statistics_cadence_breakdown_with_unknown">Достигнуто: %1$d · Не достигнуто: %2$d · Без данных: %3$d</string>
+    <string name="unified_statistics_cadence_exempt_and_capacity">Освобождено: %1$d · По ёмкости: %2$d</string>
+    <string name="unified_statistics_cadence_exempt_only">Освобождено: %1$d</string>
+    <string name="unified_statistics_cadence_capacity_only">По ёмкости: %1$d</string>
+    <string name="unified_statistics_cadence_partial_and_transition">Неполные: %1$d · Переходные: %2$d</string>
+    <string name="unified_statistics_cadence_partial_only">Неполные: %1$d</string>
+    <string name="unified_statistics_cadence_transition_only">Переходные: %1$d</string>
+    <string name="unified_statistics_cadence_ongoing_count">Текущие: %1$d</string>
+    <string name="unified_statistics_cadence_historical_count">На конец периода: %1$d</string>
+    <string name="unified_statistics_cadence_unavailable_count">Недоступно: %1$d</string>
+
+    <!-- Ongoing Preview Strings -->
+    <string name="unified_statistics_habits_ongoing_actual_format">Факт: %1$s</string>
+    <string name="unified_statistics_habits_ongoing_coverage_warning">Неполные данные (%1$d дн. без записей)</string>
+    <string name="unified_statistics_habits_ongoing_coverage_warning_generic">Неполные данные (есть дни без записей)</string>
+
+    <!-- Cycle Detail Pagination & Contribution Classification Strings -->
+    <string name="unified_statistics_pagination_page_format">Стр. %1$d из %2$d (%3$d–%4$d из %5$d)</string>
+    <string name="unified_statistics_pagination_prev">‹ Назад</string>
+    <string name="unified_statistics_pagination_next">Вперёд ›</string>
+    <string name="unified_statistics_cycle_contribution_active">Активное начисление: +%1$s (%2$s)</string>
+    <string name="unified_statistics_cycle_contribution_excluded">Исключено (SKIP/вне статистики): +%1$s (%2$s)</string>
+    <string name="unified_statistics_cycle_contribution_revoked">Отозвано (Tombstone): -%1$s (%2$s)</string>
+</resources>
