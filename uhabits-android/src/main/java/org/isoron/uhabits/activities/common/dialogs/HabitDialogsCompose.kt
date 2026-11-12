@@ -703,3 +703,58 @@ private fun FocusBreakdownPanel(
         )
     }
 }
+
+
+/**
+ * Modern Material 3 content for history editor dialog ([HistoryEditorDialog]).
+ */
+@Composable
+fun HistoryEditorDialogContent(
+    habitName: String,
+    habitColorArgb: Int,
+    dataView: AndroidDataView,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
+    colors: UHabitComposeColors = LocalUHabitComposeColors.current
+) {
+    val dialogDescription = if (habitName.isNotBlank()) {
+        "${stringResource(R.string.calendar)}: $habitName"
+    } else {
+        stringResource(R.string.calendar)
+    }
+
+    UHabitDialogShell(
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics {
+                paneTitle = dialogDescription
+                contentDescription = dialogDescription
+            },
+        contentPadding = PaddingValues(12.dp)
+    ) {
+        Box(modifier = Modifier.fillMaxWidth()) {
+            // Enlarged History Chart host (316dp height yields ~38dp date cells across 7 weekday rows + header)
+            AndroidView(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(316.dp),
+                factory = { dataView }
+            )
+
+            // Compact top-right Close action aligned on the same top header row as month/year labels
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .size(32.dp)
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_tabler_x),
+                    contentDescription = stringResource(android.R.string.cancel),
+                    tint = colors.secondaryColor,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
+    }
+}

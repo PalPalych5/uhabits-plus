@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2025 Álinson Santos Xavier <git@axavier.org>
+ * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org>
  *
  * This file is part of Loop Habit Tracker.
  *
@@ -21,26 +21,45 @@ package org.isoron.uhabits.activities.common.dialogs
 import android.app.Dialog
 import android.content.DialogInterface
 import android.os.Bundle
+import android.view.Gravity
+import android.view.ViewGroup
+import android.view.WindowManager
 import androidx.appcompat.app.AppCompatDialogFragment
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.unit.dp
 import org.isoron.platform.gui.AndroidDataView
+import org.isoron.platform.gui.toInt
 import org.isoron.platform.time.JavaLocalDateFormatter
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
+import org.isoron.uhabits.activities.settings.SettingsThemePaletteResolver
+import org.isoron.uhabits.compose.LocalUHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
+import org.isoron.uhabits.compose.UHabitElevationAndBorders
+import org.isoron.uhabits.compose.rememberHarmonizedChartTheme
 import org.isoron.uhabits.core.commands.Command
 import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.ModelObservable
 import org.isoron.uhabits.core.preferences.Preferences
-import org.isoron.uhabits.core.ui.screens.habits.show.views.HistoryCardPresenter
 import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitPresenter
-import org.isoron.uhabits.focus.EffectiveHabitReadController
+import org.isoron.uhabits.core.ui.screens.habits.show.views.HistoryCardPresenter
 import org.isoron.uhabits.core.ui.views.HistoryChart
-import org.isoron.uhabits.core.ui.views.LightTheme
 import org.isoron.uhabits.core.ui.views.OnDateClickedListener
+import org.isoron.uhabits.focus.EffectiveHabitReadController
 import java.util.Locale
-import kotlin.math.min
 
 class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener, ModelObservable.Listener {
 
@@ -57,6 +76,7 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener, M
 
     private var chart: HistoryChart? = null
     private var onDateClickedListener: OnDateClickedListener? = null
+    private lateinit var themeSwitcher: AndroidThemeSwitcher
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         clearCurrentDialog()
@@ -67,7 +87,7 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener, M
         val initialHabit = component.habitList.getById(habitId)
         if (initialHabit == null) {
             dismissAllowingStateLoss()
-            return Dialog(requireContext())
+            return Dialog(requireContext(), R.style.CustomTransparentDialogTheme)
         }
         habit = initialHabit
         habitBinding = HistoryEditorHabitBinding(component.habitList)
@@ -75,9 +95,10 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener, M
         preferences = component.preferences
         effectiveReads = component.effectiveHabitReads
 
-        val themeSwitcher = AndroidThemeSwitcher(requireActivity(), preferences)
+        themeSwitcher = AndroidThemeSwitcher(requireActivity(), preferences)
         themeSwitcher.apply()
 
+        val savedOffset = savedInstanceState?.getInt("dataOffset", 0) ?: 0
         chart = HistoryChart(
             dateFormatter = JavaLocalDateFormatter(Locale.getDefault()),
             firstWeekday = preferences.firstWeekday,
@@ -88,20 +109,99 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener, M
             theme = themeSwitcher.currentTheme,
             today = getToday(),
             onDateClickedListener = onDateClickedListener ?: object : OnDateClickedListener {},
-            padding = 10.0
-        )
+            padding = 6.0
+        ).apply {
+            squareSpacing = 2.0
+            dataOffset = savedOffset
+        }
         dataView = AndroidDataView(requireContext(), null)
         dataView.view = chart!!
 
-        val dialog = Dialog(requireContext()).apply {
-            val metrics = resources.displayMetrics
-            val maxHeight = resources.getDimensionPixelSize(R.dimen.history_editor_max_height)
-            setContentView(dataView)
-            window!!.setLayout(metrics.widthPixels, min(metrics.heightPixels, maxHeight))
+        val palette = SettingsThemePaletteResolver.resolve(requireContext(), preferences)
+        val colors = UHabitComposeColors.fromPalette(palette)
+        val dialog = Dialog(requireContext(), R.style.CustomTransparentDialogTheme)
+
+        val composeView = ComposeView(requireContext()).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                UHabitComposeTheme(colors = colors) {
+                    val currentColors = LocalUHabitComposeColors.current
+                    val dialogSurface = if (currentColors.isPureBlack) {
+                        androidx.compose.ui.graphics.Color(UHabitElevationAndBorders.AMOLED_BORDERED_CARD_SURFACE_ARGB)
+                    } else {
+                        androidx.compose.ui.graphics.Color(currentColors.surface)
+                    }
+                    val harmonizedTheme = rememberHarmonizedChartTheme(
+                        baseTheme = themeSwitcher.currentTheme,
+                        colors = currentColors,
+                        surfaceColor = dialogSurface
+                    )
+                    chart?.theme = harmonizedTheme
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 16.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                dismiss()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    // Consume clicks inside the dialog card
+                                }
+                        ) {
+                            HistoryEditorDialogContent(
+                                habitName = habit.name,
+                                habitColorArgb = themeSwitcher.currentTheme.color(habit.color).toInt(),
+                                dataView = dataView.apply {
+                                    (parent as? ViewGroup)?.removeView(this)
+                                },
+                                onDismiss = { dismiss() },
+                                colors = currentColors
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        dialog.setContentView(composeView)
+        dialog.window?.apply {
+            setBackgroundDrawableResource(android.R.color.transparent)
+            setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT)
+            setGravity(Gravity.CENTER)
+            setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         }
 
         currentDialog = dialog
         return dialog
+    }
+
+    override fun onStart() {
+        super.onStart()
+        dialog?.window?.apply {
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            setGravity(Gravity.CENTER)
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt("dataOffset", chart?.dataOffset ?: 0)
     }
 
     override fun onDismiss(dialog: DialogInterface) {
@@ -164,10 +264,11 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener, M
         }
         // Only the presentation is projected. Date clicks retain the parent's presenter,
         // whose numerical editor reads canonical manual entries from the real Habit.
+        val currentTheme = chart?.theme ?: themeSwitcher.currentTheme
         val model = runCatching {
             val snapshot = effectiveReads?.snapshot(habit)
-            if (snapshot == null) HistoryCardPresenter.buildState(habit, preferences.firstWeekday, LightTheme())
-            else ShowHabitPresenter.buildState(habit, preferences, LightTheme(), snapshot).history
+            if (snapshot == null) HistoryCardPresenter.buildState(habit, preferences.firstWeekday, currentTheme)
+            else ShowHabitPresenter.buildState(habit, preferences, currentTheme, snapshot).history
         }.getOrElse {
             android.widget.Toast.makeText(requireContext(), R.string.focus_credit_unavailable, android.widget.Toast.LENGTH_LONG).show()
             dismissAllowingStateLoss()
