@@ -307,7 +307,7 @@ class HabitCardListView(
         private fun getHeadingGap(): Int {
             textPaint.textSize = 13f * resources.displayMetrics.scaledDensity
             val textHeight = textPaint.fontMetrics.let { it.descent - it.ascent }
-            return maxOf(dp(34f), textHeight + dp(18f)).toInt()
+            return maxOf(dp(28f), textHeight + dp(12f)).toInt()
         }
 
         override fun getItemOffsets(

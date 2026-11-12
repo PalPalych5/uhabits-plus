@@ -190,6 +190,7 @@ class NumberButtonView(
                 effectiveCompletion != null -> if (effectiveCompletion == org.isoron.uhabits.core.models.projection.HabitGoalStatus.SATISFIED) color else mediumContrast
                 (targetType == AT_LEAST) && (value >= threshold) -> color
                 (targetType == AT_MOST) && (value <= threshold) -> color
+                value <= 0.0 -> lowContrast
                 else -> mediumContrast
             }
 

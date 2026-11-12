@@ -194,8 +194,12 @@ class ListHabitsScreen(
     }
 
     override fun showSelectHabitTypeDialog() {
-        val dialog = HabitTypeDialog()
-        dialog.show(activity.supportFragmentManager, "habitType")
+        val intent = intentFactory.startEditActivity(
+            activity,
+            org.isoron.uhabits.core.models.HabitType.YES_NO.value,
+            false
+        )
+        activity.startActivity(intent)
     }
 
     override fun showDeleteConfirmationScreen(callback: OnConfirmedCallback, quantity: Int) {

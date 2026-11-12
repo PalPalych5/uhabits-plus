@@ -106,7 +106,7 @@ class HeaderView(
         private val dateFormatter = JavaLocalDateFormatter(Locale.getDefault())
         private val paint = TextPaint().apply {
             isAntiAlias = true
-            textSize = dim(R.dimen.tinyTextSize)
+            textSize = dim(R.dimen.smallerTextSize)
             textAlign = Paint.Align.CENTER
             typeface = Typeface.DEFAULT_BOLD
             color = palette.onSurfaceVariant
@@ -140,6 +140,9 @@ class HeaderView(
                 }
 
                 val date = today.minus(index + dataOffset)
+                val isToday = (date == today)
+                paint.color = if (isToday) palette.onSurface else palette.onSurfaceVariant
+                paint.typeface = if (isToday) Typeface.DEFAULT_BOLD else Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 val dayOfWeek = dateFormatter.shortWeekdayName(date).uppercase()
                 val dayOfMonth = date.day.toString()
                 val y1 = rect.centerY() - 0.25 * em

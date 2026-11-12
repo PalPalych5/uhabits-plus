@@ -1,94 +1,61 @@
 /*
- * Copyright (C) 2016-2025 Álinson Santos Xavier <git@axavier.org>
- *
- * This file is part of Loop Habit Tracker.
- *
- * Loop Habit Tracker is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.
- *
- * Loop Habit Tracker is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
+ * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 package org.isoron.uhabits.activities.habits.list.views
 
 import android.content.Context
-import android.view.Gravity.CENTER
 import android.view.View
-import android.view.ViewGroup.LayoutParams.MATCH_PARENT
-import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-import android.widget.LinearLayout
+import android.widget.FrameLayout
 import android.widget.TextView
-import org.isoron.uhabits.R
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
-import org.isoron.uhabits.utils.dp
-import org.isoron.uhabits.utils.getFontAwesome
-import org.isoron.uhabits.utils.sp
-import org.isoron.uhabits.utils.str
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
 
-class EmptyListView(context: Context) : LinearLayout(context) {
-    private val palette = MainTabsThemeBridge.resolve(context)
-    var textTextView: TextView
-    var iconTextView: TextView
+class EmptyListView(context: Context) : FrameLayout(context) {
+    private val palette get() = MainTabsThemeBridge.resolve(context)
+    private var currentMode by mutableStateOf(HabitListEmptyMode.EMPTY)
+
+    // Legacy compatibility views preserved for ABI safety
+    var textTextView: TextView = TextView(context)
+    var iconTextView: TextView = TextView(context)
 
     init {
-        orientation = VERTICAL
-        gravity = CENTER
+        val composeView = ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
+            setContent {
+                val colors = UHabitComposeColors.fromPalette(palette)
+                UHabitComposeTheme(colors = colors) {
+                    HabitListEmptyState(mode = currentMode, colors = colors)
+                }
+            }
+        }
+        addView(composeView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         visibility = View.GONE
-
-        iconTextView = TextView(context).apply {
-            text = str(R.string.fa_star_half_o)
-            typeface = getFontAwesome()
-            textSize = sp(40.0f)
-            gravity = CENTER
-            setTextColor(palette.onSurfaceVariant)
-        }
-
-        addView(
-            iconTextView,
-            MATCH_PARENT,
-            WRAP_CONTENT
-        )
-
-        textTextView = TextView(context).apply {
-            text = str(R.string.no_habits_found)
-            gravity = CENTER
-            setPadding(0, dp(20.0f).toInt(), 0, 0)
-            setTextColor(palette.onSurfaceVariant)
-        }
-        addView(
-            textTextView,
-            MATCH_PARENT,
-            WRAP_CONTENT
-        )
     }
 
     fun showDone() {
-        visibility = VISIBLE
-        iconTextView.text = str(R.string.fa_umbrella_beach)
-        textTextView.text = str(R.string.no_habits_left_to_do)
+        currentMode = HabitListEmptyMode.ALL_DONE
+        visibility = View.VISIBLE
     }
 
     fun showEmpty() {
-        visibility = VISIBLE
-        iconTextView.text = str(R.string.fa_star_half_o)
-        textTextView.text = str(R.string.no_habits_found)
+        currentMode = HabitListEmptyMode.EMPTY
+        visibility = View.VISIBLE
     }
 
     fun showNotFound() {
-        visibility = VISIBLE
-        iconTextView.text = str(R.string.fa_search)
-        textTextView.text = str(R.string.no_search_results)
+        currentMode = HabitListEmptyMode.SEARCH_NOT_FOUND
+        visibility = View.VISIBLE
     }
 
     fun hide() {
-        visibility = GONE
+        visibility = View.GONE
     }
 }
