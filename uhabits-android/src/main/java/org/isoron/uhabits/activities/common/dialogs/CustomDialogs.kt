@@ -11,6 +11,8 @@ import android.graphics.Color
 import android.graphics.PorterDuff
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
+import android.graphics.drawable.StateListDrawable
 import android.text.InputType
 import android.view.LayoutInflater
 import android.view.View
@@ -113,6 +115,35 @@ object CustomDialogs {
         }
     }
 
+    private fun styleDialogActionButton(button: Button?, textColor: Int) {
+        if (button == null) return
+        val density = button.resources.displayMetrics.density
+        button.setTextColor(textColor)
+        button.textSize = 14f
+        button.isAllCaps = false
+        button.backgroundTintList = null
+        button.stateListAnimator = null
+        button.elevation = 0f
+        val mask = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 8f * density
+            setColor(Color.WHITE)
+        }
+        val rippleColor = ColorStateList.valueOf(adjustAlpha(textColor, 0.14f))
+        button.background = RippleDrawable(rippleColor, null, mask)
+    }
+
+    private fun styleChoiceRowBackground(rowView: View, palette: SettingsThemePalette) {
+        val density = rowView.resources.displayMetrics.density
+        val mask = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 8f * density
+            setColor(Color.WHITE)
+        }
+        val rippleColor = ColorStateList.valueOf(adjustAlpha(palette.onSurface, 0.10f))
+        rowView.background = RippleDrawable(rippleColor, null, mask)
+    }
+
     fun styleText(
         title: TextView,
         message: TextView?,
@@ -127,15 +158,13 @@ object CustomDialogs {
 
         title.setTextColor(palette.onSurface)
         message?.setTextColor(palette.onSurfaceVariant)
-        negativeButton?.setTextColor(palette.onSurfaceVariant)
-        neutralButton?.setTextColor(palette.onSurfaceVariant)
-        negativeButton?.textSize = 14f
-        positiveButton?.textSize = 14f
-        neutralButton?.textSize = 14f
+
+        styleDialogActionButton(negativeButton, palette.onSurfaceVariant)
+        styleDialogActionButton(neutralButton, palette.onSurfaceVariant)
 
         if (positiveButton != null) {
             val color = if (isDestructive) resolveErrorColor(context) else accentColor
-            positiveButton.setTextColor(color)
+            styleDialogActionButton(positiveButton, color)
         }
     }
 
@@ -155,12 +184,33 @@ object CustomDialogs {
         val context = editText.context
         val palette = resolvePalette(context)
         val accentColor = resolveAccentColor(context)
+        val density = context.resources.displayMetrics.density
 
         editText.setTextColor(palette.onSurface)
         editText.setHintTextColor(palette.onSurfaceVariant)
-        editText.textSize = 16f
+        editText.textSize = 15f
         editText.highlightColor = adjustAlpha(accentColor, 0.30f)
-        editText.backgroundTintList = ColorStateList.valueOf(accentColor)
+        editText.backgroundTintList = null
+
+        val focusedDrawable = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 10f * density
+            setColor(palette.surfaceVariant)
+            setStroke((1.5f * density).toInt().coerceAtLeast(2), accentColor)
+        }
+        val defaultDrawable = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 10f * density
+            setColor(palette.surfaceVariant)
+            setStroke((1f * density).toInt().coerceAtLeast(1), palette.border)
+        }
+        editText.background = StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_focused), focusedDrawable)
+            addState(intArrayOf(), defaultDrawable)
+        }
+        val padH = (12f * density).toInt()
+        val padV = (10f * density).toInt()
+        editText.setPadding(padH, padV, padH, padV)
         editText.textCursorDrawable?.mutate()?.setColorFilter(accentColor, PorterDuff.Mode.SRC_IN)
     }
 
@@ -189,7 +239,7 @@ object CustomDialogs {
             setStroke((1f * density).toInt().coerceAtLeast(1), palette.border)
         }
 
-        val selector = android.graphics.drawable.StateListDrawable().apply {
+        val selector = StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_focused), focusedDrawable)
             addState(intArrayOf(), defaultDrawable)
         }
@@ -222,6 +272,7 @@ object CustomDialogs {
         radio.scaleX = 0.82f
         radio.scaleY = 0.82f
         CompoundButtonCompat.setButtonTintList(radio, ColorStateList.valueOf(accentColor))
+        (radio.parent as? View)?.let { styleChoiceRowBackground(it, palette) }
     }
 
     fun styleCustomViewElements(view: View) {
@@ -686,6 +737,7 @@ object CustomDialogs {
                 }
 
                 label.setTextColor(palette.onSurface)
+                styleChoiceRowBackground(row, palette)
 
                 row.setOnClickListener {
                     onSelect(index)

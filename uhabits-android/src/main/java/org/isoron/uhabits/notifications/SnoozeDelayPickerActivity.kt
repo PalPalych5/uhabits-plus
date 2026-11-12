@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2025 Álinson Santos Xavier <git@axavier.org>
+ * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org>
  *
  * This file is part of Loop Habit Tracker.
  *
@@ -18,21 +18,19 @@
  */
 package org.isoron.uhabits.notifications
 
-import androidx.appcompat.app.AlertDialog
-import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import android.content.ContentUris
 import android.os.Bundle
 import android.text.format.DateFormat
 import android.view.View
 import android.widget.AdapterView
 import android.widget.AdapterView.OnItemClickListener
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.FragmentActivity
-import com.android.datetimepicker.time.RadialPickerLayout
-import com.android.datetimepicker.time.TimePickerDialog
 import org.isoron.platform.gui.toInt
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
+import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.ui.views.DarkTheme
 import org.isoron.uhabits.core.ui.views.LightTheme
@@ -100,17 +98,23 @@ class SnoozeDelayPickerActivity : FragmentActivity(), OnItemClickListener {
 
     private fun showTimePicker() {
         val calendar = Calendar.getInstance()
-        val dialog = TimePickerDialog.newInstance(
-            { view: RadialPickerLayout?, hour: Int, minute: Int ->
-                reminderController!!.onSnoozeTimePicked(habit, hour, minute)
+        val customDialog = CustomDialogs.showTimePickerDialog(
+            context = this,
+            title = getString(R.string.snooze),
+            initialHour = calendar[Calendar.HOUR_OF_DAY],
+            initialMinute = calendar[Calendar.MINUTE],
+            is24Hour = DateFormat.is24HourFormat(this),
+            onConfirm = { hour, minute ->
+                val currentHabit = habit
+                if (currentHabit != null) {
+                    reminderController?.onSnoozeTimePicked(currentHabit, hour, minute)
+                }
                 finish()
-            },
-            calendar[Calendar.HOUR_OF_DAY],
-            calendar[Calendar.MINUTE],
-            DateFormat.is24HourFormat(this),
-            androidColor
+            }
         )
-        dialog.show(supportFragmentManager, "timePicker")
+        customDialog.setOnDismissListener {
+            if (!isFinishing) finish()
+        }
     }
 
     override fun onItemClick(parent: AdapterView<*>?, view: View, position: Int, id: Long) {

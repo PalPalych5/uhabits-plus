@@ -163,7 +163,7 @@
         <item name="dialogFormLabelColor">@color/grey_800</item>
     </style>
 
-    <style name="CustomTransparentDialogTheme" parent="Theme.MaterialComponents.Dialog.Alert">
+    <style name="CustomTransparentDialogTheme" parent="ThemeOverlay.MaterialComponents.Dialog.Alert">
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:backgroundDimEnabled">true</item>
         <item name="android:windowNoTitle">true</item>
