@@ -224,7 +224,6 @@ class HabitCardListAdapter(
     }
 
     override fun onRefreshFinished() {
-        notifyDataSetChanged()
         observable.notifyListeners()
     }
 
@@ -298,8 +297,14 @@ class HabitCardListAdapter(
     override var primaryOrder: HabitList.Order
         get() = cache.primaryOrder
         set(value) {
+            val previous = cache.primaryOrder
             cache.primaryOrder = value
             preferences.defaultPrimaryOrder = value
+            if (previous != value &&
+                (previous == HabitList.Order.BY_SPHERE || value == HabitList.Order.BY_SPHERE)
+            ) {
+                notifyDataSetChanged()
+            }
             listView?.invalidateItemDecorations()
         }
 

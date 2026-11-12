@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.runtime.CompositionContext
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -51,6 +52,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.platform.compositionContext
+import androidx.compose.ui.platform.findViewTreeCompositionContext
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.findViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.findViewTreeSavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -120,6 +129,14 @@ class HabitCardView(
     private var headingColors by mutableStateOf<UHabitComposeColors?>(null)
     private var headingView: ComposeView? = null
 
+    private var attachedTreeLifecycleOwner: LifecycleOwner? = null
+    private var attachedTreeSavedStateOwner: SavedStateRegistryOwner? = null
+    private var attachedCompositionContext: CompositionContext? = null
+    private var hasTemporaryTreeLifecycleOwner = false
+    private var hasTemporaryTreeSavedStateOwner = false
+    private var hasTemporaryParentCompositionContext = false
+    private var hasInstalledLocalComposeContext = false
+
     var composeGroupHeading: String? = null
         set(value) {
             field = value
@@ -134,7 +151,7 @@ class HabitCardView(
                 headingText = value
                 headingColors = UHabitComposeColors.fromPalette(palette)
                 if (headingView == null) {
-                    headingView = ComposeView(context).apply {
+                    val createdHeadingView = ComposeView(context).apply {
                         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
                         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
                         setOnTouchListener { _, _ -> true }
@@ -146,7 +163,33 @@ class HabitCardView(
                                 }
                             }
                         }
-                        this@HabitCardView.addView(this, FrameLayout.LayoutParams(MATCH_PARENT, gap, Gravity.TOP))
+                    }
+                    // When RecyclerView rebinds an attached-scrap ViewHolder (isAttachedToWindow == true,
+                    // parent == null), addView() attaches ComposeView + AndroidComposeView synchronously.
+                    // Attach to the shared ancestor CompositionContext when available and also supply
+                    // temporary ViewTree*Owners on HabitCardView strictly for the duration of addView().
+                    var usedSharedParentContext = false
+                    var appliedTemporaryOwners = false
+                    if (isAttachedToWindow) {
+                        val sharedParentContext = attachedCompositionContext ?: findViewTreeCompositionContext()
+                        if (sharedParentContext != null) {
+                            createdHeadingView.setParentCompositionContext(sharedParentContext)
+                            hasTemporaryParentCompositionContext = true
+                            usedSharedParentContext = true
+                        }
+                        appliedTemporaryOwners = applyTemporaryTreeOwners()
+                    }
+                    headingView = createdHeadingView
+                    try {
+                        this@HabitCardView.addView(
+                            createdHeadingView,
+                            FrameLayout.LayoutParams(MATCH_PARENT, gap, Gravity.TOP)
+                        )
+                        if (!usedSharedParentContext && appliedTemporaryOwners && this@HabitCardView.compositionContext != null) {
+                            hasInstalledLocalComposeContext = true
+                        }
+                    } finally {
+                        clearTemporaryTreeOwners()
                     }
                 }
                 headingView?.let { view ->
@@ -157,6 +200,46 @@ class HabitCardView(
             }
             headingView?.visibility = if (value == null) GONE else VISIBLE
         }
+
+    private fun applyTemporaryTreeOwners(): Boolean {
+        var applied = false
+        if (findViewTreeLifecycleOwner() == null) {
+            val owner = attachedTreeLifecycleOwner ?: findContextOwner<LifecycleOwner>()
+            if (owner != null) {
+                setViewTreeLifecycleOwner(owner)
+                hasTemporaryTreeLifecycleOwner = true
+                applied = true
+            }
+        }
+        if (findViewTreeSavedStateRegistryOwner() == null) {
+            val owner = attachedTreeSavedStateOwner ?: findContextOwner<SavedStateRegistryOwner>()
+            if (owner != null) {
+                setViewTreeSavedStateRegistryOwner(owner)
+                hasTemporaryTreeSavedStateOwner = true
+                applied = true
+            }
+        }
+        return applied
+    }
+
+    private fun clearTemporaryTreeOwners() {
+        if (hasTemporaryTreeLifecycleOwner) {
+            setViewTreeLifecycleOwner(null)
+            hasTemporaryTreeLifecycleOwner = false
+        }
+        if (hasTemporaryTreeSavedStateOwner) {
+            setViewTreeSavedStateRegistryOwner(null)
+            hasTemporaryTreeSavedStateOwner = false
+        }
+    }
+
+    private inline fun <reified T> findContextOwner(): T? {
+        var current: Context? = context
+        while (current is android.content.ContextWrapper && current !is T) {
+            current = current.baseContext
+        }
+        return current as? T
+    }
 
     private fun headingGap(): Int {
         val paint = android.text.TextPaint().apply {
@@ -450,11 +533,34 @@ class HabitCardView(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         habit?.observable?.addListener(this)
+        if (parent != null) {
+            attachedTreeLifecycleOwner = findViewTreeLifecycleOwner()
+            attachedTreeSavedStateOwner = findViewTreeSavedStateRegistryOwner()
+            attachedCompositionContext = findViewTreeCompositionContext()
+            clearTemporaryTreeOwners()
+            if (hasTemporaryParentCompositionContext) {
+                headingView?.setParentCompositionContext(null)
+                hasTemporaryParentCompositionContext = false
+            }
+        }
     }
 
     override fun onDetachedFromWindow() {
         habit?.observable?.removeListener(this)
+        attachedTreeLifecycleOwner = null
+        attachedTreeSavedStateOwner = null
+        attachedCompositionContext = null
         super.onDetachedFromWindow()
+        clearTemporaryTreeOwners()
+        if (hasTemporaryParentCompositionContext) {
+            headingView?.setParentCompositionContext(null)
+            hasTemporaryParentCompositionContext = false
+        }
+        if (hasInstalledLocalComposeContext) {
+            headingView?.disposeComposition()
+            compositionContext = null
+            hasInstalledLocalComposeContext = false
+        }
     }
 
     private fun copyAttributesFrom(h: Habit) {
