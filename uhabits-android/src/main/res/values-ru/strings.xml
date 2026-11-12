@@ -1015,4 +1015,20 @@
     <string name="dialog_action_skip">Пропуск</string>
     <string name="dialog_action_skip_description">Пропустить запись</string>
     <string name="dialog_action_save_description">Сохранить запись</string>
+    <string name="discard_changes">Отменить изменения?</string>
+    <string name="discard_changes_message">Все несохранённые данные будут потеряны.</string>
+    <string name="discard">Отменить</string>
+    <string name="keep_editing">Продолжить</string>
+    <string name="habit_notes_placeholder">Дополнительные правила, мотивы, инструкции…</string>
+    <string name="habit_form_section_target">Цель и расписание</string>
+    <string name="habit_type_yes_no_title">Да / Нет</string>
+    <string name="habit_type_numerical_title">Числовая</string>
+    <string name="habit_unit_placeholder">мин, км, стр…</string>
+    <string name="target_type_label">Тип цели:</string>
+    <string name="reminder_days">Дни напоминания</string>
+    <string name="habit_form_section_organization">Раздел и фокус</string>
+    <string name="focus_credit_descendants_summary">Учитывать сессии из дочерних разделов</string>
+    <string name="unit_tooltip_title">Единицы измерения</string>
+    <string name="unit_tooltip_body">Можно указать мин, мл, км, страницы, повторения или свою единицу.\nЕсли указать минуты (например, «мин»), станут доступны секундомер и Помодоро.</string>
+    <string name="unit_tooltip_action">Понятно</string>
 </resources>

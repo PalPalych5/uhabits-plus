@@ -999,4 +999,20 @@
     <string name="dialog_action_skip">Skip</string>
     <string name="dialog_action_skip_description">Skip entry</string>
     <string name="dialog_action_save_description">Save entry</string>
+    <string name="discard_changes">Discard changes?</string>
+    <string name="discard_changes_message">All unsaved data will be lost.</string>
+    <string name="discard">Discard</string>
+    <string name="keep_editing">Keep editing</string>
+    <string name="habit_notes_placeholder">Additional rules, motives, instructions…</string>
+    <string name="habit_form_section_target">Target &amp; Schedule</string>
+    <string name="habit_type_yes_no_title">Yes / No</string>
+    <string name="habit_type_numerical_title">Measurable</string>
+    <string name="habit_unit_placeholder">min, km, pages…</string>
+    <string name="target_type_label">Target type:</string>
+    <string name="reminder_days">Reminder days</string>
+    <string name="habit_form_section_organization">Organization &amp; Focus</string>
+    <string name="focus_credit_descendants_summary">Count sessions from subsections</string>
+    <string name="unit_tooltip_title">Units of measurement</string>
+    <string name="unit_tooltip_body">You can enter min, ml, km, pages, reps, or a custom unit.\nIf you specify minutes (e.g. \"min\"), Stopwatch and Pomodoro tracking will become available.</string>
+    <string name="unit_tooltip_action">Got it</string>
 </resources>

@@ -714,8 +714,12 @@ class UnifiedContainerHomeView(
             text = "+ " + getString(R.string.habit),
             isPrimary = false
         ) {
-            val dialog = HabitTypeDialog.newInstance()
-            dialog.show(fragmentManager, "habit_type")
+            val intent = org.isoron.uhabits.intents.IntentFactory().startEditActivity(
+                context,
+                org.isoron.uhabits.core.models.HabitType.YES_NO.value,
+                false
+            )
+            context.startActivity(intent)
         }
         habitsHeader.addView(addHabitBtn)
         contentLayout.addView(habitsHeader)

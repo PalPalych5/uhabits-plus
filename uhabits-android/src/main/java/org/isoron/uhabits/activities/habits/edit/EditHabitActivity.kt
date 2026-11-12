@@ -1,78 +1,52 @@
 /*
- * Copyright (C) 2016-2025 Álinson Santos Xavier <git@axavier.org>
- *
- * This file is part of Loop Habit Tracker.
- *
- * Loop Habit Tracker is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.
- *
- * Loop Habit Tracker is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
+ * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 package org.isoron.uhabits.activities.habits.edit
 
-import android.animation.ObjectAnimator
-import android.annotation.SuppressLint
-import android.content.res.ColorStateList
 import android.content.res.Resources
-import org.isoron.uhabits.activities.common.icons.IconPack
-import org.isoron.uhabits.activities.common.icons.IconPickerBottomSheet
-import org.isoron.uhabits.core.containers.IconRef
-import android.graphics.Canvas
-import android.graphics.ColorFilter
-import android.graphics.PixelFormat
-import android.graphics.drawable.Drawable
 import android.os.Bundle
-import android.text.Html
-import android.text.Spanned
+import android.text.Editable
+import android.text.TextWatcher
 import android.text.format.DateFormat
 import android.view.MenuItem
 import android.view.View
-import android.view.animation.PathInterpolator
-import android.widget.ArrayAdapter
-import android.widget.TextView
-import androidx.annotation.StringRes
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.content.res.AppCompatResources
-import androidx.core.graphics.drawable.DrawableCompat
-import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowCompat
+import org.isoron.uhabits.activities.settings.SettingsThemePaletteResolver
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.DialogFragment
-import com.android.datetimepicker.date.DatePickerDialog
-import com.android.datetimepicker.time.RadialPickerLayout
-import com.android.datetimepicker.time.TimePickerDialog
-import org.isoron.platform.time.DayOfWeek
-import org.isoron.platform.time.LocalDate
-import org.isoron.platform.time.getFirstWeekdayNumberAccordingToLocale
-import org.isoron.platform.time.getToday
 import org.isoron.platform.gui.toInt
+import org.isoron.platform.time.LocalDate
+import org.isoron.platform.time.getToday
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
-import org.isoron.uhabits.activities.common.dialogs.ColorPickerDialog
-import org.isoron.uhabits.activities.common.dialogs.ColorPickerDialogFactory
-import org.isoron.uhabits.activities.common.dialogs.UHabitColorPickerBottomSheet
+import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import org.isoron.uhabits.activities.common.dialogs.FrequencyPickerDialog
+import org.isoron.uhabits.activities.common.dialogs.NumericalInputValidator
+import org.isoron.uhabits.activities.common.dialogs.UHabitColorPickerBottomSheet
 import org.isoron.uhabits.activities.common.dialogs.WeekdayPickerDialog
+import org.isoron.uhabits.activities.common.icons.IconPickerBottomSheet
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
+import org.isoron.uhabits.activities.habits.edit.views.HabitFormActions
+import org.isoron.uhabits.activities.habits.edit.views.HabitFormScreen
+import org.isoron.uhabits.activities.habits.edit.views.HabitFormState
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
 import org.isoron.uhabits.core.commands.CommandRunner
 import org.isoron.uhabits.core.commands.CreateHabitCommand
-import org.isoron.uhabits.core.commands.EditHabitGoalCommand
 import org.isoron.uhabits.core.commands.EditHabitCommand
+import org.isoron.uhabits.core.commands.EditHabitGoalCommand
 import org.isoron.uhabits.core.commands.GoalApplyScope
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.HabitRef
-import org.isoron.uhabits.core.rules.HabitTimeValueConverter
+import org.isoron.uhabits.core.containers.IconRef
 import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
-import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.DayTier
+import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitType
 import org.isoron.uhabits.core.models.NumericalHabitType
@@ -80,16 +54,11 @@ import org.isoron.uhabits.core.models.PaletteColor
 import org.isoron.uhabits.core.models.Reminder
 import org.isoron.uhabits.core.models.WeekdayList
 import org.isoron.uhabits.core.models.isMinuteUnit
+import org.isoron.uhabits.core.rules.HabitTimeValueConverter
 import org.isoron.uhabits.databinding.ActivityEditHabitBinding
-import org.isoron.uhabits.utils.applyBottomInset
-import org.isoron.uhabits.utils.applyRootViewInsets
-import org.isoron.uhabits.utils.applyToolbarInsets
 import org.isoron.uhabits.utils.dismissCurrentAndShow
-import org.isoron.uhabits.utils.formatTime
-import org.isoron.uhabits.utils.StyledResources
-import org.isoron.uhabits.utils.toFormattedString
 
-fun formatFrequency(freqNum: Int, freqDen: Int, resources: Resources) = when {
+fun formatFrequency(freqNum: Int, freqDen: Int, resources: Resources): String = when {
     freqNum == 1 && (freqDen == 30 || freqDen == 31) -> resources.getString(R.string.every_month)
     freqDen == 30 || freqDen == 31 -> resources.getString(R.string.x_times_per_month, freqNum)
     freqNum == 1 && freqDen == 1 -> resources.getString(R.string.every_day)
@@ -99,88 +68,147 @@ fun formatFrequency(freqNum: Int, freqDen: Int, resources: Resources) = when {
     else -> resources.getString(R.string.x_times_per_y_days, freqNum, freqDen)
 }
 
-private const val DROPDOWN_ARROW_ANIMATION_MS = 160L
-
-private class RotatingDropdownArrowDrawable(
-    private val delegate: Drawable
-) : Drawable() {
-    var rotation: Float = 0f
-        set(value) {
-            field = value
-            invalidateSelf()
-    }
-
-    override fun draw(canvas: Canvas) {
-        val currentBounds = bounds
-        val saveCount = canvas.save()
-        canvas.rotate(rotation, currentBounds.exactCenterX(), currentBounds.exactCenterY())
-        delegate.bounds = currentBounds
-        delegate.draw(canvas)
-        canvas.restoreToCount(saveCount)
-    }
-
-    override fun setAlpha(alpha: Int) {
-        delegate.alpha = alpha
-    }
-
-    override fun setColorFilter(colorFilter: ColorFilter?) {
-        delegate.colorFilter = colorFilter
-    }
-
-    @Deprecated("Deprecated in Java")
-    override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
-
-    override fun getIntrinsicWidth(): Int = delegate.intrinsicWidth
-
-    override fun getIntrinsicHeight(): Int = delegate.intrinsicHeight
-}
-
-private class DropdownArrowHandle(
-    private val arrow: RotatingDropdownArrowDrawable
-) {
-    private val interpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
-    private var animator: ObjectAnimator? = null
-
-    fun open() = rotateTo(180f)
-
-    fun close() = rotateTo(0f)
-
-    private fun rotateTo(targetRotation: Float) {
-        animator?.cancel()
-        animator = ObjectAnimator.ofFloat(arrow, "rotation", arrow.rotation, targetRotation).apply {
-            duration = DROPDOWN_ARROW_ANIMATION_MS
-            interpolator = this@DropdownArrowHandle.interpolator
-            start()
-        }
-    }
-}
-
-class EditHabitActivity : AppCompatActivity() {
+class EditHabitActivity : AppCompatActivity(), HabitFormActions {
 
     private lateinit var themeSwitcher: AndroidThemeSwitcher
     private lateinit var binding: ActivityEditHabitBinding
-    private lateinit var commandRunner: CommandRunner
+    lateinit var formState: HabitFormState
 
-    var habitId = -1L
-    lateinit var habitType: HabitType
-    var unit = ""
-    var color = PaletteColor(18)
-    var androidColor = 0
-    var freqNum = 1
-    var freqDen = 1
-    var reminderHour = -1
-    var reminderMin = -1
+    // Public properties preserved for activity contract and test compatibility
+    var habitId: Long = -1L
+        get() = if (::formState.isInitialized) formState.habitId else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) formState.habitId = value
+        }
+
+    var habitType: HabitType = HabitType.YES_NO
+        get() = if (::formState.isInitialized) formState.habitType else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) formState.habitType = value
+        }
+    var unit: String = ""
+        get() = if (::formState.isInitialized) formState.unit else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) formState.unit = value
+        }
+
+    var color: PaletteColor = PaletteColor(18)
+        get() = if (::formState.isInitialized) formState.color else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) formState.color = value
+        }
+
+    var androidColor: Int = 0
+    var freqNum: Int = 1
+        get() = if (::formState.isInitialized) formState.freqNum else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) formState.freqNum = value
+        }
+
+    var freqDen: Int = 1
+        get() = if (::formState.isInitialized) formState.freqDen else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) formState.freqDen = value
+        }
+
+    var reminderHour: Int = -1
+        get() = if (::formState.isInitialized) formState.reminderHour else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) formState.reminderHour = value
+        }
+
+    var reminderMin: Int = -1
+        get() = if (::formState.isInitialized) formState.reminderMin else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) formState.reminderMin = value
+        }
+
     var reminderDays: WeekdayList = WeekdayList.EVERY_DAY
-    var targetType = NumericalHabitType.AT_LEAST
-    var dayTier = DayTier.NORMAL
-    var timerEnabled = false
+        get() = if (::formState.isInitialized) formState.reminderDays else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) formState.reminderDays = value
+        }
+
+    var targetType: NumericalHabitType = NumericalHabitType.AT_LEAST
+        get() = if (::formState.isInitialized) formState.targetType else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) formState.targetType = value
+        }
+
+    var dayTier: DayTier = DayTier.NORMAL
+        get() = if (::formState.isInitialized) formState.dayTier else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) formState.dayTier = value
+        }
+
+    var timerEnabled: Boolean = false
+        get() = if (::formState.isInitialized) formState.timerEnabled else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) formState.timerEnabled = value
+        }
+
     var blockId: Long? = 7L
+        get() = if (::formState.isInitialized) formState.blockId else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) formState.blockId = value
+        }
+
     var containerId: String? = null
+        get() = if (::formState.isInitialized) formState.containerId else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) formState.containerId = value
+        }
+
     var focusSourceContainerId: String? = null
-    var focusIncludeDescendants = true
+        get() = if (::formState.isInitialized) formState.focusSourceContainerId else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) {
+                formState.focusSourceContainerId = value
+                updateFocusSourceDisplayName()
+            }
+        }
+
+    var focusIncludeDescendants: Boolean = true
+        get() = if (::formState.isInitialized) formState.focusIncludeDescendants else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) formState.focusIncludeDescendants = value
+        }
+
     var iconRef: IconRef = IconRef.None
+        get() = if (::formState.isInitialized) formState.iconRef else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) formState.iconRef = value
+        }
+
     private var hasIndividualColor = false
     private var createArchived = false
+
+    // Snapshot of original habit values to detect unsaved changes
+    private var origName = ""
+    private var origQuestion = ""
+    private var origNotes = ""
+    private var origUnit = ""
+    private var origTarget = 1.0
+    private var origColor = PaletteColor(18)
+    private var origFreqNum = 1
+    private var origFreqDen = 1
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -190,14 +218,31 @@ class EditHabitActivity : AppCompatActivity() {
         themeSwitcher = AndroidThemeSwitcher(this, component.preferences)
         themeSwitcher.apply()
 
+        // Configure edge-to-edge system bars and synchronize status bar icon contrast
+        val palette = SettingsThemePaletteResolver.resolve(this, component.preferences)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+        insetsController.isAppearanceLightStatusBars = !palette.isDark
+        insetsController.isAppearanceLightNavigationBars = !palette.isDark
+
         binding = ActivityEditHabitBinding.inflate(layoutInflater)
-        binding.root.applyRootViewInsets()
-        binding.root.applyBottomInset()
-        binding.toolbar.applyToolbarInsets()
         setContentView(binding.root)
 
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                handleBackOrCancel()
+            }
+        })
+
+        var initName = ""
+        var initQuestion = ""
+        var initNotes = ""
+        var initUnit = ""
+        var initTargetValue = 1.0
+
         if (intent.hasExtra("habitId")) {
-            binding.toolbar.title = getString(R.string.edit_habit)
             habitId = intent.getLongExtra("habitId", -1)
             val habit = component.habitList.getById(habitId)!!
             habitType = habit.type
@@ -223,11 +268,20 @@ class EditHabitActivity : AppCompatActivity() {
                 reminderMin = it.minute
                 reminderDays = it.days
             }
-            binding.nameInput.setText(habit.name)
-            binding.questionInput.setText(habit.question)
-            binding.notesInput.setText(habit.description)
-            binding.unitInput.setText(habit.unit)
-            binding.targetInput.setText(habit.targetValue.toString())
+            initName = habit.name
+            initQuestion = habit.question
+            initNotes = habit.description
+            initUnit = habit.unit
+            initTargetValue = habit.targetValue
+
+            origName = habit.name
+            origQuestion = habit.question
+            origNotes = habit.description
+            origUnit = habit.unit
+            origTarget = habit.targetValue
+            origColor = habit.color
+            origFreqNum = freqNum
+            origFreqDen = freqDen
         } else {
             habitType = HabitType.fromInt(intent.getIntExtra("habitType", HabitType.YES_NO.value))
             createArchived = intent.getBooleanExtra("createArchived", false)
@@ -262,76 +316,79 @@ class EditHabitActivity : AppCompatActivity() {
             color = defaultColorForCurrentBlock()
         }
 
-        updateColors()
+        updateAndroidColor()
 
-        if (!component.preferences.isDayTiersEnabled) {
-            binding.dayTierOuterBox.visibility = View.GONE
-        }
-        if (!component.preferences.isHabitSpheresEnabled) {
-            binding.habitBlockOuterBox.visibility = View.GONE
-        }
-
-        when (habitType) {
-            HabitType.YES_NO -> {
-                binding.unitOuterBox.visibility = View.GONE
-                binding.targetOuterBox.visibility = View.GONE
-                binding.targetTypeOuterBox.visibility = View.GONE
-                binding.timerEnabledOuterBox.visibility = View.GONE
+        // Build and initialize FormState
+        formState = HabitFormState(
+            initialHabitId = habitId,
+            initialHabitType = habitType,
+            initialName = initName,
+            initialQuestion = initQuestion,
+            initialNotes = initNotes,
+            initialUnit = initUnit,
+            initialTargetValue = initTargetValue,
+            initialTargetType = targetType,
+            initialFreqNum = freqNum,
+            initialFreqDen = freqDen,
+            initialDayTier = dayTier,
+            initialDayTiersEnabled = component.preferences.isDayTiersEnabled,
+            initialHabitSpheresEnabled = component.preferences.isHabitSpheresEnabled,
+            initialColor = color,
+            initialAndroidColor = androidColor,
+            initialIconRef = iconRef,
+            initialBlockId = blockId,
+            initialContainerId = containerId,
+            initialTimerEnabled = timerEnabled,
+            initialFocusSourceContainerId = focusSourceContainerId,
+            initialFocusIncludeDescendants = focusIncludeDescendants,
+            initialReminderHour = reminderHour,
+            initialReminderMin = reminderMin,
+            initialReminderDays = reminderDays,
+            initialCreateArchived = createArchived,
+            isContainerLocal = facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL,
+            focusCreditAvailable = component.focusCreditController != null,
+            initialUnitTooltipDismissed = component.preferences.isNumericalUnitTooltipShown,
+            onDismissUnitTooltip = {
+                component.preferences.isNumericalUnitTooltipShown = true
             }
-            HabitType.NUMERICAL -> {
-                binding.nameInput.hint = getString(R.string.measurable_short_example)
-                binding.questionInput.hint = getString(R.string.measurable_question_example)
-                binding.frequencyOuterBox.visibility = View.GONE
+        )
 
-                binding.unitInput.addTextChangedListener(object : android.text.TextWatcher {
-                    override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                    override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-                    override fun afterTextChanged(s: android.text.Editable?) {
-                        updateTimerVisibility()
-                        updateFocusConfigurationVisibility()
-                    }
-                })
-                updateTimerVisibility()
+        updateSectionDisplayName()
+        updateFocusSourceDisplayName()
+
+        // Set up Native Compose Screen
+        binding.composeFormView.apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                val palette = MainTabsThemeBridge.resolve(this@EditHabitActivity)
+                val colors = UHabitComposeColors.fromPalette(palette)
+                UHabitComposeTheme(colors) {
+                    HabitFormScreen(
+                        state = formState,
+                        actions = this@EditHabitActivity
+                    )
+                }
             }
         }
 
-        binding.focusDescendantsSwitch.isChecked = focusIncludeDescendants
-        binding.focusDescendantsSwitch.setOnCheckedChangeListener { _, checked -> focusIncludeDescendants = checked }
-        val focusArrow = configureDropdownArrow(binding.focusSourcePicker)
-        binding.focusSourcePicker.setOnClickListener {
-            val containers = facade.availableContainers()
-            focusArrow.open()
-            val dialog = CustomDialogs.showSingleChoiceDialog(
-                context = this, title = getString(R.string.focus_credit_source),
-                options = listOf(getString(R.string.focus_credit_off)) + containers.map { it.path ?: it.name },
-                selectedIndex = containers.indexOfFirst { it.key == focusSourceContainerId } + 1
-            ) { which ->
-                focusSourceContainerId = if (which == 0) null else containers[which - 1].key
-                populateFocusConfiguration()
-            }
-            dialog.setOnDismissListener { focusArrow.close() }
-        }
+        // Connect Compatibility Layer text watchers and listeners for instrumentation tests
+        setupCompatLayer()
         updateFocusConfigurationVisibility()
-        populateFocusConfiguration()
-        setSupportActionBar(binding.toolbar)
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        supportActionBar?.setDisplayShowHomeEnabled(true)
-        supportActionBar?.elevation = 10.0f
 
-        val colorPickerDialogFactory = ColorPickerDialogFactory(this)
+        // Restore active color picker dialog if needed
         val configureColorPicker: (UHabitColorPickerBottomSheet) -> Unit = { picker ->
             picker.onColorPicked = { paletteColor ->
                 this.color = paletteColor
+                formState.color = paletteColor
                 hasIndividualColor = HabitColorDefaults.isIndividual(
                     paletteColor,
                     blockId,
                     currentBlocks()
                 )
-                updateColors()
+                updateAndroidColor()
             }
         }
-        (supportFragmentManager.findFragmentByTag("colorPicker") as? UHabitColorPickerBottomSheet)
-            ?.let(configureColorPicker)
+        (supportFragmentManager.findFragmentByTag("colorPicker") as? UHabitColorPickerBottomSheet)?.let(configureColorPicker)
         if (state?.getBoolean("colorPickerOpen") == true) {
             (supportFragmentManager.findFragmentByTag("colorPicker") as? UHabitColorPickerBottomSheet)?.let {
                 supportFragmentManager.beginTransaction().remove(it).commitNowAllowingStateLoss()
@@ -340,224 +397,338 @@ class EditHabitActivity : AppCompatActivity() {
             configureColorPicker(restoredPicker)
             restoredPicker.show(supportFragmentManager, "colorPicker")
         }
-        binding.colorButton.setOnClickListener {
-            val picker = UHabitColorPickerBottomSheet.newInstance(color)
-            configureColorPicker(picker)
-            picker.show(supportFragmentManager, "colorPicker")
+
+        // Dismiss leftover dialog fragments on recreation
+        for (fragment in supportFragmentManager.fragments) {
+            if (fragment is DialogFragment && fragment !is UHabitColorPickerBottomSheet) {
+                fragment.dismiss()
+            }
         }
+    }
 
-        val booleanFrequencyArrow = configureDropdownArrow(binding.booleanFrequencyPicker)
-        val numericalFrequencyArrow = configureDropdownArrow(binding.numericalFrequencyPicker)
-        val targetTypeArrow = configureDropdownArrow(binding.targetTypePicker)
-        val dayTierArrow = configureDropdownArrow(binding.dayTierPicker)
-        val habitBlockArrow = configureDropdownArrow(binding.habitBlockPicker)
-        val reminderTimeArrow = configureDropdownArrow(binding.reminderTimePicker)
-        val reminderDateArrow = configureDropdownArrow(binding.reminderDatePicker)
+    private fun setupCompatLayer() {
+        binding.buttonSave.setOnClickListener {
+            if (formState.validate()) save()
+        }
+        binding.unitInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                val text = s?.toString().orEmpty()
+                formState.unit = text
+                updateTimerVisibility()
+                updateFocusConfigurationVisibility()
+            }
+        })
+        binding.nameInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                formState.name = s?.toString().orEmpty()
+            }
+        })
+        binding.targetInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                formState.targetValueString = s?.toString().orEmpty()
+            }
+        })
+        binding.colorButton.setOnClickListener { onPickColor() }
+        binding.booleanFrequencyPicker.setOnClickListener { onPickFrequency() }
+        binding.reminderTimePicker.setOnClickListener { onPickReminderTime() }
+        binding.reminderDatePicker.setOnClickListener { onPickReminderDays() }
+        binding.focusDescendantsSwitch.setOnCheckedChangeListener { _, isChecked ->
+            focusIncludeDescendants = isChecked
+            formState.focusIncludeDescendants = isChecked
+        }
+    }
 
-        populateFrequency()
-        binding.booleanFrequencyPicker.setOnClickListener {
-            booleanFrequencyArrow.open()
-            val picker = FrequencyPickerDialog(freqNum, freqDen)
-            picker.onDismissCallback = { booleanFrequencyArrow.close() }
+    private fun updateAndroidColor() {
+        androidColor = themeSwitcher.currentTheme.color(color).toInt()
+        if (::formState.isInitialized) {
+            formState.androidColor = androidColor
+        }
+    }
+
+    private fun updateSectionDisplayName() {
+        val component = (application as HabitsApplication).component
+        val facade = component.organizationFacade
+        val name = if (facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            if (containerId != null) {
+                val current = facade.availableContainers().firstOrNull { it.key == containerId }
+                current?.path ?: current?.name ?: getString(R.string.habit_block_unassigned)
+            } else {
+                getString(R.string.habit_block_unassigned)
+            }
+        } else {
+            val blocks = component.habitList.getBlocks()
+            val currentBlock = blocks.firstOrNull { it.id == blockId }
+            currentBlock?.name ?: getString(R.string.habit_block_unassigned)
+        }
+        formState.sectionDisplayName = name
+    }
+
+    private fun updateFocusSourceDisplayName() {
+        val facade = (application as HabitsApplication).component.organizationFacade
+        val source = facade.availableContainers().firstOrNull { it.key == focusSourceContainerId }
+        val name = when {
+            focusSourceContainerId == null -> getString(R.string.focus_credit_off)
+            source != null -> source.path ?: source.name
+            else -> getString(R.string.focus_credit_source_missing)
+        }
+        formState.focusSourceDisplayName = name
+    }
+
+    private fun updateTimerVisibility() {
+        val isMinute = formState.unit.isMinuteUnit()
+        binding.timerEnabledOuterBox.visibility = if (isMinute) View.VISIBLE else View.GONE
+    }
+
+    private fun updateFocusConfigurationVisibility() {
+        val experimental = (application as HabitsApplication).component.focusCreditController != null
+        val visible = experimental && isFocusCompatible()
+        binding.focusCreditOuterBox.visibility = if (visible) View.VISIBLE else View.GONE
+    }
+
+    private fun isFocusCompatible(): Boolean = runCatching {
+        HabitTimeValueConverter.validateTargetHabit(
+            formState.habitType == HabitType.NUMERICAL, formState.unit
+        )
+    }.isSuccess
+
+    // ========================================================================
+    // HabitFormActions Implementation
+    // ========================================================================
+
+    override fun onSave() {
+        if (formState.validate()) {
+            save()
+        }
+    }
+
+    override fun onCancel() {
+        handleBackOrCancel()
+    }
+
+    override fun onPickColor() {
+        val picker = UHabitColorPickerBottomSheet.newInstance(color)
+        picker.onColorPicked = { paletteColor ->
+            this.color = paletteColor
+            formState.color = paletteColor
+            hasIndividualColor = HabitColorDefaults.isIndividual(
+                paletteColor,
+                blockId,
+                currentBlocks()
+            )
+            updateAndroidColor()
+        }
+        picker.show(supportFragmentManager, "colorPicker")
+    }
+
+    override fun onPickIcon() {
+        val picker = IconPickerBottomSheet().apply {
+            previewColor = androidColor
+            initialIconRef = iconRef
+            onIconSelected = { picked ->
+                iconRef = picked
+                formState.iconRef = picked
+            }
+        }
+        picker.show(supportFragmentManager, "habit_icon_picker")
+    }
+
+    override fun onPickSection() {
+        val component = (application as HabitsApplication).component
+        val facade = component.organizationFacade
+        if (facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
+            val containers = facade.availableContainers()
+            val items = mutableListOf<String>()
+            items.add(getString(R.string.habit_block_unassigned))
+            items.addAll(containers.map { it.path ?: it.name })
+
+            val currentIdx = if (containerId == null) 0 else {
+                val idx = containers.indexOfFirst { it.key == containerId }
+                if (idx >= 0) idx + 1 else 0
+            }
+
+            CustomDialogs.showSingleChoiceDialog(
+                context = this,
+                title = getString(R.string.habit_block),
+                options = items,
+                selectedIndex = currentIdx
+            ) { which ->
+                containerId = if (which == 0) null else containers[which - 1].key
+                formState.containerId = containerId
+                updateSectionDisplayName()
+                updateAndroidColor()
+            }
+        } else {
+            val blocks = component.habitList.getBlocks()
+            val items = blocks.map { it.name }
+
+            CustomDialogs.showSingleChoiceDialog(
+                context = this,
+                title = getString(R.string.habit_block),
+                options = items,
+                selectedIndex = blocks.indexOfFirst { it.id == blockId },
+                neutralText = getString(R.string.manage_blocks),
+                onNeutral = {
+                    startActivity(android.content.Intent(this, org.isoron.uhabits.activities.blocks.ManageBlocksActivity::class.java))
+                }
+            ) { which ->
+                val selectedBlock = blocks[which]
+                color = HabitColorDefaults.afterBlockChange(
+                    currentColor = color,
+                    newBlockId = selectedBlock.id,
+                    hasIndividualColor = hasIndividualColor,
+                    blocks = blocks
+                )
+                blockId = selectedBlock.id
+                formState.color = color
+                formState.blockId = blockId
+                updateSectionDisplayName()
+                updateAndroidColor()
+            }
+        }
+    }
+
+    override fun onPickFrequency() {
+        if (formState.habitType == HabitType.YES_NO) {
+            val picker = FrequencyPickerDialog(formState.freqNum, formState.freqDen)
             picker.onFrequencyPicked = { num, den ->
                 freqNum = num
                 freqDen = den
-                populateFrequency()
+                formState.freqNum = num
+                formState.freqDen = den
             }
             picker.dismissCurrentAndShow(supportFragmentManager, "frequencyPicker")
-        }
-
-        populateTargetType()
-        binding.targetTypePicker.setOnClickListener {
-            targetTypeArrow.open()
-            val options = listOf(
-                getString(R.string.target_type_at_least),
-                getString(R.string.target_type_at_most)
-            )
-            val dialog = CustomDialogs.showSingleChoiceDialog(
-                context = this,
-                title = getString(R.string.target_type),
-                options = options,
-                selectedIndex = if (targetType == NumericalHabitType.AT_LEAST) 0 else 1
-            ) { which ->
-                targetType = when (which) {
-                    0 -> NumericalHabitType.AT_LEAST
-                    else -> NumericalHabitType.AT_MOST
-                }
-                populateTargetType()
-            }
-            dialog.setOnDismissListener { targetTypeArrow.close() }
-        }
-
-        populateDayTier()
-        binding.dayTierPicker.setOnClickListener {
-            dayTierArrow.open()
-            val tiers = DayTier.entries
-            val labels = tiers.map { getString(it.labelResId) }
-            val dialog = CustomDialogs.showSingleChoiceDialog(
-                context = this,
-                title = getString(R.string.day_tier),
-                options = labels,
-                selectedIndex = tiers.indexOf(dayTier)
-            ) { which ->
-                dayTier = tiers[which]
-                populateDayTier()
-            }
-            dialog.setOnDismissListener { dayTierArrow.close() }
-        }
-        binding.timerEnabledSwitch.isChecked = timerEnabled
-
-        binding.habitBlockPicker.setOnClickListener {
-            habitBlockArrow.open()
-            val component = (application as HabitsApplication).component
-            val facade = component.organizationFacade
-            if (facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
-                val containers = facade.availableContainers()
-                val items = mutableListOf<String>()
-                items.add(getString(R.string.habit_block_unassigned))
-                items.addAll(containers.map { it.path ?: it.name })
-
-                val currentIdx = if (containerId == null) 0 else {
-                    val idx = containers.indexOfFirst { it.key == containerId }
-                    if (idx >= 0) idx + 1 else 0
-                }
-
-                val dialog = CustomDialogs.showSingleChoiceDialog(
-                    context = this,
-                    title = getString(R.string.habit_block),
-                    options = items,
-                    selectedIndex = currentIdx
-                ) { which ->
-                    containerId = if (which == 0) null else containers[which - 1].key
-                    populateHabitBlock()
-                    updateColors()
-                }
-                dialog.setOnDismissListener { habitBlockArrow.close() }
-            } else {
-                val blocks = component.habitList.getBlocks()
-                val items = blocks.map { getBlockDisplayName(it) }
-
-                val dialog = CustomDialogs.showSingleChoiceDialog(
-                    context = this,
-                    title = getString(R.string.habit_block),
-                    options = items,
-                    selectedIndex = blocks.indexOfFirst { it.id == blockId },
-                    neutralText = getString(R.string.manage_blocks),
-                    onNeutral = {
-                        startActivity(android.content.Intent(this, org.isoron.uhabits.activities.blocks.ManageBlocksActivity::class.java))
-                    }
-                ) { which ->
-                    val selectedBlock = blocks[which]
-                    color = HabitColorDefaults.afterBlockChange(
-                        currentColor = color,
-                        newBlockId = selectedBlock.id,
-                        hasIndividualColor = hasIndividualColor,
-                        blocks = blocks
-                    )
-                    blockId = selectedBlock.id
-                    populateHabitBlock()
-                    updateColors()
-                }
-                dialog.setOnDismissListener { habitBlockArrow.close() }
-            }
-        }
-
-        val iconArrow = configureDropdownArrow(binding.iconPicker)
-        binding.iconOuterBox.visibility = View.VISIBLE
-        updateIconPickerLabel()
-        binding.iconPicker.setOnClickListener {
-            iconArrow.open()
-            val picker = IconPickerBottomSheet().apply {
-                previewColor = androidColor
-                initialIconRef = iconRef
-                onIconSelected = { picked ->
-                    iconRef = picked
-                    updateIconPickerLabel()
-                }
-            }
-            picker.show(supportFragmentManager, "habit_icon_picker")
-        }
-
-        binding.numericalFrequencyPicker.setOnClickListener {
-            numericalFrequencyArrow.open()
+        } else {
             val options = listOf(
                 getString(R.string.every_day),
                 getString(R.string.every_week),
                 getString(R.string.every_month)
             )
-            val currentIdx = when (freqDen) {
+            val currentIdx = when (formState.freqDen) {
                 7 -> 1
                 30 -> 2
                 else -> 0
             }
-            val dialog = CustomDialogs.showSingleChoiceDialog(
+            CustomDialogs.showSingleChoiceDialog(
                 context = this,
                 title = getString(R.string.frequency),
                 options = options,
                 selectedIndex = currentIdx
             ) { which ->
-                freqDen = when (which) {
+                val den = when (which) {
                     1 -> 7
                     2 -> 30
                     else -> 1
                 }
-                populateFrequency()
+                freqDen = den
+                formState.freqDen = den
             }
-            dialog.setOnDismissListener { numericalFrequencyArrow.close() }
-        }
-
-        populateReminder()
-        binding.reminderTimePicker.setOnClickListener {
-            reminderTimeArrow.open()
-            val currentHour = if (reminderHour >= 0) reminderHour else 8
-            val currentMin = if (reminderMin >= 0) reminderMin else 0
-            val is24HourMode = DateFormat.is24HourFormat(this)
-            val dialog = TimePickerDialog.newInstance(
-                object : TimePickerDialog.OnTimeSetListener {
-                    override fun onTimeSet(view: RadialPickerLayout?, hourOfDay: Int, minute: Int) {
-                        reminderHour = hourOfDay
-                        reminderMin = minute
-                        populateReminder()
-                    }
-
-                    override fun onTimeCleared(view: RadialPickerLayout?) {
-                        reminderHour = -1
-                        reminderMin = -1
-                        reminderDays = WeekdayList.EVERY_DAY
-                        populateReminder()
-                    }
-                },
-                currentHour,
-                currentMin,
-                is24HourMode,
-                androidColor
-            )
-            dialog.setDismissListener { reminderTimeArrow.close() }
-            dialog.dismissCurrentAndShow(supportFragmentManager, "timePicker")
-        }
-
-        binding.reminderDatePicker.setOnClickListener {
-            reminderDateArrow.open()
-            val dialog = WeekdayPickerDialog()
-            dialog.onDismissCallback = { reminderDateArrow.close() }
-
-            dialog.setListener { days: WeekdayList ->
-                reminderDays = days
-                if (reminderDays.isEmpty) reminderDays = WeekdayList.EVERY_DAY
-                populateReminder()
-            }
-            dialog.setSelectedDays(reminderDays)
-            dialog.dismissCurrentAndShow(supportFragmentManager, "dayPicker")
-        }
-
-        binding.buttonSave.setOnClickListener {
-            if (validate()) save()
-        }
-
-        for (fragment in supportFragmentManager.fragments) {
-            (fragment as DialogFragment).dismiss()
         }
     }
+
+    override fun onPickTargetType() {
+        val options = listOf(
+            getString(R.string.target_type_at_least),
+            getString(R.string.target_type_at_most)
+        )
+        CustomDialogs.showSingleChoiceDialog(
+            context = this,
+            title = getString(R.string.target_type),
+            options = options,
+            selectedIndex = if (targetType == NumericalHabitType.AT_LEAST) 0 else 1
+        ) { which ->
+            targetType = if (which == 0) NumericalHabitType.AT_LEAST else NumericalHabitType.AT_MOST
+            formState.targetType = targetType
+        }
+    }
+
+    override fun onPickDayTier() {
+        val tiers = DayTier.entries
+        val labels = tiers.map { getString(it.labelResId) }
+        CustomDialogs.showSingleChoiceDialog(
+            context = this,
+            title = getString(R.string.day_tier),
+            options = labels,
+            selectedIndex = tiers.indexOf(dayTier)
+        ) { which ->
+            dayTier = tiers[which]
+            formState.dayTier = dayTier
+        }
+    }
+
+    private val DayTier.labelResId: Int
+        get() = when (this) {
+            DayTier.MINIMUM -> R.string.day_tier_minimum
+            DayTier.NORMAL -> R.string.day_tier_normal
+            DayTier.IDEAL -> R.string.day_tier_ideal
+            DayTier.OPTIONAL -> R.string.day_tier_optional
+        }
+
+    override fun onPickReminderTime() {
+        val currentHour = if (reminderHour >= 0) reminderHour else 8
+        val currentMin = if (reminderMin >= 0) reminderMin else 0
+        val is24HourMode = DateFormat.is24HourFormat(this)
+        CustomDialogs.showTimePickerDialog(
+            context = this,
+            title = getString(R.string.reminder),
+            initialHour = currentHour,
+            initialMinute = currentMin,
+            is24Hour = is24HourMode,
+            neutralText = getString(R.string.clear),
+            onNeutral = {
+                reminderHour = -1
+                reminderMin = -1
+                reminderDays = WeekdayList.EVERY_DAY
+                formState.reminderHour = -1
+                formState.reminderMin = -1
+                formState.reminderDays = WeekdayList.EVERY_DAY
+            },
+            onConfirm = { hourOfDay, minute ->
+                reminderHour = hourOfDay
+                reminderMin = minute
+                formState.reminderHour = hourOfDay
+                formState.reminderMin = minute
+            }
+        )
+    }
+
+    override fun onPickReminderDays() {
+        val dialog = WeekdayPickerDialog()
+        dialog.setListener { days: WeekdayList ->
+            val updated = if (days.isEmpty) WeekdayList.EVERY_DAY else days
+            reminderDays = updated
+            formState.reminderDays = updated
+        }
+        dialog.setSelectedDays(reminderDays)
+        dialog.dismissCurrentAndShow(supportFragmentManager, "dayPicker")
+    }
+
+    override fun onPickFocusSource() {
+        val facade = (application as HabitsApplication).component.organizationFacade
+        val containers = facade.availableContainers()
+        val options = listOf(getString(R.string.focus_credit_off)) + containers.map { it.path ?: it.name }
+        val currentIdx = containers.indexOfFirst { it.key == focusSourceContainerId } + 1
+
+        CustomDialogs.showSingleChoiceDialog(
+            context = this,
+            title = getString(R.string.focus_credit_source),
+            options = options,
+            selectedIndex = currentIdx
+        ) { which ->
+            focusSourceContainerId = if (which == 0) null else containers[which - 1].key
+            formState.focusSourceContainerId = focusSourceContainerId
+            updateFocusSourceDisplayName()
+        }
+    }
+
+    // ========================================================================
+    // Save Logic
+    // ========================================================================
 
     private fun save() {
         val component = (application as HabitsApplication).component
@@ -569,55 +740,53 @@ class EditHabitActivity : AppCompatActivity() {
             habit.copyFrom(original)
         }
 
-        habit.name = binding.nameInput.text.trim().toString()
-        habit.question = binding.questionInput.text.trim().toString()
-        habit.description = binding.notesInput.text.trim().toString()
-        habit.color = color
-        if (reminderHour >= 0) {
-            habit.reminder = Reminder(reminderHour, reminderMin, reminderDays)
+        habit.name = formState.name.trim()
+        habit.question = formState.question.trim()
+        habit.description = formState.notes.trim()
+        habit.color = formState.color
+        if (formState.reminderHour >= 0) {
+            habit.reminder = Reminder(formState.reminderHour, formState.reminderMin, formState.reminderDays)
         } else {
             habit.reminder = null
         }
 
-        habit.frequency = Frequency(freqNum, freqDen)
-        habit.dayTier = dayTier
+        habit.frequency = Frequency(formState.freqNum, formState.freqDen)
+        habit.dayTier = formState.dayTier
         val facade = component.organizationFacade
         if (facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
             habit.blockId = null
         } else {
-            habit.blockId = blockId
+            habit.blockId = formState.blockId
         }
-        if (habitType == HabitType.NUMERICAL) {
-            val parsedTarget = when (val res = org.isoron.uhabits.activities.common.dialogs.NumericalInputValidator.validateTargetValue(binding.targetInput.text.toString())) {
-                is org.isoron.uhabits.activities.common.dialogs.NumericalInputValidator.ValidationResult.Valid -> res.value
+
+        if (formState.habitType == HabitType.NUMERICAL) {
+            val parsedTarget = when (val res = NumericalInputValidator.validateTargetValue(formState.targetValueString)) {
+                is NumericalInputValidator.ValidationResult.Valid -> res.value
                 else -> 1.0
             }
             habit.targetValue = parsedTarget
-            habit.targetType = targetType
-            habit.unit = binding.unitInput.text.trim().toString()
-            habit.timerEnabled = binding.timerEnabledSwitch.isChecked && habit.unit.isMinuteUnit()
+            habit.targetType = formState.targetType
+            habit.unit = formState.unit.trim()
+            habit.timerEnabled = formState.timerEnabled && habit.unit.isMinuteUnit()
         } else {
             habit.timerEnabled = false
         }
-        habit.type = habitType
-        if (habitId < 0 && createArchived) {
+        habit.type = formState.habitType
+        if (habitId < 0 && formState.createArchived) {
             habit.isArchived = true
         }
 
         if (habitId >= 0 && original != null && didGoalBundleChange(original, habit)) {
-            showGoalChangeDialog(
-                original = original,
-                modified = habit
-            )
+            showGoalChangeDialog(original = original, modified = habit)
             return
         }
 
         val isContainerLocal = facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL
-        val targetContainer = containerId?.let { ContainerId(it) }
+        val targetContainer = formState.containerId?.let { ContainerId(it) }
         val origContainerId = if (habitId >= 0 && original != null && isContainerLocal) {
             facade.getPlacementInfo(original.uuid ?: "", original.blockId).containerId?.value
         } else null
-        val containerChanged = isContainerLocal && (containerId != origContainerId)
+        val containerChanged = isContainerLocal && (formState.containerId != origContainerId)
 
         runSaveCommand(
             if (habitId >= 0) {
@@ -628,7 +797,7 @@ class EditHabitActivity : AppCompatActivity() {
                     targetContainerId = targetContainer,
                     changeContainer = containerChanged,
                     organizationFacade = facade,
-                    visualIdentity = iconRef
+                    visualIdentity = formState.iconRef
                 )
             } else {
                 CreateHabitCommand(
@@ -637,180 +806,10 @@ class EditHabitActivity : AppCompatActivity() {
                     model = habit,
                     initialContainerId = targetContainer,
                     organizationFacade = facade,
-                    initialVisualIdentity = iconRef
+                    initialVisualIdentity = formState.iconRef
                 )
             }
         )
-    }
-
-    private fun validate(): Boolean {
-        var isValid = true
-        if (binding.nameInput.text.isEmpty()) {
-            binding.nameInput.error = getFormattedValidationError(R.string.validation_cannot_be_blank)
-            isValid = false
-        }
-        if (habitType == HabitType.NUMERICAL) {
-            val targetStr = binding.targetInput.text.toString()
-            when (org.isoron.uhabits.activities.common.dialogs.NumericalInputValidator.validateTargetValue(targetStr)) {
-                is org.isoron.uhabits.activities.common.dialogs.NumericalInputValidator.ValidationResult.Valid -> {}
-                is org.isoron.uhabits.activities.common.dialogs.NumericalInputValidator.ValidationResult.OutOfRange -> {
-                    binding.targetInput.error = getString(R.string.validation_number_out_of_range)
-                    isValid = false
-                }
-                is org.isoron.uhabits.activities.common.dialogs.NumericalInputValidator.ValidationResult.InvalidFormat -> {
-                    binding.targetInput.error = if (targetStr.trim().isEmpty()) {
-                        getString(R.string.validation_cannot_be_blank)
-                    } else {
-                        getString(R.string.validation_invalid_number_format)
-                    }
-                    isValid = false
-                }
-            }
-        }
-        return isValid
-    }
-
-    private fun populateReminder() {
-        if (reminderHour < 0) {
-            binding.reminderTimePicker.text = getString(R.string.reminder_off)
-            binding.reminderDatePicker.visibility = View.GONE
-            binding.reminderDivider.visibility = View.GONE
-        } else {
-            val time = formatTime(this, reminderHour, reminderMin)
-            binding.reminderTimePicker.text = time
-            binding.reminderDatePicker.visibility = View.VISIBLE
-            binding.reminderDivider.visibility = View.VISIBLE
-            binding.reminderDatePicker.text = reminderDays.toFormattedString(this)
-        }
-    }
-
-    @SuppressLint("StringFormatMatches")
-    private fun populateFrequency() {
-        binding.booleanFrequencyPicker.text = formatFrequency(freqNum, freqDen, resources)
-        binding.numericalFrequencyPicker.text = when (freqDen) {
-            1 -> getString(R.string.every_day)
-            7 -> getString(R.string.every_week)
-            30 -> getString(R.string.every_month)
-            else -> "$freqNum/$freqDen"
-        }
-    }
-
-    private fun populateTargetType() {
-        binding.targetTypePicker.text = when (targetType) {
-            NumericalHabitType.AT_MOST -> getString(R.string.target_type_at_most)
-            else -> getString(R.string.target_type_at_least)
-        }
-    }
-
-    private fun populateDayTier() {
-        binding.dayTierPicker.text = getString(dayTier.labelResId)
-    }
-
-    private val DayTier.labelResId: Int
-        get() = when (this) {
-            DayTier.MINIMUM -> R.string.day_tier_minimum
-            DayTier.NORMAL -> R.string.day_tier_normal
-            DayTier.IDEAL -> R.string.day_tier_ideal
-            DayTier.OPTIONAL -> R.string.day_tier_optional
-        }
-
-    private fun updateColors() {
-        androidColor = themeSwitcher.currentTheme.color(color).toInt()
-        binding.colorButton.backgroundTintList = ColorStateList.valueOf(androidColor)
-        val res = StyledResources(this)
-        window.statusBarColor = res.getColor(R.attr.colorPrimaryDark)
-        binding.toolbar.setBackgroundColor(res.getColor(R.attr.colorPrimary))
-    }
-
-    private fun getFormattedValidationError(@StringRes resId: Int): Spanned {
-        val html = "<font color=#FFFFFF>${getString(resId)}</font>"
-        return Html.fromHtml(html)
-    }
-
-    override fun onSaveInstanceState(state: Bundle) {
-        super.onSaveInstanceState(state)
-        val colorPicker = supportFragmentManager.findFragmentByTag("colorPicker") as? ColorPickerDialog
-        with(state) {
-            putLong("habitId", habitId)
-            putInt("habitType", habitType.value)
-            putInt("paletteColor", color.paletteIndex)
-            putInt("androidColor", androidColor)
-            putInt("freqNum", freqNum)
-            putInt("freqDen", freqDen)
-            putInt("reminderHour", reminderHour)
-            putInt("reminderMin", reminderMin)
-            putInt("reminderDays", reminderDays.toInteger())
-            putString("dayTier", dayTier.name)
-            putBoolean("timerEnabled", binding.timerEnabledSwitch.isChecked)
-            putLong("blockId", blockId ?: -1L)
-            containerId?.let { putString("containerId", it) }
-            putString("focusSourceContainerId", focusSourceContainerId)
-            putBoolean("focusIncludeDescendants", focusIncludeDescendants)
-            putString("iconRef", IconRef.toStorageString(iconRef))
-            putBoolean("hasIndividualColor", hasIndividualColor)
-            putBoolean("createArchived", createArchived)
-            putBoolean("colorPickerOpen", colorPicker?.isAdded == true)
-            colorPicker?.let {
-                putInt("colorPickerDraftColor", it.snapshotDraftColor())
-            }
-        }
-    }
-
-    private fun updateIconPickerLabel() {
-        val label = when (val ref = iconRef) {
-            is IconRef.Vector -> IconPack.getIcon(ref.key)?.labelRu ?: ref.key
-            is IconRef.Emoji -> ref.value
-            IconRef.None -> getString(R.string.containers_no_icon)
-        }
-        binding.iconPicker.text = label
-    }
-
-    override fun onResume() {
-        super.onResume()
-        populateHabitBlock()
-        populateFocusConfiguration()
-        if ((application as HabitsApplication).component.organizationFacade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
-            updateIconPickerLabel()
-        }
-    }
-
-    private fun populateHabitBlock() {
-        val component = (application as HabitsApplication).component
-        val facade = component.organizationFacade
-        if (facade.mode == OrganizationAuthorityMode.CONTAINER_LOCAL) {
-            if (containerId != null) {
-                val current = facade.availableContainers().firstOrNull { it.key == containerId }
-                binding.habitBlockPicker.text = current?.path ?: current?.name ?: getString(R.string.habit_block_unassigned)
-            } else {
-                binding.habitBlockPicker.text = getString(R.string.habit_block_unassigned)
-            }
-            return
-        }
-        val blocks = component.habitList.getBlocks()
-        val currentBlock = blocks.firstOrNull { it.id == blockId }
-        binding.habitBlockPicker.text = currentBlock?.let { getBlockDisplayName(it) } ?: getString(R.string.habit_block_unassigned)
-    }
-
-    private fun currentBlocks() =
-        (application as HabitsApplication).component.habitList.getBlocks()
-
-    private fun defaultColorForCurrentBlock(): PaletteColor =
-        HabitColorDefaults.forBlock(blockId, currentBlocks())
-
-    private fun getBlockDisplayName(block: org.isoron.uhabits.core.models.HabitBlock): String = block.name
-
-    private fun updateTimerVisibility() {
-        val isMinute = binding.unitInput.text.toString().isMinuteUnit()
-        binding.timerEnabledOuterBox.visibility = if (isMinute) View.VISIBLE else View.GONE
-    }
-
-    private fun configureDropdownArrow(field: TextView): DropdownArrowHandle {
-        val base = AppCompatResources.getDrawable(this, R.drawable.ic_arrow_drop_down_dark)!!
-            .mutate()
-        DrawableCompat.setTint(base, StyledResources(this).getColor(R.attr.contrast60))
-        val arrow = RotatingDropdownArrowDrawable(base)
-        field.setCompoundDrawablesRelativeWithIntrinsicBounds(null, null, arrow, null)
-        return DropdownArrowHandle(arrow)
     }
 
     private fun didGoalBundleChange(original: Habit, modified: Habit): Boolean {
@@ -881,15 +880,18 @@ class EditHabitActivity : AppCompatActivity() {
     private fun runSaveCommand(command: org.isoron.uhabits.core.commands.Command) {
         val component = (application as HabitsApplication).component
         val controller = component.focusCreditController
+        formState.isSaving = true
+        binding.buttonSave.isEnabled = false
+
         if (controller == null) {
             component.commandRunner.run(command)
             finish()
             return
         }
-        // Configuration needs the persisted Habit, including newly assigned database identity.
-        val selectedSource = if (isFocusCompatible()) focusSourceContainerId?.let(::ContainerId) else null
-        val selectedDescendants = focusIncludeDescendants
-        binding.buttonSave.isEnabled = false
+
+        val selectedSource = if (isFocusCompatible()) formState.focusSourceContainerId?.let(::ContainerId) else null
+        val selectedDescendants = formState.focusIncludeDescendants
+
         component.commandRunner.addListener(object : CommandRunner.Listener {
             override fun onCommandFinished(completed: org.isoron.uhabits.core.commands.Command) {
                 if (completed !== command) return
@@ -902,20 +904,17 @@ class EditHabitActivity : AppCompatActivity() {
                     is CreateHabitCommand -> component.habitList.getByUUID(command.model.uuid)
                     else -> component.habitList.getById(habitId)
                 }
-                // Creation has already committed. Retrying failed focus settings must edit
-                // that same Habit, rather than create a second Habit with another UUID.
                 if (habit != null && command is CreateHabitCommand) {
                     habitId = requireNotNull(habit.id)
-                    binding.toolbar.title = getString(R.string.edit_habit)
                 }
                 try {
                     if (habit != null) {
-                        controller.configure(habit,
-                            selectedSource, selectedDescendants)
+                        controller.configure(habit, selectedSource, selectedDescendants)
                     }
                     finish()
                 } catch (error: Exception) {
                     if (isFinishing || isDestroyed) return
+                    formState.isSaving = false
                     binding.buttonSave.isEnabled = true
                     AlertDialog.Builder(this@EditHabitActivity)
                         .setMessage(R.string.focus_credit_save_failed)
@@ -926,34 +925,84 @@ class EditHabitActivity : AppCompatActivity() {
         component.commandRunner.run(command)
     }
 
-    private fun isFocusCompatible(): Boolean = runCatching {
-        HabitTimeValueConverter.validateTargetHabit(
-            habitType == HabitType.NUMERICAL, binding.unitInput.text.toString())
-    }.isSuccess
-
-    private fun updateFocusConfigurationVisibility() {
-        val experimental = (application as HabitsApplication).component.focusCreditController != null
-        binding.focusCreditOuterBox.visibility = if (experimental && isFocusCompatible()) View.VISIBLE else View.GONE
+    private fun handleBackOrCancel() {
+        if (::formState.isInitialized && formState.showUnitTooltip) {
+            formState.dismissUnitTooltip()
+            return
+        }
+        if (::formState.isInitialized && !formState.isUnitTooltipDismissed) {
+            formState.dismissUnitTooltip()
+        }
+        if (habitId >= 0 && formState.hasChangesFrom(origName, origQuestion, origNotes, origUnit, origTarget, origColor, origFreqNum, origFreqDen)) {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.discard_changes)
+                .setMessage(R.string.discard_changes_message)
+                .setPositiveButton(R.string.discard) { _, _ -> finish() }
+                .setNegativeButton(R.string.keep_editing, null)
+                .show()
+        } else if (habitId < 0 && (formState.name.isNotBlank() || formState.question.isNotBlank() || formState.notes.isNotBlank())) {
+            AlertDialog.Builder(this)
+                .setTitle(R.string.discard_changes)
+                .setMessage(R.string.discard_changes_message)
+                .setPositiveButton(R.string.discard) { _, _ -> finish() }
+                .setNegativeButton(R.string.keep_editing, null)
+                .show()
+        } else {
+            finish()
+        }
     }
 
-    private fun populateFocusConfiguration() {
-        val source = (application as HabitsApplication).component.organizationFacade.availableContainers()
-            .firstOrNull { it.key == focusSourceContainerId }
-        binding.focusSourcePicker.text = when {
-            focusSourceContainerId == null -> getString(R.string.focus_credit_off)
-            source != null -> source.path ?: source.name
-            else -> getString(R.string.focus_credit_source_missing)
-        }
-        binding.focusDescendantsSwitch.isEnabled = focusSourceContainerId != null
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        handleBackOrCancel()
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             android.R.id.home -> {
-                finish()
+                handleBackOrCancel()
                 true
             }
             else -> super.onOptionsItemSelected(item)
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        updateSectionDisplayName()
+        updateFocusSourceDisplayName()
+        updateFocusConfigurationVisibility()
+    }
+
+    override fun onSaveInstanceState(state: Bundle) {
+        super.onSaveInstanceState(state)
+        val colorPicker = supportFragmentManager.findFragmentByTag("colorPicker") as? UHabitColorPickerBottomSheet
+        with(state) {
+            putLong("habitId", habitId)
+            putInt("habitType", formState.habitType.value)
+            putInt("paletteColor", color.paletteIndex)
+            putInt("androidColor", androidColor)
+            putInt("freqNum", freqNum)
+            putInt("freqDen", freqDen)
+            putInt("reminderHour", reminderHour)
+            putInt("reminderMin", reminderMin)
+            putInt("reminderDays", reminderDays.toInteger())
+            putString("dayTier", dayTier.name)
+            putBoolean("timerEnabled", formState.timerEnabled)
+            putLong("blockId", blockId ?: -1L)
+            containerId?.let { putString("containerId", it) }
+            putString("focusSourceContainerId", focusSourceContainerId)
+            putBoolean("focusIncludeDescendants", focusIncludeDescendants)
+            putString("iconRef", IconRef.toStorageString(iconRef))
+            putBoolean("hasIndividualColor", hasIndividualColor)
+            putBoolean("createArchived", createArchived)
+            putBoolean("colorPickerOpen", colorPicker?.isAdded == true)
+        }
+    }
+
+    private fun currentBlocks() =
+        (application as HabitsApplication).component.habitList.getBlocks()
+
+    private fun defaultColorForCurrentBlock(): PaletteColor =
+        HabitColorDefaults.forBlock(blockId, currentBlocks())
 }

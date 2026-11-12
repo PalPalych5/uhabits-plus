@@ -90,8 +90,12 @@ class ContainersActivity : AppCompatActivity() {
                         ContainerStatisticsActivity.start(this@ContainersActivity, containerId)
                     },
                     onAddHabitInContainer = { _ ->
-                        val dialog = HabitTypeDialog.newInstance()
-                        dialog.show(supportFragmentManager, "habit_type")
+                        val intent = org.isoron.uhabits.intents.IntentFactory().startEditActivity(
+                            this@ContainersActivity,
+                            org.isoron.uhabits.core.models.HabitType.YES_NO.value,
+                            false
+                        )
+                        startActivity(intent)
                     },
                     onOpenHabitDetail = { habit ->
                         listHabitsBehavior.onClickHabit(habit)

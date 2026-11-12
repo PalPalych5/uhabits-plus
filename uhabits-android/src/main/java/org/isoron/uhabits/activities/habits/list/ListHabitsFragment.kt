@@ -290,9 +290,12 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             }
         }
         if (item.itemId == R.id.actionAddHabit) {
-            HabitTypeDialog.newInstance(
-                createArchived = displayMode == ListHabitsDisplayMode.ARCHIVE
-            ).show(parentFragmentManager, "habitType")
+            val intent = org.isoron.uhabits.intents.IntentFactory().startEditActivity(
+                requireActivity(),
+                org.isoron.uhabits.core.models.HabitType.YES_NO.value,
+                displayMode == ListHabitsDisplayMode.ARCHIVE
+            )
+            startActivity(intent)
             return true
         }
         if (item.itemId == R.id.actionSync) {

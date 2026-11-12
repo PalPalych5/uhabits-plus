@@ -120,6 +120,11 @@ open class Preferences(private val storage: Storage) {
         set(isDeveloper) {
             storage.putBoolean("pref_developer", isDeveloper)
         }
+    open var isNumericalUnitTooltipShown: Boolean
+        get() = storage.getBoolean("pref_numerical_unit_tooltip_shown", false)
+        set(value) {
+            storage.putBoolean("pref_numerical_unit_tooltip_shown", value)
+        }
     open var isFirstRun: Boolean
         get() = storage.getBoolean("pref_first_run", true)
         set(isFirstRun) {
