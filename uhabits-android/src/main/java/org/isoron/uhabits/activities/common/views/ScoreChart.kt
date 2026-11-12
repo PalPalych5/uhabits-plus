@@ -145,7 +145,13 @@ class ScoreChart : ScrollableChart {
         previousYearText = ""
         skipYear = 0
         val graphSaveCount = activeCanvas.save()
-        activeCanvas.clipRect(plotBounds)
+        val markerClipMargin = baseSize * 0.35f
+        activeCanvas.clipRect(
+            plotBounds.left,
+            plotBounds.top - markerClipMargin,
+            plotBounds.right,
+            plotBounds.bottom + markerClipMargin
+        )
         for (k in 0 until nColumns) {
             val offset = nColumns - k - 1 + dataOffset
             if (offset >= scores!!.size) continue

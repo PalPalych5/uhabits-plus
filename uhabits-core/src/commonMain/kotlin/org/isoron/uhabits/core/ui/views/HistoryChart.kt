@@ -261,7 +261,7 @@ class HistoryChart(
                 else -> color
             }
             canvas.setColor(circleColor)
-            canvas.fillCircle(x + width - width / 5, y + width / 5, width / 12)
+            canvas.fillCircle(x + width - (width * 0.14), y + (width * 0.14), width / 13)
         }
     }
 }

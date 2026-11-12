@@ -24,6 +24,7 @@ import org.isoron.uhabits.core.BaseUnitTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class StreakListTest : BaseUnitTest() {
     private lateinit var habit: Habit
@@ -83,6 +84,40 @@ class StreakListTest : BaseUnitTest() {
         habit.recompute()
 
         assertEquals(null, streaks.getLatest())
+    }
+
+    @Test
+    fun testRecompute_withValidHistoricalStreaks() {
+        habit.originalEntries.clear()
+        val histStart = today.minus(20)
+        for (i in 0 until 10) {
+            habit.originalEntries.add(Entry(histStart.plus(i), Entry.YES_MANUAL))
+        }
+        habit.recompute()
+
+        val latest = streaks.getLatest()
+        val best = streaks.getBest(5)
+        assertEquals(1, best.size)
+        assertEquals(10, best[0].length)
+        assertEquals(histStart, best[0].start)
+        assertEquals(histStart.plus(9), best[0].end)
+        assertEquals(best[0], latest)
+    }
+
+    @Test
+    fun testGenuinelyEmptyStreakHistory() {
+        habit.originalEntries.clear()
+        habit.recompute()
+
+        assertEquals(null, streaks.getLatest())
+        assertEquals(emptyList(), streaks.getBest(10))
+    }
+
+    @Test
+    fun testStreakDomainValidity() {
+        val validStreak = Streak(LocalDate(1975, 1, 1), LocalDate(1975, 1, 5))
+        assertEquals(5, validStreak.length)
+        assertTrue(validStreak.length > 0)
     }
 
     @Test

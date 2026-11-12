@@ -153,7 +153,7 @@ class StreakChart : View {
     }
 
     private fun drawRow(canvas: Canvas, streak: Streak, rect: RectF?) {
-        if (maxLength == 0L) return
+        if (maxLength == 0L || streak.length <= 0) return
         val percentage = streak.length.toFloat() / maxLength
         var availableWidth = internalWidth - 2 * maxLabelWidth
         if (shouldShowLabels) availableWidth -= 2 * textMargin
@@ -242,6 +242,7 @@ class StreakChart : View {
         shouldShowLabels = true
         val df = dateFormatter ?: return
         for (s in streaks!!) {
+            if (s.length <= 0) continue
             maxLength = max(maxLength, s.length.toLong())
             minLength = min(minLength, s.length.toLong())
             val lw1 = paint!!.measureText(df.longFormat(s.start))
