@@ -38,14 +38,9 @@
 
         <item
             android:id="@+id/actionSync"
+            android:visible="false"
             android:icon="@drawable/ic_toolbar_refresh"
             android:title="@string/sync_now"
-            app:showAsAction="always" />
-
-        <item
-            android:id="@+id/actionSkipDay"
-            android:icon="@drawable/ic_toolbar_skip_day"
-            android:title="@string/action_skip_day"
             app:showAsAction="always" />
 
         <item
@@ -104,19 +99,25 @@
                             android:title="@string/by_level"/>
                     </menu>
                 </item>
-
-                <item
-                    android:id="@+id/actionSearch"
-                    android:enabled="true"
-                    android:title="@string/search"/>
-
-                <item
-                    android:id="@+id/actionTodayEvaluation"
-                    android:enabled="true"
-                    android:visible="false"
-                    android:title="@string/today_eval_menu_item"/>
             </menu>
         </item>
+
+        <item
+            android:id="@+id/actionSkipDay"
+            android:icon="@drawable/ic_toolbar_skip_day"
+            android:title="@string/action_skip_day"
+            app:showAsAction="never" />
+
+        <item
+            android:id="@+id/actionSearch"
+            android:title="@string/search"
+            app:showAsAction="never" />
+
+        <item
+            android:id="@+id/actionTodayEvaluation"
+            android:visible="false"
+            android:title="@string/today_eval_menu_item"
+            app:showAsAction="never" />
     </group>
 
 </menu>

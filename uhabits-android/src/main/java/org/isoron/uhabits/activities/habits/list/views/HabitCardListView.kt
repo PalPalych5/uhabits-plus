@@ -368,9 +368,9 @@ class HabitCardListView(
             preferences.isShowSphereNamesEnabled
     }
 
-    // Keep the established Canvas path for RTL and large text until those layouts are validated.
+    // Use the refined Compose heading for all standard left-to-right layouts.
     private fun useComposeSphereHeading(): Boolean =
-        shouldShowHeading() && !isRTL() && resources.configuration.fontScale <= 1.3f
+        shouldShowHeading() && !isRTL()
 
     private fun hasSeparatorBefore(position: Int): Boolean {
         if (!adapter.primaryOrder.isGroupedOrder()) return false

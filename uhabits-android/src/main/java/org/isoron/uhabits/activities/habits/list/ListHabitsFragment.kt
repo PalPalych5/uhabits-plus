@@ -15,6 +15,7 @@ import org.isoron.platform.time.getToday
 import org.isoron.uhabits.BaseExceptionHandler
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.activities.main.MainNavigationHost
@@ -146,36 +147,47 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
 
     override fun onSyncStateChanged(isSyncing: Boolean, lastResult: SyncRunResult?) {
         activity?.runOnUiThread {
+            if (!isAdded) return@runOnUiThread
             activity?.invalidateOptionsMenu()
             if (!isSyncing && manualSyncInitiated) {
                 manualSyncInitiated = false
                 if (lastResult != null) {
-                    when (lastResult) {
-                        is SyncRunResult.Success -> {
-                            Toast.makeText(
-                                requireContext(),
-                                getString(R.string.sync_result_success, lastResult.pushed, lastResult.pulled),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                        is SyncRunResult.Failure -> {
-                            Toast.makeText(
-                                requireContext(),
-                                lastResult.userMessage,
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                        is SyncRunResult.Skipped -> {
-                            if (lastResult.reason != "already_syncing") {
-                                Toast.makeText(
-                                    requireContext(),
-                                    "Sync skipped: ${lastResult.reason}",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        }
-                    }
+                    showManualSyncResultToast(lastResult)
                 }
+            }
+        }
+    }
+
+    private fun showManualSyncResultToast(result: SyncRunResult) {
+        if (!isAdded) return
+        when (result) {
+            is SyncRunResult.Success -> {
+                Toast.makeText(
+                    requireContext(),
+                    getString(R.string.sync_result_success, result.pushed, result.pulled),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+            is SyncRunResult.Failure -> {
+                Toast.makeText(
+                    requireContext(),
+                    result.userMessage,
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            is SyncRunResult.Skipped -> {
+                val msg = when (result.reason) {
+                    "already_syncing" -> getString(R.string.sync_error_already_syncing)
+                    "review_required" -> getString(R.string.sync_status_review_required)
+                    "not_configured" -> getString(R.string.sync_error_config_missing)
+                    "sync_disabled_in_session" -> getString(R.string.sync_status_disabled)
+                    else -> getString(R.string.sync_status_error, result.reason)
+                }
+                Toast.makeText(
+                    requireContext(),
+                    msg,
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
@@ -244,7 +256,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
         menuController.onPrepare(menu)
         val syncItem = menu.findItem(R.id.actionSync)
         val syncCoordinator = appComponent.syncCoordinator
-        val syncEnabled = syncCoordinator.isSyncReady() && !menuController.isSearchActive
+        val syncEnabled = syncCoordinator.isSyncReady() && !menuController.isSearchActive && displayMode == ListHabitsDisplayMode.NORMAL
         if (syncItem != null) {
             syncItem.isVisible = syncEnabled
             if (syncCoordinator.isSyncing) {
@@ -262,6 +274,9 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
     }
 
     private fun updateToolbarNavigation() {
+        if (displayMode == ListHabitsDisplayMode.NORMAL) {
+            rootView.setScreenTitle(if (menuController.isSearchActive) "" else getString(R.string.habits_title))
+        }
         if (displayMode == ListHabitsDisplayMode.ARCHIVE) {
             rootView.tbar.setNavigationIcon(R.drawable.ic_settings_back)
             rootView.tbar.setNavigationOnClickListener {
@@ -299,7 +314,11 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             return true
         }
         if (item.itemId == R.id.actionSync) {
-            triggerManualSync()
+            if (prefs.isSyncReviewRequired) {
+                showSyncReviewDialog()
+            } else {
+                triggerManualSync(allowAfterReview = false)
+            }
             return true
         }
         if (item.itemId == R.id.actionSkipDay) {
@@ -318,11 +337,34 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
 
     private var manualSyncInitiated = false
 
-    private fun triggerManualSync() {
+    private fun showSyncReviewDialog() {
+        CustomDialogs.showConfirmDialog(
+            context = requireContext(),
+            title = getString(R.string.sync_confirm_after_restore_title),
+            message = prefs.syncReviewReason.ifBlank {
+                getString(R.string.sync_confirm_after_restore_message)
+            },
+            isDestructive = false,
+            positiveText = getString(R.string.sync_now)
+        ) {
+            appComponent.syncCoordinator.confirmSyncReview()
+            triggerManualSync(allowAfterReview = true)
+        }
+    }
+
+    private fun triggerManualSync(allowAfterReview: Boolean = false) {
         manualSyncInitiated = true
         activity?.invalidateOptionsMenu()
         viewLifecycleOwner.lifecycleScope.launch {
-            appComponent.syncCoordinator.runSync(manual = true)
+            val result = appComponent.syncCoordinator.runSync(
+                manual = true,
+                allowAfterReview = allowAfterReview
+            )
+            if (manualSyncInitiated) {
+                manualSyncInitiated = false
+                activity?.invalidateOptionsMenu()
+                showManualSyncResultToast(result)
+            }
         }
     }
 
@@ -352,7 +394,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
                 HabitMatcher(isArchivedAllowed = true, isArchivedRequired = true)
             )
         } else {
-            rootView.setScreenTitle("")
+            rootView.setScreenTitle(getString(R.string.habits_title))
             rootView.showContainerHomeView(false)
             menuController.behavior.onPreferencesChanged()
         }
@@ -378,6 +420,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
         menu.findItem(R.id.action_filter)?.isVisible = inNormalMode
         menu.findItem(R.id.actionSkipDay)?.isVisible = inNormalMode
         menu.findItem(R.id.actionAddHabit)?.isVisible = inNormalMode
+        menu.findItem(R.id.actionSync)?.isVisible = inNormalMode && appComponent.syncCoordinator.isSyncReady()
     }
 
     fun onHostStartup() {
