@@ -1,43 +1,37 @@
 /*
- * Copyright (C) 2016-2025 Álinson Santos Xavier <git@axavier.org>
- *
- * This file is part of Loop Habit Tracker.
- *
- * Loop Habit Tracker is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.
- *
- * Loop Habit Tracker is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
+ * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
+
 package org.isoron.uhabits.activities.habits.show.views
 
 import android.content.Context
-import android.content.res.Resources
 import android.util.AttributeSet
-import android.view.LayoutInflater
-import android.widget.LinearLayout
-import android.view.View
+import android.widget.FrameLayout
 import androidx.appcompat.app.AlertDialog
-import org.isoron.uhabits.utils.HabitQuantityFormatter
-import java.text.NumberFormat
-import org.isoron.uhabits.activities.habits.show.FocusProgressPresentation
-import org.isoron.uhabits.core.models.projection.HabitGoalStatus
-import org.isoron.platform.gui.toInt
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
+import org.isoron.uhabits.activities.habits.show.FocusProgressPresentation
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
+import org.isoron.uhabits.core.models.projection.HabitGoalStatus
 import org.isoron.uhabits.core.ui.screens.habits.show.views.TargetCardState
-import org.isoron.uhabits.databinding.ShowHabitTargetBinding
-import org.isoron.uhabits.utils.StyledResources
+import java.text.NumberFormat
 
-class TargetCardView(context: Context, attrs: AttributeSet) : LinearLayout(context, attrs) {
-    private val binding = ShowHabitTargetBinding.inflate(LayoutInflater.from(context), this)
-    private val sres = StyledResources(context)
+class TargetCardView @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null,
+    defStyleAttr: Int = 0
+) : FrameLayout(context, attrs, defStyleAttr) {
+
+    private var targetState by mutableStateOf<TargetCardState?>(null)
+    private var focusProgress by mutableStateOf<FocusProgressPresentation?>(null)
+    private var isUnavailable by mutableStateOf(false)
     private var hasShortTermTargets = false
     private var showBreakdown: (() -> Unit)? = null
 
@@ -45,69 +39,60 @@ class TargetCardView(context: Context, attrs: AttributeSet) : LinearLayout(conte
 
     fun showProgressDetails() = showBreakdown?.invoke()
 
-    fun setFocusProgress(progress: FocusProgressPresentation?, unavailable: Boolean = false) {
-        val visible = progress != null || unavailable
-        binding.focusProgress.visibility = if (visible) View.VISIBLE else View.GONE
-        binding.targetChart.visibility = if (visible) View.GONE else View.VISIBLE
-        visibility = if (visible || hasShortTermTargets) View.VISIBLE else View.GONE
-        showBreakdown = null
-        if (!visible) return
-        binding.title.setText(R.string.focus_credit_progress)
-        if (progress == null) {
-            binding.focusValue.setText(R.string.focus_credit_unavailable)
-            binding.focusGoal.visibility = View.GONE
-            binding.focusCoverage.visibility = View.GONE
-            return
-        }
-        binding.focusGoal.visibility = View.VISIBLE
-        val skipped = progress.status == HabitGoalStatus.SKIPPED || progress.status == HabitGoalStatus.EXCLUDED
-        val formatted = progress.total?.let { totalVal ->
-            val amt = HabitQuantityFormatter.format(totalVal / 1000.0, progress.unit, progress.lowerBound)
-            amt.toString()
-        } ?: resources.getString(
-            if (skipped) R.string.focus_credit_day_excluded else R.string.focus_credit_unknown
-        )
-        binding.focusValue.text = formatted
-        val target = "${if (progress.atMost) "≤" else "≥"} ${HabitQuantityFormatter.format(progress.target, progress.unit)}"
-        binding.focusGoal.text = resources.getString(R.string.focus_credit_goal, target)
-        binding.focusCoverage.visibility = if (skipped || progress.lowerBound) View.VISIBLE else View.GONE
-        binding.focusCoverage.setText(if (skipped) R.string.focus_credit_skipped else R.string.focus_credit_incomplete)
-        if (progress.total != null || progress.focus != 0L || progress.excludedFocus != 0L) showBreakdown = {
-            val exactFormat = NumberFormat.getNumberInstance().apply { maximumFractionDigits = 3 }
-            fun exact(value: Long) = "${exactFormat.format(value / 1000.0)} ${progress.unit}"
-            val message = buildString {
-                append(resources.getString(R.string.focus_credit_manual)).append("\n").append(exact(progress.manual))
-                append("\n\n").append(resources.getString(R.string.focus_credit_focus)).append("\n").append(exact(progress.focus))
-                if (progress.excludedFocus != 0L) {
-                    append("\n\n").append(resources.getString(R.string.focus_credit_excluded)).append("\n").append(exact(progress.excludedFocus))
+    init {
+        val composeView = ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                val palette = MainTabsThemeBridge.resolve(context)
+                val colors = UHabitComposeColors.fromPalette(palette, cardCornerRadiusDp = palette.statisticsCardCornerRadius, showCardBorders = palette.showHabitCardBorders)
+                UHabitComposeTheme(colors) {
+                    val ts = targetState
+                    if (ts != null) {
+                        HabitTargetProgress(
+                            progress = focusProgress,
+                            state = ts,
+                            unavailable = isUnavailable,
+                            onShowBreakdown = showBreakdown
+                        )
+                    }
                 }
-                if (progress.lowerBound || progress.total == null) {
-                    append("\n\n").append(resources.getString(R.string.focus_credit_incomplete))
-                }
-                if (skipped) append("\n\n").append(resources.getString(R.string.focus_credit_skipped))
             }
-            AlertDialog.Builder(context).setTitle(R.string.focus_credit_breakdown)
-                .setMessage(message).setPositiveButton(android.R.string.ok, null).show()
+        }
+        addView(composeView)
+    }
+
+    fun setFocusProgress(progress: FocusProgressPresentation?, unavailable: Boolean = false) {
+        this.focusProgress = progress
+        this.isUnavailable = unavailable
+        showBreakdown = null
+
+        if (progress != null && (progress.focus != 0L || progress.excludedFocus != 0L)) {
+            showBreakdown = {
+                val exactFormat = NumberFormat.getNumberInstance().apply { maximumFractionDigits = 3 }
+                fun exact(value: Long) = "${exactFormat.format(value / 1000.0)} ${progress.unit}"
+                val skipped = progress.status == HabitGoalStatus.SKIPPED || progress.status == HabitGoalStatus.EXCLUDED
+                val message = buildString {
+                    append(resources.getString(R.string.focus_credit_manual)).append("\n").append(exact(progress.manual))
+                    append("\n\n").append(resources.getString(R.string.focus_credit_focus)).append("\n").append(exact(progress.focus))
+                    if (progress.excludedFocus != 0L) {
+                        append("\n\n").append(resources.getString(R.string.focus_credit_excluded)).append("\n").append(exact(progress.excludedFocus))
+                    }
+                    if (skipped) append("\n\n").append(resources.getString(R.string.focus_credit_skipped))
+                }
+                AlertDialog.Builder(context).setTitle(R.string.focus_credit_breakdown)
+                    .setMessage(message).setPositiveButton(android.R.string.ok, null).show()
+            }
         }
     }
 
     fun setState(state: TargetCardState) {
-        showBreakdown = null
-        binding.title.setText(R.string.target)
-        val androidColor = state.theme.color(state.color).toInt()
-        // Presentation only: keep daily/weekly rows without changing goal calculations.
+        this.targetState = state
         val indices = state.intervals.indices.filter { state.intervals[it] <= 7 }
         hasShortTermTargets = indices.isNotEmpty()
-        binding.targetChart.setValues(indices.map { state.values[it] })
-        binding.targetChart.setTargets(indices.map { state.targets[it] })
-        binding.targetChart.setLabels(indices.map { intervalToLabel(resources, state.intervals[it]) })
-        binding.title.setTextColor(sres.getColor(R.attr.contrast100))
-        binding.targetChart.setColor(androidColor)
-        postInvalidate()
     }
 
     companion object {
-        fun intervalToLabel(resources: Resources, interval: Int) = when (interval) {
+        fun intervalToLabel(resources: android.content.res.Resources, interval: Int): String = when (interval) {
             1 -> resources.getString(R.string.today)
             7 -> resources.getString(R.string.week)
             30 -> resources.getString(R.string.month)

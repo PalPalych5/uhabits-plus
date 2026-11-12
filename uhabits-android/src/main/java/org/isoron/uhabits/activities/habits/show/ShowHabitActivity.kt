@@ -34,7 +34,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.appcompat.app.AlertDialog
-import com.android.datetimepicker.date.DatePickerDialog
+
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -51,6 +51,7 @@ import org.isoron.uhabits.AndroidDirFinder
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.HabitsDirFinder
 import org.isoron.uhabits.activities.common.dialogs.CheckmarkDialog
 import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
@@ -206,7 +207,13 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
     }
 
     override fun onCreateOptionsMenu(m: Menu): Boolean {
-        return menu.onCreateOptionsMenu(m)
+        val result = menu.onCreateOptionsMenu(m)
+        val iconTint = view.toolbarForegroundColor
+        for (i in 0 until m.size()) {
+            m.getItem(i).icon?.setTint(iconTint)
+        }
+        view.harmonizeToolbar(iconTint)
+        return result
     }
 
     fun editHistory() = presenter.historyCardPresenter.onClickEditButton()
@@ -241,6 +248,9 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
     }
 
     override fun onPause() {
+        if (::view.isInitialized) {
+            view.resetCalendarEditMode()
+        }
         readsActive = false
         refreshGeneration.invalidate()
         popupGeneration.invalidate()

@@ -1,57 +1,75 @@
 /*
- * Copyright (C) 2016-2025 Álinson Santos Xavier <git@axavier.org>
- *
- * This file is part of Loop Habit Tracker.
- *
- * Loop Habit Tracker is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.
- *
- * Loop Habit Tracker is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
+ * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
+
 package org.isoron.uhabits.activities.habits.show.views
 
 import android.content.Context
 import android.util.AttributeSet
-import android.view.LayoutInflater
-import android.widget.LinearLayout
-import org.isoron.platform.time.JavaLocalDateFormatter
-import org.isoron.uhabits.R
+import android.widget.FrameLayout
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
 import org.isoron.uhabits.core.ui.screens.habits.show.views.HistoryCardPresenter
 import org.isoron.uhabits.core.ui.screens.habits.show.views.HistoryCardState
-import org.isoron.uhabits.core.ui.views.HistoryChart
-import org.isoron.uhabits.databinding.ShowHabitHistoryBinding
-import org.isoron.uhabits.utils.StyledResources
-import java.util.Locale
+import org.isoron.uhabits.core.ui.views.OnDateClickedListener
 
-class HistoryCardView(context: Context, attrs: AttributeSet) : LinearLayout(context, attrs) {
+class HistoryCardView @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null,
+    defStyleAttr: Int = 0
+) : FrameLayout(context, attrs, defStyleAttr) {
 
-    private var binding = ShowHabitHistoryBinding.inflate(LayoutInflater.from(context), this)
-    private val sres = StyledResources(context)
+    private var cardState by mutableStateOf<HistoryCardState?>(null)
+    private var presenter: HistoryCardPresenter? = null
+
+    /**
+     * Compact inline calendar is strictly read-only for visualization and scrolling.
+     * Pressing "Edit" opens the expanded [org.isoron.uhabits.activities.common.dialogs.HistoryEditorDialog].
+     */
+    private val readOnlyDateClickListener = object : OnDateClickedListener {
+        override fun onDateShortPress(date: org.isoron.platform.time.LocalDate) = Unit
+        override fun onDateLongPress(date: org.isoron.platform.time.LocalDate) = Unit
+    }
+
+    init {
+        val composeView = ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                val palette = MainTabsThemeBridge.resolve(context)
+                val colors = UHabitComposeColors.fromPalette(
+                    palette,
+                    cardCornerRadiusDp = palette.statisticsCardCornerRadius,
+                    showCardBorders = palette.showHabitCardBorders
+                )
+                UHabitComposeTheme(colors) {
+                    val current = cardState
+                    if (current != null) {
+                        HabitHistoryCalendar(
+                            state = current,
+                            onEditClicked = { presenter?.onClickEditButton() },
+                            onDateClickedListener = readOnlyDateClickListener
+                        )
+                    }
+                }
+            }
+        }
+        addView(composeView)
+    }
 
     fun setState(state: HistoryCardState) {
-        binding.title.setTextColor(sres.getColor(R.attr.contrast100))
-        binding.chart.view = HistoryChart(
-            today = state.today,
-            paletteColor = state.color,
-            theme = state.theme,
-            dateFormatter = JavaLocalDateFormatter(Locale.getDefault()),
-            series = state.series,
-            defaultSquare = state.defaultSquare,
-            notesIndicators = state.notesIndicators,
-            firstWeekday = state.firstWeekday
-        )
-        binding.chart.postInvalidate()
+        this.cardState = state
     }
 
     fun setListener(presenter: HistoryCardPresenter) {
-        binding.edit.setOnClickListener { presenter.onClickEditButton() }
+        this.presenter = presenter
     }
+
+    fun resetEditMode() = Unit
 }

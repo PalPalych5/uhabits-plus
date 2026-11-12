@@ -1,20 +1,6 @@
 <!--
-  ~ Copyright (C) 2016-2025 Álinson Santos Xavier <git@axavier.org>
-  ~
-  ~ This file is part of Loop Habit Tracker.
-  ~
-  ~ Loop Habit Tracker is free software: you can redistribute it and/or modify
-  ~ it under the terms of the GNU General Public License as published by the
-  ~ Free Software Foundation, either version 3 of the License, or (at your
-  ~ option) any later version.
-  ~
-  ~ Loop Habit Tracker is distributed in the hope that it will be useful, but
-  ~ WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-  ~ or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
-  ~ more details.
-  ~
-  ~ You should have received a copy of the GNU General Public License along
-  ~ with this program. If not, see <http://www.gnu.org/licenses/>.
+  ~ Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
+  ~ SPDX-License-Identifier: GPL-3.0-or-later
   -->
 
 <RelativeLayout android:id="@+id/container"
@@ -43,6 +29,8 @@
         <LinearLayout
             style="@style/CardList"
             android:id="@+id/linearLayout"
+            android:paddingTop="6dp"
+            android:paddingBottom="32dp"
             android:clipToPadding="false">
 
             <org.isoron.uhabits.activities.habits.show.views.SubtitleCardView
@@ -61,22 +49,24 @@
 
             <org.isoron.uhabits.activities.habits.show.views.OverviewCardView
                 android:id="@+id/overviewCard"
-                style="@style/ShowHabit.Card"
-                android:paddingTop="12dp" />
+                style="@style/ShowHabit.Card" />
 
             <org.isoron.uhabits.activities.habits.show.views.TargetCardView
                 android:id="@+id/targetCard"
-                style="@style/ShowHabit.Card"
-                android:paddingTop="12dp" />
+                style="@style/ShowHabit.Card" />
 
             <TextView
                 android:id="@+id/effectiveReadNotice"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="10dp"
                 android:paddingStart="16dp"
                 android:paddingEnd="16dp"
-                android:paddingBottom="8dp"
-                android:minHeight="48dp"
+                android:paddingTop="10dp"
+                android:paddingBottom="10dp"
+                android:minHeight="44dp"
                 android:gravity="center_vertical"
                 android:background="?attr/selectableItemBackground"
                 android:clickable="true"
@@ -98,8 +88,7 @@
             <org.isoron.uhabits.activities.habits.show.views.HistoryCardView
                 android:id="@+id/historyCard"
                 style="@style/ShowHabit.Card"
-                android:gravity="center"
-                android:paddingBottom="0dp" />
+                android:gravity="center" />
 
             <org.isoron.uhabits.activities.habits.show.views.StreakCardView
                 android:id="@+id/streakCard"

@@ -69,7 +69,9 @@ class ShowHabitSyncReloadTest : BaseAndroidJVMTest() {
         override fun showFeedback() {}
         override fun showNumberPopup(value: Double, notes: String, callback: NumberPickerCallback) {}
         override fun showNumberPopup(value: Double, notes: String, habit: Habit?, date: LocalDate?, callback: NumberPickerCallback) {}
-        override fun showCheckmarkPopup(selectedValue: Int, notes: String, color: PaletteColor, callback: CheckMarkDialogCallback) {}
+        override fun showCheckmarkPopup(selectedValue: Int, notes: String, color: PaletteColor, callback: CheckMarkDialogCallback) {
+            callback.onNotesSaved(Entry.YES_MANUAL, notes)
+        }
         override fun showEditHabitScreen(habit: Habit) {}
         override fun showMessage(m: ShowHabitMenuPresenter.Message?) {}
         override fun showSendFileScreen(filename: String) {}

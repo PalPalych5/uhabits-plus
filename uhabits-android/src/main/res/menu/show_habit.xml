@@ -23,7 +23,7 @@
 
     <item
         android:id="@+id/action_edit_habit"
-        android:icon="?iconEdit"
+        android:icon="@drawable/ic_cat_pencil"
         android:title="@string/edit"
         app:showAsAction="ifRoom"/>
 
@@ -31,7 +31,6 @@
         android:id="@+id/action_more_habit"
         android:icon="@drawable/ic_toolbar_more_vertical"
         android:title="@string/today_show_more"
-        app:iconTint="@color/white"
         app:showAsAction="always"/>
 
     <item android:id="@+id/export" android:title="@string/export" android:visible="false" />

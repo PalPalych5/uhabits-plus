@@ -1,6 +1,7 @@
 package org.isoron.uhabits.core.ui.screens.habits.show.views
 
 import dev.mokkery.answering.calls
+import dev.mokkery.answering.returns
 import dev.mokkery.every
 import dev.mokkery.matcher.any
 import dev.mokkery.mock
@@ -9,6 +10,7 @@ import org.isoron.platform.time.getToday
 import org.isoron.uhabits.core.BaseUnitTest
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.preferences.Preferences
+import org.isoron.uhabits.core.ui.callbacks.CheckMarkDialogCallback
 import org.isoron.uhabits.core.ui.callbacks.NumberPickerCallback
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -34,5 +36,45 @@ class HistoryCardManualEditTest : BaseUnitTest() {
         picker!!.onNumberPicked(40.0, "edited")
         assertEquals(40000, habit.originalEntries.get(today).value)
         assertEquals("edited", habit.originalEntries.get(today).notes)
+    }
+
+    @Test
+    fun binaryHabitShortPressOpensCheckmarkDialogAndDoesNotSilentlyToggle() {
+        val habit = fixtures.createEmptyHabit()
+        habitList.add(habit)
+        val today = getToday()
+        val screen = mock<HistoryCardPresenter.Screen>()
+        var callback: CheckMarkDialogCallback? = null
+        every { screen.showCheckmarkPopup(any(), any(), any(), any()) } calls { args ->
+            callback = args.arg<CheckMarkDialogCallback>(3)
+            Unit
+        }
+        val prefs = mock<Preferences>()
+        every { prefs.isShortToggleEnabled } returns true
+        val presenter = HistoryCardPresenter(commandRunner, habit, habitList, prefs, screen)
+
+        // Short press must open checkmark popup, not silently toggle
+        presenter.onDateShortPress(today)
+        verify { screen.showCheckmarkPopup(Entry.UNKNOWN, "", habit.color, any()) }
+
+        // Executing the callback saves entry
+        callback!!.onNotesSaved(Entry.YES_MANUAL, "done with note")
+        assertEquals(Entry.YES_MANUAL, habit.originalEntries.get(today).value)
+        assertEquals("done with note", habit.originalEntries.get(today).notes)
+    }
+
+    @Test
+    fun binaryHabitLongPressAlsoOpensCheckmarkDialog() {
+        val habit = fixtures.createEmptyHabit()
+        habitList.add(habit)
+        val today = getToday()
+        val screen = mock<HistoryCardPresenter.Screen>()
+        every { screen.showCheckmarkPopup(any(), any(), any(), any()) } returns Unit
+        val prefs = mock<Preferences>()
+        every { prefs.isShortToggleEnabled } returns false
+        val presenter = HistoryCardPresenter(commandRunner, habit, habitList, prefs, screen)
+
+        presenter.onDateLongPress(today)
+        verify { screen.showCheckmarkPopup(Entry.UNKNOWN, "", habit.color, any()) }
     }
 }
