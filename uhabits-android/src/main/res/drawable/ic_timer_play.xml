@@ -4,5 +4,8 @@
     android:height="28dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <path android:fillColor="@android:color/white" android:pathData="M8,5V19L19,12Z" />
+    <!-- Subtly rounded, optically centered Play triangle (centroid at X=12.0) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M 8.5 6.5 a 1.5 1.5 0 0 1 2.28 -1.29 l 8.0 4.8 a 1.5 1.5 0 0 1 0 2.58 l -8.0 4.8 a 1.5 1.5 0 0 1 -2.28 -1.29 z" />
 </vector>

@@ -1015,4 +1015,5 @@
     <string name="unit_tooltip_title">Units of measurement</string>
     <string name="unit_tooltip_body">You can enter min, ml, km, pages, reps, or a custom unit.\nIf you specify minutes (e.g. \"min\"), Stopwatch and Pomodoro tracking will become available.</string>
     <string name="unit_tooltip_action">Got it</string>
+    <string name="timer_tap_to_configure">Tap to configure</string>
 </resources>

@@ -25,6 +25,14 @@ import org.isoron.uhabits.core.tasks.TaskRunner
 import org.isoron.uhabits.core.timer.PomodoroPhase
 import org.isoron.uhabits.core.timer.TimerMode
 import org.isoron.uhabits.core.timer.TimerSessionEngine
+import org.isoron.uhabits.core.containers.session.DatasetMode
+import org.isoron.uhabits.core.containers.session.DatasetSession
+import org.isoron.uhabits.core.containers.session.DatasetSessionFactory
+import org.isoron.uhabits.core.focus.FocusPrimaryTargetType
+import org.isoron.uhabits.core.focus.memory.MemoryFocusCaptureStore
+import org.isoron.uhabits.core.focus.runtime.FocusCaptureStore
+import org.isoron.uhabits.core.focus.runtime.FocusCaptureTarget
+import org.isoron.uhabits.core.userTasks.TaskId
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -252,7 +260,12 @@ class TimerPersistenceSafetyTest : BaseAndroidJVMTest() {
 
     private fun createManager(
         commandRunner: CommandRunner = synchronousCommandRunner,
-        timeProvider: () -> Long = { currentTimeMillis }
+        timeProvider: () -> Long = { currentTimeMillis },
+        captureStore: FocusCaptureStore? = null,
+        session: DatasetSession = DatasetSessionFactory.production(),
+        captureTargetResolver: (FocusPrimaryTargetType, String) -> Pair<String, FocusCaptureTarget>? = { kind, id ->
+            Pair("Target $id", FocusCaptureTarget(kind, id))
+        }
     ): TimerSessionManager {
         val engine = TimerSessionEngine(timeProvider)
         return TimerSessionManager(
@@ -263,6 +276,9 @@ class TimerPersistenceSafetyTest : BaseAndroidJVMTest() {
             alarmScheduler = fakeAlarmScheduler,
             completionNotifier = fakeCompletionNotifier,
             engine = engine,
+            captureStore = captureStore,
+            session = session,
+            captureTargetResolver = captureTargetResolver,
             prefs = testPrefs
         )
     }
@@ -655,5 +671,167 @@ class TimerPersistenceSafetyTest : BaseAndroidJVMTest() {
         // Repetition was written to database
         val entry = habit.originalEntries.get(LocalDate(2026, 10, 31))
         assertEquals(25000, entry.value)
+    }
+
+    @Test
+    fun pomodoroFullLifecycleAutomaticTransitionExcludesBreaksAndPausesFromCreditedWork() {
+        val habit = createHabit(isNumerical = true)
+        appPreferences.isPomodoroAutoSwitch = true
+        val manager = createManager()
+        manager.prepare(habit)
+        manager.switchMode(habit, TimerMode.POMODORO)
+        manager.updateDurations(habit, 25, 5)
+
+        // 1. Start Focus
+        assertTrue(manager.startOrPause(habit))
+        assertTrue(manager.snapshot().isRunning)
+        assertEquals(PomodoroPhase.FOCUS, manager.snapshot().phase)
+
+        // 2. Run for 10 minutes, then pause
+        currentTimeMillis += 10 * 60 * 1000L
+        assertTrue(manager.startOrPause(habit))
+        assertFalse(manager.snapshot().isRunning)
+        assertEquals(PomodoroPhase.FOCUS, manager.snapshot().phase)
+
+        // 3. Pause for 5 minutes (this must be excluded from credited work)
+        currentTimeMillis += 5 * 60 * 1000L
+
+        // 4. Resume Focus
+        assertTrue(manager.startOrPause(habit))
+        assertTrue(manager.snapshot().isRunning)
+
+        // 5. Run remaining 15 minutes to completion
+        currentTimeMillis += 15 * 60 * 1000L
+
+        // 6. Complete focus via alarm / tick
+        val rev = fakeAlarmScheduler.scheduledRevision ?: testPrefs.getLong("pref_timer_alarm_revision", 0L)
+        manager.onAlarm(rev)
+
+        // Verify: Focus completed and automatically transitioned to BREAK
+        val postFocusSnapshot = manager.snapshot()
+        assertEquals(PomodoroPhase.BREAK, postFocusSnapshot.phase)
+        assertFalse(postFocusSnapshot.isRunning)
+
+        // 7. Break phase execution: start break, run 2 min, pause 3 min, resume, run 3 min
+        assertTrue(manager.startOrPause(habit))
+        assertTrue(manager.snapshot().isRunning)
+
+        currentTimeMillis += 2 * 60 * 1000L
+        assertTrue(manager.startOrPause(habit))
+        assertFalse(manager.snapshot().isRunning)
+
+        currentTimeMillis += 3 * 60 * 1000L // paused in break
+        assertTrue(manager.startOrPause(habit))
+        assertTrue(manager.snapshot().isRunning)
+
+        currentTimeMillis += 3 * 60 * 1000L // finish remaining 3 min of break
+
+        val breakRev = fakeAlarmScheduler.scheduledRevision ?: testPrefs.getLong("pref_timer_alarm_revision", 0L)
+        manager.onAlarm(breakRev)
+
+        // Verify: Break completed and returned to FOCUS
+        assertEquals(PomodoroPhase.FOCUS, manager.snapshot().phase)
+
+        // Break time MUST NOT add to habit entry
+        val postBreakEntry = habit.originalEntries.get(LocalDate(2026, 10, 31))
+        assertEquals("Break time must add 0 to habit credited work", 25000, postBreakEntry.value)
+    }
+
+    @Test
+    fun pomodoroManualBreakTransitionOvertimeIsDistinct() {
+        val habit = createHabit(isNumerical = true)
+        appPreferences.isPomodoroAutoSwitch = false
+        val manager = createManager()
+        manager.prepare(habit)
+        manager.switchMode(habit, TimerMode.POMODORO)
+        manager.updateDurations(habit, 25, 5)
+
+        // Start Focus
+        manager.startOrPause(habit)
+
+        // Run 25 min base + 3 min overtime
+        currentTimeMillis += 28 * 60 * 1000L
+
+        // Trigger manual break transition
+        manager.takeBreakCurrent()
+
+        // Phase transitioned to BREAK
+        assertEquals(PomodoroPhase.BREAK, manager.snapshot().phase)
+
+        // Base 25 min + 3 min overtime = 28 min credited
+        val entry = habit.originalEntries.get(LocalDate(2026, 10, 31))
+        assertEquals(28000, entry.value)
+    }
+
+    @Test
+    fun pomodoroCancellationAndResetRestoresCleanStateWithoutCreditingWork() {
+        val habit = createHabit(isNumerical = true)
+        val manager = createManager()
+        manager.prepare(habit)
+        manager.switchMode(habit, TimerMode.POMODORO)
+
+        // Start Focus, advance 5 minutes
+        manager.startOrPause(habit)
+        currentTimeMillis += 5 * 60 * 1000L
+
+        // Cancel / reset
+        manager.resetCurrent()
+
+        // Must be idle, not running
+        assertFalse(manager.snapshot().isRunning)
+        assertEquals(0L, manager.snapshot().elapsedMillis)
+
+        // Zero work credited (UNKNOWN = unrecorded)
+        val entry = habit.originalEntries.get(LocalDate(2026, 10, 31))
+        assertEquals(Entry.UNKNOWN, entry.value)
+    }
+
+    @Test
+    fun taskFocusFullLifecycleWithDeterministicClock() {
+        val captureStore = MemoryFocusCaptureStore()
+        val manager = createManager(
+            captureStore = captureStore,
+            session = DatasetSessionFactory.production().copy(mode = DatasetMode.PRODUCTION_NEXT)
+        )
+        val taskId = TaskId("task-lifecycle-test")
+        val taskTitle = "Important Task"
+
+        manager.prepareTask(taskId, taskTitle)
+        manager.switchTaskMode(taskId, taskTitle, TimerMode.STOPWATCH)
+
+        // 1. Toggle task focus to start
+        assertTrue(manager.toggleTask(taskId, taskTitle))
+        assertTrue(manager.isTaskTarget(taskId))
+        assertTrue(manager.snapshot().isRunning)
+
+        // 2. Run for 8 minutes
+        currentTimeMillis += 8 * 60 * 1000L
+
+        // 3. Pause
+        assertTrue(manager.toggleTask(taskId, taskTitle))
+        assertFalse(manager.snapshot().isRunning)
+
+        // 4. Paused for 4 minutes
+        currentTimeMillis += 4 * 60 * 1000L
+
+        // 5. Resume
+        assertTrue(manager.toggleTask(taskId, taskTitle))
+        assertTrue(manager.snapshot().isRunning)
+
+        // 6. Run for 12 minutes
+        currentTimeMillis += 12 * 60 * 1000L
+
+        // 7. Finish task focus
+        manager.finishCurrent()
+
+        // State is cleaned up
+        assertFalse(manager.snapshot().isRunning)
+        assertFalse(manager.isTaskTarget(taskId))
+
+        // Fact recorded with duration = 8 + 12 = 20 min (1_200_000 ms), excluding the 4 min paused
+        val facts = captureStore.repository.getAll()
+        assertEquals(1, facts.size)
+        assertEquals(20 * 60 * 1000L, facts.single().durationMs)
+        assertEquals(taskId.value, facts.single().taskId?.value)
     }
 }

@@ -1013,4 +1013,5 @@
     <string name="unit_tooltip_title">Единицы измерения</string>
     <string name="unit_tooltip_body">Можно указать мин, мл, км, страницы, повторения или свою единицу.\nЕсли указать минуты (например, «мин»), станут доступны секундомер и Помодоро.</string>
     <string name="unit_tooltip_action">Понятно</string>
+    <string name="timer_tap_to_configure">Нажмите, чтобы настроить</string>
 </resources>

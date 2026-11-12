@@ -1,8 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
+  ~ SPDX-License-Identifier: GPL-3.0-or-later
+  -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="28dp"
     android:height="28dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <path android:fillColor="@android:color/white" android:pathData="M7,5H10V19H7ZM14,5H17V19H14Z" />
+    <!-- Subtly rounded pause bars (R=1.5) matching ic_timer_play geometry and optical centroid at (12, 12) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M 8.5 5 h 0.5 a 1.5 1.5 0 0 1 1.5 1.5 v 11 a 1.5 1.5 0 0 1 -1.5 1.5 h -0.5 a 1.5 1.5 0 0 1 -1.5 -1.5 v -11 a 1.5 1.5 0 0 1 1.5 -1.5 z M 15 5 h 0.5 a 1.5 1.5 0 0 1 1.5 1.5 v 11 a 1.5 1.5 0 0 1 -1.5 1.5 h -0.5 a 1.5 1.5 0 0 1 -1.5 -1.5 v -11 a 1.5 1.5 0 0 1 1.5 -1.5 z" />
 </vector>
