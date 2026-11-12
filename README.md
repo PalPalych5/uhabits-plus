@@ -22,6 +22,8 @@ The current development builds include:
 - Unified Statistics views for habits, tasks and focus sessions.
 - Light, Dark and AMOLED themes.
 
+The app uses a mix of Android Views and Jetpack Compose; the migration is ongoing. Some Next-only journeys have limited fresh-install runtime coverage, and onboarding and localized text still need refinement.
+
 These features are under development. Behavior, data migration, backup and synchronization should not be assumed stable or compatible across arbitrary versions. Some integrations and refinements remain incomplete; see the code and tests for their current scope.
 
 ## Screenshots
@@ -35,10 +37,10 @@ Use JDK 17 and an Android SDK with platform 36. The repository includes the Grad
 ```sh
 git clone https://github.com/PalPalych5/uhabits-plus.git
 cd uhabits-plus
-./gradlew :uhabits-android:assembleDebug
+./gradlew :uhabits-android:assembleDebug -Puhabit.allowDefaultDebugKeystore=true
 ```
 
-On Windows, use `gradlew.bat` instead of `./gradlew`. The debug APK is written under `uhabits-android/build/outputs/apk/debug/`. For setup and test commands, see [Building](docs/BUILD.md).
+The flag explicitly opts into the local default debug signing key for development. Use a designated key to update an existing installation; see [Building](docs/BUILD.md). On Windows, use `gradlew.bat` instead of `./gradlew`. The debug APK is written under `uhabits-android/build/outputs/apk/debug/`. For setup and test commands, see [Building](docs/BUILD.md).
 
 ## Project Relationship & Credits
 

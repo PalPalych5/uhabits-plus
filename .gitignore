@@ -36,3 +36,17 @@ debug.log
 *.aab
 *.jks
 *.keystore
+
+# Local profiling captures, generated databases and virtual devices.
+*.perfetto-trace
+*.pftrace
+*.trace
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.avd/
+
+# Database fixtures already tracked remain versioned.
+*.db
+*.db-journal
