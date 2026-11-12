@@ -482,7 +482,7 @@ private fun TaskCheckboxAffordance(
                     Image(
                         painter = painterResource(R.drawable.ic_action_check),
                         contentDescription = null,
-                        colorFilter = ColorFilter.tint(if (colors.isDark) Color(0xFF102638) else Color.White),
+                        colorFilter = ColorFilter.tint(if (androidx.core.graphics.ColorUtils.calculateContrast(android.graphics.Color.WHITE, colors.accent) >= 4.5) Color.White else Color(0xFF191C20)),
                         modifier = Modifier
                             .size(11.dp)
                             .scale(checkmarkScale)

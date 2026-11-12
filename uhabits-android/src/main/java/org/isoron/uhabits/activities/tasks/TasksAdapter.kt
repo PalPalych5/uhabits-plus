@@ -271,7 +271,7 @@ class TasksAdapter(
                 viewCheckCircle?.background = circleDrawable
                 ivCheckmark?.setImageResource(R.drawable.ic_action_check)
                 ivCheckmark?.visibility = View.VISIBLE
-                ivCheckmark?.setColorFilter(if (palette.isDark) Color.parseColor("#102638") else Color.WHITE)
+                ivCheckmark?.setColorFilter(if (androidx.core.graphics.ColorUtils.calculateContrast(Color.WHITE, palette.accent) >= 4.5) Color.WHITE else Color.parseColor("#191C20"))
             } else if (isCompleted) {
                 circleDrawable.setColor(MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.12f))
                 circleDrawable.setStroke(dp(1f), palette.onSurfaceVariant)
