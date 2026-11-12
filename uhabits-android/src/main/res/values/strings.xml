@@ -996,4 +996,7 @@
     <string name="settings_show_score_rings_summary">Show habit strength ring in the habit list</string>
     <string name="settings_show_habit_icons_title">Habit icons</string>
     <string name="settings_show_habit_icons_summary">Show habit icons in habit list cards</string>
+    <string name="dialog_action_skip">Skip</string>
+    <string name="dialog_action_skip_description">Skip entry</string>
+    <string name="dialog_action_save_description">Save entry</string>
 </resources>

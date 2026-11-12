@@ -1,29 +1,53 @@
+/*
+ * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org>
+ *
+ * This file is part of Loop Habit Tracker.
+ *
+ * Loop Habit Tracker is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by the
+ * Free Software Foundation, either version 3 of the License, or (at your
+ * option) any later version.
+ *
+ * Loop Habit Tracker is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+ * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+ * more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
 package org.isoron.uhabits.activities.common.dialogs
 
 import android.app.Dialog
 import android.content.DialogInterface
 import android.os.Bundle
-import android.provider.Settings
-import android.text.Editable
-import android.text.TextWatcher
-import android.text.method.DigitsKeyListener
-import android.view.KeyEvent
-import android.view.LayoutInflater
-import android.view.MotionEvent
-import android.view.View
-import android.view.inputmethod.EditorInfo
-import androidx.appcompat.app.AppCompatDialogFragment
+import android.view.Gravity
+import android.view.ViewGroup
+import android.view.WindowManager
+import android.widget.EditText
 import androidx.appcompat.app.AppCompatDialog
+import androidx.appcompat.app.AppCompatDialogFragment
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.settings.SettingsThemePaletteResolver
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
 import org.isoron.uhabits.core.models.Entry
-import org.isoron.uhabits.databinding.CheckmarkPopupBinding
-import org.isoron.uhabits.utils.InterfaceUtils
-import org.isoron.uhabits.utils.getCenter
-import org.isoron.uhabits.utils.requestFocusWithKeyboard
-import org.isoron.uhabits.utils.sres
 import java.text.DecimalFormat
-import java.text.DecimalFormatSymbols
 
 class NumberDialog : AppCompatDialogFragment() {
 
@@ -34,8 +58,8 @@ class NumberDialog : AppCompatDialogFragment() {
 
     private var dismissedViaSaveAction = false
     private var originalNotes: String = ""
+    private var currentNotes: String = ""
     private var originalValue: Double = 0.0
-    private lateinit var view: CheckmarkPopupBinding
 
     private var currentActiveFocus: Double = 0.0
     private var currentTombstonedFocus: Double = 0.0
@@ -45,27 +69,16 @@ class NumberDialog : AppCompatDialogFragment() {
     private var hasManualEntry: Boolean = false
     private var hasCompleteCoverage: Boolean = true
 
+    internal var valueView: EditText? = null
+
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val appComponent = (requireActivity().application as HabitsApplication).component
         val prefs = appComponent.preferences
-        val dialog = AppCompatDialog(requireContext(), R.style.CustomTransparentDialogTheme)
-        view = CheckmarkPopupBinding.inflate(LayoutInflater.from(dialog.context))
+        val dialog = Dialog(requireContext(), R.style.CustomTransparentDialogTheme)
 
-        arguments?.getInt("color")?.let { color ->
-            if (color != 0) view.yesBtn.setTextColor(color)
-        }
-        arrayOf(view.noBtn, view.unknownBtnNumber).forEach {
-            it.setTextColor(view.root.sres.getColor(R.attr.contrast60))
-        }
-        arrayOf(view.yesBtn, view.noBtn, view.unknownBtnNumber).forEach {
-            it.typeface = InterfaceUtils.getFontAwesome(requireContext())
-        }
-        if (!prefs.isSkipEnabled) view.skipBtnNumber.visibility = View.GONE
-        if (!prefs.areQuestionMarksEnabled) view.unknownBtnNumber.visibility = View.GONE
-        view.numberButtons.visibility = View.VISIBLE
-        fixDecimalSeparator(view)
-
+        val color = arguments?.getInt("color", 0) ?: 0
         originalNotes = requireArguments().getString("notes", "") ?: ""
+        currentNotes = originalNotes
         originalValue = requireArguments().getDouble("value", 0.0)
 
         val focusVal = arguments?.getDouble("focusValue", 0.0) ?: 0.0
@@ -78,146 +91,141 @@ class NumberDialog : AppCompatDialogFragment() {
         hasManualEntry = arguments?.getBoolean("hasManualEntry", false) ?: false
         hasCompleteCoverage = arguments?.getBoolean("hasCompleteCoverage", true) ?: true
 
+        val initialFormatted = when {
+            originalValue < 0.0 -> "0"
+            originalValue < 0.01 -> "0"
+            else -> DecimalFormat("#.##").format(originalValue)
+        }
+
         val hasContributions = activeIds.isNotEmpty() || tombstonedIds.isNotEmpty() || currentActiveFocus > 0.0 || currentTombstonedFocus > 0.0
-        if (hasContributions) {
-            view.focusBreakdownPanel.visibility = View.VISIBLE
-            view.focusBreakdownTitle.setText(R.string.focus_edit_breakdown_title)
-            updateBreakdown()
 
-            view.focusBreakdownExcludeBtn.setOnClickListener {
-                if (currentActiveFocus > 0.0 && activeIds.isNotEmpty()) {
-                    val toRevoke = activeIds.toList()
-                    onRevokeContributions?.invoke(toRevoke)
-                    tombstonedIds.addAll(toRevoke)
-                    activeIds.clear()
-                    currentTombstonedFocus += currentActiveFocus
-                    currentActiveFocus = 0.0
-                    updateBreakdown()
-                } else if (tombstonedIds.isNotEmpty()) {
-                    val toRestore = tombstonedIds.toList()
-                    onRestoreContributions?.invoke(toRestore)
-                    activeIds.addAll(toRestore)
-                    tombstonedIds.clear()
-                    currentActiveFocus += currentTombstonedFocus
-                    currentTombstonedFocus = 0.0
-                    updateBreakdown()
+        val palette = SettingsThemePaletteResolver.resolve(requireContext(), prefs)
+        val colors = UHabitComposeColors.fromPalette(palette)
+
+        val composeView = ComposeView(requireContext()).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                UHabitComposeTheme(colors = colors) {
+                    var notesState by remember { mutableStateOf(originalNotes) }
+                    var activeFocusState by remember { mutableDoubleStateOf(currentActiveFocus) }
+                    var tombstonedFocusState by remember { mutableDoubleStateOf(currentTombstonedFocus) }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                dialog.dismiss()
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {
+                                // Do not dismiss when clicking inside the card
+                            }
+                        ) {
+                            NumberDialogContent(
+                                initialFormattedValue = initialFormatted,
+                                habitUnit = habitUnit,
+                                habitColorArgb = color,
+                                notes = notesState,
+                                onNotesChanged = {
+                                    notesState = it
+                                    currentNotes = it
+                                },
+                                isSkipEnabled = prefs.isSkipEnabled,
+                                isUnknownEnabled = prefs.areQuestionMarksEnabled,
+                                activeFocus = activeFocusState,
+                                tombstonedFocus = tombstonedFocusState,
+                                hasContributions = hasContributions,
+                                hasManualEntry = hasManualEntry,
+                                hasCompleteCoverage = hasCompleteCoverage,
+                                originalValue = originalValue,
+                                onExcludeContributions = {
+                                    if (currentActiveFocus > 0.0 && activeIds.isNotEmpty()) {
+                                        val toRevoke = activeIds.toList()
+                                        onRevokeContributions?.invoke(toRevoke)
+                                        tombstonedIds.addAll(toRevoke)
+                                        activeIds.clear()
+                                        currentTombstonedFocus += currentActiveFocus
+                                        currentActiveFocus = 0.0
+                                        activeFocusState = 0.0
+                                        tombstonedFocusState = currentTombstonedFocus
+                                    }
+                                },
+                                onRestoreContributions = {
+                                    if (tombstonedIds.isNotEmpty()) {
+                                        val toRestore = tombstonedIds.toList()
+                                        onRestoreContributions?.invoke(toRestore)
+                                        activeIds.addAll(toRestore)
+                                        tombstonedIds.clear()
+                                        currentActiveFocus += currentTombstonedFocus
+                                        currentTombstonedFocus = 0.0
+                                        activeFocusState = currentActiveFocus
+                                        tombstonedFocusState = 0.0
+                                    }
+                                },
+                                onSaveClicked = { save() },
+                                onSkipClicked = {
+                                    dismissedViaSaveAction = true
+                                    onToggle(Entry.SKIP.toDouble() / 1000.0, currentNotes.trim())
+                                    dialog.dismiss()
+                                },
+                                onUnknownClicked = {
+                                    dismissedViaSaveAction = true
+                                    onToggle(Entry.UNKNOWN.toDouble() / 1000.0, currentNotes.trim())
+                                    dialog.dismiss()
+                                },
+                                onCancelClicked = {
+                                    dialog.dismiss()
+                                },
+                                onEditTextAttached = { editText ->
+                                    valueView = editText
+                                },
+                                colors = colors
+                            )
+                        }
+                    }
                 }
             }
-
-            view.value.addTextChangedListener(object : TextWatcher {
-                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-                override fun afterTextChanged(s: Editable?) {
-                    updateBreakdown()
-                }
-            })
         }
 
-        view.notes.setText(originalNotes)
-        view.value.setText(
-            when {
-                originalValue < 0.0 -> ""
-                originalValue < 0.01 -> "0"
-                else -> DecimalFormat("#.##").format(originalValue)
-            }
-        )
-        view.value.setOnKeyListener { _, keyCode, event ->
-            if (event.action == MotionEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_ENTER) {
-                save()
-                return@setOnKeyListener true
-            }
-            return@setOnKeyListener false
-        }
-        view.saveBtn.setOnClickListener {
-            save()
-        }
-        view.skipBtnNumber.setOnClickListener {
-            dismissedViaSaveAction = true
-            val notes = view.notes.text.toString().trim()
-            onToggle(Entry.SKIP.toDouble() / 1000.0, notes)
-            requireDialog().dismiss()
-        }
-
-        view.unknownBtnNumber.setOnClickListener {
-            dismissedViaSaveAction = true
-            val notes = view.notes.text.toString().trim()
-            onToggle(Entry.UNKNOWN.toDouble() / 1000.0, notes)
-            requireDialog().dismiss()
-        }
-
-        view.notes.setOnEditorActionListener { _, _, _ ->
-            save()
-            true
-        }
-        CustomDialogs.stylePlainEditText(view.notes)
-        CustomDialogs.stylePlainEditText(view.value)
-        view.value.requestFocusWithKeyboard()
-        dialog.setContentView(view.root)
+        dialog.setContentView(composeView)
         dialog.window?.apply {
             setBackgroundDrawableResource(android.R.color.transparent)
+            setLayout(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT)
+            setGravity(Gravity.CENTER)
+            clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+            setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
         }
         return dialog
     }
 
-    private fun updateBreakdown() {
-        val exactFormat = DecimalFormat("#.##")
-        fun fmt(v: Double) = "${exactFormat.format(v)} $habitUnit".trim()
-
-        val text = view.value.text.toString().trim()
-        val parsedManual: Double? = if (text.isNotEmpty()) {
-            when (val res = NumericalInputValidator.validateEntryInput(text)) {
-                is NumericalInputValidator.ValidationResult.Valid -> {
-                    if (res.value >= 0.0) res.value else null
-                }
-                else -> null
-            }
-        } else {
-            if (hasManualEntry && originalValue >= 0.0) originalValue else null
+    override fun onStart() {
+        super.onStart()
+        dialog?.window?.apply {
+            setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            setGravity(Gravity.CENTER)
         }
-
-        if (currentActiveFocus > 0.0) {
-            view.focusBreakdownFocusText.text = getString(R.string.focus_edit_focus_label, fmt(currentActiveFocus))
-            view.focusBreakdownExcludeBtn.visibility = View.VISIBLE
-            view.focusBreakdownExcludeBtn.setText(R.string.focus_edit_exclude_action)
-        } else if (currentTombstonedFocus > 0.0) {
-            view.focusBreakdownFocusText.text = getString(R.string.focus_edit_focus_excluded_label, fmt(0.0), fmt(currentTombstonedFocus))
-            view.focusBreakdownExcludeBtn.visibility = View.VISIBLE
-            view.focusBreakdownExcludeBtn.setText(R.string.focus_edit_restore_action)
-        } else {
-            view.focusBreakdownFocusText.text = getString(R.string.focus_edit_focus_label, fmt(0.0))
-            view.focusBreakdownExcludeBtn.visibility = View.GONE
-        }
-
-        if (parsedManual != null) {
-            view.focusBreakdownManualText.text = getString(R.string.focus_edit_manual_label, fmt(parsedManual))
-        } else {
-            view.focusBreakdownManualText.text = getString(R.string.focus_edit_manual_none)
-        }
-
-        val total = (parsedManual ?: 0.0) + currentActiveFocus
-        val isMin = parsedManual == null && currentActiveFocus > 0.0 && !hasCompleteCoverage
-        view.focusBreakdownTotalText.text = if (isMin) {
-            getString(R.string.focus_edit_total_min_label, fmt(total))
-        } else {
-            getString(R.string.focus_edit_total_label, fmt(total))
-        }
-
-        view.focusBreakdownHint.setText(
-            if (currentActiveFocus == 0.0 && currentTombstonedFocus > 0.0)
-                R.string.focus_edit_hint_excluded
-            else
-                R.string.focus_edit_hint
-        )
     }
 
     override fun onDismiss(dialog: DialogInterface) {
         super.onDismiss(dialog)
 
         if (!dismissedViaSaveAction) {
-            val currentNotes = view.notes.text.toString().trim()
-            if (currentNotes != originalNotes) {
+            val currentNotesTrimmed = currentNotes.trim()
+            if (currentNotesTrimmed != originalNotes.trim()) {
                 try {
-                    onToggle(originalValue, currentNotes)
+                    onToggle(originalValue, currentNotesTrimmed)
                 } catch (e: Exception) {
                     // Pre-existing accepted data or dismissal must not throw on note update
                 }
@@ -226,36 +234,21 @@ class NumberDialog : AppCompatDialogFragment() {
         onDismiss()
     }
 
-    private fun fixDecimalSeparator(view: CheckmarkPopupBinding) {
-        val separator = DecimalFormatSymbols.getInstance().decimalSeparator
-        view.value.keyListener = DigitsKeyListener.getInstance("0123456789$separator")
-
-        val currKeyboard = Settings.Secure.getString(
-            requireContext().contentResolver,
-            Settings.Secure.DEFAULT_INPUT_METHOD
-        )
-        if (currKeyboard?.contains("swiftkey", ignoreCase = true) == true ||
-            currKeyboard?.contains("samsung", ignoreCase = true) == true) {
-            view.value.inputType = EditorInfo.TYPE_CLASS_TEXT
-        }
-    }
-
     fun save() {
-        val valueStr = view.value.text.toString()
+        val valueStr = valueView?.text?.toString() ?: ""
         when (val result = NumericalInputValidator.validateEntryInput(valueStr)) {
             is NumericalInputValidator.ValidationResult.Valid -> {
                 dismissedViaSaveAction = true
-                val notes = view.notes.text.toString().trim()
-                onToggle(result.value, notes)
+                onToggle(result.value, currentNotes.trim())
                 requireDialog().dismiss()
             }
             is NumericalInputValidator.ValidationResult.OutOfRange -> {
-                view.value.error = getString(R.string.validation_number_out_of_range)
-                view.value.requestFocus()
+                valueView?.error = getString(R.string.validation_number_out_of_range)
+                valueView?.requestFocus()
             }
             is NumericalInputValidator.ValidationResult.InvalidFormat -> {
-                view.value.error = getString(R.string.validation_invalid_number_format)
-                view.value.requestFocus()
+                valueView?.error = getString(R.string.validation_invalid_number_format)
+                valueView?.requestFocus()
             }
         }
     }

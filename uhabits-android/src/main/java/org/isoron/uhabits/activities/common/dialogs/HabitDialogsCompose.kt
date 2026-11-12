@@ -286,3 +286,420 @@ fun CheckmarkDialogContent(
     }
 }
 
+/**
+ * Modern Material 3 content for numerical habit editing dialog ([NumberDialog]).
+ *
+ * Faithfully recovers the compact, quiet, restrained visual language of Loop Habit Tracker:
+ * - Crisp, compact dialog box (6dp rounded corners, subtle hairline border).
+ * - Unboxed, quiet note field with centered placeholder/text.
+ * - Hairline horizontal divider.
+ * - Single 48dp tactile bottom row combining the numerical input cell with SAVE, SKIP, and ? actions.
+ */
+@Composable
+fun NumberDialogContent(
+    initialFormattedValue: String,
+    habitUnit: String,
+    habitColorArgb: Int,
+    notes: String,
+    onNotesChanged: (String) -> Unit,
+    isSkipEnabled: Boolean,
+    isUnknownEnabled: Boolean,
+    activeFocus: Double,
+    tombstonedFocus: Double,
+    hasContributions: Boolean,
+    hasManualEntry: Boolean,
+    hasCompleteCoverage: Boolean,
+    originalValue: Double,
+    onExcludeContributions: () -> Unit,
+    onRestoreContributions: () -> Unit,
+    onSaveClicked: () -> Unit,
+    onSkipClicked: () -> Unit,
+    onUnknownClicked: () -> Unit,
+    onCancelClicked: () -> Unit,
+    onEditTextAttached: (EditText) -> Unit,
+    modifier: Modifier = Modifier,
+    colors: UHabitComposeColors = LocalUHabitComposeColors.current
+) {
+    val context = LocalContext.current
+    val fontAwesome = remember(context) {
+        InterfaceUtils.getFontAwesome(context)?.let { FontFamily(it) } ?: FontFamily.Default
+    }
+    val habitColor = if (habitColorArgb != 0) Color(habitColorArgb) else Color(colors.accent)
+    val neutralColor = colors.secondaryColor
+    val shape = RoundedCornerShape(5.dp)
+
+    val surfaceColor = if (colors.isPureBlack) {
+        Color(UHabitElevationAndBorders.AMOLED_BORDERED_CARD_SURFACE_ARGB)
+    } else {
+        Color(colors.surface)
+    }
+    val borderColor = colors.resolveSectionBorderColor()
+    val dividerColor = colors.resolveDividerColor()
+    var enteredText by remember { mutableStateOf(initialFormattedValue) }
+
+    Column(
+        modifier = modifier
+            .widthIn(min = 250.dp, max = 310.dp)
+            .clip(shape)
+            .background(surfaceColor)
+            .border(1.dp, borderColor, shape)
+    ) {
+        // Focus breakdown panel if contributions exist
+        if (hasContributions) {
+            FocusBreakdownPanel(
+                enteredText = enteredText,
+                habitUnit = habitUnit,
+                activeFocus = activeFocus,
+                tombstonedFocus = tombstonedFocus,
+                hasManualEntry = hasManualEntry,
+                hasCompleteCoverage = hasCompleteCoverage,
+                originalValue = originalValue,
+                onExcludeContributions = onExcludeContributions,
+                onRestoreContributions = onRestoreContributions,
+                colors = colors
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(dividerColor)
+            )
+        }
+
+        // Notes area: unboxed, clean, centered placeholder/hint, matching original
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 52.dp, max = 74.dp)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            BasicTextField(
+                value = notes,
+                onValueChange = onNotesChanged,
+                modifier = Modifier.fillMaxWidth(),
+                textStyle = TextStyle(
+                    color = Color(colors.foreground),
+                    fontSize = 13.5.sp,
+                    textAlign = TextAlign.Center
+                ),
+                cursorBrush = SolidColor(habitColor),
+                decorationBox = { innerTextField ->
+                    Box(
+                        modifier = Modifier.fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (notes.isEmpty()) {
+                            Text(
+                                text = stringResource(R.string.notes),
+                                style = TextStyle(
+                                    color = neutralColor.copy(alpha = 0.6f),
+                                    fontSize = 13.5.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                            )
+                        }
+                        innerTextField()
+                    }
+                }
+            )
+        }
+
+        // Horizontal hairline divider
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(dividerColor)
+        )
+
+        // Action row: 48dp height with input cell, SAVE, SKIP, and ?
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Number input cell hosting actual EditText with id R.id.value
+            Box(
+                modifier = Modifier
+                    .defaultMinSize(minWidth = 56.dp)
+                    .weight(1f)
+                    .fillMaxHeight(),
+                contentAlignment = Alignment.Center
+            ) {
+                AndroidView(
+                    modifier = Modifier.fillMaxWidth(),
+                    factory = { ctx ->
+                        AppCompatEditText(ctx).apply {
+                            id = R.id.value
+                            background = null
+                            gravity = Gravity.CENTER
+                            textSize = 15f
+                            setTextColor(colors.foreground)
+                            setHintTextColor(neutralColor.copy(alpha = 0.5f).hashCode())
+                            inputType = EditorInfo.TYPE_CLASS_NUMBER or EditorInfo.TYPE_NUMBER_FLAG_DECIMAL
+                            val separator = DecimalFormatSymbols.getInstance().decimalSeparator
+                            keyListener = DigitsKeyListener.getInstance("0123456789$separator")
+                            setText(initialFormattedValue)
+                            selectAll()
+                            addTextChangedListener(object : TextWatcher {
+                                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                                override fun afterTextChanged(s: Editable?) {
+                                    enteredText = s?.toString() ?: ""
+                                }
+                            })
+                            setOnKeyListener { _, keyCode, event ->
+                                if (event.action == MotionEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_ENTER) {
+                                    onSaveClicked()
+                                    true
+                                } else false
+                            }
+                            onEditTextAttached(this)
+                            post {
+                                requestFocusWithKeyboard()
+                                selectAll()
+                            }
+                        }
+                    }
+                )
+            }
+
+            // Vertical divider
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .fillMaxHeight()
+                    .background(dividerColor)
+            )
+
+            val actionTextColor = Color(colors.foreground)
+            val saveDesc = stringResource(R.string.dialog_action_save_description)
+            val skipDesc = stringResource(R.string.dialog_action_skip_description)
+
+            // Save button (Cell 2): measured text width with horizontal padding, restrained medium typography
+            Box(
+                modifier = Modifier
+                    .wrapContentWidth()
+                    .fillMaxHeight()
+                    .clickable(
+                        role = Role.Button,
+                        onClick = onSaveClicked
+                    )
+                    .padding(horizontal = 10.dp)
+                    .semantics { contentDescription = saveDesc },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = stringResource(R.string.save).uppercase(Locale.getDefault()),
+                    style = TextStyle(
+                        color = actionTextColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 0.4.sp
+                    ),
+                    maxLines = 1,
+                    softWrap = false
+                )
+            }
+
+            // Skip button (Cell 3, if enabled): measured text width with identical typography and color
+            if (isSkipEnabled) {
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .fillMaxHeight()
+                        .background(dividerColor)
+                )
+                Box(
+                    modifier = Modifier
+                        .wrapContentWidth()
+                        .fillMaxHeight()
+                        .clickable(
+                            role = Role.Button,
+                            onClick = onSkipClicked
+                        )
+                        .padding(horizontal = 10.dp)
+                        .semantics { contentDescription = skipDesc },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = stringResource(R.string.dialog_action_skip).uppercase(Locale.getDefault()),
+                        style = TextStyle(
+                            color = actionTextColor,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            letterSpacing = 0.4.sp
+                        ),
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+            }
+
+            // Unknown / question button (Cell 4, if enabled)
+            if (isUnknownEnabled) {
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .fillMaxHeight()
+                        .background(dividerColor)
+                )
+                Box(
+                    modifier = Modifier
+                        .wrapContentWidth()
+                        .fillMaxHeight()
+                        .clickable(
+                            role = Role.Button,
+                            onClick = onUnknownClicked
+                        )
+                        .padding(horizontal = 12.dp)
+                        .semantics { contentDescription = "Unknown" },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = stringResource(R.string.fa_question),
+                        fontFamily = fontAwesome,
+                        color = actionTextColor,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FocusBreakdownPanel(
+    enteredText: String,
+    habitUnit: String,
+    activeFocus: Double,
+    tombstonedFocus: Double,
+    hasManualEntry: Boolean,
+    hasCompleteCoverage: Boolean,
+    originalValue: Double,
+    onExcludeContributions: () -> Unit,
+    onRestoreContributions: () -> Unit,
+    colors: UHabitComposeColors
+) {
+    val exactFormat = remember { DecimalFormat("#.##") }
+    fun fmt(v: Double) = "${exactFormat.format(v)} $habitUnit".trim()
+
+    val parsedManual: Double? = if (enteredText.isNotBlank()) {
+        when (val res = NumericalInputValidator.validateEntryInput(enteredText.trim())) {
+            is NumericalInputValidator.ValidationResult.Valid -> if (res.value >= 0.0) res.value else null
+            else -> null
+        }
+    } else {
+        if (hasManualEntry && originalValue >= 0.0) originalValue else null
+    }
+
+    val total = (parsedManual ?: 0.0) + activeFocus
+    val isMin = parsedManual == null && activeFocus > 0.0 && !hasCompleteCoverage
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Text(
+            text = stringResource(R.string.focus_edit_breakdown_title),
+            style = TextStyle(
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = colors.foregroundColor
+            )
+        )
+
+        Spacer(Modifier.height(6.dp))
+
+        // Focus Row with Exclude / Restore
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val focusText = if (activeFocus > 0.0) {
+                stringResource(R.string.focus_edit_focus_label, fmt(activeFocus))
+            } else if (tombstonedFocus > 0.0) {
+                stringResource(R.string.focus_edit_focus_excluded_label, fmt(0.0), fmt(tombstonedFocus))
+            } else {
+                stringResource(R.string.focus_edit_focus_label, fmt(0.0))
+            }
+
+            Text(
+                text = focusText,
+                style = TextStyle(fontSize = 13.sp, color = colors.foregroundColor)
+            )
+
+            if (activeFocus > 0.0) {
+                Text(
+                    text = stringResource(R.string.focus_edit_exclude_action),
+                    style = TextStyle(
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(colors.accent)
+                    ),
+                    modifier = Modifier
+                        .clickable(role = Role.Button, onClick = onExcludeContributions)
+                        .padding(4.dp)
+                )
+            } else if (tombstonedFocus > 0.0) {
+                Text(
+                    text = stringResource(R.string.focus_edit_restore_action),
+                    style = TextStyle(
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(colors.accent)
+                    ),
+                    modifier = Modifier
+                        .clickable(role = Role.Button, onClick = onRestoreContributions)
+                        .padding(4.dp)
+                )
+            }
+        }
+
+        Spacer(Modifier.height(4.dp))
+
+        // Manual Row
+        val manualText = if (parsedManual != null) {
+            stringResource(R.string.focus_edit_manual_label, fmt(parsedManual))
+        } else {
+            stringResource(R.string.focus_edit_manual_none)
+        }
+        Text(
+            text = manualText,
+            style = TextStyle(fontSize = 13.sp, color = colors.foregroundColor)
+        )
+
+        Spacer(Modifier.height(4.dp))
+
+        // Total Row
+        val totalText = if (isMin) {
+            stringResource(R.string.focus_edit_total_min_label, fmt(total))
+        } else {
+            stringResource(R.string.focus_edit_total_label, fmt(total))
+        }
+        Text(
+            text = totalText,
+            style = TextStyle(
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = colors.foregroundColor
+            )
+        )
+
+        Spacer(Modifier.height(6.dp))
+
+        // Hint
+        val hintText = if (activeFocus == 0.0 && tombstonedFocus > 0.0) {
+            stringResource(R.string.focus_edit_hint_excluded)
+        } else {
+            stringResource(R.string.focus_edit_hint)
+        }
+        Text(
+            text = hintText,
+            style = TextStyle(fontSize = 11.sp, color = colors.secondaryColor)
+        )
+    }
+}

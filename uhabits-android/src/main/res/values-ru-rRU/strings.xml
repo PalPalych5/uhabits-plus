@@ -994,4 +994,7 @@
     <string name="settings_show_score_rings_summary">Показывать кольцо силы привычки слева в списке</string>
     <string name="settings_show_habit_icons_title">Иконки привычек</string>
     <string name="settings_show_habit_icons_summary">Показывать иконки привычек в карточках списка</string>
+    <string name="dialog_action_skip">Пропуск</string>
+    <string name="dialog_action_skip_description">Пропустить запись</string>
+    <string name="dialog_action_save_description">Сохранить запись</string>
 </resources>
