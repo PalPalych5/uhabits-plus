@@ -23,7 +23,9 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
@@ -1558,9 +1560,10 @@ class TaskCalendarViewController(
         val summaryCard = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPaddingRelative(dpInt(12f), dpInt(8f), dpInt(12f), dpInt(8f))
+            clipToOutline = true
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                cornerRadius = dpInt(8f).toFloat()
+                cornerRadius = dpInt(12f).toFloat()
                 setColor(palette.surface)
                 setStroke(dpInt(1f), palette.border)
             }
@@ -2216,18 +2219,26 @@ class TaskCalendarViewController(
     // History Helpers & Detail Dialogs
     // -----------------------------------------------------------------------------------------
     private fun buildSessionCard(seg: FocusHistorySegment): View {
+        val rippleColor = (palette.onSurface and 0x00FFFFFF) or 0x1F000000
+        val cardBg = GradientDrawable().apply {
+            setShape(GradientDrawable.RECTANGLE)
+            cornerRadius = dpInt(12f).toFloat()
+            setColor(palette.surface)
+            setStroke(dpInt(1f), palette.border)
+        }
+        val cardMask = GradientDrawable().apply {
+            setShape(GradientDrawable.RECTANGLE)
+            cornerRadius = dpInt(12f).toFloat()
+            setColor(Color.WHITE)
+        }
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             minimumHeight = dpInt(48f)
             setPaddingRelative(dpInt(12f), dpInt(8f), dpInt(12f), dpInt(8f))
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dpInt(8f).toFloat()
-                setColor(palette.surface)
-                setStroke(dpInt(1f), palette.border)
-            }
-            setSelectableBackground()
+            clipToOutline = true
+            background = RippleDrawable(ColorStateList.valueOf(rippleColor), cardBg, cardMask)
+            isFocusable = true
             setOnClickListener { showSessionDetailsDialog(seg.session) }
         }
 
@@ -2332,15 +2343,23 @@ class TaskCalendarViewController(
             val habitColor = seg.session.habit?.let { hRef ->
                 habits.find { it.uuid == hRef.uuid }?.let { TaskThemeUtils.resolvePaletteColor(context, it.color, palette.accent) }
             } ?: palette.accent
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
+            val rippleColor = (palette.onSurface and 0x00FFFFFF) or 0x1F000000
+            val blockShape = GradientDrawable().apply {
+                setShape(GradientDrawable.RECTANGLE)
                 cornerRadius = dpInt(6f).toFloat()
                 val bgTint = if (palette.isDark) 0x28000000 or (habitColor and 0x00FFFFFF)
                 else 0x1E000000 or (habitColor and 0x00FFFFFF)
                 setColor(bgTint)
                 setStroke(dpInt(1f), habitColor)
             }
-            setSelectableBackground()
+            val blockMask = GradientDrawable().apply {
+                setShape(GradientDrawable.RECTANGLE)
+                cornerRadius = dpInt(6f).toFloat()
+                setColor(Color.WHITE)
+            }
+            clipToOutline = true
+            background = RippleDrawable(ColorStateList.valueOf(rippleColor), blockShape, blockMask)
+            isFocusable = true
             setOnClickListener { showSessionDetailsDialog(seg.session) }
         }
 
