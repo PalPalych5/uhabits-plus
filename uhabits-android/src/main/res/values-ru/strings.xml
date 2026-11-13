@@ -1032,4 +1032,12 @@
     <string name="unit_tooltip_body">Можно указать мин, мл, км, страницы, повторения или свою единицу.\nЕсли указать минуты (например, «мин»), станут доступны секундомер и Помодоро.</string>
     <string name="unit_tooltip_action">Понятно</string>
     <string name="timer_tap_to_configure">Нажмите, чтобы настроить</string>
+    <string name="settings_dev_experimental">Экспериментальные функции</string>
+    <string name="settings_dev_container_experiment">Эксперимент: UHabit Next (Разделы)</string>
+    <string name="settings_dev_container_experiment_active">Активен изолированный эксперимент. Нажмите для возврата в продуктовый режим.</string>
+    <string name="settings_dev_container_experiment_inactive">Создать изолированную копию данных и протестировать режим разделов.</string>
+    <string name="settings_dev_cutover">Переход на UHabit Next (v30)</string>
+    <string name="settings_dev_cutover_summary">Защищённое обновление продуктовой базы данных</string>
+    <string name="settings_dev_container_ui">Эксперименты с интерфейсом контейнеров</string>
+    <string name="settings_dev_container_ui_summary">Открыть ContainersActivity / Living Context для отладки</string>
 </resources>

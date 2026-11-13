@@ -1016,4 +1016,12 @@
     <string name="unit_tooltip_body">You can enter min, ml, km, pages, reps, or a custom unit.\nIf you specify minutes (e.g. \"min\"), Stopwatch and Pomodoro tracking will become available.</string>
     <string name="unit_tooltip_action">Got it</string>
     <string name="timer_tap_to_configure">Tap to configure</string>
+    <string name="settings_dev_experimental">Experimental features</string>
+    <string name="settings_dev_container_experiment">Experiment: UHabit Next (Sections)</string>
+    <string name="settings_dev_container_experiment_active">The isolated experiment is active. Tap to return to production mode.</string>
+    <string name="settings_dev_container_experiment_inactive">Create an isolated copy of the data to try sections.</string>
+    <string name="settings_dev_cutover">Switch to UHabit Next (v30)</string>
+    <string name="settings_dev_cutover_summary">Protected upgrade of the production database</string>
+    <string name="settings_dev_container_ui">Container interface experiments</string>
+    <string name="settings_dev_container_ui_summary">Open ContainersActivity / Living Context for debugging</string>
 </resources>

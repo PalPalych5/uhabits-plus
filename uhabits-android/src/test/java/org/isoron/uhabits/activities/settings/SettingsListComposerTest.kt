@@ -87,22 +87,16 @@ class SettingsListComposerTest {
 
     @Test
     fun navigationRowsDoNotRenderASecondBusyIndicator() {
-        val layoutDir = listOf(
-            Path.of("src/main/res/layout"),
-            Path.of("uhabits-android/src/main/res/layout")
-        ).first { Files.isDirectory(it) }
-        val navigationRow = String(
-            Files.readAllBytes(layoutDir.resolve("item_settings_row.xml")),
-            Charsets.UTF_8
-        )
-        val statusRow = String(
-            Files.readAllBytes(layoutDir.resolve("item_settings_status.xml")),
-            Charsets.UTF_8
-        )
+        val composeRows = readSettingsSource("SettingsComposeRows.kt")
 
-        assertFalse(navigationRow.contains("accessoryProgress"))
-        assertTrue(statusRow.contains("statusProgress"))
-        assertTrue(statusRow.contains("android:visibility=\"invisible\""))
+        assertTrue(composeRows.contains("is SettingItem.Status"))
+        assertTrue(composeRows.contains("CircularProgressIndicator"))
+        assertTrue(composeRows.contains("item.reserveProgressSpace"))
+        assertFalse(
+            "Navigation rows should keep standard click/chevron rendering without progress spinners",
+            composeRows.substringAfter("is SettingItem.Navigation").substringBefore("is SettingItem.Switch")
+                .contains("CircularProgressIndicator")
+        )
     }
 
     @Test
@@ -303,38 +297,27 @@ class SettingsListComposerTest {
 
     @Test
     fun allSettingRowLayoutsUseSharedDividerGeometry() {
-        val layoutDir = listOf(
-            Path.of("src/main/res/layout"),
-            Path.of("uhabits-android/src/main/res/layout")
+        val valuesDir = listOf(
+            Path.of("src/main/res/values"),
+            Path.of("uhabits-android/src/main/res/values")
         ).first { Files.isDirectory(it) }
-        val rowLayouts = listOf(
-            "item_settings_row.xml",
-            "item_settings_status.xml",
-            "item_settings_segmented.xml"
-        )
+        val dimensXml = String(Files.readAllBytes(valuesDir.resolve("dimens.xml")), Charsets.UTF_8)
+        val composeRows = readSettingsSource("SettingsComposeRows.kt")
 
-        rowLayouts.forEach { fileName ->
-            val xml = String(Files.readAllBytes(layoutDir.resolve(fileName)), Charsets.UTF_8)
-            assertTrue(
-                "$fileName must use shared row divider start",
-                xml.contains("android:layout_marginStart=\"@dimen/settings_detail_row_divider_start\"")
-            )
-            assertTrue(
-                "$fileName must use shared divider end",
-                xml.contains("android:layout_marginEnd=\"@dimen/settings_detail_divider_end\"")
-            )
-        }
+        assertTrue(dimensXml.contains("name=\"settings_detail_row_divider_start\">52dp"))
+        assertTrue(dimensXml.contains("name=\"settings_detail_group_divider_start\">18dp"))
+        assertTrue(dimensXml.contains("name=\"settings_detail_divider_end\">16dp"))
+        assertTrue(composeRows.contains("R.dimen.settings_detail_row_divider_start"))
+        assertTrue(composeRows.contains("R.dimen.settings_detail_group_divider_start"))
+        assertTrue(composeRows.contains("R.dimen.settings_detail_divider_end"))
+    }
 
-        val subsection = String(
-            Files.readAllBytes(layoutDir.resolve("item_settings_subsection.xml")),
-            Charsets.UTF_8
-        )
-        assertTrue(
-            subsection.contains("android:layout_marginStart=\"@dimen/settings_detail_group_divider_start\"")
-        )
-        assertTrue(
-            subsection.contains("android:layout_marginEnd=\"@dimen/settings_detail_divider_end\"")
-        )
+    private fun readSettingsSource(fileName: String): String {
+        val sourceDir = listOf(
+            Path.of("src/main/java/org/isoron/uhabits/activities/settings"),
+            Path.of("uhabits-android/src/main/java/org/isoron/uhabits/activities/settings")
+        ).first { Files.isDirectory(it) }
+        return String(Files.readAllBytes(sourceDir.resolve(fileName)), Charsets.UTF_8)
     }
 
     @Test
@@ -362,6 +345,396 @@ class SettingsListComposerTest {
 
         assertFalse(items.first().presentation.isLast)
         assertTrue(items.last().presentation.isLast)
+    }
+
+    @Test
+    fun appearanceDetailComposesSegmentedThemeColorPickerAndFixedSeparator() {
+        val appearance = SettingsSectionModel.fromItems(
+            id = SettingsSectionId.APPEARANCE,
+            iconRes = R.drawable.ic_settings_theme,
+            title = "Appearance",
+            summary = "Dark · #64B5F6 accent",
+            items = listOf(
+                SettingItem.Subsection("appearance_main", "General", presentation = SettingPresentation()),
+                SettingItem.SegmentedTheme(
+                    key = "pref_theme",
+                    iconRes = R.drawable.ic_settings_theme,
+                    title = "Theme",
+                    themeValue = 1,
+                    pureBlackValue = true,
+                    onSegmentSelected = { _, _ -> }
+                ),
+                SettingItem.ColorPicker(
+                    key = "pref_accent_color",
+                    iconRes = R.drawable.ic_settings_droplet,
+                    title = "Accent color",
+                    summary = "#64B5F6",
+                    colorString = "preset:blue",
+                    onClick = {}
+                ),
+                SettingItem.Subsection("appearance_interface", "Interface", presentation = SettingPresentation()),
+                SettingItem.Switch(
+                    key = "pref_show_habit_card_borders",
+                    iconRes = R.drawable.ic_settings_layout_list,
+                    title = "Card borders",
+                    summary = "Show subtle outlines around cards",
+                    checked = true,
+                    onCheckedChange = {}
+                )
+            )
+        )
+
+        val composed = SettingsListComposer.composeDetail(appearance)
+
+        assertEquals(5, composed.size)
+        assertTrue(composed[0].presentation.isFirst)
+        assertFalse(composed[0].presentation.isLast)
+        assertEquals(composed[0].presentation.cardId, composed[1].presentation.cardId)
+        assertEquals(composed[0].presentation.cardId, composed[2].presentation.cardId)
+        assertTrue(composed[2].presentation.isLast)
+        assertTrue(composed[3].presentation.isFirst)
+        assertTrue(composed[4].presentation.isLast)
+        assertNotEquals(composed[0].presentation.cardId, composed[3].presentation.cardId)
+
+        val valuesDir = listOf(
+            Path.of("src/main/res/values"),
+            Path.of("uhabits-android/src/main/res/values")
+        ).first { Files.isDirectory(it) }
+        val stringsXml = String(Files.readAllBytes(valuesDir.resolve("strings.xml")), Charsets.UTF_8)
+        assertTrue(stringsXml.contains("<string name=\"settings_summary_appearance\">%1\$s · %2\$s accent</string>"))
+        assertTrue(stringsXml.contains("<string name=\"custom_color_modes\">HEX · HSV · RGB</string>"))
+        assertFalse(
+            stringsXml.lineSequence()
+                .filter {
+                    it.contains("settings_summary_") ||
+                        it.contains("backup_status_") ||
+                        it.contains("sync_account_") ||
+                        it.contains("custom_color_")
+                }
+                .any { it.contains("В·") }
+        )
+    }
+
+    @Test
+    fun habitsDetailComposesSpheresDayTiersBehaviorAndArchiveCards() {
+        val enabledHabits = SettingsSectionModel.fromItems(
+            id = SettingsSectionId.HABITS,
+            iconRes = R.drawable.ic_settings_spheres,
+            title = "Habits & Day",
+            summary = "Areas and day levels enabled",
+            items = listOf(
+                SettingItem.Subsection("habits_spheres", "Areas", presentation = SettingPresentation()),
+                SettingItem.Switch(
+                    key = "pref_enable_habit_spheres",
+                    iconRes = R.drawable.ic_settings_spheres,
+                    title = "Enable areas",
+                    summary = "Group habits by life areas",
+                    checked = true,
+                    onCheckedChange = {}
+                ),
+                SettingItem.Navigation(
+                    key = "configureSpheres",
+                    iconRes = R.drawable.ic_settings_configure_spheres,
+                    title = "Configure areas",
+                    summary = "Manage custom areas",
+                    onClick = {}
+                ),
+                SettingItem.Switch(
+                    key = "pref_show_sphere_names",
+                    iconRes = R.drawable.ic_settings_squares,
+                    title = "Show area names",
+                    summary = "Display labels on cards",
+                    checked = true,
+                    onCheckedChange = {}
+                ),
+                SettingItem.Subsection("habits_tiers", "Day levels", presentation = SettingPresentation()),
+                SettingItem.Switch(
+                    key = "pref_enable_day_tiers",
+                    iconRes = R.drawable.ic_settings_tiers,
+                    title = "Enable day levels",
+                    summary = "Track daily effort levels",
+                    checked = true,
+                    onCheckedChange = {}
+                ),
+                SettingItem.Navigation(
+                    key = "pref_day_tier_sort_order",
+                    iconRes = R.drawable.ic_settings_arrows_sort,
+                    title = "Level sort order",
+                    summary = "Minimum · Normal · Ideal · Optional",
+                    onClick = {}
+                ),
+                SettingItem.Subsection("habits_behavior", "Behavior", presentation = SettingPresentation()),
+                SettingItem.Switch("pref_habit_group_separators", R.drawable.ic_settings_separator_horizontal, "Separators", null, false, {}),
+                SettingItem.Switch("pref_short_toggle", R.drawable.ic_settings_check, "Short press", "Toggle on tap", true, {}),
+                SettingItem.Switch("pref_checkmark_reverse_order", R.drawable.ic_settings_reverse, "Reverse days", "Most recent last", false, {}),
+                SettingItem.Switch("pref_skip_enabled", R.drawable.ic_settings_fast_forward, "Allow skip", "Mark day as skipped", true, {}),
+                SettingItem.Switch("pref_unknown_enabled", R.drawable.ic_settings_question, "Unknown marks", "Show question marks", false, {}),
+                SettingItem.Switch("pref_midnight_delay", R.drawable.ic_settings_clock, "Extend day", "Until 04:00", true, {}),
+                SettingItem.Subsection("habits_archive", "Archive", presentation = SettingPresentation()),
+                SettingItem.Navigation(
+                    key = "openArchive",
+                    iconRes = R.drawable.ic_settings_archive,
+                    title = "Open archive",
+                    summary = "View archived habits",
+                    onClick = {}
+                )
+            )
+        )
+
+        val composedEnabled = SettingsListComposer.composeDetail(enabledHabits)
+        assertEquals(16, composedEnabled.size)
+        assertTrue(composedEnabled[0].presentation.isFirst)
+        assertTrue(composedEnabled[3].presentation.isLast)
+        assertEquals(composedEnabled[0].presentation.cardId, composedEnabled[3].presentation.cardId)
+        assertTrue(composedEnabled[4].presentation.isFirst)
+        assertTrue(composedEnabled[6].presentation.isLast)
+        assertEquals(composedEnabled[4].presentation.cardId, composedEnabled[6].presentation.cardId)
+        assertTrue(composedEnabled[7].presentation.isFirst)
+        assertTrue(composedEnabled[13].presentation.isLast)
+        assertTrue(composedEnabled[14].presentation.isFirst)
+        assertTrue(composedEnabled[15].presentation.isLast)
+        assertEquals(
+            setOf(
+                composedEnabled[0].presentation.cardId,
+                composedEnabled[4].presentation.cardId,
+                composedEnabled[7].presentation.cardId,
+                composedEnabled[14].presentation.cardId
+            ).size,
+            4
+        )
+
+        val disabledHabits = SettingsSectionModel.fromItems(
+            id = SettingsSectionId.HABITS,
+            iconRes = R.drawable.ic_settings_spheres,
+            title = "Habits & Day",
+            summary = "Areas and day levels off",
+            items = listOf(
+                SettingItem.Subsection("habits_spheres", "Areas", presentation = SettingPresentation()),
+                SettingItem.Switch("pref_enable_habit_spheres", R.drawable.ic_settings_spheres, "Enable areas", null, false, {}),
+                SettingItem.Subsection("habits_tiers", "Day levels", presentation = SettingPresentation()),
+                SettingItem.Switch("pref_enable_day_tiers", R.drawable.ic_settings_tiers, "Enable day levels", null, false, {}),
+                SettingItem.Subsection("habits_behavior", "Behavior", presentation = SettingPresentation()),
+                SettingItem.Switch("pref_short_toggle", R.drawable.ic_settings_check, "Short press", null, true, {}),
+                SettingItem.Subsection("habits_archive", "Archive", presentation = SettingPresentation()),
+                SettingItem.Navigation("openArchive", R.drawable.ic_settings_archive, "Open archive", null, onClick = {})
+            )
+        )
+
+        val composedDisabled = SettingsListComposer.composeDetail(disabledHabits)
+        assertEquals(8, composedDisabled.size)
+        assertTrue(composedDisabled[0].presentation.isFirst)
+        assertTrue(composedDisabled[1].presentation.isLast)
+        assertTrue(composedDisabled[2].presentation.isFirst)
+        assertTrue(composedDisabled[3].presentation.isLast)
+        assertNotEquals(composedDisabled[0].presentation.cardId, composedDisabled[2].presentation.cardId)
+
+        val valuesDir = listOf(
+            Path.of("src/main/res/values"),
+            Path.of("uhabits-android/src/main/res/values")
+        ).first { Files.isDirectory(it) }
+        val stringsXml = String(Files.readAllBytes(valuesDir.resolve("strings.xml")), Charsets.UTF_8)
+        assertTrue(stringsXml.contains("<string name=\"settings_summary_habits_spheres\">Areas enabled · day levels off</string>"))
+        assertTrue(stringsXml.contains("<string name=\"settings_summary_habits_tiers\">Day levels enabled · areas off</string>"))
+        assertTrue(stringsXml.contains("<string name=\"pref_unknown_title\">Show “?” for empty days</string>"))
+    }
+
+    @Test
+    fun notificationsAndStatisticsSectionsComposeCardsAndDirectHomeAction() {
+        val notifications = SettingsSectionModel.fromItems(
+            id = SettingsSectionId.NOTIFICATIONS,
+            iconRes = R.drawable.ic_settings_notification_ringing,
+            title = "Notifications",
+            summary = "Channel configured · Exact alarms on",
+            items = listOf(
+                SettingItem.Subsection("notifications_general", "Habit reminders", presentation = SettingPresentation()),
+                SettingItem.Switch("pref_sticky_notifications", R.drawable.ic_settings_notification, "Sticky notifications", "Keep visible", false, {}),
+                SettingItem.Navigation("reminderCustomize", R.drawable.ic_settings_bell_cog, "Reminder channel", "Default", presentation = SettingPresentation(showIcon = true), onClick = {}),
+                SettingItem.Navigation("reminderExactAlarm", R.drawable.ic_settings_clock, "Exact alarms", "Granted", onClick = {}),
+                SettingItem.Navigation("reminderTest", R.drawable.ic_settings_bell_check, "Test reminder", "Send test notification", onClick = {}),
+                SettingItem.Subsection("notifications_pomodoro", "Pomodoro completion", presentation = SettingPresentation()),
+                SettingItem.Switch("pref_pomodoro_focus_alert", R.drawable.ic_settings_pomodoro_focus, "Focus alert", null, true, {}),
+                SettingItem.Switch("pref_pomodoro_break_alert", R.drawable.ic_settings_pomodoro_break, "Break alert", null, true, {}),
+                SettingItem.Navigation("pomodoroAlertChannel", R.drawable.ic_settings_clock_cog, "Completion channel", "Configured", presentation = SettingPresentation(showIcon = true), onClick = {}),
+                SettingItem.Navigation("pomodoroTestAlert", R.drawable.ic_settings_clock_check, "Test completion signal", "Ring now", onClick = {}),
+                SettingItem.Subsection("notifications_delivery", "Timer and timing", presentation = SettingPresentation()),
+                SettingItem.Navigation("pomodoroProgressChannel", R.drawable.ic_settings_lock, "Timer progress channel", "Open channel settings", onClick = {}),
+                SettingItem.Navigation("pomodoroExactAlarm", R.drawable.ic_settings_clock, "Exact timer alarms", "Enabled", onClick = {}),
+            )
+        )
+
+        val composedNotifications = SettingsListComposer.composeDetail(notifications)
+        assertEquals(13, composedNotifications.size)
+        assertTrue(composedNotifications[0].presentation.isFirst)
+        assertTrue(composedNotifications[4].presentation.isLast)
+        assertEquals(composedNotifications[0].presentation.cardId, composedNotifications[4].presentation.cardId)
+        assertTrue(composedNotifications[5].presentation.isFirst)
+        assertTrue(composedNotifications[9].presentation.isLast)
+        assertEquals(composedNotifications[5].presentation.cardId, composedNotifications[9].presentation.cardId)
+        assertTrue(composedNotifications[10].presentation.isFirst)
+        assertTrue(composedNotifications[12].presentation.isLast)
+        assertEquals(composedNotifications[10].presentation.cardId, composedNotifications[12].presentation.cardId)
+        assertEquals(
+            3,
+            setOf(
+                composedNotifications[0].presentation.cardId,
+                composedNotifications[5].presentation.cardId,
+                composedNotifications[10].presentation.cardId
+            ).size
+        )
+
+        var statisticsOpened = false
+        val statistics = SettingsSectionModel.fromItems(
+            id = SettingsSectionId.STATISTICS,
+            iconRes = R.drawable.ic_settings_statistics,
+            title = "Statistics",
+            summary = "All time",
+            items = emptyList(),
+            homeAction = { statisticsOpened = true }
+        )
+
+        val composedHome = SettingsListComposer.composeHome(
+            sections = listOf(notifications, statistics),
+            accessibilityDescription = { "${it.title}: ${it.summary}" },
+            onSectionClick = { }
+        )
+        assertEquals(2, composedHome.size)
+        val statsOverview = composedHome[1] as SettingItem.Section
+        assertEquals(SettingsSectionId.STATISTICS, statsOverview.sectionId)
+        assertEquals("All time", statsOverview.summary)
+        statsOverview.onClick(null)
+        assertTrue(statisticsOpened)
+        assertTrue(SettingsListComposer.composeDetail(statistics).isEmpty())
+    }
+
+    @Test
+    fun dataSectionComposesStatusConditionalCutoverAndDestructiveCards() {
+        fun buildDataModel(includeCutover: Boolean, busyBackup: Boolean = false): SettingsSectionModel =
+            SettingsSectionModel.fromItems(
+                id = SettingsSectionId.DATA,
+                iconRes = R.drawable.ic_settings_backup_history,
+                title = "Data & Backup",
+                summary = "Never backed up",
+                items = buildList {
+                    add(SettingItem.Subsection("data_status", "Last backup", presentation = SettingPresentation()))
+                    add(
+                        SettingItem.Status(
+                            key = "backupStatus",
+                            iconRes = R.drawable.ic_settings_backup_history,
+                            title = "Backup status",
+                            summary = "Never backed up",
+                            showProgress = busyBackup,
+                            presentation = SettingPresentation(showIcon = true),
+                            reserveProgressSpace = true
+                        )
+                    )
+                    add(SettingItem.Subsection("data_create", "Create backup", presentation = SettingPresentation()))
+                    add(
+                        SettingItem.Navigation(
+                            key = "exportDB",
+                            iconRes = R.drawable.ic_settings_backup_upload,
+                            title = "Back up now",
+                            summary = "Save full backup",
+                            onClick = {}
+                        )
+                    )
+                    add(
+                        SettingItem.Navigation(
+                            key = "backupToPublicFolder",
+                            iconRes = R.drawable.ic_settings_folder_upload,
+                            title = "Back up to folder",
+                            summary = "External folder",
+                            isBusy = busyBackup,
+                            onClick = {},
+                            presentation = SettingPresentation(showIcon = true, enabled = !busyBackup)
+                        )
+                    )
+                    if (includeCutover) {
+                        add(SettingItem.Subsection("data_next_cutover", "UHabit Next", presentation = SettingPresentation()))
+                        add(
+                            SettingItem.Navigation(
+                                key = "pref_production_cutover",
+                                iconRes = R.drawable.ic_settings_git_merge,
+                                title = "Upgrade to UHabit Next (v30)",
+                                summary = "Protected database upgrade",
+                                onClick = {}
+                            )
+                        )
+                    }
+                    add(
+                        SettingItem.Subsection(
+                            key = "data_delete",
+                            title = "Delete data",
+                            isDestructive = true,
+                            presentation = SettingPresentation()
+                        )
+                    )
+                    add(
+                        SettingItem.Navigation(
+                            key = "hardResetStatistics",
+                            iconRes = R.drawable.ic_settings_trash,
+                            title = "Reset statistics",
+                            summary = "Delete entries forever",
+                            isDanger = true,
+                            onClick = {}
+                        )
+                    )
+                }
+            )
+
+        val legacySessionItems = SettingsListComposer.composeDetail(buildDataModel(includeCutover = true))
+        assertEquals(9, legacySessionItems.size)
+        val statusItem = legacySessionItems[1] as SettingItem.Status
+        assertEquals("status:backupStatus", statusItem.stableKey)
+        assertTrue(statusItem.reserveProgressSpace)
+        assertFalse(statusItem.showProgress)
+        assertTrue(statusItem.presentation.isLast)
+        assertEquals(legacySessionItems[0].presentation.cardId, statusItem.presentation.cardId)
+
+        val exportItem = legacySessionItems[3] as SettingItem.Navigation
+        assertFalse(exportItem.presentation.isLast)
+        val publicBackupItem = legacySessionItems[4] as SettingItem.Navigation
+        assertTrue(publicBackupItem.presentation.isLast)
+        assertEquals(exportItem.presentation.cardId, publicBackupItem.presentation.cardId)
+
+        val deleteHeader = legacySessionItems[7] as SettingItem.Subsection
+        assertTrue(deleteHeader.isDestructive)
+        val hardResetItem = legacySessionItems[8] as SettingItem.Navigation
+        assertTrue(hardResetItem.isDanger)
+        assertTrue(hardResetItem.presentation.isLast)
+
+        val nextSessionItems = SettingsListComposer.composeDetail(buildDataModel(includeCutover = false, busyBackup = true))
+        assertEquals(7, nextSessionItems.size)
+        assertFalse(nextSessionItems.any { it.stableKey == "navigation:pref_production_cutover" })
+        assertTrue((nextSessionItems[1] as SettingItem.Status).showProgress)
+        val busyPublicItem = nextSessionItems[4] as SettingItem.Navigation
+        assertTrue(busyPublicItem.isBusy)
+        assertFalse(busyPublicItem.presentation.enabled)
+    }
+
+    @Test
+    fun syncDetailKeepsStatusAndBusyActionAcrossUpdates() {
+        fun section(syncing: Boolean, signedIn: Boolean, review: Boolean) =
+            SettingsSectionModel.fromItems(
+                id = SettingsSectionId.SYNC, iconRes = 1, title = "Sync", summary = "Status",
+                items = buildList {
+                    add(SettingItem.Subsection("account", "Account", presentation = SettingPresentation()))
+                    add(SettingItem.Status("syncStatus", 1, "Status", if (syncing) "Syncing" else "Idle", syncing, SettingPresentation(), reserveProgressSpace = true))
+                    add(SettingItem.Navigation(if (signedIn) "syncSignOut" else "syncSignIn", 1, "Account", null, onClick = {}))
+                    add(SettingItem.Navigation("syncNow", 1, "Sync now", "Sync", isBusy = syncing, presentation = SettingPresentation(enabled = !syncing), onClick = {}))
+                    if (review) add(SettingItem.Navigation("syncReview", 1, "Review", null, onClick = {}))
+                }
+            )
+        val idle = SettingsListComposer.composeDetail(section(false, false, false))
+        val busy = SettingsListComposer.composeDetail(section(true, true, true))
+        val idleStatus = idle.filterIsInstance<SettingItem.Status>().single()
+        val busyStatus = busy.filterIsInstance<SettingItem.Status>().single()
+        assertEquals(idleStatus.stableKey, busyStatus.stableKey)
+        assertTrue(busyStatus.showProgress)
+        assertTrue(busyStatus.reserveProgressSpace)
+        assertFalse(busy.filterIsInstance<SettingItem.Navigation>().first { it.key == "syncNow" }.presentation.enabled)
+        assertTrue(busy.any { it.stableKey == "navigation:syncSignOut" })
+        assertTrue(busy.any { it.stableKey == "navigation:syncReview" })
+        assertTrue(idle.any { it.stableKey == "navigation:syncSignIn" })
     }
 
     private fun section(id: SettingsSectionId, title: String, childKey: String) =

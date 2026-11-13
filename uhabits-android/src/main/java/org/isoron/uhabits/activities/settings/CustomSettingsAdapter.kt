@@ -4,21 +4,21 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.RippleDrawable
-import android.text.TextUtils
-import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.widget.ProgressBar
-import android.widget.ImageView
-import android.widget.TextView
-import androidx.core.content.ContextCompat
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import org.isoron.uhabits.R
-import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
+import org.isoron.uhabits.compose.UHabitComposeColors
 import org.isoron.uhabits.core.preferences.Preferences
 
 enum class SettingsSectionId {
@@ -52,7 +52,8 @@ sealed class SettingItem {
         val title: String,
         val summary: String,
         val accessibilityDescription: String,
-        val onClick: (SettingsTransitionSource?) -> Unit
+        val onClick: (SettingsTransitionSource?) -> Unit,
+        override val presentation: SettingPresentation = SettingPresentation()
     ) : SettingItem() {
         override val stableKey: String = "section:${sectionId.name}"
     }
@@ -142,8 +143,7 @@ sealed class SettingItem {
 class CustomSettingsAdapter(
     private val context: Context,
     private val prefs: Preferences,
-    private var items: List<SettingItem>,
-    private val composePomodoro: Boolean = false
+    private var items: List<SettingItem>
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     private var paletteSignature = currentPaletteSignature()
 
@@ -219,17 +219,8 @@ class CustomSettingsAdapter(
     }
 
     companion object {
-        private const val TYPE_SECTION = 0
-        private const val TYPE_ROW = 1
-        private const val TYPE_SEGMENTED = 2
-        private const val TYPE_SUBSECTION = 3
-        private const val TYPE_STATUS = 4
-        private const val TYPE_COMPOSE = 5
-    }
-
-    private enum class ChangePayload {
-        NAVIGATION_BUSY,
-        STATUS_PROGRESS
+        private const val TYPE_HOME_SECTION = 1
+        private const val TYPE_DETAIL_ROW = 2
     }
 
     fun updateItems(newItems: List<SettingItem>) {
@@ -255,13 +246,12 @@ class CustomSettingsAdapter(
             }
 
             override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
-                return contentSame(oldItems[oldItemPosition], newItems[newItemPosition])
+                return SettingsItemDiff.contentSame(oldItems[oldItemPosition], newItems[newItemPosition])
             }
 
             override fun getChangePayload(oldItemPosition: Int, newItemPosition: Int): Any? {
-                return changePayload(oldItems[oldItemPosition], newItems[newItemPosition])
+                return SettingsItemDiff.changePayload(oldItems[oldItemPosition], newItems[newItemPosition])
             }
-
         })
         items = newItems
         paletteSignature = newPaletteSignature
@@ -273,328 +263,45 @@ class CustomSettingsAdapter(
     }
 
     override fun getItemViewType(position: Int): Int {
-        if (composePomodoro && (items[position] is SettingItem.Subsection || items[position] is SettingItem.Navigation || items[position] is SettingItem.Switch)) return TYPE_COMPOSE
-        return when (items[position]) {
-            is SettingItem.Section -> TYPE_SECTION
-            is SettingItem.Subsection -> TYPE_SUBSECTION
-            is SettingItem.Status -> TYPE_STATUS
-            is SettingItem.SegmentedTheme -> TYPE_SEGMENTED
-            else -> TYPE_ROW
-        }
+        return if (items[position] is SettingItem.Section) TYPE_HOME_SECTION else TYPE_DETAIL_ROW
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
-        val inflater = LayoutInflater.from(context)
+        val composeView = ComposeView(context)
         return when (viewType) {
-            TYPE_COMPOSE -> ComposeSettingsHolder(androidx.compose.ui.platform.ComposeView(context).apply {
-                layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                setViewCompositionStrategy(androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
-            })
-            TYPE_SECTION -> {
-                val view = inflater.inflate(R.layout.item_settings_section, parent, false)
-                SectionViewHolder(view)
+            TYPE_HOME_SECTION -> ComposeHolder(composeView) { state ->
+                SettingsHomeCard(state.item as SettingItem.Section, state.colors)
             }
-            TYPE_SUBSECTION -> SubsectionViewHolder(inflater.inflate(R.layout.item_settings_subsection, parent, false))
-            TYPE_STATUS -> StatusViewHolder(inflater.inflate(R.layout.item_settings_status, parent, false))
-            TYPE_SEGMENTED -> {
-                val view = inflater.inflate(R.layout.item_settings_segmented, parent, false)
-                SegmentedViewHolder(view)
-            }
-            else -> {
-                val view = inflater.inflate(R.layout.item_settings_row, parent, false)
-                RowViewHolder(view)
+            else -> ComposeHolder(composeView) { state ->
+                SettingsDetailRow(state.item, state.colors)
             }
         }
     }
 
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
         val item = items[position]
-        val isLastInCard = item.presentation.isLast || item is SettingItem.Section
         val palette = SettingsThemePaletteResolver.resolve(context, prefs)
+        val colors = UHabitComposeColors.fromPalette(palette)
+        val composeHolder = holder as ComposeHolder
 
-        when (holder) {
-            is ComposeSettingsHolder -> {
-                applyCardDecoration(holder.itemView, position)
-                val colors = org.isoron.uhabits.compose.UHabitComposeColors.fromPalette(palette)
-                (holder.itemView as androidx.compose.ui.platform.ComposeView).setContent {
-                    PomodoroSettingsRow(item, colors)
-                }
+        applyCardDecoration(composeHolder.itemView, position)
+        when (item) {
+            is SettingItem.Section -> {
+                bindSectionInteraction(composeHolder.itemView, item)
+                composeHolder.bind(item, colors)
             }
-            is SectionViewHolder -> {
-                bindSection(holder, item as SettingItem.Section)
-                applyCardDecoration(holder.itemView, position)
-            }
-            is SubsectionViewHolder -> {
-                val subsection = item as SettingItem.Subsection
-                applyCardDecoration(holder.itemView, position)
-                holder.titleText.text = subsection.title
-                holder.titleText.setTextColor(
-                    if (subsection.isDestructive) {
-                        ColorUtils.setAlphaComponent(ContextCompat.getColor(context, R.color.red_500), 204)
-                    } else {
-                        palette.accent
-                    }
-                )
-                ViewCompat.setAccessibilityHeading(holder.titleText, true)
-                holder.divider.setBackgroundColor(palette.groupDivider)
-                holder.divider.visibility = if (isLastInCard && !prefs.isClassicSectionLayout) View.GONE else View.VISIBLE
-            }
-            is StatusViewHolder -> {
-                val status = item as SettingItem.Status
-                applyCardDecoration(holder.itemView, position)
-                holder.iconImg.setImageResource(status.iconRes)
-                holder.iconImg.imageTintList = ColorStateList.valueOf(palette.onSurfaceVariant)
-                holder.titleText.text = status.title
-                holder.summaryText.text = status.summary
-                holder.progress.visibility = when {
-                    status.showProgress -> View.VISIBLE
-                    status.reserveProgressSpace -> View.INVISIBLE
-                    else -> View.GONE
-                }
-                holder.progress.indeterminateTintList = ColorStateList.valueOf(palette.accent)
-                holder.titleText.setTextColor(palette.onSurface)
-                holder.summaryText.setTextColor(palette.onSurfaceVariant)
-                holder.divider.setBackgroundColor(palette.divider)
-                holder.divider.visibility = if (isLastInCard && !prefs.isClassicSectionLayout) View.GONE else View.VISIBLE
-            }
-            is SegmentedViewHolder -> {
-                val segmentedItem = item as SettingItem.SegmentedTheme
-                
-                // Card Decoration
-                applyCardDecoration(holder.itemView, position)
-                
-                // Icon Tinting
-                holder.iconImg.imageTintList = ColorStateList.valueOf(palette.onSurfaceVariant)
-                holder.iconImg.visibility = if (segmentedItem.presentation.showIcon) View.VISIBLE else View.GONE
-                holder.iconImg.setImageResource(segmentedItem.iconRes)
-                
-                holder.titleText.text = segmentedItem.title
-                holder.titleText.setTextColor(palette.onSurface)
-
-                // Determine active segment index
-                val activeIndex = when {
-                    segmentedItem.themeValue == 0 -> 0
-                    segmentedItem.themeValue == 2 -> 1
-                    segmentedItem.themeValue == 1 && !segmentedItem.pureBlackValue -> 2
-                    segmentedItem.themeValue == 1 && segmentedItem.pureBlackValue -> 3
-                    else -> 0
-                }
-
-                // Set Russian text/localized labels for theme segments
-                val themeEntries = context.resources.getStringArray(R.array.pref_theme_entries)
-                holder.btnSystem.text = themeEntries[0]
-                holder.btnLight.text = themeEntries[1]
-                holder.btnDark.text = themeEntries[2]
-                holder.btnAmoled.text = "AMOLED"
-
-                AccentColorManager.tintSegment(holder.btnSystem, activeIndex == 0, context, prefs)
-                AccentColorManager.tintSegment(holder.btnLight, activeIndex == 1, context, prefs)
-                AccentColorManager.tintSegment(holder.btnDark, activeIndex == 2, context, prefs)
-                AccentColorManager.tintSegment(holder.btnAmoled, activeIndex == 3, context, prefs)
-
-                holder.btnSystem.setOnClickListener { segmentedItem.onSegmentSelected(0, segmentedItem.pureBlackValue) }
-                holder.btnLight.setOnClickListener { segmentedItem.onSegmentSelected(2, segmentedItem.pureBlackValue) }
-                holder.btnDark.setOnClickListener { segmentedItem.onSegmentSelected(1, false) }
-                holder.btnAmoled.setOnClickListener { segmentedItem.onSegmentSelected(1, true) }
-
-                holder.divider.setBackgroundColor(palette.divider)
-                holder.divider.visibility = if (isLastInCard && !prefs.isClassicSectionLayout) View.GONE else View.VISIBLE
-            }
-            is RowViewHolder -> {
-                // Card Decoration
-                applyCardDecoration(holder.itemView, position)
-                holder.divider.setBackgroundColor(palette.divider)
-                holder.divider.visibility = if (isLastInCard && !prefs.isClassicSectionLayout) View.GONE else View.VISIBLE
-
-                // Reset accessory visibilities
-                holder.switchComp.visibility = View.GONE
-                holder.valueText.visibility = View.GONE
-                holder.colorSwatch.visibility = View.GONE
-                holder.summaryText.visibility = View.GONE
-                holder.chevronImg.imageTintList = ColorStateList.valueOf(palette.onSurfaceVariant)
-
-                holder.titleText.setTextColor(palette.onSurface)
-                holder.itemView.alpha = 1f
-                holder.itemView.isEnabled = item.presentation.enabled
-                holder.itemView.setOnClickListener(null)
-                holder.itemView.setOnLongClickListener(null)
-                holder.itemView.isClickable = false
-                holder.itemView.isFocusable = false
-                holder.summaryText.setOnClickListener(null)
-                holder.summaryText.setOnLongClickListener(null)
-                holder.summaryText.isClickable = false
-
-                // Icon Tinting
-                val baseIconColor = if (item is SettingItem.Navigation && item.isDanger) {
-                    ContextCompat.getColor(context, R.color.red_500)
-                } else {
-                    palette.onSurfaceVariant
-                }
-                holder.iconImg.imageTintList = ColorStateList.valueOf(baseIconColor)
-                val contentAlpha = if (item.presentation.enabled || (item is SettingItem.Navigation && item.isBusy)) 1f else 0.48f
-                holder.iconImg.alpha = contentAlpha
-                holder.titleText.alpha = contentAlpha
-                holder.summaryText.alpha = contentAlpha
-                holder.chevronImg.alpha = contentAlpha
-                holder.switchComp.alpha = contentAlpha
-                holder.valueText.alpha = contentAlpha
-                holder.colorSwatch.alpha = contentAlpha
-
-                when (item) {
-                    is SettingItem.Navigation -> {
-                        bindRowIcon(holder, item.iconRes, item.presentation.showIcon)
-                        holder.titleText.text = item.title
-                        if (!item.summary.isNullOrBlank()) {
-                            bindSummary(holder, item.summary)
-                        }
-                        if (item.isDanger) {
-                            holder.titleText.setTextColor(ContextCompat.getColor(context, R.color.red_500))
-                        }
-                        bindNavigationAccessory(holder, item)
-                        if (item.onClick != null) {
-                            bindRowClick(holder, item.presentation.enabled) { item.onClick.invoke() }
-                        }
-                    }
-                    is SettingItem.Switch -> {
-                        resetNavigationAccessory(holder, showChevron = false)
-                        bindRowIcon(holder, item.iconRes, item.presentation.showIcon)
-                        holder.titleText.text = item.title
-                        if (!item.summary.isNullOrBlank()) {
-                            bindSummary(holder, item.summary)
-                        }
-                        holder.switchComp.visibility = View.VISIBLE
-                        holder.switchComp.setOnCheckedChangeListener(null)
-                        holder.switchComp.configure(
-                            accentColor = AccentColorManager.getAccentColor(context, prefs),
-                            isDark = palette.isDark,
-                            isPureBlack = palette.isPureBlack
-                        )
-                        holder.switchComp.bindChecked(item.checked)
-                        holder.switchComp.setOnCheckedChangeListener(
-                            object : SettingsSwitchView.OnCheckedChangeListener {
-                                override fun onCheckedChanged(view: SettingsSwitchView, checked: Boolean) {
-                                    item.onCheckedChange(checked)
-                                }
-                            }
-                        )
-
-                        holder.switchComp.isEnabled = item.presentation.enabled
-                        bindRowClick(holder, item.presentation.enabled) {
-                            holder.switchComp.setCheckedAnimated(!holder.switchComp.isChecked)
-                        }
-                    }
-                    is SettingItem.Value -> {
-                        resetNavigationAccessory(holder, showChevron = true)
-                        bindRowIcon(holder, item.iconRes, item.presentation.showIcon)
-                        holder.titleText.text = item.title
-                        holder.valueText.text = item.valueText
-                        holder.valueText.visibility = View.VISIBLE
-                        bindRowClick(holder, item.presentation.enabled, item.onClick)
-                    }
-                    is SettingItem.ColorPicker -> {
-                        resetNavigationAccessory(holder, showChevron = true)
-                        bindRowIcon(holder, item.iconRes, item.presentation.showIcon)
-                        holder.titleText.text = item.title
-                        bindSummary(holder, item.summary)
-                        
-                        // Color Swatch setup
-                        holder.colorSwatch.visibility = View.VISIBLE
-                        val colorInt = AccentColorManager.getAccentColor(context, prefs)
-                        val circleDrawable = GradientDrawable().apply {
-                            shape = GradientDrawable.OVAL
-                            setColor(colorInt)
-                            setStroke(context.resources.displayMetrics.density.toInt(), palette.divider)
-                        }
-                        holder.colorSwatch.background = circleDrawable
-
-                        bindRowClick(holder, item.presentation.enabled, item.onClick)
-                    }
-                    else -> Unit
-                }
+            else -> {
+                // DiffUtil deliberately ignores callback identity. Resolve the latest action
+                // at invocation time even when an otherwise identical row is not rebound.
+                composeHolder.bind(composeSettingsItem(item) { items }, colors)
             }
         }
     }
 
-    override fun onBindViewHolder(
-        holder: RecyclerView.ViewHolder,
-        position: Int,
-        payloads: MutableList<Any>
-    ) {
-        val item = items[position]
-        when {
-            ChangePayload.NAVIGATION_BUSY in payloads &&
-                holder is RowViewHolder &&
-                item is SettingItem.Navigation -> bindNavigationBusyPayload(holder, item)
-            ChangePayload.STATUS_PROGRESS in payloads &&
-                holder is StatusViewHolder &&
-                item is SettingItem.Status -> bindStatusProgressPayload(holder, item)
-            else -> onBindViewHolder(holder, position)
-        }
-    }
-
-    private fun bindNavigationBusyPayload(
-        holder: RowViewHolder,
-        item: SettingItem.Navigation
-    ) {
-        holder.itemView.isEnabled = item.presentation.enabled
-        holder.itemView.setOnClickListener(null)
-        holder.itemView.isClickable = false
-        holder.itemView.isFocusable = false
-        holder.summaryText.setOnClickListener(null)
-        holder.summaryText.isClickable = false
-        bindNavigationAccessory(holder, item)
-        item.onClick?.let { action ->
-            bindRowClick(holder, item.presentation.enabled, action)
-        }
-    }
-
-    private fun bindStatusProgressPayload(
-        holder: StatusViewHolder,
-        item: SettingItem.Status
-    ) {
-        holder.progress.animate().cancel()
-        holder.progress.indeterminateTintList = ColorStateList.valueOf(
-            AccentColorManager.getAccentColor(context, prefs)
-        )
-        holder.progress.visibility = when {
-            item.showProgress -> View.VISIBLE
-            item.reserveProgressSpace -> View.INVISIBLE
-            else -> View.GONE
-        }
-    }
-
-    private fun bindNavigationAccessory(
-        holder: RowViewHolder,
-        item: SettingItem.Navigation
-    ) {
-        val hasAction = item.onClick != null
-        holder.chevronImg.animate().cancel()
-        holder.chevronImg.alpha = 1f
-        holder.chevronImg.visibility = if (hasAction) View.VISIBLE else View.GONE
-    }
-
-    private fun resetNavigationAccessory(holder: RowViewHolder, showChevron: Boolean) {
-        holder.chevronImg.animate().cancel()
-        holder.chevronImg.alpha = 1f
-        holder.chevronImg.visibility = if (showChevron) View.VISIBLE else View.GONE
-    }
-
-    private fun bindSection(
-        holder: SectionViewHolder,
-        item: SettingItem.Section,
-    ) {
-        val palette = SettingsThemePaletteResolver.resolve(context, prefs)
-        holder.iconImg.setImageResource(item.iconRes)
-        holder.iconImg.imageTintList = ColorStateList.valueOf(palette.accent)
-        holder.titleText.text = item.title
-        holder.summaryText.text = item.summary
-        holder.titleText.setTextColor(palette.onSurface)
-        holder.summaryText.setTextColor(palette.onSurfaceVariant)
-        holder.chevron.imageTintList = ColorStateList.valueOf(palette.onSurfaceVariant)
-        holder.chevron.setImageResource(item.endIconRes ?: R.drawable.ic_chevron_right)
-        holder.itemView.contentDescription = item.accessibilityDescription
-        ViewCompat.setStateDescription(holder.itemView, null)
-        ViewCompat.setAccessibilityDelegate(holder.itemView, object : androidx.core.view.AccessibilityDelegateCompat() {
+    private fun bindSectionInteraction(view: View, item: SettingItem.Section) {
+        view.contentDescription = item.accessibilityDescription
+        ViewCompat.setStateDescription(view, null)
+        ViewCompat.setAccessibilityDelegate(view, object : androidx.core.view.AccessibilityDelegateCompat() {
             override fun onInitializeAccessibilityNodeInfo(
                 host: View,
                 info: androidx.core.view.accessibility.AccessibilityNodeInfoCompat
@@ -603,15 +310,15 @@ class CustomSettingsAdapter(
                 info.className = android.widget.Button::class.java.name
             }
         })
-        holder.itemView.setOnTouchListener { view, event ->
+        view.setOnTouchListener { target, event ->
             when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> view.animate()
+                MotionEvent.ACTION_DOWN -> target.animate()
                     .scaleX(SettingsTransitionSpec.PRESSED_SCALE)
                     .scaleY(SettingsTransitionSpec.PRESSED_SCALE)
                     .setDuration(SettingsTransitionSpec.PRESS_DURATION)
                     .setInterpolator(SettingsTransitionSpec.PRINCIPAL_INTERPOLATOR)
                     .start()
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> view.animate()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> target.animate()
                     .scaleX(1f)
                     .scaleY(1f)
                     .setDuration(SettingsTransitionSpec.PRESS_DURATION)
@@ -620,13 +327,42 @@ class CustomSettingsAdapter(
             }
             false
         }
-        holder.itemView.setOnClickListener {
-            item.onClick(SettingsTransitionSource(item.sectionId, holder.itemView))
+        view.setOnClickListener {
+            val current = items.firstOrNull { it.stableKey == item.stableKey } as? SettingItem.Section
+            current?.onClick?.invoke(SettingsTransitionSource(current.sectionId, view))
         }
-        holder.itemView.isClickable = true
-        holder.itemView.isFocusable = true
-        holder.chevron.animate().setListener(null).cancel()
-        holder.chevron.rotation = 0f
+        view.isClickable = true
+        view.isFocusable = true
+    }
+
+    private data class BoundComposeState(
+        val item: SettingItem,
+        val colors: UHabitComposeColors
+    )
+
+    private class ComposeHolder(
+        composeView: ComposeView,
+        content: @Composable (BoundComposeState) -> Unit
+    ) : RecyclerView.ViewHolder(composeView) {
+        private var boundState by mutableStateOf<BoundComposeState?>(null)
+
+        init {
+            composeView.layoutParams = RecyclerView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            composeView.setViewCompositionStrategy(
+                ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed
+            )
+            composeView.setContent {
+                val state = boundState ?: return@setContent
+                content(state)
+            }
+        }
+
+        fun bind(item: SettingItem, colors: UHabitComposeColors) {
+            boundState = BoundComposeState(item, colors)
+        }
     }
 
     override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
@@ -638,15 +374,6 @@ class CustomSettingsAdapter(
         super.onViewRecycled(holder)
     }
 
-    private fun bindRowIcon(holder: RowViewHolder, iconRes: Int, visible: Boolean) {
-        holder.iconImg.visibility = if (visible) View.VISIBLE else View.GONE
-        if (visible) holder.iconImg.setImageResource(iconRes)
-        (holder.divider.layoutParams as? ViewGroup.MarginLayoutParams)?.let { params ->
-            params.marginStart = dp(if (visible) 52f else 18f).toInt()
-            holder.divider.layoutParams = params
-        }
-    }
-
     private fun stableIdFor(key: String): Long {
         var hash = -3750763034362895579L
         key.forEach { char ->
@@ -656,7 +383,35 @@ class CustomSettingsAdapter(
         return hash
     }
 
-    private fun contentSame(oldItem: SettingItem, newItem: SettingItem): Boolean {
+    private fun currentPaletteSignature(): String {
+        val palette = SettingsThemePaletteResolver.resolve(context, prefs)
+        val accent = AccentColorManager.getAccentColor(context, prefs)
+        return "$accent:${palette.isDark}:${palette.isPureBlack}:${palette.isClassicSectionLayout}:${palette.habitsCardCornerRadius}:${palette.showHabitCardBorders}"
+    }
+
+    override fun getItemCount(): Int = items.size
+}
+
+internal fun composeSettingsItem(item: SettingItem, currentItems: () -> List<SettingItem>): SettingItem =
+    when (item) {
+        is SettingItem.Navigation -> item.copy(onClick = item.onClick?.let {
+            {
+                val current = currentItems().firstOrNull { it.stableKey == item.stableKey } as? SettingItem.Navigation
+                if (current != null && current.presentation.enabled && !current.isBusy) current.onClick?.invoke()
+                Unit
+            }
+        })
+        is SettingItem.Switch -> item.copy(onCheckedChange = { value ->
+            val current = currentItems().firstOrNull { it.stableKey == item.stableKey } as? SettingItem.Switch
+            if (current?.presentation?.enabled == true) current.onCheckedChange(value)
+        })
+        else -> item
+    }
+
+internal object SettingsItemDiff {
+    enum class ChangePayload { NAVIGATION_BUSY, STATUS_PROGRESS }
+
+    fun contentSame(oldItem: SettingItem, newItem: SettingItem): Boolean {
         if (oldItem::class != newItem::class) return false
         return when {
             oldItem is SettingItem.Section && newItem is SettingItem.Section ->
@@ -665,9 +420,10 @@ class CustomSettingsAdapter(
                     oldItem.endIconRes == newItem.endIconRes &&
                     oldItem.title == newItem.title &&
                     oldItem.summary == newItem.summary &&
-                    oldItem.accessibilityDescription == newItem.accessibilityDescription
+                    oldItem.accessibilityDescription == newItem.accessibilityDescription &&
+                    oldItem.presentation == newItem.presentation
             oldItem is SettingItem.Subsection && newItem is SettingItem.Subsection ->
-                    oldItem.key == newItem.key && oldItem.title == newItem.title &&
+                oldItem.key == newItem.key && oldItem.title == newItem.title &&
                     oldItem.isDestructive == newItem.isDestructive &&
                     oldItem.presentation == newItem.presentation
             oldItem is SettingItem.Status && newItem is SettingItem.Status ->
@@ -715,7 +471,7 @@ class CustomSettingsAdapter(
         }
     }
 
-    private fun changePayload(oldItem: SettingItem, newItem: SettingItem): ChangePayload? {
+    fun changePayload(oldItem: SettingItem, newItem: SettingItem): ChangePayload? {
         if (oldItem is SettingItem.Navigation && newItem is SettingItem.Navigation) {
             val sameStaticContent = oldItem.key == newItem.key &&
                 oldItem.iconRes == newItem.iconRes &&
@@ -744,101 +500,4 @@ class CustomSettingsAdapter(
         }
         return null
     }
-
-    private fun dp(value: Float): Float {
-        return value * context.resources.displayMetrics.density
-    }
-
-    private fun currentPaletteSignature(): String {
-        val palette = SettingsThemePaletteResolver.resolve(context, prefs)
-        val accent = AccentColorManager.getAccentColor(context, prefs)
-        return "$accent:${palette.isDark}:${palette.isPureBlack}"
-    }
-
-    private fun bindSummary(
-        holder: RowViewHolder,
-        summary: String
-    ) {
-        holder.summaryText.text = summary
-        holder.summaryText.visibility = View.VISIBLE
-        holder.summaryText.maxLines = 2
-        holder.summaryText.ellipsize = TextUtils.TruncateAt.END
-
-        if (shouldAllowSummaryPreview(summary)) {
-            val showPreview = View.OnLongClickListener {
-                CustomDialogs.showInfoDialog(
-                    context = holder.itemView.context,
-                    title = holder.titleText.text,
-                    message = summary
-                )
-                true
-            }
-            holder.itemView.setOnLongClickListener(showPreview)
-            holder.summaryText.setOnLongClickListener(showPreview)
-        }
-    }
-
-    private fun bindRowClick(
-        holder: RowViewHolder,
-        enabled: Boolean,
-        action: () -> Unit
-    ) {
-        if (!enabled) return
-        holder.itemView.setOnClickListener { action() }
-        holder.itemView.isClickable = true
-        holder.itemView.isFocusable = true
-        if (holder.summaryText.visibility == View.VISIBLE) {
-            holder.summaryText.setOnClickListener { holder.itemView.performClick() }
-            holder.summaryText.isClickable = true
-        }
-    }
-
-    private fun shouldAllowSummaryPreview(summary: String?): Boolean {
-        if (summary.isNullOrBlank()) return false
-        return summary.length > 72 || summary.contains('\n')
-    }
-
-    override fun getItemCount(): Int = items.size
-
-    class SectionViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-        val iconImg: ImageView = view.findViewById(R.id.sectionIcon)
-        val titleText: TextView = view.findViewById(R.id.sectionTitle)
-        val summaryText: TextView = view.findViewById(R.id.sectionSummary)
-        val chevron: ImageView = view.findViewById(R.id.sectionChevron)
-    }
-
-    class SubsectionViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-        val titleText: TextView = view.findViewById(R.id.subsectionTitle)
-        val divider: View = view.findViewById(R.id.rowDivider)
-    }
-
-    class StatusViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-        val iconImg: ImageView = view.findViewById(R.id.statusIcon)
-        val titleText: TextView = view.findViewById(R.id.statusTitle)
-        val summaryText: TextView = view.findViewById(R.id.statusSummary)
-        val progress: ProgressBar = view.findViewById(R.id.statusProgress)
-        val divider: View = view.findViewById(R.id.rowDivider)
-    }
-
-    class SegmentedViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-        val iconImg: ImageView = view.findViewById(R.id.rowIcon)
-        val titleText: TextView = view.findViewById(R.id.rowTitle)
-        val btnSystem: TextView = view.findViewById(R.id.segmentSystem)
-        val btnLight: TextView = view.findViewById(R.id.segmentLight)
-        val btnDark: TextView = view.findViewById(R.id.segmentDark)
-        val btnAmoled: TextView = view.findViewById(R.id.segmentAmoled)
-        val divider: View = view.findViewById(R.id.rowDivider)
-    }
-
-    class RowViewHolder(view: View) : RecyclerView.ViewHolder(view) {
-        val iconImg: ImageView = view.findViewById(R.id.rowIcon)
-        val titleText: TextView = view.findViewById(R.id.rowTitle)
-        val summaryText: TextView = view.findViewById(R.id.rowSummary)
-        val chevronImg: ImageView = view.findViewById(R.id.accessoryChevron)
-        val switchComp: SettingsSwitchView = view.findViewById(R.id.accessorySwitch)
-        val valueText: TextView = view.findViewById(R.id.accessoryValue)
-        val colorSwatch: View = view.findViewById(R.id.accessoryColorSwatch)
-        val divider: View = view.findViewById(R.id.rowDivider)
-    }
-
 }

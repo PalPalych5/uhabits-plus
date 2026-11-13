@@ -3,9 +3,6 @@ package org.isoron.uhabits.activities.settings
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
-import android.util.TypedValue
-import android.widget.TextView
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
 import org.isoron.uhabits.R
@@ -146,28 +143,5 @@ object AccentColorManager {
 
         switchView.thumbTintList = thumbStateList
         switchView.trackTintList = trackStateList
-    }
-
-    fun tintSegment(segmentView: TextView, isSelected: Boolean, context: Context, prefs: Preferences) {
-        val themeSwitcher = AndroidThemeSwitcher(context, prefs)
-        val isDark = themeSwitcher.isNightMode
-        if (isSelected) {
-            val accentColor = getAccentColor(context, prefs)
-            val drawable = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_DIP,
-                    6f,
-                    context.resources.displayMetrics
-                )
-                setColor(accentColor)
-            }
-            segmentView.background = drawable
-            segmentView.setTextColor(ColorPickerUtils.onColor(accentColor))
-        } else {
-            segmentView.background = null
-            val normalColor = ContextCompat.getColor(context, if (isDark) R.color.grey_400 else R.color.grey_600)
-            segmentView.setTextColor(normalColor)
-        }
     }
 }

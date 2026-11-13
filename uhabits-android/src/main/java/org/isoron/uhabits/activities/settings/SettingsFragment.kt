@@ -218,7 +218,7 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             insets
         }
 
-        adapter = CustomSettingsAdapter(requireContext(), prefs, emptyList(), detailSectionId() == SettingsSectionId.POMODORO)
+        adapter = CustomSettingsAdapter(requireContext(), prefs, emptyList())
         recyclerView.adapter = adapter
     }
 
@@ -675,15 +675,15 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             navigation("bugReport", R.drawable.ic_settings_bug, getString(R.string.generate_bug_report), getString(R.string.generate_bug_report_summary), showIcon = true) { actionHandler().onSettingsAction(SettingsAction.BUG_REPORT) },
         )
         if (currentSession.mode != DatasetMode.PRODUCTION_NEXT) {
-            items.add(subsection("developer_experimental", "Экспериментальные функции"))
+            items.add(subsection("developer_experimental", getString(R.string.settings_dev_experimental)))
             items.add(navigation(
                 "pref_container_experiment",
                 R.drawable.ic_settings_terminal,
-                "Эксперимент: UHabit Next (Разделы)",
+                getString(R.string.settings_dev_container_experiment),
                 if (isExp)
-                    "Активен изолированный эксперимент. Нажмите для возврата в продуктовый режим."
+                    getString(R.string.settings_dev_container_experiment_active)
                 else
-                    "Создать изолированную копию данных и протестировать режим разделов.",
+                    getString(R.string.settings_dev_container_experiment_inactive),
                 showIcon = true
             ) { showContainerExperimentDialog() })
         }
@@ -693,8 +693,8 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 navigation(
                     "pref_production_cutover_dev",
                     R.drawable.ic_settings_git_merge,
-                    "Переход на UHabit Next (v30)",
-                    "Защищённое обновление продуктовой базы данных",
+                    getString(R.string.settings_dev_cutover),
+                    getString(R.string.settings_dev_cutover_summary),
                     showIcon = true
                 ) { showProductionCutoverDialog() }
             )
@@ -716,8 +716,8 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 navigation(
                     "pref_container_ui_experiments",
                     R.drawable.ic_settings_terminal,
-                    "Эксперименты с интерфейсом контейнеров",
-                    "Открыть ContainersActivity / Living Context для отладки",
+                    getString(R.string.settings_dev_container_ui),
+                    getString(R.string.settings_dev_container_ui_summary),
                     showIcon = true
                 ) {
                     val intent = Intent(requireContext(), org.isoron.uhabits.activities.containers.ContainersActivity::class.java)
