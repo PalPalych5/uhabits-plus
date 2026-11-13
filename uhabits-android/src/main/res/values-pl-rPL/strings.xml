@@ -18,8 +18,8 @@
   ~ with this program. If not, see <http://www.gnu.org/licenses/>.
   -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">Śledzenie Nawyków Loop</string>
-    <string name="main_activity_title">Nawyki</string>
+    <string name="app_name">UHabit Next</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="action_settings">Ustawienia</string>
     <string name="edit">Edytuj</string>
     <string name="delete">Usuń</string>
@@ -68,7 +68,7 @@
     <string name="check">Zaznacz</string>
     <string name="snooze">Później</string>
     <string name="intro_title_1">Witaj</string>
-    <string name="intro_description_1">Śledzenie nawyków Loop pozwala Ci na utworzenie i prowadzenie dobrych nawyków.</string>
+    <string name="intro_description_1">UHabit Next pozwala Ci na utworzenie i prowadzenie dobrych nawyków.</string>
     <string name="intro_title_2">Utwórz nowe nawyki</string>
     <string name="intro_description_2">Codziennie, po wykonaniu swojego nawyku, postaw znaczek w aplikacji.</string>
     <string name="intro_title_4">Śledź swój postęp</string>

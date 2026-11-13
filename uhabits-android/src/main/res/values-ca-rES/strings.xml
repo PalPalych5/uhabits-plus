@@ -18,8 +18,8 @@
   ~ with this program. If not, see <http://www.gnu.org/licenses/>.
   -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">Loop - Hàbit Rastrejador</string>
-    <string name="main_activity_title">Hàbits</string>
+    <string name="app_name">UHabit Next</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="action_settings">Configuració</string>
     <string name="edit">Editar</string>
     <string name="delete">Esborrar</string>
@@ -52,7 +52,7 @@
     <string name="check">Revisar</string>
     <string name="snooze">Més tard</string>
     <string name="intro_title_1">Benvingut</string>
-    <string name="intro_description_1">Loop Habit Tracker t\'ajuda a crear i mantenir bons hàbits</string>
+    <string name="intro_description_1">UHabit Next t\'ajuda a crear i mantenir bons hàbits</string>
     <string name="intro_title_2">Crear alguns hàbits nous</string>
     <string name="intro_description_2">Cada dia, després de complir el teu hàbit, posa una marca amb l\'aplicació.</string>
     <string name="intro_title_4">Segueix el teu progrès</string>

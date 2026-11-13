@@ -54,7 +54,6 @@ object SettingsIconRegistry {
         "syncNow" to R.drawable.ic_settings_sync,
         "syncReview" to R.drawable.ic_settings_git_merge,
         "help" to R.drawable.ic_settings_lifebuoy,
-        "rateApp" to R.drawable.ic_settings_rate,
         "about" to R.drawable.ic_settings_info,
         "pref_developer" to R.drawable.ic_settings_terminal,
         "pref_sync_base_url" to R.drawable.ic_settings_link,

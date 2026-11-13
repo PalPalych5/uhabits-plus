@@ -40,18 +40,11 @@ class LinksTest : BaseUserInterfaceTest() {
     @Throws(Exception::class)
     fun shouldLinkToSourceCode() {
         launchApp()
-        clickMenu(ABOUT)
-        clickText("View source code at GitHub")
+        clickMenu(SETTINGS)
+        clickText("Help & app")
+        clickText("About")
+        clickText("Source code")
         verifyOpensWebsite("github.com")
-    }
-
-    @Test
-    @Throws(Exception::class)
-    fun shouldLinkToTranslationWebsite() {
-        launchApp()
-        clickMenu(ABOUT)
-        clickText("Help translate this app")
-        verifyOpensWebsite("translate.loophabits.org")
     }
 
     @Test
@@ -59,15 +52,6 @@ class LinksTest : BaseUserInterfaceTest() {
     fun shouldLinkToHelp() {
         launchApp()
         clickMenu(HELP)
-        verifyOpensWebsite("github.com")
-    }
-
-    @Test
-    @Throws(Exception::class)
-    fun shouldLinkToHelpFromSettings() {
-        launchApp()
-        clickMenu(SETTINGS)
-        clickText("Help & FAQ")
         verifyOpensWebsite("github.com")
     }
 }

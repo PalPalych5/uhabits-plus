@@ -18,8 +18,8 @@
   ~ with this program. If not, see <http://www.gnu.org/licenses/>.
   -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">Loop Analizador de Hábitos</string>
-    <string name="main_activity_title">Hábitos</string>
+    <string name="app_name">UHabit Next</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="action_settings">Configuración</string>
     <string name="edit">Editar</string>
     <string name="delete">Eliminar</string>
@@ -60,7 +60,7 @@
     <string name="check">Marcar</string>
     <string name="snooze">Aplazar</string>
     <string name="intro_title_1">Bienvenido</string>
-    <string name="intro_description_1">Loop Analizador de Hábitos te ayuda a crear y mantener buenos hábitos.</string>
+    <string name="intro_description_1">UHabit Next te ayuda a crear y mantener buenos hábitos.</string>
     <string name="intro_title_2">Crea algunos hábitos nuevos</string>
     <string name="intro_description_2">Cada día, después de realizar tu hábito, pon una marca en la aplicación.</string>
     <string name="intro_title_4">Haz un seguimiento de tu progreso</string>

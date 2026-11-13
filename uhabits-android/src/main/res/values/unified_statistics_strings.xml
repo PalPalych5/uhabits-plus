@@ -120,7 +120,7 @@
     <string name="unified_statistics_tasks_due_disclaimer">Editing due date changes cohort composition</string>
     <string name="unified_statistics_why_no_ontime_button">Why is there no \"On-time\" metric?</string>
     <string name="unified_statistics_why_no_ontime_title">Why is there no \"On-time\" indicator?</string>
-    <string name="unified_statistics_why_no_ontime_body">Loop Habit Tracker stores only the task\'s current due date, not a historical snapshot of due date at completion time. Changing a deadline or reopening a task retroactively updates past cohorts. Therefore, rather than showing a misleading pseudo-on-time percentage, the app provides exact completion counts and current overdue state.</string>
+    <string name="unified_statistics_why_no_ontime_body">UHabit Next stores only the task\'s current due date, not a historical snapshot of due date at completion time. Changing a deadline or reopening a task retroactively updates past cohorts. Therefore, rather than showing a misleading pseudo-on-time percentage, the app provides exact completion counts and current overdue state.</string>
     <string name="unified_statistics_focus_calendar_mode">View on calendar</string>
     <string name="unified_statistics_focus_show_all_sections">All sections (%1$d)</string>
     <string name="unified_statistics_focus_target_unnamed">Unnamed</string>

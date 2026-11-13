@@ -18,8 +18,8 @@
   ~ with this program. If not, see <http://www.gnu.org/licenses/>.
   -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">Loop Habit Tracker</string>
-    <string name="main_activity_title">عادات</string>
+    <string name="app_name">UHabit Next</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="action_settings">إعدادات</string>
     <string name="edit">تعديل</string>
     <string name="delete">حذف</string>
@@ -76,7 +76,7 @@
     <string name="check">سجل</string>
     <string name="snooze">لاحقاً</string>
     <string name="intro_title_1">أهلا بك</string>
-    <string name="intro_description_1">يساعدك متتبع العادات loop في بَدْء عادات جيدة والحفاظ عليها.   </string>
+    <string name="intro_description_1">يساعدك UHabit Next في بَدْء عادات جيدة والحفاظ عليها.</string>
     <string name="intro_title_2">إنشاء بعض عادات جديدة</string>
     <string name="intro_description_2">كل يوم، بعد أداء عادتك، ضع علامة عليها في التطبيق.</string>
     <string name="intro_title_4">تتبع تقدمك</string>

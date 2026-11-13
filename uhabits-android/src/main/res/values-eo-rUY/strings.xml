@@ -18,8 +18,8 @@
   ~ with this program. If not, see <http://www.gnu.org/licenses/>.
   -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">Loop Habit Tracker</string>
-    <string name="main_activity_title">Kutimoj</string>
+    <string name="app_name">UHabit Next</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="action_settings">Agordoj</string>
     <string name="edit">Redakti</string>
     <string name="delete">Forigi</string>
@@ -43,7 +43,7 @@
     <string name="check">Kontrolu</string>
     <string name="snooze">Poste</string>
     <string name="intro_title_1">Bonvenon</string>
-    <string name="intro_description_1">Loop Habit Tracker helpas vin krei kaj konservi bonajn kutimojn.</string>
+    <string name="intro_description_1">UHabit Next helpas vin krei kaj konservi bonajn kutimojn.</string>
     <string name="intro_title_2">Krei kelkajn novajn kutimojn</string>
     <string name="intro_description_2">Ĉiutage, post plenumi vian kutimon, metu markostampon en la app.</string>
     <string name="intro_title_4">Por atenti vian progreson:</string>

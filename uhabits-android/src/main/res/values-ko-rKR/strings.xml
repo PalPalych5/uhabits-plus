@@ -18,8 +18,8 @@
   ~ with this program. If not, see <http://www.gnu.org/licenses/>.
   -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">Loop 습관제조기</string>
-    <string name="main_activity_title">습관</string>
+    <string name="app_name">UHabit Next</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="action_settings">설정</string>
     <string name="edit">수정</string>
     <string name="delete">삭제</string>
@@ -56,7 +56,7 @@
     <string name="check">완료</string>
     <string name="snooze">나중에</string>
     <string name="intro_title_1">환영합니다</string>
-    <string name="intro_description_1">Loop은 당신이 좋은 습관을 만들고 유지하도록 도와줍니다.</string>
+    <string name="intro_description_1">UHabit Next는 당신이 좋은 습관을 만들고 유지하도록 도와줍니다.</string>
     <string name="intro_title_2">새로운 습관을 만들어 보세요.</string>
     <string name="intro_description_2">매일 습관을 수행하고 앱에 기록하세요.</string>
     <string name="intro_title_4">습관을 관리하세요</string>

@@ -332,11 +332,6 @@
                 app:iconSpaceReserved="false" />
 
         <Preference
-                android:key="rateApp"
-                android:title="@string/pref_rate_this_app"
-                app:iconSpaceReserved="false" />
-
-        <Preference
                 android:key="about"
                 android:title="@string/about"
                 app:iconSpaceReserved="false" />

@@ -734,9 +734,6 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             navigation("help", R.drawable.ic_settings_lifebuoy, getString(R.string.help), showIcon = true) {
                 startActivity(Intent(requireContext(), StatisticsHelpActivity::class.java))
             },
-            navigation("rateApp", R.drawable.ic_settings_rate, getString(R.string.pref_rate_this_app), showIcon = true) {
-                activity?.startActivitySafely(Intent(Intent.ACTION_VIEW, Uri.parse(getString(R.string.playStoreURL))))
-            },
             navigation("about", R.drawable.ic_settings_info, getString(R.string.about), getString(R.string.version_n, BuildConfig.VERSION_NAME), showIcon = true) {
                 startActivity(intentFactory.startAboutActivity(requireContext()))
             }

@@ -18,8 +18,8 @@
   ~ with this program. If not, see <http://www.gnu.org/licenses/>.
   -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">Loop Habit Tracker</string>
-    <string name="main_activity_title">Zvyky</string>
+    <string name="app_name">UHabit Next</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="action_settings">Nastavení</string>
     <string name="edit">Upravit</string>
     <string name="delete">Smazat</string>
@@ -68,7 +68,7 @@
     <string name="check">Hotovo</string>
     <string name="snooze">Odložit</string>
     <string name="intro_title_1">Vítejte</string>
-    <string name="intro_description_1">Loop Habit Tracker vám pomůže vytvořit a udržet dobré návyky.</string>
+    <string name="intro_description_1">UHabit Next vám pomůže vytvořit a udržet dobré návyky.</string>
     <string name="intro_title_2">Vytvoř si nové zvyky</string>
     <string name="intro_description_2">Každý den po splnění zvyku si ho v aplikaci zaškrtněte.</string>
     <string name="intro_title_4">Sleduj svůj postup</string>

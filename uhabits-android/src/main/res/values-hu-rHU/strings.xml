@@ -18,8 +18,8 @@
   ~ with this program. If not, see <http://www.gnu.org/licenses/>.
   -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">Loop Szokásrögzítő</string>
-    <string name="main_activity_title">Szokások</string>
+    <string name="app_name">UHabit Next</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="action_settings">Beállítások</string>
     <string name="edit">Szerkesztés</string>
     <string name="delete">Törlés</string>
@@ -60,7 +60,7 @@
     <string name="check">Kipipálva</string>
     <string name="snooze">Később</string>
     <string name="intro_title_1">Üdv!</string>
-    <string name="intro_description_1">A Loop Habit Tracker segít a jó szokások kialakításában és azok fenntartásában</string>
+    <string name="intro_description_1">A UHabit Next segít a jó szokások kialakításában és azok fenntartásában</string>
     <string name="intro_title_2">Hozz létre néhány új szokást</string>
     <string name="intro_description_2">Minden nap jelöld pipával az alkalmazásban, ahogy elvégeztél egy jó szokást.</string>
     <string name="intro_title_4">Kövesd a fejlődésed</string>

@@ -120,7 +120,7 @@
     <string name="unified_statistics_tasks_due_disclaimer">Редактирование срока меняет состав выборки</string>
     <string name="unified_statistics_why_no_ontime_button">Почему нет показателя «В срок»</string>
     <string name="unified_statistics_why_no_ontime_title">Почему нет показателя «В срок»</string>
-    <string name="unified_statistics_why_no_ontime_body">Loop Habit Tracker хранит только текущий срок задачи, а не снимок срока на момент завершения. Перенос срока или повторное открытие задачи меняет состав прошлых когорт. Поэтому вместо недостоверного показателя «выполнено в срок» приложение показывает точное число завершений и текущее состояние просрочки.</string>
+    <string name="unified_statistics_why_no_ontime_body">UHabit Next хранит только текущий срок задачи, а не снимок срока на момент завершения. Перенос срока или повторное открытие задачи меняет состав прошлых когорт. Поэтому вместо недостоверного показателя «выполнено в срок» приложение показывает точное число завершений и текущее состояние просрочки.</string>
     <string name="unified_statistics_focus_calendar_mode">Посмотреть на календаре</string>
     <string name="unified_statistics_focus_show_all_sections">Все разделы (%1$d)</string>
     <string name="unified_statistics_focus_target_unnamed">Без названия</string>

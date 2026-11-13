@@ -18,8 +18,8 @@
   ~ with this program. If not, see <http://www.gnu.org/licenses/>.
   -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">Loop - आदत पर नजर</string>
-    <string name="main_activity_title">आदतें</string>
+    <string name="app_name">UHabit Next</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="action_settings">सेटिंग्स</string>
     <string name="edit">संपादित करें</string>
     <string name="delete">हटाएँ</string>
@@ -60,7 +60,7 @@
     <string name="check">जाञ्च करें</string>
     <string name="snooze">बाद में</string>
     <string name="intro_title_1">स्वागत है</string>
-    <string name="intro_description_1">लूप हैबिट ट्रैकर नई और अच्छी आदतों को बनाए रखने मे मदद करता है ।</string>
+    <string name="intro_description_1">UHabit Next नई और अच्छी आदतों को बनाए रखने मे मदद करता है ।</string>
     <string name="intro_title_2">कुछ नई अच्छी आदतें बनाएँ</string>
     <string name="intro_description_2">हर दिन, अपनी आदत के प्रदर्शन के बाद, ऐप पर एक सही का निशान डालें</string>
     <string name="intro_title_4">\"

@@ -18,8 +18,8 @@
   ~ with this program. If not, see <http://www.gnu.org/licenses/>.
   -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">Loop — ჩვევების ტრეკერი</string>
-    <string name="main_activity_title">ჩვევები</string>
+    <string name="app_name">UHabit Next</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="action_settings">პარამეტრები</string>
     <string name="edit">რედაქტირება</string>
     <string name="delete">წაშლა</string>
@@ -60,7 +60,7 @@
     <string name="check">ჩანიშვნა</string>
     <string name="snooze">მოგვიანებით</string>
     <string name="intro_title_1">მოგესალმები</string>
-    <string name="intro_description_1">Loop — ჩვევების ტრეკერი: ხელშემწყობი კარგი ჩვევების გამომუშავებასა და შენარჩუნებისათვის.</string>
+    <string name="intro_description_1">UHabit Next: ხელშემწყობი კარგი ჩვევების გამომუშავებასა და შენარჩუნებისათვის.</string>
     <string name="intro_title_2">გამოიმუშავე ახალი ჩვევები</string>
     <string name="intro_description_2">ყოველდღიურად, როგორც კი ჩვევას შეასრულებ, ეს აპლიკაციაში ჩაინიშნე.</string>
     <string name="intro_title_4">თვალი ადევნე შენს პროგრესს</string>
@@ -104,7 +104,7 @@
     <string name="clear_label">წაშლა</string>
     <string name="select_hours">საათების მონიშვნა</string>
     <string name="select_minutes">წუთების მონიშვნა</string>
-    <string name="about">Loop-ის შესახებ</string>
+    <string name="about">UHabit Next-ის შესახებ</string>
     <string name="translators">მთარგმნელები</string>
     <string name="developers">დეველოპერები</string>
     <string name="version_n">ვერსია: %s</string>

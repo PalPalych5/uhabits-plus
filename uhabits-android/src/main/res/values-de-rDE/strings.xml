@@ -18,8 +18,8 @@
   ~ with this program. If not, see <http://www.gnu.org/licenses/>.
   -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">Loop - Gewohnheiten Tracking</string>
-    <string name="main_activity_title">Gewohnheiten</string>
+    <string name="app_name">UHabit Next</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="action_settings">Einstellungen</string>
     <string name="edit">Bearbeiten</string>
     <string name="delete">Löschen</string>
@@ -60,7 +60,7 @@
     <string name="check">Abhaken</string>
     <string name="snooze">Später</string>
     <string name="intro_title_1">Willkommen</string>
-    <string name="intro_description_1">Loop Habit Tracker hilft dir dabei, gute Gewohnheiten zu entwickeln.</string>
+    <string name="intro_description_1">UHabit Next hilft dir dabei, gute Gewohnheiten zu entwickeln.</string>
     <string name="intro_title_2">Erstelle neue Gewohnheiten</string>
     <string name="intro_description_2">Hake die Gewohnheit jeden Tag in der App ab, nachdem du sie erledigt hast.</string>
     <string name="intro_title_4">Verfolge deinen Fortschritt</string>
@@ -104,7 +104,7 @@
     <string name="clear_label">Löschen</string>
     <string name="select_hours">Stunden auswählen</string>
     <string name="select_minutes">Minuten auswählen</string>
-    <string name="about">Über Loop</string>
+    <string name="about">Über UHabit Next</string>
     <string name="translators">Übersetzer</string>
     <string name="developers">Entwickler</string>
     <string name="version_n">Version %s</string>

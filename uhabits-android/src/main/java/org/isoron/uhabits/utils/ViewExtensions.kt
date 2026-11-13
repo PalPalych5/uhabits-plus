@@ -144,22 +144,17 @@ fun Activity.startActivitySafely(intent: Intent) {
     }
 }
 
-fun Activity.showSendEmailScreen(
-    @StringRes toId: Int,
+fun Activity.showShareTextScreen(
     @StringRes subjectId: Int,
     content: String?
 ) {
-    val to = this.getString(toId)
     val subject = this.getString(subjectId)
-    this.startActivity(
-        Intent().apply {
-            action = Intent.ACTION_SEND
-            type = "message/rfc822"
-            putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
-            putExtra(Intent.EXTRA_SUBJECT, subject)
-            putExtra(Intent.EXTRA_TEXT, content)
-        }
-    )
+    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, subject)
+        putExtra(Intent.EXTRA_TEXT, content)
+    }
+    this.startActivitySafely(Intent.createChooser(shareIntent, subject))
 }
 
 fun Activity.restartWithFade(cls: Class<*>?) {

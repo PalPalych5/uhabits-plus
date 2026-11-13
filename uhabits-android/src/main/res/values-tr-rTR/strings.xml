@@ -18,8 +18,8 @@
   ~ with this program. If not, see <http://www.gnu.org/licenses/>.
   -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">Loop - Alışkanlık Takip Uygulaması</string>
-    <string name="main_activity_title">Alışkanlıklar</string>
+    <string name="app_name">UHabit Next</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="action_settings">Ayarlar</string>
     <string name="edit">Düzenle</string>
     <string name="delete">Sil</string>
@@ -60,7 +60,7 @@
     <string name="check">İşaretle</string>
     <string name="snooze">Sonra</string>
     <string name="intro_title_1">Hoşgeldin</string>
-    <string name="intro_description_1">Loop Alışkanlık Takibi, iyi alışkanlıklar edinmene ve sürdürmene yardımcı olur.</string>
+    <string name="intro_description_1">UHabit Next, iyi alışkanlıklar edinmene ve sürdürmene yardımcı olur.</string>
     <string name="intro_title_2">Yeni alışkanlıklar oluştur</string>
     <string name="intro_description_2">Alışkanlığın gerçekleştiği günleri işaretle.</string>
     <string name="intro_title_4">Gelişimini takip et</string>

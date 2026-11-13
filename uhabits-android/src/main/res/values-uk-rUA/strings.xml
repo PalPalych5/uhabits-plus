@@ -18,8 +18,8 @@
   ~ with this program. If not, see <http://www.gnu.org/licenses/>.
   -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">Трекер звичок Loop</string>
-    <string name="main_activity_title">Звички</string>
+    <string name="app_name">UHabit Next</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="action_settings">Налаштування</string>
     <string name="edit">Змінити</string>
     <string name="delete">Вилучити</string>
@@ -68,7 +68,7 @@
     <string name="check">Відзначити</string>
     <string name="snooze">Відкласти</string>
     <string name="intro_title_1">Вітаємо</string>
-    <string name="intro_description_1">Трекер звичок Loop допомагає Вам розвивати і підтримувати корисні звички.</string>
+    <string name="intro_description_1">UHabit Next допомагає Вам розвивати і підтримувати корисні звички.</string>
     <string name="intro_title_2">Додайте нові звички</string>
     <string name="intro_description_2">Щодня, після виконання Вашої звички, ставте пташку в програмі.</string>
     <string name="intro_title_4">Відстежуйте свій поступ</string>

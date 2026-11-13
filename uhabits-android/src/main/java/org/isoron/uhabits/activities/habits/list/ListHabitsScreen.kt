@@ -90,8 +90,8 @@ import org.isoron.uhabits.utils.currentTheme
 import org.isoron.uhabits.utils.dismissCurrentAndShow
 import org.isoron.uhabits.utils.restartWithFade
 import org.isoron.uhabits.utils.showMessage
-import org.isoron.uhabits.utils.showSendEmailScreen
 import org.isoron.uhabits.utils.showSendFileScreen
+import org.isoron.uhabits.utils.showShareTextScreen
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -247,9 +247,8 @@ class ListHabitsScreen(
     }
 
     override fun showSendBugReportToDeveloperScreen(log: String) {
-        val to = R.string.bugReportTo
         val subject = R.string.bugReportSubject
-        activity.showSendEmailScreen(to, subject, log)
+        activity.showShareTextScreen(subject, log)
     }
 
     override fun showSendFileScreen(filename: String) {

@@ -22,8 +22,8 @@
     xmlns:tools="http://schemas.android.com/tools"
     tools:ignore="MissingTranslation">
 
-    <string name="app_name" >Loop+</string>
-    <string name="main_activity_title">Loop+</string>
+    <string name="app_name">UHabit Next</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="habits_title">Habits</string>
     <string name="tasks_title">Tasks</string>
     <string name="archive_title">Archive</string>
@@ -75,7 +75,7 @@
     <string name="check">Check</string>
     <string name="snooze">Later</string>
     <string name="intro_title_1">Welcome</string>
-    <string name="intro_description_1">Loop Habit Tracker helps you create and maintain good habits.</string>
+    <string name="intro_description_1">UHabit Next helps you create and maintain good habits.</string>
     <string name="intro_title_2">Create some new habits</string>
     <string name="intro_description_2">Every day, after performing your habit, put a checkmark on the app.</string>
     <string name="intro_title_4">Track your progress</string>

@@ -18,8 +18,8 @@
   ~ with this program. If not, see <http://www.gnu.org/licenses/>.
   -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">Loop - Gewoonte Boekhouer</string>
-    <string name="main_activity_title">Gewoontes</string>
+    <string name="app_name">UHabit Next</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="action_settings">Instellings</string>
     <string name="edit">Redigeer</string>
     <string name="delete">Verwyder</string>

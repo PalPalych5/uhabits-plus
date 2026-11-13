@@ -18,7 +18,7 @@
   ~ with this program. If not, see <http://www.gnu.org/licenses/>.
   -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="main_activity_title">ئادەت</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="action_settings">تەڭشەك</string>
     <string name="edit">تەھرىرلەش</string>
     <string name="delete">ئۆچۈرۈش</string>

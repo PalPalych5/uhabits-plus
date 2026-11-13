@@ -18,8 +18,8 @@
   ~ with this program. If not, see <http://www.gnu.org/licenses/>.
   -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">Loop Habit Tracker</string>
-    <string name="main_activity_title">Rutiinit</string>
+    <string name="app_name">UHabit Next</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="action_settings">Asetukset</string>
     <string name="edit">Muokkaa</string>
     <string name="delete">Poista</string>
@@ -60,7 +60,7 @@
     <string name="check">Merkitse tehdyksi</string>
     <string name="snooze">Lykkää</string>
     <string name="intro_title_1">Tervetuloa</string>
-    <string name="intro_description_1">Loop Habit Tracker auttaa sinua luomaan ja ylläpitämään hyviä rutiineja.</string>
+    <string name="intro_description_1">UHabit Next auttaa sinua luomaan ja ylläpitämään hyviä rutiineja.</string>
     <string name="intro_title_2">Merkitse uusia rutiineja</string>
     <string name="intro_description_2">Joka päivä, suoritettuasi rutiinin, merkitse se sovellukseen.</string>
     <string name="intro_title_4">Seuraa kehitystäsi</string>

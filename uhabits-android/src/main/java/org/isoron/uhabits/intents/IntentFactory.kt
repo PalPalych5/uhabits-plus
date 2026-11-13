@@ -35,22 +35,10 @@ import org.isoron.uhabits.core.models.Habit
 @Inject
 class IntentFactory() {
 
-    fun helpTranslate(context: Context) =
-        buildViewIntent(context.getString(R.string.translateURL))
-
     fun openDocument() = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
         addCategory(Intent.CATEGORY_OPENABLE)
         type = "*/*"
     }
-
-    fun rateApp(context: Context) =
-        buildViewIntent(context.getString(R.string.playStoreURL))
-
-    fun sendFeedback(context: Context) =
-        buildSendToIntent(context.getString(R.string.feedbackURL))
-
-    fun privacyPolicy(context: Context) =
-        buildViewIntent(context.getString(R.string.privacyPolicyURL))
 
     fun startAboutActivity(context: Context) =
         Intent(context, AboutActivity::class.java)
@@ -85,7 +73,7 @@ class IntentFactory() {
         buildViewIntent(context.getString(R.string.helpURL))
 
     fun viewSourceCode(context: Context) =
-        buildViewIntent(context.getString(R.string.sourceCodeURL))
+        viewProjectSourceCode(context)
 
     fun viewProjectSourceCode(context: Context) =
         buildViewIntent(context.getString(R.string.uhabitSourceCodeURL))
@@ -95,11 +83,6 @@ class IntentFactory() {
 
     fun viewUpstreamRepository(context: Context) =
         buildViewIntent(context.getString(R.string.upstreamRepoURL))
-
-    private fun buildSendToIntent(url: String) = Intent().apply {
-        action = Intent.ACTION_SENDTO
-        data = Uri.parse(url)
-    }
 
     private fun buildViewIntent(url: String) = Intent().apply {
         action = Intent.ACTION_VIEW

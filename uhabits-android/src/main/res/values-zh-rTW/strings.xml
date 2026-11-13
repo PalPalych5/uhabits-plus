@@ -18,8 +18,8 @@
   ~ with this program. If not, see <http://www.gnu.org/licenses/>.
   -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
-    <string name="app_name">Loop 習以為常</string>
-    <string name="main_activity_title">習慣</string>
+    <string name="app_name">UHabit Next</string>
+    <string name="main_activity_title">UHabit Next</string>
     <string name="action_settings">偏好設定</string>
     <string name="edit">編輯</string>
     <string name="delete">刪除</string>
@@ -56,7 +56,7 @@
     <string name="check">打勾</string>
     <string name="snooze">稍後</string>
     <string name="intro_title_1">歡迎使用</string>
-    <string name="intro_description_1">「Loop 習以為常」可以幫您記錄並培養好習慣。</string>
+    <string name="intro_description_1">UHabit Next 可以幫您記錄並培養好習慣。</string>
     <string name="intro_title_2">開始來建立一些習慣吧</string>
     <string name="intro_description_2">每天完成你的習慣後，進入 APP 來打個勾吧。</string>
     <string name="intro_title_4">追蹤您的進度</string>
