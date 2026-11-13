@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2025 Álinson Santos Xavier <git@axavier.org>
+ * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
  *
  * This file is part of Loop Habit Tracker.
  *
@@ -16,38 +16,111 @@
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
+
 package org.isoron.uhabits.activities.about
 
+import android.graphics.Color
 import android.os.Bundle
-import android.view.MenuItem
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.core.view.WindowCompat
+import kotlinx.coroutines.launch
+import org.isoron.uhabits.BaseExceptionHandler
+import org.isoron.uhabits.BuildConfig
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
+import org.isoron.uhabits.activities.settings.SettingsThemePaletteResolver
+import org.isoron.uhabits.compose.UHabitComposeColors
 
 /**
- * Activity that allows the user to see information about the app itself.
- * Display current version, link to Google Play and list of contributors.
+ * Activity that displays metadata, project links, upstream attribution, and open-source licenses.
  */
 class AboutActivity : AppCompatActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = application as HabitsApplication
+        val prefs = app.component.preferences
+        AndroidThemeSwitcher(this, prefs).apply()
+        BaseExceptionHandler.install(this)
+
+        val palette = SettingsThemePaletteResolver.resolve(this, prefs)
+        val composeColors = UHabitComposeColors.fromPalette(palette)
+
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+        insetsController.isAppearanceLightStatusBars = !palette.isDark
+        insetsController.isAppearanceLightNavigationBars = !palette.isDark
+
         val screen = AboutScreen(
-            this,
-            app.component.intentFactory,
-            app.component.preferences
+            activity = this,
+            intents = app.component.intentFactory,
+            prefs = prefs,
         )
-        AndroidThemeSwitcher(this, app.component.preferences).apply()
-        setContentView(AboutView(this, screen))
+        val gplLicenseText = readLegalAsset("legal/LICENSE.txt")
+        val fullNoticesText = readLegalAsset("legal/NOTICE.md")
+
+        val composeView = ComposeView(this).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                var destination by rememberSaveable { mutableStateOf(AboutDestination.MAIN) }
+                var isDeveloper by rememberSaveable { mutableStateOf(screen.isDeveloper) }
+                val snackbarHostState = remember { SnackbarHostState() }
+                val coroutineScope = rememberCoroutineScope()
+
+                AboutComposeScreen(
+                    colors = composeColors,
+                    versionName = BuildConfig.VERSION_NAME,
+                    versionCode = BuildConfig.VERSION_CODE,
+                    isDeveloper = isDeveloper,
+                    destination = destination,
+                    gplLicenseText = gplLicenseText,
+                    fullNoticesText = fullNoticesText,
+                    snackbarHostState = snackbarHostState,
+                    onNavigate = { destination = it },
+                    onBack = {
+                        val parent = destination.parent()
+                        if (parent != null) {
+                            destination = parent
+                        } else {
+                            finish()
+                        }
+                    },
+                    onVersionTap = {
+                        when (screen.onPressDeveloperCountdown()) {
+                            DeveloperUnlockOutcome.Activated -> {
+                                isDeveloper = true
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar(screen.developerActivatedMessage())
+                                }
+                            }
+
+                            is DeveloperUnlockOutcome.Countdown,
+                            DeveloperUnlockOutcome.AlreadyEnabled -> Unit
+                        }
+                    },
+                    onOpenSourceCode = { screen.onViewProjectSourceCode() },
+                    onReportIssue = { screen.onReportIssue() },
+                    onOpenUpstreamRepository = { screen.onViewUpstreamRepository() },
+                    onOpenUpstreamContributors = { screen.onViewContributors() },
+                )
+            }
+        }
+        setContentView(composeView)
     }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            android.R.id.home -> {
-                finish()
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
-        }
-    }
+    private fun readLegalAsset(path: String): String =
+        runCatching {
+            assets.open(path).bufferedReader().use { it.readText() }
+        }.getOrDefault("")
 }

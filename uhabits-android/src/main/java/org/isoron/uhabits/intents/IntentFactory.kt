@@ -87,6 +87,15 @@ class IntentFactory() {
     fun viewSourceCode(context: Context) =
         buildViewIntent(context.getString(R.string.sourceCodeURL))
 
+    fun viewProjectSourceCode(context: Context) =
+        buildViewIntent(context.getString(R.string.uhabitSourceCodeURL))
+
+    fun reportIssue(context: Context) =
+        buildViewIntent(context.getString(R.string.uhabitIssuesURL))
+
+    fun viewUpstreamRepository(context: Context) =
+        buildViewIntent(context.getString(R.string.upstreamRepoURL))
+
     private fun buildSendToIntent(url: String) = Intent().apply {
         action = Intent.ACTION_SENDTO
         data = Uri.parse(url)

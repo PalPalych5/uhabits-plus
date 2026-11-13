@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2025 Álinson Santos Xavier <git@axavier.org>
+ * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
  *
  * This file is part of Loop Habit Tracker.
  *
@@ -16,45 +16,47 @@
  * You should have received a copy of the GNU General Public License along
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
+
 package org.isoron.uhabits.activities.about
 
 import org.isoron.uhabits.R
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.intents.IntentFactory
-import org.isoron.uhabits.utils.showMessage
 import org.isoron.uhabits.utils.startActivitySafely
 
 class AboutScreen(
     private val activity: AboutActivity,
     private val intents: IntentFactory,
-    private val prefs: Preferences
+    private val prefs: Preferences,
 ) {
+    private val unlockState = AboutDeveloperUnlockState(
+        initialIsDeveloper = prefs.isDeveloper,
+        persistDeveloperEnabled = { prefs.isDeveloper = true },
+    )
 
-    private var developerCountdown = 5
+    val isDeveloper: Boolean
+        get() = unlockState.isDeveloperEnabled
 
-    fun showRateAppWebsite() =
-        activity.startActivitySafely(intents.rateApp(activity))
+    fun onPressDeveloperCountdown(): DeveloperUnlockOutcome {
+        return unlockState.onVersionTap()
+    }
 
-    fun showSendFeedbackScreen() =
-        activity.startActivitySafely(intents.sendFeedback(activity))
+    fun developerActivatedMessage(): String =
+        activity.resources.getString(R.string.you_are_now_a_developer)
 
-    fun showSourceCodeWebsite() =
-        activity.startActivitySafely(intents.viewSourceCode(activity))
+    fun onViewProjectSourceCode() {
+        activity.startActivitySafely(intents.viewProjectSourceCode(activity))
+    }
 
-    fun showTranslationWebsite() =
-        activity.startActivitySafely(intents.helpTranslate(activity))
+    fun onReportIssue() {
+        activity.startActivitySafely(intents.reportIssue(activity))
+    }
 
-    fun showPrivacyPolicyWebsite() =
-        activity.startActivitySafely(intents.privacyPolicy(activity))
+    fun onViewUpstreamRepository() {
+        activity.startActivitySafely(intents.viewUpstreamRepository(activity))
+    }
 
-    fun showCodeContributorsWebsite() =
+    fun onViewContributors() {
         activity.startActivitySafely(intents.codeContributors(activity))
-
-    fun onPressDeveloperCountdown() {
-        developerCountdown--
-        if (developerCountdown == 0) {
-            prefs.isDeveloper = true
-            activity.showMessage(activity.resources.getString(R.string.you_are_now_a_developer))
-        }
     }
 }

@@ -55,6 +55,13 @@ val prepareAndroidCoreAssets by tasks.registering(Sync::class) {
     into(layout.buildDirectory.dir("generated/coreAssets"))
 }
 
+val prepareLegalAssets by tasks.registering(Sync::class) {
+    into(layout.buildDirectory.dir("generated/legalAssets"))
+    into("legal") {
+        from("../LICENSE.txt", "../NOTICE.md")
+    }
+}
+
 // Narrow, explicitly opt-in smoke APK. Normal androidTest keeps the complete suite.
 val calendarSmoke = providers.gradleProperty("calendarSmokeSources").orNull == "true"
 val prepareCalendarSmokeSources by tasks.registering(Sync::class) {
@@ -76,7 +83,7 @@ android {
 
     sourceSets {
         getByName("main") {
-            assets.srcDirs("src/main/assets", prepareAndroidCoreAssets)
+            assets.srcDirs("src/main/assets", prepareAndroidCoreAssets, prepareLegalAssets)
         }
         if (calendarSmoke) getByName("androidTest").java.setSrcDirs(listOf(layout.buildDirectory.dir("generated/calendarSmokeSources")))
     }
@@ -203,7 +210,7 @@ android {
 }
 
 tasks.named("preBuild") {
-    dependsOn(prepareAndroidCoreAssets)
+    dependsOn(prepareAndroidCoreAssets, prepareLegalAssets)
 }
 
 mokkery {

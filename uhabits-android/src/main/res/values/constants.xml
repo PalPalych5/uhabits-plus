@@ -28,6 +28,9 @@
     <string name="bugReportTo">dev@loophabits.org</string>
     <string name="bugReportSubject">Bug Report - Loop Habit Tracker</string>
     <string name="syncBaseURL" formatted="false">https://sync.loophabits.org</string>
+    <string name="uhabitSourceCodeURL" formatted="false">https://github.com/PalPalych5/uhabits-plus</string>
+    <string name="uhabitIssuesURL" formatted="false">https://github.com/PalPalych5/uhabits-plus/issues</string>
+    <string name="upstreamRepoURL" formatted="false">https://github.com/iSoron/uhabits</string>
 
     <string-array name="snooze_picker_names">
         <item>@string/interval_15_minutes</item>

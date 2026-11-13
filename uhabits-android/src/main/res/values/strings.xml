@@ -1024,4 +1024,35 @@
     <string name="settings_dev_cutover_summary">Protected upgrade of the production database</string>
     <string name="settings_dev_container_ui">Container interface experiments</string>
     <string name="settings_dev_container_ui_summary">Open ContainersActivity / Living Context for debugging</string>
+    <string name="about_build_status">Experimental development build</string>
+    <string name="about_build_code">Build %1$d</string>
+    <string name="about_developer_enabled">Developer options enabled</string>
+    <string name="about_section_project">Project</string>
+    <string name="about_source_code">Source code</string>
+    <string name="about_source_code_summary" translatable="false">GitHub · PalPalych5/uhabits-plus</string>
+    <string name="about_report_issue">Report an issue</string>
+    <string name="about_report_issue_summary" translatable="false">GitHub Issues · PalPalych5/uhabits-plus</string>
+    <string name="about_section_authors">Authors &amp; acknowledgements</string>
+    <string name="about_fork_maintainer_title">Fork maintainer</string>
+    <string name="about_fork_maintainer_summary">UHabit Next is maintained by PalPalych5.</string>
+    <string name="about_upstream_project_title">Based on Loop Habit Tracker</string>
+    <string name="about_upstream_project_summary">Original app by Álinson Santos Xavier and contributors</string>
+    <string name="about_original_contributors_title">Original contributors &amp; translators</string>
+    <string name="about_original_contributors_summary">Upstream Loop Habit Tracker developers and community translators</string>
+    <string name="about_view_upstream_contributors">View all contributors on GitHub</string>
+    <string name="about_view_upstream_contributors_summary" translatable="false">GitHub · iSoron/uhabits</string>
+    <string name="about_upstream_developers_section">Loop Habit Tracker developers</string>
+    <string name="about_upstream_translators_section">Original community translators</string>
+    <string name="about_section_licenses">Licenses &amp; open source</string>
+    <string name="about_app_license_title">GNU GPL v3.0 or later</string>
+    <string name="about_app_license_summary">Free software under GPL-3.0-or-later. Tap to read LICENSE.txt. Upstream Loop Habit Tracker Copyright (C) 2016–2026 Álinson Santos Xavier &amp; contributors.</string>
+    <string name="about_open_source_notices_title">Open-source notices</string>
+    <string name="about_open_source_notices_summary">Dependencies, icons, and third-party notices</string>
+    <string name="about_open_source_intro">UHabit Next builds on Loop Habit Tracker and open-source components declared in this repository.</string>
+    <string name="about_full_notices_title">Full copyright &amp; license notices</string>
+    <string name="about_full_notices_summary">Read bundled NOTICE.md text offline</string>
+    <string name="about_gpl_license_title" translatable="false">GNU GPL v3.0</string>
+    <string name="about_legal_document_unavailable">License document is unavailable in this build.</string>
+    <string name="about_open_link_action">Open external link</string>
+    <string name="about_view_license_action">Read full license text</string>
 </resources>
