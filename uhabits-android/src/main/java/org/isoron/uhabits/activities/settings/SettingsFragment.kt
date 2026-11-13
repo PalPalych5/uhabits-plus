@@ -41,13 +41,14 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.app.AlertDialog
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
 import androidx.core.os.LocaleListCompat
@@ -57,7 +58,6 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.slider.Slider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -70,14 +70,13 @@ import org.isoron.platform.time.getToday
 import org.isoron.uhabits.BuildConfig
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
-import org.isoron.uhabits.activities.AndroidThemeSwitcher
 import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.activities.main.SettingsAction
 import org.isoron.uhabits.activities.main.SettingsActionHandler
 import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
-import org.isoron.uhabits.activities.common.dialogs.ColorPickerDialogFactory
 import org.isoron.uhabits.activities.common.dialogs.UHabitColorPickerBottomSheet
+import org.isoron.uhabits.compose.UHabitComposeColors
 import org.isoron.uhabits.activities.habits.show.timer.PomodoroCompletionNotifier
 import org.isoron.uhabits.activities.habits.show.timer.TimerForegroundService
 import org.isoron.uhabits.core.commands.ClearAllEntriesCommand
@@ -127,7 +126,15 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     private lateinit var adapter: CustomSettingsAdapter
     private var visibleItems: List<SettingItem> = emptyList()
     private var manualSyncInProgress = false
-    private var statisticsDialog: AlertDialog? = null
+    private var activeAppearanceDialog: AlertDialog? = null
+    private var activeAppearanceDialogKey: String? = null
+    private var activeDataDialog: AlertDialog? = null
+    private val restoreFlowGuard = RestoreFlowGuard()
+    private var draftCardRoundingHabitsDp: Int? = null
+    private var draftCardRoundingStatsDp: Int? = null
+    private var draftDayTierOrder: List<DayTier>? = null
+    private var draftStatisticsDate: LocalDate? = null
+    private var draftPomodoroMinutes: String? = null
     private val useCompactTopInset: Boolean
         get() = arguments?.getBoolean(ARG_COMPACT_TOP_INSET, false) ?: false
 
@@ -220,6 +227,70 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
 
         adapter = CustomSettingsAdapter(requireContext(), prefs, emptyList())
         recyclerView.adapter = adapter
+
+        (childFragmentManager.findFragmentByTag(TAG_ACCENT_COLOR_PICKER) as? UHabitColorPickerBottomSheet)
+            ?.let(::bindAccentColorPickerListener)
+    }
+
+    override fun onViewStateRestored(savedInstanceState: Bundle?) {
+        super.onViewStateRestored(savedInstanceState)
+        if (sharedPrefs == null) {
+            sharedPrefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(requireContext())
+        }
+        val dialogKey = savedInstanceState?.getString(STATE_ACTIVE_APPEARANCE_DIALOG) ?: return
+        val habitsDraft = savedInstanceState.getInt(STATE_DRAFT_HABITS_CORNER_DP, Int.MIN_VALUE)
+            .takeIf { it != Int.MIN_VALUE }
+        val statsDraft = savedInstanceState.getInt(STATE_DRAFT_STATS_CORNER_DP, Int.MIN_VALUE)
+            .takeIf { it != Int.MIN_VALUE }
+        val dayTierDraft = savedInstanceState.getStringArrayList(STATE_DRAFT_DAY_TIER_ORDER)
+            ?.mapNotNull { name -> DayTier.entries.firstOrNull { it.name == name } }
+            ?.takeIf { it.size == DayTier.entries.size }
+        val statisticsDateDraft = if (savedInstanceState.containsKey(STATE_DRAFT_STATISTICS_YEAR)) {
+            LocalDate(
+                savedInstanceState.getInt(STATE_DRAFT_STATISTICS_YEAR),
+                savedInstanceState.getInt(STATE_DRAFT_STATISTICS_MONTH),
+                savedInstanceState.getInt(STATE_DRAFT_STATISTICS_DAY)
+            )
+        } else {
+            null
+        }
+        val pomodoroDraft = savedInstanceState.getString(STATE_DRAFT_POMODORO_MINUTES)
+        restoreAppearanceDialog(
+            dialogKey,
+            habitsDraft,
+            statsDraft,
+            dayTierDraft,
+            statisticsDateDraft,
+            pomodoroDraft,
+        )
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (activeAppearanceDialog?.isShowing == true) {
+            activeAppearanceDialogKey?.let { key ->
+                outState.putString(STATE_ACTIVE_APPEARANCE_DIALOG, key)
+                if (key == DIALOG_KEY_CARD_ROUNDING) {
+                    draftCardRoundingHabitsDp?.let { outState.putInt(STATE_DRAFT_HABITS_CORNER_DP, it) }
+                    draftCardRoundingStatsDp?.let { outState.putInt(STATE_DRAFT_STATS_CORNER_DP, it) }
+                } else if (key == DIALOG_KEY_DAY_TIER_ORDER) {
+                    draftDayTierOrder?.let { order ->
+                        outState.putStringArrayList(
+                            STATE_DRAFT_DAY_TIER_ORDER,
+                            ArrayList(order.map(DayTier::name))
+                        )
+                    }
+                } else if (key == DIALOG_KEY_STATISTICS_DATE_PICKER) {
+                    draftStatisticsDate?.let { date ->
+                        outState.putInt(STATE_DRAFT_STATISTICS_YEAR, date.year)
+                        outState.putInt(STATE_DRAFT_STATISTICS_MONTH, date.month)
+                        outState.putInt(STATE_DRAFT_STATISTICS_DAY, date.day)
+                    }
+                } else if (key == DIALOG_KEY_POMODORO_FOCUS || key == DIALOG_KEY_POMODORO_BREAK) {
+                    draftPomodoroMinutes?.let { outState.putString(STATE_DRAFT_POMODORO_MINUTES, it) }
+                }
+            }
+        }
     }
 
     override fun onResume() {
@@ -237,8 +308,13 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     }
 
     override fun onDestroyView() {
-        statisticsDialog?.dismiss()
-        statisticsDialog = null
+        restoreFlowGuard.finishValidation()
+        activeDataDialog?.setOnDismissListener(null)
+        activeDataDialog?.dismiss()
+        activeDataDialog = null
+        activeAppearanceDialog?.setOnDismissListener(null)
+        activeAppearanceDialog?.dismiss()
+        activeAppearanceDialog = null
         super.onDestroyView()
     }
 
@@ -810,28 +886,32 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             getString(R.string.settings_notifications_off)
         }
 
-    private fun showPomodoroDefaultMinutesDialog(isBreak: Boolean) {
-        val initialValue = if (isBreak) {
+    private fun showPomodoroDefaultMinutesDialog(
+        isBreak: Boolean,
+        initialDraft: String? = null,
+    ) {
+        val currentPersisted = if (isBreak) {
             prefs.pomodoroDefaultBreakMinutes.toString()
         } else {
             prefs.pomodoroDefaultFocusMinutes.toString()
         }
+        var currentInput = initialDraft ?: currentPersisted
+        draftPomodoroMinutes = currentInput
+        val maxLimit = PomodoroDurationSpec.maxMinutes(isBreak)
         val title = if (isBreak) {
             getString(R.string.pref_pomodoro_default_break_title)
         } else {
             getString(R.string.pref_pomodoro_default_focus_title)
         }
-        CustomDialogs.showInputDialog(
-            context = requireContext(),
-            title = title,
-            initialValue = initialValue,
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER,
-            hint = title
-        ) { newValue ->
-            val minutes = newValue.toIntOrNull()
-            val minLimit = 1
-            val maxLimit = if (isBreak) 60 else 180
-            if (minutes != null && minutes in minLimit..maxLimit) {
+        val rangeHint = getString(
+            R.string.pref_pomodoro_invalid_range,
+            PomodoroDurationSpec.MIN_MINUTES,
+            maxLimit,
+        )
+        var dialogRef: AlertDialog? = null
+        val commitMinutes: () -> Unit = {
+            val minutes = PomodoroDurationSpec.parseValidMinutes(currentInput, isBreak)
+            if (minutes != null) {
                 if (isBreak) {
                     prefs.pomodoroDefaultBreakMinutes = minutes
                 } else {
@@ -839,13 +919,51 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 }
                 rebuildSettingsList()
             } else {
-                Toast.makeText(
-                    requireContext(),
-                    getString(R.string.pref_pomodoro_invalid_range, minLimit, maxLimit),
-                    Toast.LENGTH_LONG
-                ).show()
+                Toast.makeText(requireContext(), rangeHint, Toast.LENGTH_LONG).show()
             }
         }
+        val composeView = ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                val colors = UHabitComposeColors.fromPalette(
+                    SettingsThemePaletteResolver.resolve(requireContext(), prefs)
+                )
+                PomodoroDurationDialogContent(
+                    colors = colors,
+                    initialValue = currentInput,
+                    isBreak = isBreak,
+                    rangeHint = rangeHint,
+                    formatPresetLabel = { minutes -> getString(R.string.pomodoro_minutes_short, minutes) },
+                    onValueChanged = { updated ->
+                        currentInput = updated
+                        draftPomodoroMinutes = updated
+                    },
+                    onSubmit = {
+                        commitMinutes()
+                        dialogRef?.dismiss()
+                    },
+                )
+            }
+        }
+        val dialog = CustomDialogs.showCustomViewDialog(
+            context = requireContext(),
+            title = title,
+            contentView = composeView,
+            positiveText = getString(android.R.string.ok),
+            negativeText = getString(android.R.string.cancel),
+            onConfirm = commitMinutes,
+        )
+        dialogRef = dialog
+        dialog.window?.clearFlags(
+            android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                android.view.WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM
+        )
+        @Suppress("DEPRECATION")
+        dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+        trackAppearanceDialog(
+            key = if (isBreak) DIALOG_KEY_POMODORO_BREAK else DIALOG_KEY_POMODORO_FOCUS,
+            dialog = dialog,
+        )
     }
 
     private fun pomodoroChannelSummary(): String {
@@ -968,69 +1086,49 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         return prefs.dayTierSortOrder.joinToString(" · ") { dayTierLabel(it) }
     }
 
-    private fun showDayTierSortOrderDialog() {
-        val order = prefs.dayTierSortOrder.toMutableList()
-        val content = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dpInt(4f), 0, dpInt(4f))
-        }
+    private fun showDayTierSortOrderDialog(initialOrder: List<DayTier>? = null) {
+        var order = (initialOrder ?: prefs.dayTierSortOrder)
+            .distinct()
+            .let { current ->
+                if (current.size == DayTier.entries.size) current else prefs.dayTierSortOrder
+            }
+        draftDayTierOrder = order
 
-        fun renderRows() {
-            content.removeAllViews()
-            order.forEachIndexed { index, tier ->
-                val row = LinearLayout(requireContext()).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = android.view.Gravity.CENTER_VERTICAL
-                    setPadding(0, dpInt(4f), 0, dpInt(4f))
-                }
-                row.addView(
-                    TextView(requireContext()).apply {
-                        text = "${index + 1}. ${dayTierLabel(tier)}"
-                        textSize = 16f
-                        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        val composeView = ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                val colors = UHabitComposeColors.fromPalette(
+                    SettingsThemePaletteResolver.resolve(requireContext(), prefs)
+                )
+                DayTierSortOrderDialogContent(
+                    colors = colors,
+                    initialOrder = order,
+                    dayTierLabel = ::dayTierLabel,
+                    onOrderChanged = { updated ->
+                        order = updated
+                        draftDayTierOrder = updated
                     }
                 )
-                row.addView(
-                    Button(requireContext()).apply {
-                        text = getString(R.string.move_up)
-                        isEnabled = index > 0
-                        setOnClickListener {
-                            if (index <= 0) return@setOnClickListener
-                            java.util.Collections.swap(order, index, index - 1)
-                            renderRows()
-                        }
-                    }
-                )
-                row.addView(
-                    Button(requireContext()).apply {
-                        text = getString(R.string.move_down)
-                        isEnabled = index < order.lastIndex
-                        setOnClickListener {
-                            if (index >= order.lastIndex) return@setOnClickListener
-                            java.util.Collections.swap(order, index, index + 1)
-                            renderRows()
-                        }
-                    }
-                )
-                content.addView(row)
             }
         }
 
-        renderRows()
-        CustomDialogs.showCustomViewDialog(
-            context = requireContext(),
-            title = getString(R.string.pref_day_tier_sort_order_title),
-            contentView = content,
-            positiveText = getString(android.R.string.ok),
-            neutralText = getString(R.string.reset_default),
-            onNeutral = {
-                prefs.dayTierSortOrder = DayTier.entries
+        trackAppearanceDialog(
+            key = DIALOG_KEY_DAY_TIER_ORDER,
+            dialog = CustomDialogs.showCustomViewDialog(
+                context = requireContext(),
+                title = getString(R.string.pref_day_tier_sort_order_title),
+                contentView = composeView,
+                positiveText = getString(android.R.string.ok),
+                neutralText = getString(R.string.reset_default),
+                onNeutral = {
+                    prefs.dayTierSortOrder = DayTier.entries
+                    rebuildSettingsList()
+                }
+            ) {
+                prefs.dayTierSortOrder = order
                 rebuildSettingsList()
             }
-        ) {
-            prefs.dayTierSortOrder = order
-            rebuildSettingsList()
-        }
+        )
     }
 
     private fun dayTierLabel(tier: DayTier): String {
@@ -1042,8 +1140,89 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         }
     }
 
-    private fun dpInt(value: Float): Int {
-        return (value * resources.displayMetrics.density).toInt()
+    private fun trackAppearanceDialog(key: String, dialog: AlertDialog) {
+        activeAppearanceDialog?.setOnDismissListener(null)
+        activeAppearanceDialog?.dismiss()
+        activeAppearanceDialog = dialog
+        activeAppearanceDialogKey = key
+        dialog.setOnDismissListener {
+            if (activeAppearanceDialog === dialog) {
+                activeAppearanceDialog = null
+                activeAppearanceDialogKey = null
+                if (key == DIALOG_KEY_CARD_ROUNDING) {
+                    draftCardRoundingHabitsDp = null
+                    draftCardRoundingStatsDp = null
+                } else if (key == DIALOG_KEY_DAY_TIER_ORDER) {
+                    draftDayTierOrder = null
+                } else if (key == DIALOG_KEY_STATISTICS_DATE_PICKER) {
+                    draftStatisticsDate = null
+                } else if (key == DIALOG_KEY_POMODORO_FOCUS || key == DIALOG_KEY_POMODORO_BREAK) {
+                    draftPomodoroMinutes = null
+                }
+            }
+        }
+    }
+
+    private fun restoreAppearanceDialog(
+        key: String,
+        habitsDraftDp: Int?,
+        statsDraftDp: Int?,
+        dayTierDraft: List<DayTier>?,
+        statisticsDateDraft: LocalDate?,
+        pomodoroDraft: String?,
+    ) {
+        when (key) {
+            DIALOG_KEY_LANGUAGE -> showLanguageDialog()
+            DIALOG_KEY_WEEKDAY -> showWeekdayDialog()
+            DIALOG_KEY_WIDGET_OPACITY -> showWidgetOpacityDialog()
+            DIALOG_KEY_SECTION_LAYOUT -> showSectionLayoutDialog()
+            DIALOG_KEY_CARD_ROUNDING -> showCardRoundingDialog(habitsDraftDp, statsDraftDp)
+            DIALOG_KEY_DAY_TIER_ORDER -> showDayTierSortOrderDialog(dayTierDraft)
+            DIALOG_KEY_STATISTICS_START -> showGlobalStatisticsStartDateDialog()
+            DIALOG_KEY_STATISTICS_DATE_PICKER -> showDatePicker(initialDate = statisticsDateDraft) { date ->
+                if (date != null) applyGlobalStatisticsStart(date)
+            }
+            DIALOG_KEY_POMODORO_FOCUS -> showPomodoroDefaultMinutesDialog(isBreak = false, initialDraft = pomodoroDraft)
+            DIALOG_KEY_POMODORO_BREAK -> showPomodoroDefaultMinutesDialog(isBreak = true, initialDraft = pomodoroDraft)
+        }
+    }
+
+    private fun showComposeSingleChoiceDialog(
+        key: String,
+        title: String,
+        options: List<SettingsChoiceOption>,
+        selectedIndex: Int,
+        onSelect: (Int) -> Unit,
+    ) {
+        val context = requireContext()
+        var dialogRef: AlertDialog? = null
+        val composeView = ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                val colors = UHabitComposeColors.fromPalette(
+                    SettingsThemePaletteResolver.resolve(context, prefs)
+                )
+                SettingsSingleChoiceDialogContent(
+                    colors = colors,
+                    options = options,
+                    selectedIndex = selectedIndex,
+                    onOptionSelected = { index ->
+                        onSelect(index)
+                        dialogRef?.dismiss()
+                    },
+                )
+            }
+        }
+        val dialog = CustomDialogs.showCustomViewDialog(
+            context = context,
+            title = title,
+            contentView = composeView,
+            positiveText = null,
+            negativeText = getString(android.R.string.cancel),
+            onConfirm = null,
+        )
+        dialogRef = dialog
+        trackAppearanceDialog(key = key, dialog = dialog)
     }
 
     private fun showLanguageDialog() {
@@ -1052,21 +1231,21 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         val currentVal = sharedPrefs?.getString("pref_app_language", "ru-RU") ?: "ru-RU"
         val selectedIndex = values.indexOf(currentVal)
 
-        CustomDialogs.showSingleChoiceDialog(
-            context = requireContext(),
+        showComposeSingleChoiceDialog(
+            key = DIALOG_KEY_LANGUAGE,
             title = getString(R.string.language),
-            options = entries.toList(),
-            selectedIndex = selectedIndex
+            options = entries.map { SettingsChoiceOption(title = it) },
+            selectedIndex = selectedIndex,
         ) { which ->
-                val selectedVal = values[which]
-                sharedPrefs?.edit()?.putString("pref_app_language", selectedVal)?.apply()
-                AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(selectedVal))
+            val selectedVal = values[which]
+            sharedPrefs?.edit()?.putString("pref_app_language", selectedVal)?.apply()
+            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(selectedVal))
 
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    if (isAdded) {
-                        reloadSettingsScreen()
-                    }
-                }, 500)
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                if (isAdded) {
+                    reloadSettingsScreen()
+                }
+            }, 500)
         }
     }
 
@@ -1081,15 +1260,15 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         }
         val selectedIndex = dayValues.indexOf(currentInt)
 
-        CustomDialogs.showSingleChoiceDialog(
-            context = requireContext(),
+        showComposeSingleChoiceDialog(
+            key = DIALOG_KEY_WEEKDAY,
             title = getString(R.string.first_day_of_the_week),
-            options = dayNames.toList(),
-            selectedIndex = selectedIndex
+            options = dayNames.map { SettingsChoiceOption(title = it) },
+            selectedIndex = selectedIndex,
         ) { which ->
-                val selectedVal = dayValues[which]
-                sharedPrefs?.edit()?.putString("pref_first_weekday", selectedVal)?.apply()
-                rebuildSettingsList()
+            val selectedVal = dayValues[which]
+            sharedPrefs?.edit()?.putString("pref_first_weekday", selectedVal)?.apply()
+            rebuildSettingsList()
         }
     }
 
@@ -1099,16 +1278,16 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         val currentVal = sharedPrefs?.getString("pref_widget_opacity", "255") ?: "255"
         val selectedIndex = values.indexOf(currentVal)
 
-        CustomDialogs.showSingleChoiceDialog(
-            context = requireContext(),
+        showComposeSingleChoiceDialog(
+            key = DIALOG_KEY_WIDGET_OPACITY,
             title = getString(R.string.widget_opacity_title),
-            options = entries.toList(),
-            selectedIndex = selectedIndex
+            options = entries.map { SettingsChoiceOption(title = it) },
+            selectedIndex = selectedIndex,
         ) { which ->
-                val selectedVal = values[which]
-                sharedPrefs?.edit()?.putString("pref_widget_opacity", selectedVal)?.apply()
-                widgetUpdater?.updateWidgets()
-                rebuildSettingsList()
+            val selectedVal = values[which]
+            sharedPrefs?.edit()?.putString("pref_widget_opacity", selectedVal)?.apply()
+            widgetUpdater?.updateWidgets()
+            rebuildSettingsList()
         }
     }
 
@@ -1125,120 +1304,71 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
 
     private fun showSectionLayoutDialog() {
         val options = listOf(
-            getString(R.string.settings_section_layout_cards),
-            getString(R.string.settings_section_layout_classic)
+            SettingsChoiceOption(title = getString(R.string.settings_section_layout_cards)),
+            SettingsChoiceOption(title = getString(R.string.settings_section_layout_classic)),
         )
         val currentIndex = if (prefs.isClassicSectionLayout) 1 else 0
-        CustomDialogs.showSingleChoiceDialog(
-            context = requireContext(),
+        showComposeSingleChoiceDialog(
+            key = DIALOG_KEY_SECTION_LAYOUT,
             title = getString(R.string.settings_section_layout_mode_title),
             options = options,
-            selectedIndex = currentIndex
+            selectedIndex = currentIndex,
         ) { which ->
             prefs.sectionLayoutMode = if (which == 1) Preferences.SECTION_LAYOUT_CLASSIC else Preferences.SECTION_LAYOUT_CARDS
             reloadSettingsScreen()
         }
     }
 
-    private fun showCardRoundingDialog() {
+    private fun showCardRoundingDialog(
+        initialHabitsDp: Int? = null,
+        initialStatsDp: Int? = null,
+    ) {
         val values = resources.getStringArray(R.array.pref_habit_card_corners_values)
-        val allowedValues = values.map { it.toIntOrNull() ?: 8 }
-        var habitsRadius = prefs.habitsCardCornerRadius
-        var statsRadius = prefs.statisticsCardCornerRadius
-        val palette = SettingsThemePaletteResolver.resolve(requireContext(), prefs)
+        val allowedValues = values.mapNotNull { it.toIntOrNull() }.ifEmpty { listOf(0, 4, 8, 12, 16, 24) }
+        var habitsRadius = (initialHabitsDp ?: prefs.habitsCardCornerRadius)
+            .let { current -> allowedValues.minByOrNull { kotlin.math.abs(it - current) } ?: 8 }
+        var statsRadius = (initialStatsDp ?: prefs.statisticsCardCornerRadius)
+            .let { current -> allowedValues.minByOrNull { kotlin.math.abs(it - current) } ?: 16 }
 
-        fun sliderIndexFor(radius: Int): Float {
-            val fallbackIndex = allowedValues.indexOf(8).takeIf { it >= 0 } ?: 0
-            return (allowedValues.indexOf(radius).takeIf { it >= 0 } ?: fallbackIndex).toFloat()
-        }
+        draftCardRoundingHabitsDp = habitsRadius
+        draftCardRoundingStatsDp = statsRadius
 
-        fun sliderBlock(
-            title: String,
-            initialRadius: Int,
-            onRadiusChanged: (Int) -> Unit
-        ): View {
-            val density = resources.displayMetrics.density
-            val valueView = TextView(requireContext()).apply {
-                text = "$initialRadius dp"
-                textSize = 13f
-                setTextColor(palette.onSurfaceVariant)
-            }
-            return LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(
-                    LinearLayout(requireContext()).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        addView(
-                            TextView(requireContext()).apply {
-                                text = title
-                                textSize = 14f
-                                setTextColor(palette.onSurface)
-                                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                            }
-                        )
-                        addView(valueView)
-                    }
+        val composeView = ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                val colors = UHabitComposeColors.fromPalette(
+                    SettingsThemePaletteResolver.resolve(requireContext(), prefs)
                 )
-                addView(
-                    Slider(requireContext()).apply {
-                        valueFrom = 0f
-                        valueTo = allowedValues.lastIndex.toFloat()
-                        stepSize = 1f
-                        value = sliderIndexFor(initialRadius)
-                        haloRadius = 0
-                        thumbRadius = (8 * density).toInt()
-                        trackHeight = (4 * density).toInt()
-                        labelBehavior = com.google.android.material.slider.LabelFormatter.LABEL_GONE
-                        trackActiveTintList = android.content.res.ColorStateList.valueOf(palette.accent)
-                        trackInactiveTintList = android.content.res.ColorStateList.valueOf(palette.border)
-                        thumbTintList = android.content.res.ColorStateList.valueOf(palette.accent)
-                        layoutParams = LinearLayout.LayoutParams(
-                            LinearLayout.LayoutParams.MATCH_PARENT,
-                            LinearLayout.LayoutParams.WRAP_CONTENT
-                        ).apply {
-                            topMargin = (4 * density).toInt()
-                        }
-                        addOnChangeListener { _, sliderValue, _ ->
-                            val mappedValue = allowedValues[sliderValue.toInt().coerceIn(0, allowedValues.lastIndex)]
-                            valueView.text = "$mappedValue dp"
-                            onRadiusChanged(mappedValue)
-                        }
-                    }
+                CardRoundingDialogContent(
+                    colors = colors,
+                    allowedValues = allowedValues,
+                    initialHabitsRadius = habitsRadius,
+                    initialStatsRadius = statsRadius,
+                    formatRadiusLabel = { radius -> "$radius dp" },
+                    onHabitsRadiusChanged = {
+                        habitsRadius = it
+                        draftCardRoundingHabitsDp = it
+                    },
+                    onStatsRadiusChanged = {
+                        statsRadius = it
+                        draftCardRoundingStatsDp = it
+                    },
                 )
             }
         }
 
-        val density = resources.displayMetrics.density
-        val content = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding((4 * density).toInt(), 0, (4 * density).toInt(), 0)
-            addView(sliderBlock(getString(R.string.habits_title), habitsRadius) { habitsRadius = it }.apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = (10 * density).toInt()
-                }
-            })
-            addView(sliderBlock(getString(R.string.pref_statistics_title), statsRadius) { statsRadius = it }.apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = (16 * density).toInt()
-                }
-            })
-        }
-
-        CustomDialogs.showCustomViewDialog(
-            context = requireContext(),
-            title = getString(R.string.pref_card_rounding_title),
-            contentView = content
-        ) {
-            prefs.habitsCardCornerRadius = habitsRadius
-            prefs.statisticsCardCornerRadius = statsRadius
-            rebuildSettingsList()
-        }
+        trackAppearanceDialog(
+            key = DIALOG_KEY_CARD_ROUNDING,
+            dialog = CustomDialogs.showCustomViewDialog(
+                context = requireContext(),
+                title = getString(R.string.pref_card_rounding_title),
+                contentView = composeView
+            ) {
+                prefs.habitsCardCornerRadius = habitsRadius
+                prefs.statisticsCardCornerRadius = statsRadius
+                rebuildSettingsList()
+            }
+        )
     }
 
     private fun showDeveloperEditTextDialog(key: String, title: String) {
@@ -1259,22 +1389,21 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         }
     }
 
-    private fun showAccentColorPicker() {
-        val themeSwitcher = AndroidThemeSwitcher(requireContext(), prefs)
-        themeSwitcher.apply()
-        val currentTheme = themeSwitcher.currentTheme
-        val factory = ColorPickerDialogFactory(requireActivity())
-        
-        val currentValString = AccentColorManager.getAccentColorString(prefs)
-        val currentPaletteColor = AccentColorManager.toPaletteColor(currentValString)
-
-        val picker = UHabitColorPickerBottomSheet.newInstance(currentPaletteColor)
+    private fun bindAccentColorPickerListener(picker: UHabitColorPickerBottomSheet) {
         picker.setListener { paletteColor ->
             val newAccentString = AccentColorManager.fromPaletteColor(paletteColor)
             AccentColorManager.setAccentColorString(prefs, newAccentString)
             rebuildSettingsList()
         }
-        picker.show(childFragmentManager, "accentColorPicker")
+    }
+
+    private fun showAccentColorPicker() {
+        val currentValString = AccentColorManager.getAccentColorString(prefs)
+        val currentPaletteColor = AccentColorManager.toPaletteColor(currentValString)
+
+        val picker = UHabitColorPickerBottomSheet.newInstance(currentPaletteColor)
+        bindAccentColorPickerListener(picker)
+        picker.show(childFragmentManager, TAG_ACCENT_COLOR_PICKER)
     }
 
     private fun reloadSettingsScreen() {
@@ -1348,7 +1477,19 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         startActivityForResult(intent, PUBLIC_BACKUP_REQUEST_CODE)
     }
 
+    private fun trackDataDialog(dialog: AlertDialog) {
+        activeDataDialog?.setOnDismissListener(null)
+        activeDataDialog?.dismiss()
+        activeDataDialog = dialog
+        dialog.setOnDismissListener {
+            if (activeDataDialog === dialog) {
+                activeDataDialog = null
+            }
+        }
+    }
+
     private fun showRestoreBackupDialog() {
+        if (activeDataDialog?.isShowing == true || restoreFlowGuard.isBusy) return
         val backups = backupManager.listBackups()
         val dateFormat = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, Locale.getDefault())
         val items = backups.map { it.name }
@@ -1360,7 +1501,7 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             "$source • ${dateFormat.format(entry.modifiedAt)} • ${formatSize(entry.sizeBytes)}"
         }
 
-        CustomDialogs.showSimpleListDialog(
+        val dialog = CustomDialogs.showSimpleListDialog(
             context = requireContext(),
             title = getString(R.string.restore_backup),
             items = items,
@@ -1369,13 +1510,15 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         ) { which ->
             showRestoreBackupConfirmation(backups[which])
         }
+        trackDataDialog(dialog)
     }
 
 
     private fun performPublicBackup() {
+        if (activeDataDialog?.isShowing == true) return
         if (!ensurePublicBackupFolderReady()) return
 
-        CustomDialogs.showConfirmDialog(
+        val dialog = CustomDialogs.showConfirmDialog(
             context = requireContext(),
             title = getString(R.string.backup_unencrypted_warning_title),
             message = getString(R.string.backup_unencrypted_warning_message),
@@ -1384,6 +1527,7 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         ) {
             executePublicBackup()
         }
+        trackDataDialog(dialog)
     }
 
     private fun executePublicBackup() {
@@ -1398,19 +1542,20 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             }
 
             override fun onPostExecute() {
+                val ctx = context ?: return
                 result?.fold(
                     onSuccess = {
-                        rebuildSettingsList()
+                        if (isAdded) rebuildSettingsList()
                         Toast.makeText(
-                            requireContext(),
-                            getString(R.string.backup_external_success),
+                            ctx,
+                            ctx.getString(R.string.backup_external_success),
                             Toast.LENGTH_LONG
                         ).show()
                     },
                     onFailure = {
                         Toast.makeText(
-                            requireContext(),
-                            it.message ?: getString(R.string.could_not_export),
+                            ctx,
+                            it.message ?: ctx.getString(R.string.could_not_export),
                             Toast.LENGTH_LONG
                         ).show()
                     }
@@ -1434,7 +1579,8 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     }
 
     private fun showChoosePublicBackupFolderDialog(messageId: Int) {
-        CustomDialogs.showConfirmDialog(
+        if (activeDataDialog?.isShowing == true) return
+        val dialog = CustomDialogs.showConfirmDialog(
             context = requireContext(),
             title = getString(R.string.select_public_backup_folder),
             message = getString(messageId),
@@ -1443,68 +1589,86 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         ) {
             launchPublicBackupFolderPicker()
         }
+        trackDataDialog(dialog)
     }
 
     private fun showRestoreBackupConfirmation(entry: BackupEntry) {
+        if (!restoreFlowGuard.tryBeginValidation()) return
         viewLifecycleOwner.lifecycleScope.launch {
-            val validation = withContext(Dispatchers.IO) {
-                backupManager.validateBackup(entry)
-            }
-            if (!isAdded) return@launch
+            try {
+                val validation = withContext(Dispatchers.IO) {
+                    backupManager.validateBackup(entry)
+                }
+                if (!isAdded) return@launch
+                restoreFlowGuard.finishValidation()
 
-            if (!validation.isValid) {
-                val errorMsg = validation.errorMessage ?: getString(R.string.could_not_restore)
-                Toast.makeText(requireContext(), errorMsg, Toast.LENGTH_LONG).show()
-                return@launch
-            }
+                if (!validation.isValid) {
+                    val errorMsg = validation.errorMessage ?: getString(R.string.could_not_restore)
+                    Toast.makeText(requireContext(), errorMsg, Toast.LENGTH_LONG).show()
+                    return@launch
+                }
 
-            val formatStr = when (validation.format) {
-                BackupFormat.VERSIONED_ZIP -> getString(R.string.backup_format_versioned_zip)
-                BackupFormat.LEGACY_RAW_SQLITE -> getString(R.string.backup_format_legacy_sqlite)
-                else -> getString(R.string.backup_format_unknown)
-            }
-            val dbVerStr = validation.databaseVersion?.let { "v$it" } ?: "—"
-            val hasPrefs = validation.manifest?.preferencesSha256 != null
-            val prefsStr = if (hasPrefs) getString(R.string.backup_prefs_included) else getString(R.string.backup_prefs_not_included)
+                val formatStr = when (validation.format) {
+                    BackupFormat.VERSIONED_ZIP -> getString(R.string.backup_format_versioned_zip)
+                    BackupFormat.LEGACY_RAW_SQLITE -> getString(R.string.backup_format_legacy_sqlite)
+                    else -> getString(R.string.backup_format_unknown)
+                }
+                val dbVerStr = validation.databaseVersion?.let { "v$it" } ?: "—"
+                val hasPrefs = validation.manifest?.preferencesSha256 != null
+                val prefsStr = if (hasPrefs) getString(R.string.backup_prefs_included) else getString(R.string.backup_prefs_not_included)
 
-            val details = buildString {
-                append(getString(R.string.restore_backup_warning))
-                append("\n\n")
-                append(getString(R.string.restore_backup_detail_format, formatStr))
-                append("\n")
-                append(getString(R.string.restore_backup_detail_version, dbVerStr))
-                append("\n")
-                append(getString(R.string.restore_backup_detail_preferences, prefsStr))
-                append("\n\n")
-                append(getString(R.string.restore_backup_quarantine_notice))
-            }
+                val details = buildString {
+                    append(getString(R.string.restore_backup_warning))
+                    append("\n\n")
+                    append(getString(R.string.restore_backup_detail_format, formatStr))
+                    append("\n")
+                    append(getString(R.string.restore_backup_detail_version, dbVerStr))
+                    append("\n")
+                    append(getString(R.string.restore_backup_detail_preferences, prefsStr))
+                    append("\n\n")
+                    append(getString(R.string.restore_backup_quarantine_notice))
+                }
 
-            CustomDialogs.showConfirmDialog(
-                context = requireContext(),
-                title = getString(R.string.restore_backup),
-                message = details,
-                isDestructive = true,
-                positiveText = getString(R.string.restore_backup_confirm)
-            ) {
-                performRestore(entry)
+                val confirmDialog = CustomDialogs.showConfirmDialog(
+                    context = requireContext(),
+                    title = getString(R.string.restore_backup),
+                    message = details,
+                    isDestructive = true,
+                    positiveText = getString(R.string.restore_backup_confirm)
+                ) {
+                    performRestore(entry)
+                }
+                trackDataDialog(confirmDialog)
+            } finally {
+                restoreFlowGuard.finishValidation()
             }
         }
     }
 
     private fun performRestore(entry: BackupEntry) {
-        val app = requireContext().applicationContext as HabitsApplication
-        app.component.taskRunner.execute(
-            restoreTaskFactory.create(entry) { error ->
+        if (!restoreFlowGuard.tryBeginRestore()) return
+        var guardedTask: org.isoron.uhabits.core.tasks.Task? = null
+        try {
+            val app = requireContext().applicationContext as HabitsApplication
+            val task = restoreTaskFactory.create(entry) { error ->
                 if (error == null) {
                     app.scheduleProcessRestart(MainDestination.SETTINGS)
                     activity?.finishAffinity()
                     Process.killProcess(Process.myPid())
                     exitProcess(0)
                 } else {
-                    Toast.makeText(requireContext(), error, Toast.LENGTH_LONG).show()
+                    context?.let { ctx ->
+                        Toast.makeText(ctx, error, Toast.LENGTH_LONG).show()
+                    }
                 }
             }
-        )
+            guardedTask = guardRestoreTask(task, restoreFlowGuard)
+            app.component.taskRunner.execute(guardedTask)
+        } catch (error: Throwable) {
+            if (guardedTask == null) restoreFlowGuard.finishRestore()
+            else guardedTask.onCompletion(error)
+            throw error
+        }
     }
 
     private fun formatSize(sizeBytes: Long): String {
@@ -1767,28 +1931,49 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     }
 
     private fun showGlobalStatisticsStartDateDialog() {
-        if (statisticsDialog?.isShowing == true) return
+        if (!isAdded) return
+        val context = requireContext()
         val options = listOf(
             getString(R.string.today),
             getString(R.string.this_monday),
             getString(R.string.next_monday),
             getString(R.string.select_date)
         )
-        statisticsDialog = CustomDialogs.showSingleChoiceDialog(
-            context = requireContext(),
-            title = getString(R.string.count_statistics_from_date),
-            options = options,
-            selectedIndex = -1,
-            neutralText = getString(R.string.clear),
-            onNeutral = { applyGlobalStatisticsStart(null) }
-        ) { which ->
-            when (which) {
-                0 -> applyGlobalStatisticsStart(getToday())
-                1 -> applyGlobalStatisticsStart(thisMonday())
-                2 -> applyGlobalStatisticsStart(thisMonday().plus(7))
-                else -> showDatePicker { date -> applyGlobalStatisticsStart(date) }
+        val colors = UHabitComposeColors.fromPalette(
+            SettingsThemePaletteResolver.resolve(context, prefs)
+        )
+        var dialogRef: AlertDialog? = null
+        val composeView = ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                StatisticsStartDateDialogContent(
+                    colors = colors,
+                    options = options,
+                    onOptionSelected = { which ->
+                        dialogRef?.dismiss()
+                        when (which) {
+                            0 -> applyGlobalStatisticsStart(getToday())
+                            1 -> applyGlobalStatisticsStart(thisMonday())
+                            2 -> applyGlobalStatisticsStart(thisMonday().plus(7))
+                            else -> showDatePicker { date ->
+                                if (date != null) applyGlobalStatisticsStart(date)
+                            }
+                        }
+                    }
+                )
             }
-        }.also { dialog -> dialog.setOnDismissListener { if (statisticsDialog === dialog) statisticsDialog = null } }
+        }
+        val dialog = CustomDialogs.showCustomViewDialog(
+            context = context,
+            title = getString(R.string.count_statistics_from_date),
+            contentView = composeView,
+            positiveText = null,
+            neutralText = getString(R.string.clear),
+            onNeutral = { applyGlobalStatisticsStart(null) },
+            onConfirm = null
+        )
+        dialogRef = dialog
+        trackAppearanceDialog(DIALOG_KEY_STATISTICS_START, dialog)
     }
 
     private fun applyGlobalStatisticsStart(date: LocalDate?) {
@@ -1800,10 +1985,11 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     }
 
     private fun showHardResetStatisticsDialog() {
+        if (activeDataDialog?.isShowing == true) return
         val message = getString(R.string.delete_entries_forever) + "\n\n" +
                 getString(R.string.action_cannot_be_undone) + "\n" +
                 getString(R.string.reset_statistics_backup_hint)
-        CustomDialogs.showConfirmDialog(
+        val dialog = CustomDialogs.showConfirmDialog(
             context = requireContext(),
             title = getString(R.string.reset_statistics),
             message = message,
@@ -1812,17 +1998,32 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             val app = requireContext().applicationContext as HabitsApplication
             app.component.commandRunner.run(ClearAllEntriesCommand(app.component.habitList))
         }
+        trackDataDialog(dialog)
     }
 
-    private fun showDatePicker(callback: (LocalDate?) -> Unit) {
-        val today = getToday()
-        statisticsDialog = CustomDialogs.showDatePickerDialog(
+    private fun showDatePicker(
+        initialDate: LocalDate? = null,
+        callback: (LocalDate?) -> Unit
+    ) {
+        if (!isAdded) return
+        val app = requireContext().applicationContext as HabitsApplication
+        val startDate = initialDate
+            ?: app.component.habitList.globalStatisticsStartDate
+            ?: getToday()
+        draftStatisticsDate = startDate
+        val dialog = CustomDialogs.showDatePickerDialog(
             context = requireContext(),
             title = getString(R.string.select_date),
-            initialDate = today
-        ) { date ->
-            callback(date)
-        }.also { dialog -> dialog.setOnDismissListener { if (statisticsDialog === dialog) statisticsDialog = null } }
+            initialDate = startDate,
+            onDateChanged = { updatedDate ->
+                draftStatisticsDate = updatedDate
+            },
+            onConfirm = { date ->
+                draftStatisticsDate = null
+                callback(date)
+            }
+        )
+        trackAppearanceDialog(DIALOG_KEY_STATISTICS_DATE_PICKER, dialog)
     }
 
     private fun thisMonday(): LocalDate {
@@ -1854,6 +2055,25 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         private const val PUBLIC_BACKUP_REQUEST_CODE = 2
         private const val ARG_COMPACT_TOP_INSET = "compactTopInset"
         internal const val ARG_DETAIL_SECTION = "settingsDetailSection"
+        private const val TAG_ACCENT_COLOR_PICKER = "accentColorPicker"
+        private const val STATE_ACTIVE_APPEARANCE_DIALOG = "activeAppearanceDialog"
+        private const val STATE_DRAFT_HABITS_CORNER_DP = "draftHabitsCornerDp"
+        private const val STATE_DRAFT_STATS_CORNER_DP = "draftStatsCornerDp"
+        private const val STATE_DRAFT_DAY_TIER_ORDER = "draftDayTierOrder"
+        private const val STATE_DRAFT_STATISTICS_YEAR = "draftStatisticsYear"
+        private const val STATE_DRAFT_STATISTICS_MONTH = "draftStatisticsMonth"
+        private const val STATE_DRAFT_STATISTICS_DAY = "draftStatisticsDay"
+        private const val STATE_DRAFT_POMODORO_MINUTES = "draftPomodoroMinutes"
+        private const val DIALOG_KEY_LANGUAGE = "pref_app_language"
+        private const val DIALOG_KEY_WEEKDAY = "pref_first_weekday"
+        private const val DIALOG_KEY_WIDGET_OPACITY = "pref_widget_opacity"
+        private const val DIALOG_KEY_SECTION_LAYOUT = "pref_section_layout_mode"
+        private const val DIALOG_KEY_CARD_ROUNDING = "pref_card_rounding"
+        private const val DIALOG_KEY_DAY_TIER_ORDER = "pref_day_tier_sort_order"
+        private const val DIALOG_KEY_STATISTICS_START = "pref_statistics_start_date"
+        private const val DIALOG_KEY_STATISTICS_DATE_PICKER = "pref_statistics_date_picker"
+        private const val DIALOG_KEY_POMODORO_FOCUS = "pref_pomodoro_default_focus_minutes"
+        private const val DIALOG_KEY_POMODORO_BREAK = "pref_pomodoro_default_break_minutes"
 
         fun newInstance(compactTopInset: Boolean = false): SettingsFragment {
             return SettingsFragment().apply {
@@ -2024,6 +2244,58 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     }
 
 }
+
+internal fun guardRestoreTask(
+    task: org.isoron.uhabits.core.tasks.Task,
+    guard: RestoreFlowGuard,
+): org.isoron.uhabits.core.tasks.Task {
+    val completed = java.util.concurrent.atomic.AtomicBoolean(false)
+    return object : org.isoron.uhabits.core.tasks.Task by task {
+        override fun onCompletion(cause: Throwable?) {
+            if (completed.compareAndSet(false, true)) {
+                guard.finishRestore()
+                task.onCompletion(cause)
+            }
+        }
+    }
+}
+
+internal class RestoreFlowGuard {
+    var isValidating: Boolean = false
+        private set
+    private var restoreLease: java.util.concurrent.atomic.AtomicBoolean? = null
+    val isRestoring: Boolean
+        get() = activeRestore.get()
+
+    val isBusy: Boolean
+        get() = isValidating || isRestoring
+
+    fun tryBeginValidation(): Boolean {
+        if (isBusy) return false
+        isValidating = true
+        return true
+    }
+
+    fun finishValidation() {
+        isValidating = false
+    }
+
+    fun tryBeginRestore(): Boolean {
+        if (isValidating || !activeRestore.compareAndSet(false, true)) return false
+        restoreLease = java.util.concurrent.atomic.AtomicBoolean(true)
+        return true
+    }
+
+    fun finishRestore() {
+        if (restoreLease?.compareAndSet(true, false) == true) activeRestore.set(false)
+    }
+
+    companion object {
+        // In-process exclusion only; process death ends the running task and clears this flag.
+        private val activeRestore = java.util.concurrent.atomic.AtomicBoolean(false)
+    }
+}
+
 private inline fun View.awaitPostLayout(crossinline action: () -> Unit) {
     if (!isAttachedToWindow) {
         post { action() }

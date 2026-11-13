@@ -712,6 +712,91 @@ class SettingsListComposerTest {
     }
 
     @Test
+    fun restoreFlowGuardPreventsConcurrentValidationAndRestore() {
+        val guard = RestoreFlowGuard()
+        assertFalse(guard.isBusy)
+
+        assertTrue(guard.tryBeginValidation())
+        assertTrue(guard.isValidating)
+        assertTrue(guard.isBusy)
+        assertFalse(guard.tryBeginValidation())
+        assertFalse(guard.tryBeginRestore())
+
+        guard.finishValidation()
+        assertFalse(guard.isBusy)
+
+        assertTrue(guard.tryBeginRestore())
+        assertTrue(guard.isRestoring)
+        assertTrue(guard.isBusy)
+        assertFalse(guard.tryBeginValidation())
+        assertFalse(guard.tryBeginRestore())
+
+        guard.finishRestore()
+        assertFalse(guard.isBusy)
+        assertTrue(guard.tryBeginValidation())
+    }
+
+    @Test
+    fun restoreGuardExcludesOtherFragmentInstancesAndCanBeReleased() {
+        val first = RestoreFlowGuard()
+        val recreated = RestoreFlowGuard()
+        assertTrue(first.tryBeginRestore())
+        first.finishValidation() // SettingsFragment.onDestroyView clears only validation.
+        assertTrue(recreated.isRestoring)
+        assertFalse(recreated.tryBeginRestore())
+        assertFalse(recreated.tryBeginValidation())
+        first.finishRestore()
+        assertTrue(recreated.tryBeginRestore())
+        first.finishRestore() // Duplicate completion from the previous operation is harmless.
+        assertTrue(recreated.isRestoring)
+        recreated.finishRestore()
+        assertFalse(first.isBusy)
+    }
+
+    @Test
+    fun restoreGuardAllowsOnlyOneConcurrentStart() {
+        val guards = List(12) { RestoreFlowGuard() }
+        val start = java.util.concurrent.CountDownLatch(1)
+        val done = java.util.concurrent.CountDownLatch(guards.size)
+        val winners = java.util.Collections.synchronizedList(mutableListOf<RestoreFlowGuard>())
+        guards.forEach { guard ->
+            Thread {
+                start.await()
+                if (guard.tryBeginRestore()) winners.add(guard)
+                done.countDown()
+            }.start()
+        }
+        start.countDown()
+        assertTrue(done.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        try {
+            assertEquals(1, winners.size)
+        } finally {
+            winners.forEach { it.finishRestore() }
+        }
+    }
+
+    @Test
+    fun restoreTaskReleasesGuardForEveryCompletionAndOnlyOnce() {
+        listOf(null, IllegalStateException("failure"), java.util.concurrent.CancellationException()).forEach { cause ->
+            val guard = RestoreFlowGuard()
+            assertTrue(guard.tryBeginRestore())
+            var completions = 0
+            val task = object : org.isoron.uhabits.core.tasks.Task {
+                override suspend fun doInBackground() = Unit
+                override fun onCompletion(cause: Throwable?) { completions++ }
+            }
+            val guarded = guardRestoreTask(task, guard)
+            guarded.onCompletion(cause)
+            assertFalse(guard.isBusy)
+            assertTrue(guard.tryBeginRestore())
+            guarded.onCompletion(cause)
+            assertTrue(guard.isRestoring)
+            assertEquals(1, completions)
+            guard.finishRestore()
+        }
+    }
+
+    @Test
     fun syncDetailKeepsStatusAndBusyActionAcrossUpdates() {
         fun section(syncing: Boolean, signedIn: Boolean, review: Boolean) =
             SettingsSectionModel.fromItems(

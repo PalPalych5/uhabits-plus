@@ -33,7 +33,8 @@
             android:id="@+id/button_neutral"
             style="?android:attr/borderlessButtonStyle"
             android:layout_width="wrap_content"
-            android:layout_height="44dp"
+            android:layout_height="wrap_content"
+            android:minHeight="44dp"
             android:layout_marginEnd="8dp"
             android:textAllCaps="false"
             android:visibility="gone" />
@@ -42,7 +43,8 @@
             android:id="@+id/button_negative"
             style="?android:attr/borderlessButtonStyle"
             android:layout_width="wrap_content"
-            android:layout_height="44dp"
+            android:layout_height="wrap_content"
+            android:minHeight="44dp"
             android:layout_marginEnd="8dp"
             android:textAllCaps="false" />
 
@@ -50,7 +52,8 @@
             android:id="@+id/button_positive"
             style="?android:attr/borderlessButtonStyle"
             android:layout_width="wrap_content"
-            android:layout_height="44dp"
+            android:layout_height="wrap_content"
+            android:minHeight="44dp"
             android:textAllCaps="false" />
 
     </LinearLayout>

@@ -593,6 +593,7 @@ object CustomDialogs {
         title: CharSequence,
         initialDate: LocalDate,
         positiveText: CharSequence = context.getString(android.R.string.ok),
+        onDateChanged: ((LocalDate) -> Unit)? = null,
         onConfirm: (LocalDate) -> Unit
     ): AlertDialog {
         val dialog = MaterialAlertDialogBuilder(context, R.style.CustomTransparentDialogTheme).create()
@@ -607,7 +608,9 @@ object CustomDialogs {
         dialogTitle.text = title
         btnNegative.text = context.getString(android.R.string.cancel)
         btnPositive.text = positiveText
-        datePicker.updateDate(initialDate.year, initialDate.month - 1, initialDate.day)
+        datePicker.init(initialDate.year, initialDate.month - 1, initialDate.day) { _, year, monthOfYear, dayOfMonth ->
+            onDateChanged?.invoke(LocalDate(year, monthOfYear + 1, dayOfMonth))
+        }
 
         dialog.setView(view, 0, 0, 0, 0)
         btnNegative.setOnClickListener { dialog.dismiss() }
@@ -759,11 +762,11 @@ object CustomDialogs {
         title: CharSequence,
         contentView: View,
         isDestructive: Boolean = false,
-        positiveText: CharSequence = context.getString(android.R.string.ok),
+        positiveText: CharSequence? = context.getString(android.R.string.ok),
         negativeText: CharSequence = context.getString(android.R.string.cancel),
         neutralText: CharSequence? = null,
         onNeutral: (() -> Unit)? = null,
-        onConfirm: () -> Unit
+        onConfirm: (() -> Unit)? = null
     ): AlertDialog {
         val builder = MaterialAlertDialogBuilder(context, R.style.CustomTransparentDialogTheme)
         val dialog = builder.create()
@@ -796,10 +799,15 @@ object CustomDialogs {
         btnNegative.text = negativeText
         btnNegative.setOnClickListener { dialog.dismiss() }
 
-        btnPositive.text = positiveText
-        btnPositive.setOnClickListener {
-            onConfirm()
-            dialog.dismiss()
+        if (!positiveText.isNullOrBlank() && onConfirm != null) {
+            btnPositive.visibility = View.VISIBLE
+            btnPositive.text = positiveText
+            btnPositive.setOnClickListener {
+                onConfirm()
+                dialog.dismiss()
+            }
+        } else {
+            btnPositive.visibility = View.GONE
         }
 
         dialog.setView(view, 0, 0, 0, 0)
