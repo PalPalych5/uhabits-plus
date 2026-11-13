@@ -42,6 +42,7 @@ class SettingsMorphLayer(context: Context) : View(context) {
     private var snapshotAlpha = 1f
     private var liftPx = 0f
     private var boundaryAlpha = 1f
+    private var drawCardShadow = true
 
     fun prepare(
         sourceBounds: RectF,
@@ -55,6 +56,7 @@ class SettingsMorphLayer(context: Context) : View(context) {
         destinationColor: Int,
         boundaryColor: Int,
         sourceCornerRadius: Float,
+        drawShadow: Boolean = true,
     ) {
         startBounds.set(sourceBounds)
         endBounds.set(destinationBounds)
@@ -67,8 +69,63 @@ class SettingsMorphLayer(context: Context) : View(context) {
         endColor = destinationColor
         outlineColor = boundaryColor
         startRadius = sourceCornerRadius
+        drawCardShadow = drawShadow
         outlinePaint.strokeWidth = 0.7f * resources.displayMetrics.density
         setFrame(0f, Direction.FORWARD)
+    }
+
+    fun prepareDetailCover(
+        destinationBounds: RectF,
+        toolbarBitmap: Bitmap,
+        bodyBitmap: Bitmap,
+        toolbarInHost: RectF,
+        bodyInHost: RectF,
+        destinationColor: Int,
+    ) {
+        startBounds.set(destinationBounds)
+        endBounds.set(destinationBounds)
+        currentBounds.set(destinationBounds)
+        sourceSnapshot?.recycle()
+        sourceSnapshot = null
+        toolbarSnapshot?.recycle()
+        bodySnapshot?.recycle()
+        toolbarSnapshot = toolbarBitmap
+        bodySnapshot = bodyBitmap
+        toolbarBounds.set(toolbarInHost)
+        bodyBounds.set(bodyInHost)
+        startColor = destinationColor
+        endColor = destinationColor
+        outlineColor = Color.TRANSPARENT
+        startRadius = 0f
+        currentRadius = 0f
+        toolbarAlpha = 1f
+        toolbarTranslationY = 0f
+        bodyAlpha = 1f
+        bodyTranslationY = 0f
+        snapshotAlpha = 0f
+        liftPx = 0f
+        boundaryAlpha = 0f
+        drawCardShadow = false
+        invalidate()
+    }
+
+    fun attachReturnSource(
+        sourceBounds: RectF,
+        sourceBitmap: Bitmap,
+        sourceColor: Int,
+        boundaryColor: Int,
+        sourceCornerRadius: Float,
+        drawShadow: Boolean = true,
+    ) {
+        startBounds.set(sourceBounds)
+        sourceSnapshot?.recycle()
+        sourceSnapshot = sourceBitmap
+        startColor = sourceColor
+        outlineColor = boundaryColor
+        startRadius = sourceCornerRadius
+        drawCardShadow = drawShadow
+        outlinePaint.strokeWidth = 0.7f * resources.displayMetrics.density
+        setFrame(0f, Direction.RETURN)
     }
 
     fun updateDetailContent(
@@ -87,19 +144,16 @@ class SettingsMorphLayer(context: Context) : View(context) {
 
     fun setFrame(progress: Float, direction: Direction) {
         val p = progress.coerceIn(0f, 1f)
-        val geometryProgress = if (direction == Direction.FORWARD) p else 1f - p
-        val side = SettingsTransitionSpec.smoothstep(0f, 0.92f, geometryProgress)
-        val top = SettingsTransitionSpec.smoothstep(0.03f, 0.95f, geometryProgress)
-        val bottom = SettingsTransitionSpec.smoothstep(0.07f, 1f, geometryProgress)
-        currentBounds.set(
-            lerp(startBounds.left, endBounds.left, side),
-            lerp(startBounds.top, endBounds.top, top),
-            lerp(startBounds.right, endBounds.right, side),
-            lerp(startBounds.bottom, endBounds.bottom, bottom),
+        val frame = SettingsMorphFrameMath.computeFrame(
+            startBounds = MorphRect(startBounds.left, startBounds.top, startBounds.right, startBounds.bottom),
+            endBounds = MorphRect(endBounds.left, endBounds.top, endBounds.right, endBounds.bottom),
+            startRadius = startRadius,
+            progress = p,
+            isForward = direction == Direction.FORWARD,
         )
-        val radiusProgress = SettingsTransitionSpec.smoothstep(0.34f, 1f, geometryProgress)
-        currentRadius = lerp(startRadius, 0f, radiusProgress)
-            .coerceAtMost(min(currentBounds.width(), currentBounds.height()) / 2f)
+        val geometryProgress = frame.geometryProgress
+        currentBounds.set(frame.bounds.left, frame.bounds.top, frame.bounds.right, frame.bounds.bottom)
+        currentRadius = frame.cornerRadius
         val density = resources.displayMetrics.density
         val liftIn = SettingsTransitionSpec.smoothstep(0f, 0.14f, geometryProgress)
         val liftOut = 1f - SettingsTransitionSpec.smoothstep(0.14f, 0.70f, geometryProgress)
@@ -127,7 +181,7 @@ class SettingsMorphLayer(context: Context) : View(context) {
         roundedPath.reset()
         roundedPath.addRoundRect(currentBounds, currentRadius, currentRadius, Path.Direction.CW)
 
-        if (liftPx > 0f) {
+        if (liftPx > 0f && drawCardShadow) {
             shadowBounds.set(currentBounds)
             shadowBounds.offset(0f, liftPx)
             shadowPaint.color = Color.argb((20f * boundaryAlpha).toInt(), 0, 0, 0)

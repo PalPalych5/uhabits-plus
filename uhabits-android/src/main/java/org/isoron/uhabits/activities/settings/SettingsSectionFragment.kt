@@ -48,6 +48,8 @@ class SettingsSectionFragment : Fragment(), SettingsNavigationController {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         @Suppress("DEPRECATION")
+        homeScrollState = savedInstanceState?.getParcelable(STATE_HOME_SCROLL)
+        @Suppress("DEPRECATION")
         savedInstanceState?.getBundle(STATE_DETAIL_SCROLL)?.let { states ->
             SettingsSectionId.entries.forEach { id ->
                 states.getParcelable<Parcelable>(id.name)?.let { detailScrollStates[id] = it }
@@ -126,6 +128,7 @@ class SettingsSectionFragment : Fragment(), SettingsNavigationController {
         if (childFragmentManager.isStateSaved || currentDetail() != null) return
         if (morphController?.state != SettingsCardMorphController.State.IDLE_HOME) return
         val home = childFragmentManager.findFragmentByTag(TAG_HOME) ?: return
+        homeScrollState = (home as? SettingsFragment)?.captureHomeScrollState()
         backCallback?.isEnabled = true
         val transaction = childFragmentManager.beginTransaction()
         if (motionEnabled()) {
@@ -218,39 +221,80 @@ class SettingsSectionFragment : Fragment(), SettingsNavigationController {
         if (sectionId != null && motionEnabled()) {
             val home = childFragmentManager.findFragmentByTag(TAG_HOME) as? SettingsFragment
             val bottomNav = requireActivity().findViewById<View>(R.id.bottomNavigationContainer)
+            val toolbar = detail.transitionToolbar()
+            val body = detail.transitionBody()
 
-            if (home != null) {
-                childFragmentManager.beginTransaction()
-                    .show(home)
-                    .setMaxLifecycle(home, Lifecycle.State.RESUMED)
-                    .commitNow()
-
-                home.restoreHomeScrollState(homeScrollState) {
-                    home.resolveSectionSource(sectionId) { resolvedSource ->
-                        val toolbar = detail.transitionToolbar()
-                        val body = detail.transitionBody()
-                        if (toolbar == null || body == null) {
-                            completeReturnImmediately()
-                            return@resolveSectionSource
-                        }
-                        controller.animateReturn(
-                            source = resolvedSource,
-                            detailRoot = detail.requireView(),
-                            detailToolbar = toolbar,
-                            detailBody = body,
-                            bottomNavigation = bottomNav,
-                            onHomeCommitted = {
-                                if (childFragmentManager.backStackEntryCount > 0) {
-                                    childFragmentManager.popBackStackImmediate()
-                                }
-                            },
-                            onComplete = {
-                                backCallback?.isEnabled = hasDetail()
-                                updateNavigationChrome(animateBottomBar = false)
-                            },
-                        )
+            if (home != null && toolbar != null && body != null) {
+                val detailRoot = detail.requireView()
+                val covered = controller.prepareReturnCover(
+                    detailRoot = detailRoot,
+                    detailToolbar = toolbar,
+                    detailBody = body,
+                    bottomNavigation = bottomNav,
+                )
+                val showHome: () -> Unit = {
+                    if (home.isHidden) {
+                        childFragmentManager.beginTransaction()
+                            .show(home)
+                            .setMaxLifecycle(home, Lifecycle.State.RESUMED)
+                            .commitNow()
                     }
                 }
+                if (!covered) {
+                    SettingsReturnCoordinator.runPreparedReturn(
+                        revealBottomNavigationHidden = {
+                            bottomNav.visibility = View.VISIBLE
+                            bottomNav.alpha = 0f
+                        },
+                        showHomeFragment = showHome,
+                        restoreHomeScrollAndStart = {
+                            home.restoreHomeScrollState(homeScrollState) {
+                                controller.startFallbackReturn(
+                                    reason = "return_cover_failed",
+                                    detailRoot = detailRoot,
+                                    bottomNavigation = bottomNav,
+                                    onHomeCommitted = {
+                                        if (childFragmentManager.backStackEntryCount > 0) {
+                                            childFragmentManager.popBackStackImmediate()
+                                        }
+                                    },
+                                    onComplete = {
+                                        backCallback?.isEnabled = hasDetail()
+                                        updateNavigationChrome(animateBottomBar = false)
+                                    },
+                                )
+                            }
+                        },
+                    )
+                    return true
+                }
+
+                SettingsReturnCoordinator.runPreparedReturn(
+                    revealBottomNavigationHidden = {
+                        // Already revealed as VISIBLE with alpha=0f inside prepareReturnCover().
+                    },
+                    showHomeFragment = showHome,
+                    restoreHomeScrollAndStart = {
+                        home.restoreHomeScrollState(homeScrollState) {
+                            home.resolveSectionSource(sectionId) { resolvedSource ->
+                                controller.startPreparedReturn(
+                                    source = resolvedSource,
+                                    detailRoot = detailRoot,
+                                    bottomNavigation = bottomNav,
+                                    onHomeCommitted = {
+                                        if (childFragmentManager.backStackEntryCount > 0) {
+                                            childFragmentManager.popBackStackImmediate()
+                                        }
+                                    },
+                                    onComplete = {
+                                        backCallback?.isEnabled = hasDetail()
+                                        updateNavigationChrome(animateBottomBar = false)
+                                    },
+                                )
+                            }
+                        }
+                    },
+                )
             } else {
                 completeReturnImmediately()
             }
@@ -285,15 +329,39 @@ class SettingsSectionFragment : Fragment(), SettingsNavigationController {
     }
 
     private fun completeReturnImmediately() {
-        if (childFragmentManager.backStackEntryCount > 0) {
-            childFragmentManager.popBackStackImmediate()
-        }
-        morphController?.cancelAndSettle(SettingsCardMorphController.SettleTarget.HOME)
-        backCallback?.isEnabled = hasDetail()
-        updateNavigationChrome(animateBottomBar = false)
+        val home = childFragmentManager.findFragmentByTag(TAG_HOME) as? SettingsFragment
+        SettingsReturnCoordinator.runImmediateReturn(
+            settleOverlayHome = {
+                morphController?.cancelAndSettle(SettingsCardMorphController.SettleTarget.HOME)
+            },
+            revealBottomNavigation = {
+                updateBottomNavigation(detailVisible = false, animate = false)
+            },
+            showHomeFragment = {
+                if (home != null && home.isHidden && !childFragmentManager.isStateSaved) {
+                    childFragmentManager.beginTransaction()
+                        .show(home)
+                        .setMaxLifecycle(home, Lifecycle.State.RESUMED)
+                        .commitNow()
+                }
+            },
+            popDetailBackStack = {
+                if (childFragmentManager.backStackEntryCount > 0) {
+                    childFragmentManager.popBackStackImmediate()
+                }
+            },
+            restoreHomeScroll = {
+                home?.restoreHomeScrollState(homeScrollState) {}
+            },
+            syncChrome = {
+                backCallback?.isEnabled = hasDetail()
+                updateNavigationChrome(animateBottomBar = false)
+            },
+        )
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        homeScrollState?.let { outState.putParcelable(STATE_HOME_SCROLL, it) }
         val states = Bundle().apply {
             detailScrollStates.forEach { (id, state) -> putParcelable(id.name, state) }
         }
@@ -452,6 +520,7 @@ class SettingsSectionFragment : Fragment(), SettingsNavigationController {
     companion object {
         private const val ARG_SHOW_TOOLBAR = "showToolbar"
         private const val TAG_HOME = "settings.home"
+        private const val STATE_HOME_SCROLL = "settings.home.scroll"
         private const val STATE_DETAIL_SCROLL = "settings.detail.scroll"
         private const val ARCHIVE_BACK_GUARD_MS = 350L
 

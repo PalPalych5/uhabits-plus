@@ -30,8 +30,9 @@ class SettingsCardMorphController(
 
     enum class SettleTarget { HOME, DETAIL }
 
-    var state: State = State.IDLE_HOME
-        private set
+    private val stateMachine = SettingsMorphStateMachine()
+    val state: State
+        get() = stateMachine.state
 
     private var animator: ValueAnimator? = null
     private var layer: SettingsMorphLayer? = null
@@ -40,40 +41,22 @@ class SettingsCardMorphController(
     private var bottomNavigation: View? = null
     private var detailRecycler: RecyclerView? = null
     private var savedItemAnimator: RecyclerView.ItemAnimator? = null
-    private var backQueued = false
     private var terminalActionRunning = false
 
-    fun reserveForward(): Boolean {
-        if (state != State.IDLE_HOME) return false
-        state = State.PREPARING_FORWARD
-        backQueued = false
-        return true
-    }
+    fun reserveForward(): Boolean = stateMachine.reserveForward()
 
-    fun reserveReturn(): Boolean {
-        if (state != State.IDLE_DETAIL) return false
-        state = State.PREPARING_RETURN
-        return true
-    }
+    fun reserveReturn(): Boolean = stateMachine.reserveReturn()
 
-    fun requestBackDuringForward(): Boolean = when (state) {
-        State.PREPARING_FORWARD, State.ANIMATING_FORWARD -> {
-            backQueued = true
-            true
-        }
-        else -> false
-    }
+    fun requestBackDuringForward(): Boolean = stateMachine.requestBackDuringForward()
 
     fun markHome() {
-        if (state == State.IDLE_HOME) return
+        if (!stateMachine.markHome()) return
         cleanVisualState(SettleTarget.HOME)
-        state = State.IDLE_HOME
     }
 
     fun markDetail() {
-        if (state == State.IDLE_DETAIL) return
+        if (!stateMachine.markDetail()) return
         cleanVisualState(SettleTarget.DETAIL)
-        state = State.IDLE_DETAIL
     }
 
     fun animateForward(
@@ -109,7 +92,7 @@ class SettingsCardMorphController(
                     morphLayer.viewTreeObserver.removeOnPreDrawListener(this)
                     if (state != State.PREPARING_FORWARD) return true
                     source.container.alpha = 0f
-                    state = State.ANIMATING_FORWARD
+                    stateMachine.startAnimatingForward()
                     startForwardAnimator(
                         morphLayer,
                         detailRoot,
@@ -123,6 +106,121 @@ class SettingsCardMorphController(
                 }
             })
         }
+    }
+
+    fun prepareReturnCover(
+        detailRoot: View,
+        detailToolbar: View,
+        detailBody: RecyclerView,
+        bottomNavigation: View,
+    ): Boolean {
+        if (state != State.PREPARING_RETURN) return false
+        terminalActionRunning = false
+        this.sourceView = null
+        this.detailRoot = detailRoot
+        this.bottomNavigation = bottomNavigation
+
+        val detailBounds = detailRoot.boundsInAncestor(overlayHost) ?: return false
+        val toolbarBounds = detailToolbar.boundsInAncestor(overlayHost) ?: return false
+        val bodyBounds = detailBody.boundsInAncestor(overlayHost) ?: return false
+        if (!detailBounds.isUsable() || !toolbarBounds.isUsable() || !bodyBounds.isUsable()) {
+            return false
+        }
+        val toolbarSnapshot = capture(detailToolbar)
+        val bodySnapshot = capture(detailBody)
+        if (toolbarSnapshot == null || bodySnapshot == null) {
+            toolbarSnapshot?.recycle()
+            bodySnapshot?.recycle()
+            return false
+        }
+        this.detailRecycler = detailBody
+        savedItemAnimator = detailBody.itemAnimator
+        detailBody.itemAnimator = null
+        val app = detailRoot.context.applicationContext as HabitsApplication
+        val palette = SettingsThemePaletteResolver.resolve(detailRoot.context, app.component.preferences)
+        val morphLayer = SettingsMorphLayer(overlayHost.context)
+        morphLayer.prepareDetailCover(
+            destinationBounds = RectF(detailBounds),
+            toolbarBitmap = toolbarSnapshot,
+            bodyBitmap = bodySnapshot,
+            toolbarInHost = toolbarBounds,
+            bodyInHost = bodyBounds,
+            destinationColor = palette.background,
+        )
+        overlayHost.removeAllViews()
+        overlayHost.addView(
+            morphLayer,
+            ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
+        )
+        layer = morphLayer
+        overlayHost.visibility = View.VISIBLE
+        detailRoot.alpha = 0f
+        bottomNavigation.visibility = View.VISIBLE
+        bottomNavigation.alpha = 0f
+        bottomNavigation.translationY = 12f * bottomNavigation.resources.displayMetrics.density
+        return true
+    }
+
+    fun startPreparedReturn(
+        source: SettingsTransitionSource?,
+        detailRoot: View,
+        bottomNavigation: View,
+        onHomeCommitted: () -> Unit,
+        onComplete: () -> Unit,
+    ) {
+        if (state != State.PREPARING_RETURN) return
+        val morphLayer = layer
+        if (source == null || morphLayer == null) {
+            fallbackReturn("return_source_unavailable", detailRoot, bottomNavigation, onHomeCommitted, onComplete)
+            return
+        }
+        val sourceBounds = source.container.boundsInAncestor(overlayHost)
+        if (sourceBounds == null || !sourceBounds.isUsable()) {
+            fallbackReturn("return_source_bounds_unusable", detailRoot, bottomNavigation, onHomeCommitted, onComplete)
+            return
+        }
+        source.container.animate().setListener(null).cancel()
+        source.container.scaleX = 1f
+        source.container.scaleY = 1f
+        source.container.isPressed = false
+        source.container.background?.jumpToCurrentState()
+        val sourceAlpha = source.container.alpha
+        source.container.alpha = 1f
+        val snapshot = capture(source.container)
+        source.container.alpha = sourceAlpha
+        if (snapshot == null) {
+            fallbackReturn("return_source_capture_failed", detailRoot, bottomNavigation, onHomeCommitted, onComplete)
+            return
+        }
+        val app = detailRoot.context.applicationContext as HabitsApplication
+        val palette = SettingsThemePaletteResolver.resolve(detailRoot.context, app.component.preferences)
+        val surfaceSpec = SettingsMorphSurfaceSpec.fromPalette(
+            palette = palette,
+            cardCornerRadiusPx = source.container.resources.getDimension(R.dimen.settings_card_radius),
+        )
+        this.sourceView = source.container
+        morphLayer.attachReturnSource(
+            sourceBounds = sourceBounds,
+            sourceBitmap = snapshot,
+            sourceColor = surfaceSpec.sourceColor,
+            boundaryColor = surfaceSpec.boundaryColor,
+            sourceCornerRadius = surfaceSpec.sourceCornerRadius,
+            drawShadow = surfaceSpec.drawShadow,
+        )
+        source.container.alpha = 0f
+        stateMachine.startAnimatingReturn()
+        startReturnAnimator(morphLayer, detailRoot, bottomNavigation, onHomeCommitted, onComplete)
+    }
+
+    fun startFallbackReturn(
+        reason: String,
+        detailRoot: View,
+        bottomNavigation: View,
+        onHomeCommitted: () -> Unit,
+        onComplete: () -> Unit,
+    ) {
+        if (state != State.PREPARING_RETURN) return
+        fallbackReturn(reason, detailRoot, bottomNavigation, onHomeCommitted, onComplete)
     }
 
     fun animateReturn(
@@ -167,7 +265,7 @@ class SettingsCardMorphController(
                     bottomNavigation.visibility = View.VISIBLE
                     bottomNavigation.alpha = 0f
                     bottomNavigation.translationY = 12f * bottomNavigation.resources.displayMetrics.density
-                    state = State.ANIMATING_RETURN
+                    stateMachine.startAnimatingReturn()
                     startReturnAnimator(morphLayer, detailRoot, bottomNavigation, onHomeCommitted, onComplete)
                     return true
                 }
@@ -220,6 +318,10 @@ class SettingsCardMorphController(
         }
         val app = detailRoot.context.applicationContext as HabitsApplication
         val palette = SettingsThemePaletteResolver.resolve(detailRoot.context, app.component.preferences)
+        val surfaceSpec = SettingsMorphSurfaceSpec.fromPalette(
+            palette = palette,
+            cardCornerRadiusPx = source.container.resources.getDimension(R.dimen.settings_card_radius),
+        )
         val morphLayer = SettingsMorphLayer(overlayHost.context)
         morphLayer.prepare(
             sourceBounds = sourceBounds,
@@ -229,10 +331,11 @@ class SettingsCardMorphController(
             bodyBitmap = bodySnapshot,
             toolbarInHost = toolbarBounds,
             bodyInHost = bodyBounds,
-            sourceColor = palette.surface,
-            destinationColor = palette.background,
-            boundaryColor = palette.divider,
-            sourceCornerRadius = source.container.resources.getDimension(R.dimen.settings_card_radius),
+            sourceColor = surfaceSpec.sourceColor,
+            destinationColor = surfaceSpec.destinationColor,
+            boundaryColor = surfaceSpec.boundaryColor,
+            sourceCornerRadius = surfaceSpec.sourceCornerRadius,
+            drawShadow = surfaceSpec.drawShadow,
         )
         overlayHost.removeAllViews()
         overlayHost.addView(
@@ -284,11 +387,9 @@ class SettingsCardMorphController(
                         detailRoot.alpha = 1f
                         onDetailCommitted()
                         overlayHost.postOnAnimation {
-                            val queued = backQueued
-                            backQueued = false
                             restoreItemAnimator()
                             releaseOverlay()
-                            state = State.IDLE_DETAIL
+                            val queued = stateMachine.finishForward()
                             terminalActionRunning = false
                             onComplete(queued)
                         }
@@ -328,7 +429,7 @@ class SettingsCardMorphController(
                     bottomNavigation.translationY = 0f
                     restoreItemAnimator()
                     releaseOverlay()
-                    state = State.IDLE_HOME
+                    stateMachine.finishReturn()
                     terminalActionRunning = false
                     onComplete()
                 }
@@ -347,7 +448,7 @@ class SettingsCardMorphController(
     ) {
         logFallback(reason)
         releaseOverlay()
-        state = State.ANIMATING_FORWARD
+        stateMachine.startAnimatingForward()
         animator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = SettingsTransitionSpec.REDUCED_DURATION
             addUpdateListener { detailRoot.alpha = it.animatedValue as Float }
@@ -359,8 +460,8 @@ class SettingsCardMorphController(
                     bottomNavigation.visibility = View.GONE
                     onDetailCommitted()
                     restoreItemAnimator()
-                    state = State.IDLE_DETAIL
-                    onComplete(backQueued.also { backQueued = false })
+                    val queued = stateMachine.finishForward()
+                    onComplete(queued)
                 }
             })
             start()
@@ -378,7 +479,7 @@ class SettingsCardMorphController(
         releaseOverlay()
         bottomNavigation.visibility = View.VISIBLE
         bottomNavigation.alpha = 0f
-        state = State.ANIMATING_RETURN
+        stateMachine.startAnimatingReturn()
         animator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = SettingsTransitionSpec.REDUCED_DURATION
             addUpdateListener {
@@ -393,7 +494,7 @@ class SettingsCardMorphController(
                     sourceView?.alpha = 1f
                     bottomNavigation.alpha = 1f
                     restoreItemAnimator()
-                    state = State.IDLE_HOME
+                    stateMachine.finishReturn()
                     onComplete()
                 }
             })
@@ -402,14 +503,13 @@ class SettingsCardMorphController(
     }
 
     fun cancelAndSettle(target: SettleTarget) {
-        if (state == State.IDLE_HOME && target == SettleTarget.HOME) return
-        if (state == State.IDLE_DETAIL && target == SettleTarget.DETAIL) return
-        state = State.CANCELLING
+        if (!stateMachine.needsCancel(target)) return
+        stateMachine.beginCancel()
         animator?.removeAllListeners()
         animator?.cancel()
         animator = null
         cleanVisualState(target)
-        state = if (target == SettleTarget.HOME) State.IDLE_HOME else State.IDLE_DETAIL
+        stateMachine.finishCancel(target)
     }
 
     private fun cleanVisualState(target: SettleTarget) {
@@ -427,7 +527,6 @@ class SettingsCardMorphController(
         }
         restoreItemAnimator()
         releaseOverlay()
-        backQueued = false
         terminalActionRunning = false
     }
 
@@ -460,6 +559,37 @@ class SettingsCardMorphController(
 
     companion object {
         private const val TAG = "SettingsMorph"
+    }
+}
+
+internal data class SettingsMorphSurfaceSpec(
+    val sourceColor: Int,
+    val destinationColor: Int,
+    val boundaryColor: Int,
+    val sourceCornerRadius: Float,
+    val drawShadow: Boolean,
+) {
+    companion object {
+        fun fromPalette(
+            palette: SettingsThemePalette,
+            cardCornerRadiusPx: Float,
+        ): SettingsMorphSurfaceSpec = if (palette.isClassicSectionLayout) {
+            SettingsMorphSurfaceSpec(
+                sourceColor = palette.background,
+                destinationColor = palette.background,
+                boundaryColor = android.graphics.Color.TRANSPARENT,
+                sourceCornerRadius = 0f,
+                drawShadow = false,
+            )
+        } else {
+            SettingsMorphSurfaceSpec(
+                sourceColor = palette.surface,
+                destinationColor = palette.background,
+                boundaryColor = palette.divider,
+                sourceCornerRadius = cardCornerRadiusPx,
+                drawShadow = true,
+            )
+        }
     }
 }
 

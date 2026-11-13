@@ -309,8 +309,10 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             onReady()
             return
         }
-        recyclerView.layoutManager?.onRestoreInstanceState(state)
-        recyclerView.postOnAnimation(onReady)
+        if (state != null) {
+            recyclerView.layoutManager?.onRestoreInstanceState(state)
+        }
+        recyclerView.awaitPostLayout(onReady)
     }
 
     internal fun resolveSectionSource(
@@ -326,14 +328,17 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             onResolved(null)
             return
         }
+        val existing = recyclerView.findViewHolderForAdapterPosition(position)?.itemView
+        if (existing != null) {
+            onResolved(SettingsTransitionSource(sectionId, existing))
+            return
+        }
         recyclerView.scrollToPosition(position)
-        recyclerView.postOnAnimation {
-            recyclerView.postOnAnimation {
-                val source = recyclerView.findViewHolderForAdapterPosition(position)?.itemView?.let { card ->
-                    SettingsTransitionSource(sectionId, card)
-                }
-                onResolved(source)
+        recyclerView.awaitPostLayout {
+            val source = recyclerView.findViewHolderForAdapterPosition(position)?.itemView?.let { card ->
+                SettingsTransitionSource(sectionId, card)
             }
+            onResolved(source)
         }
     }
 
@@ -2018,4 +2023,18 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         exitProcess(0)
     }
 
+}
+private inline fun View.awaitPostLayout(crossinline action: () -> Unit) {
+    if (!isAttachedToWindow) {
+        post { action() }
+        return
+    }
+    viewTreeObserver.addOnPreDrawListener(object : android.view.ViewTreeObserver.OnPreDrawListener {
+        override fun onPreDraw(): Boolean {
+            viewTreeObserver.removeOnPreDrawListener(this)
+            action()
+            return true
+        }
+    })
+    requestLayout()
 }
