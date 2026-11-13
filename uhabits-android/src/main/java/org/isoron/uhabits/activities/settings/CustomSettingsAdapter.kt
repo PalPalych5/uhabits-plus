@@ -163,15 +163,21 @@ class CustomSettingsAdapter(
 
     private fun applyCardDecoration(view: View, position: Int) {
         val isClassic = prefs.isClassicSectionLayout
-        val showBorders = prefs.showHabitCardBorders
         val density = context.resources.displayMetrics.density
-        val radius = if (isClassic) 0f else (prefs.habitsCardCornerRadius.coerceAtLeast(0) * density)
 
-        val item = items[position]
         val cardId = cardId(position) ?: return
         val isFirst = !isSameCard(position - 1, cardId)
         val isLast = !isSameCard(position + 1, cardId)
         val palette = SettingsThemePaletteResolver.resolve(context, prefs)
+        val style = SettingsRowSurfaceSpec.resolve(
+            palette = palette,
+            density = density,
+            cardMarginHorizontalPx = context.resources.getDimensionPixelSize(R.dimen.settings_card_horizontal_margin),
+            cardHalfGapPx = context.resources.getDimensionPixelSize(R.dimen.settings_card_vertical_gap_half),
+            isFirst = isFirst,
+            isLast = isLast,
+        )
+        val radius = style.cornerRadiusPx
 
         val radii = when {
             isClassic -> floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f)
@@ -184,9 +190,9 @@ class CustomSettingsAdapter(
         val backgroundDrawable = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadii = radii
-            setColor(palette.surface)
-            if (!isClassic && (showBorders || palette.isPureBlack)) {
-                setStroke((1 * density).toInt().coerceAtLeast(1), palette.border)
+            setColor(style.backgroundColor)
+            if (style.strokeWidthPx > 0) {
+                setStroke(style.strokeWidthPx, style.strokeColor)
             }
         }
 
@@ -197,7 +203,7 @@ class CustomSettingsAdapter(
         }
 
         val rippleColor = ColorUtils.setAlphaComponent(palette.onSurface, if (palette.isDark) 28 else 18)
-        
+
         val rippleDrawable = RippleDrawable(
             ColorStateList.valueOf(rippleColor),
             backgroundDrawable,
@@ -205,15 +211,16 @@ class CustomSettingsAdapter(
         )
 
         view.background = rippleDrawable
-        view.clipToOutline = !isClassic
+        view.clipToOutline = style.clipToOutline
 
         val lp = view.layoutParams as? ViewGroup.MarginLayoutParams
         if (lp != null) {
-            val marginHorizontal = if (isClassic) 0 else context.resources.getDimensionPixelSize(R.dimen.settings_card_horizontal_margin)
-            val halfGap = if (isClassic) 0 else context.resources.getDimensionPixelSize(R.dimen.settings_card_vertical_gap_half)
-            val marginTop = if (isFirst) halfGap else 0
-            val marginBottom = if (isLast) halfGap else 0
-            lp.setMargins(marginHorizontal, marginTop, marginHorizontal, marginBottom)
+            lp.setMargins(
+                style.marginHorizontalPx,
+                style.marginTopPx,
+                style.marginHorizontalPx,
+                style.marginBottomPx,
+            )
             view.layoutParams = lp
         }
     }
@@ -390,6 +397,57 @@ class CustomSettingsAdapter(
     }
 
     override fun getItemCount(): Int = items.size
+}
+
+internal data class SettingsRowSurfaceStyle(
+    val backgroundColor: Int,
+    val cornerRadiusPx: Float,
+    val strokeWidthPx: Int,
+    val strokeColor: Int,
+    val clipToOutline: Boolean,
+    val marginHorizontalPx: Int,
+    val marginTopPx: Int,
+    val marginBottomPx: Int,
+)
+
+internal object SettingsRowSurfaceSpec {
+    fun resolve(
+        palette: SettingsThemePalette,
+        density: Float,
+        cardMarginHorizontalPx: Int,
+        cardHalfGapPx: Int,
+        isFirst: Boolean,
+        isLast: Boolean,
+    ): SettingsRowSurfaceStyle {
+        if (palette.isClassicSectionLayout) {
+            return SettingsRowSurfaceStyle(
+                backgroundColor = palette.background,
+                cornerRadiusPx = 0f,
+                strokeWidthPx = 0,
+                strokeColor = android.graphics.Color.TRANSPARENT,
+                clipToOutline = false,
+                marginHorizontalPx = 0,
+                marginTopPx = 0,
+                marginBottomPx = 0,
+            )
+        }
+        val radiusPx = palette.habitsCardCornerRadius.coerceAtLeast(0) * density
+        val strokeWidthPx = if (palette.showHabitCardBorders || palette.isPureBlack) {
+            (1f * density).toInt().coerceAtLeast(1)
+        } else {
+            0
+        }
+        return SettingsRowSurfaceStyle(
+            backgroundColor = palette.surface,
+            cornerRadiusPx = radiusPx,
+            strokeWidthPx = strokeWidthPx,
+            strokeColor = palette.border,
+            clipToOutline = true,
+            marginHorizontalPx = cardMarginHorizontalPx,
+            marginTopPx = if (isFirst) cardHalfGapPx else 0,
+            marginBottomPx = if (isLast) cardHalfGapPx else 0,
+        )
+    }
 }
 
 internal fun composeSettingsItem(item: SettingItem, currentItems: () -> List<SettingItem>): SettingItem =

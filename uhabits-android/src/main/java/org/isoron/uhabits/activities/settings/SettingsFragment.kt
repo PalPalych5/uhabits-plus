@@ -189,6 +189,7 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         view.setBackgroundColor(palette.background)
 
         recyclerView = view.findViewById(R.id.settingsRecyclerView)
+        recyclerView.setBackgroundColor(palette.background)
         view.addOnLayoutChangeListener { _, left, _, right, _, _, _, _, _ ->
             val maxWidth = resources.getDimensionPixelSize(R.dimen.settings_content_max_width)
             val targetWidth = min(right - left, maxWidth)

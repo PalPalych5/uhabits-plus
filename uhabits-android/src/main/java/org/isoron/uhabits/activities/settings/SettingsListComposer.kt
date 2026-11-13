@@ -74,7 +74,7 @@ object SettingsListComposer {
         sections: List<SettingsSectionModel>,
         accessibilityDescription: (SettingsSectionModel) -> String,
         onSectionClick: (SettingsTransitionSource) -> Unit
-    ): List<SettingItem> = sections.map { section ->
+    ): List<SettingItem> = sections.mapIndexed { index, section ->
         SettingItem.Section(
             sectionId = section.id,
             iconRes = section.iconRes,
@@ -90,7 +90,12 @@ object SettingsListComposer {
                         onSectionClick(source)
                     }
                 }
-            }
+            },
+            presentation = SettingPresentation(
+                cardId = "section:${section.id.name}",
+                isFirst = index == 0,
+                isLast = index == sections.lastIndex,
+            ),
         )
     }
 
