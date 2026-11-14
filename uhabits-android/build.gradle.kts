@@ -169,6 +169,10 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android.txt"), "proguard-rules.txt")
             if (signingConfigs.findByName("release") != null) {
                 signingConfig = signingConfigs.getByName("release")
+            } else if (project.hasProperty("uhabit.signReleaseWithDebug") &&
+                project.property("uhabit.signReleaseWithDebug") == "true"
+            ) {
+                signingConfig = signingConfigs.getByName("debug")
             }
         }
 
