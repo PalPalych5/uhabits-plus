@@ -20,10 +20,10 @@
 package org.isoron.uhabits.activities.habits.list
 
 import android.content.Context
-import android.view.Menu
-import android.view.MenuItem
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.view.ActionMode
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import me.tatarka.inject.annotations.Inject
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.R
@@ -46,55 +46,42 @@ class ListHabitsSelectionMenu(
     private val behavior: ListHabitsSelectionMenuBehavior,
     private val listController: Lazy<HabitCardListController>,
     private val notificationTray: NotificationTray
-) : ActionMode.Callback {
+) {
+
+    // Revision observed by the Compose toolbar when selection or its eligibility changes.
+    var selectionRevision by mutableIntStateOf(0)
+        private set
+
+    val selectedCount get() = listAdapter.selected.size
+    fun canEdit() = behavior.canEdit()
+    fun canArchive() = behavior.canArchive()
+    fun canUnarchive() = behavior.canUnarchive()
+    fun canNotify() = prefs.isDeveloper
 
     val activity = (context as AppCompatActivity)
 
-    var activeActionMode: ActionMode? = null
     var onSelectionModeChanged: (Boolean) -> Unit = {}
 
     fun onSelectionStart() {
-        activity.startSupportActionMode(this)
+        selectionRevision++
+        onSelectionModeChanged(true)
     }
 
     fun onSelectionChange() {
-        activeActionMode?.invalidate()
+        selectionRevision++
     }
 
     fun onSelectionFinish() {
-        activeActionMode?.finish()
-    }
-
-    override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
-        activeActionMode = mode
-        onSelectionModeChanged(true)
-        activity.menuInflater.inflate(R.menu.list_habits_selection, menu)
-        return true
-    }
-
-    override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean {
-        val itemEdit = menu.findItem(R.id.action_edit_habit)
-        val itemColor = menu.findItem(R.id.action_color)
-        val itemArchive = menu.findItem(R.id.action_archive_habit)
-        val itemUnarchive = menu.findItem(R.id.action_unarchive_habit)
-        val itemNotify = menu.findItem(R.id.action_notify)
-
-        itemColor.isVisible = true
-        itemEdit.isVisible = behavior.canEdit()
-        itemArchive.isVisible = behavior.canArchive()
-        itemUnarchive.isVisible = behavior.canUnarchive()
-        itemNotify.isVisible = prefs.isDeveloper
-        activeActionMode?.title = listAdapter.selected.size.toString()
-        return true
-    }
-    override fun onDestroyActionMode(mode: ActionMode?) {
-        activeActionMode = null
+        selectionRevision++
         onSelectionModeChanged(false)
+    }
+
+    fun cancelSelection() {
         listController.value.onSelectionFinished()
     }
 
-    override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
-        when (item.itemId) {
+    fun onActionItemClicked(itemId: Int): Boolean {
+        when (itemId) {
             R.id.action_edit_habit -> {
                 behavior.onEditHabits()
                 return true

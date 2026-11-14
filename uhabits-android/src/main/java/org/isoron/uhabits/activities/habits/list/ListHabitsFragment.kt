@@ -8,20 +8,23 @@ import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.BaseExceptionHandler
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
+import org.isoron.uhabits.activities.habits.edit.HabitTypeDialog
+import org.isoron.uhabits.activities.habits.list.views.HabitCardListAdapter
 import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.activities.main.MainNavigationHost
 import org.isoron.uhabits.activities.main.SettingsAction
-import org.isoron.uhabits.activities.habits.edit.HabitTypeDialog
-import org.isoron.uhabits.activities.habits.list.views.HabitCardListAdapter
 import org.isoron.uhabits.core.models.HabitMatcher
 import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 import org.isoron.uhabits.core.preferences.Preferences
@@ -29,13 +32,10 @@ import org.isoron.uhabits.core.tasks.TaskRunner
 import org.isoron.uhabits.inject.HabitsActivityComponent
 import org.isoron.uhabits.inject.HabitsApplicationComponent
 import org.isoron.uhabits.inject.create
-import org.isoron.uhabits.utils.dismissCurrentDialog
-import org.isoron.uhabits.utils.restartWithFade
-import android.widget.Toast
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
 import org.isoron.uhabits.sync.SyncCoordinator
 import org.isoron.uhabits.sync.SyncRunResult
+import org.isoron.uhabits.utils.dismissCurrentDialog
+import org.isoron.uhabits.utils.restartWithFade
 
 enum class ListHabitsDisplayMode { NORMAL, ARCHIVE }
 
@@ -64,7 +64,23 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
         savedInstanceState: Bundle?
     ): View {
         if (!initialized) initialize()
+        if (savedInstanceState != null) {
+            rootView.dataOffset = savedInstanceState.getInt(STATE_DATA_OFFSET, rootView.dataOffset)
+            if (savedInstanceState.getBoolean(STATE_SEARCH_ACTIVE)) {
+                menuController.behavior.onSearchQueryChanged(savedInstanceState.getString(STATE_SEARCH_QUERY).orEmpty())
+                menuController.openSearch()
+            }
+        }
         return rootView
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (initialized) {
+            outState.putInt(STATE_DATA_OFFSET, rootView.dataOffset)
+            outState.putBoolean(STATE_SEARCH_ACTIVE, menuController.isSearchActive)
+            outState.putString(STATE_SEARCH_QUERY, menuController.behavior.searchQuery)
+        }
     }
 
     private fun initialize() {
@@ -89,6 +105,13 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
         adapter = component.habitCardListAdapter
         taskRunner = appComponent.taskRunner
         menuController = component.listHabitsMenu
+        rootView.bindSelectionMenu(component.listHabitsSelectionMenu)
+        rootView.onToolbarAction = { id -> menuController.menu?.findItem(id)?.let { onOptionsItemSelected(it) } }
+        rootView.onToolbarBack = { handleBack() }
+        rootView.onToolbarQuery = { query ->
+            menuController.behavior.onSearchQueryChanged(query)
+            activity.invalidateOptionsMenu()
+        }
         component.listHabitsSelectionMenu.onSelectionModeChanged = { selecting ->
             (activity as? MainNavigationHost)?.setHabitCreationAvailable(
                 !selecting && displayMode == ListHabitsDisplayMode.NORMAL
@@ -124,6 +147,10 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
     }
 
     fun handleBack(): Boolean {
+        if (adapter.selected.isNotEmpty()) {
+            component.listHabitsSelectionMenu.cancelSelection()
+            return true
+        }
         if (menuController.isSearchActive) {
             menuController.closeSearch()
             return true
@@ -194,6 +221,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
 
     override fun onResume() {
         super.onResume()
+        (activity as? MainActivity)?.setHabitsSearchActive(menuController.isSearchActive)
         activateToolbar()
         adapter.refresh()
         screen.onAttached()
@@ -205,6 +233,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
     }
 
     override fun onPause() {
+        (activity as? MainActivity)?.setHabitsSearchActive(false)
         screen.onDetached()
         adapter.cancelRefresh()
         dismissCurrentDialog()
@@ -236,7 +265,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             adapter.primaryOrder = org.isoron.uhabits.core.models.HabitList.Order.BY_POSITION
         }
         adapter.applyDayTierSortOrder()
-        rootView.listView.invalidateItemDecorations()
+        rootView.refreshDisplayState()
         adapter.notifyDataSetChanged()
         requireActivity().invalidateOptionsMenu()
     }
@@ -270,7 +299,56 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
         updateMenuVisibility(menu)
         updateToolbarNavigation()
         rootView.applyToolbarIconTint(menu)
+        updateComposeToolbar(menu)
         super.onPrepareOptionsMenu(menu)
+    }
+
+    private fun updateComposeToolbar(menu: Menu) {
+        (activity as? MainActivity)?.setHabitsSearchActive(menuController.isSearchActive)
+        fun items(vararg ids: Int) = ids.asIterable().mapNotNull { id ->
+            menu.findItem(id)?.takeIf { it.isVisible }?.let { HabitToolbarItem(id, it.title.toString(), it.isChecked, it.isEnabled) }
+        }
+        val sortOrder = prefs.defaultPrimaryOrder
+        val selectedSort = when (sortOrder) {
+            org.isoron.uhabits.core.models.HabitList.Order.BY_NAME_ASC, org.isoron.uhabits.core.models.HabitList.Order.BY_NAME_DESC -> R.id.actionSortName
+            org.isoron.uhabits.core.models.HabitList.Order.BY_COLOR_ASC, org.isoron.uhabits.core.models.HabitList.Order.BY_COLOR_DESC -> R.id.actionSortColor
+            org.isoron.uhabits.core.models.HabitList.Order.BY_SCORE_ASC, org.isoron.uhabits.core.models.HabitList.Order.BY_SCORE_DESC -> R.id.actionSortScore
+            org.isoron.uhabits.core.models.HabitList.Order.BY_STATUS_ASC, org.isoron.uhabits.core.models.HabitList.Order.BY_STATUS_DESC -> R.id.actionSortStatus
+            org.isoron.uhabits.core.models.HabitList.Order.BY_SPHERE -> R.id.actionSortSphere
+            org.isoron.uhabits.core.models.HabitList.Order.BY_DAY_TIER -> R.id.actionSortLevel
+            else -> R.id.actionSortManual
+        }
+        val descending = sortOrder in setOf(
+            org.isoron.uhabits.core.models.HabitList.Order.BY_NAME_DESC,
+            org.isoron.uhabits.core.models.HabitList.Order.BY_COLOR_DESC,
+            org.isoron.uhabits.core.models.HabitList.Order.BY_SCORE_DESC,
+            org.isoron.uhabits.core.models.HabitList.Order.BY_STATUS_DESC
+        )
+        val sync = menu.findItem(R.id.actionSync)
+        rootView.updateComposeToolbar(HabitToolbarState(
+            title = getString(if (displayMode == ListHabitsDisplayMode.ARCHIVE) R.string.archive_title else R.string.habits_title),
+            archive = displayMode == ListHabitsDisplayMode.ARCHIVE,
+            searching = menuController.isSearchActive,
+            query = menuController.behavior.searchQuery,
+            syncVisible = sync?.isVisible == true,
+            syncing = sync?.isEnabled == false,
+            filters = items(R.id.actionHideArchived, R.id.actionHideCompleted),
+            sorts = items(
+                R.id.actionSortManual,
+                R.id.actionSortName,
+                R.id.actionSortColor,
+                R.id.actionSortScore,
+                R.id.actionSortStatus,
+                R.id.actionSortSphere,
+                R.id.actionSortLevel
+            ).map { item ->
+                item.copy(
+                    checked = item.id == selectedSort,
+                    isDescending = descending
+                )
+            },
+            overflow = items(R.id.actionSkipDay, R.id.actionSearch, R.id.actionTodayEvaluation, R.id.actionContainers)
+        ))
     }
 
     private fun updateToolbarNavigation() {
@@ -465,5 +543,11 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
 
     fun restartHost() {
         requireActivity().restartWithFade(MainActivity::class.java)
+    }
+
+    companion object {
+        private const val STATE_DATA_OFFSET = "habits_list_data_offset"
+        private const val STATE_SEARCH_ACTIVE = "habits_search_active"
+        private const val STATE_SEARCH_QUERY = "habits_search_query"
     }
 }

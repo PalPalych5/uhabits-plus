@@ -99,6 +99,14 @@ class HabitCardListAdapter(
     fun getMetadata(position: Int): HabitCardListCache.RowMetadata? =
         cache.getHabitByPosition(position)?.id?.let { cache.getMetadata(it) }
 
+    fun getScore(habitId: Long): Double = cache.getScore(habitId)
+
+    fun getCheckmarks(habitId: Long): IntArray = cache.getCheckmarks(habitId)
+
+    fun getNotes(habitId: Long): Array<String> = cache.getNotes(habitId)
+
+    fun getEffectiveSnapshot(habitId: Long) = cache.getEffectiveSnapshot(habitId)
+
     override fun getItemCount(): Int {
         return cache.habitCount
     }
@@ -300,12 +308,11 @@ class HabitCardListAdapter(
             val previous = cache.primaryOrder
             cache.primaryOrder = value
             preferences.defaultPrimaryOrder = value
-            if (previous != value &&
-                (previous == HabitList.Order.BY_SPHERE || value == HabitList.Order.BY_SPHERE)
-            ) {
+            if (previous != value) {
                 notifyDataSetChanged()
             }
             listView?.invalidateItemDecorations()
+            observable.notifyListeners()
         }
 
     override var secondaryOrder: HabitList.Order
@@ -313,12 +320,16 @@ class HabitCardListAdapter(
         set(value) {
             cache.secondaryOrder = value
             preferences.defaultSecondaryOrder = value
+            notifyDataSetChanged()
             listView?.invalidateItemDecorations()
+            observable.notifyListeners()
         }
 
     fun applyDayTierSortOrder() {
         cache.setDayTierSortOrder(preferences.dayTierSortOrder)
+        notifyDataSetChanged()
         listView?.invalidateItemDecorations()
+        observable.notifyListeners()
     }
 
     /**

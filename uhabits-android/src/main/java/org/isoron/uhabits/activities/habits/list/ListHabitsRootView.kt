@@ -1,67 +1,66 @@
 /*
- * Copyright (C) 2016-2025 Álinson Santos Xavier <git@axavier.org>
- *
- * This file is part of Loop Habit Tracker.
- *
- * Loop Habit Tracker is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.
- *
- * Loop Habit Tracker is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
+ * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 package org.isoron.uhabits.activities.habits.list
 
 import android.content.Context
 import android.content.res.ColorStateList
+import android.graphics.PointF
 import android.graphics.drawable.ColorDrawable
 import android.view.Menu
 import android.view.View
-import android.view.View.GONE
-import android.view.View.VISIBLE
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.RelativeLayout
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.graphics.drawable.DrawableCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.recyclerview.widget.RecyclerView
 import me.tatarka.inject.annotations.Inject
-import nl.dionsegijn.konfetti.xml.KonfettiView
+import org.isoron.platform.gui.toInt
+import org.isoron.platform.time.getToday
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
-import org.isoron.uhabits.activities.common.views.ScrollableChart
-import org.isoron.uhabits.activities.habits.list.views.EmptyListView
+import org.isoron.uhabits.activities.habits.list.views.HabitAppearanceState
 import org.isoron.uhabits.activities.habits.list.views.HabitCardListAdapter
-import org.isoron.uhabits.activities.habits.list.views.HabitCardListView
-import org.isoron.uhabits.activities.habits.list.views.HabitCardListViewFactory
-import org.isoron.uhabits.activities.habits.list.views.HeaderView
-import org.isoron.uhabits.activities.habits.list.views.HintView
+import org.isoron.uhabits.activities.habits.list.views.HabitCardListController
+import org.isoron.uhabits.activities.habits.list.views.HabitCelebrationState
+import org.isoron.uhabits.activities.habits.list.views.HabitListDisplayModeState
+import org.isoron.uhabits.activities.habits.list.views.HabitListRowUi
+import org.isoron.uhabits.activities.habits.list.views.HabitListScreenCompose
+import org.isoron.uhabits.activities.habits.list.views.HabitListScreenUiState
+import org.isoron.uhabits.activities.habits.list.views.HabitRowIntValues
+import org.isoron.uhabits.activities.habits.list.views.resolveGroupUiInfo
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
+import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.ModelObservable
 import org.isoron.uhabits.core.models.PaletteColor
 import org.isoron.uhabits.core.preferences.Preferences
-import org.isoron.uhabits.core.tasks.TaskRunner
+import org.isoron.uhabits.core.ui.screens.habits.list.HabitCardListCache
+import org.isoron.uhabits.core.ui.screens.habits.list.HintList
 import org.isoron.uhabits.core.ui.screens.habits.list.HintListFactory
+import org.isoron.uhabits.core.ui.screens.habits.list.ListHabitsBehavior
 import org.isoron.uhabits.core.utils.MidnightTimer
 import org.isoron.uhabits.inject.ActivityContext
 import org.isoron.uhabits.inject.ActivityScope
-import org.isoron.uhabits.utils.addAtBottom
+import org.isoron.uhabits.utils.HabitsStartupTrace
 import org.isoron.uhabits.utils.addAtTop
 import org.isoron.uhabits.utils.addBelow
 import org.isoron.uhabits.utils.buildToolbar
 import org.isoron.uhabits.utils.currentTheme
-import org.isoron.uhabits.utils.dim
-import org.isoron.uhabits.utils.dp
 import org.isoron.uhabits.utils.setupToolbar
-import org.isoron.uhabits.utils.sres
-import kotlin.math.max
-import kotlin.math.min
 
 const val MAX_CHECKMARK_COUNT = 60
 
@@ -70,62 +69,120 @@ const val MAX_CHECKMARK_COUNT = 60
 class ListHabitsRootView(
     @ActivityContext context: Context,
     hintListFactory: HintListFactory,
-    preferences: Preferences,
-    midnightTimer: MidnightTimer,
-    runner: TaskRunner,
+    private val preferences: Preferences,
+    private val midnightTimer: MidnightTimer,
     private val listAdapter: HabitCardListAdapter,
-    habitCardListViewFactory: HabitCardListViewFactory
-) : FrameLayout(context), ModelObservable.Listener {
+    private val listController: Lazy<HabitCardListController>,
+    private val behavior: ListHabitsBehavior
+) : FrameLayout(context),
+    ModelObservable.Listener,
+    Preferences.Listener,
+    MidnightTimer.MidnightListener {
+
     private val palette get() = MainTabsThemeBridge.resolve(context)
 
-    val listView: HabitCardListView = habitCardListViewFactory.create()
-    val llEmpty = EmptyListView(context)
     val tbar = buildToolbar()
-    val konfettiView = KonfettiView(context).apply {
-        translationZ = 10f
-    }
-    val hintView: HintView
-    val header = HeaderView(context, preferences, midnightTimer)
+    val celebrationState = HabitCelebrationState()
+
+    private val hintList: HintList = hintListFactory.create(resources.getStringArray(R.array.hints))
+    private val composeListView: ComposeView
     private val mainLayout: RelativeLayout
     private var containerHomeView: View? = null
-    private val loadingLabel = android.widget.TextView(context).apply {
-        setTextColor(palette.onSurfaceVariant)
-        gravity = android.view.Gravity.CENTER
-        setPadding(dp(16f).toInt(), dp(12f).toInt(), dp(16f).toInt(), dp(12f).toInt())
-    }
-    private val loadingRetry = android.widget.Button(context).apply {
-        setText(R.string.habits_loading_retry)
-        setOnClickListener { listAdapter.refresh(); updateEmptyView() }
-    }
-    private val loadingState = android.widget.LinearLayout(context).apply {
-        orientation = android.widget.LinearLayout.VERTICAL
-        gravity = android.view.Gravity.CENTER
-        addView(loadingLabel, MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
-        addView(loadingRetry)
-    }
     private var failureNotified = false
+    private var isContainerHomeVisible = false
+    private var startupLayoutTraced = false
+
+    private var uiRevision by mutableLongStateOf(0L)
+    var dataOffset by mutableIntStateOf(0)
+    private var activeHint by mutableStateOf<String?>(null)
+    private var composeColors by mutableStateOf(UHabitComposeColors.fromPalette(palette))
+    private var screenUiState by mutableStateOf(buildUiState())
+    private var selectionMenu by mutableStateOf<ListHabitsSelectionMenu?>(null)
+    private var toolbarState by mutableStateOf(HabitToolbarState())
+    var onToolbarAction: (Int) -> Unit = {}
+    var onToolbarBack: () -> Unit = {}
+    var onToolbarQuery: (String) -> Unit = {}
+
+    private val adapterObserver = object : RecyclerView.AdapterDataObserver() {
+        override fun onChanged() = publishUiState()
+        override fun onItemRangeChanged(positionStart: Int, itemCount: Int) = publishUiState()
+        override fun onItemRangeChanged(positionStart: Int, itemCount: Int, payload: Any?) = publishUiState()
+        override fun onItemRangeInserted(positionStart: Int, itemCount: Int) = publishUiState()
+        override fun onItemRangeRemoved(positionStart: Int, itemCount: Int) = publishUiState()
+        override fun onItemRangeMoved(fromPosition: Int, toPosition: Int, itemCount: Int) = publishUiState()
+    }
 
     init {
-        val hints = resources.getStringArray(R.array.hints)
-        val hintList = hintListFactory.create(hints)
-        hintView = HintView(context, hintList)
+        composeListView = ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setContent {
+                val colors = composeColors
+                UHabitComposeTheme(colors = colors) {
+                    HabitListScreenCompose(
+                        state = screenUiState,
+                        dataOffset = dataOffset,
+                        onDataOffsetChanged = { newOffset -> dataOffset = newOffset },
+                        onRetryRefresh = {
+                            listAdapter.refresh()
+                            publishUiState()
+                        },
+                        onRowClick = { pos -> listController.value.onItemClick(pos) },
+                        onRowLongClick = { pos -> listController.value.onItemLongClick(pos) },
+                        onMoveRow = { from, to -> listController.value.drop(from, to) },
+                        onCheckmarkToggle = { habit, date, nextValue, notes, windowOffset ->
+                            val pt = toKonfettiCoords(windowOffset)
+                            behavior.onToggle(habit, date, nextValue, notes, pt.x, pt.y)
+                        },
+                        onHabitDateEdit = { habit, date, windowOffset ->
+                            val pt = toKonfettiCoords(windowOffset)
+                            behavior.onEdit(habit, date, pt.x, pt.y)
+                        },
+                        onDismissHint = { activeHint = null },
+                        searchActive = toolbarState.searching,
+                        celebrationState = celebrationState,
+                        onMeaningfulContentDrawn = {
+                            if (HabitsStartupTrace.enabled && !startupLayoutTraced) {
+                                startupLayoutTraced = true
+                                HabitsStartupTrace.mark("list.layout.ready")
+                                HabitsStartupTrace.mark("list.meaningful.draw")
+                                if (android.os.Build.VERSION.SDK_INT >= 29 && isHardwareAccelerated) {
+                                    viewTreeObserver.registerFrameCommitCallback {
+                                        HabitsStartupTrace.mark("list.frame.commit")
+                                    }
+                                }
+                            }
+                        },
+                        colors = colors
+                    )
+                }
+            }
+        }
 
+        val selectionToolbar = ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setContent {
+                UHabitComposeTheme(colors = composeColors) {
+                    val selection = selectionMenu
+                    if (selection != null && selection.selectionRevision.let { selection.selectedCount > 0 }) {
+                        HabitSelectionToolbar(selection, composeColors)
+                    } else {
+                        HabitToolbarCompose(toolbarState, composeColors, onToolbarAction, onToolbarBack) { query ->
+                            toolbarState = toolbarState.copy(query = query)
+                            onToolbarQuery(query)
+                        }
+                    }
+                }
+            }
+        }
         mainLayout = RelativeLayout(context).apply {
             setBackgroundColor(palette.background)
-            addAtTop(konfettiView)
             addAtTop(tbar)
-            addBelow(header, tbar)
-            addBelow(listView, header, height = MATCH_PARENT) {
-                it.topMargin = dp(3f).toInt()
-            }
+            addBelow(composeListView, tbar, height = MATCH_PARENT)
+            addAtTop(selectionToolbar)
             // addBelow assigns a generated ID; retain the list's stable resource identity afterward.
-            listView.id = R.id.habitCardList
-            addBelow(llEmpty, header, height = MATCH_PARENT) {
-                it.topMargin = dp(3f).toInt()
-            }
-            addBelow(loadingState, header, height = MATCH_PARENT)
-            addAtBottom(hintView)
+            composeListView.id = R.id.habitCardList
         }
+
         mainLayout.setupToolbar(
             toolbar = tbar,
             title = "",
@@ -135,10 +192,31 @@ class ListHabitsRootView(
         )
         tbar.background = ColorDrawable(palette.background)
         tbar.setTitleTextColor(palette.onSurface)
+        tbar.visibility = INVISIBLE
         (context as? AppCompatActivity)?.window?.statusBarColor = palette.background
         applyToolbarIconTint()
         addView(mainLayout, MATCH_PARENT, MATCH_PARENT)
-        listAdapter.setListView(listView)
+        listAdapter.setListView(null)
+    }
+
+    fun bindSelectionMenu(menu: ListHabitsSelectionMenu) {
+        selectionMenu = menu
+    }
+
+    internal fun updateComposeToolbar(state: HabitToolbarState) { toolbarState = state }
+
+    private fun toKonfettiCoords(windowOffset: Offset): PointF {
+        if (windowOffset == Offset.Zero) return PointF(0f, 0f)
+        val origin = IntArray(2)
+        composeListView.getLocationInWindow(origin)
+        return PointF(
+            windowOffset.x - origin[0].toFloat(),
+            windowOffset.y - origin[1].toFloat()
+        )
+    }
+
+    fun startCelebration(x: Float, y: Float, colors: List<androidx.compose.ui.graphics.Color>) {
+        celebrationState.burst(x, y, colors)
     }
 
     fun setContainerHomeView(view: View) {
@@ -148,90 +226,187 @@ class ListHabitsRootView(
     }
 
     fun showContainerHomeView(show: Boolean) {
+        isContainerHomeVisible = show
         if (show) {
-            header.visibility = GONE
-            listView.visibility = GONE
-            llEmpty.visibility = GONE
-            loadingState.visibility = GONE
-            hintView.setSuppressed(true)
+            composeListView.visibility = GONE
             containerHomeView?.visibility = VISIBLE
+            activeHint = null
         } else {
-            header.visibility = VISIBLE
-            listView.visibility = VISIBLE
-            hintView.setSuppressed(false)
+            composeListView.visibility = VISIBLE
             containerHomeView?.visibility = GONE
-            updateEmptyView()
+            maybeShowHint()
+            publishUiState()
         }
     }
 
-    override fun onModelChange() {
-        updateEmptyView()
+    fun refreshDisplayState() {
+        publishUiState()
     }
 
-    private fun setupControllers() {
-        header.setScrollController(
-            object : ScrollableChart.ScrollController {
-                override fun onDataOffsetChanged(newDataOffset: Int) {
-                    listView.dataOffset = newDataOffset
-                }
-            }
-        )
+    override fun onModelChange() {
+        publishUiState()
+    }
+
+    override fun atMidnight() {
+        post { publishUiState() }
+    }
+
+    override fun onCheckmarkSequenceChanged() {
+        post { publishUiState() }
+    }
+
+    override fun onQuestionMarksChanged() {
+        post { publishUiState() }
+    }
+
+    override fun onCardCornersChanged() {
+        post { publishUiState() }
+    }
+
+    override fun onHabitListAppearanceChanged() {
+        post { publishUiState() }
     }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        setupControllers()
+        startupLayoutTraced = false
         listAdapter.observable.addListener(this)
+        listAdapter.registerAdapterDataObserver(adapterObserver)
+        preferences.addListener(this)
+        midnightTimer.addListener(this)
+        listAdapter.onAttached()
+        maybeShowHint()
+        publishUiState()
     }
 
     override fun onDetachedFromWindow() {
+        listAdapter.onDetached()
+        midnightTimer.removeListener(this)
+        preferences.removeListener(this)
+        listAdapter.unregisterAdapterDataObserver(adapterObserver)
         listAdapter.observable.removeListener(this)
         super.onDetachedFromWindow()
     }
 
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        val count = getCheckmarkCount()
-        header.buttonCount = count
-        header.setMaxDataOffset(max(MAX_CHECKMARK_COUNT - count, 0))
-        listView.checkmarkCount = count
-        super.onSizeChanged(w, h, oldw, oldh)
+    private fun maybeShowHint() {
+        if (isContainerHomeVisible || !activeHint.isNullOrBlank()) return
+        if (!hintList.shouldShow()) return
+        val hint = hintList.pop()?.takeIf { it.isNotBlank() } ?: return
+        activeHint = hint
     }
 
-    private fun getCheckmarkCount(): Int {
-        val nameWidth = dim(R.dimen.habitNameWidth)
-        val buttonWidth = dim(R.dimen.checkmarkWidth)
-        val labelWidth = max((measuredWidth / 3).toFloat(), nameWidth)
-        val buttonCount = ((measuredWidth - labelWidth) / buttonWidth).toInt()
-        return min(MAX_CHECKMARK_COUNT, max(0, buttonCount))
-    }
+    private fun publishUiState() {
+        val currentPalette = palette
+        mainLayout.setBackgroundColor(currentPalette.background)
+        tbar.background = ColorDrawable(currentPalette.background)
+        tbar.setTitleTextColor(currentPalette.onSurface)
+        composeColors = UHabitComposeColors.fromPalette(currentPalette)
+        screenUiState = buildUiState()
 
-    private fun updateEmptyView() {
-        loadingState.visibility = GONE
-        if (containerHomeView?.visibility == VISIBLE) {
-            llEmpty.hide()
-            return
-        }
-        if (!listAdapter.hasLoaded) {
-            llEmpty.hide()
-            loadingState.visibility = VISIBLE
-            loadingRetry.visibility = if (listAdapter.lastRefreshFailed) VISIBLE else GONE
-            loadingLabel.setText(if (listAdapter.lastRefreshFailed) R.string.habits_loading_error else R.string.habits_loading)
-        } else if (listAdapter.itemCount == 0) {
-            if (listAdapter.isSearching()) {
-                llEmpty.showNotFound()
-            } else if (listAdapter.hasNoHabit()) {
-                llEmpty.showEmpty()
-            } else {
-                llEmpty.showDone()
-            }
-        } else {
-            llEmpty.hide()
-        }
-        if (!listAdapter.lastRefreshFailed) failureNotified = false
-        if (listAdapter.hasLoaded && listAdapter.lastRefreshFailed && !failureNotified) {
+        if (!listAdapter.lastRefreshFailed) {
+            failureNotified = false
+        } else if (listAdapter.hasLoaded && !failureNotified && !isContainerHomeVisible) {
             failureNotified = true
-            android.widget.Toast.makeText(context, R.string.habits_loading_error, android.widget.Toast.LENGTH_LONG).show()
+            android.widget.Toast.makeText(
+                context,
+                R.string.habits_loading_error,
+                android.widget.Toast.LENGTH_LONG
+            ).show()
         }
+    }
+
+    private fun buildUiState(): HabitListScreenUiState {
+        val today = getToday()
+        val theme = currentTheme()
+        val count = listAdapter.itemCount
+
+        val displayState = when {
+            !listAdapter.hasLoaded -> {
+                if (listAdapter.lastRefreshFailed) HabitListDisplayModeState.ERROR else HabitListDisplayModeState.LOADING
+            }
+            count == 0 -> when {
+                listAdapter.isSearching() -> HabitListDisplayModeState.EMPTY_SEARCH
+                listAdapter.hasNoHabit() -> HabitListDisplayModeState.EMPTY_NO_HABITS
+                else -> HabitListDisplayModeState.EMPTY_ALL_DONE
+            }
+            else -> HabitListDisplayModeState.CONTENT
+        }
+
+        val metadataList = ArrayList<HabitCardListCache.RowMetadata>(count)
+        val habits = ArrayList<org.isoron.uhabits.core.models.Habit>(count)
+        for (i in 0 until count) {
+            val habit = listAdapter.getItem(i)
+            val id = habit?.id
+            if (habit != null && id != null) {
+                habits.add(habit)
+                metadataList.add(listAdapter.getMetadata(i) ?: HabitCardListCache.RowMetadata(null, null, org.isoron.uhabits.core.models.DayTier.NORMAL, null))
+            }
+        }
+
+        val grouping = resolveGroupUiInfo(
+            metadataList = metadataList,
+            primaryOrder = listAdapter.primaryOrder,
+            spheresEnabled = preferences.isHabitSpheresEnabled,
+            showSphereNames = preferences.isShowSphereNamesEnabled,
+            dayTiersEnabled = preferences.isDayTiersEnabled,
+            groupSeparatorsEnabled = preferences.areHabitGroupSeparatorsEnabled,
+            unassignedHeading = context.getString(R.string.habit_block_unassigned)
+        )
+
+        val selectedSet = listAdapter.selected.mapNotNull { it.id }.toSet()
+        val rows = habits.mapIndexed { idx, habit ->
+            val id = requireNotNull(habit.id)
+            val meta = metadataList[idx]
+            val group = grouping[idx]
+            val todayGoal = habit.goalAt(today)
+            val goalSignature = "${todayGoal.targetValue}|${todayGoal.targetType}|${todayGoal.unit}|${todayGoal.frequency.denominator}"
+            HabitListRowUi(
+                position = idx,
+                habitId = id,
+                name = habit.name,
+                activeColorArgb = theme.color(habit.color).toInt(),
+                isNumerical = habit.isNumerical,
+                score = listAdapter.getScore(id),
+                values = HabitRowIntValues(listAdapter.getCheckmarks(id)),
+                notes = listAdapter.getNotes(id).toList(),
+                effectiveSnapshot = listAdapter.getEffectiveSnapshot(id),
+                iconRef = meta.iconRef,
+                isSelected = selectedSet.contains(id),
+                groupHeading = group.heading,
+                showTopGap = group.showTopGap,
+                goalSignature = goalSignature,
+                habit = habit
+            )
+        }
+
+        val appearance = HabitAppearanceState(
+            isClassic = preferences.isClassicSectionLayout,
+            showCardBorders = preferences.showHabitCardBorders,
+            cardCornerRadiusDp = preferences.habitsCardCornerRadius,
+            showScoreRings = preferences.showScoreRings,
+            showHabitIcons = preferences.showHabitIcons,
+            areQuestionMarksEnabled = preferences.areQuestionMarksEnabled,
+            isShortToggleEnabled = preferences.isShortToggleEnabled,
+            isSkipEnabled = preferences.isSkipEnabled,
+            isCheckmarkSequenceReversed = preferences.isCheckmarkSequenceReversed,
+            primaryOrder = listAdapter.primaryOrder,
+            isSortable = listAdapter.primaryOrder == HabitList.Order.BY_POSITION,
+            isDayTiersEnabled = preferences.isDayTiersEnabled,
+            isHabitSpheresEnabled = preferences.isHabitSpheresEnabled,
+            isShowSphereNamesEnabled = preferences.isShowSphereNamesEnabled,
+            areHabitGroupSeparatorsEnabled = preferences.areHabitGroupSeparatorsEnabled
+        )
+
+        uiRevision++
+        return HabitListScreenUiState(
+            today = today,
+            displayState = displayState,
+            rows = rows,
+            appearance = appearance,
+            isSelectionActive = listAdapter.selected.isNotEmpty(),
+            activeHint = activeHint,
+            listRevision = uiRevision
+        )
     }
 
     fun setScreenTitle(title: String) {
@@ -239,6 +414,10 @@ class ListHabitsRootView(
     }
 
     fun applyToolbarIconTint(menu: Menu? = null) {
+        (context as? AppCompatActivity)?.window?.let { window ->
+            window.statusBarColor = palette.background
+            WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = !palette.isDark
+        }
         tbar.navigationIcon?.mutate()?.let { DrawableCompat.setTint(it, palette.onSurface) }
         tbar.overflowIcon?.mutate()?.let { DrawableCompat.setTint(it, palette.onSurface) }
         menu?.let {

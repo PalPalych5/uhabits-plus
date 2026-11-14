@@ -27,6 +27,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.StrokeCap
@@ -62,28 +64,44 @@ fun HabitProgressIndicator(
     score: Float,
     color: Color,
     modifier: Modifier = Modifier,
-    size: Dp = 16.dp,
-    thickness: Dp = 2.5.dp,
-    trackAlpha: Float = 0.18f
+    size: Dp = 15.dp,
+    thickness: Dp = 3.dp,
+    trackAlpha: Float = 0.15f
 ) {
     val clampedScore = score.coerceIn(0f, 1f)
-    val sweepAngle = clampedScore * 360f
 
     Canvas(modifier = modifier.size(size)) {
         val strokeWidth = thickness.toPx()
-        // Subtle background ring
+        val diameter = this.size.minDimension - strokeWidth
+        val radius = diameter / 2f
+        val arcTopLeft = Offset((this.size.width - diameter) / 2f, (this.size.height - diameter) / 2f)
+        val arcSize = Size(diameter, diameter)
+
+        // 1. Subtle background ring
         drawCircle(
             color = color.copy(alpha = trackAlpha),
-            radius = (size.toPx() - strokeWidth) / 2f,
+            radius = radius,
+            center = center,
             style = Stroke(width = strokeWidth)
         )
-        // Foreground progress arc
-        if (sweepAngle > 0f) {
+
+        // 2. Foreground progress
+        if (clampedScore >= 1f) {
+            // Seamless full circle without cap overlap artifacts
+            drawCircle(
+                color = color,
+                radius = radius,
+                center = center,
+                style = Stroke(width = strokeWidth)
+            )
+        } else if (clampedScore > 0f) {
             drawArc(
                 color = color,
                 startAngle = -90f,
-                sweepAngle = sweepAngle,
+                sweepAngle = clampedScore * 360f,
                 useCenter = false,
+                topLeft = arcTopLeft,
+                size = arcSize,
                 style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
             )
         }

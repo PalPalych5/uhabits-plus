@@ -31,9 +31,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.tatarka.inject.annotations.Inject
-import nl.dionsegijn.konfetti.core.Party
-import nl.dionsegijn.konfetti.core.Position
-import nl.dionsegijn.konfetti.core.emitter.Emitter
+
 import org.isoron.platform.gui.toInt
 import org.isoron.platform.io.JavaUserFile
 import org.isoron.platform.time.LocalDate
@@ -267,24 +265,13 @@ class ListHabitsScreen(
             return
         }
         val baseColor = themeSwitcher.currentTheme!!.color(color).toInt()
-        rootView.value.konfettiView.start(
-            Party(
-                speed = 0f,
-                maxSpeed = 16f,
-                damping = 0.9f,
-                spread = 360,
-                angle = 0,
-                colors = listOf(
-                    ColorUtils.changeHue(baseColor, 180f),
-                    ColorUtils.changeHue(baseColor, 20f),
-                    ColorUtils.changeHue(baseColor, -20f),
-                    baseColor
-                ),
-                position = Position.Absolute(x, y),
-                emitter = Emitter(duration = 25, TimeUnit.MILLISECONDS).max(25),
-                timeToLive = 0
-            )
+        val colors = listOf(
+            androidx.compose.ui.graphics.Color(ColorUtils.changeHue(baseColor, 180f)),
+            androidx.compose.ui.graphics.Color(ColorUtils.changeHue(baseColor, 20f)),
+            androidx.compose.ui.graphics.Color(ColorUtils.changeHue(baseColor, -20f)),
+            androidx.compose.ui.graphics.Color(baseColor)
         )
+        rootView.value.startCelebration(x, y, colors)
     }
 
     override fun showSettingsScreen() {

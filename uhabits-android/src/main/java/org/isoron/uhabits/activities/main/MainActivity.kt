@@ -72,6 +72,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     private var bottomNavigationNaturalHeight = 0
     private var bottomNavigationAnimationToken = 0
     private var taskQuickAddActive = false
+    private var habitsSearchActive = false
     private lateinit var workspaceSidebar: MainWorkspaceSidebar
     private val experimentalWide: Boolean
         get() = appComponent.session.isNextArchitecture && resources.configuration.screenWidthDp >= 600
@@ -125,7 +126,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(binding.bottomNavigationContainer) { view, insets ->
             val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
             val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
-            binding.bottomNavigation.visibility = if (taskQuickAddActive &&
+            binding.bottomNavigation.visibility = if ((taskQuickAddActive || habitsSearchActive) &&
                 insets.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime())) View.GONE else View.VISIBLE
             view.setPadding(0, 0, 0, maxOf(bars.bottom, ime.bottom))
             insets
@@ -788,6 +789,14 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     fun setTaskQuickAddActive(active: Boolean) {
         if (taskQuickAddActive == active) return
         taskQuickAddActive = active
+        androidx.core.view.ViewCompat.getRootWindowInsets(binding.bottomNavigationContainer)?.let {
+            androidx.core.view.ViewCompat.dispatchApplyWindowInsets(binding.bottomNavigationContainer, it)
+        }
+    }
+
+    fun setHabitsSearchActive(active: Boolean) {
+        if (habitsSearchActive == active) return
+        habitsSearchActive = active
         androidx.core.view.ViewCompat.getRootWindowInsets(binding.bottomNavigationContainer)?.let {
             androidx.core.view.ViewCompat.dispatchApplyWindowInsets(binding.bottomNavigationContainer, it)
         }

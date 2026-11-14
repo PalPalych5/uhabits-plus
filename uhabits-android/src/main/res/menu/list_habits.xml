@@ -26,7 +26,6 @@
     <item
         android:id="@+id/actionSearchContainer"
         android:title="@string/search"
-        app:actionViewClass="androidx.appcompat.widget.SearchView"
         app:showAsAction="always"/>
 
     <group android:id="@+id/actionItems">
