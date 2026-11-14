@@ -595,7 +595,7 @@ class EditHabitActivity : AppCompatActivity(), HabitFormActions {
 
     override fun onPickFrequency() {
         if (formState.habitType == HabitType.YES_NO) {
-            val picker = FrequencyPickerDialog(formState.freqNum, formState.freqDen)
+            val picker = FrequencyPickerDialog(formState.freqNum, formState.freqDen, androidColor)
             picker.onFrequencyPicked = { num, den ->
                 freqNum = num
                 freqDen = den
@@ -698,7 +698,7 @@ class EditHabitActivity : AppCompatActivity(), HabitFormActions {
     }
 
     override fun onPickReminderDays() {
-        val dialog = WeekdayPickerDialog()
+        val dialog = WeekdayPickerDialog(habitColor = androidColor)
         dialog.setListener { days: WeekdayList ->
             val updated = if (days.isEmpty) WeekdayList.EVERY_DAY else days
             reminderDays = updated

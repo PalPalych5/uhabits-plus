@@ -1,37 +1,30 @@
 /*
- * Copyright (C) 2016-2025 Álinson Santos Xavier <git@axavier.org>
- *
- * This file is part of Loop Habit Tracker.
- *
- * Loop Habit Tracker is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.
- *
- * Loop Habit Tracker is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
+ * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
+
 package org.isoron.uhabits.activities.common.dialogs
 
 import android.content.Context
-import android.view.LayoutInflater
-import android.widget.Button
-import android.widget.TextView
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
 import org.isoron.uhabits.core.ui.callbacks.OnConfirmedCallback
 import org.isoron.uhabits.inject.ActivityContext
 
-import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
-
-/**
- * Dialog that asks the user confirmation before executing a delete operation.
- */
 class ConfirmDeleteDialog(
     @ActivityContext context: Context,
     callback: OnConfirmedCallback,
@@ -42,29 +35,85 @@ class ConfirmDeleteDialog(
 ) {
     init {
         val res = context.resources
-        val view = LayoutInflater.from(context)
-            .inflate(R.layout.dialog_custom_confirm, null)
-        val dialogTitle  = view.findViewById<TextView>(R.id.dialog_title)
-        val dialogMessage= view.findViewById<TextView>(R.id.dialog_message)
-        val btnNegative  = view.findViewById<Button>(R.id.button_negative)
-        val btnPositive  = view.findViewById<Button>(R.id.button_positive)
+        val dialogTitle = res.getQuantityString(R.plurals.delete_habits_title, quantity)
+        val dialogMessage = res.getQuantityString(R.plurals.delete_habits_message, quantity)
 
-        dialogTitle.text  = res.getQuantityString(R.plurals.delete_habits_title, quantity)
-        dialogMessage.text= res.getQuantityString(R.plurals.delete_habits_message, quantity)
-
-        btnNegative.text = context.getString(android.R.string.cancel)
-        btnPositive.text = context.getString(android.R.string.ok)
-
-        btnNegative.setOnClickListener { dismiss() }
-        btnPositive.setOnClickListener {
-            callback.onConfirmed()
-            dismiss()
+        val composeView = ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setContent {
+                val palette = MainTabsThemeBridge.resolve(context)
+                val colors = UHabitComposeColors.fromPalette(palette)
+                UHabitComposeTheme(colors = colors) {
+                    ConfirmDeleteDialogContent(
+                        title = dialogTitle,
+                        message = dialogMessage,
+                        colors = colors,
+                        onCancel = { dismiss() },
+                        onConfirm = {
+                            callback.onConfirmed()
+                            dismiss()
+                        }
+                    )
+                }
+            }
         }
-        setView(view, 0, 0, 0, 0)
-
+        setView(composeView, 0, 0, 0, 0)
+        window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+        window?.decorView?.setPadding(0, 0, 0, 0)
         setOnShowListener {
-            CustomDialogs.styleDialogShell(this, view)
-            CustomDialogs.styleText(dialogTitle, dialogMessage, btnNegative, btnPositive, null, isDestructive = true)
+            window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+            window?.decorView?.setPadding(0, 0, 0, 0)
+        }
+    }
+}
+
+@Composable
+internal fun ConfirmDeleteDialogContent(
+    title: String,
+    message: String,
+    colors: UHabitComposeColors,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = colors.surfaceColor,
+        border = BorderStroke(1.dp, colors.borderColor),
+        shadowElevation = 0.dp,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = colors.foregroundColor
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = colors.secondaryColor
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onCancel) {
+                    Text(stringResource(android.R.string.cancel), color = colors.secondaryColor)
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(
+                    onClick = onConfirm,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            }
         }
     }
 }

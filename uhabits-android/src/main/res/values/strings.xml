@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  ~ Copyright (C) 2016-2025 Álinson Santos Xavier <git@axavier.org>
+  ~ Copyright (C) 2016-2025 ГЃlinson Santos Xavier <git@axavier.org>
   ~
   ~ This file is part of Loop Habit Tracker.
   ~
@@ -25,6 +25,11 @@
     <string name="app_name">UHabit Next</string>
     <string name="main_activity_title">UHabit Next</string>
     <string name="habits_title">Habits</string>
+    <string name="goal_reached">Goal reached</string>
+    <string name="score_pp_suffix"> pp</string>
+    <string name="score_delta_month">30d Δ</string>
+    <string name="score_delta_year">1y Δ</string>
+    <string name="score_checkins">Check-ins</string>
     <string name="tasks_title">Tasks</string>
     <string name="archive_title">Archive</string>
     <string name="organization">Organization</string>
@@ -60,9 +65,13 @@
     <string name="overview">Overview</string>
     <string name="habit_strength">Habit strength</string>
     <string name="history">History</string>
+    <string name="calendar_editing_hint">Tap a date to edit</string>
     <string name="clear">Clear</string>
     <string name="reminder">Reminder</string>
     <string name="save">Save</string>
+    <string name="dialog_action_skip">Skip</string>
+    <string name="dialog_action_skip_description">Skip entry</string>
+    <string name="dialog_action_save_description">Save entry</string>
     <string name="streaks">Streaks</string>
     <string name="no_habits_found">You have no active habits</string>
     <string name="no_habits_left_to_do">You\'re all done for today!</string>
@@ -213,8 +222,8 @@
     <string name="none">None</string>
     <string name="filter">Filter</string>
     <string name="search">Search</string>
-    <string name="hide_completed">Hide completed</string>
-    <string name="hide_entered">Hide entered</string>
+    <string name="hide_completed">Hide habits completed today</string>
+    <string name="hide_entered">Hide habits marked today</string>
     <string name="hide_archived">Hide archived</string>
     <string name="sticky_notifications">Pin notifications</string>
     <string name="sticky_notifications_description">Prevent active notifications from being swiped away</string>
@@ -321,7 +330,7 @@
     <string name="per_day">per day</string>
     <string name="per_week">per week</string>
     <string name="per_month">per month</string>
-    <string name="today_numerical_progress">%1$s / %2$s %3$s · %4$s</string>
+    <string name="today_numerical_progress">%1$s / %2$s %3$s В· %4$s</string>
     <string name="enter">Enter</string>
     <string name="no_habits">No habits found</string>
     <string name="no_numerical_habits">No measurable habits found</string>
@@ -360,25 +369,30 @@
     <string name="day_tier_badge_normal">Normal</string>
     <string name="day_tier_badge_ideal">Ideal</string>
     <string name="day_tier_badge_optional_short">Optional</string>
-    <string name="habit_timer">Habit timer</string>
-    <string name="timer_enabled">Enable timer and Pomodoro</string>
+    <string name="habit_timer">Stopwatch &amp; Pomodoro</string>
+    <string name="timer_enabled">Track habit time</string>
+    <string name="habit_unit_minutes">Minutes (min)</string>
+    <string name="habit_unit_time_hint">Stopwatch &amp; Pomodoro available</string>
+    <string name="unit_tooltip_title">Units of measurement</string>
+    <string name="unit_tooltip_body">You can enter min, ml, km, pages, reps, or a custom unit.\nIf you specify minutes (e.g. \"min\"), Stopwatch and Pomodoro tracking will become available.</string>
+    <string name="unit_tooltip_action">Got it</string>
     <string name="timer_finish">Finish</string>
     <string name="timer_active_for_other">Timer active: %1$s</string>
-    <string name="timer_pomodoro_phase">Pomodoro · %1$s</string>
+    <string name="timer_pomodoro_phase">Pomodoro В· %1$s</string>
     <string name="pomodoro_minutes_short">%1$d min</string>
     <string name="pomodoro_start_break">Start break</string>
     <string name="timer_notification_channel">Timer</string>
     <string name="timer_notification_channel_description">Stopwatch and Pomodoro progress</string>
-    <string name="timer_notification_paused_format">%1$s · %2$s</string>
-    <string name="timer_notification_pomodoro_focus">Pomodoro · Focus</string>
+    <string name="timer_notification_paused_format">%1$s В· %2$s</string>
+    <string name="timer_notification_pomodoro_focus">Pomodoro В· Focus</string>
     <string name="timer_notification_focus_complete">Focus completed</string>
-    <string name="timer_notification_pomodoro_break">Pomodoro · Break</string>
+    <string name="timer_notification_pomodoro_break">Pomodoro В· Break</string>
     <string name="pomodoro_completion_channel_name">Pomodoro completion</string>
     <string name="pomodoro_completion_channel_description">Focus and break completion alerts</string>
     <string name="pomodoro_notification_focus_title">Focus completed</string>
     <string name="pomodoro_notification_break_title">Break completed</string>
-    <string name="pomodoro_notification_focus_text">%1$s · %2$d min. Time to rest.</string>
-    <string name="pomodoro_notification_break_text">%1$s · %2$d min. Time to focus.</string>
+    <string name="pomodoro_notification_focus_text">%1$s В· %2$d min. Time to rest.</string>
+    <string name="pomodoro_notification_break_text">%1$s В· %2$d min. Time to focus.</string>
     <string name="pomodoro_notification_start_break">Start break</string>
     <string name="pomodoro_notification_start_focus">Start focus</string>
     <string name="pomodoro_notification_dismiss">Dismiss</string>
@@ -438,7 +452,7 @@
     <string name="today_weekly_quota_numerical">%1$s (%2$s / %3$s %4$s per week)</string>
     <string name="motivation_minimum_completed">Well done: daily minimum completed!</string>
     <string name="motivation_streak_milestone">Streak of %2$d days for %1$s!</string>
-    <string name="motivation_comeback">You returned to %1$s after a skip — this is more important than a perfect streak!</string>
+    <string name="motivation_comeback">You returned to %1$s after a skip вЂ” this is more important than a perfect streak!</string>
 
     <string name="theme">Theme</string>
     <string name="appearance">Appearance</string>
@@ -463,7 +477,7 @@
     <string name="sync_status_success">Last successful sync: %1$s</string>
     <string name="sync_status_error">Last sync failed: %1$s</string>
     <string name="sync_status_idle">Ready to sync</string>
-    <string name="sync_status_syncing">Sync in progress…</string>
+    <string name="sync_status_syncing">Sync in progressвЂ¦</string>
     <string name="sync_status_signed_out">Signed out</string>
     <string name="sync_status_review_required">Sync paused until you confirm after restore.</string>
     <string name="sync_sign_in_dialog_title">Sign in to sync</string>
@@ -496,7 +510,7 @@
     <string name="help_category">Help</string>
     <string name="language">Language</string>
     <string name="pref_app_language_system">System default</string>
-    <string name="reports_all_goals_completed">All goals completed! 🎉</string>
+    <string name="reports_all_goals_completed">All goals completed! рџЋ‰</string>
     <string name="reports_completion_success">Completion success: %1$d%%</string>
     <string name="reports_total_completed_days">Total checkmarks: %1$d of %2$d days</string>
     <string name="reports_total_focus_time">Total focus time: %1$s h</string>
@@ -568,10 +582,10 @@
     <string name="action_skip_day">Skip day</string>
     <string name="skip_day_dialog_title">Skip day</string>
     <string name="skip_day_dialog_message">Apply skip to %1$d remaining habits that still have no explicit entry today.</string>
-    <string name="skip_day_dialog_impact">Completed habits and already entered values stay untouched. Skipped habits keep scores and streaks unchanged.</string>
-    <string name="skip_day_all">Skip all remaining habits</string>
-    <string name="skip_day_by_sphere">Skip remaining habits by area/sphere</string>
-    <string name="skip_day_note_hint">Day note (optional, copies to skipped habits)</string>
+    <string name="skip_day_dialog_impact">Completed habits and already entered values stay untouched.</string>
+    <string name="skip_day_all">All unmarked habits</string>
+    <string name="skip_day_by_sphere">By sphere</string>
+    <string name="skip_day_note_hint">Reason for skip (optional)</string>
     <string name="skip_day_confirm">Skip</string>
     <string name="skip_day_empty_message">No remaining habits to skip today.</string>
     <string name="skip_day_empty_selection">Select at least one area to skip.</string>
@@ -628,8 +642,11 @@
     <string name="pref_statistics_card_corners_title">Statistics card corners</string>
     <string name="pref_habit_card_corners_rectangular">Rectangular (0 dp)</string>
     <string name="pref_habit_card_corners_default">8 dp (Default)</string>
-    <string name="settings_show_habit_card_borders_title">Habit row outlines</string>
-    <string name="settings_show_habit_card_borders_summary">Show borders around habit rows</string>
+    <string name="settings_section_layout_mode_title">Section layout style</string>
+    <string name="settings_section_layout_cards">Cards</string>
+    <string name="settings_section_layout_classic">Classic (full-width)</string>
+    <string name="settings_show_habit_card_borders_title">Card borders</string>
+    <string name="settings_show_habit_card_borders_summary">Show subtle outlines around cards</string>
     <string name="statistics_daily_overview_title">Daily overview</string>
     <string name="statistics_weekly_overview_title">Weekly overview</string>
     <string name="statistics_monthly_overview_title">Monthly overview</string>
@@ -639,7 +656,7 @@
     <string name="manage_blocks_empty_state">No spheres yet. Create a sphere to group your habits.</string>
     <string name="manage_blocks_habit_count">Habits: %1$d</string>
     <string name="reports_no_data">No data</string>
-    <string name="reports_refreshing">Updating…</string>
+    <string name="reports_refreshing">UpdatingвЂ¦</string>
     <string name="statistics_insights_strong">Strong</string>
     <string name="statistics_insights_attention">Needs Attention</string>
     <string name="statistics_insights_no_strong">No strong habits found.</string>
@@ -672,7 +689,7 @@
     <string name="statistics_period_comparison">%1$s pp vs %2$s</string>
     <string name="statistics_compare_habits">Compare habits</string>
     <string name="statistics_compare_action">Compare</string>
-    <string name="statistics_compare_result">Stability · Loop Score</string>
+    <string name="statistics_compare_result">Stability В· Loop Score</string>
     <string name="compare_habits_add">+ Add</string>
     <string name="compare_habits_min_warning">Select at least 2 habits to compare</string>
     <string name="compare_overview">Overview</string>
@@ -697,7 +714,7 @@
     <string name="tier_scope_all">All</string>
     <string name="statistics_scope_label">Count:</string>
     <string name="statistics_compare_card_title">Compare Habits</string>
-    <string name="statistics_compare_card_subtitle">Completion, stability, history, calendar, and streaks ›</string>
+    <string name="statistics_compare_card_subtitle">Completion, stability, history, calendar, and streaks вЂє</string>
     <string name="statistics_day_title_default">Habit completion</string>
     <string name="statistics_day_title_by_level">Completion by level</string>
     <string name="statistics_changes_week_title">Changes from previous week</string>
@@ -728,7 +745,7 @@
     <string name="statistics_vs_previous_period_points">%1$s percentage points vs previous period</string>
     <string name="statistics_show_all_habits">Show all %1$d habits</string>
     <string name="statistics_hide_habits">Hide %1$d habits</string>
-    <string name="statistics_trend_range">Range: %1$d–%2$d%%</string>
+    <string name="statistics_trend_range">Range: %1$dвЂ“%2$d%%</string>
     <string name="statistics_all_skipped">All goals were skipped</string>
     <string name="statistics_trend_point_description">%1$s: %2$d%% completed</string>
     <string name="statistics_trend_chart_description">Completion over time, average %1$d%%. Touch to explore points.</string>
@@ -825,7 +842,7 @@
     <string name="sync_account_connected">%1$s · connected</string>
     <string name="sync_error_short">Could not synchronize data</string>
     <string name="backup_external_folder_selected">External folder selected</string>
-    <string name="statistics_filter_summary">All habits · Filters</string>
+    <string name="statistics_filter_summary">All habits В· Filters</string>
     <string name="statistics_filter_active_habits">All active habits</string>
     <string name="statistics_filter_count">Filters %1$d</string>
     <string name="statistics_success_days">Minimum closed on %1$d of %2$d days</string>
@@ -840,9 +857,9 @@
     <string name="statistics_days_by_tier">Days by level</string>
     <string name="statistics_cell_future">Upcoming</string>
     <string name="statistics_cell_no_goals">No daily goals</string>
-    <string name="statistics_calendar_legend">Color: highest fully completed level · bottom line: partial Minimum progress</string>
+    <string name="statistics_calendar_legend">Color: highest fully completed level В· bottom line: partial Minimum progress</string>
     <string name="statistics_stability_by_period">Minimum progress by period</string>
-    <string name="statistics_bar_scale">Average Minimum progress on completed days, 0–100%</string>
+    <string name="statistics_bar_scale">Average Minimum progress on completed days, 0вЂ“100%</string>
     <string name="statistics_help_back">Back</string>
     <string name="statistics_minimum_goals_short">Minimum goals completed</string>
     <string name="statistics_days_fully_closed_short">Days fully closed</string>
@@ -852,7 +869,7 @@
     <string name="statistics_help_fully_closed_title">Fully closed day</string>
     <string name="statistics_help_fully_closed_body">A day is fully closed only when all applicable DAILY Minimum habits for that date are completed (100%).\n\nSKIP removes a goal from that day\'s denominator. If every Minimum goal on a day is SKIP, the day is considered not applicable (ineligible) and does not count as either finished or closed.\n\nToday is considered in progress and is not counted as a finished day.</string>
     <string name="statistics_help_stability_title">Habit stability</string>
-    <string name="statistics_help_stability_body">Habit stability is based on the Loop Score algorithm (Score.compute). It is a smoothed exponential moving average:\n\nS[t] = S[t-1] · λ + V[t] · (1 - λ)\n\nwhere λ = 0.5^(√(frequency) / 13) is a decay factor tied to the habit\'s frequency, and V[t] is the checkmark value.\n\nOlder performance gradually decays, meaning recent consistency has a much stronger impact than old history. Stability is NOT the completion percentage of the selected period, and 100% does not mean every historical day was completed.</string>
+    <string name="statistics_help_stability_body">Habit stability is based on the Loop Score algorithm (Score.compute). It is a smoothed exponential moving average:\n\nS[t] = S[t-1] В· О» + V[t] В· (1 - О»)\n\nwhere О» = 0.5^(в€љ(frequency) / 13) is a decay factor tied to the habit\'s frequency, and V[t] is the checkmark value.\n\nOlder performance gradually decays, meaning recent consistency has a much stronger impact than old history. Stability is NOT the completion percentage of the selected period, and 100% does not mean every historical day was completed.</string>
     <string name="statistics_help_period_goals_note">Weekly and monthly goals are evaluated in their own periods and therefore do not appear as progress inside individual calendar days.</string>
     <string name="statistics_by_level">By level</string>
     <string name="statistics_by_sphere">By sphere</string>
@@ -868,7 +885,7 @@
     <string name="statistics_show_less_habits">Show less</string>
     <string name="statistics_habit_stability_description">How firmly the habit is established now</string>
     <string name="statistics_remaining_minimum_habits_count">%d Minimum habits remaining</string>
-    <string name="statistics_all_minimum_completed">Minimum completed ✓</string>
+    <string name="statistics_all_minimum_completed">Minimum completed вњ“</string>
     <string name="statistics_finished_days_closed">Fully closed: %1$d of %2$d days</string>
     <string name="statistics_fully_closed_days_stat">Fully closed: %d days</string>
     <string name="statistics_pp_vs_previous_week">%+d pp vs previous week</string>
@@ -878,8 +895,8 @@
     <string name="statistics_not_enough_data">Not enough data yet</string>
     <string name="statistics_today">Today</string>
     <string name="statistics_day_status_completed">Minimum completed (%1$d/%2$d)</string>
-    <string name="statistics_day_status_in_progress">Minimum: %1$d/%2$d · Remaining: %3$d · Day in progress</string>
-    <string name="statistics_day_status_not_completed">Minimum: %1$d/%2$d · Not completed</string>
+    <string name="statistics_day_status_in_progress">Minimum: %1$d/%2$d В· Remaining: %3$d В· Day in progress</string>
+    <string name="statistics_day_status_not_completed">Minimum: %1$d/%2$d В· Not completed</string>
     <string name="statistics_month_average">Average</string>
     <string name="statistics_month_best_day">Best Day</string>
     <string name="statistics_no_data">No data</string>
@@ -914,7 +931,7 @@
     <string name="containers_rename">Rename</string>
     <string name="containers_change_color">Change color</string>
     <string name="containers_move">Move section</string>
-    <string name="containers_move_habit">Move to section…</string>
+    <string name="containers_move_habit">Move to sectionвЂ¦</string>
     <string name="containers_to_archive">To archive</string>
     <string name="containers_restore">Restore</string>
     <string name="containers_archive_confirm_title">Archive section?</string>
@@ -922,15 +939,15 @@
     <string name="containers_restore_confirm_title">Restore section?</string>
     <string name="containers_restore_parent_missing">Parent section is no longer available. Cannot restore without a valid parent.</string>
     <string name="containers_move_picker_title">Move: %s</string>
-    <string name="containers_move_picker_search">Search section…</string>
-    <string name="containers_move_to_current">Place in «%s»</string>
+    <string name="containers_move_picker_search">Search sectionвЂ¦</string>
+    <string name="containers_move_to_current">Place in В«%sВ»</string>
     <string name="containers_move_to_root">To root (make top-level)</string>
     <string name="containers_move_cycle_error">Cannot move inside itself or its subsections</string>
     <string name="containers_ancestors_title">Section location</string>
     <string name="containers_count_subsections">%d subsections</string>
     <string name="containers_count_habits_inside">%d habits inside</string>
-    <string name="containers_count_composite">%1$d subsections · %2$d habits inside</string>
-    <string name="containers_search_hint">Search sections and habits…</string>
+    <string name="containers_count_composite">%1$d subsections В· %2$d habits inside</string>
+    <string name="containers_search_hint">Search sections and habitsвЂ¦</string>
     <string name="containers_search_sections_header">SECTIONS</string>
     <string name="containers_search_habits_header">HABITS</string>
     <string name="containers_search_no_results">Nothing found</string>
@@ -952,8 +969,8 @@
     <string name="containers_add_short_subsection">Subsection</string>
     <string name="containers_add_short_habit">Habit</string>
     <string name="containers_assign">Assign</string>
-    <string name="containers_name_hint">e.g. Health, Work…</string>
-    <string name="containers_in_section">In «%s»</string>
+    <string name="containers_name_hint">e.g. Health, WorkвЂ¦</string>
+    <string name="containers_in_section">In В«%sВ»</string>
     <string name="containers_no_sections">No sections yet</string>
     <string name="containers_in_archive">Archived</string>
     <string name="containers_unassigned_habits_suffix">unassigned</string>
@@ -989,32 +1006,36 @@
     <string name="task_calendar_empty_day">Nothing planned for this day</string>
     <string name="task_calendar_no_sessions_date">No work sessions recorded for this date</string>
     <string name="task_calendar_no_sessions_day">No work sessions recorded for this day</string>
-    <string name="settings_section_layout_mode_title">Section layout style</string>
-    <string name="settings_section_layout_cards">Cards</string>
-    <string name="settings_section_layout_classic">Classic (full-width)</string>
+
     <string name="settings_show_score_rings_title">Score rings</string>
     <string name="settings_show_score_rings_summary">Show habit strength ring in the habit list</string>
     <string name="settings_show_habit_icons_title">Habit icons</string>
     <string name="settings_show_habit_icons_summary">Show habit icons in habit list cards</string>
-    <string name="dialog_action_skip">Skip</string>
-    <string name="dialog_action_skip_description">Skip entry</string>
-    <string name="dialog_action_save_description">Save entry</string>
+    <string name="habit_form_section_essentials">Essentials</string>
+    <string name="habit_form_section_target">Target &amp; Schedule</string>
+    <string name="habit_form_section_organization">Organization &amp; Focus</string>
+    <string name="habit_form_section_reminders_notes">Reminder &amp; Notes</string>
     <string name="discard_changes">Discard changes?</string>
     <string name="discard_changes_message">All unsaved data will be lost.</string>
     <string name="discard">Discard</string>
     <string name="keep_editing">Keep editing</string>
-    <string name="habit_notes_placeholder">Additional rules, motives, instructions…</string>
-    <string name="habit_form_section_target">Target &amp; Schedule</string>
+
+
+    <!-- Habit Form & Timer Compose -->
     <string name="habit_type_yes_no_title">Yes / No</string>
+    <string name="habit_type_yes_no_desc">Checkmark per day</string>
     <string name="habit_type_numerical_title">Measurable</string>
+    <string name="habit_type_numerical_desc">Target and units</string>
+    <string name="habit_type_badge_yes_no">Type: Yes / No</string>
+    <string name="habit_type_badge_numerical">Type: Measurable</string>
     <string name="habit_unit_placeholder">min, km, pages…</string>
     <string name="target_type_label">Target type:</string>
+    <string name="habit_form_section_appearance">Appearance &amp; Section</string>
+    <string name="habit_color_palette_prefix">Palette #%1$d</string>
+    <string name="habit_form_section_focus_reminders">Focus &amp; Reminders</string>
     <string name="reminder_days">Reminder days</string>
-    <string name="habit_form_section_organization">Organization &amp; Focus</string>
     <string name="focus_credit_descendants_summary">Count sessions from subsections</string>
-    <string name="unit_tooltip_title">Units of measurement</string>
-    <string name="unit_tooltip_body">You can enter min, ml, km, pages, reps, or a custom unit.\nIf you specify minutes (e.g. \"min\"), Stopwatch and Pomodoro tracking will become available.</string>
-    <string name="unit_tooltip_action">Got it</string>
+    <string name="habit_notes_placeholder">Additional rules, motives, instructions…</string>
     <string name="timer_tap_to_configure">Tap to configure</string>
     <string name="settings_dev_experimental">Experimental features</string>
     <string name="settings_dev_container_experiment">Experiment: UHabit Next (Sections)</string>
