@@ -308,9 +308,13 @@ class TaskDuePickerBottomSheet : BottomSheetDialogFragment() {
             sheet.behavior.skipCollapsed = true
             sheet.behavior.state = BottomSheetBehavior.STATE_EXPANDED
             sheet.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)?.background = GradientDrawable().apply {
-                setColor(MainTabsThemeBridge.resolve(requireContext()).surface)
+                val palette = MainTabsThemeBridge.resolve(requireContext())
+                setColor(palette.dialogSurface)
                 val radius = TaskThemeUtils.dp(requireContext(), 24f)
                 cornerRadii = floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
+                if (palette.isPureBlack) {
+                    setStroke(TaskThemeUtils.dpInt(requireContext(), 1f).coerceAtLeast(1), palette.dialogBorder)
+                }
             }
         }
     }

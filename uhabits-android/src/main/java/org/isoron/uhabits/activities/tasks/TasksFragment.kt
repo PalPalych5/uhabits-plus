@@ -44,7 +44,6 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.widget.PopupMenu
 import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -52,6 +51,7 @@ import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.recyclerview.widget.ItemTouchHelper
 import org.isoron.uhabits.activities.habits.show.ShowHabitActivity
 import org.isoron.uhabits.core.containers.facade.OrganizationalItem
+import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import org.isoron.uhabits.activities.common.icons.IconPack
 import org.isoron.uhabits.activities.common.views.CompactPopupMenu
 import org.isoron.uhabits.activities.containers.CreateContainerDialog
@@ -220,7 +220,7 @@ class TasksFragment : Fragment() {
             completedExpanded = it.getBoolean("completedExpanded", false)
             activeSmartView = TaskSmartView.entries.getOrElse(it.getInt("smartView")) { TaskSmartView.TODAY }
             selectedContainerFilter = it.getString("filter")?.let(::ContainerId)
-            selectedTagFilter = it.getStringArrayList("tagFilter").orEmpty().toSet()
+            selectedTagFilter = emptySet()
             val dueKind = it.getString("quickDueKind")
             val dueMillis = if (it.containsKey("quickDueMillis")) it.getLong("quickDueMillis") else null
             val dueDateDays = if (it.containsKey("quickDueDays")) it.getInt("quickDueDays") else null
@@ -493,8 +493,8 @@ class TasksFragment : Fragment() {
         tvEmptyTitle.setTextColor(palette.onSurface)
         tvEmptyMessage.setTextColor(palette.onSurfaceVariant)
 
-        // Keep quick capture docked to the current workspace.
-        layoutQuickAddContainer.setBackgroundColor(palette.surface)
+        // Keep quick capture integrated seamlessly with the Tasks workspace across themes.
+        layoutQuickAddContainer.setBackgroundColor(palette.background)
         quickAddDivider.setBackgroundColor(palette.divider)
         ivQuickAddIcon.setColorFilter(palette.accent)
         tvQuickAddCollapsedLabel.setTextColor(palette.onSurfaceVariant)
@@ -515,99 +515,63 @@ class TasksFragment : Fragment() {
         if (calendarMode) calendarViewController?.render()
     }
 
-    private fun openTagFilterPicker() {
-        if (childFragmentManager.findFragmentByTag("filterTags") == null) {
-            TaskTagPickerBottomSheet.newInstance(
-                ids = selectedTagFilter,
-                resultKey = "filterTags",
-                datasetId = component.session.datasetId,
-                filter = true,
-            ).show(childFragmentManager, "filterTags")
-        }
-    }
-
     private fun updateTagFilterChip() {
         if (!::tvTasksTagFilter.isInitialized) return
-        val available = workspaceSnapshot?.availableTags.orEmpty()
-        val selectedNames = available.filter { it.id in selectedTagFilter }.map { it.name }
-        val active = selectedNames.isNotEmpty()
-        val bg = GradientDrawable().apply {
-            cornerRadius = dp(12f)
-            if (active) {
-                setColor(MainTabsThemeBridge.withAlpha(palette.accent, 0.14f))
-                setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.accent, 0.45f))
-            } else {
-                setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.05f))
-                setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.2f))
-            }
-        }
-        tvTasksTagFilter.background = bg
-        tvTasksTagFilter.setTextColor(if (active) palette.accent else palette.onSurfaceVariant)
-        tvTasksTagFilter.text = if (active) {
-            val preview = selectedNames.take(2).joinToString(", ") { "#$it" }
-            val extra = selectedNames.size - 2
-            if (extra > 0) "$preview +$extra" else preview
-        } else {
-            "Теги"
-        }
-        tvTasksTagFilter.contentDescription = if (active) {
-            "Фильтр по тегам: ${selectedNames.joinToString(", ")}"
-        } else {
-            "Фильтр по тегам"
-        }
+        tvTasksTagFilter.visibility = View.GONE
     }
 
     private fun setupOverflowMenu() {
-        tvTasksTagFilter.setOnClickListener {
-            openTagFilterPicker()
-        }
-        tvTasksTagFilter.setOnLongClickListener {
-            if (selectedTagFilter.isNotEmpty()) {
-                selectedTagFilter = emptySet()
-                loadTasks()
-                true
-            } else {
-                false
-            }
-        }
-        childFragmentManager.setFragmentResultListener("filterTags", viewLifecycleOwner) { _, result ->
-            if (component !== HabitsApplication.component) return@setFragmentResultListener
-            if (result.getBoolean(TaskTagPickerBottomSheet.RESULT_APPLIED, false)) {
-                selectedTagFilter = result.getStringArrayList(TaskTagPickerBottomSheet.RESULT_TAG_IDS).orEmpty().toSet()
-            }
-            loadTasks()
-        }
-
+        tvTasksTagFilter.visibility = View.GONE
         btnTasksOverflow.setOnClickListener {
-            val popup = PopupMenu(requireContext(), btnTasksOverflow)
+            val ru = TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru"
+            val entries = mutableListOf<CompactPopupMenu.Entry>()
             if (calendarMode) {
                 val prefs = TaskCalendarPreferences(requireContext())
                 val isShown = calendarViewController?.showHabits ?: (calendarShowHabits ?: prefs.showHabits)
-                val ru = TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru"
                 val habitsTitle = if (ru) "Показывать привычки" else getString(R.string.task_calendar_menu_show_habits)
-                val habitsItem = popup.menu.add(0, 10, 0, habitsTitle)
-                habitsItem.isCheckable = true
-                habitsItem.isChecked = isShown
-                popup.menu.add(0, 6, 1, "Фильтр по тегам")
-                if (selectedTagFilter.isNotEmpty()) {
-                    popup.menu.add(0, 7, 2, "Сбросить фильтр по тегам")
-                }
-                popup.menu.add(0, 3, 3, "Настройки")
+                entries += CompactPopupMenu.Entry.Item(
+                    id = 10,
+                    title = habitsTitle,
+                    iconRes = if (isShown) R.drawable.ic_tabler_check else null,
+                    selected = isShown,
+                )
+                entries += CompactPopupMenu.Entry.Divider
+                entries += CompactPopupMenu.Entry.Item(
+                    id = 3,
+                    title = if (ru) "Настройки" else getString(R.string.settings),
+                )
             } else {
-                popup.menu.add(0, 1, 0, "Все задачи")
-                popup.menu.add(0, 2, 1, "Завершённые")
-                popup.menu.add(0, 6, 2, "Фильтр по тегам")
-                if (selectedTagFilter.isNotEmpty()) {
-                    popup.menu.add(0, 7, 3, "Сбросить фильтр по тегам")
-                }
-                popup.menu.add(0, 3, 4, "Настройки")
+                entries += CompactPopupMenu.Entry.Item(
+                    id = 1,
+                    title = if (ru) "Все задачи" else TaskSmartView.ALL.displayName,
+                    iconRes = if (selectedContainerFilter == null && activeSmartView == TaskSmartView.ALL) R.drawable.ic_tabler_check else null,
+                    selected = selectedContainerFilter == null && activeSmartView == TaskSmartView.ALL,
+                )
+                entries += CompactPopupMenu.Entry.Item(
+                    id = 2,
+                    title = if (ru) "Завершённые" else TaskSmartView.COMPLETED.displayName,
+                    iconRes = if (selectedContainerFilter == null && activeSmartView == TaskSmartView.COMPLETED) R.drawable.ic_tabler_check else null,
+                    selected = selectedContainerFilter == null && activeSmartView == TaskSmartView.COMPLETED,
+                )
                 if (selectedContainerFilter != null) {
-                    popup.menu.add(0, 4, 5, getString(R.string.container_statistics_title))
+                    entries += CompactPopupMenu.Entry.Item(
+                        id = 4,
+                        title = getString(R.string.container_statistics_title),
+                    )
                 }
-                popup.menu.add(0, 5, 6, getString(R.string.today_eval_menu_item))
+                entries += CompactPopupMenu.Entry.Divider
+                entries += CompactPopupMenu.Entry.Item(
+                    id = 3,
+                    title = if (ru) "Настройки" else getString(R.string.settings),
+                )
             }
-            popup.setOnMenuItemClickListener { item ->
-                when (item.itemId) {
+            CompactPopupMenu.show(
+                anchor = btnTasksOverflow,
+                entries = entries,
+                minWidthDp = 180,
+                maxWidthDp = 240,
+            ) { itemId ->
+                when (itemId) {
                     10 -> {
                         val prefs = TaskCalendarPreferences(requireContext())
                         val current = calendarViewController?.showHabits ?: (calendarShowHabits ?: prefs.showHabits)
@@ -616,7 +580,6 @@ class TasksFragment : Fragment() {
                         calendarShowHabits = next
                         calendarViewController?.showHabits = next
                         calendarViewController?.render()
-                        true
                     }
                     1 -> {
                         clearSelection()
@@ -624,7 +587,6 @@ class TasksFragment : Fragment() {
                         activeSmartView = TaskSmartView.ALL
                         updateSmartViewLabel()
                         loadTasks()
-                        true
                     }
                     2 -> {
                         clearSelection()
@@ -632,21 +594,10 @@ class TasksFragment : Fragment() {
                         activeSmartView = TaskSmartView.COMPLETED
                         updateSmartViewLabel()
                         loadTasks()
-                        true
-                    }
-                    6 -> {
-                        openTagFilterPicker()
-                        true
-                    }
-                    7 -> {
-                        selectedTagFilter = emptySet()
-                        loadTasks()
-                        true
                     }
                     3 -> {
                         clearSelection()
                         workspaceNavigator?.invoke("Settings")
-                        true
                     }
                     4 -> {
                         selectedContainerFilter?.let { filter ->
@@ -655,16 +606,9 @@ class TasksFragment : Fragment() {
                                 org.isoron.uhabits.core.containers.ContainerId(filter.value)
                             )
                         }
-                        true
                     }
-                    5 -> {
-                        startActivity(org.isoron.uhabits.activities.today.TodayActivity.createIntent(requireContext()))
-                        true
-                    }
-                    else -> false
                 }
             }
-            popup.show()
         }
     }
 
@@ -1435,7 +1379,7 @@ class TasksFragment : Fragment() {
         }
         applyVisibilitySelection(snapshot)
         val availableTagIds = snapshot.availableTags.mapTo(mutableSetOf()) { it.id }
-        selectedTagFilter = selectedTagFilter.intersect(availableTagIds)
+        selectedTagFilter = emptySet()
         quickTagIds = quickTagIds.intersect(availableTagIds)
         val allRoots = snapshot.roots
         val subtaskMap = snapshot.subtaskCounts
@@ -1719,15 +1663,18 @@ class TasksFragment : Fragment() {
             setOnClickListener {
                 clearSelection()
                 val ru = TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru"
-                val labels = if (ru) arrayOf("Список", "Календарь", "Матрица") else arrayOf("List", "Calendar", "Matrix")
-                AlertDialog.Builder(requireContext()).setSingleChoiceItems(labels,
-                    if (matrixMode) 2 else if (calendarMode) 1 else 0) { dialog, choice ->
+                val labels = if (ru) listOf("Список", "Календарь", "Матрица") else listOf("List", "Calendar", "Matrix")
+                CustomDialogs.showSingleChoiceDialog(
+                    context = requireContext(),
+                    title = if (ru) "Вид" else "View",
+                    options = labels,
+                    selectedIndex = if (matrixMode) 2 else if (calendarMode) 1 else 0,
+                ) { choice ->
                     calendarMode = choice == 1
                     matrixMode = choice == 2
-                    dialog.dismiss()
                     updateSmartViewLabel()
                     loadTasks()
-                }.show()
+                }
             }
         }
         header.addView(representationButton, header.childCount - 1, LinearLayout.LayoutParams(dpInt(48f), dpInt(48f)))
@@ -2187,25 +2134,6 @@ class TasksFragment : Fragment() {
             val local = localTreeRoot?.let { snapshot.containers[it] }
             if (local != null) addContainer(local, 0) else snapshot.children[null].orEmpty().forEach { addContainer(it, 0) }
         }
-            if (snapshot.availableTags.isNotEmpty()) {
-                divider()
-                navigationColumn.addView(navText("Теги").apply { textSize = 12f; minHeight = dpInt(32f); setTextColor(palette.onSurfaceVariant) })
-                snapshot.availableTags.forEach { tag ->
-                    val isSelected = tag.id in selectedTagFilter
-                    val count = snapshot.roots.count { root -> !root.isCompleted && snapshot.taskTags[root.id].orEmpty().any { it.id == tag.id } }
-                    navigationColumn.addView(navigationRow(
-                        "#${tag.name}",
-                        R.drawable.ic_cat_flag,
-                        count,
-                        isSelected,
-                    ) {
-                        clearSelection()
-                        selectedTagFilter = if (isSelected) selectedTagFilter - tag.id else selectedTagFilter + tag.id
-                        closeNavigation()
-                        loadTasks()
-                    })
-                }
-            }
             divider()
             navigationColumn.addView(navigationRow("Настройки", R.drawable.ic_nav_settings) {
             clearSelection()

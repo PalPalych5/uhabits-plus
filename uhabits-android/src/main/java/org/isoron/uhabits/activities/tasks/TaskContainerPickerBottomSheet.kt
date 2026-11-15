@@ -241,7 +241,11 @@ class TaskContainerPickerBottomSheet : BottomSheetDialogFragment() {
             sheet.behavior.skipCollapsed = true
             sheet.behavior.state = BottomSheetBehavior.STATE_EXPANDED
             val surface = sheet.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
-            surface?.background = rounded(palette.surface, 24)
+            surface?.background = rounded(palette.dialogSurface, 24).apply {
+                if (palette.isPureBlack) {
+                    setStroke(dp(1).coerceAtLeast(1), palette.dialogBorder)
+                }
+            }
             ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
                 lastInsets = insets
                 imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())

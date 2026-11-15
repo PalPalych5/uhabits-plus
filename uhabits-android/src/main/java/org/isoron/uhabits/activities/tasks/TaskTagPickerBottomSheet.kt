@@ -51,7 +51,11 @@ class TaskTagPickerBottomSheet : BottomSheetDialogFragment() {
         val root = LinearLayout(requireContext()).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(12), dp(24), dp(12))
-            background = rounded(palette.surface, 24)
+            background = rounded(palette.dialogSurface, 24).apply {
+                if (palette.isPureBlack) {
+                    setStroke(dp(1).coerceAtLeast(1), palette.dialogBorder)
+                }
+            }
         }
         root.addView(label(if (arguments?.getBoolean("filter") == true) "Фильтр по тегам" else "Теги", 22f, true).apply {
             setPadding(0, dp(8), 0, dp(8))

@@ -423,7 +423,13 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                     }
                 }
                 clipToOutline = true
-                background = ColorDrawable(palette.surface)
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(palette.dialogSurface)
+                    cornerRadii = floatArrayOf(cornerRadiusPx, cornerRadiusPx, cornerRadiusPx, cornerRadiusPx, 0f, 0f, 0f, 0f)
+                    if (palette.isPureBlack) {
+                        setStroke(dpInt(1f).coerceAtLeast(1), palette.dialogBorder)
+                    }
+                }
                 sheet.behavior.state = BottomSheetBehavior.STATE_EXPANDED
             }
         }
