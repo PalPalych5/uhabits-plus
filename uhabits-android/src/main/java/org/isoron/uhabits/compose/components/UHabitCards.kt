@@ -57,7 +57,7 @@ fun UHabitSectionCard(
         Column(
             modifier = modifier
                 .fillMaxWidth()
-                .background(colors.surfaceColor)
+                .background(colors.resolveSectionSurfaceColor())
                 .drawBehind {
                     val stroke = 1.dp.toPx()
                     drawLine(

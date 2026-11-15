@@ -21,6 +21,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,6 +32,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -37,6 +44,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import org.isoron.uhabits.compose.LocalUHabitComposeColors
 import org.isoron.uhabits.compose.LocalUHabitDesignTokens
 import org.isoron.uhabits.compose.UHabitComposeColors
@@ -53,8 +61,11 @@ fun UHabitActionChip(
     hasDropdown: Boolean = false,
     isSelected: Boolean = false,
     accentColor: Color? = null,
-    colors: UHabitComposeColors = LocalUHabitComposeColors.current
+    colors: UHabitComposeColors = LocalUHabitComposeColors.current,
+    onAnchorClick: ((android.graphics.Rect?) -> Unit)? = null
 ) {
+    val hostView = LocalView.current
+    var chipCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val shape = LocalUHabitDesignTokens.current.shapes.sm
     val effectiveAccent = accentColor ?: Color(colors.accent)
     val chipBorderColor = when {
@@ -76,11 +87,34 @@ fun UHabitActionChip(
 
     Row(
         modifier = modifier
+            .onGloballyPositioned { chipCoords = it }
             .defaultMinSize(minHeight = 32.dp)
             .clip(shape)
             .background(chipSurfaceColor)
             .border(1.dp, chipBorderColor, shape)
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(role = Role.Button) {
+                if (onAnchorClick != null) {
+                    val coords = chipCoords?.takeIf { it.isAttached }
+                    val anchorRect = coords?.let {
+                        val winBounds = it.boundsInWindow()
+                        val locScreen = IntArray(2)
+                        val locWindow = IntArray(2)
+                        hostView.getLocationOnScreen(locScreen)
+                        hostView.getLocationInWindow(locWindow)
+                        val dx = locScreen[0] - locWindow[0]
+                        val dy = locScreen[1] - locWindow[1]
+                        android.graphics.Rect(
+                            winBounds.left.roundToInt() + dx,
+                            winBounds.top.roundToInt() + dy,
+                            winBounds.right.roundToInt() + dx,
+                            winBounds.bottom.roundToInt() + dy
+                        )
+                    }
+                    onAnchorClick(anchorRect)
+                } else {
+                    onClick()
+                }
+            }
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -129,12 +163,20 @@ fun UHabitSegmentedPillTab(
     colors: UHabitComposeColors = LocalUHabitComposeColors.current
 ) {
     val accent = Color(colors.accent)
-    val onSurfaceVariant = Color(colors.secondary)
+    val unselectedContainer = if (colors.isPureBlack) {
+        Color(0xFF121418)
+    } else if (colors.isDark) {
+        Color(colors.surfaceVariant).copy(alpha = 0.55f)
+    } else {
+        Color(colors.surfaceVariant).copy(alpha = 0.55f)
+    }
+    val unselectedText = Color(colors.foreground).copy(alpha = 0.78f)
+    val selectedContainer = accent.copy(alpha = if (colors.isDark) 0.18f else 0.12f)
 
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(if (selected) accent.copy(alpha = 0.12f) else Color.Transparent)
+            .background(if (selected) selectedContainer else unselectedContainer)
             .semantics {
                 role = Role.Tab
                 this.selected = selected
@@ -146,9 +188,9 @@ fun UHabitSegmentedPillTab(
         BasicText(
             text = text,
             style = TextStyle(
-                color = if (selected) accent else onSurfaceVariant,
+                color = if (selected) accent else unselectedText,
                 fontSize = 12.sp,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
             )
         )
     }

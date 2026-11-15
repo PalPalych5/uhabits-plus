@@ -38,9 +38,9 @@
         <item name="highlightedBackgroundColor">@color/grey_100</item>
         <item name="iconAdd">@drawable/ic_action_add_dark</item>
         <item name="iconArchive">@drawable/ic_action_archive_dark</item>
-        <item name="iconChangeColor">@drawable/ic_action_color_dark</item>
+        <item name="iconChangeColor">@drawable/ic_toolbar_palette</item>
         <item name="iconDownload">@drawable/ic_action_download_dark</item>
-        <item name="iconEdit">@drawable/ic_action_edit_dark</item>
+        <item name="iconEdit">@drawable/ic_toolbar_edit</item>
         <item name="iconFilter">@drawable/ic_action_filter_dark</item>
         <item name="iconUnarchive">@drawable/ic_action_unarchive_dark</item>
         <item name="iconArrowUp">@drawable/ic_arrow_up_light</item>
@@ -60,7 +60,7 @@
         <item name="widgetBackgroundAlpha">1</item>
         <item name="widgetShadowAlpha">0.25</item>
         <item name="windowActionModeOverlay">true</item>
-        <item name="windowBackgroundColor">@color/grey_200</item>
+        <item name="windowBackgroundColor">@color/theme_background_light</item>
         <item name="android:colorBackground">@color/color_background</item>
         <item name="android:textColorAlertDialogListItem">@color/grey_800</item>
         <item name="singleLineTitle">false</item>
@@ -85,8 +85,8 @@
         <item name="highlightedBackgroundColor">@color/theme_surface_variant_dark</item>
         <item name="iconAdd">@drawable/ic_action_add_dark</item>
         <item name="iconArchive">@drawable/ic_action_archive_dark</item>
-        <item name="iconChangeColor">@drawable/ic_action_color_dark</item>
-        <item name="iconEdit">@drawable/ic_action_edit_dark</item>
+        <item name="iconChangeColor">@drawable/ic_toolbar_palette</item>
+        <item name="iconEdit">@drawable/ic_toolbar_edit</item>
         <item name="iconFilter">@drawable/ic_action_filter_dark</item>
         <item name="iconUnarchive">@drawable/ic_action_unarchive_dark</item>
         <item name="iconArrowUp">@drawable/ic_arrow_up_dark</item>
@@ -128,7 +128,7 @@
         <item name="headerBackgroundColor">@color/black</item>
         <item name="highlightedBackgroundColor">@color/theme_surface_variant_amoled</item>
         <item name="contrast0">@color/black</item>
-        <item name="contrast20">@color/theme_surface_amoled</item>
+        <item name="contrast20">@color/theme_surface_variant_amoled</item>
         <item name="contrast40">@color/theme_surface_variant_amoled</item>
         <item name="contrast60">@color/grey_500</item>
         <item name="contrast80">@color/grey_400</item>
@@ -640,6 +640,21 @@
     <style name="CompactPopupAnimation">
         <item name="android:windowEnterAnimation">@anim/compact_popup_enter</item>
         <item name="android:windowExitAnimation">@anim/compact_popup_exit</item>
+    </style>
+
+
+    <style name="FormSectionHeader">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:paddingTop">16dp</item>
+        <item name="android:paddingBottom">4dp</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">?attr/contrast80</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:letterSpacing">0.05</item>
     </style>
 
 </resources>

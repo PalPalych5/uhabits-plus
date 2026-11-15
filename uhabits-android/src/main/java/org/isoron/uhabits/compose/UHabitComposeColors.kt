@@ -35,7 +35,9 @@ data class UHabitComposeColors(
     val showCardBorders: Boolean = true,
     val habitsCardCornerRadiusDp: Int = cardCornerRadiusDp,
     val statisticsCardCornerRadiusDp: Int = cardCornerRadiusDp,
-    val isClassicSectionLayout: Boolean = false
+    val isClassicSectionLayout: Boolean = false,
+    val dialogSurface: Int = surface,
+    val dialogBorder: Int = border
 ) {
     val backgroundColor: Color get() = Color(background)
     val foregroundColor: Color get() = Color(foreground)
@@ -45,6 +47,8 @@ data class UHabitComposeColors(
     val surfaceVariantColor: Color get() = Color(surfaceVariant)
     val borderColor: Color get() = Color(border)
     val dividerColor: Color get() = Color(divider)
+    val dialogSurfaceColor: Color get() = Color(dialogSurface)
+    val dialogBorderColor: Color get() = Color(dialogBorder)
     val dangerColor: Color get() = UHabitElevationAndBorders.resolveDangerColor(this)
     val warningColor: Color get() = UHabitElevationAndBorders.resolveWarningColor(this)
 
@@ -96,7 +100,9 @@ data class UHabitComposeColors(
             showCardBorders = showCardBorders,
             habitsCardCornerRadiusDp = palette.habitsCardCornerRadius,
             statisticsCardCornerRadiusDp = palette.statisticsCardCornerRadius,
-            isClassicSectionLayout = palette.isClassicSectionLayout
+            isClassicSectionLayout = palette.isClassicSectionLayout,
+            dialogSurface = palette.dialogSurface,
+            dialogBorder = palette.dialogBorder
         )
     }
 }

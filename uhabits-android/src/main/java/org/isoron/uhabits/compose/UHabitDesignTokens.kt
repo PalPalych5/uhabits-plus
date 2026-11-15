@@ -20,9 +20,9 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -119,6 +119,7 @@ object UHabitElevationAndBorders {
      *   Light/Dark use [UHabitComposeColors.surface].
      */
     fun resolveSectionCardSurface(colors: UHabitComposeColors): Color = when {
+        colors.isClassicSectionLayout -> if (colors.isPureBlack) Color.Black else Color(colors.surface)
         colors.isPureBlack -> if (colors.showCardBorders) Color(AMOLED_BORDERED_CARD_SURFACE_ARGB) else Color.Black
         colors.showCardBorders -> Color(colors.surface)
         colors.isDark -> Color(colors.surface)
@@ -329,7 +330,7 @@ fun UHabitComposeColors.toMaterialColorScheme(): ColorScheme {
     val brd = Color(border)
     val div = Color(divider)
     val err = UHabitElevationAndBorders.resolveDangerColor(this)
-    val onAcc = if (1.05f / (acc.luminance() + 0.05f) >= 4.5f) Color.White else Color(0xFF191C20)
+    val onAcc = if ((1.05f / (acc.luminance() + 0.05f)) >= 4.5f) Color.White else Color(0xFF191C20)
     val accContainer = acc.copy(alpha = if (isDark) 0.20f else 0.14f)
 
     return if (isDark) {

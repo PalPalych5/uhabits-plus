@@ -301,6 +301,9 @@
     <string name="target_type">Тип цели</string>
     <string name="target_type_at_least">Набрать минимум</string>
     <string name="target_type_at_most">Не превысить лимит</string>
+    <string name="missing_entries_policy_label">Пропуски дней</string>
+    <string name="missing_entries_count_as_zero">Считать как 0</string>
+    <string name="missing_entries_unknown">Неизвестно</string>
     <string name="example_question_boolean">напр.: Вы упражнялись сегодня?</string>
     <string name="question">Вопрос</string>
     <string name="target">Цель</string>
@@ -560,9 +563,9 @@
     <string name="action_skip_day">Пропустить день</string>
     <string name="skip_day_dialog_title">Пропустить день</string>
     <string name="skip_day_dialog_message">Применить пропуск к %1$d оставшимся привычкам, у которых сегодня ещё нет явной отметки.</string>
-    <string name="skip_day_dialog_impact">Уже выполненные привычки и введённые значения не изменятся.</string>
-    <string name="skip_day_all">Все неотмеченные</string>
-    <string name="skip_day_by_sphere">По сферам</string>
+    <string name="skip_day_dialog_impact">Пропустит сегодняшние привычки без отметки. Выполненные и с записями не изменятся.</string>
+    <string name="skip_day_all">Все</string>
+    <string name="skip_day_by_sphere">Выбрать сферы</string>
     <string name="skip_day_note_hint">Причина пропуска (необязательно)</string>
     <string name="skip_day_confirm">Пропустить</string>
     <string name="skip_day_empty_message">Нет оставшихся привычек для пропуска сегодня.</string>
@@ -1096,4 +1099,9 @@
     <string name="about_legal_document_unavailable">Текст лицензии недоступен в этой сборке.</string>
     <string name="about_open_link_action">Открыть внешнюю ссылку</string>
     <string name="about_view_license_action">Открыть текст лицензии</string>
+    <string name="streak_show_all">Показать все (%1$d)</string>
+    <string name="target_limit_within">Лимит соблюдён</string>
+    <string name="target_limit_ongoing">В пределах лимита · период не завершён</string>
+    <string name="target_limit_no_logs">Нет записей за период · лимит %1$s</string>
+    <string name="target_limit_exceeded">Лимит превышен: %1$s из %2$s</string>
 </resources>

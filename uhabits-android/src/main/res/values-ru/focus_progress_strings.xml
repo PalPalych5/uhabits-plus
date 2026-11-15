@@ -21,4 +21,8 @@
     <string name="focus_edit_hint_excluded">Учёт фокуса исключён из этой привычки. Сессия фокуса сохранена.</string>
     <string name="focus_edit_exclude_action">Исключить</string>
     <string name="focus_edit_restore_action">Восстановить</string>
+    <string name="focus_edit_summary_focus_and_manual">Фокус: %1$s · Вручную: %2$s</string>
+    <string name="focus_edit_summary_excluded">Фокус исключён (%1$s)</string>
+    <string name="focus_edit_below_focus_error">Меньше времени фокуса (%1$s). Нажмите «Исключить», чтобы задать меньше.</string>
+    <string name="focus_edit_total_hint">Итого</string>
 </resources>

@@ -8,6 +8,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import org.hamcrest.CoreMatchers.equalTo
 import org.hamcrest.MatcherAssert.assertThat
+import org.isoron.uhabits.activities.habits.show.views.HarmonizedTheme
+import org.isoron.uhabits.activities.habits.show.views.resolveSectionSurfaceColor
 import org.isoron.uhabits.activities.settings.SettingsThemePalette
 import org.isoron.uhabits.core.ui.views.DarkTheme
 import org.isoron.uhabits.core.ui.views.LightTheme
@@ -50,10 +52,26 @@ class UHabitComposeComponentsContractTest {
     }
 
     @Test
-    fun testHarmonizedThemePreservesDelegatedChartProperties() {
+    fun testHabitDetailsResolveSectionSurfaceColorDelegatesToSharedTokens() {
+        for (isDark in listOf(false, true)) {
+            for (isPureBlack in listOf(false, true)) {
+                if (isPureBlack && !isDark) continue
+                for (showBorders in listOf(false, true)) {
+                    val colors = buildColors(isDark = isDark, isPureBlack = isPureBlack, showBorders = showBorders)
+                    assertThat(
+                        resolveSectionSurfaceColor(colors),
+                        equalTo(colors.resolveSectionSurfaceColor())
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun testHarmonizedThemeAliasPreservesDelegatedChartProperties() {
         val base = PureBlackTheme()
         val colors = buildColors(isDark = true, isPureBlack = true, showBorders = true)
-        val harmonized: HarmonizedChartTheme = harmonizeChartTheme(base, colors)
+        val harmonized: HarmonizedTheme = harmonizeChartTheme(base, colors)
 
         assertThat(
             harmonized.cardBackgroundColor,

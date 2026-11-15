@@ -41,11 +41,7 @@ fun UHabitBottomSheetShell(
     contentPadding: PaddingValues = PaddingValues(bottom = 16.dp),
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val sheetSurface = if (colors.isPureBlack) {
-        Color(UHabitElevationAndBorders.AMOLED_BORDERED_CARD_SURFACE_ARGB)
-    } else {
-        Color(colors.surface)
-    }
+    val sheetSurface = colors.dialogSurfaceColor
     val shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
 
     Column(
@@ -53,6 +49,17 @@ fun UHabitBottomSheetShell(
             .fillMaxWidth()
             .clip(shape)
             .background(sheetSurface)
+            .let { mod ->
+                if (colors.isPureBlack) {
+                    mod.border(
+                        width = UHabitElevationAndBorders.hairlineBorderWidth,
+                        color = colors.dialogBorderColor,
+                        shape = shape
+                    )
+                } else {
+                    mod
+                }
+            }
             .navigationBarsPadding()
             .padding(contentPadding),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -82,15 +89,11 @@ fun UHabitDialogShell(
     content: @Composable ColumnScope.() -> Unit
 ) {
     val shape = LocalUHabitDesignTokens.current.shapes.lg
-    val dialogSurface = if (colors.isPureBlack) {
-        Color(UHabitElevationAndBorders.AMOLED_BORDERED_CARD_SURFACE_ARGB)
-    } else {
-        Color(colors.surface)
-    }
+    val dialogSurface = colors.dialogSurfaceColor
     val borderMod = if (colors.isDark) {
         Modifier.border(
             width = UHabitElevationAndBorders.hairlineBorderWidth,
-            color = colors.resolveSectionBorderColor(),
+            color = colors.dialogBorderColor,
             shape = shape
         )
     } else {

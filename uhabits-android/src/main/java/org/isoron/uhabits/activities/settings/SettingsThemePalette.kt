@@ -25,7 +25,9 @@ data class SettingsThemePalette(
     val habitsCardCornerRadius: Int = 8,
     val statisticsCardCornerRadius: Int = 8,
     val showHabitCardBorders: Boolean = true,
-    val isClassicSectionLayout: Boolean = false
+    val isClassicSectionLayout: Boolean = false,
+    val dialogSurface: Int = surface,
+    val dialogBorder: Int = border
 )
 
 object SettingsThemePaletteResolver {
@@ -57,7 +59,9 @@ object SettingsThemePaletteResolver {
                 habitsCardCornerRadius = habitsRadius,
                 statisticsCardCornerRadius = statsRadius,
                 showHabitCardBorders = showBorders,
-                isClassicSectionLayout = isClassic
+                isClassicSectionLayout = isClassic,
+                dialogSurface = ContextCompat.getColor(context, R.color.theme_background_amoled),
+                dialogBorder = ContextCompat.getColor(context, R.color.theme_border_amoled)
             )
             isDark -> SettingsThemePalette(
                 background = ContextCompat.getColor(context, R.color.theme_background_dark),
@@ -74,7 +78,9 @@ object SettingsThemePaletteResolver {
                 habitsCardCornerRadius = habitsRadius,
                 statisticsCardCornerRadius = statsRadius,
                 showHabitCardBorders = showBorders,
-                isClassicSectionLayout = isClassic
+                isClassicSectionLayout = isClassic,
+                dialogSurface = ContextCompat.getColor(context, R.color.theme_surface_dark),
+                dialogBorder = 0x1FFFFFFF
             )
             else -> SettingsThemePalette(
                 background = ContextCompat.getColor(context, R.color.theme_background_light),
@@ -91,7 +97,9 @@ object SettingsThemePaletteResolver {
                 habitsCardCornerRadius = habitsRadius,
                 statisticsCardCornerRadius = statsRadius,
                 showHabitCardBorders = showBorders,
-                isClassicSectionLayout = isClassic
+                isClassicSectionLayout = isClassic,
+                dialogSurface = ContextCompat.getColor(context, R.color.theme_surface_light),
+                dialogBorder = 0xFFD9DEE5.toInt()
             )
         }
     }

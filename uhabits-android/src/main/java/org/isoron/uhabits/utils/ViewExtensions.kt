@@ -38,6 +38,7 @@ import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.WindowManager
+import android.widget.EditText
 import android.widget.RelativeLayout
 import android.widget.RelativeLayout.ALIGN_PARENT_BOTTOM
 import android.widget.RelativeLayout.ALIGN_PARENT_TOP
@@ -240,10 +241,25 @@ fun View.requestFocusWithKeyboard() {
     // are not reliable; sometimes the keyboard does not show, and sometimes it does not go away
     // after focus is lost. Here, we simulate a click on the view, which triggers the keyboard.
     // Based on: https://stackoverflow.com/a/7699556
+    val editText = this as? EditText
+    val initialText = editText?.text?.toString()
+    val hadFullSelection = editText != null &&
+        editText.selectionStart == 0 &&
+        editText.selectionEnd == (initialText?.length ?: 0)
     postDelayed({
+        if (!isAttachedToWindow) return@postDelayed
+        val currentText = editText?.text?.toString()
         val time = SystemClock.uptimeMillis()
         dispatchTouchEvent(MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, 0f, 0f, 0))
         dispatchTouchEvent(MotionEvent.obtain(time, time, MotionEvent.ACTION_UP, 0f, 0f, 0))
+        if (editText != null && hadFullSelection && currentText == initialText) {
+            editText.selectAll()
+            editText.post {
+                if (editText.isAttachedToWindow && editText.text?.toString() == initialText && editText.hasFocus()) {
+                    editText.selectAll()
+                }
+            }
+        }
     }, 250)
 }
 

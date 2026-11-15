@@ -21,4 +21,8 @@
     <string name="focus_edit_hint_excluded">Focus credit is excluded from this habit. Focus session is preserved.</string>
     <string name="focus_edit_exclude_action">Exclude</string>
     <string name="focus_edit_restore_action">Restore</string>
+    <string name="focus_edit_summary_focus_and_manual">Focus: %1$s · Manual: %2$s</string>
+    <string name="focus_edit_summary_excluded">Focus excluded (%1$s)</string>
+    <string name="focus_edit_below_focus_error">Cannot be less than focus (%1$s). Tap Exclude to enter less.</string>
+    <string name="focus_edit_total_hint">Total</string>
 </resources>

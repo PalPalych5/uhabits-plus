@@ -49,11 +49,73 @@ object CompactPopupMenu {
         object Divider : Entry()
     }
 
+    internal fun calculatePopupCoordinates(
+        anchorLeft: Int,
+        anchorTop: Int,
+        anchorRight: Int,
+        anchorBottom: Int,
+        frameLeft: Int,
+        frameTop: Int,
+        frameRight: Int,
+        frameBottom: Int,
+        popupWidth: Int,
+        popupHeight: Int,
+        horizontalMarginPx: Int,
+        verticalMarginPx: Int,
+        verticalOffsetPx: Int,
+    ): Pair<Int, Int> {
+        val minX = frameLeft + horizontalMarginPx
+        val maxX = (frameRight - popupWidth - horizontalMarginPx).coerceAtLeast(minX)
+        val x = (anchorRight - popupWidth).coerceIn(minX, maxX)
+
+        val minY = frameTop + verticalMarginPx
+        val maxY = (frameBottom - popupHeight - verticalMarginPx).coerceAtLeast(minY)
+        val belowY = anchorBottom + verticalOffsetPx
+        val aboveY = anchorTop - popupHeight - verticalOffsetPx
+        val spaceBelow = (frameBottom - verticalMarginPx) - (anchorBottom + verticalOffsetPx)
+        val spaceAbove = (anchorTop - verticalOffsetPx) - (frameTop + verticalMarginPx)
+
+        val y = when {
+            popupHeight <= spaceBelow -> belowY.coerceIn(minY, maxY)
+            popupHeight <= spaceAbove -> aboveY.coerceIn(minY, maxY)
+            spaceAbove > spaceBelow -> aboveY.coerceIn(minY, maxY)
+            else -> belowY.coerceIn(minY, maxY)
+        }
+        return x to y
+    }
+
+    internal fun calculatePopupPosition(
+        anchorRect: Rect,
+        visibleFrame: Rect,
+        popupWidth: Int,
+        popupHeight: Int,
+        horizontalMarginPx: Int,
+        verticalMarginPx: Int,
+        verticalOffsetPx: Int,
+    ): Pair<Int, Int> = calculatePopupCoordinates(
+        anchorLeft = anchorRect.left,
+        anchorTop = anchorRect.top,
+        anchorRight = anchorRect.right,
+        anchorBottom = anchorRect.bottom,
+        frameLeft = visibleFrame.left,
+        frameTop = visibleFrame.top,
+        frameRight = visibleFrame.right,
+        frameBottom = visibleFrame.bottom,
+        popupWidth = popupWidth,
+        popupHeight = popupHeight,
+        horizontalMarginPx = horizontalMarginPx,
+        verticalMarginPx = verticalMarginPx,
+        verticalOffsetPx = verticalOffsetPx,
+    )
+
     fun show(
         anchor: View,
         entries: List<Entry>,
         minWidthDp: Int = 144,
         maxWidthDp: Int = 220,
+        horizontalMarginDp: Int = 8,
+        verticalOffsetDp: Int = 4,
+        anchorRectOnScreen: Rect? = null,
         onDismiss: (() -> Unit)? = null,
         onItemClick: (Int) -> Unit,
     ) {
@@ -70,9 +132,10 @@ object CompactPopupMenu {
         val popup = PopupWindow(context)
         val content = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(px(4), px(4), px(4), px(4))
+            setPadding(px(6), px(6), px(6), px(6))
             background = GradientDrawable().apply {
-                setColor(palette.surface)
+                setColor(palette.dialogSurface)
+                setStroke(px(1).coerceAtLeast(1), palette.dialogBorder)
                 cornerRadius = px(12).toFloat()
             }
         }
@@ -96,8 +159,8 @@ object CompactPopupMenu {
                     textSize = 14f
                     gravity = Gravity.CENTER_VERTICAL
                     includeFontPadding = false
-                    minHeight = px(48)
-                    setPadding(px(12), 0, px(14), 0)
+                    minHeight = px(42)
+                    setPadding(px(12), 0, px(12), 0)
                     val itemColor = when {
                         entry.destructive -> destructive
                         entry.selected -> accent
@@ -128,7 +191,10 @@ object CompactPopupMenu {
                 }, LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT,
-                ))
+                ).apply {
+                    topMargin = px(2)
+                    bottomMargin = px(2)
+                })
             }
         }
         popup.contentView = content
@@ -152,18 +218,27 @@ object CompactPopupMenu {
 
         val frame = Rect()
         anchor.rootView.getWindowVisibleDisplayFrame(frame)
-        val location = IntArray(2)
-        anchor.getLocationOnScreen(location)
-        val margin = px(8)
-        val x = (location[0] + anchor.width - measuredWidth)
-            .coerceIn(frame.left + margin, frame.right - measuredWidth - margin)
-        val belowY = location[1] + anchor.height + px(4)
-        val aboveY = location[1] - content.measuredHeight - px(4)
-        val y = if (belowY + content.measuredHeight <= frame.bottom - margin) {
-            belowY
+        val anchorRect = if (anchorRectOnScreen != null && !anchorRectOnScreen.isEmpty) {
+            anchorRectOnScreen
         } else {
-            aboveY.coerceAtLeast(frame.top + margin)
+            val location = IntArray(2)
+            anchor.getLocationOnScreen(location)
+            Rect(
+                location[0],
+                location[1],
+                location[0] + anchor.width,
+                location[1] + anchor.height,
+            )
         }
+        val (x, y) = calculatePopupPosition(
+            anchorRect = anchorRect,
+            visibleFrame = frame,
+            popupWidth = measuredWidth,
+            popupHeight = content.measuredHeight,
+            horizontalMarginPx = px(horizontalMarginDp),
+            verticalMarginPx = px(8),
+            verticalOffsetPx = px(verticalOffsetDp),
+        )
         popup.showAtLocation(anchor.rootView, Gravity.TOP or Gravity.START, x, y)
     }
 }

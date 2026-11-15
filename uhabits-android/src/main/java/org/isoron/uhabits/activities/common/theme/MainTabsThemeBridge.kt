@@ -14,7 +14,7 @@ object MainTabsThemeBridge {
             SettingsThemePaletteResolver.resolve(context, prefs)
         } else {
             SettingsThemePalette(
-                background = Color.WHITE,
+                background = 0xFFF6F7F9.toInt(),
                 surface = Color.WHITE,
                 surfaceVariant = 0xFFF3F4F6.toInt(),
                 border = 0xFFD9DEE5.toInt(),
@@ -23,7 +23,9 @@ object MainTabsThemeBridge {
                 onSurfaceVariant = 0xFF626872.toInt(),
                 accent = 0xFF68C37A.toInt(),
                 isDark = false,
-                isPureBlack = false
+                isPureBlack = false,
+                dialogSurface = Color.WHITE,
+                dialogBorder = 0xFFD9DEE5.toInt()
             )
         }
     }

@@ -252,6 +252,9 @@
     <string name="target_type">Target Type</string>
     <string name="target_type_at_least">Reach at least</string>
     <string name="target_type_at_most">Stay under limit</string>
+    <string name="missing_entries_policy_label">Missing entries</string>
+    <string name="missing_entries_count_as_zero">Count as 0</string>
+    <string name="missing_entries_unknown">Unknown</string>
     <string name="example_question_boolean">e.g. Did you exercise today?</string>
     <string name="question">Question</string>
     <string name="target">Target</string>
@@ -582,9 +585,9 @@
     <string name="action_skip_day">Skip day</string>
     <string name="skip_day_dialog_title">Skip day</string>
     <string name="skip_day_dialog_message">Apply skip to %1$d remaining habits that still have no explicit entry today.</string>
-    <string name="skip_day_dialog_impact">Completed habits and already entered values stay untouched.</string>
-    <string name="skip_day_all">All unmarked habits</string>
-    <string name="skip_day_by_sphere">By sphere</string>
+    <string name="skip_day_dialog_impact">Skips today’s unmarked habits. Completed and logged ones stay unchanged.</string>
+    <string name="skip_day_all">All</string>
+    <string name="skip_day_by_sphere">Select spheres</string>
     <string name="skip_day_note_hint">Reason for skip (optional)</string>
     <string name="skip_day_confirm">Skip</string>
     <string name="skip_day_empty_message">No remaining habits to skip today.</string>
@@ -1076,4 +1079,9 @@
     <string name="about_legal_document_unavailable">License document is unavailable in this build.</string>
     <string name="about_open_link_action">Open external link</string>
     <string name="about_view_license_action">Read full license text</string>
+    <string name="streak_show_all">Show all (%1$d)</string>
+    <string name="target_limit_within">Within limit</string>
+    <string name="target_limit_ongoing">Within limit · period in progress</string>
+    <string name="target_limit_no_logs">No entries for current period · limit %1$s</string>
+    <string name="target_limit_exceeded">Limit exceeded: %1$s / %2$s</string>
 </resources>

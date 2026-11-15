@@ -113,11 +113,11 @@
     <color name="color_picker_slider_focus_dark">#1FFFFFFF</color>
     <color name="color_picker_danger_dark">#FFB4AB</color>
     <color name="color_picker_background_amoled">#FF000000</color>
-    <color name="color_picker_surface_amoled">#FF0B0B0D</color>
+    <color name="color_picker_surface_amoled">#FF000000</color>
     <color name="color_picker_surface_variant_amoled">#FF111216</color>
     <color name="color_picker_on_surface_amoled">#FFF5F6F8</color>
     <color name="color_picker_on_surface_variant_amoled">#FFA7ADB8</color>
-    <color name="color_picker_border_amoled">#242F3642</color>
+    <color name="color_picker_border_amoled">#29FFFFFF</color>
     <color name="color_picker_divider_amoled">#1AFFFFFF</color>
     <color name="color_picker_slider_inactive_amoled">#FF1A1A1D</color>
     <color name="color_picker_slider_thumb_stroke_amoled">#33FFFFFF</color>
