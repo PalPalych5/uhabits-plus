@@ -152,7 +152,8 @@ abstract class HabitsApplicationComponent(
             FocusSessionSchema.createSchema(providedDb)
             org.isoron.uhabits.core.contribution.sqlite.ContributionSchema.createSchema(providedDb)
             val contribRepo = org.isoron.uhabits.core.contribution.sqlite.SQLiteContributionRepository(providedDb)
-            val effectiveHabitValueService = org.isoron.uhabits.core.models.projection.EffectiveHabitValueService(contribRepo)
+            val adjRepo = org.isoron.uhabits.core.models.projection.SQLiteHabitDayAdjustmentRepository(providedDb)
+            val effectiveHabitValueService = org.isoron.uhabits.core.models.projection.EffectiveHabitValueService(contribRepo, adjustmentRepository = adjRepo)
             org.isoron.uhabits.core.containers.statistics.ContainerStatisticsService(
                 containerQueries = cQueries,
                 placementQueries = pQueries,
@@ -171,11 +172,13 @@ abstract class HabitsApplicationComponent(
             FocusSessionSchema.createSchema(providedDb)
             org.isoron.uhabits.core.contribution.sqlite.ContributionSchema.createSchema(providedDb)
             val contribRepo = org.isoron.uhabits.core.contribution.sqlite.SQLiteContributionRepository(providedDb)
+            val adjRepo = org.isoron.uhabits.core.models.projection.SQLiteHabitDayAdjustmentRepository(providedDb)
             val effectiveHabitValueService = org.isoron.uhabits.core.models.projection.EffectiveHabitValueService(
                 contribRepo,
                 preferences.midnightDelayHours,
                 0,
-                preferences.firstWeekday
+                preferences.firstWeekday,
+                adjustmentRepository = adjRepo,
             )
             org.isoron.uhabits.core.today.TodayEvaluationService(
                 userTaskRepository = userTaskRepository,
@@ -206,6 +209,10 @@ abstract class HabitsApplicationComponent(
 
     val contributionRepository: org.isoron.uhabits.core.contribution.sqlite.SQLiteContributionRepository? by lazy {
         if (session.isNextArchitecture) org.isoron.uhabits.core.contribution.sqlite.SQLiteContributionRepository(providedDb) else null
+    }
+
+    val habitDayAdjustmentRepository: org.isoron.uhabits.core.models.projection.SQLiteHabitDayAdjustmentRepository? by lazy {
+        if (session.isNextArchitecture) org.isoron.uhabits.core.models.projection.SQLiteHabitDayAdjustmentRepository(providedDb) else null
     }
 
     private val providedDb: AndroidDatabase by lazy {

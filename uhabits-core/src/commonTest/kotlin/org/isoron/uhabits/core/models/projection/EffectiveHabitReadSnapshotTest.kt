@@ -194,7 +194,8 @@ class EffectiveHabitReadSnapshotTest : BaseUnitTest() {
         val snapshot = read(h, monday)
         assertTrue(snapshot.day(monday).hasCompleteCoverage)
         assertEquals(EffectiveReadExactness.INCOMPLETE, snapshot.scoreResult.exactness)
-        assertNull(snapshot.scoreResult.scores); assertNull(snapshot.streakResult.streaks)
+        assertNotNull(snapshot.scoreResult.scores)
+        assertNotNull(snapshot.streakResult.streaks)
     }
 
     @Test fun liveCalendarAchievementAndLegacyAtMostCalendarStayDistinct() {
@@ -206,6 +207,7 @@ class EffectiveHabitReadSnapshotTest : BaseUnitTest() {
         h.targetValue = 100.0; h.statisticsStartDate = start
         for (offset in 0..7) h.originalEntries.add(Entry(start.plus(offset), 0))
         h.recompute(); credit(h, start, 150000)
+        setToday(monday.plus(8))
         val snapshot = EffectiveHabitReadSnapshotProvider(repository).prepare(listOf(h), start, date,
             "calendar", 1, calendar.copy(firstWeekday = liveFirst)).getValue(HabitRef(h.uuid!!))
         assertEquals(HabitGoalStatus.SATISFIED, snapshot.goalAchievementOn(date).status)
@@ -215,6 +217,7 @@ class EffectiveHabitReadSnapshotTest : BaseUnitTest() {
 
     @Test fun atMostUnloggedFuturePeriodMakesStreakUnavailableEvenWithKnownCurrentDay() {
         val h = habit(Frequency(1, 7), NumericalHabitType.AT_MOST)
+        h.missingDataPolicy = MissingDataPolicy.UNKNOWN
         val first = DayOfWeek.entries[getFirstWeekdayNumberAccordingToLocale() - 1]
         val start = monday.startOfWeek(first)
         h.statisticsStartDate = start
@@ -223,7 +226,7 @@ class EffectiveHabitReadSnapshotTest : BaseUnitTest() {
             "at-most", 1, calendar).getValue(HabitRef(h.uuid!!))
         assertEquals(HabitGoalStatus.UNKNOWN, snapshot.compatibilityCompletionOn(start).status)
         assertEquals(EffectiveReadExactness.INCOMPLETE, snapshot.streakResult.exactness)
-        assertNull(snapshot.streakResult.streaks)
+        assertEquals(emptyList(), snapshot.streakResult.streaks)
     }
 
     @Test fun incompatibleAndBooleanContributionTargetsRemainTypedIntegrityFailures() {
@@ -286,7 +289,9 @@ class EffectiveHabitReadSnapshotTest : BaseUnitTest() {
         assertFalse(snapshot.day(monday.minus(7)).hasCompleteCoverage)
         assertEquals(0L, snapshot.day(monday.plus(10)).totalValue)
         assertEquals(EffectiveReadExactness.INCOMPLETE, snapshot.scoreResult.exactness)
-        assertNull(snapshot.scoreResult.scores); assertNull(snapshot.streakResult.streaks)
+        assertNotNull(snapshot.scoreResult.scores)
+        assertTrue((snapshot.scoreResult.on(monday.minus(7)) ?: 0.0) > 0.0)
+        assertNotNull(snapshot.streakResult.streaks)
         assertTrue(h.originalEntries.getKnown().isEmpty()); assertTrue(h.computedEntries.getKnown().isEmpty())
     }
 
@@ -296,6 +301,7 @@ class EffectiveHabitReadSnapshotTest : BaseUnitTest() {
         assertEquals(HabitGoalStatus.SATISFIED, snapshot.goalAchievementOn(monday).status)
         assertTrue(snapshot.compatibilityCompletionOn(monday).isCompleted)
         h.targetType = NumericalHabitType.AT_MOST
+        h.missingDataPolicy = MissingDataPolicy.UNKNOWN
         snapshot = read(h)
         assertEquals(HabitGoalStatus.NOT_SATISFIED, snapshot.goalAchievementOn(monday).status)
         h.targetValue = 400.0

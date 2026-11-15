@@ -70,18 +70,20 @@ class EffectiveHabitReadSnapshot internal constructor(
     precomputedStreakIncomplete: Boolean? = null,
 ) {
     val hasContributions: Boolean = precomputedHasContributions ?: days.any { it.contributions.isNotEmpty() }
+    val hasAdjustments: Boolean = days.any { it.adjustmentValue != 0L }
+    val hasProjectedChanges: Boolean get() = hasContributions || hasAdjustments
     private val cachedHasHistoricalContributions: Boolean = precomputedHasHistoricalContributions
         ?: (hasContributions || days.any { it.tombstonedContributions.isNotEmpty() })
     val hasHistoricalContributions: Boolean get() = cachedHasHistoricalContributions
-    val canUseLegacyEntryAdapter: Boolean = precomputedCanUseLegacyEntryAdapter ?: (!hasContributions || (
+    val canUseLegacyEntryAdapter: Boolean = precomputedCanUseLegacyEntryAdapter ?: (!hasProjectedChanges || (
         service.hasUniformObservationUnits(captured, days) && legacyQuantitiesRepresentable(days)))
     private val representable get() = canUseLegacyEntryAdapter
     // Legacy UNKNOWN-as-zero remains an explicitly named compatibility result only when no credit exists.
     // Once automatic observations exist, a missing manual log cannot be made exact by an Int adapter.
     private val scoreIncomplete: Boolean = precomputedScoreIncomplete
-        ?: (hasContributions && representable && hasIncompleteAlgorithmInputs(resultTo, true))
+        ?: (hasProjectedChanges && representable && hasIncompleteAlgorithmInputs(resultTo, true))
     private val streakIncomplete: Boolean = precomputedStreakIncomplete
-        ?: (hasContributions && representable && hasIncompleteAlgorithmInputs(compatibilityTo, false))
+        ?: (hasProjectedChanges && representable && hasIncompleteAlgorithmInputs(compatibilityTo, false))
     val scoreResult: EffectiveScoreResult
     val streakResult: EffectiveStreakResult
     val scoreStreakComputeDurationMs: Double
@@ -94,7 +96,7 @@ class EffectiveHabitReadSnapshot internal constructor(
         } else {
             val scoreStreakStart = TimeSource.Monotonic.markNow()
             val baseExactness = when {
-                !hasContributions -> EffectiveReadExactness.LEGACY_COMPATIBILITY
+                !hasProjectedChanges -> EffectiveReadExactness.LEGACY_COMPATIBILITY
                 !representable -> EffectiveReadExactness.UNREPRESENTABLE
                 else -> EffectiveReadExactness.EXACT
             }
@@ -102,20 +104,20 @@ class EffectiveHabitReadSnapshot internal constructor(
                 scoreResult = EffectiveScoreResult(null, baseExactness)
                 streakResult = EffectiveStreakResult(null, baseExactness)
             } else {
-                val projected = if (hasContributions && captured.isNumerical) detachedPresentation() else captured
+                val projected = if (hasProjectedChanges && captured.isNumerical) detachedPresentation() else captured
                 val start = projected.effectiveStatisticsStartDate()
                     ?: projected.computedEntries.getEarliestDate() ?: from
-                val safe = !hasContributions || rollingWindowsRepresentable(projected, start, resultTo)
+                val safe = !hasProjectedChanges || rollingWindowsRepresentable(projected, start, resultTo)
                 scoreResult = when {
                     !safe -> EffectiveScoreResult(null, EffectiveReadExactness.UNREPRESENTABLE)
-                    scoreIncomplete -> EffectiveScoreResult(null, EffectiveReadExactness.INCOMPLETE)
                     else -> {
                         projected.scores.recompute(projected, projected.computedEntries, start, resultTo)
-                        EffectiveScoreResult(projected.scores.getByInterval(from, resultTo).toList(), baseExactness)
+                        val exactness = if (scoreIncomplete) EffectiveReadExactness.INCOMPLETE else baseExactness
+                        EffectiveScoreResult(projected.scores.getByInterval(from, resultTo).toList(), exactness)
                     }
                 }
-                streakResult = if (streakIncomplete) EffectiveStreakResult(null, EffectiveReadExactness.INCOMPLETE)
-                else EffectiveStreakResult(buildStreaks(minOf(start, compatibilityTo), compatibilityTo), baseExactness)
+                val streakExactness = if (streakIncomplete) EffectiveReadExactness.INCOMPLETE else baseExactness
+                streakResult = EffectiveStreakResult(buildStreaks(minOf(start, compatibilityTo), compatibilityTo), streakExactness)
             }
             scoreStreakComputeDurationMs = scoreStreakStart.elapsedNow().toDouble(DurationUnit.MILLISECONDS)
         }
@@ -182,15 +184,15 @@ class EffectiveHabitReadSnapshot internal constructor(
 
     /** Same compatibility definition before/after insert or final tombstone, with typed coverage. */
     fun compatibilityCompletionOn(date: LocalDate): CompatibilityCompletion {
-        if (!captured.isNumerical || !hasContributions) {
+        if (!captured.isNumerical || !hasProjectedChanges) {
             return CompatibilityCompletion(if (captured.isCompletedOn(date)) HabitGoalStatus.SATISFIED else HabitGoalStatus.NOT_SATISFIED)
         }
         val day = day(date)
         val status = when {
             !day.includedInStatistics -> HabitGoalStatus.EXCLUDED
             day.isSkipped -> HabitGoalStatus.SKIPPED
-            day.totalValue == null -> HabitGoalStatus.UNKNOWN
             captured.goalAt(date).targetType == NumericalHabitType.AT_MOST -> compatibilityService.goalProgressOn(captured, date, days).status
+            day.totalValue == null -> HabitGoalStatus.UNKNOWN
             day.totalValue / 1000.0 >= captured.goalAt(date).targetValue -> HabitGoalStatus.SATISFIED
             !day.hasCompleteCoverage -> HabitGoalStatus.UNKNOWN
             else -> HabitGoalStatus.NOT_SATISFIED
@@ -215,7 +217,7 @@ class EffectiveHabitReadSnapshot internal constructor(
             if (streakResult.streaks != null) {
                 val start = projected.effectiveStatisticsStartDate()
                     ?: projected.computedEntries.getEarliestDate() ?: from
-                if (!hasContributions) {
+                if (!hasProjectedChanges) {
                     projected.streaks.setAllFrom(streakResult.streaks)
                 } else {
                     projected.streaks.recompute(projected, projected.computedEntries, minOf(start, compatibilityTo), compatibilityTo)
@@ -225,7 +227,7 @@ class EffectiveHabitReadSnapshot internal constructor(
     }
 
     private fun detachedPresentation(): Habit = copyDetached(captured).also { projected ->
-        if (hasContributions && captured.isNumerical) days.forEach { day ->
+        if (hasProjectedChanges && captured.isNumerical) days.forEach { day ->
             val number = day.totalValue
             if (number != null) {
                 check(number <= Int.MAX_VALUE) { "Effective observation exceeds legacy Int representation" }
@@ -240,17 +242,24 @@ class EffectiveHabitReadSnapshot internal constructor(
         while (date <= end) {
             val current = findDay(date)
             if (captured.isDateIncludedInStatistics(date) && current?.isSkipped != true) {
-                if (current?.hasCompleteCoverage != true) return true
                 val goal = captured.goalAt(date)
-                for (offset in 0 until (if (includeRolling) goal.frequency.denominator else 0)) {
-                    val inputDate = date.minus(offset)
-                    if (captured.isDateIncludedInStatistics(inputDate)) {
-                        val input = findDay(inputDate)
-                        if (input?.isSkipped != true && input?.hasCompleteCoverage != true) return true
+                val isAtMostDefaultZero = goal.targetType == NumericalHabitType.AT_MOST &&
+                    captured.effectiveMissingDataPolicy() == MissingDataPolicy.DEFAULT_ZERO
+                if (!isAtMostDefaultZero) {
+                    if (current?.hasCompleteCoverage != true) return true
+                    for (offset in 0 until (if (includeRolling) goal.frequency.denominator else 0)) {
+                        val inputDate = date.minus(offset)
+                        if (captured.isDateIncludedInStatistics(inputDate)) {
+                            val input = findDay(inputDate)
+                            if (input?.isSkipped != true && input?.hasCompleteCoverage != true) return true
+                        }
+                    }
+                    if (goal.targetType == NumericalHabitType.AT_MOST &&
+                        compatibilityService.goalProgressOn(captured, date, days).status == HabitGoalStatus.UNKNOWN
+                    ) {
+                        return true
                     }
                 }
-                if (goal.targetType == NumericalHabitType.AT_MOST &&
-                    compatibilityService.goalProgressOn(captured, date, days).status == HabitGoalStatus.UNKNOWN) return true
             }
             date = date.plus(1)
         }
@@ -271,12 +280,14 @@ class EffectiveHabitReadSnapshot internal constructor(
     }
 
     private fun buildStreaks(start: LocalDate, end: LocalDate): List<Streak> {
+        val today = getToday()
+        val firstWeekday = DayOfWeek.entries[getFirstWeekdayNumberAccordingToLocale() - 1]
         val result = mutableListOf<Streak>()
         var begin: LocalDate? = null
         var last: LocalDate? = null
         var date = start
         while (date <= end) {
-            if (compatibilityCompletionOn(date).isCompleted) {
+            if (isCompletedForStreak(date, today, firstWeekday)) {
                 if (begin == null) begin = date
                 last = date
             } else if (begin != null) {
@@ -287,6 +298,26 @@ class EffectiveHabitReadSnapshot internal constructor(
         }
         if (begin != null) result.add(Streak(begin, requireNotNull(last)))
         return result.reversed().toList()
+    }
+
+    private fun isCompletedForStreak(date: LocalDate, today: LocalDate, firstWeekday: DayOfWeek): Boolean {
+        if (!compatibilityCompletionOn(date).isCompleted) return false
+        if (captured.isNumerical) {
+            val goal = captured.goalAt(date)
+            if (goal.targetType == NumericalHabitType.AT_MOST &&
+                (goal.frequency.denominator == 7 || goal.frequency.denominator == 30)
+            ) {
+                val periodEnd = when (goal.frequency.denominator) {
+                    7 -> date.startOfWeek(firstWeekday).plus(6)
+                    else -> {
+                        val periodStart = date.startOfMonth()
+                        periodStart.plus(date.monthLength - 1)
+                    }
+                }
+                if (!periodEnd.isOlderThan(today)) return false
+            }
+        }
+        return true
     }
 }
 
@@ -308,7 +339,10 @@ data class SnapshotPreparationMetrics(
     val materializedContributionCount: Int,
 )
 
-class EffectiveHabitReadSnapshotProvider(private val repository: ContributionRepository) {
+class EffectiveHabitReadSnapshotProvider(
+    private val repository: ContributionRepository,
+    private val adjustmentRepository: HabitDayAdjustmentRepository? = null,
+) {
     var preparationMetricsObserver: ((SnapshotPreparationMetrics) -> Unit)? = null
 
     /**
@@ -387,9 +421,9 @@ class EffectiveHabitReadSnapshotProvider(private val repository: ContributionRep
         val loadTo = maxOf(month.plus(month.monthLength - 1), latest.plus(6))
         val domainDuration = domainStart.elapsedNow()
 
-        val service = EffectiveHabitValueService(repository, calendar.hourOffset, calendar.minuteOffset, calendar.firstWeekday)
+        val service = EffectiveHabitValueService(repository, calendar.hourOffset, calendar.minuteOffset, calendar.firstWeekday, adjustmentRepository = adjustmentRepository)
         val compatibilityService = EffectiveHabitValueService(repository, calendar.hourOffset, calendar.minuteOffset,
-            DayOfWeek.entries[getFirstWeekdayNumberAccordingToLocale() - 1])
+            DayOfWeek.entries[getFirstWeekdayNumberAccordingToLocale() - 1], adjustmentRepository = adjustmentRepository)
 
         val daysStart = TimeSource.Monotonic.markNow()
         val values = service.daysForRange(frozen, loadFrom, loadTo)

@@ -37,7 +37,10 @@ class EffectiveHabitReadController(
     private val habits: HabitList,
     private val notificationTray: org.isoron.uhabits.core.ui.NotificationTray? = null,
 ) : Preferences.Listener {
-    internal val provider = EffectiveHabitReadSnapshotProvider(SQLiteContributionRepository(db))
+    internal val provider = EffectiveHabitReadSnapshotProvider(
+        SQLiteContributionRepository(db),
+        SQLiteHabitDayAdjustmentRepository(db),
+    )
     private val handler = Handler(Looper.getMainLooper())
     @Volatile private var disposed = false
     private var calendar = captureCalendar()

@@ -20,6 +20,7 @@ package org.isoron.uhabits.core.models
 
 import org.isoron.platform.Synchronized
 import org.isoron.platform.time.LocalDate
+import org.isoron.platform.time.getToday
 import kotlin.math.min
 
 class StreakList {
@@ -27,6 +28,9 @@ class StreakList {
 
     @Synchronized
     fun getLatest(): Streak? = list.maxByOrNull { it.end.daysSince2000 }
+
+    @Synchronized
+    fun getAll(): List<Streak> = list.sortedWith { s1, s2 -> s2.compareNewer(s1) }.toList()
 
     @Synchronized
     fun getBest(limit: Int): List<Streak> {
@@ -52,11 +56,12 @@ class StreakList {
         list.clear()
         if (from.isNewerThan(to)) return
 
+        val today = getToday()
         var begin: LocalDate? = null
         var end: LocalDate? = null
         var current = to
         while (!current.isOlderThan(from)) {
-            if (habit.isCompletedOn(current)) {
+            if (habit.isCompletedForStreak(current, today)) {
                 if (begin == null) {
                     begin = current
                     end = current

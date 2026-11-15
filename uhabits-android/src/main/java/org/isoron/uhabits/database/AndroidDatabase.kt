@@ -348,7 +348,7 @@ class AndroidDatabase(
         override fun inTransaction(): Boolean = db.inTransaction()
     }.let { raw ->
         if (revision == null) raw else org.isoron.uhabits.core.models.projection.EffectiveReadDatabase(
-            raw, revision, setOf("CONTRIBUTIONS", "REPETITIONS", "HABITS", "HABITGOALS", "HABITEXTENSIONS", "APPSETTINGS", "CONTAINERS", "HABITPLACEMENTS", "ORGANIZATIONSTATE", "HABITVISUALIDENTITIES")
+            raw, revision, setOf("CONTRIBUTIONS", "REPETITIONS", "HABITS", "HABITGOALS", "HABITEXTENSIONS", "APPSETTINGS", "CONTAINERS", "HABITPLACEMENTS", "ORGANIZATIONSTATE", "HABITVISUALIDENTITIES", "HABITDAYADJUSTMENTS")
         )
     }.let { effective ->
         if (workspaceRevision == null) effective else org.isoron.uhabits.core.models.projection.EffectiveReadDatabase(

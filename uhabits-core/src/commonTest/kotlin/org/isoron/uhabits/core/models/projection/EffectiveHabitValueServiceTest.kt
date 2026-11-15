@@ -151,7 +151,7 @@ class EffectiveHabitValueServiceTest : BaseUnitTest() {
     }
 
     @Test fun atMostRequiresCompleteCoverageDespiteKnownCredit() {
-        val h = habit(target = 30.0, type = NumericalHabitType.AT_MOST); credit(h, 20000)
+        val h = habit(target = 30.0, type = NumericalHabitType.AT_MOST).apply { missingDataPolicy = MissingDataPolicy.UNKNOWN }; credit(h, 20000)
         assertEquals(HabitGoalStatus.UNKNOWN, service.goalProgressOn(h, monday).status)
         manual(h, 0)
         assertEquals(HabitGoalStatus.SATISFIED, service.goalProgressOn(h, monday).status)
@@ -163,7 +163,7 @@ class EffectiveHabitValueServiceTest : BaseUnitTest() {
     }
 
     @Test fun weeklyAtMostRequiresEveryIncludedUnskippedDayKnown() {
-        val h = habit(frequency = Frequency(1, 7), target = 30.0, type = NumericalHabitType.AT_MOST)
+        val h = habit(frequency = Frequency(1, 7), target = 30.0, type = NumericalHabitType.AT_MOST).apply { missingDataPolicy = MissingDataPolicy.UNKNOWN }
         manual(h, 0); credit(h, 30000)
         assertEquals(HabitGoalStatus.UNKNOWN, service.goalProgressOn(h, monday).status)
         (1..6).forEach { manual(h, 0, monday.plus(it)) }
@@ -171,7 +171,7 @@ class EffectiveHabitValueServiceTest : BaseUnitTest() {
     }
 
     @Test fun dailyToWeeklyLimitAndMovingEntryRecomputeBothWeeks() {
-        val h = habit(frequency = Frequency.WEEKLY, target = 180.0, type = NumericalHabitType.AT_MOST)
+        val h = habit(frequency = Frequency.WEEKLY, target = 180.0, type = NumericalHabitType.AT_MOST).apply { missingDataPolicy = MissingDataPolicy.UNKNOWN }
         h.goalHistory = mutableListOf(
             HabitGoal(monday.minus(7), Frequency.DAILY, NumericalHabitType.AT_MOST, 60.0, "min"),
             HabitGoal(monday, Frequency.WEEKLY, NumericalHabitType.AT_MOST, 180.0, "min")

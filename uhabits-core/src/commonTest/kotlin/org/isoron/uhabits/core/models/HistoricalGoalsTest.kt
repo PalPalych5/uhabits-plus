@@ -138,7 +138,8 @@ class HistoricalGoalsTest : BaseUnitTest() {
         h2.originalEntries.add(Entry(LocalDate(2015, 1, 25), 5_000))
         h2.recompute()
 
-        assertTrue(h2.isCompletedOn(LocalDate(2015, 1, 25)))
+        assertFalse(h2.isCompletedOn(LocalDate(2015, 1, 25), LocalDate(2015, 1, 25)))
+        assertTrue(h2.isCompletedOn(LocalDate(2015, 1, 25), LocalDate(2015, 2, 2)))
     }
 
     @Test

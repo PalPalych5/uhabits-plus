@@ -28,7 +28,8 @@ object EffectiveWidgetPresenter {
             if (habit.isNumerical) day.totalValue else habit.computedEntries.get(today).value.toLong(),
             day.manualValue, day.contributionValue, day.hasCompleteCoverage, day.isSkipped,
             snapshot.compatibilityCompletionOn(today).status,
-            snapshot.scoreResult.on(today), snapshot.scoreResult.exactness,
+            if (snapshot.scoreResult.exactness == EffectiveReadExactness.INCOMPLETE) null else snapshot.scoreResult.on(today),
+            snapshot.scoreResult.exactness,
         )
     }
 
@@ -64,6 +65,7 @@ object EffectiveWidgetPresenter {
 
     fun score(habit: Habit, snapshot: EffectiveHabitReadSnapshot, firstWeekday: Int, spinnerPosition: Int, theme: Theme): ScoreCardState? {
         if (!snapshot.hasContributions) return ScoreCardPresenter.buildState(habit, firstWeekday, spinnerPosition, theme)
+        if (snapshot.scoreResult.exactness == EffectiveReadExactness.INCOMPLETE) return null
         val scores = snapshot.scoreResult.scores ?: return null
         val size = ScoreCardPresenter.BUCKET_SIZES[spinnerPosition]
         val start = habit.effectiveStatisticsStartDate() ?: snapshot.observedFrom ?: getToday()
@@ -82,6 +84,7 @@ object EffectiveWidgetPresenter {
 
     fun streak(habit: Habit, snapshot: EffectiveHabitReadSnapshot, theme: Theme): StreakCardState? {
         if (!snapshot.hasContributions) return StreakCartPresenter.buildState(habit, theme)
+        if (snapshot.streakResult.exactness == EffectiveReadExactness.INCOMPLETE) return null
         val streaks = snapshot.streakResult.streaks ?: return null
         val latest = streaks.maxByOrNull { it.end }
         return StreakCardState(habit.color, latest, streaks.sortedByDescending { it.length }.filterNot { it == latest }.take(10), theme)

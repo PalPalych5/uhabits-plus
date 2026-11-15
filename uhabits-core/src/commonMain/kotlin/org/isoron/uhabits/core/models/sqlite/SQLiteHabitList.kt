@@ -38,6 +38,7 @@ import org.isoron.uhabits.core.models.HabitGoal
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.HabitMatcher
 import org.isoron.uhabits.core.models.HabitType
+import org.isoron.uhabits.core.models.MissingDataPolicy
 import org.isoron.uhabits.core.models.ModelFactory
 import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.PaletteColor
@@ -48,7 +49,9 @@ import org.isoron.uhabits.core.sync.SyncManager
 
 @Inject
 class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
-    private val repository: HabitRepository = (modelFactory as SQLModelFactory).habitRepository
+    internal val sqlModelFactory: SQLModelFactory
+        get() = modelFactory as SQLModelFactory
+    private val repository: HabitRepository = sqlModelFactory.habitRepository
     private val extensionRepository: HabitExtensionRepository =
         (modelFactory as SQLModelFactory).habitExtensionRepository
     private val goalRepository: HabitGoalRepository =
@@ -111,6 +114,7 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
                 h.timerEnabled = extension.timerEnabled
                 h.blockId = extension.blockId
                 h.statisticsStartDate = extension.statsStartTimestamp?.let(LocalDate::fromUnixTime)
+                h.missingDataPolicy = MissingDataPolicy.fromInt(extension.missingDataPolicy)
             }
             h.goalHistory = goalRepository.findAllByHabitId(rec.id!!).map(::toGoal).toMutableList()
             h.globalStatisticsStartDate = globalStatisticsStartDate
@@ -356,7 +360,8 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
             dayTier = dayTier.name,
             timerEnabled = timerEnabled,
             blockId = blockId,
-            statsStartTimestamp = statisticsStartDate?.unixTime
+            statsStartTimestamp = statisticsStartDate?.unixTime,
+            missingDataPolicy = missingDataPolicy?.value
         )
 
         private fun HabitGoal.toGoalData(habitId: Long, habitUuid: String): HabitGoalData = HabitGoalData(

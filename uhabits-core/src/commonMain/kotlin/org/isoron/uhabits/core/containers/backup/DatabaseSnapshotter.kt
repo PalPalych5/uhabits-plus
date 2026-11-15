@@ -108,6 +108,9 @@ object DatabaseSnapshotter {
             require(SourceRuleBackupInventory.schemaError(sourceDb) == null) { "Unsupported SourceRules schema" }
             org.isoron.uhabits.core.rules.sqlite.SourceRuleSchema.createSchema(targetDb)
         }
+        if (sourceTables.contains("HabitDayAdjustments")) {
+            org.isoron.uhabits.core.models.projection.HabitDayAdjustmentSchema.createSchema(targetDb)
+        }
         val tagSchemaError = TaskTagBackupInventory.schemaError(sourceDb)
         require(tagSchemaError == null) { tagSchemaError!! }
         if (sourceTables.any { it in TaskTagBackupInventory.columns.keys }) {
@@ -182,10 +185,14 @@ object DatabaseSnapshotter {
                     day_tier TEXT NOT NULL DEFAULT 'NORMAL',
                     timer_enabled INTEGER NOT NULL DEFAULT 0,
                     block_id INTEGER,
-                    stats_start_timestamp INTEGER
+                    stats_start_timestamp INTEGER,
+                    missing_data_policy INTEGER
                 );
                 """.trimIndent()
             )
+            if ("missing_data_policy" !in tableColumns(db, "HabitExtensions")) {
+                db.run("ALTER TABLE HabitExtensions ADD COLUMN missing_data_policy INTEGER;")
+            }
         }
 
         if (sourceTables.contains("HabitGoals")) {
@@ -362,6 +369,7 @@ object DatabaseSnapshotter {
             val tablesToClear = listOf(
                 "BackupManifest",
                 "FocusCaptureJournal",
+                "HabitDayAdjustments",
                 "SourceRules",
                 "Contributions",
                 "FocusSessions",
@@ -429,6 +437,7 @@ object DatabaseSnapshotter {
                 val repository = org.isoron.uhabits.core.rules.sqlite.SQLiteSourceRuleRepository(targetDb)
                 SourceRuleBackupInventory.read(sourceDb).forEach(repository::record)
             }
+            if (sourceTables.contains("HabitDayAdjustments")) copyHabitDayAdjustments(sourceDb, targetDb)
 
             if (sourceTables.contains("BackupManifest")) copyBackupManifest(sourceDb, targetDb)
 
@@ -516,16 +525,38 @@ object DatabaseSnapshotter {
         insert.finalize()
     }
 
+    private fun tableColumns(db: Database, tableName: String): Set<String> {
+        val cols = mutableSetOf<String>()
+        val stmt = db.prepareStatement("PRAGMA table_info($tableName)")
+        try {
+            while (stmt.step() == StepResult.ROW) cols.add(stmt.getText(1))
+        } finally { stmt.finalize() }
+        return cols
+    }
+
     private fun copyHabitExtensions(sourceDb: Database, targetDb: Database) {
-        val select = sourceDb.prepareStatement(
-            "SELECT habit_id, day_tier, timer_enabled, block_id, stats_start_timestamp FROM HabitExtensions"
-        )
+        val sourceHasPolicy = "missing_data_policy" in tableColumns(sourceDb, "HabitExtensions")
+        val targetHasPolicy = "missing_data_policy" in tableColumns(targetDb, "HabitExtensions")
+        val selectCols = if (sourceHasPolicy) {
+            "habit_id, day_tier, timer_enabled, block_id, stats_start_timestamp, missing_data_policy"
+        } else {
+            "habit_id, day_tier, timer_enabled, block_id, stats_start_timestamp"
+        }
+        val select = sourceDb.prepareStatement("SELECT $selectCols FROM HabitExtensions")
         val insert = targetDb.prepareStatement(
-            """
-            INSERT OR REPLACE INTO HabitExtensions (
-                habit_id, day_tier, timer_enabled, block_id, stats_start_timestamp
-            ) VALUES (?, ?, ?, ?, ?)
-            """.trimIndent()
+            if (targetHasPolicy) {
+                """
+                INSERT OR REPLACE INTO HabitExtensions (
+                    habit_id, day_tier, timer_enabled, block_id, stats_start_timestamp, missing_data_policy
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """.trimIndent()
+            } else {
+                """
+                INSERT OR REPLACE INTO HabitExtensions (
+                    habit_id, day_tier, timer_enabled, block_id, stats_start_timestamp
+                ) VALUES (?, ?, ?, ?, ?)
+                """.trimIndent()
+            }
         )
         while (select.step() == StepResult.ROW) {
             insert.bindLong(1, select.getLong(0))
@@ -533,6 +564,33 @@ object DatabaseSnapshotter {
             insert.bindInt(3, select.getInt(2))
             val bId = select.getLongOrNull(3); if (bId != null) insert.bindLong(4, bId) else insert.bindNull(4)
             val st = select.getLongOrNull(4); if (st != null) insert.bindLong(5, st) else insert.bindNull(5)
+            if (targetHasPolicy) {
+                val policy = if (sourceHasPolicy) select.getIntOrNull(5) else null
+                if (policy != null) insert.bindInt(6, policy) else insert.bindNull(6)
+            }
+            insert.step()
+            insert.reset()
+        }
+        select.finalize()
+        insert.finalize()
+    }
+
+    private fun copyHabitDayAdjustments(sourceDb: Database, targetDb: Database) {
+        val select = sourceDb.prepareStatement(
+            "SELECT habit_uuid, date, adjustment_millis, updated_at FROM HabitDayAdjustments"
+        )
+        val insert = targetDb.prepareStatement(
+            """
+            INSERT OR REPLACE INTO HabitDayAdjustments (
+                habit_uuid, date, adjustment_millis, updated_at
+            ) VALUES (?, ?, ?, ?)
+            """.trimIndent()
+        )
+        while (select.step() == StepResult.ROW) {
+            insert.bindText(1, select.getText(0))
+            insert.bindInt(2, select.getInt(1))
+            insert.bindLong(3, select.getLong(2))
+            insert.bindLong(4, select.getLong(3))
             insert.step()
             insert.reset()
         }

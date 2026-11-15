@@ -9,22 +9,49 @@ data class HabitExtensionData(
     val dayTier: String = "NORMAL",
     val timerEnabled: Boolean = false,
     val blockId: Long? = null,
-    val statsStartTimestamp: Long? = null
+    val statsStartTimestamp: Long? = null,
+    val missingDataPolicy: Int? = null
 )
 
 class HabitExtensionRepository(private val db: Database) {
     var authorityMode: OrganizationAuthorityMode = OrganizationAuthorityMode.LEGACY
 
+    private val hasMissingDataPolicyColumn: Boolean by lazy {
+        val stmt = db.prepareStatement("PRAGMA table_info(HabitExtensions)")
+        try {
+            var found = false
+            while (stmt.step() == StepResult.ROW) {
+                if (stmt.getText(1) == "missing_data_policy") {
+                    found = true
+                    break
+                }
+            }
+            found
+        } finally {
+            stmt.finalize()
+        }
+    }
+
     private val findByHabitIdStmt by lazy {
-        db.prepareStatement(
-            "SELECT habit_id, day_tier, timer_enabled, block_id, stats_start_timestamp FROM HabitExtensions WHERE habit_id = ?"
-        )
+        val selectCols = if (hasMissingDataPolicyColumn) {
+            "habit_id, day_tier, timer_enabled, block_id, stats_start_timestamp, missing_data_policy"
+        } else {
+            "habit_id, day_tier, timer_enabled, block_id, stats_start_timestamp"
+        }
+        db.prepareStatement("SELECT $selectCols FROM HabitExtensions WHERE habit_id = ?")
     }
     private val upsertStmt by lazy {
-        db.prepareStatement(
-            """INSERT OR REPLACE INTO HabitExtensions(habit_id, day_tier, timer_enabled, block_id, stats_start_timestamp)
-               VALUES (?, ?, ?, ?, ?)"""
-        )
+        if (hasMissingDataPolicyColumn) {
+            db.prepareStatement(
+                """INSERT OR REPLACE INTO HabitExtensions(habit_id, day_tier, timer_enabled, block_id, stats_start_timestamp, missing_data_policy)
+                   VALUES (?, ?, ?, ?, ?, ?)"""
+            )
+        } else {
+            db.prepareStatement(
+                """INSERT OR REPLACE INTO HabitExtensions(habit_id, day_tier, timer_enabled, block_id, stats_start_timestamp)
+                   VALUES (?, ?, ?, ?, ?)"""
+            )
+        }
     }
     private val deleteStmt by lazy {
         db.prepareStatement("DELETE FROM HabitExtensions WHERE habit_id = ?")
@@ -42,7 +69,8 @@ class HabitExtensionRepository(private val db: Database) {
             dayTier = findByHabitIdStmt.getText(1),
             timerEnabled = findByHabitIdStmt.getInt(2) != 0,
             blockId = findByHabitIdStmt.getLongOrNull(3),
-            statsStartTimestamp = findByHabitIdStmt.getLongOrNull(4)
+            statsStartTimestamp = findByHabitIdStmt.getLongOrNull(4),
+            missingDataPolicy = if (hasMissingDataPolicyColumn) findByHabitIdStmt.getIntOrNull(5) else null
         )
     }
 
@@ -53,7 +81,8 @@ class HabitExtensionRepository(private val db: Database) {
         } else {
             data.blockId
         }
-        if (existing == data.copy(blockId = blockIdToWrite)) return
+        val effectiveMissingPolicy = if (hasMissingDataPolicyColumn) data.missingDataPolicy else null
+        if (existing == data.copy(blockId = blockIdToWrite, missingDataPolicy = effectiveMissingPolicy)) return
 
         upsertStmt.reset()
         upsertStmt.bindLong(1, data.habitId)
@@ -68,6 +97,13 @@ class HabitExtensionRepository(private val db: Database) {
             upsertStmt.bindLong(5, data.statsStartTimestamp)
         } else {
             upsertStmt.bindNull(5)
+        }
+        if (hasMissingDataPolicyColumn) {
+            if (data.missingDataPolicy != null) {
+                upsertStmt.bindInt(6, data.missingDataPolicy)
+            } else {
+                upsertStmt.bindNull(6)
+            }
         }
         upsertStmt.step()
     }

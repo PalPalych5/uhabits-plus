@@ -33,6 +33,7 @@ import org.isoron.uhabits.core.contribution.ContributionSourceType
 import org.isoron.uhabits.core.contribution.memory.MemoryContributionRepository
 import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.Entry
+import org.isoron.uhabits.core.models.MissingDataPolicy
 import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitGoal
@@ -338,18 +339,32 @@ class HabitsCSVExporterTest : BaseUnitTest() {
             targetType = NumericalHabitType.AT_MOST
             targetValue = 60.0
             frequency = Frequency.DAILY
+            missingDataPolicy = MissingDataPolicy.UNKNOWN
         }
         testHabits.add(habit)
+
+        val defaultZeroHabit = modelFactory.buildHabit().apply {
+            uuid = "at-most-default-zero-uuid"
+            name = "Screen Time Default Zero"
+            type = HabitType.NUMERICAL
+            unit = "min"
+            targetType = NumericalHabitType.AT_MOST
+            targetValue = 60.0
+            frequency = Frequency.DAILY
+        }
+        testHabits.add(defaultZeroHabit)
 
         val dateIncompleteSatisfied = monday
         val dateIncompleteExceeded = monday.plus(1)
         setToday(dateIncompleteExceeded)
 
-        // Date 1: Incomplete coverage with 30 min focus (30 <= 60, but missing manual means it cannot prove satisfaction!)
+        // Date 1: Incomplete coverage with 30 min focus (30 <= 60; UNKNOWN under UNKNOWN policy, SATISFIED under DEFAULT_ZERO)
         credit(habit, dateIncompleteSatisfied, 30000)
+        credit(defaultZeroHabit, dateIncompleteSatisfied, 30000)
 
         // Date 2: Incomplete coverage with 90 min focus (90 > 60 proves failure!)
         credit(habit, dateIncompleteExceeded, 90000)
+        credit(defaultZeroHabit, dateIncompleteExceeded, 90000)
 
         val exporter = HabitsCSVExporter(testHabits, testHabits.toList(), ::snapshotProvider)
         val bytes = exporter.writeArchive()
@@ -359,13 +374,19 @@ class HabitsCSVExporterTest : BaseUnitTest() {
         assertNotNull(effectiveFile)
         val lines = effectiveFile.content.trimEnd().lines()
 
-        // 30 min is <= 60, but coverage is incomplete so GoalStatus must be UNKNOWN
+        // 30 min is <= 60, but coverage is incomplete so GoalStatus must be UNKNOWN under MissingDataPolicy.UNKNOWN
         val row1 = "2026-10-05,UNKNOWN,30.0,0.0,UNKNOWN,30.0,INCOMPLETE,UNKNOWN,min,"
         assertTrue(lines.contains(row1), "Date 1 must be UNKNOWN status:\n${effectiveFile.content}")
 
         // 90 min is > 60, so even with incomplete coverage GoalStatus is proved NOT_SATISFIED
         val row2 = "2026-10-06,UNKNOWN,90.0,0.0,UNKNOWN,90.0,INCOMPLETE,NOT_SATISFIED,min,"
         assertTrue(lines.contains(row2), "Date 2 must be NOT_SATISFIED status:\n${effectiveFile.content}")
+
+        val defaultZeroFile = entries.find { it.name == "002 Screen Time Default Zero/Effective.csv" }
+        assertNotNull(defaultZeroFile)
+        val defaultZeroLines = defaultZeroFile.content.trimEnd().lines()
+        val dzRow1 = "2026-10-05,UNKNOWN,30.0,0.0,UNKNOWN,30.0,INCOMPLETE,SATISFIED,min,"
+        assertTrue(defaultZeroLines.contains(dzRow1), "Date 1 with DEFAULT_ZERO must be SATISFIED:\n${defaultZeroFile.content}")
     }
 
     @Test

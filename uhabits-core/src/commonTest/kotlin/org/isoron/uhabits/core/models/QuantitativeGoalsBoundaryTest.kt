@@ -111,16 +111,18 @@ class QuantitativeGoalsBoundaryTest : BaseUnitTest() {
         habit.computedEntries.add(Entry(monday.plus(5), 0))
         habit.computedEntries.add(Entry(monday.plus(6), 0))
 
-        // At exactly 180.0, each day in the week should evaluate isCompletedOn == true
+        // At exactly 180.0 after week ends, each day in the week should evaluate isCompletedOn == true
+        val afterWeek = monday.plus(7)
         val actual = habit.periodActualOn(monday)
         assertEquals(180.0, actual)
-        assertTrue(habit.isCompletedOn(monday), "Weekly sum of 180.0 should satisfy AT_MOST 180.0")
+        assertFalse(habit.isCompletedOn(monday, baseDate), "Ongoing week within limit is pending")
+        assertTrue(habit.isCompletedOn(monday, afterWeek), "Weekly sum of 180.0 should satisfy AT_MOST 180.0")
 
         // Exceed by 1 minute on Sunday: 180 + 1 = 181.0
         habit.computedEntries.add(Entry(monday.plus(6), 1_000))
         val exceededActual = habit.periodActualOn(monday)
         assertEquals(181.0, exceededActual)
-        assertFalse(habit.isCompletedOn(monday), "Weekly sum of 181.0 should violate AT_MOST 180.0")
+        assertFalse(habit.isCompletedOn(monday, afterWeek), "Weekly sum of 181.0 should violate AT_MOST 180.0")
     }
 
     @Test
@@ -136,16 +138,17 @@ class QuantitativeGoalsBoundaryTest : BaseUnitTest() {
         habit.computedEntries.add(Entry(firstOfMonth.plus(10), 200_000))
         habit.computedEntries.add(Entry(firstOfMonth.plus(20), 100_000))
 
-        // Sum = 500.0
+        // Sum = 500.0 (once month ends)
+        val afterMonth = LocalDate(2026, 11, 1)
         val actual = habit.periodActualOn(firstOfMonth)
         assertEquals(500.0, actual)
-        assertTrue(habit.isCompletedOn(firstOfMonth), "Monthly sum of 500.0 satisfies AT_MOST 500.0")
+        assertTrue(habit.isCompletedOn(firstOfMonth, afterMonth), "Monthly sum of 500.0 satisfies AT_MOST 500.0")
 
         // Exceed by 0.5
         habit.computedEntries.add(Entry(firstOfMonth.plus(25), 500))
         val actualExceeded = habit.periodActualOn(firstOfMonth)
         assertEquals(500.5, actualExceeded)
-        assertFalse(habit.isCompletedOn(firstOfMonth), "Monthly sum of 500.5 violates AT_MOST 500.0")
+        assertFalse(habit.isCompletedOn(firstOfMonth, afterMonth), "Monthly sum of 500.5 violates AT_MOST 500.0")
     }
 
     @Test

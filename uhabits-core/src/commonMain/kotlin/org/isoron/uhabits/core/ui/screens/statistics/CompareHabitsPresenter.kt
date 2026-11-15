@@ -120,7 +120,9 @@ object CompareHabitsPresenter {
 
         // 4. Streak
         val streakLength: Int? = if (snapshot != null && snapshot.hasContributions) {
-            if (snapshot.streakResult.streaks == null) null
+            if (snapshot.streakResult.streaks == null ||
+                snapshot.streakResult.exactness == EffectiveReadExactness.INCOMPLETE
+            ) null
             else snapshot.streakResult.streaks?.firstOrNull { it.end == today || it.end == today.minus(1) }?.length ?: 0
         } else {
             val presentation = snapshot?.presentationHabit() ?: habit
@@ -229,6 +231,9 @@ object CompareHabitsPresenter {
         snapshot: EffectiveHabitReadSnapshot? = null
     ): CompareStreakState {
         if (snapshot != null && snapshot.hasContributions) {
+            if (snapshot.streakResult.exactness == EffectiveReadExactness.INCOMPLETE) {
+                return CompareStreakState(habit, null, null, isExact = false)
+            }
             val streaks = snapshot.streakResult.streaks
                 ?: return CompareStreakState(habit, null, null, isExact = false)
             val latest = streaks.maxByOrNull { it.end }

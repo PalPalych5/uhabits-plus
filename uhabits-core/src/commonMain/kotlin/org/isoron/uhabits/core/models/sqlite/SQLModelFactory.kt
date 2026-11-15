@@ -25,10 +25,12 @@ import org.isoron.uhabits.core.database.HabitGoalRepository
 import org.isoron.uhabits.core.database.HabitRepository
 import org.isoron.uhabits.core.database.HabitExtensionRepository
 import org.isoron.uhabits.core.database.HabitBlockRepository
+import org.isoron.uhabits.core.contribution.sqlite.SQLiteContributionRepository
 import org.isoron.uhabits.core.models.EntryList
 import org.isoron.uhabits.core.models.ModelFactory
 import org.isoron.uhabits.core.models.ScoreList
 import org.isoron.uhabits.core.models.StreakList
+import org.isoron.uhabits.core.models.projection.SQLiteHabitDayAdjustmentRepository
 import org.isoron.uhabits.core.sync.EntryOpRepository
 import org.isoron.uhabits.core.sync.SyncInboxRepository
 import org.isoron.uhabits.core.sync.SyncInboxSchema
@@ -57,6 +59,8 @@ class SQLModelFactory(
     val habitBlockRepository = HabitBlockRepository(database)
     val entryRepository = EntryRepository(database)
     val appSettingRepository = AppSettingRepository(database)
+    val contributionRepository = SQLiteContributionRepository(database)
+    val habitDayAdjustmentRepository = SQLiteHabitDayAdjustmentRepository(database)
     val syncQueueRepository = SyncQueueRepository(database)
     val entryOpRepository = EntryOpRepository(database)
     val syncStateRepository = SyncStateRepository(database)

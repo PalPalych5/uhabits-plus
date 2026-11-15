@@ -68,4 +68,15 @@ object ContributionSchema {
             throw error
         }
     }
+
+    fun tableExists(db: Database): Boolean {
+        val stmt = db.prepareStatement(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'Contributions' LIMIT 1"
+        )
+        return try {
+            stmt.step() == StepResult.ROW
+        } finally {
+            stmt.finalize()
+        }
+    }
 }

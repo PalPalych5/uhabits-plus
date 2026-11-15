@@ -63,19 +63,20 @@ class HabitCardListCacheBindingInvalidationTest : BaseUnitTest() {
         assertEquals(revision, cache.getEffectiveSnapshot(unrelated.id!!)!!.revision)
     }
 
-    @Test fun unrelatedIncompleteScoreDoesNotRepaintForNaNOrGlobalRevision() {
+    @Test fun unrelatedIncompleteScoreDoesNotRepaintForGlobalRevision() {
         val changed = habit("changed")
         val incomplete = habit("incomplete")
         credit(incomplete, "incomplete", 30000)
         val changes = Changes(); val cache = ready(changes)
-        assertTrue(cache.getScore(incomplete.id!!).isNaN())
+        val initialScore = cache.getScore(incomplete.id!!)
+        assertTrue(initialScore.isFinite() && initialScore > 0.0)
         changed.originalEntries.add(Entry(getToday(), 1000)); changed.recompute()
         revision++; cache.refreshAllHabits()
         assertEquals(listOf(0), changes.all())
-        assertTrue(cache.getScore(incomplete.id!!).isNaN())
+        assertEquals(initialScore, cache.getScore(incomplete.id!!))
         assertEquals(revision, cache.getEffectiveSnapshot(incomplete.id!!)!!.revision)
         changes.clear(); cache.refreshAllHabits()
-        assertTrue(changes.all().isEmpty(), "NaN/NaN is unchanged rendering state")
+        assertTrue(changes.all().isEmpty(), "Unchanged incomplete lower-bound score must not repaint")
     }
 
     @Test fun mutableHabitTitleColorAndHistoricalGoalChangesStillCauseFullBinding() {

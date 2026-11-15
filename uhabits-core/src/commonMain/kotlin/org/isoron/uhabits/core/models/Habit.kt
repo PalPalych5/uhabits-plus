@@ -25,6 +25,19 @@ import org.isoron.platform.time.getToday
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
+enum class MissingDataPolicy(val value: Int) {
+    DEFAULT_ZERO(0),
+    UNKNOWN(1);
+
+    companion object {
+        fun fromInt(value: Int?): MissingDataPolicy? = when (value) {
+            0 -> DEFAULT_ZERO
+            1 -> UNKNOWN
+            else -> null
+        }
+    }
+}
+
 @OptIn(ExperimentalUuidApi::class)
 data class Habit(
     var color: PaletteColor = PaletteColor(8),
@@ -47,11 +60,21 @@ data class Habit(
     var dayTier: DayTier = DayTier.NORMAL,
     var timerEnabled: Boolean = false,
     var blockId: Long? = null,
+    var missingDataPolicy: MissingDataPolicy? = null,
     val computedEntries: EntryList,
     val originalEntries: EntryList,
     val scores: ScoreList,
     val streaks: StreakList
 ) {
+    fun effectiveMissingDataPolicy(): MissingDataPolicy {
+        if (!isNumerical) return MissingDataPolicy.UNKNOWN
+        missingDataPolicy?.let { return it }
+        return if (targetType == NumericalHabitType.AT_MOST) {
+            MissingDataPolicy.DEFAULT_ZERO
+        } else {
+            MissingDataPolicy.UNKNOWN
+        }
+    }
     init {
         if (uuid == null) this.uuid = Uuid.random().toHexString()
     }
@@ -166,28 +189,86 @@ data class Habit(
         return !date.isOlderThan(start)
     }
 
-    fun isCompletedOn(date: LocalDate): Boolean {
+    fun isCompletedOn(date: LocalDate): Boolean = isCompletedOn(date, getToday())
+
+    fun isCompletedOn(date: LocalDate, today: LocalDate): Boolean {
         if (!isDateIncludedInStatistics(date)) return false
         val entry = computedEntries.get(date)
         val value = entry.value
         if (isNumerical) {
-            if (value == Entry.UNKNOWN || value == Entry.SKIP) return false
+            if (value == Entry.SKIP) return false
             val goal = goalAt(date)
             return when (goal.targetType) {
-                NumericalHabitType.AT_LEAST -> value / 1000.0 >= goal.targetValue
+                NumericalHabitType.AT_LEAST -> {
+                    if (value == Entry.UNKNOWN) false else value / 1000.0 >= goal.targetValue
+                }
                 NumericalHabitType.AT_MOST -> {
-                    val actual = periodActualOn(date)
-                    actual != null && actual <= goal.targetValue
+                    if (effectiveMissingDataPolicy() == MissingDataPolicy.DEFAULT_ZERO) {
+                        if (goal.frequency.denominator == 7 || goal.frequency.denominator == 30) {
+                            val periodEnd = periodEndFor(date, goal)
+                            if (!periodEnd.isOlderThan(today)) {
+                                false
+                            } else {
+                                val actual = periodActualOn(date)
+                                actual != null && actual <= goal.targetValue
+                            }
+                        } else {
+                            if (value == Entry.UNKNOWN) {
+                                date.isOlderThan(today) && 0.0 <= goal.targetValue
+                            } else {
+                                value / 1000.0 <= goal.targetValue
+                            }
+                        }
+                    } else {
+                        if (value == Entry.UNKNOWN) return false
+                        val actual = periodActualOn(date)
+                        actual != null && actual <= goal.targetValue
+                    }
                 }
             }
         }
         return value != Entry.NO && value != Entry.UNKNOWN
     }
 
+    /**
+     * Streak completion obeys [isCompletedOn], except multi-day AT_MOST limit periods (weekly/monthly)
+     * must have ended before [today] so an ongoing or future period never receives a premature streak.
+     */
+    fun isCompletedForStreak(date: LocalDate, today: LocalDate = getToday()): Boolean {
+        if (!isCompletedOn(date, today)) return false
+        if (isNumerical) {
+            val goal = goalAt(date)
+            if (goal.targetType == NumericalHabitType.AT_MOST &&
+                (goal.frequency.denominator == 7 || goal.frequency.denominator == 30)
+            ) {
+                if (!periodEndFor(date, goal).isOlderThan(today)) return false
+            }
+        }
+        return true
+    }
+
+    fun periodEndFor(date: LocalDate, goal: HabitGoal = goalAt(date)): LocalDate {
+        return when (goal.frequency.denominator) {
+            7 -> {
+                val firstWeekdayNum = getFirstWeekdayNumberAccordingToLocale()
+                date.startOfWeek(org.isoron.platform.time.DayOfWeek.entries[firstWeekdayNum - 1]).plus(6)
+            }
+            30 -> {
+                val start = date.startOfMonth()
+                start.plus(date.monthLength - 1)
+            }
+            else -> date
+        }
+    }
+
     fun periodActualOn(date: LocalDate): Double? {
         val entry = computedEntries.get(date)
-        if (entry.value == Entry.UNKNOWN || entry.value == Entry.SKIP) return null
+        if (entry.value == Entry.SKIP) return null
         val goal = goalAt(date)
+        val allowDefaultZero = isNumerical &&
+            goal.targetType == NumericalHabitType.AT_MOST &&
+            effectiveMissingDataPolicy() == MissingDataPolicy.DEFAULT_ZERO
+        if (entry.value == Entry.UNKNOWN && !allowDefaultZero) return null
         return when (goal.frequency.denominator) {
             7 -> {
                 val firstWeekdayNum = getFirstWeekdayNumberAccordingToLocale()
@@ -200,7 +281,7 @@ data class Habit(
                 val end = start.plus(date.monthLength - 1)
                 sumNumericalInterval(start, end) / 1000.0
             }
-            else -> entry.value / 1000.0
+            else -> if (entry.value == Entry.UNKNOWN) 0.0 else entry.value / 1000.0
         }
     }
 
@@ -282,6 +363,7 @@ data class Habit(
         this.dayTier = other.dayTier
         this.timerEnabled = other.timerEnabled
         this.blockId = other.blockId
+        this.missingDataPolicy = other.missingDataPolicy
     }
 
     override fun equals(other: Any?): Boolean {
@@ -308,6 +390,7 @@ data class Habit(
         if (dayTier != other.dayTier) return false
         if (timerEnabled != other.timerEnabled) return false
         if (blockId != other.blockId) return false
+        if (missingDataPolicy != other.missingDataPolicy) return false
 
         return true
     }
@@ -333,6 +416,7 @@ data class Habit(
         result = 31 * result + dayTier.hashCode()
         result = 31 * result + timerEnabled.hashCode()
         result = 31 * result + (blockId?.hashCode() ?: 0)
+        result = 31 * result + (missingDataPolicy?.hashCode() ?: 0)
         return result
     }
 }

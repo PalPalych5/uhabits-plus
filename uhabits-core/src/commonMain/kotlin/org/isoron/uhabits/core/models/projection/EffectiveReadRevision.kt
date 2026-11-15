@@ -101,7 +101,7 @@ class EffectiveReadRevision(val datasetId: String) {
 class EffectiveReadDatabase(
     private val delegate: Database,
     private val revision: EffectiveReadRevision,
-    observedTables: Set<String> = setOf("CONTRIBUTIONS", "REPETITIONS", "HABITS", "HABITGOALS", "HABITEXTENSIONS", "APPSETTINGS"),
+    observedTables: Set<String> = setOf("CONTRIBUTIONS", "REPETITIONS", "HABITS", "HABITGOALS", "HABITEXTENSIONS", "APPSETTINGS", "HABITDAYADJUSTMENTS"),
 ) : Database {
     private data class Frame(
         val name: String?,
@@ -115,7 +115,7 @@ class EffectiveReadDatabase(
     private val frames get() = transactionFrames.get()
     private val mutation = Regex("^(?:INSERT(?:\\s+OR\\s+\\w+)?\\s+INTO|REPLACE\\s+INTO|UPDATE(?:\\s+OR\\s+\\w+)?|DELETE\\s+FROM)\\s+[\"`\\[]?(\\w+)", RegexOption.IGNORE_CASE)
     private val tables = observedTables.map { it.uppercase() }.toSet()
-    private val habitScopedTables = setOf("REPETITIONS", "CONTRIBUTIONS", "HABITS", "HABITGOALS", "HABITEXTENSIONS")
+    private val habitScopedTables = setOf("REPETITIONS", "CONTRIBUTIONS", "HABITS", "HABITGOALS", "HABITEXTENSIONS", "HABITDAYADJUSTMENTS")
 
     override fun beginTransaction() {
         // SQLite may wait for another thread's writer. Never hold an observer

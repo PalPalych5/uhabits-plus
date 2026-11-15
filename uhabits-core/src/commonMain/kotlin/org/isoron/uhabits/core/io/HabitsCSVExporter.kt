@@ -70,7 +70,7 @@ class HabitsCSVExporter(
             } else null
         } else null
 
-        val hasAnyContributions = snapshots?.values?.any { it.hasHistoricalContributions } ?: false
+        val hasAnyContributions = snapshots?.values?.any { it.hasHistoricalContributions || it.hasAdjustments } ?: false
 
         var effectiveOldest = legacyOldest
         var effectiveNewest = legacyNewest
@@ -163,7 +163,8 @@ class HabitsCSVExporter(
         val observedDays = snapshot.days.filter { day ->
             day.manualEntry.value != Entry.UNKNOWN ||
                 day.contributions.isNotEmpty() ||
-                day.tombstonedContributions.isNotEmpty()
+                day.tombstonedContributions.isNotEmpty() ||
+                day.adjustmentValue != 0L
         }.sortedBy { it.manualEntry.date }.reversed()
 
         for (day in observedDays) {

@@ -10,8 +10,10 @@ import org.isoron.uhabits.core.containers.HabitRef
 import org.isoron.uhabits.core.contribution.Contribution
 import org.isoron.uhabits.core.contribution.ContributionRepository
 import org.isoron.uhabits.core.models.Entry
+import org.isoron.platform.time.getToday
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitGoal
+import org.isoron.uhabits.core.models.MissingDataPolicy
 import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.rules.HabitTimeValueConverter
 import org.isoron.uhabits.core.rules.IncompatibleTargetHabitException
@@ -29,13 +31,14 @@ data class EffectiveHabitDay(
     val includedInStatistics: Boolean,
     val tombstonedContributions: List<Contribution> = emptyList(),
     val tombstonedContributionValue: Long = 0L,
+    val adjustmentValue: Long = 0L,
 ) {
     val isSkipped: Boolean get() = manualEntry.value == Entry.SKIP
     val hasCompleteCoverage: Boolean get() = manualValue != null
     val contributionCount: Int get() = contributions.size
     val effectiveLowerBound: Long
         get() = if (!isNumerical || isSkipped || !includedInStatistics) 0L
-        else (manualValue ?: 0L) + contributionValue
+        else ((manualValue ?: 0L) + contributionValue + adjustmentValue).coerceAtLeast(0L)
 }
 
 data class EffectiveHabitValue(
@@ -45,6 +48,7 @@ data class EffectiveHabitValue(
     /** null means no included numerical observation; explicit manual/derived zero remains zero. */
     val totalValue: Long?,
     val excludedContributionValue: Long,
+    val adjustmentValue: Long = 0L,
 ) {
     val contributionCount: Int get() = days.filter { it.includedInStatistics && !it.isSkipped }.sumOf { it.contributionCount }
     val unknownDates: List<LocalDate> get() = days.filter {
@@ -78,6 +82,7 @@ class EffectiveHabitValueService(
     private val firstWeekday: DayOfWeek = DayOfWeek.entries[getFirstWeekdayNumberAccordingToLocale() - 1],
     private val dateAt: (Long) -> LocalDate = { localDateAt(it, hourOffset, minuteOffset) },
     private val dayStart: (LocalDate) -> Long = { startOfLocalDay(it, hourOffset, minuteOffset) },
+    private val adjustmentRepository: HabitDayAdjustmentRepository? = null,
 ) {
     fun valueForDay(habit: Habit, date: LocalDate): EffectiveHabitDay =
         valueForRange(habit, date, date).days.single()
@@ -120,16 +125,27 @@ class EffectiveHabitValueService(
         val allFacts = repository.getByHabitsInRange(byRef.keys, start, end - 1, includeRemoved = true)
         val facts = allFacts.filter { it.isActive }.groupBy { it.targetHabit }
         val tombstonedFacts = allFacts.filter { !it.isActive }.groupBy { it.targetHabit }
+        val adjustments = adjustmentRepository?.getByHabitsInDateRange(byRef.keys, from, to).orEmpty()
         return byRef.mapValues { (ref, habit) ->
             val byDay = facts[ref].orEmpty().groupBy { dateAt(it.effectiveTimestamp) }
             val tombstonedByDay = tombstonedFacts[ref].orEmpty().groupBy { dateAt(it.effectiveTimestamp) }
+            val adjByDay = adjustments[ref].orEmpty()
             val count = to.daysSince2000 - from.daysSince2000 + 1
             val days = ArrayList<EffectiveHabitDay>(count)
             habit.originalEntries.withLoadedEntries { entriesMap ->
                 var current = from
                 while (current <= to) {
                     val entry = entriesMap[current] ?: Entry(current, Entry.UNKNOWN)
-                    days.add(projectDay(habit, entry, byDay[current].orEmpty(), tombstonedByDay[current].orEmpty()))
+                    val adjustmentMillis = adjByDay[current]?.adjustmentMillis ?: 0L
+                    days.add(
+                        projectDay(
+                            habit = habit,
+                            entry = entry,
+                            contributions = byDay[current].orEmpty(),
+                            tombstonedContributions = tombstonedByDay[current].orEmpty(),
+                            adjustmentMillis = adjustmentMillis,
+                        )
+                    )
                     current = current.plus(1)
                 }
             }
@@ -138,7 +154,7 @@ class EffectiveHabitValueService(
     }
 
     /** Calendar week/month, following Habit.periodActualOn (denominators 7/30); other goals use one day. */
-    fun goalProgressOn(habit: Habit, date: LocalDate): EffectiveHabitGoal {
+    fun goalProgressOn(habit: Habit, date: LocalDate, today: LocalDate = getToday()): EffectiveHabitGoal {
         val goal = goalAt(habit, date)
         val from = when (goal.frequency.denominator) {
             7 -> date.startOfWeek(firstWeekday)
@@ -150,14 +166,24 @@ class EffectiveHabitValueService(
             30 -> from.plus(from.monthLength - 1)
             else -> date
         }
-        return goalProgressOn(habit, date, valueForRange(habit, from, to))
+        return goalProgressOn(habit, date, valueForRange(habit, from, to), today)
     }
 
     /** Evaluates an already loaded complete period; performs no repository reads. */
-    fun goalProgressOn(habit: Habit, date: LocalDate, preloaded: EffectiveHabitValue): EffectiveHabitGoal =
-        goalProgressOn(habit, date, preloaded.days)
+    fun goalProgressOn(
+        habit: Habit,
+        date: LocalDate,
+        preloaded: EffectiveHabitValue,
+        today: LocalDate = getToday()
+    ): EffectiveHabitGoal =
+        goalProgressOn(habit, date, preloaded.days, today)
 
-    fun goalProgressOn(habit: Habit, date: LocalDate, preloadedDays: List<EffectiveHabitDay>): EffectiveHabitGoal {
+    fun goalProgressOn(
+        habit: Habit,
+        date: LocalDate,
+        preloadedDays: List<EffectiveHabitDay>,
+        today: LocalDate = getToday()
+    ): EffectiveHabitGoal {
         val goal = goalAt(habit, date)
         val from = when (goal.frequency.denominator) { 7 -> date.startOfWeek(firstWeekday); 30 -> date.startOfMonth(); else -> date }
         val to = when (goal.frequency.denominator) { 7 -> from.plus(6); 30 -> from.plus(from.monthLength - 1); else -> date }
@@ -189,7 +215,17 @@ class EffectiveHabitValueService(
         val status = when {
             !day.includedInStatistics -> HabitGoalStatus.EXCLUDED
             day.isSkipped -> HabitGoalStatus.SKIPPED
-            !habit.isNumerical -> if (habit.isCompletedOn(date)) HabitGoalStatus.SATISFIED else HabitGoalStatus.NOT_SATISFIED
+            !habit.isNumerical -> if (habit.isCompletedOn(date, today)) HabitGoalStatus.SATISFIED else HabitGoalStatus.NOT_SATISFIED
+            goal.targetType == NumericalHabitType.AT_MOST &&
+                habit.effectiveMissingDataPolicy() == MissingDataPolicy.DEFAULT_ZERO -> {
+                val actual = (value.totalValue ?: 0L) / 1000.0
+                when {
+                    actual > goal.targetValue -> HabitGoalStatus.NOT_SATISFIED
+                    (goal.frequency.denominator == 7 || goal.frequency.denominator == 30) && !to.isOlderThan(today) -> HabitGoalStatus.UNKNOWN
+                    goal.frequency.denominator != 7 && goal.frequency.denominator != 30 && !day.hasCompleteCoverage && !date.isOlderThan(today) -> HabitGoalStatus.UNKNOWN
+                    else -> HabitGoalStatus.SATISFIED
+                }
+            }
             value.totalValue == null -> HabitGoalStatus.UNKNOWN
             goal.targetType == NumericalHabitType.AT_MOST && value.totalValue / 1000.0 > goal.targetValue -> HabitGoalStatus.NOT_SATISFIED
             goal.targetType == NumericalHabitType.AT_MOST && !value.hasCompleteCoverage -> HabitGoalStatus.UNKNOWN
@@ -215,6 +251,7 @@ class EffectiveHabitValueService(
         entry: Entry,
         contributions: List<Contribution>,
         tombstonedContributions: List<Contribution> = emptyList(),
+        adjustmentMillis: Long = 0L,
     ): EffectiveHabitDay {
         if (contributions.isNotEmpty()) {
             validateUnits(habit, entry.date)
@@ -224,18 +261,33 @@ class EffectiveHabitValueService(
         val automatic = contributions.fold(0L) { sum, fact -> add(sum, fact.contributedValue) }
         val tombstoned = tombstonedContributions.fold(0L) { sum, fact -> add(sum, fact.contributedValue) }
         val included = habit.isDateIncludedInStatistics(entry.date)
-        val total = if (!habit.isNumerical || entry.value == Entry.SKIP || !included || (manual == null && contributions.isEmpty())) null
-        else add(manual ?: 0L, automatic)
+        val total = if (!habit.isNumerical || entry.value == Entry.SKIP || !included || (manual == null && contributions.isEmpty() && adjustmentMillis == 0L)) null
+        else {
+            val baseTotal = add(manual ?: 0L, automatic)
+            if (adjustmentMillis > 0 && baseTotal > Long.MAX_VALUE - adjustmentMillis) {
+                throw HabitProjectionIntegrityException("Habit value projection overflow")
+            }
+            (baseTotal + adjustmentMillis).coerceAtLeast(0L)
+        }
         return EffectiveHabitDay(
-            entry, manual, automatic, total, contributions, habit.isNumerical, included,
+            manualEntry = entry,
+            manualValue = manual,
+            contributionValue = automatic,
+            totalValue = total,
+            contributions = contributions,
+            isNumerical = habit.isNumerical,
+            includedInStatistics = included,
             tombstonedContributions = tombstonedContributions,
             tombstonedContributionValue = tombstoned,
+            adjustmentValue = if (habit.isNumerical && entry.value != Entry.SKIP && included) adjustmentMillis else 0L,
         )
     }
 
     private fun aggregate(days: List<EffectiveHabitDay>): EffectiveHabitValue {
         var manual = 0L
         var automatic = 0L
+        var adjustment = 0L
+        var observedTotal = 0L
         var excluded = 0L
         var observed = false
         for (day in days) {
@@ -245,9 +297,21 @@ class EffectiveHabitValueService(
             }
             manual = add(manual, day.manualValue ?: 0L)
             automatic = add(automatic, day.contributionValue)
-            observed = observed || day.totalValue != null
+            adjustment += day.adjustmentValue
+            val dayTotal = day.totalValue
+            if (dayTotal != null) {
+                observed = true
+                observedTotal = add(observedTotal, dayTotal)
+            }
         }
-        return EffectiveHabitValue(days, manual, automatic, if (observed) add(manual, automatic) else null, excluded)
+        return EffectiveHabitValue(
+            days = days,
+            manualValue = manual,
+            contributionValue = automatic,
+            totalValue = if (observed) observedTotal else null,
+            excludedContributionValue = excluded,
+            adjustmentValue = adjustment,
+        )
     }
 
     private fun add(a: Long, b: Long): Long {

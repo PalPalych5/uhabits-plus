@@ -53,9 +53,9 @@ class EffectiveShowHabitPresenterTest : BaseUnitTest() {
         assertEquals(org.isoron.uhabits.core.ui.views.HistoryChart.Square.GREY, state.history.series[1])
         assertTrue(state.hasAutomaticQuantity)
         assertTrue(state.hasIncompleteCoverage)
-        assertTrue(state.scoreUnavailable)
-        assertTrue(state.streakUnavailable)
-        assertTrue(state.scores.scores.isEmpty())
+        assertFalse(state.scoreUnavailable)
+        assertFalse(state.streakUnavailable)
+        assertTrue(state.scores.scores.isNotEmpty())
         assertEquals(Entry.UNKNOWN, h.originalEntries.get(date).value)
         assertTrue(h.originalEntries.getKnown().isEmpty())
     }
@@ -87,13 +87,20 @@ class EffectiveShowHabitPresenterTest : BaseUnitTest() {
             recompute()
         }
         val provider = EffectiveHabitReadSnapshotProvider(MemoryContributionRepository())
-        fun history(first: DayOfWeek): org.isoron.uhabits.core.ui.views.HistoryChart.Square {
-            val read = provider.prepare(listOf(h), sunday.minus(6), sunday, "test", 0,
+        fun history(first: DayOfWeek, today: LocalDate, targetDate: LocalDate = today): org.isoron.uhabits.core.ui.views.HistoryChart.Square {
+            setToday(today)
+            val read = provider.prepare(listOf(h), sunday.minus(6), today, "test", 0,
                 EffectiveReadCalendarContext("UTC", first, 0, 0)).getValue(HabitRef(h.uuid!!))
-            return ShowHabitPresenter.buildState(h, Preferences(MemoryStorage()), LightTheme(), read).history.series.first()
+            val index = today.daysSince2000 - targetDate.daysSince2000
+            return ShowHabitPresenter.buildState(h, Preferences(MemoryStorage()), LightTheme(), read).history.series[index]
         }
-        assertEquals(org.isoron.uhabits.core.ui.views.HistoryChart.Square.GREY, history(DayOfWeek.MONDAY))
-        assertEquals(org.isoron.uhabits.core.ui.views.HistoryChart.Square.ON, history(DayOfWeek.SUNDAY))
+        // On Jan 25 itself: MONDAY week (Jan 19..25) already exceeds 180 -> GREY, while ongoing SUNDAY week (Jan 25..31) is not prematurely ON.
+        assertEquals(org.isoron.uhabits.core.ui.views.HistoryChart.Square.GREY, history(DayOfWeek.MONDAY, sunday))
+        assertNotEquals(org.isoron.uhabits.core.ui.views.HistoryChart.Square.ON, history(DayOfWeek.SUNDAY, sunday))
+        // Once the SUNDAY week (Jan 25..31) has completed on Feb 1, Jan 25 resolves to GREY under MONDAY vs ON under SUNDAY.
+        val afterWeekEnd = sunday.plus(7)
+        assertEquals(org.isoron.uhabits.core.ui.views.HistoryChart.Square.GREY, history(DayOfWeek.MONDAY, afterWeekEnd, sunday))
+        assertEquals(org.isoron.uhabits.core.ui.views.HistoryChart.Square.ON, history(DayOfWeek.SUNDAY, afterWeekEnd, sunday))
     }
 
     @Test fun manualHistoricalUnitBoundaryOnlyGatesCalendarGoal() {
