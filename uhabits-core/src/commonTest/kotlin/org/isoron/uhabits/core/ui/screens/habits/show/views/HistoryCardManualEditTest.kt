@@ -39,6 +39,24 @@ class HistoryCardManualEditTest : BaseUnitTest() {
     }
 
     @Test
+    fun explicitZeroOnUnknownPersistsZero() {
+        val habit = fixtures.createNumericalHabit()
+        habitList.add(habit)
+        val emptyDay = getToday().minus(2)
+        val screen = mock<HistoryCardPresenter.Screen>()
+        var picker: NumberPickerCallback? = null
+        every { screen.showNumberPopup(any(), any(), any(), any(), any()) } calls { args ->
+            picker = args.arg<NumberPickerCallback>(4)
+            Unit
+        }
+        val presenter = HistoryCardPresenter(commandRunner, habit, habitList, mock<Preferences>(), screen)
+        presenter.onDateShortPress(emptyDay)
+        verify { screen.showNumberPopup(0.0, "", habit, emptyDay, any()) }
+        picker!!.onNumberPicked(0.0, "")
+        assertEquals(Entry.NO, habit.originalEntries.get(emptyDay).value)
+    }
+
+    @Test
     fun binaryHabitShortPressOpensCheckmarkDialogAndDoesNotSilentlyToggle() {
         val habit = fixtures.createEmptyHabit()
         habitList.add(habit)

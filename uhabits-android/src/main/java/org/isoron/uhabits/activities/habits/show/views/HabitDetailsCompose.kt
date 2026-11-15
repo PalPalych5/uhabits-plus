@@ -32,7 +32,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,7 +77,7 @@ import org.isoron.uhabits.compose.components.UHabitSectionCard
 import org.isoron.uhabits.compose.components.UHabitSectionHeader
 import org.isoron.uhabits.compose.rememberHarmonizedChartTheme
 import org.isoron.uhabits.core.models.NumericalHabitType
-import org.isoron.uhabits.core.models.projection.HabitGoalStatus
+import org.isoron.uhabits.core.models.projection.GoalPeriodAchievement
 import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitState
 import org.isoron.uhabits.core.ui.screens.habits.show.views.BarCardState
 import org.isoron.uhabits.core.ui.screens.habits.show.views.FrequencyCardState
@@ -83,6 +86,7 @@ import org.isoron.uhabits.core.ui.screens.habits.show.views.NotesCardState
 import org.isoron.uhabits.core.ui.screens.habits.show.views.OverviewCardState
 import org.isoron.uhabits.core.ui.screens.habits.show.views.ScoreCardState
 import org.isoron.uhabits.core.ui.screens.habits.show.views.StreakCardState
+import org.isoron.uhabits.core.ui.screens.habits.show.views.StreakPeriod
 import org.isoron.uhabits.core.ui.screens.habits.show.views.SubtitleCardState
 import org.isoron.uhabits.core.ui.screens.habits.show.views.TargetCardState
 import org.isoron.uhabits.core.ui.views.BarChart
@@ -150,7 +154,8 @@ fun HabitActionChip(
     modifier: Modifier = Modifier,
     hasDropdown: Boolean = false,
     isSelected: Boolean = false,
-    accentColor: Color? = null
+    accentColor: Color? = null,
+    onAnchorClick: ((android.graphics.Rect?) -> Unit)? = null
 ) {
     UHabitActionChip(
         text = text,
@@ -158,7 +163,8 @@ fun HabitActionChip(
         modifier = modifier,
         hasDropdown = hasDropdown,
         isSelected = isSelected,
-        accentColor = accentColor
+        accentColor = accentColor,
+        onAnchorClick = onAnchorClick
     )
 }
 
@@ -206,7 +212,6 @@ fun formatTargetQuantity(value: Double, unit: String): String {
 fun HabitDetailsEditorialHeader(
     state: ShowHabitState,
     focusProgress: FocusProgressPresentation? = null,
-    onShowBreakdown: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -497,7 +502,7 @@ fun HabitOverview(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
-                val percentage = state.scoreToday.toFloat().coerceIn(0f, 1f)
+                val percentage = state.scoreToday.let { if (it.isNaN()) 0f else it.toFloat().coerceIn(0f, 1f) }
                 Canvas(modifier = Modifier.size(30.dp)) {
                     val strokeWidth = 5.dp.toPx()
                     val halfStroke = strokeWidth / 2f
@@ -507,15 +512,21 @@ fun HabitOverview(
                         radius = arcSize / 2f,
                         style = Stroke(width = strokeWidth)
                     )
-                    if (percentage > 0f) {
+                    if (percentage >= 1f) {
+                        drawCircle(
+                            color = accentColor,
+                            radius = arcSize / 2f,
+                            style = Stroke(width = strokeWidth)
+                        )
+                    } else if (percentage > 0f) {
                         drawArc(
                             color = accentColor,
                             startAngle = -90f,
-                            sweepAngle = (percentage * 360f).coerceIn(0f, 360f),
+                            sweepAngle = percentage * 360f,
                             useCenter = false,
                             topLeft = androidx.compose.ui.geometry.Offset(halfStroke, halfStroke),
                             size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
-                            style = Stroke(width = strokeWidth, cap = StrokeCap.Butt)
+                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
                         )
                     }
                 }
@@ -613,23 +624,28 @@ fun HabitOverview(
 }
 
 /** Numerical habit goal progress summary card. */
+fun resolveTargetTrackColor(colors: UHabitComposeColors): Int = when {
+    colors.isPureBlack -> 0xFF1F232A.toInt()
+    colors.isDark -> 0xFF282D37.toInt()
+    else -> 0xFFE4E8EF.toInt()
+}
+
 @Composable
 fun HabitTargetProgress(
     progress: FocusProgressPresentation?,
     state: TargetCardState,
     unavailable: Boolean,
-    onShowBreakdown: (() -> Unit)?,
+    goalAchievement: GoalPeriodAchievement? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val colors = LocalUHabitComposeColors.current
     val androidColor = state.theme.color(state.color).toInt()
+    val trackColor = resolveTargetTrackColor(colors)
+    val isAtMost = state.targetType == NumericalHabitType.AT_MOST
 
     HabitSectionCard(modifier = modifier) {
-        HabitSectionHeader(
-            title = stringResource(R.string.target),
-            action = null
-        )
+        HabitSectionHeader(title = stringResource(R.string.target))
 
         if (unavailable || state.intervals.isEmpty()) {
             HabitEmptyState(stringResource(R.string.focus_credit_unavailable))
@@ -643,6 +659,11 @@ fun HabitTargetProgress(
                 factory = { ctx ->
                     TargetChart(ctx).apply {
                         setColor(androidColor)
+                        setSurfaceColors(
+                            trackColor = trackColor,
+                            labelColor = colors.secondary
+                        )
+                        setIsAtMost(isAtMost)
                         setLabels(labels)
                         setTargets(targets)
                         setValues(values)
@@ -650,6 +671,11 @@ fun HabitTargetProgress(
                 },
                 update = { chart ->
                     chart.setColor(androidColor)
+                    chart.setSurfaceColors(
+                        trackColor = trackColor,
+                        labelColor = colors.secondary
+                    )
+                    chart.setIsAtMost(isAtMost)
                     chart.setLabels(labels)
                     chart.setTargets(targets)
                     chart.setValues(values)
@@ -729,7 +755,7 @@ fun HabitHistoryCalendar(
 fun HabitStatisticsSection(
     state: ScoreCardState,
     periodLabel: String,
-    onSelectPeriod: () -> Unit,
+    onSelectPeriod: (android.graphics.Rect?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalUHabitComposeColors.current
@@ -742,8 +768,9 @@ fun HabitStatisticsSection(
             action = {
                 HabitActionChip(
                     text = periodLabel,
-                    onClick = onSelectPeriod,
-                    hasDropdown = true
+                    onClick = {},
+                    hasDropdown = true,
+                    onAnchorClick = onSelectPeriod
                 )
             }
         )
@@ -798,7 +825,7 @@ fun HabitStatisticsSection(
 fun HabitBarHistorySection(
     state: BarCardState,
     periodLabel: String,
-    onSelectPeriod: () -> Unit,
+    onSelectPeriod: (android.graphics.Rect?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = LocalUHabitComposeColors.current
@@ -810,8 +837,9 @@ fun HabitBarHistorySection(
             action = {
                 HabitActionChip(
                     text = periodLabel,
-                    onClick = onSelectPeriod,
-                    hasDropdown = true
+                    onClick = {},
+                    hasDropdown = true,
+                    onAnchorClick = onSelectPeriod
                 )
             }
         )
@@ -860,13 +888,18 @@ fun HabitBarHistorySection(
 @Composable
 fun HabitStreakSummary(
     state: StreakCardState,
+    selectedPeriod: StreakPeriod = StreakPeriod.ALL,
+    periodLabel: String? = null,
+    onSelectPeriod: ((android.graphics.Rect?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val androidColor = state.theme.color(state.color).toInt()
     val colors = LocalUHabitComposeColors.current
-    val validLatest = state.latestStreak?.takeIf { it.length > 0 }
-    val validBest = state.bestStreaks.filter { it.length > 0 }
-    val displayBest = validBest.take(5)
+    val trackColor = resolveTargetTrackColor(colors)
+    val barTextColor = TargetChart.resolveFilledBarTextColor(androidColor)
+    val slice = state.forPeriod(selectedPeriod)
+    val validLatest = slice.latestStreak?.takeIf { it.length > 0 }
+    val displayBest = slice.bestStreaks
     val hasLatest = validLatest != null
     val hasBest = displayBest.isNotEmpty()
     val sharedMaxLength = (listOfNotNull(validLatest) + displayBest)
@@ -874,7 +907,19 @@ fun HabitStreakSummary(
         ?.toLong()
 
     HabitSectionCard(modifier = modifier) {
-        HabitSectionHeader(title = stringResource(R.string.streak_card_title))
+        HabitSectionHeader(
+            title = stringResource(R.string.streak_card_title),
+            action = if (onSelectPeriod != null && !periodLabel.isNullOrBlank()) {
+                {
+                    HabitActionChip(
+                        text = periodLabel,
+                        onClick = {},
+                        hasDropdown = true,
+                        onAnchorClick = onSelectPeriod
+                    )
+                }
+            } else null
+        )
 
         if (!hasLatest && !hasBest) {
             HabitEmptyState(stringResource(R.string.reports_no_data))
@@ -889,12 +934,22 @@ fun HabitStreakSummary(
                     factory = { ctx ->
                         StreakChart(ctx).apply {
                             setColor(androidColor)
+                            setSurfaceColors(
+                                trackColor = trackColor,
+                                labelColor = colors.secondary,
+                                filledBarTextColor = barTextColor
+                            )
                             sharedMaxLength?.let { setMaxLengthOverride(it) }
                             setStreaks(listOfNotNull(validLatest))
                         }
                     },
                     update = { chart ->
                         chart.setColor(androidColor)
+                        chart.setSurfaceColors(
+                            trackColor = trackColor,
+                            labelColor = colors.secondary,
+                            filledBarTextColor = barTextColor
+                        )
                         sharedMaxLength?.let { chart.setMaxLengthOverride(it) }
                         chart.setStreaks(listOfNotNull(validLatest))
                         chart.postInvalidate()
@@ -904,7 +959,9 @@ fun HabitStreakSummary(
                         .height(20.dp)
                         .clipToBounds()
                 )
-                Spacer(Modifier.height(10.dp))
+                if (hasBest) {
+                    Spacer(Modifier.height(10.dp))
+                }
             }
 
             if (hasBest) {
@@ -918,12 +975,22 @@ fun HabitStreakSummary(
                     factory = { ctx ->
                         StreakChart(ctx).apply {
                             setColor(androidColor)
+                            setSurfaceColors(
+                                trackColor = trackColor,
+                                labelColor = colors.secondary,
+                                filledBarTextColor = barTextColor
+                            )
                             sharedMaxLength?.let { setMaxLengthOverride(it) }
                             setStreaks(displayBest)
                         }
                     },
                     update = { chart ->
                         chart.setColor(androidColor)
+                        chart.setSurfaceColors(
+                            trackColor = trackColor,
+                            labelColor = colors.secondary,
+                            filledBarTextColor = barTextColor
+                        )
                         sharedMaxLength?.let { chart.setMaxLengthOverride(it) }
                         chart.setStreaks(displayBest)
                         chart.postInvalidate()
@@ -944,7 +1011,9 @@ fun HabitFrequencySection(
     state: FrequencyCardState,
     modifier: Modifier = Modifier
 ) {
+    val colors = LocalUHabitComposeColors.current
     val androidColor = state.theme.color(state.color).toInt()
+    val gridColor = resolveTargetTrackColor(colors)
 
     HabitSectionCard(modifier = modifier) {
         HabitSectionHeader(title = stringResource(R.string.frequency))
@@ -959,6 +1028,10 @@ fun HabitFrequencySection(
                         setIsNumerical(state.isNumerical)
                         setFirstWeekday(state.firstWeekday)
                         setColor(androidColor)
+                        setSurfaceColors(
+                            labelColor = colors.secondary,
+                            gridColor = gridColor
+                        )
                     }
                 },
                 update = { chart ->
@@ -966,6 +1039,10 @@ fun HabitFrequencySection(
                     chart.setIsNumerical(state.isNumerical)
                     chart.setFirstWeekday(state.firstWeekday)
                     chart.setColor(androidColor)
+                    chart.setSurfaceColors(
+                        labelColor = colors.secondary,
+                        gridColor = gridColor
+                    )
                     chart.postInvalidate()
                 },
                 modifier = Modifier

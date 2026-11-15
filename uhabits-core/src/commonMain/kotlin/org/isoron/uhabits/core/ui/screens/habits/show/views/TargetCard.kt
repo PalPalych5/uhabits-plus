@@ -23,6 +23,7 @@ import org.isoron.platform.time.DayOfWeek
 import org.isoron.platform.time.TruncateField
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.PaletteColor
 import org.isoron.uhabits.core.models.countSkippedDays
 import org.isoron.uhabits.core.models.groupedSum
@@ -34,7 +35,9 @@ data class TargetCardState(
     val values: List<Double> = listOf(),
     val targets: List<Double> = listOf(),
     val intervals: List<Int> = listOf(),
-    val theme: Theme
+    val theme: Theme,
+    val targetType: NumericalHabitType = NumericalHabitType.AT_LEAST,
+    val unit: String = ""
 )
 
 class TargetCardPresenter {
@@ -166,7 +169,9 @@ class TargetCardPresenter {
                 values = values,
                 targets = targets,
                 intervals = intervals,
-                theme = theme
+                theme = theme,
+                targetType = habit.targetType,
+                unit = habit.unit
             )
         }
     }

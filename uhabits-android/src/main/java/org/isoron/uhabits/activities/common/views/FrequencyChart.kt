@@ -56,6 +56,8 @@ class FrequencyChart : ScrollableChart {
     private var gridColor = 0
     private lateinit var colors: IntArray
     private var primaryColor = 0
+    private var textColorOverride: Int? = null
+    private var gridColorOverride: Int? = null
     private var isBackgroundTransparent = false
     private lateinit var frequency: HashMap<LocalDate, Array<Int>>
     private var maxFreq = 0
@@ -73,6 +75,13 @@ class FrequencyChart : ScrollableChart {
 
     fun setColor(color: Int) {
         primaryColor = color
+        initColors()
+        postInvalidate()
+    }
+
+    fun setSurfaceColors(labelColor: Int, gridColor: Int) {
+        textColorOverride = labelColor
+        gridColorOverride = gridColor
         initColors()
         postInvalidate()
     }
@@ -265,8 +274,8 @@ class FrequencyChart : ScrollableChart {
 
     private fun initColors() {
         val res = StyledResources(context)
-        textColor = res.getColor(R.attr.contrast60)
-        gridColor = res.getColor(R.attr.contrast20)
+        textColor = textColorOverride ?: res.getColor(R.attr.contrast60)
+        gridColor = gridColorOverride ?: res.getColor(R.attr.contrast20)
         colors = IntArray(4)
         colors[0] = gridColor
         colors[3] = primaryColor

@@ -218,10 +218,6 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
 
     fun editHistory() = presenter.historyCardPresenter.onClickEditButton()
 
-    val hasProgressDetails: Boolean get() = view.hasProgressDetails
-
-    fun showProgressDetails() = view.showProgressDetails()
-
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         if (item.itemId == android.R.id.home) {
             finish()
@@ -483,6 +479,7 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
                             if (date != null) {
                                 val orig = targetHabit.originalEntries.get(date)
                                 putDouble("value", orig.value.toDouble() / 1000)
+                                putInt("originalRawValue", orig.value)
                                 putString("notes", orig.notes)
                                 putBoolean("hasManualEntry", orig.value != Entry.UNKNOWN)
                             }
@@ -501,12 +498,9 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
                                 }.getOrNull()
                             } else null
                             if (day != null) {
-                                dialogArgs.putDouble("focusValue", day.contributionValue / 1000.0)
-                                dialogArgs.putDouble("tombstonedFocusValue", day.tombstonedContributionValue / 1000.0)
-                                dialogArgs.putStringArrayList("activeContributionIds", ArrayList(day.contributions.map { it.id.value }))
-                                dialogArgs.putStringArrayList("tombstonedContributionIds", ArrayList(day.tombstonedContributions.map { it.id.value }))
-                                dialogArgs.putBoolean("hasManualEntry", day.manualValue != null)
-                                dialogArgs.putBoolean("hasCompleteCoverage", day.hasCompleteCoverage)
+                                dialogArgs.putBoolean("hasEffectiveTotal", day.totalValue != null)
+                                dialogArgs.putInt("effectiveMillis", (day.totalValue ?: 0L).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt())
+                                dialogArgs.putInt("focusMillis", day.contributionValue.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt())
                             }
                         }
                         dialogArgs
@@ -518,16 +512,6 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
                 if (!popupGeneration.accepts(generation) || !readsActive || isFinishing || isDestroyed) return@launch
                 val dialog = NumberDialog()
                 dialog.arguments = args
-                dialog.onRevokeContributions = { ids ->
-                    ids.forEach { id ->
-                        focusCredit?.revokeContribution(ContributionId(id))
-                    }
-                }
-                dialog.onRestoreContributions = { ids ->
-                    ids.forEach { id ->
-                        focusCredit?.restoreContribution(ContributionId(id))
-                    }
-                }
                 dialog.onToggle = { v, n -> callback.onNumberPicked(v, n) }
                 dialog.dismissCurrentAndShow(supportFragmentManager, "numberDialog")
             }
@@ -600,7 +584,7 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
             current: LocalDate?,
             callback: (LocalDate?) -> Unit
         ) {
-            showStatisticsStartDateDialogInternal(callback)
+            showStatisticsStartDateDialogInternal(current, callback)
         }
 
         override fun showHardResetStatisticsConfirmation(callback: OnConfirmedCallback) {
@@ -622,36 +606,42 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
         }
     }
 
-    private fun showStatisticsStartDateDialogInternal(callback: (LocalDate?) -> Unit) {
+    private fun showStatisticsStartDateDialogInternal(
+        current: LocalDate?,
+        callback: (LocalDate?) -> Unit
+    ) {
+        val today = getToday()
         val options = listOf(
             getString(R.string.today),
             getString(R.string.this_monday),
-            getString(R.string.next_monday),
             getString(R.string.select_date)
+        )
+        val selectedIndex = CustomDialogs.resolveStatisticsStartSelection(
+            current = current,
+            today = today,
+            thisMonday = thisMonday()
         )
         CustomDialogs.showSingleChoiceDialog(
             context = this,
             title = getString(R.string.count_statistics_from_date),
             options = options,
-            selectedIndex = -1,
+            selectedIndex = selectedIndex,
             neutralText = getString(R.string.clear),
             onNeutral = { callback(null) }
         ) { which ->
             when (which) {
-                0 -> callback(getToday())
+                0 -> callback(today)
                 1 -> callback(thisMonday())
-                2 -> callback(thisMonday().plus(7))
-                else -> showDatePicker(callback)
+                else -> showDatePicker(current ?: today, callback)
             }
         }
     }
 
-    private fun showDatePicker(callback: (LocalDate?) -> Unit) {
-        val today = getToday()
+    private fun showDatePicker(initialDate: LocalDate, callback: (LocalDate?) -> Unit) {
         CustomDialogs.showDatePickerDialog(
             context = this,
             title = getString(R.string.select_date),
-            initialDate = today
+            initialDate = initialDate
         ) { date ->
             callback(date)
         }

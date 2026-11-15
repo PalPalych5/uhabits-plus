@@ -8,7 +8,6 @@ package org.isoron.uhabits.activities.habits.show.views
 import android.content.Context
 import android.util.AttributeSet
 import android.widget.FrameLayout
-import androidx.appcompat.app.AlertDialog
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -19,9 +18,8 @@ import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.habits.show.FocusProgressPresentation
 import org.isoron.uhabits.compose.UHabitComposeColors
 import org.isoron.uhabits.compose.UHabitComposeTheme
-import org.isoron.uhabits.core.models.projection.HabitGoalStatus
+import org.isoron.uhabits.core.models.projection.GoalPeriodAchievement
 import org.isoron.uhabits.core.ui.screens.habits.show.views.TargetCardState
-import java.text.NumberFormat
 
 class TargetCardView @JvmOverloads constructor(
     context: Context,
@@ -31,13 +29,9 @@ class TargetCardView @JvmOverloads constructor(
 
     private var targetState by mutableStateOf<TargetCardState?>(null)
     private var focusProgress by mutableStateOf<FocusProgressPresentation?>(null)
+    private var goalAchievementState by mutableStateOf<GoalPeriodAchievement?>(null)
     private var isUnavailable by mutableStateOf(false)
     private var hasShortTermTargets = false
-    private var showBreakdown: (() -> Unit)? = null
-
-    val hasProgressDetails: Boolean get() = showBreakdown != null
-
-    fun showProgressDetails() = showBreakdown?.invoke()
 
     init {
         val composeView = ComposeView(context).apply {
@@ -52,7 +46,7 @@ class TargetCardView @JvmOverloads constructor(
                             progress = focusProgress,
                             state = ts,
                             unavailable = isUnavailable,
-                            onShowBreakdown = showBreakdown
+                            goalAchievement = goalAchievementState
                         )
                     }
                 }
@@ -64,25 +58,10 @@ class TargetCardView @JvmOverloads constructor(
     fun setFocusProgress(progress: FocusProgressPresentation?, unavailable: Boolean = false) {
         this.focusProgress = progress
         this.isUnavailable = unavailable
-        showBreakdown = null
+    }
 
-        if (progress != null && (progress.focus != 0L || progress.excludedFocus != 0L)) {
-            showBreakdown = {
-                val exactFormat = NumberFormat.getNumberInstance().apply { maximumFractionDigits = 3 }
-                fun exact(value: Long) = "${exactFormat.format(value / 1000.0)} ${progress.unit}"
-                val skipped = progress.status == HabitGoalStatus.SKIPPED || progress.status == HabitGoalStatus.EXCLUDED
-                val message = buildString {
-                    append(resources.getString(R.string.focus_credit_manual)).append("\n").append(exact(progress.manual))
-                    append("\n\n").append(resources.getString(R.string.focus_credit_focus)).append("\n").append(exact(progress.focus))
-                    if (progress.excludedFocus != 0L) {
-                        append("\n\n").append(resources.getString(R.string.focus_credit_excluded)).append("\n").append(exact(progress.excludedFocus))
-                    }
-                    if (skipped) append("\n\n").append(resources.getString(R.string.focus_credit_skipped))
-                }
-                AlertDialog.Builder(context).setTitle(R.string.focus_credit_breakdown)
-                    .setMessage(message).setPositiveButton(android.R.string.ok, null).show()
-            }
-        }
+    fun setGoalAchievement(achievement: GoalPeriodAchievement?) {
+        this.goalAchievementState = achievement
     }
 
     fun setState(state: TargetCardState) {

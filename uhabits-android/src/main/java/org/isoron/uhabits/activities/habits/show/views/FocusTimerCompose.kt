@@ -5,14 +5,24 @@
 
 package org.isoron.uhabits.activities.habits.show.views
 
+import android.provider.Settings
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -68,7 +78,6 @@ import org.isoron.uhabits.activities.habits.show.timer.PomodoroAlertIssue
 import org.isoron.uhabits.activities.habits.show.timer.PomodoroDurations
 import org.isoron.uhabits.activities.habits.show.timer.TimerSessionManager
 import org.isoron.uhabits.compose.UHabitComposeColors
-import org.isoron.uhabits.compose.components.UHabitSectionCard
 import org.isoron.uhabits.compose.components.UHabitSegmentedPillTab
 import org.isoron.uhabits.core.focus.FocusPrimaryTargetType
 import org.isoron.uhabits.core.models.Habit
@@ -258,10 +267,23 @@ fun FocusTimerContent(
     var draftFocus by remember(state.focusMinutes) { mutableIntStateOf(state.focusMinutes) }
     var draftBreak by remember(state.breakMinutes) { mutableIntStateOf(state.breakMinutes) }
 
+    val context = LocalContext.current
+    val isReducedMotion = remember(context) {
+        try {
+            Settings.Global.getFloat(
+                context.contentResolver,
+                Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f
+            ) == 0f
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     val accent = Color(colors.accent)
     val onSurface = Color(colors.foreground)
     val onSurfaceVariant = Color(colors.secondary)
-    val surfaceColor = Color(colors.surface)
+    val surfaceColor = Color(colors.surfaceVariant)
     val borderColor = Color(colors.border)
 
     val contentBlock: @Composable () -> Unit = {
@@ -516,6 +538,28 @@ fun FocusTimerContent(
 
                         // Control Buttons Row (Reset, Play/Pause, Break, Finish)
                         Spacer(Modifier.height(8.dp))
+                        val sideEnter: EnterTransition = remember(isReducedMotion) {
+                            if (isReducedMotion) {
+                                fadeIn(snap())
+                            } else {
+                                fadeIn(tween(200, easing = FastOutSlowInEasing)) +
+                                    expandHorizontally(
+                                        animationSpec = tween(200, easing = FastOutSlowInEasing),
+                                        expandFrom = Alignment.CenterHorizontally
+                                    )
+                            }
+                        }
+                        val sideExit: ExitTransition = remember(isReducedMotion) {
+                            if (isReducedMotion) {
+                                fadeOut(snap())
+                            } else {
+                                fadeOut(tween(160, easing = FastOutSlowInEasing)) +
+                                    shrinkHorizontally(
+                                        animationSpec = tween(180, easing = FastOutSlowInEasing),
+                                        shrinkTowards = Alignment.CenterHorizontally
+                                    )
+                            }
+                        }
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -523,36 +567,24 @@ fun FocusTimerContent(
                             horizontalArrangement = Arrangement.Center,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Left: Reset Button
+                            // Left: Reset Button (spacing sits inside AnimatedVisibility so Play remains centered when idle)
                             AnimatedVisibility(
                                 visible = state.canReset,
-                                enter = fadeIn(tween(200)),
-                                exit = fadeOut(tween(200))
+                                enter = sideEnter,
+                                exit = sideExit
                             ) {
-                                val resetDesc = stringResource(R.string.timer_reset)
-                                Box(
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .clip(CircleShape)
-                                        .background(surfaceColor)
-                                        .border(1.dp, borderColor, CircleShape)
-                                        .clickable { onReset() }
-                                        .semantics {
-                                            role = Role.Button
-                                            contentDescription = resetDesc
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    androidx.compose.foundation.Image(
-                                        painter = painterResource(R.drawable.ic_timer_reset),
-                                        contentDescription = resetDesc,
-                                        modifier = Modifier.size(24.dp),
-                                        colorFilter = ColorFilter.tint(accent)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    TimerSecondaryActionButton(
+                                        iconRes = R.drawable.ic_timer_reset,
+                                        contentDescription = stringResource(R.string.timer_reset),
+                                        accent = accent,
+                                        surfaceColor = surfaceColor,
+                                        borderColor = borderColor,
+                                        onClick = onReset
                                     )
+                                    Spacer(Modifier.width(16.dp))
                                 }
                             }
-
-                            Spacer(Modifier.width(16.dp))
 
                             // Center: Primary Play/Pause Button
                             val primaryDesc = when {
@@ -569,11 +601,21 @@ fun FocusTimerContent(
                                 isEditingDuration = isEditingDuration,
                                 fallbackSecondary = onSurfaceVariant
                             )
+                            val primaryContainerColor by animateColorAsState(
+                                targetValue = tones.container,
+                                animationSpec = if (isReducedMotion) snap() else tween(180, easing = FastOutSlowInEasing),
+                                label = "TimerPrimaryContainer"
+                            )
+                            val primaryContentColor by animateColorAsState(
+                                targetValue = tones.content,
+                                animationSpec = if (isReducedMotion) snap() else tween(180, easing = FastOutSlowInEasing),
+                                label = "TimerPrimaryContent"
+                            )
                             Box(
                                 modifier = Modifier
                                     .size(56.dp)
                                     .clip(CircleShape)
-                                    .background(tones.container)
+                                    .background(primaryContainerColor)
                                     .clickable(enabled = tones.isEnabled) {
                                         onTogglePlayPause()
                                     }
@@ -583,71 +625,64 @@ fun FocusTimerContent(
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
-                                val iconRes = if (state.isRunning) R.drawable.ic_timer_pause else R.drawable.ic_timer_play
-                                androidx.compose.foundation.Image(
-                                    painter = painterResource(iconRes),
-                                    contentDescription = primaryDesc,
-                                    modifier = Modifier.size(28.dp),
-                                    colorFilter = ColorFilter.tint(tones.content)
-                                )
-                            }
-
-                            Spacer(Modifier.width(16.dp))
-
-                            // Right 1: Take Break Button (when in Pomodoro Overtime)
-                            val breakDesc = stringResource(R.string.pomodoro_start_break)
-                            AnimatedVisibility(
-                                visible = state.canTakeBreak,
-                                enter = fadeIn(tween(200)),
-                                exit = fadeOut(tween(200))
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .clip(CircleShape)
-                                        .background(surfaceColor)
-                                        .border(1.dp, borderColor, CircleShape)
-                                        .clickable { onTakeBreak() }
-                                        .semantics {
-                                            role = Role.Button
-                                            contentDescription = breakDesc
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
+                                AnimatedContent(
+                                    targetState = state.isRunning,
+                                    transitionSpec = {
+                                        if (isReducedMotion) {
+                                            fadeIn(snap()) togetherWith fadeOut(snap())
+                                        } else {
+                                            (fadeIn(tween(180, easing = FastOutSlowInEasing)) +
+                                                scaleIn(initialScale = 0.86f, animationSpec = tween(180, easing = FastOutSlowInEasing))) togetherWith
+                                                (fadeOut(tween(150, easing = FastOutSlowInEasing)) +
+                                                    scaleOut(targetScale = 0.86f, animationSpec = tween(150, easing = FastOutSlowInEasing)))
+                                        }
+                                    },
+                                    label = "TimerPlayPauseIcon"
+                                ) { running ->
+                                    val iconRes = if (running) R.drawable.ic_timer_pause else R.drawable.ic_timer_play
                                     androidx.compose.foundation.Image(
-                                        painter = painterResource(R.drawable.ic_timer_break),
-                                        contentDescription = breakDesc,
-                                        modifier = Modifier.size(24.dp),
-                                        colorFilter = ColorFilter.tint(accent)
+                                        painter = painterResource(iconRes),
+                                        contentDescription = primaryDesc,
+                                        modifier = Modifier.size(28.dp),
+                                        colorFilter = ColorFilter.tint(primaryContentColor)
                                     )
                                 }
                             }
 
-                            // Right 2: Finish Button
-                            val finishDesc = stringResource(R.string.timer_finish)
+                            // Right 1: Take Break Button (when in Pomodoro Overtime)
+                            AnimatedVisibility(
+                                visible = state.canTakeBreak,
+                                enter = sideEnter,
+                                exit = sideExit
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Spacer(Modifier.width(16.dp))
+                                    TimerSecondaryActionButton(
+                                        iconRes = R.drawable.ic_timer_break,
+                                        contentDescription = stringResource(R.string.pomodoro_start_break),
+                                        accent = accent,
+                                        surfaceColor = surfaceColor,
+                                        borderColor = borderColor,
+                                        onClick = onTakeBreak
+                                    )
+                                }
+                            }
+
+                            // Right 2: Finish Button (keeps exact 16dp gap even when Break is visible alongside Finish)
                             AnimatedVisibility(
                                 visible = state.canFinish,
-                                enter = fadeIn(tween(200)),
-                                exit = fadeOut(tween(200))
+                                enter = sideEnter,
+                                exit = sideExit
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .clip(CircleShape)
-                                        .background(surfaceColor)
-                                        .border(1.dp, borderColor, CircleShape)
-                                        .clickable { onFinish() }
-                                        .semantics {
-                                            role = Role.Button
-                                            contentDescription = finishDesc
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    androidx.compose.foundation.Image(
-                                        painter = painterResource(R.drawable.ic_timer_finish),
-                                        contentDescription = finishDesc,
-                                        modifier = Modifier.size(24.dp),
-                                        colorFilter = ColorFilter.tint(accent)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Spacer(Modifier.width(16.dp))
+                                    TimerSecondaryActionButton(
+                                        iconRes = R.drawable.ic_timer_finish,
+                                        contentDescription = stringResource(R.string.timer_finish),
+                                        accent = accent,
+                                        surfaceColor = surfaceColor,
+                                        borderColor = borderColor,
+                                        onClick = onFinish
                                     )
                                 }
                             }
@@ -659,7 +694,7 @@ fun FocusTimerContent(
     }
 
     if (wrapInCard) {
-        UHabitSectionCard(
+        HabitSectionCard(
             modifier = modifier.fillMaxWidth(),
             colors = colors,
             contentPadding = PaddingValues(horizontal = 0.dp, vertical = 6.dp)
@@ -668,6 +703,38 @@ fun FocusTimerContent(
         }
     } else {
         contentBlock()
+    }
+}
+
+/** Circular 48dp secondary timer action button shared across Reset, Break, and Finish controls. */
+@Composable
+private fun TimerSecondaryActionButton(
+    iconRes: Int,
+    contentDescription: String,
+    accent: Color,
+    surfaceColor: Color,
+    borderColor: Color,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(surfaceColor)
+            .border(1.dp, borderColor, CircleShape)
+            .clickable(onClick = onClick)
+            .semantics {
+                role = Role.Button
+                this.contentDescription = contentDescription
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        androidx.compose.foundation.Image(
+            painter = painterResource(iconRes),
+            contentDescription = contentDescription,
+            modifier = Modifier.size(24.dp),
+            colorFilter = ColorFilter.tint(accent)
+        )
     }
 }
 

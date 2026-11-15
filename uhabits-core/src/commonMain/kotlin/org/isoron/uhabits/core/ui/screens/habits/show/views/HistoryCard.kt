@@ -30,6 +30,7 @@ import org.isoron.uhabits.core.models.Entry.Companion.YES_AUTO
 import org.isoron.uhabits.core.models.Entry.Companion.YES_MANUAL
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitList
+import org.isoron.uhabits.core.models.MissingDataPolicy
 import org.isoron.uhabits.core.models.NumericalHabitType.AT_LEAST
 import org.isoron.uhabits.core.models.NumericalHabitType.AT_MOST
 import org.isoron.uhabits.core.models.PaletteColor
@@ -128,20 +129,23 @@ class HistoryCardPresenter(
             habit = habit,
             date = date,
         ) { newValue: Double, newNotes: String ->
-            val thousands = if (oldValue != Entry.UNKNOWN && newValue == oldValue / 1000.0) {
-                oldValue
-            } else if (oldValue == Entry.UNKNOWN && (newValue == Entry.UNKNOWN.toDouble() / 1000.0 || (newValue == 0.0 && seedNotes == newNotes))) {
-                oldValue
+            val thousands = if (oldValue == Entry.UNKNOWN && newValue == Entry.UNKNOWN.toDouble() / 1000.0) {
+                Entry.UNKNOWN
+            } else if (newValue == Entry.SKIP.toDouble() / 1000.0) {
+                Entry.SKIP
             } else {
                 Entry.toScaledValue(newValue)
             }
+            val hourOffset = runCatching { preferences.midnightDelayHours }.getOrDefault(0)
             commandRunner.run(
                 CreateRepetitionCommand(
-                    habitList,
-                    habit,
-                    date,
-                    thousands,
-                    newNotes
+                    habitList = habitList,
+                    habit = habit,
+                    date = date,
+                    value = thousands,
+                    notes = newNotes,
+                    isTotalEdit = true,
+                    hourOffset = hourOffset,
                 )
             )
         }
@@ -167,13 +171,29 @@ class HistoryCardPresenter(
                     val value = it.value
                     val goal = habit.goalAt(it.date)
                     when {
-                        value == Entry.UNKNOWN -> OFF
                         value == SKIP -> HATCHED
+                        !habit.isDateIncludedInStatistics(it.date) -> OFF
+                        goal.targetType == AT_MOST &&
+                            habit.effectiveMissingDataPolicy() == MissingDataPolicy.DEFAULT_ZERO -> {
+                            val actual = habit.periodActualOn(it.date)
+                            when {
+                                actual != null && actual > goal.targetValue -> GREY
+                                habit.isCompletedOn(it.date, today) -> ON
+                                else -> OFF
+                            }
+                        }
+                        value == Entry.UNKNOWN -> OFF
                         (goal.targetType == AT_MOST) -> {
                             val denominator = goal.frequency.denominator
                             if (denominator == 7 || denominator == 30) {
-                                val isWithinLimit = (habit.periodActualOn(it.date) ?: Double.MAX_VALUE) <= goal.targetValue
-                                if (isWithinLimit) ON else GREY
+                                val periodEnd = habit.periodEndFor(it.date, goal)
+                                val actual = habit.periodActualOn(it.date)
+                                when {
+                                    actual != null && actual > goal.targetValue -> GREY
+                                    !periodEnd.isOlderThan(today) -> OFF
+                                    actual != null -> ON
+                                    else -> OFF
+                                }
                             } else {
                                 if (value / 1000.0 <= goal.targetValue) ON else GREY
                             }

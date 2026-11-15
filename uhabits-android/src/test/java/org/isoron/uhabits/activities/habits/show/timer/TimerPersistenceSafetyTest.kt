@@ -215,7 +215,7 @@ class TimerPersistenceSafetyTest : BaseAndroidJVMTest() {
             migrationsDir = File("uhabits-core/assets/main/migrations")
         }
         if (!migrationsDir.exists()) {
-            System.getenv("UHABIT_MIGRATIONS_DIR")?.let { migrationsDir = File(it) }
+            migrationsDir = File("../../uhabits-core/assets/main/migrations")
         }
 
         memoryDb.migrateTo(DATABASE_VERSION) { v: Int ->

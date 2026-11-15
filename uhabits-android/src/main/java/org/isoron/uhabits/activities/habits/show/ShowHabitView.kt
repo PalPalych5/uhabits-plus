@@ -6,10 +6,12 @@
 package org.isoron.uhabits.activities.habits.show
 
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.ImageView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.graphics.ColorUtils
@@ -21,14 +23,43 @@ import org.isoron.uhabits.activities.habits.show.timer.PomodoroAlertIssue
 import org.isoron.uhabits.activities.habits.show.timer.PomodoroCompletionNotifier
 import org.isoron.uhabits.activities.habits.show.timer.TimerSessionManager
 import org.isoron.uhabits.activities.habits.show.views.TimerCardView
+import org.isoron.uhabits.activities.settings.SettingsThemePalette
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.isMinuteUnit
 import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitPresenter
 import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitState
 import org.isoron.uhabits.databinding.ShowHabitBinding
-import org.isoron.uhabits.utils.StyledResources
 import org.isoron.uhabits.utils.applyBottomInset
 import org.isoron.uhabits.utils.applyToolbarInsets
+
+data class ShowHabitSurfaceSpec(
+    val canvasColor: Int,
+    val toolbarColor: Int,
+    val statusBarColor: Int,
+    val navigationBarColor: Int,
+    val dividerColor: Int,
+    val showToolbarDivider: Boolean,
+    val iconColor: Int,
+    val isLightSystemBars: Boolean
+)
+
+fun resolveShowHabitSurfaceSpec(
+    palette: SettingsThemePalette,
+    isClassicSectionLayout: Boolean
+): ShowHabitSurfaceSpec {
+    val classicCanvas = if (palette.isPureBlack) Color.BLACK else palette.surface
+    val canvasColor = if (isClassicSectionLayout) classicCanvas else palette.background
+    return ShowHabitSurfaceSpec(
+        canvasColor = canvasColor,
+        toolbarColor = canvasColor,
+        statusBarColor = canvasColor,
+        navigationBarColor = canvasColor,
+        dividerColor = palette.divider,
+        showToolbarDivider = isClassicSectionLayout,
+        iconColor = palette.onSurface,
+        isLightSystemBars = !palette.isDark
+    )
+}
 
 class ShowHabitView(context: Context) : FrameLayout(context) {
     private val binding = ShowHabitBinding.inflate(LayoutInflater.from(context))
@@ -47,36 +78,45 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
     }
 
     private fun setupCohesiveToolbar(data: ShowHabitState) {
-        val res = StyledResources(context)
         val activity = context as? AppCompatActivity
+        val app = context.applicationContext as? org.isoron.uhabits.HabitsApplication
+        val isClassic = app?.component?.preferences?.isClassicSectionLayout ?: false
+        val palette = MainTabsThemeBridge.resolve(context)
+        val surfaceSpec = resolveShowHabitSurfaceSpec(palette, isClassic)
 
-        // Production Toolbar B2: Tonal integrated toolbar with neutral title
-        val windowBg = res.getColor(R.attr.windowBackgroundColor)
-        val isLightBg = ColorUtils.calculateLuminance(windowBg) > 0.5
-        val iconColor = if (isLightBg) res.getColor(R.attr.contrast100) else Color.WHITE
-        val titleColor = iconColor
+        val iconColor = surfaceSpec.iconColor
+        val titleColor = surfaceSpec.iconColor
 
         toolbarForegroundColor = iconColor
         currentTitleColor = titleColor
 
+        binding.container.setBackgroundColor(surfaceSpec.canvasColor)
+        binding.scrollView.setBackgroundColor(surfaceSpec.canvasColor)
+        binding.toolbarDivider.setBackgroundColor(surfaceSpec.dividerColor)
+        binding.toolbarDivider.visibility = if (surfaceSpec.showToolbarDivider) VISIBLE else GONE
+
         binding.toolbar.elevation = 0f
         binding.toolbar.title = data.title
-        binding.toolbar.setBackgroundColor(windowBg)
+        binding.toolbar.setBackgroundColor(surfaceSpec.toolbarColor)
         binding.toolbar.setTitleTextColor(titleColor)
 
         if (activity != null) {
-            activity.window.statusBarColor = windowBg
+            activity.window.statusBarColor = surfaceSpec.statusBarColor
+            activity.window.navigationBarColor = surfaceSpec.navigationBarColor
             activity.setSupportActionBar(binding.toolbar)
             activity.supportActionBar?.setDisplayHomeAsUpEnabled(true)
             activity.supportActionBar?.setHomeAsUpIndicator(R.drawable.ic_settings_back)
             val insetsController = WindowInsetsControllerCompat(activity.window, activity.window.decorView)
-            insetsController.isAppearanceLightStatusBars = isLightBg
+            insetsController.isAppearanceLightStatusBars = surfaceSpec.isLightSystemBars
+            insetsController.isAppearanceLightNavigationBars = surfaceSpec.isLightSystemBars
         }
         binding.toolbar.setTitleTextColor(currentTitleColor)
         binding.toolbar.navigationIcon?.setTint(iconColor)
         binding.toolbar.overflowIcon?.setTint(iconColor)
         for (i in 0 until binding.toolbar.menu.size()) {
-            binding.toolbar.menu.getItem(i).icon?.setTint(iconColor)
+            val item = binding.toolbar.menu.getItem(i)
+            item.icon?.setTint(iconColor)
+            (item.actionView as? ImageView)?.imageTintList = ColorStateList.valueOf(iconColor)
         }
     }
 
@@ -85,7 +125,9 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
         binding.toolbar.navigationIcon?.setTint(toolbarForegroundColor)
         binding.toolbar.overflowIcon?.setTint(toolbarForegroundColor)
         for (i in 0 until binding.toolbar.menu.size()) {
-            binding.toolbar.menu.getItem(i).icon?.setTint(toolbarForegroundColor)
+            val item = binding.toolbar.menu.getItem(i)
+            item.icon?.setTint(toolbarForegroundColor)
+            (item.actionView as? ImageView)?.imageTintList = ColorStateList.valueOf(toolbarForegroundColor)
         }
     }
 
@@ -95,8 +137,7 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
 
         binding.subtitleCard.setHabitState(
             state = data,
-            focusProgress = currentFocusProgress,
-            onShowBreakdown = { binding.targetCard.showProgressDetails() }
+            focusProgress = currentFocusProgress
         )
 
         // Maintain state on legacy views for backward-compatibility and tests,
@@ -104,6 +145,7 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
         binding.overviewCard.setState(data.overview)
         binding.notesCard.setState(data.notes)
         binding.targetCard.setState(data.target)
+        binding.targetCard.setGoalAchievement(data.goalAchievement)
         binding.overviewCard.visibility = if (!data.isNumerical) VISIBLE else GONE
         binding.notesCard.visibility = GONE
         binding.targetCard.visibility = if (data.isNumerical) VISIBLE else GONE
@@ -147,7 +189,7 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
         val sideMargin = if (isClassic) 0 else (16 * density).toInt()
         val bottomMargin = if (isClassic) 0 else (10 * density).toInt()
         val bottomPad = (32 * density).toInt()
-        val topPad = if (isClassic) 0 else (6 * density).toInt()
+        val topPad = if (isClassic) 0 else (12 * density).toInt()
         binding.linearLayout.setPadding(0, topPad, 0, bottomPad)
         for (i in 0 until binding.linearLayout.childCount) {
             val child = binding.linearLayout.getChildAt(i)
@@ -213,8 +255,4 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
         binding.targetCard.visibility = if (isNumerical) VISIBLE else GONE
         binding.subtitleCard.setFocusProgress(progress)
     }
-
-    val hasProgressDetails: Boolean get() = binding.targetCard.hasProgressDetails
-
-    fun showProgressDetails() = binding.targetCard.showProgressDetails()
 }

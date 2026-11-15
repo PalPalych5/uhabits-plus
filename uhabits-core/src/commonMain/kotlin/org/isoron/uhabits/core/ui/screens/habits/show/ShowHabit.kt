@@ -108,7 +108,7 @@ class ShowHabitPresenter(
         ): ShowHabitState {
             // Legacy quantity cards aggregate Int entries. Check their whole read domain rather
             // than clamping individual days or letting a monthly/weekday bucket overflow.
-            val quantityUnavailable = snapshot?.hasContributions == true && (
+            val quantityUnavailable = snapshot?.hasProjectedChanges == true && (
                 !snapshot.canUseLegacyEntryAdapter ||
                     snapshot.days.filter { it.includedInStatistics && !it.isSkipped }
                         .sumOf { it.totalValue ?: 0L } > Int.MAX_VALUE
@@ -139,7 +139,8 @@ class ShowHabitPresenter(
                 ),
                 streaks = StreakCartPresenter.buildState(
                     habit = readHabit,
-                    theme = theme
+                    theme = theme,
+                    firstWeekday = preferences.firstWeekday
                 ),
                 scores = ScoreCardPresenter.buildState(
                     spinnerPosition = preferences.scoreCardSpinnerPosition,
@@ -165,8 +166,20 @@ class ShowHabitPresenter(
                     theme = theme
                 )
             )
-            if (snapshot == null) return base
             val today = getToday()
+            val legacyAll = readHabit.streaks.getAll()
+            val legacyLatest = legacyAll.maxWithOrNull { a, b -> a.compareNewer(b) } ?: readHabit.streaks.getLatest()
+            val legacyStreaks = base.streaks.copy(
+                latestStreak = legacyLatest,
+                bestStreaks = legacyAll
+                    .filterNot { it == legacyLatest }
+                    .sortedWith { a, b -> b.compareLonger(a) },
+                allStreaks = legacyAll,
+                firstWeekday = preferences.firstWeekday,
+                today = today
+            )
+            val baseWithFullStreaks = base.copy(streaks = legacyStreaks)
+            if (snapshot == null) return baseWithFullStreaks
             val oldest = habit.effectiveStatisticsStartDate() ?: snapshot.observedFrom ?: today
             val historyDates = readHabit.computedEntries.getByInterval(oldest, today).map { it.date }
             val history = if (habit.isNumerical) base.history.copy(
@@ -211,7 +224,7 @@ class ShowHabitPresenter(
                         bucket[weekday] += requireNotNull(day.totalValue).toInt()
                     }
             }
-            return base.copy(
+            return baseWithFullStreaks.copy(
                 scoreUnavailable = scoreUnavailable,
                 streakUnavailable = streakUnavailable,
                 quantityUnavailable = quantityUnavailable,
@@ -224,9 +237,14 @@ class ShowHabitPresenter(
                 goalAchievementUnavailable = goalAchievementUnavailable,
                 history = history,
                 scores = if (scoreUnavailable) base.scores.copy(scores = emptyList()) else base.scores,
-                streaks = if (snapshot.streakResult.exactness == EffectiveReadExactness.LEGACY_COMPATIBILITY) base.streaks else base.streaks.copy(
+                streaks = if (snapshot.streakResult.exactness == EffectiveReadExactness.LEGACY_COMPATIBILITY) legacyStreaks else base.streaks.copy(
                     latestStreak = latest,
-                    bestStreaks = streaks.orEmpty().filterNot { it == latest }.sortedWith { a, b -> b.compareLonger(a) }.take(10)
+                    bestStreaks = streaks.orEmpty()
+                        .filterNot { it == latest }
+                        .sortedWith { a, b -> b.compareLonger(a) },
+                    allStreaks = streaks.orEmpty(),
+                    firstWeekday = preferences.firstWeekday,
+                    today = today
                 ),
                 frequency = if (habit.isNumerical && snapshot.hasContributions && !quantityUnavailable) base.frequency.copy(
                     frequency = effectiveFrequency

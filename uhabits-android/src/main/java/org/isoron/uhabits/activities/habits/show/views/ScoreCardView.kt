@@ -43,9 +43,10 @@ class ScoreCardView @JvmOverloads constructor(
                         HabitStatisticsSection(
                             state = current,
                             periodLabel = labels.getOrElse(current.spinnerPosition) { "" },
-                            onSelectPeriod = {
+                            onSelectPeriod = { anchorRect ->
                                 CompactPopupMenu.show(
                                     anchor = this@ScoreCardView,
+                                    anchorRectOnScreen = anchorRect,
                                     entries = labels.mapIndexed { index, label ->
                                         CompactPopupMenu.Entry.Item(
                                             id = index,

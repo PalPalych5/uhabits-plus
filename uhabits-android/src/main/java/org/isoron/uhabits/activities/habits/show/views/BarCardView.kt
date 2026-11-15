@@ -46,9 +46,10 @@ class BarCardView @JvmOverloads constructor(
                         HabitBarHistorySection(
                             state = current,
                             periodLabel = labels.getOrElse(position) { "" },
-                            onSelectPeriod = {
+                            onSelectPeriod = { anchorRect ->
                                 CompactPopupMenu.show(
                                     anchor = this@BarCardView,
+                                    anchorRectOnScreen = anchorRect,
                                     entries = labels.mapIndexed { index, label ->
                                         CompactPopupMenu.Entry.Item(
                                             id = index,

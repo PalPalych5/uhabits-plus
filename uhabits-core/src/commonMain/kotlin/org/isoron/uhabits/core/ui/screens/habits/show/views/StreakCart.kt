@@ -19,22 +19,70 @@
 
 package org.isoron.uhabits.core.ui.screens.habits.show.views
 
+import org.isoron.platform.time.DayOfWeek
+import org.isoron.platform.time.LocalDate
+import org.isoron.platform.time.getToday
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.PaletteColor
 import org.isoron.uhabits.core.models.Streak
 import org.isoron.uhabits.core.ui.views.Theme
 
+enum class StreakPeriod {
+    WEEK,
+    MONTH,
+    ALL
+}
+
+data class StreakSlice(
+    val latestStreak: Streak?,
+    val bestStreaks: List<Streak>
+)
+
 data class StreakCardState(
     val color: PaletteColor,
     val latestStreak: Streak?,
     val bestStreaks: List<Streak>,
-    val theme: Theme
-)
+    val theme: Theme,
+    val allStreaks: List<Streak> = (listOfNotNull(latestStreak) + bestStreaks).distinct(),
+    val firstWeekday: DayOfWeek = DayOfWeek.MONDAY,
+    val today: LocalDate = getToday()
+) {
+    fun forPeriod(period: StreakPeriod): StreakSlice {
+        val pool = (allStreaks + listOfNotNull(latestStreak) + bestStreaks)
+            .distinct()
+            .filter { it.length > 0 }
+        val filtered = when (period) {
+            StreakPeriod.ALL -> pool
+            StreakPeriod.WEEK -> {
+                val periodStart = today.startOfWeek(firstWeekday)
+                val periodEnd = periodStart.plus(6)
+                pool.filter { !it.end.isOlderThan(periodStart) && !it.start.isNewerThan(periodEnd) }
+            }
+            StreakPeriod.MONTH -> {
+                val periodStart = today.startOfMonth()
+                val periodEnd = periodStart.plus(periodStart.monthLength - 1)
+                pool.filter { !it.end.isOlderThan(periodStart) && !it.start.isNewerThan(periodEnd) }
+            }
+        }
+        val latest = filtered.maxWithOrNull { a, b -> a.compareNewer(b) }
+        val best = filtered
+            .filterNot { it == latest }
+            .sortedWith { a, b -> b.compareLonger(a) }
+            .take(5)
+        return StreakSlice(latestStreak = latest, bestStreaks = best)
+    }
+}
 
 class StreakCartPresenter {
     companion object {
-        fun buildState(habit: Habit, theme: Theme): StreakCardState {
-            val latestStreak = habit.streaks.getLatest()
+        fun buildState(
+            habit: Habit,
+            theme: Theme,
+            firstWeekday: DayOfWeek = DayOfWeek.MONDAY,
+            today: LocalDate = getToday()
+        ): StreakCardState {
+            val allStreaks = habit.streaks.getAll()
+            val latestStreak = allStreaks.maxWithOrNull { a, b -> a.compareNewer(b) } ?: habit.streaks.getLatest()
             return StreakCardState(
                 color = habit.color,
                 latestStreak = latestStreak,
@@ -42,7 +90,10 @@ class StreakCartPresenter {
                     .getBest(11)
                     .filterNot { it == latestStreak }
                     .take(10),
-                theme = theme
+                theme = theme,
+                allStreaks = allStreaks,
+                firstWeekday = firstWeekday,
+                today = today
             )
         }
     }

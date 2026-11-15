@@ -13,10 +13,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
+import org.isoron.uhabits.activities.common.views.CompactPopupMenu
 import org.isoron.uhabits.compose.UHabitComposeColors
 import org.isoron.uhabits.compose.UHabitComposeTheme
 import org.isoron.uhabits.core.ui.screens.habits.show.views.StreakCardState
+import org.isoron.uhabits.core.ui.screens.habits.show.views.StreakPeriod
 
 class StreakCardView @JvmOverloads constructor(
     context: Context,
@@ -25,6 +28,12 @@ class StreakCardView @JvmOverloads constructor(
 ) : FrameLayout(context, attrs, defStyleAttr) {
 
     private var cardState by mutableStateOf<StreakCardState?>(null)
+    private var selectedPeriod by mutableStateOf(StreakPeriod.ALL)
+    private val periodOptions = listOf(
+        StreakPeriod.WEEK to R.string.reports_tab_week,
+        StreakPeriod.MONTH to R.string.reports_tab_month,
+        StreakPeriod.ALL to R.string.reports_tab_all
+    )
 
     init {
         val composeView = ComposeView(context).apply {
@@ -35,7 +44,29 @@ class StreakCardView @JvmOverloads constructor(
                 UHabitComposeTheme(colors) {
                     val current = cardState
                     if (current != null) {
-                        HabitStreakSummary(state = current)
+                        val activeLabelRes = periodOptions.firstOrNull { it.first == selectedPeriod }?.second
+                            ?: R.string.reports_tab_all
+                        HabitStreakSummary(
+                            state = current,
+                            selectedPeriod = selectedPeriod,
+                            periodLabel = context.getString(activeLabelRes),
+                            onSelectPeriod = { anchorRect ->
+                                CompactPopupMenu.show(
+                                    anchor = this@StreakCardView,
+                                    anchorRectOnScreen = anchorRect,
+                                    entries = periodOptions.mapIndexed { index, (period, labelRes) ->
+                                        CompactPopupMenu.Entry.Item(
+                                            id = index,
+                                            title = context.getString(labelRes),
+                                            selected = period == selectedPeriod
+                                        )
+                                    },
+                                    onItemClick = { index ->
+                                        periodOptions.getOrNull(index)?.first?.let { selectedPeriod = it }
+                                    }
+                                )
+                            }
+                        )
                     }
                 }
             }

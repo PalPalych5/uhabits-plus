@@ -31,7 +31,6 @@ class SubtitleCardView @JvmOverloads constructor(
     private var notesState by mutableStateOf<NotesCardState?>(null)
     private var fullHabitState by mutableStateOf<ShowHabitState?>(null)
     private var focusProgressState by mutableStateOf<FocusProgressPresentation?>(null)
-    private var onShowBreakdownAction by mutableStateOf<(() -> Unit)?>(null)
 
     init {
         val composeView = ComposeView(context).apply {
@@ -48,8 +47,7 @@ class SubtitleCardView @JvmOverloads constructor(
                     if (habitState != null) {
                         HabitDetailsEditorialHeader(
                             state = habitState,
-                            focusProgress = focusProgressState,
-                            onShowBreakdown = onShowBreakdownAction
+                            focusProgress = focusProgressState
                         )
                     } else {
                         val currentSubtitle = subtitleState
@@ -68,12 +66,10 @@ class SubtitleCardView @JvmOverloads constructor(
 
     fun setHabitState(
         state: ShowHabitState,
-        focusProgress: FocusProgressPresentation? = null,
-        onShowBreakdown: (() -> Unit)? = null
+        focusProgress: FocusProgressPresentation? = null
     ) {
         this.fullHabitState = state
         this.focusProgressState = focusProgress
-        this.onShowBreakdownAction = onShowBreakdown
     }
 
     fun setFocusProgress(progress: FocusProgressPresentation?) {

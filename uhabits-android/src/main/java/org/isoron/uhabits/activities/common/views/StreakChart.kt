@@ -50,6 +50,9 @@ class StreakChart : View {
     private var rect: RectF? = null
     private var baseSize = 0
     private var primaryColor = 0
+    private var trackColorOverride: Int? = null
+    private var labelColorOverride: Int? = null
+    private var filledTextColorOverride: Int? = null
     private var streaks: List<Streak>? = null
     private var isBackgroundTransparent = false
     private var dateFormatter: JavaLocalDateFormatter? = null
@@ -91,6 +94,15 @@ class StreakChart : View {
 
     fun setColor(color: Int) {
         primaryColor = color
+        initColors()
+        postInvalidate()
+    }
+
+    fun setSurfaceColors(trackColor: Int, labelColor: Int, filledBarTextColor: Int? = null) {
+        trackColorOverride = trackColor
+        labelColorOverride = labelColor
+        filledTextColorOverride = filledBarTextColor
+        initColors()
         postInvalidate()
     }
 
@@ -212,11 +224,11 @@ class StreakChart : View {
         colors[3] = primaryColor
         colors[2] = Color.argb(192, red, green, blue)
         colors[1] = Color.argb(96, red, green, blue)
-        colors[0] = res.getColor(R.attr.contrast20)
+        colors[0] = trackColorOverride ?: res.getColor(R.attr.contrast20)
         textColors = IntArray(3)
-        textColors[2] = res.getColor(R.attr.contrast0)
-        textColors[1] = res.getColor(R.attr.contrast60)
-        textColors[0] = res.getColor(R.attr.contrast80)
+        textColors[2] = filledTextColorOverride ?: TargetChart.resolveFilledBarTextColor(primaryColor)
+        textColors[1] = labelColorOverride ?: res.getColor(R.attr.contrast60)
+        textColors[0] = labelColorOverride ?: res.getColor(R.attr.contrast80)
     }
 
     private fun initPaints() {

@@ -41,11 +41,13 @@ class TargetChart : View {
     private var mediumContrastTextColor = 0
     private var highContrastReverseTextColor = 0
     private var lowContrastTextColor = 0
+    private var barTextColorOverride: Int? = null
     private val rect = RectF()
     private val barRect = RectF()
     private var values = emptyList<Double>()
     private var labels = emptyList<String>()
     private var targets = emptyList<Double>()
+    private var isAtMost = false
     private var maxLabelSize = 0f
     private var tinyTextSize = 0f
 
@@ -59,6 +61,13 @@ class TargetChart : View {
 
     fun setColor(color: Int) {
         primaryColor = color
+        postInvalidate()
+    }
+
+    fun setSurfaceColors(trackColor: Int, labelColor: Int, barTextColor: Int? = null) {
+        lowContrastTextColor = trackColor
+        mediumContrastTextColor = labelColor
+        barTextColorOverride = barTextColor
         postInvalidate()
     }
 
@@ -139,11 +148,17 @@ class TargetChart : View {
         paint!!.textSize = tinyTextSize
         paint!!.textAlign = Paint.Align.CENTER
         yTextAdjust = (paint!!.descent() + paint!!.ascent()) / 2.0f
-        val remaining = targets[row] - values[row]
-        val completedText = values[row].toShortString()
+        val remaining = max(0.0, targets[row] - values[row])
+        val isExceededAtMost = isAtMost && values[row] > targets[row]
+        val completedText = if (isExceededAtMost) {
+            val combined = "${values[row].toShortString()} / ${targets[row].toShortString()}"
+            if (completedWidth > paint!!.measureText(combined) + 2 * padding) combined else values[row].toShortString()
+        } else {
+            values[row].toShortString()
+        }
         val remainingText = remaining.toShortString()
         if (completedWidth > paint!!.measureText(completedText) + 2 * padding) {
-            paint!!.color = highContrastReverseTextColor
+            paint!!.color = barTextColorOverride ?: resolveFilledBarTextColor(primaryColor)
             canvas.drawText(
                 completedText,
                 barRect.centerX(),
@@ -151,7 +166,7 @@ class TargetChart : View {
                 paint!!
             )
         }
-        if (remainingWidth > paint!!.measureText(remainingText) + 2 * padding) {
+        if (remaining > 0.0 && remainingWidth > paint!!.measureText(remainingText) + 2 * padding) {
             paint!!.color = mediumContrastTextColor
             barRect[rect.left + stop + padding + completedWidth, barRect.top, rect.right - padding] =
                 barRect.bottom
@@ -188,5 +203,38 @@ class TargetChart : View {
     fun setTargets(targets: List<Double>) {
         this.targets = targets
         requestLayout()
+    }
+
+    fun setIsAtMost(atMost: Boolean) {
+        if (this.isAtMost != atMost) {
+            this.isAtMost = atMost
+            invalidate()
+        }
+    }
+
+    companion object {
+        private fun linearizeChannel(channel: Int): Double {
+            val c = channel / 255.0
+            return if (c <= 0.04045) {
+                c / 12.92
+            } else {
+                Math.pow((c + 0.055) / 1.055, 2.4)
+            }
+        }
+
+        fun resolveFilledBarTextColor(fillColor: Int): Int {
+            val r = (fillColor ushr 16) and 0xFF
+            val g = (fillColor ushr 8) and 0xFF
+            val b = fillColor and 0xFF
+            val luminance =
+                0.2126 * linearizeChannel(r) +
+                    0.7152 * linearizeChannel(g) +
+                    0.0722 * linearizeChannel(b)
+            return if (luminance > 0.42) {
+                0xFF111318.toInt()
+            } else {
+                Color.WHITE
+            }
+        }
     }
 }

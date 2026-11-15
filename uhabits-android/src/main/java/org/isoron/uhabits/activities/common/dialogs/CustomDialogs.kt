@@ -5,6 +5,7 @@
  */
 package org.isoron.uhabits.activities.common.dialogs
 
+import android.app.Dialog
 import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.Color
@@ -20,22 +21,22 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
-import android.widget.ImageView
 import android.widget.DatePicker
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.widget.CompoundButtonCompat
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.color.MaterialColors
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import org.isoron.platform.time.LocalDate
-import org.isoron.uhabits.R
 import org.isoron.uhabits.HabitsApplication
+import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.settings.AccentColorManager
 import org.isoron.uhabits.activities.settings.SettingsThemePalette
 import org.isoron.uhabits.activities.settings.SettingsThemePaletteResolver
@@ -55,14 +56,16 @@ object CustomDialogs {
         } else {
             val isDark = (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
             SettingsThemePalette(
-                background = if (isDark) 0xFF121212.toInt() else Color.WHITE,
+                background = if (isDark) 0xFF111318.toInt() else 0xFFF6F7F9.toInt(),
                 surface = if (isDark) 0xFF1A1D23.toInt() else Color.WHITE,
                 border = if (isDark) 0x1FFFFFFF else 0xFFD9DEE5.toInt(),
                 divider = if (isDark) 0x1FFFFFFF else 0xFFE7EBF0.toInt(),
                 onSurface = if (isDark) 0xFFF1F2F5.toInt() else 0xFF191C20.toInt(),
                 onSurfaceVariant = if (isDark) 0xFFAEB3BD.toInt() else 0xFF626872.toInt(),
                 isDark = isDark,
-                isPureBlack = false
+                isPureBlack = false,
+                dialogSurface = if (isDark) 0xFF1A1D23.toInt() else Color.WHITE,
+                dialogBorder = if (isDark) 0x1FFFFFFF else 0xFFD9DEE5.toInt()
             )
         }
     }
@@ -105,13 +108,45 @@ object CustomDialogs {
         root.background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = density * 16f
-            setColor(palette.surface)
-            setStroke((density * 1f).toInt().coerceAtLeast(1), palette.border)
+            setColor(palette.dialogSurface)
+            setStroke((density * 1f).toInt().coerceAtLeast(1), palette.dialogBorder)
         }
         dialog.window?.let { window ->
             window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             // Clear default window padding so custom dialog dimensions are fully in control
             window.decorView.setPadding(0, 0, 0, 0)
+        }
+    }
+
+    fun styleBottomSheet(
+        dialog: Dialog?,
+        context: Context,
+        palette: SettingsThemePalette = resolvePalette(context),
+        cornerRadiusDp: Float = 16f
+    ) {
+        if (dialog == null) return
+        val density = context.resources.displayMetrics.density
+        val r = cornerRadiusDp * density
+        dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        dialog.findViewById<FrameLayout>(com.google.android.material.R.id.design_bottom_sheet)?.let { sheet ->
+            sheet.elevation = 0f
+            sheet.clipToOutline = true
+            sheet.outlineProvider = object : android.view.ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: android.graphics.Outline) {
+                    if (view.width > 0 && view.height > 0) {
+                        outline.setRoundRect(0, 0, view.width, view.height + r.toInt(), r)
+                    } else {
+                        outline.setEmpty()
+                    }
+                }
+            }
+            sheet.background = GradientDrawable().apply {
+                setColor(palette.dialogSurface)
+                cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
+                if (palette.isPureBlack) {
+                    setStroke((density * 1f).toInt().coerceAtLeast(1), palette.dialogBorder)
+                }
+            }
         }
     }
 
@@ -133,15 +168,113 @@ object CustomDialogs {
         button.background = RippleDrawable(rippleColor, null, mask)
     }
 
-    private fun styleChoiceRowBackground(rowView: View, palette: SettingsThemePalette) {
+    private fun styleChoiceRowBackground(
+        rowView: View,
+        palette: SettingsThemePalette,
+        selectedAccentColor: Int? = null
+    ) {
         val density = rowView.resources.displayMetrics.density
+        val baseDrawable = if (selectedAccentColor != null) {
+            GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 10f * density
+                setColor(adjustAlpha(selectedAccentColor, 0.12f))
+                setStroke((1f * density).toInt().coerceAtLeast(1), adjustAlpha(selectedAccentColor, 0.35f))
+            }
+        } else {
+            null
+        }
         val mask = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            cornerRadius = 8f * density
+            cornerRadius = 10f * density
             setColor(Color.WHITE)
         }
         val rippleColor = ColorStateList.valueOf(adjustAlpha(palette.onSurface, 0.10f))
-        rowView.background = RippleDrawable(rippleColor, null, mask)
+        rowView.background = RippleDrawable(rippleColor, baseDrawable, mask)
+    }
+
+    fun resolveStatisticsStartSelection(
+        current: LocalDate?,
+        today: LocalDate,
+        thisMonday: LocalDate
+    ): Int {
+        if (current == null) return -1
+        return when (current) {
+            today -> 0
+            thisMonday -> 1
+            else -> 2
+        }
+    }
+
+    private fun styleDatePickerHeader(datePicker: DatePicker, palette: SettingsThemePalette) {
+        val density = datePicker.resources.displayMetrics.density
+        val sysRes = android.content.res.Resources.getSystem()
+        val headerId = sysRes.getIdentifier("date_picker_header", "id", "android")
+        val yearId = sysRes.getIdentifier("date_picker_header_year", "id", "android")
+        val dateId = sysRes.getIdentifier("date_picker_header_date", "id", "android")
+        val lunarId = sysRes.getIdentifier("date_picker_header_lunar", "id", "android")
+        val header = if (headerId != 0) datePicker.findViewById<View>(headerId) else null
+        if (header != null) {
+            header.minimumHeight = 0
+            header.setPadding(
+                (14f * density).toInt(),
+                (10f * density).toInt(),
+                (14f * density).toInt(),
+                (10f * density).toInt()
+            )
+            header.layoutParams?.let { lp ->
+                lp.width = ViewGroup.LayoutParams.MATCH_PARENT
+                lp.height = ViewGroup.LayoutParams.WRAP_CONTENT
+                if (lp is ViewGroup.MarginLayoutParams) {
+                    lp.leftMargin = 0
+                    lp.rightMargin = 0
+                    lp.topMargin = 0
+                    lp.bottomMargin = (4f * density).toInt()
+                }
+                header.layoutParams = lp
+            }
+            header.background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 12f * density
+                setColor(palette.surfaceVariant)
+                setStroke((1f * density).toInt().coerceAtLeast(1), palette.border)
+            }
+        }
+        val yearView = if (yearId != 0) datePicker.findViewById<TextView>(yearId) else null
+        yearView?.apply {
+            setTextColor(palette.onSurfaceVariant)
+            textSize = 13f
+            includeFontPadding = false
+            setPadding(0, 0, 0, 0)
+            (layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
+                lp.topMargin = 0
+                lp.bottomMargin = 0
+                lp.marginStart = 0
+                lp.leftMargin = 0
+                layoutParams = lp
+            }
+        }
+        val dateView = if (dateId != 0) datePicker.findViewById<TextView>(dateId) else null
+        dateView?.apply {
+            setTextColor(palette.onSurface)
+            textSize = 21f
+            includeFontPadding = false
+            setPadding(0, 0, 0, 0)
+            (layoutParams as? ViewGroup.MarginLayoutParams)?.let { lp ->
+                lp.topMargin = (3f * density).toInt()
+                lp.bottomMargin = 0
+                lp.marginStart = 0
+                lp.leftMargin = 0
+                if (lp is android.widget.RelativeLayout.LayoutParams && yearId != 0) {
+                    lp.addRule(android.widget.RelativeLayout.BELOW, yearId)
+                    lp.addRule(android.widget.RelativeLayout.ALIGN_START, yearId)
+                }
+                layoutParams = lp
+            }
+        }
+        if (lunarId != 0) {
+            datePicker.findViewById<TextView>(lunarId)?.setTextColor(palette.onSurfaceVariant)
+        }
     }
 
     fun styleText(
@@ -266,11 +399,11 @@ object CustomDialogs {
         val palette = resolvePalette(label.context)
         val accentColor = resolveAccentColor(label.context)
         label.setTextColor(palette.onSurface)
-        label.textSize = 16f
-        radio.minHeight = (44f * radio.resources.displayMetrics.density).toInt()
+        label.textSize = 15f
+        radio.minHeight = (38f * radio.resources.displayMetrics.density).toInt()
         radio.minimumHeight = radio.minHeight
-        radio.scaleX = 0.82f
-        radio.scaleY = 0.82f
+        radio.scaleX = 0.80f
+        radio.scaleY = 0.80f
         CompoundButtonCompat.setButtonTintList(radio, ColorStateList.valueOf(accentColor))
         (radio.parent as? View)?.let { styleChoiceRowBackground(it, palette) }
     }
@@ -545,6 +678,9 @@ object CustomDialogs {
         }
 
         var currentSelection = selectedIndex.takeIf { it in options.indices } ?: -1
+        val palette = resolvePalette(dialogContext)
+        val accentColor = resolveAccentColor(dialogContext)
+        val rows = mutableListOf<View>()
         val radios = mutableListOf<RadioButton>()
 
         options.forEachIndexed { index, option ->
@@ -556,13 +692,18 @@ object CustomDialogs {
             radio.isChecked = index == currentSelection
             label.text = option
             styleChoiceRow(radio, label)
+            styleChoiceRowBackground(row, palette, if (index == currentSelection) accentColor else null)
             row.setOnClickListener {
                 currentSelection = index
                 radios.forEachIndexed { radioIndex, item -> item.isChecked = radioIndex == index }
+                rows.forEachIndexed { rowIndex, r ->
+                    styleChoiceRowBackground(r, palette, if (rowIndex == index) accentColor else null)
+                }
                 onSelect(index)
                 dialog.dismiss()
             }
 
+            rows += row
             radios += radio
             optionsContainer.addView(row)
         }
@@ -628,6 +769,7 @@ object CustomDialogs {
         dialog.show()
         styleDialogShell(dialog, view)
         styleText(dialogTitle, null, btnNegative, btnPositive, null, isDestructive = false)
+        styleDatePickerHeader(datePicker, resolvePalette(dialogContext))
         return dialog
     }
 
