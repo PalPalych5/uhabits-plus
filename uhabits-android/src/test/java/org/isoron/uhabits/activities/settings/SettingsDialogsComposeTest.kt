@@ -72,6 +72,30 @@ class SettingsDialogsComposeTest {
         assertTrue(dialogsSource.contains("selectableGroup()"))
     }
 
+    @Test
+    fun statisticsStartSelectionMapsNullTodayMondayAndCustomDate() {
+        val monday = org.isoron.platform.time.LocalDate(2026, 11, 9)
+        val today = org.isoron.platform.time.LocalDate(2026, 11, 14)
+        val custom = org.isoron.platform.time.LocalDate(2026, 10, 1)
+
+        assertEquals(
+            -1,
+            org.isoron.uhabits.activities.common.dialogs.CustomDialogs.resolveStatisticsStartSelection(null, today, monday),
+        )
+        assertEquals(
+            0,
+            org.isoron.uhabits.activities.common.dialogs.CustomDialogs.resolveStatisticsStartSelection(today, today, monday),
+        )
+        assertEquals(
+            1,
+            org.isoron.uhabits.activities.common.dialogs.CustomDialogs.resolveStatisticsStartSelection(monday, today, monday),
+        )
+        assertEquals(
+            2,
+            org.isoron.uhabits.activities.common.dialogs.CustomDialogs.resolveStatisticsStartSelection(custom, today, monday),
+        )
+    }
+
     private fun readSettingsSource(fileName: String): String {
         val sourceDir = listOf(
             Path.of("src/main/java/org/isoron/uhabits/activities/settings"),

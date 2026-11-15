@@ -1931,10 +1931,16 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     private fun showGlobalStatisticsStartDateDialog() {
         if (!isAdded) return
         val context = requireContext()
+        val app = context.applicationContext as HabitsApplication
+        val currentStart = app.component.habitList.globalStatisticsStartDate
+        val selectedIndex = CustomDialogs.resolveStatisticsStartSelection(
+            current = currentStart,
+            today = getToday(),
+            thisMonday = thisMonday(),
+        )
         val options = listOf(
             getString(R.string.today),
             getString(R.string.this_monday),
-            getString(R.string.next_monday),
             getString(R.string.select_date)
         )
         val colors = UHabitComposeColors.fromPalette(
@@ -1947,13 +1953,13 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 StatisticsStartDateDialogContent(
                     colors = colors,
                     options = options,
+                    selectedIndex = selectedIndex,
                     onOptionSelected = { which ->
                         dialogRef?.dismiss()
                         when (which) {
                             0 -> applyGlobalStatisticsStart(getToday())
                             1 -> applyGlobalStatisticsStart(thisMonday())
-                            2 -> applyGlobalStatisticsStart(thisMonday().plus(7))
-                            else -> showDatePicker { date ->
+                            else -> showDatePicker(currentStart) { date ->
                                 if (date != null) applyGlobalStatisticsStart(date)
                             }
                         }

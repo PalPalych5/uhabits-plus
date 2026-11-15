@@ -130,11 +130,7 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener, M
             setContent {
                 UHabitComposeTheme(colors = colors) {
                     val currentColors = LocalUHabitComposeColors.current
-                    val dialogSurface = if (currentColors.isPureBlack) {
-                        androidx.compose.ui.graphics.Color(UHabitElevationAndBorders.AMOLED_BORDERED_CARD_SURFACE_ARGB)
-                    } else {
-                        androidx.compose.ui.graphics.Color(currentColors.surface)
-                    }
+                    val dialogSurface = currentColors.dialogSurfaceColor
                     val harmonizedTheme = rememberHarmonizedChartTheme(
                         baseTheme = themeSwitcher.currentTheme,
                         colors = currentColors,

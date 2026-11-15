@@ -160,8 +160,11 @@ class CreateContainerDialog : BottomSheetDialogFragment() {
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = GradientDrawable().apply {
-                setColor(palette.surface)
+                setColor(palette.dialogSurface)
                 cornerRadii = floatArrayOf(dp(20f), dp(20f), dp(20f), dp(20f), 0f, 0f, 0f, 0f)
+                if (palette.isPureBlack) {
+                    setStroke(dp(1f).toInt().coerceAtLeast(1), palette.dialogBorder)
+                }
             }
             setPadding(dp(20f).toInt(), dp(12f).toInt(), dp(20f).toInt(), dp(24f).toInt())
         }

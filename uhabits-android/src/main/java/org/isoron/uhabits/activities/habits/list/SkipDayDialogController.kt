@@ -9,21 +9,29 @@ import android.graphics.drawable.ColorDrawable
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.Fragment
@@ -183,6 +191,7 @@ class SkipDayDialogController(
 
 internal data class SphereOption(val key: String, val name: String)
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SkipDayDialogContent(
     count: Int,
@@ -197,6 +206,7 @@ internal fun SkipDayDialogContent(
     var selectedSpheres by remember { mutableStateOf(sphereOptions.map { it.key }.toSet()) }
     var skipSphereless by remember { mutableStateOf(true) }
     var noteText by remember { mutableStateOf("") }
+    var noteFocused by remember { mutableStateOf(false) }
 
     val hasGrouping = sphereOptions.isNotEmpty() || hasSphereless
 
@@ -213,156 +223,169 @@ internal fun SkipDayDialogContent(
 
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = colors.surfaceColor,
-        border = BorderStroke(1.dp, colors.borderColor),
+        color = colors.dialogSurfaceColor,
+        border = BorderStroke(1.dp, colors.dialogBorderColor),
         shadowElevation = 0.dp,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        Column(modifier = Modifier.padding(20.dp).verticalScroll(rememberScrollState())) {
+        Column(
+            modifier = Modifier
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
             Text(
                 text = stringResource(R.string.skip_day_dialog_title),
-                style = MaterialTheme.typography.titleMedium.copy(fontSize = 20.sp, fontWeight = FontWeight.SemiBold),
-                color = colors.foregroundColor
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+                color = colors.foregroundColor,
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = "$formattedDate • $habitCountText",
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
-                color = colors.secondaryColor
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                color = colors.secondaryColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = stringResource(R.string.skip_day_dialog_impact),
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
-                color = colors.secondaryColor
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontSize = 12.sp,
+                    lineHeight = 15.sp,
+                ),
+                color = colors.secondaryColor.copy(alpha = 0.9f),
             )
-            Spacer(modifier = Modifier.height(12.dp))
 
-            // Radio 1: All habits
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { allHabits = true }
-                    .padding(vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                RadioButton(
-                    selected = allHabits,
-                    onClick = { allHabits = true },
-                    colors = RadioButtonDefaults.colors(selectedColor = colors.accentColor)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.skip_day_all),
-                    color = colors.foregroundColor,
-                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp)
-                )
-            }
-
-            // Radio 2: By sphere (if available)
             if (hasGrouping) {
+                Spacer(modifier = Modifier.height(12.dp))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { allHabits = false }
-                        .padding(vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(colors.surfaceVariantColor.copy(alpha = 0.65f))
+                        .border(1.dp, colors.borderColor, RoundedCornerShape(10.dp))
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    RadioButton(
-                        selected = !allHabits,
-                        onClick = { allHabits = false },
-                        colors = RadioButtonDefaults.colors(selectedColor = colors.accentColor)
+                    SkipScopeSegment(
+                        label = stringResource(R.string.skip_day_all),
+                        selected = allHabits,
+                        colors = colors,
+                        modifier = Modifier.weight(1f),
+                        onClick = { allHabits = true },
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = stringResource(R.string.skip_day_by_sphere),
-                        color = colors.foregroundColor,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp)
+                    SkipScopeSegment(
+                        label = stringResource(R.string.skip_day_by_sphere),
+                        selected = !allHabits,
+                        colors = colors,
+                        modifier = Modifier.weight(1f),
+                        onClick = { allHabits = false },
                     )
                 }
 
-                // Checkbox list under "By sphere"
                 if (!allHabits) {
-                    Column(modifier = Modifier.padding(start = 32.dp, top = 2.dp, bottom = 4.dp)) {
-                        sphereOptions.forEach { opt ->
-                            val checked = selectedSpheres.contains(opt.key)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        selectedSpheres = if (checked) selectedSpheres - opt.key else selectedSpheres + opt.key
-                                    }
-                                    .padding(vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Checkbox(
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 176.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            sphereOptions.forEach { opt ->
+                                val checked = selectedSpheres.contains(opt.key)
+                                SkipSphereChip(
+                                    label = opt.name,
                                     checked = checked,
-                                    onCheckedChange = { isChecked ->
-                                        selectedSpheres = if (isChecked) selectedSpheres + opt.key else selectedSpheres - opt.key
+                                    colors = colors,
+                                    onToggle = {
+                                        selectedSpheres = if (checked) {
+                                            selectedSpheres - opt.key
+                                        } else {
+                                            selectedSpheres + opt.key
+                                        }
                                     },
-                                    colors = CheckboxDefaults.colors(checkedColor = colors.accentColor, checkmarkColor = colors.surfaceColor)
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(opt.name, color = colors.foregroundColor, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp))
                             }
-                        }
-                        if (hasSphereless) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { skipSphereless = !skipSphereless }
-                                    .padding(vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Checkbox(
+                            if (hasSphereless) {
+                                SkipSphereChip(
+                                    label = stringResource(R.string.skip_day_other_sphere),
                                     checked = skipSphereless,
-                                    onCheckedChange = { skipSphereless = it },
-                                    colors = CheckboxDefaults.colors(checkedColor = colors.accentColor, checkmarkColor = colors.surfaceColor)
+                                    colors = colors,
+                                    onToggle = { skipSphereless = !skipSphereless },
                                 )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(stringResource(R.string.skip_day_other_sphere), color = colors.foregroundColor, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp))
                             }
                         }
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
-            OutlinedTextField(
-                value = noteText,
-                onValueChange = { noteText = it },
-                placeholder = {
+            Spacer(modifier = Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 42.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(colors.surfaceVariantColor.copy(alpha = 0.35f))
+                    .border(
+                        width = if (noteFocused) 1.5.dp else 1.dp,
+                        color = if (noteFocused) colors.accentColor else colors.borderColor,
+                        shape = RoundedCornerShape(10.dp),
+                    )
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                if (noteText.isEmpty()) {
                     Text(
                         text = stringResource(R.string.skip_day_note_hint),
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Normal
-                        ),
-                        color = colors.secondaryColor
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                        color = colors.secondaryColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                },
-                textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = colors.accentColor,
-                    unfocusedBorderColor = colors.borderColor,
-                    focusedTextColor = colors.foregroundColor,
-                    unfocusedTextColor = colors.foregroundColor,
-                    cursorColor = colors.accentColor
+                }
+                BasicTextField(
+                    value = noteText,
+                    onValueChange = { noteText = it },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 13.sp,
+                        color = colors.foregroundColor,
+                    ),
+                    cursorBrush = SolidColor(colors.accentColor),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { noteFocused = it.isFocused },
                 )
-            )
+            }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(onClick = onCancel) {
-                    Text(stringResource(android.R.string.cancel), color = colors.secondaryColor)
+                TextButton(
+                    onClick = onCancel,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.heightIn(min = 36.dp),
+                ) {
+                    Text(
+                        text = stringResource(android.R.string.cancel),
+                        color = colors.secondaryColor,
+                        fontSize = 14.sp,
+                    )
                 }
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(6.dp))
                 val contrastWithWhite = androidx.core.graphics.ColorUtils.calculateContrast(
                     android.graphics.Color.WHITE,
                     colors.accentColor.toArgb()
@@ -372,15 +395,100 @@ internal fun SkipDayDialogContent(
                     onClick = {
                         onConfirm(allHabits, selectedSpheres, skipSphereless, noteText)
                     },
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
+                    modifier = Modifier.heightIn(min = 36.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = colors.accentColor,
                         contentColor = buttonTextColor
                     )
                 ) {
-                    Text(stringResource(R.string.skip_day_confirm), color = buttonTextColor)
+                    Text(
+                        text = stringResource(R.string.skip_day_confirm),
+                        color = buttonTextColor,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SkipScopeSegment(
+    label: String,
+    selected: Boolean,
+    colors: UHabitComposeColors,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = when {
+            !selected -> Color.Transparent
+            colors.isPureBlack -> colors.surfaceVariantColor
+            else -> colors.dialogSurfaceColor
+        },
+        border = if (selected) BorderStroke(1.dp, colors.accentColor.copy(alpha = 0.5f)) else null,
+        shadowElevation = 0.dp,
+        modifier = modifier
+            .heightIn(min = 34.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick),
+    ) {
+        Box(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label,
+                color = if (selected) colors.foregroundColor else colors.secondaryColor,
+                fontSize = 12.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SkipSphereChip(
+    label: String,
+    checked: Boolean,
+    colors: UHabitComposeColors,
+    onToggle: () -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (checked) {
+            colors.accentColor.copy(alpha = 0.16f)
+        } else {
+            colors.surfaceVariantColor.copy(alpha = 0.35f)
+        },
+        border = BorderStroke(
+            width = if (checked) 1.5.dp else 1.dp,
+            color = if (checked) colors.accentColor else colors.borderColor,
+        ),
+        shadowElevation = 0.dp,
+        modifier = Modifier
+            .heightIn(min = 32.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onToggle),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                color = if (checked) colors.foregroundColor else colors.secondaryColor,
+                fontSize = 12.sp,
+                fontWeight = if (checked) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

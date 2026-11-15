@@ -33,7 +33,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -53,23 +53,41 @@ class NumberDialog : AppCompatDialogFragment() {
 
     var onToggle: (Double, String) -> Unit = { _, _ -> }
     var onDismiss: () -> Unit = {}
-    var onRevokeContributions: ((List<String>) -> Unit)? = null
-    var onRestoreContributions: ((List<String>) -> Unit)? = null
 
     private var dismissedViaSaveAction = false
     private var originalNotes: String = ""
     private var currentNotes: String = ""
     private var originalValue: Double = 0.0
+    private var originalRawValue: Int = Entry.UNKNOWN
 
-    private var currentActiveFocus: Double = 0.0
-    private var currentTombstonedFocus: Double = 0.0
-    private var activeIds = mutableListOf<String>()
-    private var tombstonedIds = mutableListOf<String>()
-    private var habitUnit: String = ""
-    private var hasManualEntry: Boolean = false
-    private var hasCompleteCoverage: Boolean = true
+    private var initialManualMillis: Int = 0
+    private var initialEffectiveMillis: Int = 0
+    private var hasEffectiveTotal: Boolean = false
+    private var validationErrorState by mutableStateOf<String?>(null)
 
     internal var valueView: EditText? = null
+
+    companion object CompanionFormat {
+        sealed class SaveResolution {
+            data class Success(val totalValue: Double) : SaveResolution()
+        }
+
+        internal fun formatMillisForInput(millis: Int): String {
+            if (millis <= 0) return "0"
+            return DecimalFormat("#.###").format(millis / 1000.0)
+        }
+
+        internal fun initialDisplayMillis(
+            initialManualMillis: Int,
+            effectiveMillis: Int? = null,
+            activeFocusMillis: Int = 0,
+            hasContributions: Boolean = false
+        ): Int = effectiveMillis ?: if (hasContributions) initialManualMillis + activeFocusMillis else initialManualMillis
+
+        internal fun resolveManualSave(
+            enteredTotalMillis: Int,
+        ): SaveResolution = SaveResolution.Success(enteredTotalMillis.coerceAtLeast(0) / 1000.0)
+    }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val appComponent = (requireActivity().application as HabitsApplication).component
@@ -80,24 +98,25 @@ class NumberDialog : AppCompatDialogFragment() {
         originalNotes = requireArguments().getString("notes", "") ?: ""
         currentNotes = originalNotes
         originalValue = requireArguments().getDouble("value", 0.0)
+        originalRawValue = arguments?.getInt("originalRawValue", Int.MIN_VALUE)
+            ?.takeIf { it != Int.MIN_VALUE }
+            ?: runCatching { Entry.toScaledValue(originalValue) }.getOrDefault(Entry.UNKNOWN)
 
-        val focusVal = arguments?.getDouble("focusValue", 0.0) ?: 0.0
-        val tombstonedVal = arguments?.getDouble("tombstonedFocusValue", 0.0) ?: 0.0
-        activeIds = (arguments?.getStringArrayList("activeContributionIds") ?: arrayListOf()).toMutableList()
-        tombstonedIds = (arguments?.getStringArrayList("tombstonedContributionIds") ?: arrayListOf()).toMutableList()
-        currentActiveFocus = focusVal
-        currentTombstonedFocus = tombstonedVal
-        habitUnit = arguments?.getString("unit") ?: ""
-        hasManualEntry = arguments?.getBoolean("hasManualEntry", false) ?: false
-        hasCompleteCoverage = arguments?.getBoolean("hasCompleteCoverage", true) ?: true
+        initialManualMillis = if (originalRawValue != Entry.UNKNOWN && originalRawValue != Entry.SKIP && originalRawValue >= 0) {
+            originalRawValue
+        } else 0
+        val effectiveMillisArg = arguments?.getInt("effectiveMillis", Int.MIN_VALUE) ?: Int.MIN_VALUE
+        hasEffectiveTotal = (arguments?.getBoolean("hasEffectiveTotal", false) ?: false) && effectiveMillisArg != Int.MIN_VALUE
+        val focusMillisFallback = (arguments?.getInt("focusMillis", 0) ?: 0).coerceAtLeast(0)
 
-        val initialFormatted = when {
-            originalValue < 0.0 -> "0"
-            originalValue < 0.01 -> "0"
-            else -> DecimalFormat("#.##").format(originalValue)
-        }
-
-        val hasContributions = activeIds.isNotEmpty() || tombstonedIds.isNotEmpty() || currentActiveFocus > 0.0 || currentTombstonedFocus > 0.0
+        val initialDisplayMillis = CompanionFormat.initialDisplayMillis(
+            initialManualMillis = initialManualMillis,
+            effectiveMillis = if (hasEffectiveTotal) effectiveMillisArg.coerceAtLeast(0) else null,
+            activeFocusMillis = focusMillisFallback,
+            hasContributions = focusMillisFallback > 0
+        )
+        initialEffectiveMillis = initialDisplayMillis
+        val initialFormatted = formatMillisForInput(initialDisplayMillis)
 
         val palette = SettingsThemePaletteResolver.resolve(requireContext(), prefs)
         val colors = UHabitComposeColors.fromPalette(palette)
@@ -111,8 +130,6 @@ class NumberDialog : AppCompatDialogFragment() {
             setContent {
                 UHabitComposeTheme(colors = colors) {
                     var notesState by remember { mutableStateOf(originalNotes) }
-                    var activeFocusState by remember { mutableDoubleStateOf(currentActiveFocus) }
-                    var tombstonedFocusState by remember { mutableDoubleStateOf(currentTombstonedFocus) }
 
                     Box(
                         modifier = Modifier
@@ -135,7 +152,6 @@ class NumberDialog : AppCompatDialogFragment() {
                         ) {
                             NumberDialogContent(
                                 initialFormattedValue = initialFormatted,
-                                habitUnit = habitUnit,
                                 habitColorArgb = color,
                                 notes = notesState,
                                 onNotesChanged = {
@@ -144,34 +160,10 @@ class NumberDialog : AppCompatDialogFragment() {
                                 },
                                 isSkipEnabled = prefs.isSkipEnabled,
                                 isUnknownEnabled = prefs.areQuestionMarksEnabled,
-                                activeFocus = activeFocusState,
-                                tombstonedFocus = tombstonedFocusState,
-                                hasContributions = hasContributions,
-                                hasManualEntry = hasManualEntry,
-                                hasCompleteCoverage = hasCompleteCoverage,
-                                originalValue = originalValue,
-                                onExcludeContributions = {
-                                    if (currentActiveFocus > 0.0 && activeIds.isNotEmpty()) {
-                                        val toRevoke = activeIds.toList()
-                                        onRevokeContributions?.invoke(toRevoke)
-                                        tombstonedIds.addAll(toRevoke)
-                                        activeIds.clear()
-                                        currentTombstonedFocus += currentActiveFocus
-                                        currentActiveFocus = 0.0
-                                        activeFocusState = 0.0
-                                        tombstonedFocusState = currentTombstonedFocus
-                                    }
-                                },
-                                onRestoreContributions = {
-                                    if (tombstonedIds.isNotEmpty()) {
-                                        val toRestore = tombstonedIds.toList()
-                                        onRestoreContributions?.invoke(toRestore)
-                                        activeIds.addAll(toRestore)
-                                        tombstonedIds.clear()
-                                        currentActiveFocus += currentTombstonedFocus
-                                        currentTombstonedFocus = 0.0
-                                        activeFocusState = currentActiveFocus
-                                        tombstonedFocusState = 0.0
+                                validationError = validationErrorState,
+                                onValueTextChanged = {
+                                    if (validationErrorState != null) {
+                                        validationErrorState = null
                                     }
                                 },
                                 onSaveClicked = { save() },
@@ -225,7 +217,12 @@ class NumberDialog : AppCompatDialogFragment() {
             val currentNotesTrimmed = currentNotes.trim()
             if (currentNotesTrimmed != originalNotes.trim()) {
                 try {
-                    onToggle(originalValue, currentNotesTrimmed)
+                    val preservedValue = if (hasEffectiveTotal && originalRawValue != Entry.SKIP) {
+                        initialEffectiveMillis / 1000.0
+                    } else {
+                        originalValue
+                    }
+                    onToggle(preservedValue, currentNotesTrimmed)
                 } catch (e: Exception) {
                     // Pre-existing accepted data or dismissal must not throw on note update
                 }
@@ -238,16 +235,21 @@ class NumberDialog : AppCompatDialogFragment() {
         val valueStr = valueView?.text?.toString() ?: ""
         when (val result = NumericalInputValidator.validateEntryInput(valueStr)) {
             is NumericalInputValidator.ValidationResult.Valid -> {
+                validationErrorState = null
                 dismissedViaSaveAction = true
                 onToggle(result.value, currentNotes.trim())
                 requireDialog().dismiss()
             }
             is NumericalInputValidator.ValidationResult.OutOfRange -> {
-                valueView?.error = getString(R.string.validation_number_out_of_range)
+                val msg = getString(R.string.validation_number_out_of_range)
+                validationErrorState = msg
+                valueView?.error = null
                 valueView?.requestFocus()
             }
             is NumericalInputValidator.ValidationResult.InvalidFormat -> {
-                valueView?.error = getString(R.string.validation_invalid_number_format)
+                val msg = getString(R.string.validation_invalid_number_format)
+                validationErrorState = msg
+                valueView?.error = null
                 valueView?.requestFocus()
             }
         }

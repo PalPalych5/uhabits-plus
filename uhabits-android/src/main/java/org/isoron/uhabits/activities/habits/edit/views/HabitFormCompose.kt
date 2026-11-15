@@ -78,6 +78,7 @@ import org.isoron.uhabits.compose.components.UHabitTextField
 import org.isoron.uhabits.core.containers.IconRef
 import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.HabitType
+import org.isoron.uhabits.core.models.MissingDataPolicy
 import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.PaletteColor
 import org.isoron.uhabits.core.models.WeekdayList
@@ -97,6 +98,7 @@ class HabitFormState(
     initialUnit: String = "",
     initialTargetValue: Double = 1.0,
     initialTargetType: NumericalHabitType = NumericalHabitType.AT_LEAST,
+    initialMissingDataPolicy: MissingDataPolicy? = null,
     initialFreqNum: Int = 1,
     initialFreqDen: Int = 1,
     initialDayTier: DayTier = DayTier.NORMAL,
@@ -151,6 +153,7 @@ class HabitFormState(
         get() = targetErrorRes?.let { "Error" }
         set(value) { targetErrorRes = if (value != null) R.string.validation_number_out_of_range else null }
     var targetType by mutableStateOf(initialTargetType)
+    var missingDataPolicy by mutableStateOf(initialMissingDataPolicy)
 
     var freqNum by mutableStateOf(initialFreqNum)
     var freqDen by mutableStateOf(initialFreqDen)
@@ -232,7 +235,8 @@ class HabitFormState(
         origTarget: Double,
         origColor: PaletteColor,
         origFreqNum: Int,
-        origFreqDen: Int
+        origFreqDen: Int,
+        origMissingDataPolicy: MissingDataPolicy? = missingDataPolicy
     ): Boolean {
         if (name.trim() != origName.trim()) return true
         if (question.trim() != origQuestion.trim()) return true
@@ -244,6 +248,11 @@ class HabitFormState(
                 else -> 0.0
             }
             if (Math.abs(parsed - origTarget) > 0.0001) return true
+            if (targetType == NumericalHabitType.AT_MOST) {
+                val origEffective = origMissingDataPolicy ?: MissingDataPolicy.DEFAULT_ZERO
+                val currEffective = missingDataPolicy ?: MissingDataPolicy.DEFAULT_ZERO
+                if (origEffective != currEffective) return true
+            }
         }
         if (color != origColor) return true
         if (freqNum != origFreqNum || freqDen != origFreqDen) return true
@@ -262,6 +271,7 @@ interface HabitFormActions {
     fun onPickSection()
     fun onPickFrequency()
     fun onPickTargetType()
+    fun onPickMissingDataPolicy()
     fun onPickDayTier()
     fun onPickReminderTime()
     fun onPickReminderDays()
@@ -902,6 +912,21 @@ private fun HabitGoalScheduleSection(
             colors = colors,
             onClick = actions::onPickFrequency
         )
+
+        if (state.habitType == HabitType.NUMERICAL && state.targetType == NumericalHabitType.AT_MOST) {
+            SettingDivider(colors)
+            val policyLabel = when (state.missingDataPolicy ?: MissingDataPolicy.DEFAULT_ZERO) {
+                MissingDataPolicy.DEFAULT_ZERO -> stringResource(R.string.missing_entries_count_as_zero)
+                MissingDataPolicy.UNKNOWN -> stringResource(R.string.missing_entries_unknown)
+            }
+            HabitSettingRow(
+                iconRes = R.drawable.ic_cat_calendar_days,
+                title = stringResource(R.string.missing_entries_policy_label),
+                value = policyLabel,
+                colors = colors,
+                onClick = actions::onPickMissingDataPolicy
+            )
+        }
 
         SettingDivider(colors)
 

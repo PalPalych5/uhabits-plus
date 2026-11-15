@@ -183,22 +183,39 @@ private fun DayTierMoveButton(
 internal fun StatisticsStartDateDialogContent(
     colors: UHabitComposeColors,
     options: List<String>,
+    selectedIndex: Int = -1,
     onOptionSelected: (Int) -> Unit,
 ) {
     UHabitComposeTheme(colors) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 4.dp)
+                .padding(vertical = 2.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             options.forEachIndexed { index, option ->
+                val isSelected = index == selectedIndex
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .heightIn(min = 42.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (isSelected) Color(colors.accent).copy(alpha = 0.12f) else Color.Transparent
+                        )
+                        .then(
+                            if (isSelected) {
+                                Modifier.border(
+                                    width = 1.dp,
+                                    color = Color(colors.accent).copy(alpha = 0.35f),
+                                    shape = RoundedCornerShape(10.dp),
+                                )
+                            } else {
+                                Modifier
+                            }
+                        )
                         .clickable(role = Role.RadioButton) { onOptionSelected(index) }
-                        .padding(horizontal = 8.dp, vertical = 10.dp),
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Box(
@@ -206,15 +223,26 @@ internal fun StatisticsStartDateDialogContent(
                             .size(18.dp)
                             .border(
                                 width = 1.75.dp,
-                                color = Color(colors.secondary),
+                                color = if (isSelected) Color(colors.accent) else Color(colors.secondary),
                                 shape = CircleShape,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (isSelected) {
+                            Box(
+                                modifier = Modifier
+                                    .size(9.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(colors.accent))
                             )
-                    )
-                    Spacer(modifier = Modifier.width(14.dp))
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
                     Text(
                         text = option,
                         color = Color(colors.foreground),
-                        fontSize = 16.sp,
+                        fontSize = 15.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                         lineHeight = 20.sp,
                         modifier = Modifier.weight(1f),
                     )

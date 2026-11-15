@@ -49,6 +49,7 @@ import org.isoron.uhabits.core.models.DayTier
 import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitType
+import org.isoron.uhabits.core.models.MissingDataPolicy
 import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.PaletteColor
 import org.isoron.uhabits.core.models.Reminder
@@ -145,6 +146,13 @@ class EditHabitActivity : AppCompatActivity(), HabitFormActions {
             if (::formState.isInitialized) formState.targetType = value
         }
 
+    var missingDataPolicy: MissingDataPolicy? = null
+        get() = if (::formState.isInitialized) formState.missingDataPolicy else field
+        set(value) {
+            field = value
+            if (::formState.isInitialized) formState.missingDataPolicy = value
+        }
+
     var dayTier: DayTier = DayTier.NORMAL
         get() = if (::formState.isInitialized) formState.dayTier else field
         set(value) {
@@ -209,6 +217,7 @@ class EditHabitActivity : AppCompatActivity(), HabitFormActions {
     private var origColor = PaletteColor(18)
     private var origFreqNum = 1
     private var origFreqDen = 1
+    private var origMissingDataPolicy: MissingDataPolicy? = null
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -250,6 +259,7 @@ class EditHabitActivity : AppCompatActivity(), HabitFormActions {
             freqNum = habit.frequency.numerator
             freqDen = habit.frequency.denominator
             targetType = habit.targetType
+            missingDataPolicy = habit.missingDataPolicy
             dayTier = habit.dayTier
             timerEnabled = habit.timerEnabled
             blockId = habit.blockId
@@ -282,6 +292,7 @@ class EditHabitActivity : AppCompatActivity(), HabitFormActions {
             origColor = habit.color
             origFreqNum = freqNum
             origFreqDen = freqDen
+            origMissingDataPolicy = habit.missingDataPolicy
         } else {
             habitType = HabitType.fromInt(intent.getIntExtra("habitType", HabitType.YES_NO.value))
             createArchived = intent.getBooleanExtra("createArchived", false)
@@ -303,6 +314,7 @@ class EditHabitActivity : AppCompatActivity(), HabitFormActions {
             reminderMin = state.getInt("reminderMin")
             reminderDays = WeekdayList(state.getInt("reminderDays"))
             dayTier = DayTier.fromString(state.getString("dayTier", DayTier.NORMAL.name))
+            missingDataPolicy = MissingDataPolicy.fromInt(state.getInt("missingDataPolicy", -1).takeIf { it >= 0 })
             timerEnabled = state.getBoolean("timerEnabled")
             val savedBlockId = state.getLong("blockId", -1L)
             blockId = if (savedBlockId == -1L) null else savedBlockId
@@ -328,6 +340,7 @@ class EditHabitActivity : AppCompatActivity(), HabitFormActions {
             initialUnit = initUnit,
             initialTargetValue = initTargetValue,
             initialTargetType = targetType,
+            initialMissingDataPolicy = missingDataPolicy,
             initialFreqNum = freqNum,
             initialFreqDen = freqDen,
             initialDayTier = dayTier,
@@ -647,6 +660,25 @@ class EditHabitActivity : AppCompatActivity(), HabitFormActions {
         }
     }
 
+    override fun onPickMissingDataPolicy() {
+        val policies = listOf(MissingDataPolicy.DEFAULT_ZERO, MissingDataPolicy.UNKNOWN)
+        val options = listOf(
+            getString(R.string.missing_entries_count_as_zero),
+            getString(R.string.missing_entries_unknown)
+        )
+        val current = missingDataPolicy ?: MissingDataPolicy.DEFAULT_ZERO
+        CustomDialogs.showSingleChoiceDialog(
+            context = this,
+            title = getString(R.string.missing_entries_policy_label),
+            options = options,
+            selectedIndex = policies.indexOf(current).coerceAtLeast(0)
+        ) { which ->
+            val selected = policies[which]
+            missingDataPolicy = selected
+            formState.missingDataPolicy = selected
+        }
+    }
+
     override fun onPickDayTier() {
         val tiers = DayTier.entries
         val labels = tiers.map { getString(it.labelResId) }
@@ -766,6 +798,11 @@ class EditHabitActivity : AppCompatActivity(), HabitFormActions {
             }
             habit.targetValue = parsedTarget
             habit.targetType = formState.targetType
+            habit.missingDataPolicy = if (formState.targetType == NumericalHabitType.AT_MOST) {
+                formState.missingDataPolicy ?: MissingDataPolicy.DEFAULT_ZERO
+            } else {
+                null
+            }
             habit.unit = formState.unit.trim()
             habit.timerEnabled = formState.timerEnabled && habit.unit.isMinuteUnit()
         } else {
@@ -933,7 +970,7 @@ class EditHabitActivity : AppCompatActivity(), HabitFormActions {
         if (::formState.isInitialized && !formState.isUnitTooltipDismissed) {
             formState.dismissUnitTooltip()
         }
-        if (habitId >= 0 && formState.hasChangesFrom(origName, origQuestion, origNotes, origUnit, origTarget, origColor, origFreqNum, origFreqDen)) {
+        if (habitId >= 0 && formState.hasChangesFrom(origName, origQuestion, origNotes, origUnit, origTarget, origColor, origFreqNum, origFreqDen, origMissingDataPolicy)) {
             AlertDialog.Builder(this)
                 .setTitle(R.string.discard_changes)
                 .setMessage(R.string.discard_changes_message)
@@ -988,6 +1025,7 @@ class EditHabitActivity : AppCompatActivity(), HabitFormActions {
             putInt("reminderMin", reminderMin)
             putInt("reminderDays", reminderDays.toInteger())
             putString("dayTier", dayTier.name)
+            putInt("missingDataPolicy", missingDataPolicy?.value ?: -1)
             putBoolean("timerEnabled", formState.timerEnabled)
             putLong("blockId", blockId ?: -1L)
             containerId?.let { putString("containerId", it) }

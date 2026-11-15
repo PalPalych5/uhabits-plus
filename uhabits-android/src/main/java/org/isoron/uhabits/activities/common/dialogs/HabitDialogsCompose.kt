@@ -51,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -62,6 +63,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -73,6 +75,7 @@ import org.isoron.uhabits.compose.UHabitElevationAndBorders
 import org.isoron.uhabits.compose.components.UHabitActionChip
 import org.isoron.uhabits.compose.components.UHabitDialogShell
 import org.isoron.uhabits.compose.components.UHabitTextField
+import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Entry.Companion.NO
 import org.isoron.uhabits.core.models.Entry.Companion.SKIP
 import org.isoron.uhabits.core.models.Entry.Companion.UNKNOWN
@@ -112,12 +115,8 @@ fun CheckmarkDialogContent(
     val neutralColor = colors.secondaryColor
     val shape = RoundedCornerShape(5.dp)
 
-    val surfaceColor = if (colors.isPureBlack) {
-        Color(UHabitElevationAndBorders.AMOLED_BORDERED_CARD_SURFACE_ARGB)
-    } else {
-        Color(colors.surface)
-    }
-    val borderColor = colors.resolveSectionBorderColor()
+    val surfaceColor = colors.dialogSurfaceColor
+    val borderColor = colors.dialogBorderColor
     val dividerColor = colors.resolveDividerColor()
 
     Column(
@@ -298,20 +297,13 @@ fun CheckmarkDialogContent(
 @Composable
 fun NumberDialogContent(
     initialFormattedValue: String,
-    habitUnit: String,
     habitColorArgb: Int,
     notes: String,
     onNotesChanged: (String) -> Unit,
     isSkipEnabled: Boolean,
     isUnknownEnabled: Boolean,
-    activeFocus: Double,
-    tombstonedFocus: Double,
-    hasContributions: Boolean,
-    hasManualEntry: Boolean,
-    hasCompleteCoverage: Boolean,
-    originalValue: Double,
-    onExcludeContributions: () -> Unit,
-    onRestoreContributions: () -> Unit,
+    validationError: String?,
+    onValueTextChanged: (String) -> Unit,
     onSaveClicked: () -> Unit,
     onSkipClicked: () -> Unit,
     onUnknownClicked: () -> Unit,
@@ -328,14 +320,10 @@ fun NumberDialogContent(
     val neutralColor = colors.secondaryColor
     val shape = RoundedCornerShape(5.dp)
 
-    val surfaceColor = if (colors.isPureBlack) {
-        Color(UHabitElevationAndBorders.AMOLED_BORDERED_CARD_SURFACE_ARGB)
-    } else {
-        Color(colors.surface)
-    }
-    val borderColor = colors.resolveSectionBorderColor()
+    val surfaceColor = colors.dialogSurfaceColor
+    val borderColor = colors.dialogBorderColor
     val dividerColor = colors.resolveDividerColor()
-    var enteredText by remember { mutableStateOf(initialFormattedValue) }
+    val errorColor = if (surfaceColor.luminance() < 0.5f) Color(0xFFEF9A9A) else Color(0xFFC62828)
 
     Column(
         modifier = modifier
@@ -344,28 +332,6 @@ fun NumberDialogContent(
             .background(surfaceColor)
             .border(1.dp, borderColor, shape)
     ) {
-        // Focus breakdown panel if contributions exist
-        if (hasContributions) {
-            FocusBreakdownPanel(
-                enteredText = enteredText,
-                habitUnit = habitUnit,
-                activeFocus = activeFocus,
-                tombstonedFocus = tombstonedFocus,
-                hasManualEntry = hasManualEntry,
-                hasCompleteCoverage = hasCompleteCoverage,
-                originalValue = originalValue,
-                onExcludeContributions = onExcludeContributions,
-                onRestoreContributions = onRestoreContributions,
-                colors = colors
-            )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(1.dp)
-                    .background(dividerColor)
-            )
-        }
-
         // Notes area: unboxed, clean, centered placeholder/hint, matching original
         Box(
             modifier = Modifier
@@ -405,6 +371,20 @@ fun NumberDialogContent(
             )
         }
 
+        if (!validationError.isNullOrBlank()) {
+            Text(
+                text = validationError,
+                style = TextStyle(
+                    color = errorColor,
+                    fontSize = 11.5.sp,
+                    textAlign = TextAlign.Center
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+        }
+
         // Horizontal hairline divider
         Box(
             modifier = Modifier
@@ -441,13 +421,15 @@ fun NumberDialogContent(
                             inputType = EditorInfo.TYPE_CLASS_NUMBER or EditorInfo.TYPE_NUMBER_FLAG_DECIMAL
                             val separator = DecimalFormatSymbols.getInstance().decimalSeparator
                             keyListener = DigitsKeyListener.getInstance("0123456789$separator")
+                            setSelectAllOnFocus(true)
                             setText(initialFormattedValue)
                             selectAll()
                             addTextChangedListener(object : TextWatcher {
                                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
                                 override fun afterTextChanged(s: Editable?) {
-                                    enteredText = s?.toString() ?: ""
+                                    val textStr = s?.toString() ?: ""
+                                    onValueTextChanged(textStr)
                                 }
                             })
                             setOnKeyListener { _, keyCode, event ->
@@ -460,6 +442,11 @@ fun NumberDialogContent(
                             post {
                                 requestFocusWithKeyboard()
                                 selectAll()
+                                postDelayed({
+                                    if (hasFocus() && text?.toString() == initialFormattedValue) {
+                                        selectAll()
+                                    }
+                                }, 270L)
                             }
                         }
                     }
@@ -569,141 +556,6 @@ fun NumberDialogContent(
         }
     }
 }
-
-@Composable
-private fun FocusBreakdownPanel(
-    enteredText: String,
-    habitUnit: String,
-    activeFocus: Double,
-    tombstonedFocus: Double,
-    hasManualEntry: Boolean,
-    hasCompleteCoverage: Boolean,
-    originalValue: Double,
-    onExcludeContributions: () -> Unit,
-    onRestoreContributions: () -> Unit,
-    colors: UHabitComposeColors
-) {
-    val exactFormat = remember { DecimalFormat("#.##") }
-    fun fmt(v: Double) = "${exactFormat.format(v)} $habitUnit".trim()
-
-    val parsedManual: Double? = if (enteredText.isNotBlank()) {
-        when (val res = NumericalInputValidator.validateEntryInput(enteredText.trim())) {
-            is NumericalInputValidator.ValidationResult.Valid -> if (res.value >= 0.0) res.value else null
-            else -> null
-        }
-    } else {
-        if (hasManualEntry && originalValue >= 0.0) originalValue else null
-    }
-
-    val total = (parsedManual ?: 0.0) + activeFocus
-    val isMin = parsedManual == null && activeFocus > 0.0 && !hasCompleteCoverage
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-    ) {
-        Text(
-            text = stringResource(R.string.focus_edit_breakdown_title),
-            style = TextStyle(
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                color = colors.foregroundColor
-            )
-        )
-
-        Spacer(Modifier.height(6.dp))
-
-        // Focus Row with Exclude / Restore
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val focusText = if (activeFocus > 0.0) {
-                stringResource(R.string.focus_edit_focus_label, fmt(activeFocus))
-            } else if (tombstonedFocus > 0.0) {
-                stringResource(R.string.focus_edit_focus_excluded_label, fmt(0.0), fmt(tombstonedFocus))
-            } else {
-                stringResource(R.string.focus_edit_focus_label, fmt(0.0))
-            }
-
-            Text(
-                text = focusText,
-                style = TextStyle(fontSize = 13.sp, color = colors.foregroundColor)
-            )
-
-            if (activeFocus > 0.0) {
-                Text(
-                    text = stringResource(R.string.focus_edit_exclude_action),
-                    style = TextStyle(
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(colors.accent)
-                    ),
-                    modifier = Modifier
-                        .clickable(role = Role.Button, onClick = onExcludeContributions)
-                        .padding(4.dp)
-                )
-            } else if (tombstonedFocus > 0.0) {
-                Text(
-                    text = stringResource(R.string.focus_edit_restore_action),
-                    style = TextStyle(
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(colors.accent)
-                    ),
-                    modifier = Modifier
-                        .clickable(role = Role.Button, onClick = onRestoreContributions)
-                        .padding(4.dp)
-                )
-            }
-        }
-
-        Spacer(Modifier.height(4.dp))
-
-        // Manual Row
-        val manualText = if (parsedManual != null) {
-            stringResource(R.string.focus_edit_manual_label, fmt(parsedManual))
-        } else {
-            stringResource(R.string.focus_edit_manual_none)
-        }
-        Text(
-            text = manualText,
-            style = TextStyle(fontSize = 13.sp, color = colors.foregroundColor)
-        )
-
-        Spacer(Modifier.height(4.dp))
-
-        // Total Row
-        val totalText = if (isMin) {
-            stringResource(R.string.focus_edit_total_min_label, fmt(total))
-        } else {
-            stringResource(R.string.focus_edit_total_label, fmt(total))
-        }
-        Text(
-            text = totalText,
-            style = TextStyle(
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.Bold,
-                color = colors.foregroundColor
-            )
-        )
-
-        Spacer(Modifier.height(6.dp))
-
-        // Hint
-        val hintText = if (activeFocus == 0.0 && tombstonedFocus > 0.0) {
-            stringResource(R.string.focus_edit_hint_excluded)
-        } else {
-            stringResource(R.string.focus_edit_hint)
-        }
-        Text(
-            text = hintText,
-            style = TextStyle(fontSize = 11.sp, color = colors.secondaryColor)
-        )
-    }
-}
-
 
 /**
  * Modern Material 3 content for history editor dialog ([HistoryEditorDialog]).

@@ -48,6 +48,16 @@ class AncestorsBottomSheetDialog : BottomSheetDialogFragment() {
     var items: List<AncestorItem> = emptyList()
     var onSelectAncestor: ((ContainerId?) -> Unit)? = null
 
+    override fun onStart() {
+        super.onStart()
+        val ctx = requireContext()
+        org.isoron.uhabits.activities.common.dialogs.CustomDialogs.styleBottomSheet(
+            dialog,
+            ctx,
+            MainTabsThemeBridge.resolve(ctx)
+        )
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -58,7 +68,7 @@ class AncestorsBottomSheetDialog : BottomSheetDialogFragment() {
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(palette.background)
+            setBackgroundColor(palette.dialogSurface)
             setPadding(dp(20f).toInt(), dp(16f).toInt(), dp(20f).toInt(), dp(24f).toInt())
         }
 

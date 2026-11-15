@@ -75,6 +75,16 @@ class DrillDownMoveDialog : BottomSheetDialogFragment() {
     private lateinit var itemsContainer: LinearLayout
     private lateinit var searchInput: EditText
 
+    override fun onStart() {
+        super.onStart()
+        val ctx = requireContext()
+        org.isoron.uhabits.activities.common.dialogs.CustomDialogs.styleBottomSheet(
+            dialog,
+            ctx,
+            MainTabsThemeBridge.resolve(ctx)
+        )
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -91,7 +101,7 @@ class DrillDownMoveDialog : BottomSheetDialogFragment() {
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(palette.background)
+            setBackgroundColor(palette.dialogSurface)
             setPadding(dp(20f).toInt(), dp(16f).toInt(), dp(20f).toInt(), dp(24f).toInt())
         }
 
