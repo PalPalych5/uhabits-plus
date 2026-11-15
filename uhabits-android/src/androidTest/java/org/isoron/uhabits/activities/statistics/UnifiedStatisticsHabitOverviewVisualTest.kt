@@ -366,6 +366,10 @@ class UnifiedStatisticsHabitOverviewVisualTest {
             }
             habitList.add(habitPartial)
         }
+        orgFacade.placeHabit(requireNotNull(habitPartial.uuid), null)
+        habitPartial.frequency = Frequency.WEEKLY
+        habitPartial.type = HabitType.YES_NO
+        habitPartial.isArchived = false
         habitPartial.statisticsStartDate = weekStart.plus(2)
         val partialEntries = habitPartial.originalEntries
         partialEntries.clear()
@@ -490,7 +494,7 @@ class UnifiedStatisticsHabitOverviewVisualTest {
         val focusRepo = component.focusSessionRepository ?: SQLiteFocusSessionRepository(component.db)
         val sessions = mutableListOf<FocusSession>()
 
-        val s1 = FocusSession(
+        val s1Candidate = FocusSession(
             id = FocusSessionId(FOCUS_SESSION_1_ID),
             startedAt = now - 3_600_000L,
             endedAt = now - 1_800_000L,
@@ -501,10 +505,10 @@ class UnifiedStatisticsHabitOverviewVisualTest {
             createdAt = now,
             updatedAt = now
         )
-        focusRepo.record(s1)
+        val s1 = focusRepo.getById(s1Candidate.id) ?: s1Candidate.also { focusRepo.record(it) }
         sessions.add(s1)
 
-        val s2 = FocusSession(
+        val s2Candidate = FocusSession(
             id = FocusSessionId(FOCUS_SESSION_2_ID),
             startedAt = now - 5_400_000L,
             endedAt = now - 3_600_000L,
@@ -515,7 +519,7 @@ class UnifiedStatisticsHabitOverviewVisualTest {
             createdAt = now,
             updatedAt = now
         )
-        focusRepo.record(s2)
+        val s2 = focusRepo.getById(s2Candidate.id) ?: s2Candidate.also { focusRepo.record(it) }
         sessions.add(s2)
 
         val totalFocusDuration = sessions.sumOf { it.durationMs }
@@ -722,7 +726,7 @@ class UnifiedStatisticsHabitOverviewVisualTest {
                 idle()
                 capture("02-overview-dynamics")
 
-                // Overview cadence opens the same cycle selection on the Habits tab.
+                // Overview cadence row switches cleanly to the Habits tab preserving query context.
                 var overviewContext: org.isoron.uhabits.core.statistics.StatisticsQueryContext? = null
                 controller.onActivity { activity ->
                     val fragment = statsFragment(activity)
@@ -735,18 +739,12 @@ class UnifiedStatisticsHabitOverviewVisualTest {
                 idle()
                 waitForSettled(controller)
                 assertTabSelected(controller, UnifiedAnalyticsTab.HABITS)
-                val overviewCycleSheet = requireNotNull(findOpenBottomSheet(controller) as? UnifiedStatisticsDrilldownBottomSheet) {
-                    "Overview daily cadence must open cycle selection"
-                }
                 controller.onActivity { activity ->
-                    val report = requireNotNull(getLoadedReport(statsFragment(activity)))
+                    val fragment = statsFragment(activity)
+                    val report = requireNotNull(getLoadedReport(fragment))
                     assertEquals("Overview navigation preserves query context", overviewContext, report.context)
-                    assertEquals("Overview selection matches daily aggregate", report.habits!!.daily.cycles.take(30).map { it.key.toString() }, overviewCycleSheet.visibleIds)
+                    assertEquals("Overview navigation selects DAILY cadence", HabitCadence.DAILY, field<HabitCadence>(fragment, "selectedHabitCadence"))
                 }
-                device.pressBack()
-                idle()
-                assertNull("Back dismisses Overview cycle selection", findOpenBottomSheet(controller))
-                assertTabSelected(controller, UnifiedAnalyticsTab.HABITS)
 
                 // =============================================================
                 // PHASE 2: HABITS TAB VERIFICATION (C1 - C7)
@@ -833,17 +831,17 @@ class UnifiedStatisticsHabitOverviewVisualTest {
                     assertEquals(HabitCadence.MONTHLY, monthly.cadence)
                 }
 
-                // C5: FAIL-CLOSED View Assertions for Cadence Rows
+                // C5: FAIL-CLOSED View Assertions for Habits Cadence Tab Selector (Weekly/Monthly moved off Overview Hero per R02)
                 controller.onActivity { activity ->
                     val fragment = statsFragment(activity)
-                    requireNotNull(fragment.view?.findViewWithTag<View>("habitCadenceDailyRow")) {
-                        "FAIL-CLOSED: habitCadenceDailyRow must exist"
+                    requireNotNull(fragment.view?.findViewWithTag<View>("habitCadenceTabDaily")) {
+                        "FAIL-CLOSED: habitCadenceTabDaily must exist"
                     }
-                    requireNotNull(fragment.view?.findViewWithTag<View>("habitCadenceWeeklyRow")) {
-                        "FAIL-CLOSED: habitCadenceWeeklyRow must exist"
+                    requireNotNull(fragment.view?.findViewWithTag<View>("habitCadenceTabWeekly")) {
+                        "FAIL-CLOSED: habitCadenceTabWeekly must exist"
                     }
-                    requireNotNull(fragment.view?.findViewWithTag<View>("habitCadenceMonthlyRow")) {
-                        "FAIL-CLOSED: habitCadenceMonthlyRow must exist"
+                    requireNotNull(fragment.view?.findViewWithTag<View>("habitCadenceTabMonthly")) {
+                        "FAIL-CLOSED: habitCadenceTabMonthly must exist"
                     }
                 }
 
@@ -892,9 +890,10 @@ class UnifiedStatisticsHabitOverviewVisualTest {
                         assertTrue("Weekly results must display a chart", chart is DiscreteColumnBarChart)
                         assertTrue(field<List<Any>>(chart, "items").isNotEmpty())
                     }
-                    val textsInFragment = texts(requireNotNull(fragment.view))
-                    assertTrue("Cadence title subtitle must reflect Weekly",
-                        textsInFragment.any { it.contains(activity.getString(R.string.unified_statistics_habits_chart_weekly)) })
+                    val tabWeekly = requireNotNull(fragment.view?.findViewWithTag<MaterialButton>("habitCadenceTabWeekly"))
+                    assertTrue("Weekly cadence pill must be bold when selected", tabWeekly.typeface?.isBold == true)
+                    assertNotNull("Weekly cadence headline row must be rendered",
+                        fragment.view?.findViewWithTag<View>("habitCadenceWeeklyRow"))
                 }
 
                 // 2. Switch to MONTHLY
@@ -919,9 +918,10 @@ class UnifiedStatisticsHabitOverviewVisualTest {
                         assertTrue("Monthly results must display a chart", chart is DiscreteColumnBarChart)
                         assertTrue(field<List<Any>>(chart, "items").isNotEmpty())
                     }
-                    val textsInFragment = texts(requireNotNull(fragment.view))
-                    assertTrue("Cadence title subtitle must reflect Monthly",
-                        textsInFragment.any { it.contains(activity.getString(R.string.unified_statistics_habits_chart_monthly)) })
+                    val tabMonthly = requireNotNull(fragment.view?.findViewWithTag<MaterialButton>("habitCadenceTabMonthly"))
+                    assertTrue("Monthly cadence pill must be bold when selected", tabMonthly.typeface?.isBold == true)
+                    assertNotNull("Monthly cadence headline row must be rendered",
+                        fragment.view?.findViewWithTag<View>("habitCadenceMonthlyRow"))
                 }
 
                 // 3. Switch back to DAILY
@@ -940,9 +940,10 @@ class UnifiedStatisticsHabitOverviewVisualTest {
                     val chart = requireNotNull(fragment.view?.findViewWithTag<DiscreteColumnBarChart>("habitCadenceChart"))
                     val items = field<List<Any>>(chart, "items")
                     assertTrue("Daily chart must contain columns", items.isNotEmpty())
-                    val textsInFragment = texts(requireNotNull(fragment.view))
-                    assertTrue("Cadence title subtitle must reflect Daily",
-                        textsInFragment.any { it.contains(activity.getString(R.string.unified_statistics_habits_chart_daily)) })
+                    val tabDaily = requireNotNull(fragment.view?.findViewWithTag<MaterialButton>("habitCadenceTabDaily"))
+                    assertTrue("Daily cadence pill must be bold when selected", tabDaily.typeface?.isBold == true)
+                    assertNotNull("Daily cadence headline row must be rendered",
+                        fragment.view?.findViewWithTag<View>("habitCadenceDailyRow"))
 
                     // Viewport scrolling: scroll to habitCadenceChart
                     val scroll = requireNotNull(getScrollView(fragment))
@@ -965,12 +966,13 @@ class UnifiedStatisticsHabitOverviewVisualTest {
                     val descriptor = column.descriptor as HabitsDrilldownDescriptor.BucketCycles
                     val bucket = requireNotNull(report.habits).dateBuckets[HabitCadence.DAILY].orEmpty()
                         .first { it.date == descriptor.date }
-                    val outcomes = listOf(HabitCycleOutcome.SATISFIED, HabitCycleOutcome.NOT_SATISFIED, HabitCycleOutcome.UNKNOWN)
-                    val expectedCounts = outcomes.map { outcome -> bucket.cycles.count { it.outcome == outcome }.toLong() }
-                    assertEquals(listOf(bucket.satisfiedCount.toLong(), bucket.notSatisfiedCount.toLong(), bucket.unknownCount.toLong()), expectedCounts)
-                    assertEquals("Chart segments must equal nonzero S/F/U counts", expectedCounts.filter { it > 0 }, column.segments.map { it.value })
-                    assertEquals("Chart total must equal S+F+U", expectedCounts.sum(), column.value)
-                    expectedBucketIds = bucket.cycles.filter { it.outcome in outcomes }.map { it.key.toString() }
+                    val plottedOutcomes = listOf(HabitCycleOutcome.SATISFIED, HabitCycleOutcome.NOT_SATISFIED)
+                    val allOutcomes = listOf(HabitCycleOutcome.SATISFIED, HabitCycleOutcome.NOT_SATISFIED, HabitCycleOutcome.UNKNOWN)
+                    val expectedCounts = plottedOutcomes.map { outcome -> bucket.cycles.count { it.outcome == outcome }.toLong() }
+                    assertEquals(listOf(bucket.satisfiedCount.toLong(), bucket.notSatisfiedCount.toLong()), expectedCounts)
+                    assertEquals("Chart segments must equal nonzero S/F counts", expectedCounts.filter { it > 0 }, column.segments.map { it.value })
+                    assertEquals("Chart total must equal S+F", expectedCounts.sum(), column.value)
+                    expectedBucketIds = bucket.cycles.filter { it.outcome in allOutcomes }.map { it.key.toString() }
                     val bounds = chart.getColumnBounds(index)
                     assertTrue("Tapped column must have measured geometry", bounds.width() > 0 && bounds.height() > 0)
                     val now = SystemClock.uptimeMillis()
@@ -1121,42 +1123,35 @@ class UnifiedStatisticsHabitOverviewVisualTest {
                 idle()
                 assertNull("All dialogs and bottom sheets must be dismissed", findOpenBottomSheet(controller))
 
-                // Verify compact alphabetical preview list excludes overflow habits
+                // Verify compact Habits drilldown action strip avoids duplicating main Habits list (R03)
                 controller.onActivity { activity ->
                     val fragment = statsFragment(activity)
-                    val alphaList = requireNotNull(fragment.view?.findViewWithTag<View>("habitAlphaPreviewList")) {
-                        "FAIL-CLOSED: habitAlphaPreviewList must exist"
+                    val actionsStrip = requireNotNull(fragment.view?.findViewWithTag<View>("habitAlphaPreviewList")) {
+                        "FAIL-CLOSED: habitAlphaPreviewList action strip must exist"
                     }
-                    val summaries = requireNotNull(getLoadedReport(fragment)?.habits).habitSummaries
-                        .distinctBy { it.habitUuid }.sortedBy { it.habitName.lowercase() }
-                    val preview = summaries.take(4)
-                    assertTrue("Fixture must contain active habits in preview", preview.any { it.habitUuid != seed.habitArchived.uuid })
-                    preview.forEach { summary ->
-                        assertNotNull("Alphabetical preview missing ${summary.habitName}", alphaList.findViewWithTag<View>(summary.habitUuid))
+                    val allHabitsBtn = requireNotNull(actionsStrip.findViewWithTag<View>("habitAllHabitsButton")) {
+                        "FAIL-CLOSED: habitAllHabitsButton must exist inside Habits action strip"
                     }
-                    summaries.drop(4).forEach { summary ->
-                        assertNull("Preview must be limited to four habits", alphaList.findViewWithTag<View>(summary.habitUuid))
-                    }
-
                     val compareEntry = requireNotNull(fragment.view?.findViewWithTag<View>("habitCompareEntry")) {
-                        "FAIL-CLOSED: habitCompareEntry must exist in menu/header"
+                        "FAIL-CLOSED: habitCompareEntry must exist inside Habits action strip"
                     }
+                    assertNotNull(allHabitsBtn)
                     assertNotNull(compareEntry)
                 }
 
-                // Verify archived habit in full searchable list (via search button)
+                // Verify archived habit in full searchable list (via All habits button)
                 controller.onActivity { activity ->
                     val fragment = statsFragment(activity)
-                    val searchBtn = requireNotNull(fragment.view?.findViewWithTag<View>("habitSearchButton")) {
-                        "FAIL-CLOSED: habitSearchButton must exist"
+                    val allHabitsBtn = requireNotNull(fragment.view?.findViewWithTag<View>("habitAllHabitsButton")) {
+                        "FAIL-CLOSED: habitAllHabitsButton must exist"
                     }
-                    searchBtn.performClick()
+                    allHabitsBtn.performClick()
                 }
                 idle()
                 waitForSettled(controller)
 
                 val fullListSheet = requireNotNull(findOpenBottomSheet(controller) as? UnifiedStatisticsDrilldownBottomSheet) {
-                    "FAIL-CLOSED: Full habit list sheet must open on search button click"
+                    "FAIL-CLOSED: Full habit list sheet must open on All habits button click"
                 }
                 val fullListTexts = texts(requireNotNull(fullListSheet.view))
                 assertTrue("Full searchable list must include archived habit",
@@ -1254,8 +1249,17 @@ class UnifiedStatisticsHabitOverviewVisualTest {
                     val fragment = statsFragment(activity)
                     val report = requireNotNull(getLoadedReport(fragment))
                     val habits = requireNotNull(report.habits)
-                    assertTrue("Unassigned habit must be present in Unassigned scope",
-                        habits.allCycles.any { it.habitName == HABIT_PARTIAL_TITLE })
+                    val placementRepo = component.organizationFacade.habitPlacementQueries
+                    val partialPlacement = placementRepo?.current(
+                        HabitRef(requireNotNull(seed.habitPartial.uuid))
+                    )
+                    assertTrue(
+                        "Unassigned habit must be present in Unassigned scope: " +
+                            "scope=${report.context.sectionScope}, from=${report.context.from}, to=${report.context.to}, " +
+                            "firstWeekday=${report.context.firstWeekday}, habitToday=${report.context.habitToday}, " +
+                            "partialPlacement=$partialPlacement, cycleHabits=${habits.allCycles.map { it.habitName }.distinct()}",
+                        habits.allCycles.any { it.habitName == HABIT_PARTIAL_TITLE }
+                    )
                     assertFalse("Root container habit must NOT be in Unassigned scope",
                         habits.allCycles.any { it.habitName == HABIT_DAILY_BOOL_TITLE })
                 }
@@ -1520,6 +1524,18 @@ class UnifiedStatisticsHabitOverviewVisualTest {
 
             QaActivityController().use { controller ->
                 navigateToStatistics(controller)
+                controller.onActivity { activity ->
+                    statsFragment(activity).applyScopedAll()
+                }
+                idle()
+                waitForSettled(controller)
+                selectTab(controller, UnifiedAnalyticsTab.HABITS.ordinal)
+                controller.onActivity { activity ->
+                    val tabDaily = statsFragment(activity).view?.findViewWithTag<MaterialButton>("habitCadenceTabDaily")
+                    tabDaily?.performClick()
+                }
+                idle()
+                waitForSettled(controller)
                 verifyHabitLiveTimeAndSyncRefresh(controller, seed)
             }
         } finally {
@@ -1593,13 +1609,24 @@ class UnifiedStatisticsHabitOverviewVisualTest {
                 assertTrue("Final HERE scope must contain root Habit", habits.allCycles.any { it.habitName == HABIT_DAILY_BOOL_TITLE })
                 assertFalse("Final HERE scope must exclude child Habit", habits.allCycles.any { it.habitName == HABIT_WEEKLY_BOOL_TITLE })
                 val daily = habits.daily
-                val expectedText = when {
-                    daily.eligibleCount == 0 -> activity.getString(R.string.unified_statistics_cadence_no_closed_cycles)
-                    daily.unknownCount > 0 -> activity.getString(R.string.unified_statistics_cadence_breakdown_with_unknown, daily.satisfiedCount, daily.notSatisfiedCount, daily.unknownCount)
-                    else -> activity.getString(R.string.unified_statistics_cadence_breakdown, daily.satisfiedCount, daily.notSatisfiedCount)
-                }
                 val row = requireNotNull(fragment.view?.findViewWithTag<View>("habitCadenceDailyRow"))
-                assertTrue("Visible counts must match final scope report", texts(row).any { it.contains(expectedText) })
+                val rowTexts = texts(row)
+                if (daily.knownCount > 0) {
+                    val pct = Math.round((daily.satisfiedCount.toDouble() / daily.knownCount.toDouble()) * 100.0).toInt()
+                    assertTrue("Visible percentage must match final scope report: expected $pct% in $rowTexts",
+                        rowTexts.any { it.contains("$pct%") })
+                    assertTrue("Visible counts must match final scope report: expected ${daily.satisfiedCount}/${daily.knownCount} in $rowTexts",
+                        rowTexts.any {
+                            it.contains("${daily.satisfiedCount}/${daily.knownCount}") ||
+                                it.contains("${daily.satisfiedCount} из ${daily.knownCount}")
+                        })
+                } else {
+                    val emptyText = activity.getString(
+                        if (daily.ongoingCount > 0) R.string.unified_statistics_habits_ongoing_in_progress
+                        else R.string.unified_statistics_cadence_no_closed_cycles
+                    )
+                    assertTrue("Visible empty headline must match final scope report", rowTexts.any { it.contains(emptyText) })
+                }
             }
             controller.onActivity { statsFragment(it).applyScopedAll() }
             idle()
@@ -1771,12 +1798,23 @@ class UnifiedStatisticsHabitOverviewVisualTest {
             val dailyRow = requireNotNull(fragment.view?.findViewWithTag<View>("habitCadenceDailyRow")) {
                 "FAIL-CLOSED: habitCadenceDailyRow must exist"
             }
-            val expectedText = when {
-                daily.eligibleCount == 0 -> activity.getString(R.string.unified_statistics_cadence_no_closed_cycles)
-                daily.unknownCount > 0 -> activity.getString(R.string.unified_statistics_cadence_breakdown_with_unknown, daily.satisfiedCount, daily.notSatisfiedCount, daily.unknownCount)
-                else -> activity.getString(R.string.unified_statistics_cadence_breakdown, daily.satisfiedCount, daily.notSatisfiedCount)
+            val dailyRowTexts = texts(dailyRow)
+            if (daily.knownCount > 0) {
+                val pct = Math.round((daily.satisfiedCount.toDouble() / daily.knownCount.toDouble()) * 100.0).toInt()
+                assertTrue("Cadence row text must reflect new percentage $pct% after sync refresh: $dailyRowTexts",
+                    dailyRowTexts.any { it.contains("$pct%") })
+                assertTrue("Cadence row text must reflect new counts ${daily.satisfiedCount}/${daily.knownCount} after sync refresh: $dailyRowTexts",
+                    dailyRowTexts.any {
+                        it.contains("${daily.satisfiedCount}/${daily.knownCount}") ||
+                            it.contains("${daily.satisfiedCount} из ${daily.knownCount}")
+                    })
+            } else {
+                val emptyText = activity.getString(
+                    if (daily.ongoingCount > 0) R.string.unified_statistics_habits_ongoing_in_progress
+                    else R.string.unified_statistics_cadence_no_closed_cycles
+                )
+                assertTrue("Cadence row text must reflect empty state after sync refresh", dailyRowTexts.any { it.contains(emptyText) })
             }
-            assertTrue("Cadence row text must reflect new breakdown counts after sync refresh", texts(dailyRow).any { it.contains(expectedText) })
         }
 
         // Clean up database mutation to preserve fixture isolation

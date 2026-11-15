@@ -234,6 +234,7 @@ class UnifiedStatisticsTaskFocusVisualTest {
             }
             habitList.add(habitUnassigned)
         }
+        orgFacade.placeHabit(requireNotNull(habitUnassigned.uuid), null)
 
         val taskRepo = component.userTaskRepository
         val taskService = component.userTaskService
@@ -462,6 +463,14 @@ class UnifiedStatisticsTaskFocusVisualTest {
         val oldTheme = component.preferences.theme
         val oldBlack = component.preferences.isPureBlackEnabled
         val oldFirstRun = component.preferences.isFirstRun
+        val namespace = component.session.preferencesNamespace
+        val testPreferences = if (namespace.isBlank()) {
+            androidx.preference.PreferenceManager.getDefaultSharedPreferences(context)
+        } else {
+            context.getSharedPreferences("uhabits_prefs_$namespace", Context.MODE_PRIVATE)
+        }
+        val hadFirstWeekday = testPreferences.contains("pref_first_weekday")
+        val oldFirstWeekday = testPreferences.getString("pref_first_weekday", "-1")
 
         try {
             val isAmoled = phase.startsWith("amoled")
@@ -469,6 +478,10 @@ class UnifiedStatisticsTaskFocusVisualTest {
             component.preferences.theme = if (isDark) ThemeSwitcher.THEME_DARK else ThemeSwitcher.THEME_LIGHT
             component.preferences.isPureBlackEnabled = isAmoled
             component.preferences.isFirstRun = false
+
+            val today = getToday()
+            val testFirstWeekday = today.minus(5).dayOfWeek
+            testPreferences.edit().putString("pref_first_weekday", (testFirstWeekday.daysSinceSunday + 1).toString()).commit()
 
             device.wakeUp()
             device.executeShellCommand("wm dismiss-keyguard")
@@ -1142,6 +1155,10 @@ class UnifiedStatisticsTaskFocusVisualTest {
                 component.preferences.theme = oldTheme
                 component.preferences.isPureBlackEnabled = oldBlack
                 component.preferences.isFirstRun = oldFirstRun
+                val editor = testPreferences.edit()
+                if (hadFirstWeekday) editor.putString("pref_first_weekday", oldFirstWeekday)
+                else editor.remove("pref_first_weekday")
+                editor.commit()
             }
         }
     }

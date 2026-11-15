@@ -753,8 +753,7 @@ class UnifiedStatisticsShellVisualTest {
                 getPrevButton(fragment),
                 getNextButton(fragment),
                 getPeriodButton(fragment),
-                getScopeButton(fragment),
-                getLegacyButton(fragment)
+                getScopeButton(fragment)
             )
             val density = activity.resources.displayMetrics.density
             val rect = android.graphics.Rect()
@@ -1127,12 +1126,13 @@ class UnifiedStatisticsShellVisualTest {
             }
             updateLabelsMethod.invoke(fragment)
 
-            // While unresolved, header must display neutral "All Time" and NOT fake "Since <Today>"
+            // While unresolved, combined period header must display neutral "All" and NOT fake "Since <Today>"
             val dateRangeView = getDateRangeView(fragment)
             val unresolvedText = dateRangeView.text.toString()
+            val periodAllLabel = context.getString(R.string.unified_statistics_period_all)
             assertEquals(
-                "While report is unresolved, period ALL header must show neutral All Time",
-                context.getString(R.string.reports_tab_all),
+                "While report is unresolved, period ALL header must show neutral period label",
+                periodAllLabel,
                 unresolvedText
             )
 
@@ -1155,7 +1155,11 @@ class UnifiedStatisticsShellVisualTest {
             val dateRangeView = getDateRangeView(fragment)
             val resolvedText = dateRangeView.text.toString()
             val expectedStartFormatted = JavaLocalDateFormatter(java.util.Locale.getDefault()).longFormat(targetCutoff)
-            val expectedHeader = context.getString(R.string.unified_statistics_since_date, expectedStartFormatted)
+            val expectedSince = context.getString(R.string.unified_statistics_since_date, expectedStartFormatted)
+            val expectedHeader = StatisticsRedesignModels.formatPeriodHeaderLabel(
+                context.getString(R.string.unified_statistics_period_all),
+                expectedSince
+            )
             assertEquals("Settled period ALL header must match resolved history start date", expectedHeader, resolvedText)
             assertFalse(
                 "Header must not show fake today start",

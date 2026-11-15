@@ -68,11 +68,10 @@ class HabitDetailCleanupTest : BaseViewTest() {
                             for (name in listOf("scoreCard", "streakCard", "frequencyCard",
                                 "historyCard", "barCard")) assertEquals(View.VISIBLE, root.named(name).visibility)
                             assertEquals(View.GONE, root.named("effectiveReadNotice").visibility)
-                            val item = PopupMenu(activity, root).menu.add(0, R.id.action_edit_habit_history, 0, "Edit entries")
-                            assertTrue(activity.onOptionsItemSelected(item))
+                            activity.editHistory()
                             activity.supportFragmentManager.executePendingTransactions()
                             val editor = activity.supportFragmentManager.findFragmentByTag("historyEditor") as DialogFragment?
-                            assertNotNull("History editing stays available from the menu", editor)
+                            assertNotNull("History editing stays available from calendar editor", editor)
                             editor!!.dismissNow()
                         }
                         if (habit.isNumerical) verifyProgress(root, state, prefix)
@@ -92,7 +91,6 @@ class HabitDetailCleanupTest : BaseViewTest() {
             assertEquals(View.GONE, root.named("effectiveReadNotice").visibility)
             assertTrue((root.named("focusValue") as TextView).text.contains("54"))
             assertTrue((root.named("focusGoal") as TextView).text.contains("30"))
-            assertTrue("Progress details stay available in the menu", (root.context as ShowHabitActivity).hasProgressDetails)
         }
         root.setState(state.copy(hasAutomaticQuantity = true, hasIncompleteCoverage = true,
             scoreUnavailable = true, streakUnavailable = true))

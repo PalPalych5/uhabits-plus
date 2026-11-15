@@ -89,6 +89,16 @@ class HabitTapPerformanceAndroidTest {
                     val requestedAt = SystemClock.elapsedRealtimeNanos()
                     mainHandler.post { event("main.heartbeatDelay", (SystemClock.elapsedRealtimeNanos() - requestedAt) / 1e6) }
                 }, 0, 16, TimeUnit.MILLISECONDS)
+                var fullRefreshes = 0
+                val observer = object : androidx.recyclerview.widget.RecyclerView.AdapterDataObserver() {
+                    override fun onChanged() { fullRefreshes++ }
+                }
+                lateinit var measuredAdapter: androidx.recyclerview.widget.RecyclerView.Adapter<*>
+                scenario.onActivity { activity ->
+                    measuredAdapter = requireNotNull(descendants(activity.window.decorView)
+                        .filterIsInstance<HabitCardListView>().first().adapter)
+                    measuredAdapter.registerAdapterDataObserver(observer)
+                }
                 for (index in 0 until 8) {
                     QaEmulatorUi.clearSystemUiError()
                     val drawn = CountDownLatch(1)
@@ -112,6 +122,17 @@ class HabitTapPerformanceAndroidTest {
                     ins.waitForIdleSync()
                     taps.put(JSONObject().put("index", index).put("handlerMs", handler).put("tapToDrawMs", response))
                     drain()
+                }
+                scenario.onActivity {
+                    check(fullRefreshes == 0) { "Boolean edits triggered $fullRefreshes full adapter refreshes" }
+                    val oldBorderSetting = component.preferences.showHabitCardBorders
+                    try {
+                        component.preferences.showHabitCardBorders = !oldBorderSetting
+                        check(fullRefreshes > 0) { "Border preference did not refresh the adapter" }
+                    } finally {
+                        component.preferences.showHabitCardBorders = oldBorderSetting
+                        measuredAdapter.unregisterAdapterDataObserver(observer)
+                    }
                 }
                 // Burst taps exercise the real UI toggle route while background work overlaps.
                 scenario.onActivity { activity ->

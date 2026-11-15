@@ -6,6 +6,7 @@ param(
     [int]$Port = 5580,
     [switch]$Temporary,
     [switch]$Headless,
+    [switch]$WipeData,
     [ValidateRange(1, 3600)][int]$BootTimeoutSeconds = 600,
     [switch]$ListOrphans,
     [string]$Package = 'system-images;android-35;google_apis;x86_64',
@@ -160,6 +161,7 @@ try {
         # Capture the exact process; shared persistent guests are deliberately left running.
         $launchArguments = @('-avd', $AvdName, '-port', $Port, '-no-snapshot', '-no-audio')
         if ($Headless) { $launchArguments += '-no-window' }
+        if ($WipeData) { $launchArguments += '-wipe-data' }
         $ownedEmulator = Start-Process -FilePath $emulator -ArgumentList $launchArguments -PassThru -WindowStyle Hidden
         $ownedEmulatorStartedUtc = $ownedEmulator.StartTime.ToUniversalTime()
         $record.emulatorPid = $ownedEmulator.Id

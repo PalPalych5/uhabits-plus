@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug-only manifest overlay for QA testing and activity launching -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name=".activities.habits.show.ShowHabitActivity"
+            android:exported="true" />
+        <activity
+            android:name=".activities.habits.edit.EditHabitActivity"
+            android:exported="true" />
+        <activity
+            android:name=".activities.main.MainActivity"
+            android:exported="true" />
+        <activity
+            android:name=".activities.settings.SettingsActivity"
+            android:exported="true" />
+    </application>
+</manifest>
