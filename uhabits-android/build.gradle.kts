@@ -64,32 +64,16 @@ val prepareLegalAssets by tasks.registering(Sync::class) {
 
 // Narrow, explicitly opt-in smoke APK. Normal androidTest keeps the complete suite.
 val calendarSmoke = providers.gradleProperty("calendarSmokeSources").orNull == "true"
-val statisticsQa = providers.gradleProperty("statisticsQaSources").orNull == "true"
 val prepareCalendarSmokeSources by tasks.registering(Sync::class) {
     from("src/androidTest/java") {
         include("**/TaskDraftQaRunner.kt", "**/TaskDraftLifecycleTest.kt", "**/TaskListVisualTest.kt", "**/TaskCalendarVisualTest.kt")
     }
     into(layout.buildDirectory.dir("generated/calendarSmokeSources"))
 }
-val prepareStatisticsQaSources by tasks.registering(Sync::class) {
-    from("src/androidTest/java") {
-        exclude(
-            "**/TaskFocusAndroidTest.kt",
-            "**/TaskDetailHabitLinkVisualTest.kt",
-            "**/TaskDraftVisualTest.kt"
-        )
-    }
-    into(layout.buildDirectory.dir("generated/statisticsQaSources"))
-}
 if (calendarSmoke) {
     require(providers.gradleProperty("taskDraftQaTest").orNull == "true") { "Calendar smoke requires TaskDraftQaRunner" }
     tasks.matching { it.name == "compileDebugAndroidTestKotlin" || it.name == "compileDebugAndroidTestJavaWithJavac" || it.name == "kspDebugAndroidTestKotlin" }.configureEach {
         dependsOn(prepareCalendarSmokeSources)
-    }
-}
-if (statisticsQa) {
-    tasks.matching { it.name == "compileDebugAndroidTestKotlin" || it.name == "compileDebugAndroidTestJavaWithJavac" || it.name == "kspDebugAndroidTestKotlin" }.configureEach {
-        dependsOn(prepareStatisticsQaSources)
     }
 }
 
@@ -102,7 +86,6 @@ android {
             assets.srcDirs("src/main/assets", prepareAndroidCoreAssets, prepareLegalAssets)
         }
         if (calendarSmoke) getByName("androidTest").java.setSrcDirs(listOf(layout.buildDirectory.dir("generated/calendarSmokeSources")))
-        else if (statisticsQa) getByName("androidTest").java.setSrcDirs(listOf(layout.buildDirectory.dir("generated/statisticsQaSources")))
     }
 
     defaultConfig {
