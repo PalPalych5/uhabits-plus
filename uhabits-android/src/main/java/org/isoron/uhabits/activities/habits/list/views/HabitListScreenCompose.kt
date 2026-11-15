@@ -8,8 +8,11 @@ package org.isoron.uhabits.activities.habits.list.views
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.provider.Settings
 import android.text.TextPaint
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -101,6 +104,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -457,12 +461,37 @@ private fun HabitRowsLazyList(
     onHabitDateEdit: (Habit, LocalDate, Offset) -> Unit,
     colors: UHabitComposeColors
 ) {
+    val context = LocalContext.current
+    val reduceMotion = remember(context) {
+        Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+    }
     val lazyListState = rememberLazyListState()
     val navBottomPadding = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val bottomPadding = navBottomPadding + if (!state.activeHint.isNullOrBlank()) 76.dp else 8.dp
 
     var draggingHabitId by remember { mutableStateOf<Long?>(null) }
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
+
+    val rowOrderKey = remember(state.rows) { state.rows.map { it.habitId } }
+    var prevOrderKey by remember { mutableStateOf(rowOrderKey) }
+    var wasAnchoredAtTop by remember { mutableStateOf(true) }
+
+    LaunchedEffect(lazyListState.firstVisibleItemIndex, lazyListState.firstVisibleItemScrollOffset) {
+        if (rowOrderKey == prevOrderKey) {
+            wasAnchoredAtTop = lazyListState.firstVisibleItemIndex == 0 &&
+                lazyListState.firstVisibleItemScrollOffset < 8
+        }
+    }
+
+    LaunchedEffect(rowOrderKey) {
+        if (rowOrderKey != prevOrderKey) {
+            val anchorTop = wasAnchoredAtTop
+            prevOrderKey = rowOrderKey
+            if (anchorTop && draggingHabitId == null && rowOrderKey.isNotEmpty()) {
+                lazyListState.scrollToItem(0)
+            }
+        }
+    }
 
     val latestRows by rememberUpdatedState(state.rows)
     val latestOnMoveRow by rememberUpdatedState(onMoveRow)
@@ -489,10 +518,22 @@ private fun HabitRowsLazyList(
         ) { index, row ->
             val isDragging = draggingHabitId == row.habitId
             val currentRowIndex by rememberUpdatedState(index)
+            val animatePlacement = !reduceMotion && draggingHabitId == null
 
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .let { mod ->
+                        if (animatePlacement) {
+                            mod.animateItem(
+                                fadeInSpec = tween(durationMillis = 160),
+                                placementSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                                fadeOutSpec = tween(durationMillis = 160)
+                            )
+                        } else {
+                            mod
+                        }
+                    }
                     .zIndex(if (isDragging) 1f else 0f)
                     .graphicsLayer {
                         if (isDragging) {
@@ -518,6 +559,7 @@ private fun HabitRowsLazyList(
                     buttonWidthDp = buttonWidthDp,
                     buttonHeightDp = buttonHeightDp,
                     appearance = state.appearance,
+                    showClassicTopDivider = index == 0 || row.groupHeading != null || row.showTopGap,
                     isSelectionActive = state.isSelectionActive,
                     isDragging = isDragging,
                     onClick = { onRowClick(currentRowIndex) },
@@ -576,6 +618,7 @@ private fun HabitRowCard(
     buttonWidthDp: Dp,
     buttonHeightDp: Dp,
     appearance: HabitAppearanceState,
+    showClassicTopDivider: Boolean = false,
     isSelectionActive: Boolean,
     isDragging: Boolean,
     onClick: () -> Unit,
@@ -769,6 +812,14 @@ private fun HabitRowCard(
             if (isClassic) {
                 m.drawBehind {
                     val stroke = 1.dp.toPx()
+                    if (showClassicTopDivider) {
+                        drawLine(
+                            color = classicDividerColor,
+                            start = Offset(0f, stroke / 2f),
+                            end = Offset(size.width, stroke / 2f),
+                            strokeWidth = stroke
+                        )
+                    }
                     drawLine(
                         color = classicDividerColor,
                         start = Offset(0f, size.height - stroke / 2f),

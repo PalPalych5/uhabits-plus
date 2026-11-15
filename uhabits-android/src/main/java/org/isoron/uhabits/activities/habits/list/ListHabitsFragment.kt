@@ -324,12 +324,25 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             org.isoron.uhabits.core.models.HabitList.Order.BY_SCORE_DESC,
             org.isoron.uhabits.core.models.HabitList.Order.BY_STATUS_DESC
         )
+        val directionalSorts = setOf(
+            R.id.actionSortName,
+            R.id.actionSortColor,
+            R.id.actionSortScore,
+            R.id.actionSortStatus
+        )
+        val searchEndMarginDp = when {
+            prefs.isClassicSectionLayout -> 0
+            prefs.showHabitCardBorders -> 4
+            else -> 2
+        }
         val sync = menu.findItem(R.id.actionSync)
         rootView.updateComposeToolbar(HabitToolbarState(
             title = getString(if (displayMode == ListHabitsDisplayMode.ARCHIVE) R.string.archive_title else R.string.habits_title),
             archive = displayMode == ListHabitsDisplayMode.ARCHIVE,
             searching = menuController.isSearchActive,
             query = menuController.behavior.searchQuery,
+            searchEndMarginDp = searchEndMarginDp,
+            cardEndMarginDp = searchEndMarginDp,
             syncVisible = sync?.isVisible == true,
             syncing = sync?.isEnabled == false,
             filters = items(R.id.actionHideArchived, R.id.actionHideCompleted),
@@ -342,9 +355,11 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
                 R.id.actionSortSphere,
                 R.id.actionSortLevel
             ).map { item ->
+                val isSelected = item.id == selectedSort
                 item.copy(
-                    checked = item.id == selectedSort,
-                    isDescending = descending
+                    checked = isSelected,
+                    supportsDirection = item.id in directionalSorts,
+                    isDescending = isSelected && descending
                 )
             },
             overflow = items(R.id.actionSkipDay, R.id.actionSearch, R.id.actionTodayEvaluation, R.id.actionContainers)

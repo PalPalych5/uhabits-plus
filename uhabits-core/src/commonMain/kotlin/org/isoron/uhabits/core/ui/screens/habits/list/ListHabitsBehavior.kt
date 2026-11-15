@@ -63,15 +63,15 @@ open class ListHabitsBehavior(
             val seedNotes = entry?.notes ?: ""
             screen.showNumberPopup(seedValue, seedNotes, habit, date) { newValue: Double, newNotes: String ->
                 val prevVal = entry?.value ?: Entry.UNKNOWN
-                val value = if (prevVal != Entry.UNKNOWN && newValue == prevVal.toDouble() / 1000.0) {
-                    prevVal
-                } else if (prevVal == Entry.UNKNOWN && (newValue == Entry.UNKNOWN.toDouble() / 1000.0 || (newValue == 0.0 && seedNotes == newNotes))) {
-                    prevVal
+                val value = if (prevVal == Entry.UNKNOWN && newValue == Entry.UNKNOWN.toDouble() / 1000.0) {
+                    Entry.UNKNOWN
+                } else if (newValue == Entry.SKIP.toDouble() / 1000.0) {
+                    Entry.SKIP
                 } else {
                     Entry.toScaledValue(newValue)
                 }
                 val oldValue = (entry?.value ?: Entry.UNKNOWN).toDouble() / 1000.0
-                if (newValue != oldValue) {
+                if (newValue != oldValue && value >= 0 && value != Entry.SKIP) {
                     if (
                         (goal.targetType == AT_LEAST && newValue >= goal.targetValue) ||
                         (goal.targetType == AT_MOST && newValue <= goal.targetValue)
@@ -79,7 +79,18 @@ open class ListHabitsBehavior(
                         screen.showConfetti(habit.color, x, y)
                     }
                 }
-                commandRunner.run(CreateRepetitionCommand(habitList, habit, date, value, newNotes))
+                val hourOffset = runCatching { prefs.midnightDelayHours }.getOrDefault(0)
+                commandRunner.run(
+                    CreateRepetitionCommand(
+                        habitList = habitList,
+                        habit = habit,
+                        date = date,
+                        value = value,
+                        notes = newNotes,
+                        isTotalEdit = true,
+                        hourOffset = hourOffset,
+                    )
+                )
             }
         } else {
             val entry = habit.computedEntries.get(date)

@@ -68,7 +68,7 @@ fun HabitProgressIndicator(
     thickness: Dp = 3.dp,
     trackAlpha: Float = 0.15f
 ) {
-    val clampedScore = score.coerceIn(0f, 1f)
+    val clampedScore = if (score.isFinite()) score.coerceIn(0f, 1f) else 0f
 
     Canvas(modifier = modifier.size(size)) {
         val strokeWidth = thickness.toPx()

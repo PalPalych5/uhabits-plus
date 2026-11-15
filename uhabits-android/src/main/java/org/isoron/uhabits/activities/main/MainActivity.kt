@@ -139,6 +139,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         val palette = MainTabsThemeBridge.resolve(this)
         binding.mainRoot.setBackgroundColor(palette.background)
         binding.mainContent.setBackgroundColor(palette.background)
+        binding.bottomNavigationDivider.setBackgroundColor(palette.divider)
         window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(palette.background))
         if (intent.getBooleanExtra(EXTRA_RESTORE_SUCCESS, false)) {
             Toast.makeText(this, R.string.restore_backup_success, Toast.LENGTH_LONG).show()

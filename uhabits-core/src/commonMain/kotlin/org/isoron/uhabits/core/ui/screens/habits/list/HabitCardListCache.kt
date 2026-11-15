@@ -698,7 +698,7 @@ class HabitCardListCache(
                 // The number panel uses canonical day/coverage/completion data.
                 // Prepare its equality key off Main, for every horizontally
                 // accessible date, without making revision freshness a repaint.
-                newData.effectiveBindings[habit.id] = snapshot?.takeIf { it.hasContributions }?.let { current ->
+                newData.effectiveBindings[habit.id] = snapshot?.takeIf { it.hasProjectedChanges }?.let { current ->
                     EffectiveBinding(current.calendar, List(requestedCheckmarkCount) { index ->
                         val date = today.minus(index)
                         if (date < current.from || date > current.to) EffectiveCellBinding(null, null)

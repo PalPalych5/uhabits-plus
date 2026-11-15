@@ -43,6 +43,12 @@
             android:layout_height="wrap_content"
             android:background="?attr/bottomNavigationBackground">
 
+            <View
+                android:id="@+id/bottomNavigationDivider"
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_gravity="top" />
+
             <!-- Horizontal Tab Bar (Compact 50dp height) -->
             <LinearLayout
                 android:id="@+id/bottomNavigation"

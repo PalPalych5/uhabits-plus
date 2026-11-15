@@ -71,8 +71,7 @@ class ListHabitsMenu(
         // In PR8, Containers is the unified hierarchical home screen in experimental mode,
         // so no separate ContainersActivity entry is displayed.
         menu.findItem(R.id.actionContainers)?.isVisible = false
-        menu.findItem(R.id.actionTodayEvaluation)?.isVisible =
-            (activity.applicationContext as HabitsApplication).component.session.isNextArchitecture
+        menu.findItem(R.id.actionTodayEvaluation)?.isVisible = false
     }
 
     fun onCreate(inflater: MenuInflater, menu: Menu) {

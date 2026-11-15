@@ -1,7 +1,9 @@
 package org.isoron.uhabits.activities.habits.list
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,11 +35,21 @@ internal fun HabitSelectionToolbar(menu: ListHabitsSelectionMenu, colors: UHabit
         )
         if (menu.canEdit()) {
             IconButton(onClick = { menu.onActionItemClicked(R.id.action_edit_habit) }) {
-                Icon(painterResource(R.drawable.ic_action_edit_dark), stringResource(R.string.edit), tint = colors.foregroundColor)
+                Icon(
+                    painter = painterResource(R.drawable.ic_toolbar_edit),
+                    contentDescription = stringResource(R.string.edit),
+                    tint = colors.foregroundColor,
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
         IconButton(onClick = { menu.onActionItemClicked(R.id.action_color) }) {
-            Icon(painterResource(R.drawable.ic_action_color_dark), stringResource(R.string.color_picker_default_title), tint = colors.foregroundColor)
+            Icon(
+                painter = painterResource(R.drawable.ic_toolbar_palette),
+                contentDescription = stringResource(R.string.color_picker_default_title),
+                tint = colors.foregroundColor,
+                modifier = Modifier.size(24.dp)
+            )
         }
         val overflowActions = buildList {
             if (menu.canArchive()) add(R.id.action_archive_habit to R.string.archive)
@@ -50,10 +62,18 @@ internal fun HabitSelectionToolbar(menu: ListHabitsSelectionMenu, colors: UHabit
                 IconButton(onClick = { expanded = true }) {
                     Icon(painterResource(R.drawable.ic_toolbar_more_vertical), stringResource(R.string.containers_more), tint = colors.foregroundColor)
                 }
-                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                DropdownMenu(
+                    expanded = expanded,
+                    onDismissRequest = { expanded = false },
+                    shape = RoundedCornerShape(12.dp),
+                    containerColor = colors.dialogSurfaceColor,
+                    tonalElevation = 0.dp,
+                    shadowElevation = 6.dp,
+                    border = BorderStroke(1.dp, colors.dialogBorderColor)
+                ) {
                     overflowActions.forEach { (id, label) ->
                         DropdownMenuItem(
-                            text = { Text(stringResource(label)) },
+                            text = { Text(stringResource(label), color = colors.foregroundColor) },
                             onClick = {
                                 expanded = false
                                 menu.onActionItemClicked(id)

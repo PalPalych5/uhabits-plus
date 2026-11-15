@@ -327,6 +327,7 @@ class ListHabitsScreen(
                             if (date != null) {
                                 val orig = habit.originalEntries.get(date)
                                 putDouble("value", orig.value.toDouble() / 1000)
+                                putInt("originalRawValue", orig.value)
                                 putString("notes", orig.notes)
                                 putBoolean("hasManualEntry", orig.value != Entry.UNKNOWN)
                             }
@@ -345,12 +346,9 @@ class ListHabitsScreen(
                             }.getOrNull()
                         } else null
                         if (day != null) {
-                            dialogArgs.putDouble("focusValue", day.contributionValue / 1000.0)
-                            dialogArgs.putDouble("tombstonedFocusValue", day.tombstonedContributionValue / 1000.0)
-                            dialogArgs.putStringArrayList("activeContributionIds", ArrayList(day.contributions.map { it.id.value }))
-                            dialogArgs.putStringArrayList("tombstonedContributionIds", ArrayList(day.tombstonedContributions.map { it.id.value }))
-                            dialogArgs.putBoolean("hasManualEntry", day.manualValue != null)
-                            dialogArgs.putBoolean("hasCompleteCoverage", day.hasCompleteCoverage)
+                            dialogArgs.putBoolean("hasEffectiveTotal", day.totalValue != null)
+                            dialogArgs.putInt("effectiveMillis", (day.totalValue ?: 0L).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt())
+                            dialogArgs.putInt("focusMillis", day.contributionValue.coerceIn(0L, Int.MAX_VALUE.toLong()).toInt())
                         }
                     }
                     dialogArgs
@@ -363,16 +361,6 @@ class ListHabitsScreen(
                 appComponent !== HabitsApplication.component || fm.isStateSaved) return@launch
             val dialog = NumberDialog()
             dialog.arguments = args
-            dialog.onRevokeContributions = { ids ->
-                ids.forEach { id ->
-                    focusCredit?.revokeContribution(ContributionId(id))
-                }
-            }
-            dialog.onRestoreContributions = { ids ->
-                ids.forEach { id ->
-                    focusCredit?.restoreContribution(ContributionId(id))
-                }
-            }
             dialog.onToggle = { v, n -> callback.onNumberPicked(v, n) }
             dialog.dismissCurrentAndShow(fm, "numberDialog")
         }

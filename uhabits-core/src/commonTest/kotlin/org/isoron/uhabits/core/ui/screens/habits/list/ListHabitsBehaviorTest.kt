@@ -108,6 +108,29 @@ class ListHabitsBehaviorTest : BaseUnitTest() {
     }
 
     @Test
+    fun explicitZeroOnUnknownPersistsZeroAndUnknownLeavesUnknown() {
+        val emptyDay = getToday().minus(100)
+        assertEquals(Entry.UNKNOWN, habit2.originalEntries.get(emptyDay).value)
+        every { screen.showNumberPopup(any(), any(), any(), any(), any()) } calls { args ->
+            capturedPicker = args.arg<NumberPickerCallback>(4)
+            Unit
+        }
+        behavior.onEdit(habit2, emptyDay, 0f, 0f)
+        verify { screen.showNumberPopup(0.0, "", habit2, emptyDay, any()) }
+
+        // Explicit 0.0 must be persisted as 0 (not kept as Entry.UNKNOWN)
+        capturedPicker!!.onNumberPicked(0.0, "")
+        assertEquals(Entry.NO, habit2.originalEntries.get(emptyDay).value)
+
+        // Question mark / blank (-0.001) on another unknown day keeps Entry.UNKNOWN
+        val anotherEmptyDay = getToday().minus(101)
+        assertEquals(Entry.UNKNOWN, habit2.originalEntries.get(anotherEmptyDay).value)
+        behavior.onEdit(habit2, anotherEmptyDay, 0f, 0f)
+        capturedPicker!!.onNumberPicked(Entry.UNKNOWN.toDouble() / 1000.0, "")
+        assertEquals(Entry.UNKNOWN, habit2.originalEntries.get(anotherEmptyDay).value)
+    }
+
+    @Test
     fun testOnExportCSV() = runTest {
         val outputDir = createTempDir()
         every { dirFinder.getCSVOutputDir() } returns outputDir
