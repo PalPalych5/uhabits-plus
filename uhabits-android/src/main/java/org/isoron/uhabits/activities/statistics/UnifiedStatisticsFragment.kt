@@ -50,6 +50,8 @@ import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.common.views.CompactPopupMenu
 import org.isoron.uhabits.activities.statistics.views.DiscreteColumnBarChart
 import org.isoron.uhabits.activities.statistics.views.SegmentedCohortBarView
+import org.isoron.uhabits.activities.statistics.views.WeeklyLimitProgressView
+import org.isoron.uhabits.compose.UHabitElevationAndBorders
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.HabitRef
 import org.isoron.uhabits.core.focus.FocusPrimaryTargetType
@@ -62,6 +64,7 @@ import org.isoron.uhabits.core.statistics.HabitCadenceAggregate
 import org.isoron.uhabits.core.statistics.HabitCycle
 import org.isoron.uhabits.core.statistics.HabitCycleLifecycle
 import org.isoron.uhabits.core.statistics.HabitCycleOutcome
+import org.isoron.uhabits.core.statistics.HabitCycleStatisticsResult
 import org.isoron.uhabits.core.statistics.HabitSummary
 import org.isoron.uhabits.core.statistics.StatisticsDataState
 import org.isoron.uhabits.core.statistics.StatisticsIssueCode
@@ -78,6 +81,7 @@ import java.time.ZoneId
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.CancellationException
+import kotlin.math.roundToInt
 
 /**
  * Android unified statistics shell (PR14.2).
@@ -96,9 +100,10 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
     private val isRussian get() = Locale.getDefault().language == "ru"
 
     private lateinit var tabLayout: TabLayout
-    private lateinit var btnPeriodSelector: MaterialButton
+    private lateinit var rootContainer: LinearLayout
+    private lateinit var headerShellContainer: LinearLayout
+    private lateinit var btnPeriodSelector: View
     private lateinit var btnScopeSelector: MaterialButton
-    private lateinit var btnLegacy: AppCompatImageButton
     private lateinit var btnPrevPeriod: AppCompatImageButton
     private lateinit var btnNextPeriod: AppCompatImageButton
     private lateinit var tvDateRange: TextView
@@ -112,9 +117,12 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
     private var currentPeriod: UnifiedPeriod = UnifiedPeriod.WEEK
     private var currentScope: UnifiedScope = UnifiedScope.All
     private var selectedHabitCadence: HabitCadence = HabitCadence.DAILY
+    private var selectedOverviewMetric: OverviewDynamicsMetric = OverviewDynamicsMetric.HABITS
     private var currentAnchorDate: LocalDate = civilToday()
     private var lastKnownToday: LocalDate = civilToday()
     private var lastDatasetId: String = ""
+
+    private enum class OverviewDynamicsMetric { HABITS, TASKS, FOCUS }
 
     private fun civilToday(): LocalDate = java.time.LocalDate.now().let { LocalDate(it.year, it.monthValue, it.dayOfMonth) }
     private var observedComponent: HabitsApplicationComponent? = null
@@ -456,13 +464,34 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
     // UI Layout Construction
     // -------------------------------------------------------------------------
 
+    private fun resolveCanvasBackgroundColor(isClassic: Boolean): Int {
+        return if (isClassic) {
+            if (palette.isPureBlack) palette.background else palette.surface
+        } else {
+            palette.background
+        }
+    }
+
     private fun buildLayout(context: Context): View {
-        val root = LinearLayout(context).apply {
+        val prefs = component.preferences
+        val isClassic = prefs.isClassicSectionLayout
+        val canvasBg = resolveCanvasBackgroundColor(isClassic)
+
+        rootContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(palette.background)
+            setBackgroundColor(canvasBg)
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        headerShellContainer = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(canvasBg)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
             )
         }
 
@@ -470,7 +499,7 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
         tabLayout = TabLayout(context).apply {
             tag = "unified_tabs"
             tabMode = TabLayout.MODE_SCROLLABLE
-            setBackgroundColor(palette.surface)
+            setBackgroundColor(Color.TRANSPARENT)
             setTabTextColors(palette.onSurfaceVariant, palette.accent)
             setSelectedTabIndicatorColor(palette.accent)
             layoutParams = LinearLayout.LayoutParams(
@@ -484,6 +513,15 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
             addTab(newTab().setText(R.string.unified_statistics_tab_focus))
 
             getTabAt(currentTab.ordinal)?.select()
+            val strip = getChildAt(0) as? ViewGroup
+            if (strip != null) {
+                val hPad = if (context.resources.configuration.screenWidthDp < 360) dp(9f) else dp(12f)
+                for (i in 0 until strip.childCount) {
+                    val tabView = strip.getChildAt(i)
+                    tabView.minimumWidth = 0
+                    tabView.setPadding(hPad, tabView.paddingTop, hPad, tabView.paddingBottom)
+                }
+            }
 
             addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
                 override fun onTabSelected(tab: TabLayout.Tab) {
@@ -499,124 +537,36 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
                         savePreferencesForTab()
                         // Single loaded report reused when switching analytic tabs!
                         renderCurrentState()
+                        contentScrollView.scrollTo(0, 0)
                     }
                 }
                 override fun onTabUnselected(tab: TabLayout.Tab) {}
                 override fun onTabReselected(tab: TabLayout.Tab) {}
             })
         }
-        root.addView(tabLayout)
+        headerShellContainer.addView(tabLayout)
+        headerShellContainer.addView(createHairlineDivider(context))
 
-        // 2. Control Bar (Period selector, Scope selector, Legacy button)
+        // 2. Combined Period + Date Navigator & Compact Scope Filter (single row on standard screens;
+        //    cleanly stacked two-row group on <380dp narrow viewports or >=130% font scale).
         val config = context.resources.configuration
-        val isNarrowOrLargeFont = config.screenWidthDp < 360 || config.fontScale >= 1.3f
+        val isNarrowOrLargeFont = config.screenWidthDp < 380 || config.fontScale >= 1.3f
 
-        btnPeriodSelector = MaterialButton(
-            context, null, com.google.android.material.R.attr.borderlessButtonStyle
-        ).apply {
-            tag = "unified_period"
-            minHeight = dp(48f)
-            setTextColor(palette.onSurface)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(12f), 0, dp(12f), 0)
-            setOnClickListener { showPeriodSelectorMenu(it) }
-        }
-
-        btnScopeSelector = MaterialButton(
-            context, null, com.google.android.material.R.attr.borderlessButtonStyle
-        ).apply {
-            tag = "unified_scope"
-            minHeight = dp(48f)
-            setTextColor(palette.onSurface)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(12f), 0, dp(12f), 0)
-            setOnClickListener {
-                UnifiedStatisticsFiltersBottomSheet.show(childFragmentManager, currentScope, component.session.datasetId)
-            }
-        }
-
-        // Legacy Statistics Action
-        btnLegacy = AppCompatImageButton(context).apply {
-            tag = "unified_legacy"
-            minimumWidth = dp(48f)
-            minimumHeight = dp(48f)
-            setImageResource(R.drawable.ic_nav_reports)
-            background = null
-            contentDescription = getString(R.string.unified_statistics_action_legacy_report)
-            imageTintList = ColorStateList.valueOf(palette.onSurfaceVariant)
-            setPadding(dp(12f), dp(12f), dp(12f), dp(12f))
-            setOnClickListener {
-                startActivity(Intent(context, StatisticsActivity::class.java))
-            }
-        }
-
-        val controlBar = if (isNarrowOrLargeFont) {
-            LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(12f), dp(4f), dp(12f), dp(2f))
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-                val topRow = LinearLayout(context).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    layoutParams = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    )
-                }
-                topRow.addView(btnPeriodSelector)
-                topRow.addView(View(context).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, 0, 1f)
-                })
-                topRow.addView(btnLegacy)
-                addView(topRow)
-
-                btnScopeSelector.layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = dp(2f)
-                }
-                addView(btnScopeSelector)
-            }
-        } else {
-            LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(dp(12f), dp(8f), dp(12f), dp(4f))
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-                addView(btnPeriodSelector)
-                btnScopeSelector.layoutParams = LinearLayout.LayoutParams(
-                    0,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    1f
-                ).apply {
-                    marginStart = dp(4f)
-                    marginEnd = dp(4f)
-                }
-                addView(btnScopeSelector)
-                addView(btnLegacy)
-            }
-        }
-
-        root.addView(controlBar)
-
-        // 3. Date Navigation Bar (Prev, Date Range, Next)
-        val dateNavBar = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12f), dp(2f), dp(12f), dp(4f))
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
+        fun styleFilterPill(button: MaterialButton) {
+            button.minHeight = dp(48f)
+            button.insetTop = dp(7f)
+            button.insetBottom = dp(7f)
+            button.isAllCaps = false
+            button.textSize = 13f
+            button.setTypeface(button.typeface, Typeface.BOLD)
+            button.setTextColor(palette.onSurface)
+            button.maxLines = 1
+            button.ellipsize = android.text.TextUtils.TruncateAt.END
+            button.backgroundTintList = ColorStateList.valueOf(resolvePillSurfaceColor())
+            button.strokeWidth = dp(1f)
+            button.strokeColor = ColorStateList.valueOf(resolvePillBorderColor())
+            button.cornerRadius = dp(18f)
+            button.setPadding(dp(12f), 0, dp(12f), 0)
         }
 
         btnPrevPeriod = AppCompatImageButton(context).apply {
@@ -625,7 +575,9 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
             rotation = -90f
             background = null
             contentDescription = getString(R.string.unified_statistics_prev_period)
-            imageTintList = ColorStateList.valueOf(palette.onSurface)
+            imageTintList = ColorStateList.valueOf(palette.onSurfaceVariant)
+            minimumWidth = dp(48f)
+            minimumHeight = dp(48f)
             setPadding(dp(12f), dp(12f), dp(12f), dp(12f))
             setOnClickListener {
                 currentAnchorDate = UnifiedStatisticsStateUtils.navigatePeriod(
@@ -634,17 +586,58 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
                 clampAndRequestUpdate("nav_prev")
             }
         }
-        dateNavBar.addView(btnPrevPeriod)
 
         tvDateRange = TextView(context).apply {
             tag = "unified_date_range"
-            textSize = 15f
+            textSize = 13f
             setTypeface(typeface, Typeface.BOLD)
-            gravity = Gravity.CENTER
+            gravity = Gravity.CENTER_VERTICAL
+            maxLines = if (isNarrowOrLargeFont) 2 else 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(palette.onSurface)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f
+            )
         }
-        dateNavBar.addView(tvDateRange)
+
+        val periodPillVisual = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12f), dp(7f), dp(10f), dp(7f))
+            background = GradientDrawable().apply {
+                setColor(resolvePillSurfaceColor())
+                setStroke(dp(1f), resolvePillBorderColor())
+                cornerRadius = dp(18f).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            addView(tvDateRange)
+            addView(TextView(context).apply {
+                text = "▾"
+                textSize = 11f
+                setTextColor(palette.onSurfaceVariant)
+                setPadding(dp(6f), 0, 0, 0)
+            })
+        }
+
+        // Wrapper preserves strict >=48dp touch height while keeping the visible pill ~34dp tall.
+        btnPeriodSelector = FrameLayout(context).apply {
+            tag = "unified_period"
+            isClickable = true
+            isFocusable = true
+            minimumHeight = dp(48f)
+            foregroundGravity = Gravity.CENTER_VERTICAL
+            (this as FrameLayout).addView(periodPillVisual, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER_VERTICAL
+            ))
+            setOnClickListener { showPeriodSelectorMenu(it) }
+        }
 
         btnNextPeriod = AppCompatImageButton(context).apply {
             tag = "unified_next"
@@ -652,7 +645,9 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
             rotation = -90f
             background = null
             contentDescription = getString(R.string.unified_statistics_next_period)
-            imageTintList = ColorStateList.valueOf(palette.onSurface)
+            imageTintList = ColorStateList.valueOf(palette.onSurfaceVariant)
+            minimumWidth = dp(48f)
+            minimumHeight = dp(48f)
             setPadding(dp(12f), dp(12f), dp(12f), dp(12f))
             setOnClickListener {
                 val nextDate = UnifiedStatisticsStateUtils.navigatePeriod(
@@ -664,9 +659,88 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
                 clampAndRequestUpdate("nav_next")
             }
         }
-        dateNavBar.addView(btnNextPeriod)
 
-        root.addView(dateNavBar)
+        btnScopeSelector = MaterialButton(
+            context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+        ).apply {
+            tag = "unified_scope"
+            styleFilterPill(this)
+            setOnClickListener {
+                UnifiedStatisticsFiltersBottomSheet.show(childFragmentManager, currentScope, component.session.datasetId)
+            }
+        }
+
+        val datePeriodCluster = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(btnPrevPeriod)
+            addView(btnPeriodSelector.apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    1f
+                )
+            })
+            addView(btnNextPeriod)
+        }
+        // Center/constrain pill nicely inside its flex slot on narrow screens or expand smoothly
+        (btnPeriodSelector as FrameLayout).getChildAt(0).layoutParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.CENTER_VERTICAL
+        )
+
+        val controlsBar = if (isNarrowOrLargeFont) {
+            LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(8f), dp(2f), dp(8f), dp(4f))
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+                addView(datePeriodCluster, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ))
+                btnScopeSelector.layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    marginStart = dp(4f)
+                    marginEnd = dp(4f)
+                }
+                addView(btnScopeSelector)
+            }
+        } else {
+            LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(6f), dp(2f), dp(12f), dp(2f))
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+                addView(datePeriodCluster, LinearLayout.LayoutParams(
+                    0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    1f
+                ))
+                btnScopeSelector.maxWidth = dp(148f)
+                btnScopeSelector.layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    marginStart = dp(4f)
+                }
+                addView(btnScopeSelector)
+            }
+        }
+
+        headerShellContainer.addView(controlsBar)
+        if (isClassic) {
+            headerShellContainer.addView(createHairlineDivider(context))
+        }
+        rootContainer.addView(headerShellContainer)
 
         // 4. Status / Refreshing / Error Banner
         statusBanner = LinearLayout(context).apply {
@@ -696,7 +770,7 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
             setOnClickListener { refresh() }
         }
         statusBanner.addView(btnRetry)
-        root.addView(statusBanner)
+        rootContainer.addView(statusBanner)
 
         // 5. Loading Progress Bar
         loadingProgressBar = ProgressBar(context).apply {
@@ -710,7 +784,7 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
                 topMargin = dp(32f)
             }
         }
-        root.addView(loadingProgressBar)
+        rootContainer.addView(loadingProgressBar)
 
         // 6. Content Scroll View
         contentScrollView = ScrollView(context).apply {
@@ -721,11 +795,11 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
                 1f
             )
         }
-        val isClassic = component.preferences.isClassicSectionLayout
+        val showBorders = prefs.showHabitCardBorders
         contentContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            val padH = if (isClassic) 0 else dp(16f)
-            val padT = if (isClassic) dp(4f) else dp(8f)
+            val padH = if (isClassic || !showBorders) 0 else dp(16f)
+            val padT = if (isClassic) 0 else if (!showBorders) dp(4f) else dp(8f)
             setPadding(padH, padT, padH, dp(24f))
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -733,9 +807,9 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
             )
         }
         contentScrollView.addView(contentContainer)
-        root.addView(contentScrollView)
+        rootContainer.addView(contentScrollView)
 
-        return root
+        return rootContainer
     }
 
     // -------------------------------------------------------------------------
@@ -1133,7 +1207,7 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
     private fun updateHeaderLabels() {
         if (!::btnPeriodSelector.isInitialized) return
 
-        btnPeriodSelector.text = when (currentPeriod) {
+        val periodLabel = when (currentPeriod) {
             UnifiedPeriod.DAY -> getString(R.string.unified_statistics_period_day)
             UnifiedPeriod.WEEK -> getString(R.string.unified_statistics_period_week)
             UnifiedPeriod.MONTH -> getString(R.string.unified_statistics_period_month)
@@ -1156,8 +1230,8 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
         btnScopeSelector.contentDescription = btnScopeSelector.text
 
         val isAll = currentPeriod == UnifiedPeriod.ALL
-        btnPrevPeriod.visibility = if (isAll) View.INVISIBLE else View.VISIBLE
-        btnNextPeriod.visibility = if (isAll) View.INVISIBLE else View.VISIBLE
+        btnPrevPeriod.visibility = if (isAll) View.GONE else View.VISIBLE
+        btnNextPeriod.visibility = if (isAll) View.GONE else View.VISIBLE
 
         val isLatest = UnifiedStatisticsStateUtils.isLatestAllowedPeriod(
             currentPeriod, currentAnchorDate, lastKnownToday, component.preferences.firstWeekday
@@ -1169,19 +1243,34 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
         val (start, end) = UnifiedStatisticsStateUtils.calculatePeriodRange(
             currentPeriod, currentAnchorDate, lastKnownToday, component.preferences.firstWeekday, resolvedAllFrom
         )
-        tvDateRange.text = when (currentPeriod) {
-            UnifiedPeriod.DAY -> dateFormatter.longFormat(start)
-            UnifiedPeriod.WEEK -> "${dateFormatter.longFormat(start)} — ${dateFormatter.longFormat(end)}"
-            UnifiedPeriod.MONTH -> "${dateFormatter.longMonthName(start)} ${start.year}"
+        val rangeText: String? = when (currentPeriod) {
+            UnifiedPeriod.DAY -> {
+                if (start.year == lastKnownToday.year) {
+                    StatisticsRedesignModels.formatCompactDateRange(start, start, lastKnownToday.year, isRussian)
+                } else {
+                    dateFormatter.longFormat(start)
+                }
+            }
+            UnifiedPeriod.WEEK -> StatisticsRedesignModels.formatCompactDateRange(
+                start = start,
+                end = end,
+                referenceYear = lastKnownToday.year,
+                isRussian = isRussian,
+                alwaysIncludeYear = false
+            )
+            UnifiedPeriod.MONTH -> {
+                val monthName = dateFormatter.longMonthName(start)
+                if (start.year == lastKnownToday.year) monthName else "$monthName ${start.year}"
+            }
             UnifiedPeriod.YEAR -> start.year.toString()
             UnifiedPeriod.ALL -> {
-                if (resolvedAllFrom != null) {
-                    getString(R.string.unified_statistics_since_date, dateFormatter.longFormat(resolvedAllFrom))
-                } else {
-                    getString(R.string.reports_tab_all)
+                resolvedAllFrom?.let {
+                    getString(R.string.unified_statistics_since_date, dateFormatter.longFormat(it))
                 }
             }
         }
+        tvDateRange.text = StatisticsRedesignModels.formatPeriodHeaderLabel(periodLabel, rangeText)
+        btnPeriodSelector.contentDescription = tvDateRange.text
     }
 
     private fun renderCurrentState() {
@@ -1228,10 +1317,6 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
     }
 
     private fun renderDomainCards(report: UnifiedStatisticsReport) {
-        if (report.context.habitHourOffset != 0) {
-            contentContainer.addView(createSecondaryInfo(requireContext(), getString(
-                R.string.unified_statistics_calendar_offset, report.context.habitHourOffset)))
-        }
         when (currentTab) {
             UnifiedAnalyticsTab.OVERVIEW -> renderOverviewTab(report)
             UnifiedAnalyticsTab.HABITS -> renderHabitsTab(report)
@@ -1240,9 +1325,30 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
         }
     }
 
+    private fun hasCadenceRowData(aggregate: HabitCadenceAggregate): Boolean =
+        aggregate.eligibleCount > 0 || aggregate.ongoingCount > 0
+
+    private fun hasCadenceTabData(habits: HabitCycleStatisticsResult, cadence: HabitCadence): Boolean {
+        val agg = when (cadence) {
+            HabitCadence.DAILY -> habits.daily
+            HabitCadence.WEEKLY -> habits.weekly
+            HabitCadence.MONTHLY -> habits.monthly
+            HabitCadence.UNSUPPORTED -> habits.unsupported
+        }
+        return hasCadenceRowData(agg) ||
+            habits.dateBuckets[cadence].orEmpty().any {
+                it.satisfiedCount + it.notSatisfiedCount + it.unknownCount > 0
+            } ||
+            habits.habitSummaries.any { it.cadence == cadence }
+    }
+
     // 1. Overview Tab
     private fun renderOverviewTab(report: UnifiedStatisticsReport) {
         val context = requireContext()
+        val pulse = StatisticsRedesignModels.buildOverviewPulse(report, isRussian)
+        val config = context.resources.configuration
+        val isNarrowOrLargeFont = config.screenWidthDp < 360 || config.fontScale >= 1.3f
+
         val overviewLayout = LinearLayout(context).apply {
             tag = "habitOverviewLayout"
             orientation = LinearLayout.VERTICAL
@@ -1252,256 +1358,364 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
             )
         }
 
-        // Habit goals card (tag: overviewCadenceGroup)
-        val habitCard = createCardView(context)
-        val habitLayout = LinearLayout(context).apply {
+        // 1. Compact Pulse Hero Card (never mixes daily/weekly/limit targets)
+        val habits = report.habits
+        val pulseCard = createCardView(context)
+        val pulseLayout = LinearLayout(context).apply {
             tag = "overviewCadenceGroup"
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16f), dp(16f), dp(16f), dp(16f))
+            setPadding(dp(16f), dp(14f), dp(16f), dp(14f))
         }
-        habitLayout.addView(createSectionHeader(context, getString(R.string.unified_statistics_overview_habits_title)))
-        habitLayout.addView(createSectionSubtitle(context, getString(R.string.unified_statistics_overview_habits_subtitle)))
 
-        val habits = report.habits
-        if (habits != null) {
-            fun openCadence(cadence: HabitCadence, title: String) {
-                if (isRefreshingState || currentLoadedReport !== report) return
-                selectedHabitCadence = cadence
+        val dailyHeroRow = LinearLayout(context).apply {
+            tag = "habitCadenceDailyRow"
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(48f)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                if (isRefreshingState || currentLoadedReport !== report) return@setOnClickListener
+                selectedHabitCadence = HabitCadence.DAILY
                 tabLayout.getTabAt(UnifiedAnalyticsTab.HABITS.ordinal)?.select()
-                UnifiedStatisticsDrilldownBottomSheet.showForHabitCycles(
-                    childFragmentManager, title, "", HabitsDrilldownDescriptor.CadenceCycles(cadence)
-                )
             }
-            habitLayout.addView(createCadenceRow(
-                context, getString(R.string.unified_statistics_cadence_daily), habits.daily, "habitCadenceDailyRow"
-            ) {
-                openCadence(HabitCadence.DAILY, getString(R.string.unified_statistics_cadence_daily))
-            })
-            habitLayout.addView(createCadenceRow(
-                context, getString(R.string.unified_statistics_cadence_weekly), habits.weekly, "habitCadenceWeeklyRow"
-            ) {
-                openCadence(HabitCadence.WEEKLY, getString(R.string.unified_statistics_cadence_weekly))
-            })
-            habitLayout.addView(createCadenceRow(
-                context, getString(R.string.unified_statistics_cadence_monthly), habits.monthly, "habitCadenceMonthlyRow"
-            ) {
-                openCadence(HabitCadence.MONTHLY, getString(R.string.unified_statistics_cadence_monthly))
-            })
-            if (habits.dataState == StatisticsDataState.PARTIAL) {
-                habitLayout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_state_partial)))
-            }
-        } else {
-            habitLayout.addView(createEmptyText(context, getString(R.string.unified_statistics_domain_failed)))
         }
-        habitCard.addView(habitLayout)
-        overviewLayout.addView(habitCard)
+        val dailyLeftCol = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        dailyLeftCol.addView(createSectionSubtitle(context, getString(R.string.unified_statistics_pulse_daily_label)).apply {
+            setPadding(0, 0, 0, dp(2f))
+        })
+        if (pulse.dailyCompletionPercent != null && pulse.dailyFractionLabel != null) {
+            val pctLine = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.BOTTOM
+            }
+            pctLine.addView(TextView(context).apply {
+                text = "${pulse.dailyCompletionPercent}%"
+                textSize = 30f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(palette.onSurface)
+            })
+            pctLine.addView(TextView(context).apply {
+                text = pulse.dailyFractionLabel
+                textSize = 13f
+                setTextColor(palette.onSurfaceVariant)
+                setPadding(dp(8f), 0, 0, dp(4f))
+            })
+            dailyLeftCol.addView(pctLine)
+        } else {
+            dailyLeftCol.addView(TextView(context).apply {
+                text = if ((habits?.daily?.ongoingCount ?: 0) > 0) {
+                    getString(R.string.unified_statistics_habits_ongoing_in_progress)
+                } else {
+                    getString(R.string.unified_statistics_pulse_daily_empty)
+                }
+                textSize = 16f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(palette.onSurfaceVariant)
+            })
+        }
+        dailyHeroRow.addView(dailyLeftCol)
+        dailyHeroRow.addView(TextView(context).apply {
+            text = "›"
+            textSize = 20f
+            setTextColor(palette.onSurfaceVariant)
+        })
+        pulseLayout.addView(dailyHeroRow)
 
-        // Summary row: Tasks & Focus
-        val config = context.resources.configuration
-        val isNarrowOrLargeFont = config.screenWidthDp < 360 || config.fontScale >= 1.3f
-        val summaryRow = LinearLayout(context).apply {
+        pulseLayout.addView(createHairlineDivider(context, topMarginDp = 8f, bottomMarginDp = 10f))
+
+        // Compact Tasks & Focus 2-column strip inside Pulse Hero
+        val kpiRow = LinearLayout(context).apply {
             orientation = if (isNarrowOrLargeFont) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(12f)
-            }
+            )
         }
 
-        // Tasks overview card (tag: overviewTasksCard)
-        val tasksCard = createCardView(context).apply {
+        val tasksKpi = LinearLayout(context).apply {
             tag = "overviewTasksCard"
+            orientation = LinearLayout.VERTICAL
             isClickable = true
             isFocusable = true
+            minimumHeight = dp(48f)
             layoutParams = if (isNarrowOrLargeFont) {
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    bottomMargin = dp(12f)
+                    bottomMargin = dp(8f)
                 }
             } else {
                 LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginEnd = dp(6f)
+                    marginEnd = dp(12f)
                 }
             }
             setOnClickListener {
                 tabLayout.getTabAt(UnifiedAnalyticsTab.TASKS.ordinal)?.select()
             }
         }
-        val tasksLayout = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16f), dp(16f), dp(16f), dp(16f))
-        }
-        tasksLayout.addView(createSectionSubtitle(context, getString(R.string.unified_statistics_overview_tasks_title)))
+        tasksKpi.addView(TextView(context).apply {
+            text = getString(R.string.unified_statistics_overview_tasks_title)
+            textSize = 12f
+            setTextColor(palette.onSurfaceVariant)
+        })
         val tasks = report.tasks
         if (tasks != null) {
-            tasksLayout.addView(createStatNumber(context, tasks.completedCount.toString()))
-            tasksLayout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_tasks_created_count, tasks.createdCount)))
-            if (tasks.dataState == StatisticsDataState.PARTIAL) {
-                tasksLayout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_state_partial)))
+            tasksKpi.addView(TextView(context).apply {
+                text = pulse.tasksCompletedCount.toString()
+                textSize = 20f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(palette.onSurface)
+                setPadding(0, dp(2f), 0, dp(1f))
+            })
+            val tasksSub = when {
+                pulse.tasksOverdueCount > 0 ->
+                    getString(R.string.unified_statistics_pulse_tasks_overdue, pulse.tasksOverdueCount)
+                pulse.tasksCreatedCount > 0 ->
+                    getString(R.string.unified_statistics_pulse_tasks_created, pulse.tasksCreatedCount)
+                else ->
+                    if (isRussian) "В периоде пусто" else "None this period"
             }
+            tasksKpi.addView(TextView(context).apply {
+                text = tasksSub
+                textSize = 12f
+                setTextColor(if (pulse.tasksOverdueCount > 0) 0xFFE53935.toInt() else palette.onSurfaceVariant)
+            })
         } else {
-            tasksLayout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_domain_failed)))
+            tasksKpi.addView(TextView(context).apply {
+                text = "—"
+                textSize = 18f
+                setTextColor(palette.onSurfaceVariant)
+            })
         }
-        tasksCard.addView(tasksLayout)
-        summaryRow.addView(tasksCard)
+        kpiRow.addView(tasksKpi)
 
-        // Focus overview card (tag: overviewFocusCard)
-        val focusCard = createCardView(context).apply {
+        val focusKpi = LinearLayout(context).apply {
             tag = "overviewFocusCard"
+            orientation = LinearLayout.VERTICAL
             isClickable = true
             isFocusable = true
+            minimumHeight = dp(48f)
             layoutParams = if (isNarrowOrLargeFont) {
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
             } else {
                 LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginStart = dp(6f)
+                    marginStart = dp(12f)
                 }
             }
             setOnClickListener {
                 tabLayout.getTabAt(UnifiedAnalyticsTab.FOCUS.ordinal)?.select()
             }
         }
-        val focusLayout = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16f), dp(16f), dp(16f), dp(16f))
-        }
-        focusLayout.addView(createSectionSubtitle(context, getString(R.string.unified_statistics_overview_focus_title)))
+        focusKpi.addView(TextView(context).apply {
+            text = getString(R.string.unified_statistics_overview_focus_title)
+            textSize = 12f
+            setTextColor(palette.onSurfaceVariant)
+        })
         val focus = report.focus
-        if (focus != null) {
-            val hasOverflow = focus.totalDurationMs == Long.MAX_VALUE ||
-                focus.issues.any { it.code == StatisticsIssueCode.OVERFLOW }
-            if (hasOverflow) {
-                focusLayout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_overflow)))
-            } else {
-                focusLayout.addView(createStatNumber(context, UnifiedStatisticsStateUtils.formatDurationMs(focus.totalDurationMs, isRussian)))
-                focusLayout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_overview_focus_sessions_format, focus.sessionCount)).apply { tag = "overview_focus_f2" })
+        if (focus != null && !pulse.focusHasOverflow) {
+            focusKpi.addView(TextView(context).apply {
+                text = pulse.focusDurationFormatted ?: "0"
+                textSize = 20f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(palette.onSurface)
+                setPadding(0, dp(2f), 0, dp(1f))
+            })
+            val focusMetaParts = buildList {
+                add(getString(R.string.unified_statistics_sessions_pill, pulse.focusSessionCount))
+                pulse.focusAvgPerDayFormatted?.let(::add)
             }
-            if (focus.dataState == StatisticsDataState.PARTIAL) {
-                focusLayout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_state_partial)))
-            }
+            focusKpi.addView(TextView(context).apply {
+                tag = "overview_focus_f2"
+                text = focusMetaParts.joinToString(" · ")
+                textSize = 12f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(palette.onSurfaceVariant)
+            })
         } else {
-            focusLayout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_domain_failed)))
+            focusKpi.addView(TextView(context).apply {
+                text = if (pulse.focusHasOverflow) getString(R.string.unified_statistics_overflow) else "—"
+                textSize = 16f
+                setTextColor(palette.onSurfaceVariant)
+            })
         }
-        focusCard.addView(focusLayout)
-        summaryRow.addView(focusCard)
-        overviewLayout.addView(summaryRow)
+        kpiRow.addView(focusKpi)
+        pulseLayout.addView(kpiRow)
 
-        // Period Dynamics Section
-        val dynamicsCard = createCardView(context).apply {
-            (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(12f)
-        }
-        val dynamicsLayout = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16f), dp(16f), dp(16f), dp(16f))
-        }
-        dynamicsLayout.addView(createSectionHeader(context, getString(R.string.unified_statistics_overview_dynamics_title)))
-        dynamicsLayout.addView(createSectionSubtitle(context, getString(R.string.unified_statistics_overview_dynamics_subtitle)))
+        pulseCard.addView(pulseLayout)
+        overviewLayout.addView(pulseCard)
 
-        // 1. Habit daily goals chart
-        if (habits != null) {
-            val habitColumns = DiscreteChartBucketer.buildHabitColumns(
-                currentPeriod, HabitCadence.DAILY, habits, lastKnownToday, palette, isRussian
+        // 2. Single Interactive Period Dynamics Card (Habits | Tasks | Focus switcher)
+        val habitColumns = if (habits != null) {
+            DiscreteChartBucketer.buildHabitColumns(
+                currentPeriod, HabitCadence.DAILY, habits, lastKnownToday, palette, isRussian,
+                includeUnknownSegment = false
             )
-            if (habitColumns.isNotEmpty()) {
-                val chartTitle = TextView(context).apply {
-                    text = getString(R.string.unified_statistics_overview_dynamics_habits)
-                    textSize = 13f
-                    setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(palette.onSurfaceVariant)
-                    setPadding(0, dp(8f), 0, dp(4f))
-                }
-                dynamicsLayout.addView(chartTitle)
-
-                val habitChart = DiscreteColumnBarChart(context).apply {
-                    tag = "overviewHabitsChart"
-                    isEnabled = !isRefreshingState
-                    setData(habitColumns, palette, unitLabel = if (isRussian) "цели" else "goals") { _, item ->
-                        if (isRefreshingState || currentLoadedReport !== report) return@setData
-                        val desc = item.descriptor as? HabitsDrilldownDescriptor ?: return@setData
-                        UnifiedStatisticsDrilldownBottomSheet.showForHabitCycles(
-                            childFragmentManager, item.label, "", desc
-                        )
-                    }
-                }
-                dynamicsLayout.addView(wrapScrollableChart(
-                    context, habitChart, habitColumns, topMarginDp = 0f, bottomMarginDp = 8f
-                ))
-            }
-        } else {
-            dynamicsLayout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_domain_failed)))
-        }
-
-        // 2. Tasks completed chart
-        if (tasks != null) {
-            val taskColumns = DiscreteChartBucketer.buildTaskColumns(
+        } else emptyList()
+        val taskColumns = if (tasks != null) {
+            DiscreteChartBucketer.buildTaskColumns(
                 currentPeriod, tasks, lastKnownToday, isRussian
             )
-            if (taskColumns.isNotEmpty()) {
-                val taskChartTitle = TextView(context).apply {
-                    text = getString(R.string.unified_statistics_overview_dynamics_tasks)
-                    textSize = 13f
-                    setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(palette.onSurfaceVariant)
-                    setPadding(0, dp(8f), 0, dp(4f))
-                }
-                dynamicsLayout.addView(taskChartTitle)
-
-                val taskChart = DiscreteColumnBarChart(context).apply {
-                    tag = "overviewTasksChart"
-                    isEnabled = !isRefreshingState
-                    setData(taskColumns, palette, unitLabel = if (isRussian) "шт." else "pcs") { _, item ->
-                        if (isRefreshingState || currentLoadedReport !== report) return@setData
-                        val desc = item.descriptor as? TasksDrilldownDescriptor ?: return@setData
-                        UnifiedStatisticsDrilldownBottomSheet.showForTasks(
-                            childFragmentManager, item.label, "", desc
-                        )
-                    }
-                }
-                dynamicsLayout.addView(wrapScrollableChart(
-                    context, taskChart, taskColumns, topMarginDp = 0f, bottomMarginDp = 8f
-                ))
-            }
-        }
-
-        // 3. Focus duration chart
-        if (focus != null) {
-            val focusColumns = DiscreteChartBucketer.buildFocusColumns(
+        } else emptyList()
+        val focusColumns = if (focus != null) {
+            DiscreteChartBucketer.buildFocusColumns(
                 currentPeriod, focus, lastKnownToday, isRussian
             )
-            if (focusColumns.isNotEmpty()) {
-                val focusChartTitle = TextView(context).apply {
-                    text = getString(R.string.unified_statistics_overview_dynamics_focus)
-                    textSize = 13f
-                    setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(palette.onSurfaceVariant)
-                    setPadding(0, dp(8f), 0, dp(4f))
-                }
-                dynamicsLayout.addView(focusChartTitle)
+        } else emptyList()
 
-                val focusChart = DiscreteColumnBarChart(context).apply {
-                    tag = "overviewFocusChart"
-                    isEnabled = !isRefreshingState
-                    setData(focusColumns, palette, unitLabel = if (isRussian) "время" else "time",
-                        valueFormatter = { UnifiedStatisticsStateUtils.formatExactDurationMs(it, isRussian) }) { _, item ->
-                        if (isRefreshingState || currentLoadedReport !== report) return@setData
-                        val desc = item.descriptor as? FocusDrilldownDescriptor ?: return@setData
-                        UnifiedStatisticsDrilldownBottomSheet.showForFocus(
-                            childFragmentManager, item.label, "", desc
-                        )
+        val hasHabitChart = habitColumns.any { it.value > 0L }
+        val hasTaskChart = taskColumns.any { it.value > 0L }
+        val hasFocusChart = focusColumns.any { it.value > 0L }
+
+        val availableMetrics = buildList {
+            if (hasHabitChart) add(OverviewDynamicsMetric.HABITS)
+            if (hasTaskChart) add(OverviewDynamicsMetric.TASKS)
+            if (hasFocusChart) add(OverviewDynamicsMetric.FOCUS)
+        }
+
+        if (availableMetrics.isNotEmpty()) {
+            if (selectedOverviewMetric !in availableMetrics) {
+                selectedOverviewMetric = availableMetrics.first()
+            }
+
+            val dynamicsCard = createCardView(context, topMarginDp = 10f)
+            val dynamicsLayout = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16f), dp(14f), dp(16f), dp(14f))
+            }
+
+            dynamicsLayout.addView(createSectionHeader(context, getString(R.string.unified_statistics_overview_dynamics_title)).apply {
+                setPadding(0, 0, 0, dp(8f))
+            })
+
+            if (availableMetrics.size > 1) {
+                val switcherRow = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        bottomMargin = dp(8f)
                     }
                 }
-                dynamicsLayout.addView(wrapScrollableChart(
-                    context, focusChart, focusColumns, topMarginDp = 0f, bottomMarginDp = 8f
-                ))
+                availableMetrics.forEachIndexed { idx, metric ->
+                    val isSelected = selectedOverviewMetric == metric
+                    val labelRes = when (metric) {
+                        OverviewDynamicsMetric.HABITS -> R.string.unified_statistics_dynamics_metric_habits
+                        OverviewDynamicsMetric.TASKS -> R.string.unified_statistics_dynamics_metric_tasks
+                        OverviewDynamicsMetric.FOCUS -> R.string.unified_statistics_dynamics_metric_focus
+                    }
+                    switcherRow.addView(MaterialButton(
+                        context, null, com.google.android.material.R.attr.borderlessButtonStyle
+                    ).apply {
+                        text = getString(labelRes)
+                        minHeight = dp(48f)
+                        insetTop = dp(7f)
+                        insetBottom = dp(7f)
+                        isAllCaps = false
+                        textSize = 13f
+                        setTypeface(typeface, if (isSelected) Typeface.BOLD else Typeface.NORMAL)
+                        setTextColor(if (isSelected) palette.accent else palette.onSurfaceVariant)
+                        backgroundTintList = ColorStateList.valueOf(
+                            if (isSelected) resolvePillSurfaceColor() else Color.TRANSPARENT
+                        )
+                        strokeWidth = if (isSelected) dp(1f) else 0
+                        strokeColor = ColorStateList.valueOf(resolvePillBorderColor())
+                        cornerRadius = dp(12f)
+                        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                            if (idx > 0) marginStart = dp(4f)
+                        }
+                        setOnClickListener {
+                            if (selectedOverviewMetric != metric) {
+                                selectedOverviewMetric = metric
+                                renderCurrentState()
+                            }
+                        }
+                    })
+                }
+                dynamicsLayout.addView(switcherRow)
             }
-        }
 
-        if (habits?.dataState == StatisticsDataState.PARTIAL || (habits?.daily?.unknownCount ?: 0) > 0) {
-            dynamicsLayout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_overview_dynamics_unknown_notice)))
-        }
+            when (selectedOverviewMetric) {
+                OverviewDynamicsMetric.HABITS -> {
+                    val habitChart = DiscreteColumnBarChart(context).apply {
+                        tag = "overviewHabitsChart"
+                        isEnabled = !isRefreshingState
+                        setData(habitColumns, palette, unitLabel = if (isRussian) "цели" else "goals") { _, item ->
+                            if (isRefreshingState || currentLoadedReport !== report) return@setData
+                            val desc = item.descriptor as? HabitsDrilldownDescriptor ?: return@setData
+                            UnifiedStatisticsDrilldownBottomSheet.showForHabitCycles(
+                                childFragmentManager, item.label, "", desc
+                            )
+                        }
+                    }
+                    dynamicsLayout.addView(wrapScrollableChart(
+                        context, habitChart, habitColumns, topMarginDp = 4f, bottomMarginDp = 6f
+                    ))
+                    val dailyAgg = habits?.daily
+                    if (dailyAgg != null) {
+                        val legendRow = LinearLayout(context).apply {
+                            orientation = LinearLayout.HORIZONTAL
+                            setPadding(0, dp(2f), 0, 0)
+                        }
+                        legendRow.addView(createLegendDotItem(
+                            context, 0xFF4CAF50.toInt(),
+                            getString(R.string.unified_statistics_legend_done, dailyAgg.satisfiedCount)
+                        ))
+                        if (dailyAgg.notSatisfiedCount > 0) {
+                            legendRow.addView(createLegendDotItem(
+                                context, 0xFFE53935.toInt(),
+                                getString(R.string.unified_statistics_legend_missed, dailyAgg.notSatisfiedCount)
+                            ).apply {
+                                setPadding(dp(16f), 0, 0, 0)
+                            })
+                        }
+                        dynamicsLayout.addView(legendRow)
+                    }
+                }
+                OverviewDynamicsMetric.TASKS -> {
+                    val taskChart = DiscreteColumnBarChart(context).apply {
+                        tag = "overviewTasksChart"
+                        isEnabled = !isRefreshingState
+                        setData(taskColumns, palette, unitLabel = if (isRussian) "шт." else "pcs") { _, item ->
+                            if (isRefreshingState || currentLoadedReport !== report) return@setData
+                            val desc = item.descriptor as? TasksDrilldownDescriptor ?: return@setData
+                            UnifiedStatisticsDrilldownBottomSheet.showForTasks(
+                                childFragmentManager, item.label, "", desc
+                            )
+                        }
+                    }
+                    dynamicsLayout.addView(wrapScrollableChart(
+                        context, taskChart, taskColumns, topMarginDp = 4f, bottomMarginDp = 4f
+                    ))
+                }
+                OverviewDynamicsMetric.FOCUS -> {
+                    val focusChart = DiscreteColumnBarChart(context).apply {
+                        tag = "overviewFocusChart"
+                        isEnabled = !isRefreshingState
+                        setData(focusColumns, palette, unitLabel = if (isRussian) "время" else "time",
+                            valueFormatter = { UnifiedStatisticsStateUtils.formatCompactDurationMs(it, isRussian) }) { _, item ->
+                            if (isRefreshingState || currentLoadedReport !== report) return@setData
+                            val desc = item.descriptor as? FocusDrilldownDescriptor ?: return@setData
+                            UnifiedStatisticsDrilldownBottomSheet.showForFocus(
+                                childFragmentManager,
+                                item.label,
+                                UnifiedStatisticsStateUtils.formatExactDurationMs(item.value, isRussian),
+                                desc
+                            )
+                        }
+                    }
+                    dynamicsLayout.addView(wrapScrollableChart(
+                        context, focusChart, focusColumns, topMarginDp = 4f, bottomMarginDp = 4f
+                    ))
+                }
+            }
 
-        dynamicsCard.addView(dynamicsLayout)
-        overviewLayout.addView(dynamicsCard)
+            dynamicsCard.addView(dynamicsLayout)
+            overviewLayout.addView(dynamicsCard)
+        }
 
         contentContainer.addView(overviewLayout)
     }
@@ -1522,140 +1736,156 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
             return
         }
 
-        // 1. Cadence Summaries Card
-        val card = createCardView(context)
-        val layout = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16f), dp(16f), dp(16f), dp(16f))
-        }
-
-        val stackHeader = context.resources.configuration.let { it.screenWidthDp < 360 || it.fontScale >= 1.3f }
-        val headerRow = LinearLayout(context).apply {
-            orientation = if (stackHeader) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
-            gravity = if (stackHeader) Gravity.START else Gravity.CENTER_VERTICAL
-        }
-        val headerTitle = createSectionHeader(context, getString(R.string.unified_statistics_habits_chart_title)).apply {
-            layoutParams = if (stackHeader) {
-                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-            } else {
-                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            }
-        }
-        headerRow.addView(headerTitle)
-
-        // Compare single entry (tag: habitCompareEntry)
-        val btnCompare = MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
-            tag = "habitCompareEntry"
-            text = getString(R.string.unified_statistics_action_compare_habits)
-            setTextColor(palette.accent)
-            minHeight = dp(48f)
-            setOnClickListener {
-                startActivity(app.component.intentFactory.startCompareHabitsActivity(context))
-            }
-        }
-        headerRow.addView(btnCompare)
-        layout.addView(headerRow)
-
-        layout.addView(createCadenceRow(
-            context, getString(R.string.unified_statistics_cadence_daily), habits.daily, "habitCadenceDailyRow"
-        ) {
-            if (isRefreshingState || currentLoadedReport !== report) return@createCadenceRow
-            UnifiedStatisticsDrilldownBottomSheet.showForHabitCycles(
-                childFragmentManager, getString(R.string.unified_statistics_cadence_daily), "",
-                HabitsDrilldownDescriptor.CadenceCycles(HabitCadence.DAILY)
-            )
-        })
-        layout.addView(createCadenceRow(
-            context, getString(R.string.unified_statistics_cadence_weekly), habits.weekly, "habitCadenceWeeklyRow"
-        ) {
-            if (isRefreshingState || currentLoadedReport !== report) return@createCadenceRow
-            UnifiedStatisticsDrilldownBottomSheet.showForHabitCycles(
-                childFragmentManager, getString(R.string.unified_statistics_cadence_weekly), "",
-                HabitsDrilldownDescriptor.CadenceCycles(HabitCadence.WEEKLY)
-            )
-        })
-        layout.addView(createCadenceRow(
-            context, getString(R.string.unified_statistics_cadence_monthly), habits.monthly, "habitCadenceMonthlyRow"
-        ) {
-            if (isRefreshingState || currentLoadedReport !== report) return@createCadenceRow
-            UnifiedStatisticsDrilldownBottomSheet.showForHabitCycles(
-                childFragmentManager, getString(R.string.unified_statistics_cadence_monthly), "",
-                HabitsDrilldownDescriptor.CadenceCycles(HabitCadence.MONTHLY)
-            )
-        })
-
-        if (habits.unsupported.unsupportedCount > 0) {
-            layout.addView(createSecondaryInfo(context, getString(
-                R.string.unified_statistics_unsupported_count, habits.unsupported.unsupportedCount)))
-        }
-        if (habits.dataState == StatisticsDataState.PARTIAL) {
-            layout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_state_partial)))
-        }
-        card.addView(layout)
-        contentContainer.addView(card)
-
-        // 2. Adaptive Cadence Chart Card
-        val chartCard = createCardView(context).apply {
-            (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(12f)
-        }
+        // 1. Cadence Switcher + Headline KPI + Interactive Chart Card
+        val chartCard = createCardView(context)
         val chartLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16f), dp(16f), dp(16f), dp(16f))
+            setPadding(dp(16f), dp(14f), dp(16f), dp(14f))
         }
 
-        // Cadence Switcher Tabs
-        val cadenceSwitcher = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = dp(8f)
-            }
+        val activeCadences = listOf(HabitCadence.DAILY, HabitCadence.WEEKLY, HabitCadence.MONTHLY)
+            .filter { hasCadenceTabData(habits, it) }
+            .ifEmpty { listOf(HabitCadence.DAILY) }
+        if (selectedHabitCadence !in activeCadences) {
+            selectedHabitCadence = activeCadences.first()
         }
 
-        fun createCadenceTabButton(cadence: HabitCadence, label: String, tagStr: String): MaterialButton {
-            val isSelected = selectedHabitCadence == cadence
-            return MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
-                tag = tagStr
-                text = label
-                minHeight = dp(48f)
-                isAllCaps = false
-                setTextColor(if (isSelected) palette.accent else palette.onSurfaceVariant)
-                setTypeface(typeface, if (isSelected) Typeface.BOLD else Typeface.NORMAL)
-                background = GradientDrawable().apply {
-                    setColor(if (isSelected) palette.surfaceVariant else Color.TRANSPARENT)
-                    cornerRadius = dp(8f).toFloat()
+        if (activeCadences.size > 1) {
+            val cadenceSwitcher = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = dp(10f)
                 }
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                setOnClickListener {
-                    if (selectedHabitCadence != cadence) {
-                        selectedHabitCadence = cadence
-                        renderCurrentState()
+            }
+            activeCadences.forEachIndexed { idx, cadence ->
+                val isSelected = selectedHabitCadence == cadence
+                val (labelRes, tagStr) = when (cadence) {
+                    HabitCadence.DAILY -> R.string.unified_statistics_cadence_daily to "habitCadenceTabDaily"
+                    HabitCadence.WEEKLY -> R.string.unified_statistics_cadence_weekly to "habitCadenceTabWeekly"
+                    HabitCadence.MONTHLY -> R.string.unified_statistics_cadence_monthly to "habitCadenceTabMonthly"
+                    HabitCadence.UNSUPPORTED -> R.string.unified_statistics_cadence_unsupported to "habitCadenceTabUnsupported"
+                }
+                cadenceSwitcher.addView(MaterialButton(
+                    context, null, com.google.android.material.R.attr.borderlessButtonStyle
+                ).apply {
+                    tag = tagStr
+                    text = getString(labelRes)
+                    minHeight = dp(48f)
+                    insetTop = dp(7f)
+                    insetBottom = dp(7f)
+                    isAllCaps = false
+                    textSize = 13f
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    setTextColor(if (isSelected) palette.accent else palette.onSurfaceVariant)
+                    setTypeface(typeface, if (isSelected) Typeface.BOLD else Typeface.NORMAL)
+                    backgroundTintList = ColorStateList.valueOf(
+                        if (isSelected) resolvePillSurfaceColor() else Color.TRANSPARENT
+                    )
+                    strokeWidth = if (isSelected) dp(1f) else 0
+                    strokeColor = ColorStateList.valueOf(resolvePillBorderColor())
+                    cornerRadius = dp(12f)
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        if (idx > 0) marginStart = dp(4f)
                     }
-                }
+                    setOnClickListener {
+                        if (selectedHabitCadence != cadence) {
+                            selectedHabitCadence = cadence
+                            renderCurrentState()
+                        }
+                    }
+                })
+            }
+            chartLayout.addView(cadenceSwitcher)
+        }
+
+        val activeAgg = when (selectedHabitCadence) {
+            HabitCadence.DAILY -> habits.daily
+            HabitCadence.WEEKLY -> habits.weekly
+            HabitCadence.MONTHLY -> habits.monthly
+            else -> habits.unsupported
+        }
+        val activeCadenceLabel = when (selectedHabitCadence) {
+            HabitCadence.DAILY -> getString(R.string.unified_statistics_cadence_daily)
+            HabitCadence.WEEKLY -> getString(R.string.unified_statistics_cadence_weekly)
+            HabitCadence.MONTHLY -> getString(R.string.unified_statistics_cadence_monthly)
+            else -> getString(R.string.unified_statistics_cadence_unsupported)
+        }
+        val activeCadenceTag = when (selectedHabitCadence) {
+            HabitCadence.DAILY -> "habitCadenceDailyRow"
+            HabitCadence.WEEKLY -> "habitCadenceWeeklyRow"
+            HabitCadence.MONTHLY -> "habitCadenceMonthlyRow"
+            else -> "habitCadenceOtherRow"
+        }
+
+        val headlineRow = LinearLayout(context).apply {
+            tag = activeCadenceTag
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(48f)
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                if (isRefreshingState || currentLoadedReport !== report) return@setOnClickListener
+                UnifiedStatisticsDrilldownBottomSheet.showForHabitCycles(
+                    childFragmentManager, activeCadenceLabel, "",
+                    HabitsDrilldownDescriptor.CadenceCycles(selectedHabitCadence)
+                )
             }
         }
-
-        cadenceSwitcher.addView(createCadenceTabButton(HabitCadence.DAILY, getString(R.string.unified_statistics_cadence_daily), "habitCadenceTabDaily"))
-        cadenceSwitcher.addView(createCadenceTabButton(HabitCadence.WEEKLY, getString(R.string.unified_statistics_cadence_weekly), "habitCadenceTabWeekly"))
-        cadenceSwitcher.addView(createCadenceTabButton(HabitCadence.MONTHLY, getString(R.string.unified_statistics_cadence_monthly), "habitCadenceTabMonthly"))
-        chartLayout.addView(cadenceSwitcher)
-
-        val cadenceTitleStr = when (selectedHabitCadence) {
-            HabitCadence.DAILY -> getString(R.string.unified_statistics_habits_chart_daily)
-            HabitCadence.WEEKLY -> getString(R.string.unified_statistics_habits_chart_weekly)
-            HabitCadence.MONTHLY -> getString(R.string.unified_statistics_habits_chart_monthly)
-            else -> getString(R.string.unified_statistics_habits_chart_daily)
+        val headlineLeft = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.BOTTOM
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
-        val dateRangeStr = "${formatStatisticsDate(report.context.from)} — ${formatStatisticsDate(report.context.to)}"
-        chartLayout.addView(createSectionSubtitle(context, "$cadenceTitleStr · $dateRangeStr"))
+        if (activeAgg.knownCount > 0) {
+            val pct = ((activeAgg.satisfiedCount.toDouble() / activeAgg.knownCount.toDouble()) * 100.0).roundToInt()
+            headlineLeft.addView(TextView(context).apply {
+                text = "$pct%"
+                textSize = 28f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(palette.onSurface)
+            })
+            val fractionStr = if (isRussian) {
+                "${activeAgg.satisfiedCount} из ${activeAgg.knownCount}"
+            } else {
+                "${activeAgg.satisfiedCount}/${activeAgg.knownCount}"
+            }
+            headlineLeft.addView(TextView(context).apply {
+                text = fractionStr
+                textSize = 13f
+                setTextColor(palette.onSurfaceVariant)
+                setPadding(dp(8f), 0, 0, dp(3f))
+            })
+        } else {
+            headlineLeft.addView(TextView(context).apply {
+                text = if (activeAgg.ongoingCount > 0) {
+                    getString(R.string.unified_statistics_habits_ongoing_in_progress)
+                } else {
+                    getString(R.string.unified_statistics_cadence_no_closed_cycles)
+                }
+                textSize = 16f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(palette.onSurfaceVariant)
+            })
+        }
+        headlineRow.addView(headlineLeft)
+        headlineRow.addView(TextView(context).apply {
+            text = "›"
+            textSize = 20f
+            setTextColor(palette.onSurfaceVariant)
+        })
+        chartLayout.addView(headlineRow)
 
         val columns = DiscreteChartBucketer.buildHabitColumns(
-            currentPeriod, selectedHabitCadence, habits, lastKnownToday, palette, isRussian
+            currentPeriod, selectedHabitCadence, habits, lastKnownToday, palette, isRussian,
+            includeUnknownSegment = false
         )
 
-        if (columns.isNotEmpty()) {
+        if (columns.any { it.value > 0L }) {
             val chartView = DiscreteColumnBarChart(context).apply {
                 tag = "habitCadenceChart"
                 isEnabled = !isRefreshingState
@@ -1668,372 +1898,251 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
                 }
             }
             chartLayout.addView(wrapScrollableChart(
-                context, chartView, columns, topMarginDp = 8f, bottomMarginDp = 4f
+                context, chartView, columns, topMarginDp = 8f, bottomMarginDp = 6f
             ))
 
-            val activeAgg = when (selectedHabitCadence) {
-                HabitCadence.DAILY -> habits.daily
-                HabitCadence.WEEKLY -> habits.weekly
-                HabitCadence.MONTHLY -> habits.monthly
-                else -> habits.unsupported
+            val legendRow = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(0, dp(2f), 0, 0)
             }
-            val legendText = getString(
-                R.string.unified_statistics_habits_chart_legend,
-                activeAgg.satisfiedCount,
-                activeAgg.notSatisfiedCount,
-                activeAgg.unknownCount
-            )
-            chartLayout.addView(createSecondaryInfo(context, legendText))
+            legendRow.addView(createLegendDotItem(
+                context, 0xFF4CAF50.toInt(),
+                getString(R.string.unified_statistics_legend_done, activeAgg.satisfiedCount)
+            ))
+            if (activeAgg.notSatisfiedCount > 0) {
+                legendRow.addView(createLegendDotItem(
+                    context, 0xFFE53935.toInt(),
+                    getString(R.string.unified_statistics_legend_missed, activeAgg.notSatisfiedCount)
+                ).apply {
+                    setPadding(dp(16f), 0, 0, 0)
+                })
+            }
+            chartLayout.addView(legendRow)
         } else {
             val emptyChartTv = createSecondaryInfo(context, getString(R.string.unified_statistics_habits_chart_empty)).apply {
                 tag = "habitCadenceChart"
-                setPadding(0, dp(16f), 0, dp(16f))
+                setPadding(0, dp(12f), 0, dp(8f))
             }
             chartLayout.addView(emptyChartTv)
+        }
+
+        StatisticsRedesignModels.buildHabitsTrendSummary(
+            selectedHabitCadence, habits, lastKnownToday, isRussian
+        )?.let { trendText ->
+            chartLayout.addView(TextView(context).apply {
+                tag = "habitCadenceTrendSummary"
+                text = trendText
+                textSize = 12.5f
+                setTextColor(palette.onSurfaceVariant)
+                setPadding(0, dp(6f), 0, 0)
+            })
         }
 
         chartCard.addView(chartLayout)
         contentContainer.addView(chartCard)
 
-        // 3. Compact Ongoing Cycles Card (tag: habitOngoingSummary)
-        if (habits.ongoingCycles.isNotEmpty()) {
-            val ongoingCard = createCardView(context).apply {
+        // 2. Concise Weekly Goals & Limits Summary (tag: habitOngoingSummary — excludes noisy daily cycles)
+        val previewCycles = StatisticsRedesignModels.selectCyclesForProgressSection(
+            habits, selectedHabitCadence, limit = 4
+        )
+        val totalProgressCycles = StatisticsRedesignModels.selectCyclesForProgressSection(
+            habits, selectedHabitCadence, limit = Int.MAX_VALUE
+        ).size
+        if (previewCycles.isNotEmpty()) {
+            val ongoingCard = createCardView(context, topMarginDp = 10f).apply {
                 tag = "habitOngoingSummary"
-                (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(12f)
             }
             val ongoingLayout = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(16f), dp(16f), dp(16f), dp(16f))
+                setPadding(dp(16f), dp(14f), dp(16f), dp(14f))
             }
-            val ongoingTitle = if (report.context.to < report.context.habitToday)
+            val ongoingTitleRes = if (report.context.to < report.context.habitToday && habits.ongoingCycles.isEmpty()) {
                 R.string.unified_statistics_habits_historical_cycles_title
-            else R.string.unified_statistics_habits_ongoing_title
-            ongoingLayout.addView(createSectionHeader(context, getString(ongoingTitle)))
+            } else {
+                R.string.unified_statistics_habits_progress_title
+            }
+            ongoingLayout.addView(createSectionHeader(context, getString(ongoingTitleRes)).apply {
+                setPadding(0, 0, 0, dp(6f))
+            })
 
-            val previewOngoing = habits.ongoingCycles.take(3)
-            previewOngoing.forEach { cycle ->
-                val ongoingRow = LinearLayout(context).apply {
+            previewCycles.forEachIndexed { index, cycle ->
+                if (index > 0) {
+                    ongoingLayout.addView(createHairlineDivider(context, topMarginDp = 4f, bottomMarginDp = 4f))
+                }
+                val model = StatisticsRedesignModels.buildHabitProgressRow(
+                    cycle = cycle,
+                    context = report.context,
+                    dateFormatter = ::formatStatisticsDate,
+                    isRussian = isRussian
+                )
+                val toneColor = resolveToneColor(model.tone)
+                val statusTextColor = if (model.tone == StatisticsRedesignModels.ProgressTone.NEUTRAL) {
+                    palette.onSurfaceVariant
+                } else {
+                    toneColor
+                }
+
+                val row = LinearLayout(context).apply {
                     orientation = LinearLayout.VERTICAL
                     isClickable = true
                     isFocusable = true
-                    tag = cycle.key.toString()
+                    tag = model.cycleKey
                     minimumHeight = dp(48f)
-                    background = GradientDrawable().apply {
-                        setColor(palette.surfaceVariant)
-                        cornerRadius = dp(8f).toFloat()
-                    }
-                    setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
-                    layoutParams = LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT
-                    ).apply {
-                        bottomMargin = dp(6f)
-                    }
+                    setPadding(0, dp(8f), 0, dp(8f))
                     setOnClickListener {
                         UnifiedStatisticsCycleDetailBottomSheet.show(
                             childFragmentManager,
-                            cycle.key.toString(),
+                            model.cycleKey,
                             report.context.datasetId,
                             statisticsQuerySignature(report.context)
                         )
                     }
                 }
 
-                val titleTv = TextView(context).apply {
-                    text = cycle.habitName
+                val topLine = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                topLine.addView(TextView(context).apply {
+                    text = model.habitName
                     textSize = 15f
+                    maxLines = if (context.resources.configuration.fontScale >= 1.5f) 2 else 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
                     setTypeface(typeface, Typeface.BOLD)
                     setTextColor(palette.onSurface)
-                }
-                ongoingRow.addView(titleTv)
-
-                val contextStr = if (cycle.contextTruncatedTo != null) {
-                    getString(R.string.unified_statistics_habits_ongoing_context_format, "${formatStatisticsDate(cycle.startDate)} — ${formatStatisticsDate(cycle.endDate)}", cycle.contextTruncatedTo?.let(::formatStatisticsDate).orEmpty())
-                } else {
-                    "${formatStatisticsDate(cycle.startDate)} — ${formatStatisticsDate(cycle.endDate)}"
-                }
-
-                val datesTv = TextView(context).apply {
-                    text = contextStr
-                    textSize = 13f
-                    setTextColor(palette.onSurfaceVariant)
-                    setPadding(0, dp(1f), 0, dp(2f))
-                }
-                ongoingRow.addView(datesTv)
-
-                val q = cycle.quantity
-                val goal = cycle.goal
-
-                val targetText: String
-                val actualText: String
-                if (q.isNumerical) {
-                    val isTargetFinite = goal.targetValue.isFinite() && goal.targetValue >= 0.0
-                    if (!isTargetFinite || cycle.outcome == HabitCycleOutcome.UNAVAILABLE) {
-                        targetText = getString(R.string.unified_statistics_cycle_target_format, getString(R.string.unified_statistics_domain_failed))
-                        actualText = getString(R.string.unified_statistics_habits_ongoing_actual_format, getString(R.string.unified_statistics_domain_failed))
-                    } else {
-                        val targetNum = java.math.BigDecimal.valueOf(goal.targetValue).stripTrailingZeros().toPlainString()
-                        val targetWithUnit = if (goal.unit.isNotBlank()) "$targetNum ${goal.unit}" else targetNum
-                        val targetOp = if (goal.targetType == NumericalHabitType.AT_MOST) "≤" else "≥"
-                        targetText = getString(R.string.unified_statistics_cycle_target_format, "$targetOp $targetWithUnit")
-
-                        val actualBound = if (q.lowerBound < 0L) {
-                            getString(R.string.unified_statistics_domain_failed)
-                        } else {
-                            val lowerDecimal = java.math.BigDecimal.valueOf(q.lowerBound, 3).stripTrailingZeros().toPlainString()
-                            val actualValStr = if (q.unit.isNotBlank()) "$lowerDecimal ${q.unit}" else lowerDecimal
-                            (if (q.hasCompleteCoverage) "" else "≥") + actualValStr
-                        }
-                        actualText = getString(R.string.unified_statistics_habits_ongoing_actual_format, actualBound)
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        marginEnd = dp(8f)
                     }
-                } else {
-                    val quota = goal.frequency.numerator
-                    val quotaDesc = when (cycle.cadence) {
-                        HabitCadence.DAILY -> if (isRussian) "1 раз в день" else "1 time/day"
-                        HabitCadence.WEEKLY -> if (isRussian) "≥$quota раз в неделю" else "≥$quota times/week"
-                        HabitCadence.MONTHLY -> if (isRussian) "≥$quota раз в месяц" else "≥$quota times/month"
-                        else -> "≥$quota"
-                    }
-                    targetText = getString(R.string.unified_statistics_cycle_target_format, quotaDesc)
-
-                    val actualCount = q.booleanManualCount
-                    val actualBound = (if (q.hasCompleteCoverage) "" else "≥") +
-                        (if (isRussian) "$actualCount выполнено" else "$actualCount completed")
-                    actualText = getString(R.string.unified_statistics_habits_ongoing_actual_format, actualBound)
-                }
-
-                val progressTv = TextView(context).apply {
-                    text = "$targetText · $actualText"
-                    textSize = 13f
-                    setTextColor(palette.onSurface)
-                    setPadding(0, dp(1f), 0, dp(2f))
-                }
-                ongoingRow.addView(progressTv)
-
-                val (statusStr, statusColor) = when {
-                    cycle.outcome == HabitCycleOutcome.UNAVAILABLE -> {
-                        getString(R.string.unified_statistics_cycle_outcome_unavailable) to palette.onSurfaceVariant
-                    }
-                    cycle.lifecycle == HabitCycleLifecycle.PARTIAL -> {
-                        getString(R.string.unified_statistics_cycle_lifecycle_partial) to palette.onSurfaceVariant
-                    }
-                    cycle.lifecycle == HabitCycleLifecycle.TRANSITION -> {
-                        getString(R.string.unified_statistics_cycle_lifecycle_transition) to palette.onSurfaceVariant
-                    }
-                    isHistoricalCycleSlice(cycle, report.context) -> {
-                        getString(R.string.unified_statistics_habits_historical_cycle_status) to palette.onSurfaceVariant
-                    }
-                    q.isNumerical && goal.targetType == NumericalHabitType.AT_MOST -> {
-                        val limitValNative = q.targetValueNative ?: (goal.targetValue * 1000).toLong()
-                        if (q.lowerBound > limitValNative) {
-                            getString(R.string.unified_statistics_habits_ongoing_over_limit) to 0xFFE53935.toInt()
-                        } else {
-                            getString(R.string.unified_statistics_habits_ongoing_within_limit) to 0xFF4CAF50.toInt()
-                        }
-                    }
-                    else -> {
-                        val isReached = if (q.isNumerical) {
-                            val targetValNative = q.targetValueNative ?: (goal.targetValue * 1000).toLong()
-                            q.lowerBound >= targetValNative
-                        } else {
-                            q.booleanManualCount >= goal.frequency.numerator
-                        }
-                        if (isReached) {
-                            getString(R.string.unified_statistics_habits_ongoing_reached) to 0xFF4CAF50.toInt()
-                        } else {
-                            getString(R.string.unified_statistics_habits_ongoing_in_progress) to palette.accent
-                        }
-                    }
-                }
-
-                val statusTv = TextView(context).apply {
-                    text = statusStr
-                    textSize = 13f
+                })
+                topLine.addView(TextView(context).apply {
+                    text = model.headlineValue
+                    textSize = 14f
                     setTypeface(typeface, Typeface.BOLD)
-                    setTextColor(statusColor)
-                    setPadding(0, dp(1f), 0, dp(1f))
-                }
-                ongoingRow.addView(statusTv)
+                    setTextColor(palette.onSurface)
+                })
+                row.addView(topLine)
 
-                if (!q.hasCompleteCoverage || q.unknownDays > 0) {
-                    val warningText = if (q.unknownDays > 0) {
-                        getString(R.string.unified_statistics_habits_ongoing_coverage_warning, q.unknownDays)
-                    } else {
-                        getString(R.string.unified_statistics_habits_ongoing_coverage_warning_generic)
+                row.addView(WeeklyLimitProgressView(context).apply {
+                    setState(
+                        progressRatio = model.progressRatio,
+                        fillColor = toneColor,
+                        palette = palette,
+                        showLimitMarker = model.isAtMost
+                    )
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        topMargin = dp(6f)
+                        bottomMargin = dp(6f)
                     }
-                    val warningTv = TextView(context).apply {
-                        text = "⚠ $warningText"
+                })
+
+                val bottomLine = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                bottomLine.addView(TextView(context).apply {
+                    text = model.statusLabel
+                    textSize = 12.5f
+                    if (model.tone != StatisticsRedesignModels.ProgressTone.NEUTRAL) {
+                        setTypeface(typeface, Typeface.BOLD)
+                    }
+                    setTextColor(statusTextColor)
+                    maxLines = 2
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        if (model.showDateRange && model.dateRangeLabel.isNotBlank()) {
+                            marginEnd = dp(8f)
+                        }
+                    }
+                })
+                if (model.showDateRange && model.dateRangeLabel.isNotBlank()) {
+                    bottomLine.addView(TextView(context).apply {
+                        text = model.dateRangeLabel
                         textSize = 12f
-                        setTextColor(0xFFFF9800.toInt())
-                        setPadding(0, dp(1f), 0, 0)
-                    }
-                    ongoingRow.addView(warningTv)
+                        setTextColor(palette.onSurfaceVariant)
+                    })
                 }
-                ongoingLayout.addView(ongoingRow)
+                row.addView(bottomLine)
+                ongoingLayout.addView(row)
             }
 
-            if (habits.ongoingCycles.size > 3) {
-                val seeAllOngoing = MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
-                    text = getString(R.string.unified_statistics_habits_ongoing_see_all, habits.ongoingCycles.size)
+            if (totalProgressCycles > previewCycles.size && habits.ongoingCycles.isNotEmpty()) {
+                ongoingLayout.addView(MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+                    text = getString(R.string.unified_statistics_habits_ongoing_see_all, totalProgressCycles)
                     setTextColor(palette.accent)
+                    isAllCaps = false
                     minHeight = dp(48f)
                     setOnClickListener {
                         UnifiedStatisticsDrilldownBottomSheet.showForHabitCycles(
-                            childFragmentManager, getString(ongoingTitle), "",
+                            childFragmentManager, getString(ongoingTitleRes), "",
                             HabitsDrilldownDescriptor.OngoingCycles
                         )
                     }
-                }
-                ongoingLayout.addView(seeAllOngoing)
+                })
             }
 
             ongoingCard.addView(ongoingLayout)
             contentContainer.addView(ongoingCard)
         }
 
-        // 4. Alphabetical Habit Preview Card (tag: habitAlphaPreviewList)
-        val habitsListCard = createCardView(context).apply {
+        // 3. Compact Habits Drilldown & Compare Action Strip (never duplicates the Habits home list)
+        val totalHabitCount = habits.habitSummaries.distinctBy { it.habitUuid }.size
+        val config = context.resources.configuration
+        val isCompactActionLayout = config.screenWidthDp < 360 || config.fontScale >= 1.3f
+
+        val habitsActionsCard = createCardView(context, topMarginDp = 10f).apply {
             tag = "habitAlphaPreviewList"
-            (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(12f)
         }
-        val habitsListLayout = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16f), dp(16f), dp(16f), dp(16f))
+        val actionsRow = LinearLayout(context).apply {
+            orientation = if (isCompactActionLayout) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+            gravity = if (isCompactActionLayout) Gravity.START else Gravity.CENTER_VERTICAL
+            setPadding(dp(16f), dp(10f), dp(16f), dp(10f))
         }
-
-        val habitsHeaderRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val habitsTitle = createSectionHeader(context, getString(R.string.unified_statistics_habits_preview_title)).apply {
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        habitsHeaderRow.addView(habitsTitle)
-
-        val btnSearch = MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
-            tag = "habitSearchButton"
-            text = getString(R.string.unified_statistics_habits_search_button)
-            setTextColor(palette.accent)
-            minHeight = dp(48f)
-            setOnClickListener {
-                UnifiedStatisticsDrilldownBottomSheet.showForHabitList(
-                    childFragmentManager, getString(R.string.unified_statistics_habits_preview_title), ""
-                )
-            }
-        }
-        habitsHeaderRow.addView(btnSearch)
-        habitsListLayout.addView(habitsHeaderRow)
-
-        val groupedSummaries = habits.habitSummaries.groupBy { it.habitUuid }
-        val sortedHabitGroups = groupedSummaries.values.sortedBy { it.first().habitName.lowercase() }
-        val previewHabitGroups = sortedHabitGroups.take(4)
-
-        previewHabitGroups.forEach { summariesForHabit ->
-            val firstSummary = summariesForHabit.first()
-            val habitUuid = firstSummary.habitUuid
-            val habitName = firstSummary.habitName
-
-            val habitRow = LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                isClickable = true
-                isFocusable = true
-                tag = habitUuid
-                minimumHeight = dp(48f)
-                background = GradientDrawable().apply {
-                    setColor(palette.surfaceVariant)
-                    cornerRadius = dp(8f).toFloat()
-                }
-                setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    bottomMargin = dp(6f)
-                }
-                setOnClickListener {
-                    UnifiedStatisticsDrilldownBottomSheet.showForHabitCycles(
-                        childFragmentManager, habitName, "",
-                        HabitsDrilldownDescriptor.HabitCycles(habitUuid, habitName)
-                    )
-                }
-            }
-
-            val titleRow = LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-            }
-            val titleTv = TextView(context).apply {
-                text = habitName
-                textSize = 15f
-                setTypeface(typeface, Typeface.BOLD)
-                setTextColor(palette.onSurface)
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            }
-            titleRow.addView(titleTv)
-
-            val chevronTv = TextView(context).apply {
-                text = "›"
-                textSize = 18f
-                setTextColor(palette.onSurfaceVariant)
-            }
-            titleRow.addView(chevronTv)
-            habitRow.addView(titleRow)
-
-            val cadenceLines = summariesForHabit.map { summary ->
-                val cadenceStr = when (summary.cadence) {
-                    HabitCadence.DAILY -> getString(R.string.unified_statistics_cadence_daily)
-                    HabitCadence.WEEKLY -> getString(R.string.unified_statistics_cadence_weekly)
-                    HabitCadence.MONTHLY -> getString(R.string.unified_statistics_cadence_monthly)
-                    HabitCadence.UNSUPPORTED -> getString(R.string.unified_statistics_cadence_unsupported)
-                }
-                val resultStr = if (summary.eligibleCount == 0) {
-                    getString(R.string.unified_statistics_cadence_no_closed_cycles)
-                } else if (summary.unknownCount > 0) {
-                    getString(
-                        R.string.unified_statistics_cadence_result_with_unknown,
-                        summary.satisfiedCount,
-                        summary.knownCount,
-                        summary.unknownCount
-                    )
-                } else {
-                    getString(
-                        R.string.unified_statistics_cadence_result_format,
-                        summary.satisfiedCount,
-                        summary.knownCount
-                    )
-                }
-                "$cadenceStr · $resultStr"
-            }
-
-            val metaTv = TextView(context).apply {
-                text = cadenceLines.joinToString("\n")
-                textSize = 13f
-                setTextColor(palette.onSurfaceVariant)
-                setPadding(0, dp(2f), 0, 0)
-            }
-            habitRow.addView(metaTv)
-            habitsListLayout.addView(habitRow)
-        }
-
-        val allHabitsButton = MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+        actionsRow.addView(MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
             tag = "habitAllHabitsButton"
-            text = if (sortedHabitGroups.isNotEmpty()) {
-                getString(R.string.unified_statistics_habits_all_button, sortedHabitGroups.size)
+            text = if (totalHabitCount > 0) {
+                getString(R.string.unified_statistics_habits_all_button, totalHabitCount)
             } else {
                 getString(R.string.unified_statistics_habits_all_button_no_count)
             }
+            isAllCaps = false
             setTextColor(palette.accent)
             minHeight = dp(48f)
+            gravity = Gravity.START or Gravity.CENTER_VERTICAL
+            setPadding(0, 0, dp(8f), 0)
+            layoutParams = if (isCompactActionLayout) {
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            } else {
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
             setOnClickListener {
                 UnifiedStatisticsDrilldownBottomSheet.showForHabitList(
                     childFragmentManager, getString(R.string.unified_statistics_habits_preview_title), ""
                 )
             }
-        }
-        habitsListLayout.addView(allHabitsButton)
-
-        habitsListCard.addView(habitsListLayout)
-        contentContainer.addView(habitsListCard)
+        })
+        actionsRow.addView(MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            tag = "habitCompareEntry"
+            text = getString(R.string.unified_statistics_action_compare_habits)
+            isAllCaps = false
+            textSize = 13f
+            setTextColor(palette.accent)
+            backgroundTintList = ColorStateList.valueOf(resolvePillSurfaceColor())
+            strokeWidth = dp(1f)
+            strokeColor = ColorStateList.valueOf(resolvePillBorderColor())
+            cornerRadius = dp(16f)
+            minHeight = dp(48f)
+            insetTop = dp(7f)
+            insetBottom = dp(7f)
+            setPadding(dp(14f), 0, dp(14f), 0)
+            setOnClickListener {
+                startActivity(app.component.intentFactory.startCompareHabitsActivity(context))
+            }
+        })
+        habitsActionsCard.addView(actionsRow)
+        contentContainer.addView(habitsActionsCard)
     }
 
     // 3. Tasks Tab
@@ -2050,13 +2159,67 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
         if (tasks.dataState == StatisticsDataState.EMPTY && tasks.completedCount == 0 && tasks.createdCount == 0 &&
             tasks.dueSummary.totalCount == 0 && tasks.noDueSummary.totalCount == 0
         ) {
-            contentContainer.addView(createEmptyText(context, getString(R.string.unified_statistics_tasks_empty)))
+            val emptyModel = StatisticsRedesignModels.buildTasksEmptyState(currentScope, currentPeriod, isRussian)
+            val emptyCard = createCardView(context).apply {
+                tag = "unified_tasks_empty_card"
+            }
+            val emptyLayout = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                setPadding(dp(18f), dp(18f), dp(18f), dp(18f))
+            }
+            emptyLayout.addView(TextView(context).apply {
+                text = emptyModel.title
+                textSize = 15.5f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(palette.onSurface)
+                gravity = Gravity.CENTER
+            })
+            emptyLayout.addView(TextView(context).apply {
+                text = emptyModel.subtitle
+                textSize = 13f
+                setTextColor(palette.onSurfaceVariant)
+                gravity = Gravity.CENTER
+                setPadding(0, dp(4f), 0, 0)
+            })
+            if (emptyModel.showResetScopeButton) {
+                emptyLayout.addView(MaterialButton(context, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                    text = getString(R.string.unified_statistics_scope_all)
+                    isAllCaps = false
+                    setTextColor(palette.accent)
+                    backgroundTintList = ColorStateList.valueOf(resolvePillSurfaceColor())
+                    strokeWidth = dp(1f)
+                    strokeColor = ColorStateList.valueOf(resolvePillBorderColor())
+                    cornerRadius = dp(16f)
+                    minHeight = dp(48f)
+                    insetTop = dp(7f)
+                    insetBottom = dp(7f)
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        topMargin = dp(10f)
+                    }
+                    setOnClickListener {
+                        currentScope = UnifiedScope.All
+                        savePreferencesForCurrentScope()
+                        currentLoadedReport = null
+                        currentLoadedKey = null
+                        currentUiState = UnifiedReportUiState.InitialLoading
+                        updateHeaderLabels()
+                        renderCurrentState()
+                        requestReportUpdate("scope_reset_empty_tasks")
+                    }
+                })
+            }
+            emptyCard.addView(emptyLayout)
+            contentContainer.addView(emptyCard)
             return
         }
 
         val isRefreshing = isRefreshingState
 
-        // T1 & T2 Headline Card
+        // T1 & T2 Headline Card + Compact 3-KPI Strip
         val flowCard = createCardView(context).apply {
             isClickable = !isRefreshing
             isFocusable = !isRefreshing
@@ -2076,30 +2239,75 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
         }
         val flowLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16f), dp(16f), dp(16f), dp(16f))
+            setPadding(dp(16f), dp(14f), dp(16f), dp(14f))
         }
-        flowLayout.addView(createSectionHeader(context, getString(R.string.unified_statistics_overview_tasks_title)))
-        flowLayout.addView(createStatNumber(context, tasks.completedCount.toString()))
-        flowLayout.addView(MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
-            tag = "unified_tasks_created"
-            text = getString(R.string.unified_statistics_tasks_created_count, tasks.createdCount)
-            isAllCaps = false
-            minHeight = dp(48f)
-            setTextColor(palette.onSurfaceVariant)
-            isEnabled = !isRefreshing
-            setOnClickListener {
-                if (!isRefreshingState) UnifiedStatisticsDrilldownBottomSheet.showForTasks(childFragmentManager,
-                    text.toString(), "${report.context.from} – ${report.context.to}",
-                    TasksDrilldownDescriptor.CreatedTasks(report.context.from, report.context.to, text.toString()))
-            }
+        flowLayout.addView(createSectionHeader(context, getString(R.string.unified_statistics_overview_tasks_title)).apply {
+            setPadding(0, 0, 0, dp(8f))
         })
-        if (tasks.dataState == StatisticsDataState.PARTIAL) {
-            flowLayout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_state_partial)))
-        }
 
-        // T1 Daily / Bucket Interactive Chart
+        val kpiRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        fun addTaskKpi(
+            value: String,
+            label: String,
+            color: Int = palette.onSurface,
+            tagStr: String? = null,
+            onClick: (() -> Unit)? = null
+        ) {
+            val col = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                if (tagStr != null) tag = tagStr
+                if (onClick != null) {
+                    isClickable = !isRefreshing
+                    isFocusable = !isRefreshing
+                    minimumHeight = dp(48f)
+                    setOnClickListener { onClick() }
+                }
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            col.addView(TextView(context).apply {
+                text = value
+                textSize = 22f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(color)
+            })
+            col.addView(TextView(context).apply {
+                text = label
+                textSize = 12f
+                setTextColor(palette.onSurfaceVariant)
+            })
+            kpiRow.addView(col)
+        }
+        addTaskKpi(
+            value = tasks.completedCount.toString(),
+            label = getString(R.string.unified_statistics_due_state_completed)
+        )
+        addTaskKpi(
+            value = tasks.createdCount.toString(),
+            label = if (isRussian) "Создано" else "Created",
+            tagStr = "unified_tasks_created",
+            onClick = {
+                if (!isRefreshingState) {
+                    val createdTitle = getString(R.string.unified_statistics_tasks_created_count, tasks.createdCount)
+                    UnifiedStatisticsDrilldownBottomSheet.showForTasks(
+                        childFragmentManager, createdTitle, "${report.context.from} – ${report.context.to}",
+                        TasksDrilldownDescriptor.CreatedTasks(report.context.from, report.context.to, createdTitle)
+                    )
+                }
+            }
+        )
+        val overdueCount = tasks.dueSummary.pendingOverdueNowCount
+        addTaskKpi(
+            value = overdueCount.toString(),
+            label = getString(R.string.unified_statistics_due_state_overdue),
+            color = if (overdueCount > 0) 0xFFE53935.toInt() else palette.onSurface
+        )
+        flowLayout.addView(kpiRow)
+
         val taskColumns = DiscreteChartBucketer.buildTaskColumns(currentPeriod, tasks, lastKnownToday, isRussian)
-        if (taskColumns.isNotEmpty()) {
+        if (taskColumns.any { it.value > 0L }) {
             val chartView = DiscreteColumnBarChart(context).apply {
                 tag = "unified_tasks_t1_chart"
                 isEnabled = !isRefreshing
@@ -2115,7 +2323,7 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
                 }
             }
             flowLayout.addView(wrapScrollableChart(
-                context, chartView, taskColumns, topMarginDp = 12f, bottomMarginDp = 4f
+                context, chartView, taskColumns, topMarginDp = 10f, bottomMarginDp = 2f
             ))
         }
 
@@ -2124,8 +2332,7 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
 
         // T3: Due Cohort Card
         val dueSum = tasks.dueSummary
-        val dueCard = createCardView(context).apply {
-            (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(12f)
+        val dueCard = createCardView(context, topMarginDp = 10f).apply {
             isClickable = !isRefreshing
             isFocusable = !isRefreshing
             setOnClickListener {
@@ -2140,16 +2347,19 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
         }
         val dueLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16f), dp(16f), dp(16f), dp(16f))
+            setPadding(dp(16f), dp(14f), dp(16f), dp(14f))
         }
-        dueLayout.addView(createSectionHeader(context, getString(R.string.unified_statistics_tasks_due_cohort_title)))
+        val dueHeader = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        dueHeader.addView(createSectionHeader(context, getString(R.string.unified_statistics_tasks_due_cohort_title)).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            setPadding(0, 0, 0, 0)
+        })
+        dueHeader.addView(createCompactBadgePill(context, "${dueSum.totalCount}"))
+        dueLayout.addView(dueHeader)
 
-        val timeFormat = SimpleDateFormat("dd MMMM HH:mm", Locale.getDefault())
-        val nowStr = timeFormat.format(Date(report.context.now))
-        dueLayout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_tasks_due_state_now, nowStr)))
-        dueLayout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_tasks_due_total_format, dueSum.totalCount)))
-
-        // T3 3-segment interactive proportion bar
         val dueSegments = listOf(
             SegmentedCohortBarView.Segment(
                 key = "COMPLETED",
@@ -2163,16 +2373,16 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
                 key = "OVERDUE_NOW",
                 count = dueSum.pendingOverdueNowCount,
                 label = getString(R.string.unified_statistics_due_state_overdue),
-                color = palette.onSurfaceVariant,
-                textColor = if (palette.isDark) palette.background else palette.surface,
+                color = 0xFFE53935.toInt(),
+                textColor = Color.WHITE,
                 descriptor = TasksDrilldownDescriptor.DueCohort(TasksDrilldownDescriptor.DueSegmentFilter.OVERDUE_NOW),
             ),
             SegmentedCohortBarView.Segment(
                 key = "PENDING_NOT_OVERDUE",
                 count = dueSum.pendingNotOverdueNowCount,
                 label = getString(R.string.unified_statistics_due_state_pending),
-                color = palette.onSurface,
-                textColor = palette.background,
+                color = palette.onSurfaceVariant,
+                textColor = if (palette.isDark) palette.background else palette.surface,
                 descriptor = TasksDrilldownDescriptor.DueCohort(TasksDrilldownDescriptor.DueSegmentFilter.PENDING_NOT_OVERDUE),
             ),
         )
@@ -2182,7 +2392,7 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply {
-                topMargin = dp(8f)
+                topMargin = dp(10f)
                 bottomMargin = dp(8f)
             }
             isEnabled = !isRefreshing
@@ -2203,23 +2413,12 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
             context,
             getString(R.string.unified_statistics_tasks_due_breakdown_format, dueSum.completedCount, dueSum.pendingOverdueNowCount, dueSum.pendingNotOverdueNowCount)
         ))
-
-        val dueDisclaimer = TextView(context).apply {
-            text = getString(R.string.unified_statistics_tasks_due_disclaimer)
-            textSize = 12f
-            setTextColor(palette.onSurfaceVariant)
-            setTypeface(typeface, Typeface.ITALIC)
-            setPadding(0, dp(4f), 0, 0)
-        }
-        dueLayout.addView(dueDisclaimer)
-
         dueCard.addView(dueLayout)
         contentContainer.addView(dueCard)
 
         // T4: No Due Cohort Card
         val noDueSum = tasks.noDueSummary
-        val noDueCard = createCardView(context).apply {
-            (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(12f)
+        val noDueCard = createCardView(context, topMarginDp = 10f).apply {
             isClickable = !isRefreshing
             isFocusable = !isRefreshing
             setOnClickListener {
@@ -2234,12 +2433,19 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
         }
         val noDueLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16f), dp(16f), dp(16f), dp(16f))
+            setPadding(dp(16f), dp(14f), dp(16f), dp(14f))
         }
-        noDueLayout.addView(createSectionHeader(context, getString(R.string.unified_statistics_tasks_nodue_cohort_title)))
-        noDueLayout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_tasks_nodue_total_format, noDueSum.totalCount)))
+        val noDueHeader = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        noDueHeader.addView(createSectionHeader(context, getString(R.string.unified_statistics_tasks_nodue_cohort_title)).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            setPadding(0, 0, 0, 0)
+        })
+        noDueHeader.addView(createCompactBadgePill(context, "${noDueSum.totalCount}"))
+        noDueLayout.addView(noDueHeader)
 
-        // T4 2-segment interactive proportion bar
         val noDueSegments = listOf(
             SegmentedCohortBarView.Segment(
                 key = "COMPLETED",
@@ -2264,7 +2470,7 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ).apply {
-                topMargin = dp(8f)
+                topMargin = dp(10f)
                 bottomMargin = dp(8f)
             }
             isEnabled = !isRefreshing
@@ -2280,31 +2486,12 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
             }
         }
         noDueLayout.addView(noDueBarView)
-
         noDueLayout.addView(createSecondaryInfo(
             context,
             getString(R.string.unified_statistics_tasks_nodue_breakdown_format, noDueSum.completedCount, noDueSum.pendingCount)
         ))
         noDueCard.addView(noDueLayout)
         contentContainer.addView(noDueCard)
-
-        // Informational button: Why is there no "On-time" indicator?
-        val whyNoOnTimeButton = MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
-            text = getString(R.string.unified_statistics_why_no_ontime_button)
-            setTextColor(palette.accent)
-            textSize = 13f
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                topMargin = dp(12f)
-                gravity = Gravity.CENTER_HORIZONTAL
-            }
-            setOnClickListener {
-                showWhyNoOnTimeDialog()
-            }
-        }
-        contentContainer.addView(whyNoOnTimeButton)
     }
 
     private fun showWhyNoOnTimeDialog() {
@@ -2333,8 +2520,9 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
         }
 
         val isRefreshing = isRefreshingState
+        val pulse = StatisticsRedesignModels.buildOverviewPulse(report, isRussian)
 
-        // F1 & F2 Totals Card
+        // F1 & F2 Headline + Interactive Chart Card
         val totalsCard = createCardView(context).apply {
             isClickable = !isRefreshing
             isFocusable = !isRefreshing
@@ -2347,80 +2535,102 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
                 UnifiedStatisticsDrilldownBottomSheet.showForFocus(
                     childFragmentManager,
                     getString(R.string.unified_statistics_focus_total_duration_title),
-                    "${focus.sessionCount} ${getString(R.string.unified_statistics_focus_sessions_count_title).lowercase()}",
+                    getString(R.string.unified_statistics_sessions_pill, focus.sessionCount),
                     FocusDrilldownDescriptor.SessionsRange(from, to, getString(R.string.unified_statistics_focus_total_duration_title))
                 )
             }
         }
         val totalsLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16f), dp(16f), dp(16f), dp(16f))
+            setPadding(dp(16f), dp(14f), dp(16f), dp(14f))
         }
-        totalsLayout.addView(createSectionHeader(context, getString(R.string.unified_statistics_focus_total_duration_title)))
+        totalsLayout.addView(createSectionSubtitle(context, getString(R.string.unified_statistics_focus_total_duration_title)).apply {
+            setPadding(0, 0, 0, dp(2f))
+        })
 
-        val hasOverflow = focus.totalDurationMs == Long.MAX_VALUE ||
-            focus.issues.any { it.code == StatisticsIssueCode.OVERFLOW }
-        if (hasOverflow) {
+        if (pulse.focusHasOverflow) {
             totalsLayout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_overflow)))
         } else {
-            totalsLayout.addView(createStatNumber(context, UnifiedStatisticsStateUtils.formatDurationMs(focus.totalDurationMs, isRussian)))
-            totalsLayout.addView(createSecondaryInfo(
+            val heroRow = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, 0, 0, dp(4f))
+            }
+            heroRow.addView(TextView(context).apply {
+                text = pulse.focusDurationFormatted ?: UnifiedStatisticsStateUtils.formatDurationMs(focus.totalDurationMs, isRussian)
+                textSize = 28f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(palette.onSurface)
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            heroRow.addView(createCompactBadgePill(
                 context,
-                getString(R.string.unified_statistics_focus_sessions_count_title) + ": " + focus.sessionCount
-            ).apply { tag = "unified_focus_f2" })
-            totalsLayout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_focus_chart_subtitle)))
-        }
-        if (focus.dataState == StatisticsDataState.PARTIAL) {
-            totalsLayout.addView(createSecondaryInfo(context, getString(R.string.unified_statistics_state_partial)))
+                getString(R.string.unified_statistics_sessions_pill, focus.sessionCount),
+                palette.onSurface
+            ).apply {
+                tag = "unified_focus_f2"
+            })
+            totalsLayout.addView(heroRow)
+
+            pulse.focusAvgPerDayFormatted?.let { avgStr ->
+                totalsLayout.addView(TextView(context).apply {
+                    text = avgStr
+                    textSize = 13f
+                    setTextColor(palette.onSurfaceVariant)
+                })
+            }
         }
 
-        // F1 Daily / Bucket Interactive Chart
         val focusColumns = DiscreteChartBucketer.buildFocusColumns(currentPeriod, focus, lastKnownToday, isRussian)
-        if (focusColumns.isNotEmpty()) {
+        if (focusColumns.any { it.value > 0L }) {
             val chartView = DiscreteColumnBarChart(context).apply {
                 tag = "unified_focus_f1_chart"
                 isEnabled = !isRefreshing
                 setData(focusColumns, palette, unitLabel = if (isRussian) "время" else "time",
-                    valueFormatter = { UnifiedStatisticsStateUtils.formatExactDurationMs(it, isRussian) }) { _, item ->
+                    valueFormatter = { UnifiedStatisticsStateUtils.formatCompactDurationMs(it, isRussian) }) { _, item ->
                     if (isRefreshingState || currentLoadedReport !== report) return@setData
                     val desc = item.descriptor as? FocusDrilldownDescriptor ?: return@setData
                     UnifiedStatisticsDrilldownBottomSheet.showForFocus(
                         childFragmentManager,
                         item.label,
-                        item.formattedValue,
+                        UnifiedStatisticsStateUtils.formatExactDurationMs(item.value, isRussian),
                         desc
                     )
                 }
             }
             totalsLayout.addView(wrapScrollableChart(
-                context, chartView, focusColumns, topMarginDp = 12f, bottomMarginDp = 4f
+                context, chartView, focusColumns, topMarginDp = 10f, bottomMarginDp = 2f
             ))
         }
 
         totalsCard.addView(totalsLayout)
         contentContainer.addView(totalsCard)
 
-        // F3: By Section (Limited branch preview up to 5 + all)
-        if (focus.sectionBreakdowns.isNotEmpty()) {
-            val sectionsCard = createCardView(context).apply {
+        // F3: By Section (clean proportional bars)
+        if (StatisticsRedesignModels.shouldShowFocusBreakdownCard(focus.sectionBreakdowns.size)) {
+            val sectionsCard = createCardView(context, topMarginDp = 10f).apply {
                 tag = "unified_focus_f3_breakdown"
-                (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(12f)
             }
             val sectionsLayout = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(16f), dp(16f), dp(16f), dp(16f))
+                setPadding(dp(16f), dp(14f), dp(16f), dp(14f))
             }
-            sectionsLayout.addView(createSectionHeader(context, getString(R.string.unified_statistics_focus_by_section_title)))
+            sectionsLayout.addView(createSectionHeader(context, getString(R.string.unified_statistics_focus_by_section_title)).apply {
+                setPadding(0, 0, 0, dp(6f))
+            })
 
             val previewItems = focus.sectionBreakdowns.take(5)
-            previewItems.forEach { item ->
+            previewItems.forEachIndexed { idx, item ->
+                if (idx > 0) {
+                    sectionsLayout.addView(createHairlineDivider(context, topMarginDp = 2f, bottomMarginDp = 2f))
+                }
                 val row = LinearLayout(context).apply {
                     orientation = LinearLayout.VERTICAL
                     isClickable = !isRefreshing
                     isFocusable = !isRefreshing
                     minimumHeight = dp(48f)
                     tag = "section:${item.category}:${item.containerId?.value}"
-                    setPadding(dp(4f), dp(8f), dp(4f), dp(8f))
+                    setPadding(0, dp(8f), 0, dp(8f))
                     setOnClickListener {
                         if (isRefreshingState || currentLoadedReport !== report) return@setOnClickListener
                         UnifiedStatisticsDrilldownBottomSheet.showForFocus(
@@ -2431,41 +2641,57 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
                         )
                     }
                 }
-                val nameView = TextView(context).apply {
+                val topLine = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                }
+                topLine.addView(TextView(context).apply {
                     text = item.name
                     textSize = 15f
+                    setTypeface(typeface, Typeface.BOLD)
                     setTextColor(palette.onSurface)
-                    layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                }
-                val durationView = TextView(context).apply {
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        marginEnd = dp(8f)
+                    }
+                })
+                topLine.addView(TextView(context).apply {
                     text = UnifiedStatisticsStateUtils.formatDurationMs(item.durationMs, isRussian)
                     textSize = 14f
                     setTypeface(typeface, Typeface.BOLD)
                     setTextColor(palette.onSurfaceVariant)
-                }
-                row.addView(nameView)
-                row.addView(durationView)
-                row.addView(ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal).apply {
-                    max = 1000
-                    progress = if (focus.totalDurationMs > 0) (item.durationMs.toDouble() / focus.totalDurationMs * 1000).toInt() else 0
-                    progressTintList = ColorStateList.valueOf(palette.accent)
-                    progressBackgroundTintList = ColorStateList.valueOf(palette.surfaceVariant)
-                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                    layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(6f)).apply { topMargin = dp(6f) }
+                })
+                row.addView(topLine)
+
+                val sectionRatio = if (focus.totalDurationMs > 0L) {
+                    (item.durationMs.toDouble() / focus.totalDurationMs.toDouble()).toFloat().coerceIn(0f, 1f)
+                } else 0f
+                row.addView(WeeklyLimitProgressView(context).apply {
+                    setState(
+                        progressRatio = sectionRatio,
+                        fillColor = palette.accent,
+                        palette = palette,
+                        showLimitMarker = false
+                    )
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                    ).apply {
+                        topMargin = dp(6f)
+                    }
                 })
                 sectionsLayout.addView(row)
             }
 
             if (focus.sectionBreakdowns.size > 5) {
-                val showAllBtn = MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
+                sectionsLayout.addView(MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
                     text = getString(R.string.unified_statistics_focus_show_all_sections, focus.sectionBreakdowns.size)
+                    isAllCaps = false
                     setTextColor(palette.accent)
+                    minHeight = dp(48f)
                     setOnClickListener {
                         if (isRefreshingState || currentLoadedReport !== report) return@setOnClickListener
-                        val (from, to) = UnifiedStatisticsStateUtils.calculatePeriodRange(
-                            currentPeriod, currentAnchorDate, lastKnownToday, component.preferences.firstWeekday,
-                            report.context.from
-                        )
                         UnifiedStatisticsDrilldownBottomSheet.showForFocus(
                             childFragmentManager,
                             getString(R.string.unified_statistics_focus_by_section_title),
@@ -2473,105 +2699,201 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
                             FocusDrilldownDescriptor.AllSections
                         )
                     }
-                }
-                sectionsLayout.addView(showAllBtn)
+                })
             }
 
             sectionsCard.addView(sectionsLayout)
             contentContainer.addView(sectionsCard)
         }
 
-        // F4: By Target Type
-        if (focus.targetTypeSummaries.isNotEmpty()) {
-            val targetCard = createCardView(context).apply {
+        // F4: Clean Focus Source Breakdown
+        if (StatisticsRedesignModels.shouldShowFocusBreakdownCard(focus.targetTypeSummaries.size)) {
+            val targetCard = createCardView(context, topMarginDp = 10f).apply {
                 tag = "unified_focus_f4_breakdown"
-                (layoutParams as? LinearLayout.LayoutParams)?.topMargin = dp(12f)
             }
             val targetLayout = LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(dp(16f), dp(16f), dp(16f), dp(16f))
+                setPadding(dp(16f), dp(14f), dp(16f), dp(14f))
             }
-            targetLayout.addView(createSectionHeader(context, getString(R.string.unified_statistics_focus_by_target_title)))
+            targetLayout.addView(createSectionHeader(context, getString(R.string.unified_statistics_focus_by_source_title)).apply {
+                setPadding(0, 0, 0, dp(6f))
+            })
 
-            focus.targetTypeSummaries.forEach { item ->
-                val durationStr = UnifiedStatisticsStateUtils.formatDurationMs(item.durationMs, isRussian)
-                val lineText = when (item.targetType) {
-                    FocusPrimaryTargetType.HABIT ->
-                        getString(R.string.unified_statistics_focus_target_habits, durationStr, item.sessionCount)
-                    FocusPrimaryTargetType.TASK ->
-                        getString(R.string.unified_statistics_focus_target_tasks, durationStr, item.sessionCount)
-                    FocusPrimaryTargetType.CONTAINER ->
-                        getString(R.string.unified_statistics_focus_target_containers, durationStr, item.sessionCount)
-                    null ->
-                        getString(R.string.unified_statistics_focus_target_unassigned, durationStr, item.sessionCount)
+            focus.targetTypeSummaries.forEachIndexed { idx, item ->
+                if (idx > 0) {
+                    targetLayout.addView(createHairlineDivider(context))
                 }
-                val row = TextView(context).apply {
-                    text = lineText
+                val durationStr = UnifiedStatisticsStateUtils.formatDurationMs(item.durationMs, isRussian)
+                val sourceTitle = StatisticsRedesignModels.formatFocusTargetSourceLabel(item.targetType, isRussian)
+                val sessionsStr = getString(R.string.unified_statistics_sessions_pill, item.sessionCount)
+
+                val row = LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
                     tag = "target-type:${item.targetType?.name ?: "UNKNOWN"}"
-                    textSize = 14f
-                    setTextColor(palette.onSurface)
                     isClickable = !isRefreshing
                     isFocusable = !isRefreshing
-                    setPadding(dp(4f), dp(6f), dp(4f), dp(6f))
+                    minimumHeight = dp(48f)
+                    setPadding(0, dp(8f), 0, dp(8f))
                     setOnClickListener {
                         if (isRefreshingState || currentLoadedReport !== report) return@setOnClickListener
-                        val title = when (item.targetType) {
-                            FocusPrimaryTargetType.HABIT -> getString(R.string.unified_statistics_tab_habits)
-                            FocusPrimaryTargetType.TASK -> getString(R.string.unified_statistics_tab_tasks)
-                            FocusPrimaryTargetType.CONTAINER -> getString(R.string.unified_statistics_scope_all)
-                            null -> getString(R.string.unified_statistics_scope_unassigned)
-                        }
                         UnifiedStatisticsDrilldownBottomSheet.showForFocus(
                             childFragmentManager,
-                            getString(R.string.unified_statistics_drilldown_target_title, title),
+                            getString(R.string.unified_statistics_drilldown_target_title, sourceTitle),
                             durationStr,
                             FocusDrilldownDescriptor.TargetType(item.targetType)
                         )
                     }
                 }
+                row.addView(TextView(context).apply {
+                    text = sourceTitle
+                    textSize = 15f
+                    setTextColor(palette.onSurface)
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        marginEnd = dp(8f)
+                    }
+                })
+                row.addView(TextView(context).apply {
+                    text = "$durationStr · $sessionsStr"
+                    textSize = 13.5f
+                    setTypeface(typeface, Typeface.BOLD)
+                    setTextColor(palette.onSurfaceVariant)
+                })
                 targetLayout.addView(row)
             }
             targetCard.addView(targetLayout)
             contentContainer.addView(targetCard)
         }
-
-        // The existing history calendar remains available in the Tasks workspace.
-        // An endedAt-selected session list is not a calendar-allocation query.
     }
 
     // -------------------------------------------------------------------------
     // View Helpers
     // -------------------------------------------------------------------------
 
-    private fun createCardView(context: Context): FrameLayout {
+    private fun resolveCardSurfaceColor(isClassic: Boolean, showBorders: Boolean): Int {
+        return when {
+            palette.isPureBlack && !isClassic && showBorders ->
+                UHabitElevationAndBorders.AMOLED_BORDERED_CARD_SURFACE_ARGB.toInt()
+            palette.isPureBlack -> palette.background
+            else -> palette.surface
+        }
+    }
+
+    private fun resolveCardBorderColor(): Int {
+        return if (palette.isPureBlack) {
+            UHabitElevationAndBorders.AMOLED_CARD_BORDER_ARGB.toInt()
+        } else {
+            palette.border
+        }
+    }
+
+    private fun resolveHairlineDividerColor(): Int {
+        return when {
+            palette.isPureBlack -> UHabitElevationAndBorders.AMOLED_DIVIDER_ARGB.toInt()
+            palette.isDark -> ColorUtils.setAlphaComponent(0xFFFFFFFF.toInt(), (255 * 0.09f).toInt())
+            else -> ColorUtils.setAlphaComponent(0xFF000000.toInt(), (255 * 0.08f).toInt())
+        }
+    }
+
+    private fun resolvePillSurfaceColor(): Int {
+        return when {
+            palette.isPureBlack -> 0xFF12151C.toInt()
+            palette.isDark -> ColorUtils.blendARGB(palette.surface, palette.onSurface, 0.07f)
+            else -> ColorUtils.blendARGB(palette.surface, palette.onSurface, 0.04f)
+        }
+    }
+
+    private fun resolvePillBorderColor(): Int {
+        return when {
+            palette.isPureBlack -> UHabitElevationAndBorders.AMOLED_CARD_BORDER_ARGB.toInt()
+            palette.isDark -> ColorUtils.setAlphaComponent(palette.onSurface, 28)
+            else -> palette.border
+        }
+    }
+
+    private fun createHairlineDivider(context: Context, topMarginDp: Float = 0f, bottomMarginDp: Float = 0f): View {
+        return View(context).apply {
+            setBackgroundColor(resolveHairlineDividerColor())
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(1f).coerceAtLeast(1)
+            ).apply {
+                if (topMarginDp > 0f) topMargin = dp(topMarginDp)
+                if (bottomMarginDp > 0f) bottomMargin = dp(bottomMarginDp)
+            }
+        }
+    }
+
+    private fun resolveToneColor(tone: StatisticsRedesignModels.ProgressTone): Int {
+        return when (tone) {
+            StatisticsRedesignModels.ProgressTone.SUCCESS -> 0xFF4CAF50.toInt()
+            StatisticsRedesignModels.ProgressTone.ACCENT -> palette.accent
+            StatisticsRedesignModels.ProgressTone.WARNING -> 0xFFFF9800.toInt()
+            StatisticsRedesignModels.ProgressTone.DANGER -> 0xFFE53935.toInt()
+            StatisticsRedesignModels.ProgressTone.NEUTRAL -> palette.onSurfaceVariant
+        }
+    }
+
+    private fun createLegendDotItem(context: Context, color: Int, text: String): View {
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(View(context).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(color)
+                }
+                layoutParams = LinearLayout.LayoutParams(dp(8f), dp(8f)).apply {
+                    marginEnd = dp(6f)
+                }
+            })
+            addView(TextView(context).apply {
+                this.text = text
+                textSize = 12f
+                setTextColor(palette.onSurfaceVariant)
+            })
+        }
+    }
+
+    private fun createCompactBadgePill(context: Context, label: String, color: Int = palette.onSurfaceVariant): TextView {
+        return TextView(context).apply {
+            text = label
+            textSize = 12f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(color)
+            setPadding(dp(10f), dp(4f), dp(10f), dp(4f))
+            background = GradientDrawable().apply {
+                setColor(resolvePillSurfaceColor())
+                setStroke(dp(1f), resolvePillBorderColor())
+                cornerRadius = dp(12f).toFloat()
+            }
+        }
+    }
+
+    private fun createCardView(context: Context, topMarginDp: Float = 0f): FrameLayout {
         val prefs = component.preferences
         val isClassic = prefs.isClassicSectionLayout
         val showBorders = prefs.showHabitCardBorders
-        val isAmoled = palette.isPureBlack
-        val radius = if (isClassic) 0f else dp(prefs.statisticsCardCornerRadius.toFloat().coerceAtLeast(0f)).toFloat()
+        val isBorderedCard = !isClassic && showBorders
+        val radius = if (isBorderedCard) dp(prefs.statisticsCardCornerRadius.toFloat().coerceAtLeast(0f)).toFloat() else 0f
 
         return FrameLayout(context).apply {
             background = GradientDrawable().apply {
-                setColor(palette.surface)
+                setColor(resolveCardSurfaceColor(isClassic, showBorders))
                 cornerRadius = radius
-                if (!isClassic && (showBorders || isAmoled)) {
-                    setStroke(dp(1f), palette.border)
+                if (isBorderedCard) {
+                    setStroke(dp(1f), resolveCardBorderColor())
                 }
             }
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = if (isClassic) 0 else dp(8f)
+                topMargin = if (isClassic || !showBorders) 0 else if (topMarginDp > 0f) dp(topMarginDp) else dp(8f)
             }
-            if (isClassic) {
-                val dividerColor = when {
-                    isAmoled -> 0xFF181818.toInt()
-                    palette.isDark -> ColorUtils.setAlphaComponent(0xFFFFFFFF.toInt(), (255 * 0.08f).toInt())
-                    else -> ColorUtils.setAlphaComponent(0xFF000000.toInt(), (255 * 0.08f).toInt())
-                }
+            if (isClassic || !showBorders) {
                 val divider = View(context).apply {
-                    setBackgroundColor(dividerColor)
+                    setBackgroundColor(resolveHairlineDividerColor())
                     layoutParams = FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         dp(1f).coerceAtLeast(1),
@@ -2586,8 +2908,16 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
     override fun onCardCornersChanged() {
         if (!isAdded) return
         val isClassic = component.preferences.isClassicSectionLayout
-        val padH = if (isClassic) 0 else dp(16f)
-        val padT = if (isClassic) dp(4f) else dp(8f)
+        val showBorders = component.preferences.showHabitCardBorders
+        val canvasColor = resolveCanvasBackgroundColor(isClassic)
+        if (::rootContainer.isInitialized) {
+            rootContainer.setBackgroundColor(canvasColor)
+        }
+        if (::headerShellContainer.isInitialized) {
+            headerShellContainer.setBackgroundColor(canvasColor)
+        }
+        val padH = if (isClassic || !showBorders) 0 else dp(16f)
+        val padT = if (isClassic) 0 else if (!showBorders) dp(4f) else dp(8f)
         contentContainer.setPadding(padH, padT, padH, dp(24f))
         renderCurrentState()
     }
@@ -2644,7 +2974,7 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
         chart.setPadding(0, 0, 0, dp(10f))
         return HorizontalScrollView(context).apply {
             isFillViewport = true
-            isScrollbarFadingEnabled = false
+            isScrollbarFadingEnabled = true
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -2654,11 +2984,13 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
             }
             addView(chart, ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             post {
-                val todayIdx = columns.indexOfFirst { it.isToday }
-                if (todayIdx >= 0) {
-                    chart.ensureColumnVisible(todayIdx)
-                } else {
-                    fullScroll(View.FOCUS_RIGHT)
+                if (chart.width > width) {
+                    val todayIdx = columns.indexOfFirst { it.isToday }
+                    if (todayIdx >= 0) {
+                        chart.ensureColumnVisible(todayIdx)
+                    } else {
+                        fullScroll(View.FOCUS_RIGHT)
+                    }
                 }
             }
         }
@@ -2728,7 +3060,9 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
 
         // 1. Closed cycles outcome (achieved S, failed F, unknown U) - separately shown, no false zero
         if (aggregate.eligibleCount == 0) {
-            lines.add(getString(R.string.unified_statistics_cadence_no_closed_cycles))
+            if (aggregate.ongoingCount == 0) {
+                lines.add(getString(R.string.unified_statistics_cadence_no_closed_cycles))
+            }
         } else if (aggregate.unknownCount > 0) {
             lines.add(
                 getString(
@@ -2823,7 +3157,7 @@ class UnifiedStatisticsFragment : Fragment(), ModelObservable.Listener, Preferen
         val valueView = TextView(context).apply {
             textSize = 14f
             text = lines.joinToString("\n")
-            setTextColor(if (aggregate.eligibleCount == 0) palette.onSurfaceVariant else palette.accent)
+            setTextColor(palette.onSurfaceVariant)
         }
         row.addView(valueView)
         return row

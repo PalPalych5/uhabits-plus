@@ -15,6 +15,8 @@ import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.models.ScoreList
 import org.isoron.uhabits.core.models.StreakList
 import org.isoron.uhabits.core.models.projection.EffectiveHabitValueService
+import org.isoron.uhabits.core.models.projection.HabitDayAdjustment
+import org.isoron.uhabits.core.models.projection.HabitDayAdjustmentRepository
 import org.isoron.uhabits.core.models.projection.HabitProjectionIntegrityException
 import org.isoron.uhabits.core.userTasks.UserTaskRepository
 import java.util.concurrent.CancellationException
@@ -40,6 +42,7 @@ class UnifiedStatisticsService(
     private val contributions: ContributionRepository,
     private val placements: HabitPlacementQueries,
     private val containers: ContainerQueries,
+    private val adjustments: HabitDayAdjustmentRepository? = null,
 ) {
     fun read(
         request: StatisticsQueryContext,
@@ -148,6 +151,27 @@ class UnifiedStatisticsService(
                     }.sortedWith(compareBy({ it.effectiveTimestamp }, { it.id.value }))
                 }
             }
+            val adjustmentMap = if (refs.isEmpty() || adjustments == null) emptyMap() else adjustments.getByHabitsInDateRange(refs, from, to)
+            val snapshotAdjustmentRepository = object : HabitDayAdjustmentRepository {
+                override fun getByHabitAndDate(targetHabit: HabitRef, date: LocalDate): HabitDayAdjustment? =
+                    adjustmentMap[targetHabit]?.get(date)
+                override fun getByHabitsInDateRange(
+                    targetHabits: Set<HabitRef>,
+                    from: LocalDate,
+                    to: LocalDate,
+                ): Map<HabitRef, Map<LocalDate, HabitDayAdjustment>> {
+                    val out = LinkedHashMap<HabitRef, Map<LocalDate, HabitDayAdjustment>>()
+                    for (ref in targetHabits) {
+                        val map = adjustmentMap[ref] ?: continue
+                        val filtered = map.filterKeys { it >= from && it <= to }
+                        if (filtered.isNotEmpty()) out[ref] = filtered
+                    }
+                    return out
+                }
+                override fun upsert(adjustment: HabitDayAdjustment) = error("Read-only snapshot repository")
+                override fun delete(targetHabit: HabitRef, date: LocalDate) = error("Read-only snapshot repository")
+                override fun deleteByHabit(targetHabit: HabitRef) = error("Read-only snapshot repository")
+            }
             val projection = EffectiveHabitValueService(
                 repository = snapshotRepository,
                 hourOffset = context.habitHourOffset,
@@ -155,6 +179,7 @@ class UnifiedStatisticsService(
                 firstWeekday = context.firstWeekday,
                 dateAt = context::habitDateAt,
                 dayStart = context::habitDayStart,
+                adjustmentRepository = snapshotAdjustmentRepository,
             )
             val inputs = habits.map { habit ->
                 checkCurrent()

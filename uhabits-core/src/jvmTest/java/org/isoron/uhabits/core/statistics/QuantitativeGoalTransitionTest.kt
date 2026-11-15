@@ -8,6 +8,7 @@ import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitGoal
 import org.isoron.uhabits.core.models.HabitType
+import org.isoron.uhabits.core.models.MissingDataPolicy
 import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.memory.MemoryModelFactory
 import org.isoron.uhabits.core.models.projection.EffectiveHabitDay
@@ -226,8 +227,16 @@ class QuantitativeGoalTransitionTest {
             "AT_MOST cycle that already exceeds target must be NOT_SATISFIED despite unknown days")
 
         // Scenario B: Active sum = 120m (<= 180m) with 1 unknown day.
-        // Incomplete coverage means we do NOT know if the unknown day pushes sum over 180m.
-        // Outcome must be UNKNOWN.
+        // Under MissingDataPolicy.UNKNOWN, incomplete coverage cannot prove sum stayed <= 180m -> UNKNOWN.
+        val unknownPolicyHabit = factory.buildHabit().apply {
+            uuid = "habit-partial-at-most-unknown"
+            type = HabitType.NUMERICAL
+            targetType = NumericalHabitType.AT_MOST
+            targetValue = 180.0
+            frequency = Frequency(1, 7)
+            unit = "min"
+            missingDataPolicy = MissingDataPolicy.UNKNOWN
+        }
         val daysB = mutableListOf<EffectiveHabitDay>()
         daysB.add(buildDay(weekStart, 60_000))
         daysB.add(buildDay(weekStart.plus(1), 60_000)) // Sum = 120m
@@ -239,11 +248,20 @@ class QuantitativeGoalTransitionTest {
 
         val resultB = HabitCycleStatisticsAggregator.aggregate(
             context,
-            listOf(StatisticsHabitInput(habit, daysB, observationStart = weekStart))
+            listOf(StatisticsHabitInput(unknownPolicyHabit, daysB, observationStart = weekStart))
         )
         val cycleB = resultB.allCycles.single { it.startDate == weekStart }
         assertEquals(HabitCycleOutcome.UNKNOWN, cycleB.outcome,
-            "AT_MOST cycle under budget with unknown days must be UNKNOWN")
+            "AT_MOST cycle under budget with unknown days under MissingDataPolicy.UNKNOWN must be UNKNOWN")
+
+        // Scenario B2: Same incomplete week under default DEFAULT_ZERO treats missing past day as 0 -> SATISFIED.
+        val resultB2 = HabitCycleStatisticsAggregator.aggregate(
+            context,
+            listOf(StatisticsHabitInput(habit, daysB, observationStart = weekStart))
+        )
+        val cycleB2 = resultB2.allCycles.single { it.startDate == weekStart }
+        assertEquals(HabitCycleOutcome.SATISFIED, cycleB2.outcome,
+            "Completed AT_MOST cycle under budget with default DEFAULT_ZERO must treat missing day as 0")
 
         // Scenario C: Active sum = 120m (<= 180m) with 0 unknown days (complete coverage).
         // Outcome must be SATISFIED.

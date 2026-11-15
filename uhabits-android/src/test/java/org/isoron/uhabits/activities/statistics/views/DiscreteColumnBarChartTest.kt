@@ -455,4 +455,26 @@ class DiscreteColumnBarChartTest {
         assertEquals(174, largeFontHeight)
         assertTrue("200% font scale expands desired height without clipping", largeFontHeight > standardHeightWithPadding)
     }
+
+    @Test
+    fun computeYTickValues_deduplicatesIdenticalFormattedTicks() {
+        val zeroOnly = DiscreteColumnBarChart.computeYTickValues(0L) { "$it" }
+        assertEquals(listOf(0L to "0"), zeroOnly)
+
+        val oneMax = DiscreteColumnBarChart.computeYTickValues(1L) { "$it" }
+        assertEquals(listOf(0L to "0", 1L to "1"), oneMax)
+
+        val twoMax = DiscreteColumnBarChart.computeYTickValues(2L) { "$it" }
+        assertEquals(listOf(0L to "0", 1L to "1", 2L to "2"), twoMax)
+
+        // Constant formatter must collapse rather than repeating "1 / 1 / 1"
+        val constantCollisions = DiscreteColumnBarChart.computeYTickValues(2L) { "1" }
+        assertEquals(listOf(0L to "1"), constantCollisions)
+
+        // Rounded minute collisions at 90s (mid = 45s -> 1m, max = 90s -> 2m) keep distinct ticks
+        val durationTicks = DiscreteColumnBarChart.computeYTickValues(90_000L) {
+            org.isoron.uhabits.activities.statistics.UnifiedStatisticsStateUtils.formatCompactDurationMs(it, isRussian = true)
+        }
+        assertEquals(listOf("0", "45с", "2м"), durationTicks.map { it.second })
+    }
 }

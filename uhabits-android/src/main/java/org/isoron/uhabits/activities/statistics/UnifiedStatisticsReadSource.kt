@@ -13,5 +13,6 @@ internal fun HabitsApplicationComponent.unifiedStatisticsReadSource(): UnifiedSt
         requireNotNull(contributionRepository),
         requireNotNull(organization.habitPlacementQueries),
         requireNotNull(organization.containerQueries),
+        habitDayAdjustmentRepository,
     )
 }

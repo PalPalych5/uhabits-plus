@@ -5,6 +5,7 @@ import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.core.models.Entry
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitGoal
+import org.isoron.uhabits.core.models.MissingDataPolicy
 import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.projection.EffectiveHabitDay
 import org.isoron.uhabits.core.rules.HabitTimeValueConverter
@@ -647,6 +648,7 @@ object HabitCycleStatisticsAggregator {
                     L = quantity.lowerBound,
                     u = quantity.unknownDays,
                     isOngoing = lifecycle == HabitCycleLifecycle.ONGOING,
+                    missingDataPolicy = habit.effectiveMissingDataPolicy(),
                 )
             }
         }
@@ -810,10 +812,22 @@ object HabitCycleStatisticsAggregator {
 
             var lowerBound = 0L
             if (!hasOverflow) {
-                try {
-                    lowerBound = Math.addExact(manualSum, activeContribSum)
-                } catch (_: ArithmeticException) {
-                    hasOverflow = true
+                for (d in days) {
+                    if (!d.includedInStatistics || d.isSkipped) continue
+                    try {
+                        val mv = d.manualValue ?: 0L
+                        val cv = d.contributionValue
+                        val base = Math.addExact(mv, cv)
+                        val eff = if (d.adjustmentValue == 0L) {
+                            base
+                        } else {
+                            Math.addExact(base, d.adjustmentValue).coerceAtLeast(0L)
+                        }
+                        lowerBound = Math.addExact(lowerBound, eff)
+                    } catch (_: ArithmeticException) {
+                        hasOverflow = true
+                        break
+                    }
                 }
             }
 
@@ -865,6 +879,7 @@ object HabitCycleStatisticsAggregator {
         L: Long,
         u: Int,
         isOngoing: Boolean,
+        missingDataPolicy: MissingDataPolicy,
     ): HabitCycleOutcome {
         return when (targetType) {
             NumericalHabitType.AT_LEAST -> {
@@ -885,7 +900,7 @@ object HabitCycleStatisticsAggregator {
                     HabitCycleOutcome.NOT_SATISFIED
                 } else if (isOngoing) {
                     HabitCycleOutcome.UNKNOWN
-                } else if (u > 0) {
+                } else if (u > 0 && missingDataPolicy == MissingDataPolicy.UNKNOWN) {
                     HabitCycleOutcome.UNKNOWN
                 } else {
                     HabitCycleOutcome.SATISFIED

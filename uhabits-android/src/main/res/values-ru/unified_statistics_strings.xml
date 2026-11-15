@@ -157,7 +157,7 @@
     <string name="unified_statistics_habits_chart_daily">Дневные цели</string>
     <string name="unified_statistics_habits_chart_weekly">Недельные цели</string>
     <string name="unified_statistics_habits_chart_monthly">Месячные цели</string>
-    <string name="unified_statistics_habits_chart_legend">Достигнута %1$d · Не достигнута %2$d · Без данных %3$d</string>
+    <string name="unified_statistics_habits_chart_legend">Достигнуто: %1$d · Не достигнуто: %2$d · Без данных: %3$d</string>
     <string name="unified_statistics_habits_chart_empty">Нет закрытых циклов в периоде</string>
 
     <string name="unified_statistics_habits_ongoing_title">Текущие циклы</string>
@@ -206,7 +206,7 @@
     <string name="unified_statistics_overview_dynamics_subtitle">Дневные цели, задачи и фокус на одной временной шкале</string>
     <string name="unified_statistics_overview_dynamics_habits">Дневные цели</string>
     <string name="unified_statistics_overview_dynamics_tasks">Завершения (шт.)</string>
-    <string name="unified_statistics_overview_dynamics_focus">Фокус (мин)</string>
+    <string name="unified_statistics_overview_dynamics_focus">Фокус</string>
     <string name="unified_statistics_overview_dynamics_unknown_notice">Есть дни без записей или с неполными данными</string>
     <string name="unified_statistics_drilldown_cycles_count">%1$d циклов</string>
 
@@ -235,4 +235,21 @@
     <string name="unified_statistics_cycle_contribution_active">Активное начисление: +%1$s (%2$s)</string>
     <string name="unified_statistics_cycle_contribution_excluded">Исключено (SKIP/вне статистики): +%1$s (%2$s)</string>
     <string name="unified_statistics_cycle_contribution_revoked">Отозвано (Tombstone): -%1$s (%2$s)</string>
+
+    <!-- Redesign Strings -->
+    <string name="unified_statistics_pulse_title">Пульс периода</string>
+    <string name="unified_statistics_pulse_daily_label">Дневные цели</string>
+    <string name="unified_statistics_pulse_daily_empty">Нет дневных целей</string>
+    <string name="unified_statistics_pulse_tasks_overdue">Просрочено: %1$d</string>
+    <string name="unified_statistics_pulse_tasks_created">Создано: %1$d</string>
+    <string name="unified_statistics_dynamics_metric_habits">Привычки</string>
+    <string name="unified_statistics_dynamics_metric_tasks">Задачи</string>
+    <string name="unified_statistics_dynamics_metric_focus">Фокус</string>
+    <string name="unified_statistics_legend_done">Выполнено: %1$d</string>
+    <string name="unified_statistics_legend_missed">Не выполнено: %1$d</string>
+    <string name="unified_statistics_habits_progress_title">Прогресс и лимиты</string>
+    <string name="unified_statistics_tasks_empty_title">Задач в периоде нет</string>
+    <string name="unified_statistics_tasks_empty_subtitle">Выберите другой период или переключите фильтр на все разделы.</string>
+    <string name="unified_statistics_focus_by_source_title">Источник фокуса</string>
+    <string name="unified_statistics_sessions_pill">%1$d сессий</string>
 </resources>

@@ -306,7 +306,7 @@ object UnifiedStatisticsStateUtils {
         }
     }
 
-    /** Exact display for a recorded session or a numerical chart axis. */
+    /** Exact display for a recorded session or drilldown header. */
     fun formatExactDurationMs(durationMs: Long, isRussian: Boolean = false): String {
         val value = durationMs.coerceAtLeast(0)
         val hours = value / 3_600_000
@@ -320,6 +320,23 @@ object UnifiedStatisticsStateUtils {
                 add("$text ${if (isRussian) "с" else "s"}")
             }
         }.joinToString(" ")
+    }
+
+    /** Compact duration label for bar chart columns and Y-axis ticks (no fractional seconds). */
+    fun formatCompactDurationMs(durationMs: Long, isRussian: Boolean = false): String {
+        if (durationMs <= 0L) return "0"
+        if (durationMs < 60_000L) {
+            val seconds = ((durationMs + 500L) / 1000L).coerceAtLeast(1L)
+            return "$seconds${if (isRussian) "с" else "s"}"
+        }
+        val totalMinutes = (durationMs / 60_000L + if (durationMs % 60_000L >= 30_000L) 1L else 0L).coerceAtLeast(1L)
+        val hours = totalMinutes / 60L
+        val minutes = totalMinutes % 60L
+        return when {
+            hours > 0L && minutes > 0L -> "$hours${if (isRussian) "ч" else "h"}$minutes${if (isRussian) "м" else "m"}"
+            hours > 0L -> "$hours${if (isRussian) "ч" else "h"}"
+            else -> "$minutes${if (isRussian) "м" else "m"}"
+        }
     }
 }
 
@@ -709,8 +726,9 @@ object DiscreteChartBucketer {
             UnifiedPeriod.DAY, UnifiedPeriod.WEEK, UnifiedPeriod.MONTH -> {
                 buckets.map { b ->
                     val dayLabel = b.date.day.toString()
-                    val valStr = UnifiedStatisticsStateUtils.formatExactDurationMs(b.durationMs, isRussian)
-                    val desc = "${b.date}: $valStr"
+                    val valStr = UnifiedStatisticsStateUtils.formatCompactDurationMs(b.durationMs, isRussian)
+                    val exactStr = UnifiedStatisticsStateUtils.formatExactDurationMs(b.durationMs, isRussian)
+                    val desc = "${b.date}: $exactStr"
                     ChartColumnItem(
                         key = b.date.toString(),
                         value = b.durationMs,
@@ -728,11 +746,12 @@ object DiscreteChartBucketer {
                 (1..12).map { monthNum ->
                     val monthBuckets = months[monthNum].orEmpty()
                     val totalDuration = monthBuckets.sumOf { it.durationMs }
-                    val valStr = UnifiedStatisticsStateUtils.formatExactDurationMs(totalDuration, isRussian)
+                    val valStr = UnifiedStatisticsStateUtils.formatCompactDurationMs(totalDuration, isRussian)
+                    val exactStr = UnifiedStatisticsStateUtils.formatExactDurationMs(totalDuration, isRussian)
                     val monthName = if (isRussian) RU_MONTHS[monthNum - 1] else EN_MONTHS[monthNum - 1]
                     val fromDate = monthBuckets.firstOrNull()?.date ?: LocalDate(today.year, monthNum, 1)
                     val toDate = monthBuckets.lastOrNull()?.date ?: LocalDate(today.year, monthNum, fromDate.monthLength)
-                    val desc = "$monthName: $valStr"
+                    val desc = "$monthName: $exactStr"
                     ChartColumnItem(
                         key = "$monthNum",
                         value = totalDuration,
@@ -754,12 +773,13 @@ object DiscreteChartBucketer {
                         val (y, m) = ym
                         val ymBuckets = yearMonths[ym].orEmpty()
                         val totalDuration = ymBuckets.sumOf { it.durationMs }
-                        val valStr = UnifiedStatisticsStateUtils.formatExactDurationMs(totalDuration, isRussian)
+                        val valStr = UnifiedStatisticsStateUtils.formatCompactDurationMs(totalDuration, isRussian)
+                        val exactStr = UnifiedStatisticsStateUtils.formatExactDurationMs(totalDuration, isRussian)
                         val mName = if (isRussian) RU_MONTHS[m - 1] else EN_MONTHS[m - 1]
                         val label = "$mName '${y % 100}"
                         val fromDate = ymBuckets.first().date
                         val toDate = ymBuckets.last().date
-                        val desc = "$label: $valStr"
+                        val desc = "$label: $exactStr"
                         ChartColumnItem(
                             key = "${y}_$m",
                             value = totalDuration,
@@ -775,11 +795,12 @@ object DiscreteChartBucketer {
                     byYear.keys.sorted().map { y ->
                         val yBuckets = byYear[y].orEmpty()
                         val totalDuration = yBuckets.sumOf { it.durationMs }
-                        val valStr = UnifiedStatisticsStateUtils.formatExactDurationMs(totalDuration, isRussian)
+                        val valStr = UnifiedStatisticsStateUtils.formatCompactDurationMs(totalDuration, isRussian)
+                        val exactStr = UnifiedStatisticsStateUtils.formatExactDurationMs(totalDuration, isRussian)
                         val label = "$y"
                         val fromDate = yBuckets.first().date
                         val toDate = yBuckets.last().date
-                        val desc = if (isRussian) "$y год: $valStr" else "Year $y: $valStr"
+                        val desc = if (isRussian) "$y год: $exactStr" else "Year $y: $exactStr"
                         ChartColumnItem(
                             key = "$y",
                             value = totalDuration,
@@ -796,13 +817,14 @@ object DiscreteChartBucketer {
                     years.chunked(chunkStep).map { chunkYears ->
                         val chunkBuckets = buckets.filter { it.date.year in chunkYears }
                         val totalDuration = chunkBuckets.sumOf { it.durationMs }
-                        val valStr = UnifiedStatisticsStateUtils.formatExactDurationMs(totalDuration, isRussian)
+                        val valStr = UnifiedStatisticsStateUtils.formatCompactDurationMs(totalDuration, isRussian)
+                        val exactStr = UnifiedStatisticsStateUtils.formatExactDurationMs(totalDuration, isRussian)
                         val firstYear = chunkYears.first()
                         val lastYear = chunkYears.last()
                         val label = if (firstYear == lastYear) "$firstYear" else "'${firstYear % 100}-'${lastYear % 100}"
                         val fromDate = chunkBuckets.first().date
                         val toDate = chunkBuckets.last().date
-                        val desc = "$label: $valStr"
+                        val desc = "$label: $exactStr"
                         ChartColumnItem(
                             key = "${firstYear}_$lastYear",
                             value = totalDuration,
@@ -825,6 +847,7 @@ object DiscreteChartBucketer {
         today: LocalDate,
         palette: SettingsThemePalette,
         isRussian: Boolean = false,
+        includeUnknownSegment: Boolean = true,
     ): List<ChartColumnItem> {
         val buckets = result.dateBuckets[cadence].orEmpty()
         if (buckets.isEmpty()) return emptyList()
@@ -839,17 +862,18 @@ object DiscreteChartBucketer {
                     val s = b.satisfiedCount.toLong()
                     val f = b.notSatisfiedCount.toLong()
                     val u = b.unknownCount.toLong()
-                    val total = s + f + u
+                    val plottedUnknown = if (includeUnknownSegment) u else 0L
+                    val total = s + f + plottedUnknown
 
                     val segments = buildList {
                         if (s > 0L) add(ChartColumnSegment(s, successColor, if (isRussian) "Достигнута" else "Satisfied"))
                         if (f > 0L) add(ChartColumnSegment(f, errorColor, if (isRussian) "Не достигнута" else "Not satisfied"))
-                        if (u > 0L) add(ChartColumnSegment(u, unknownColor, if (isRussian) "Без данных" else "Without data"))
+                        if (plottedUnknown > 0L) add(ChartColumnSegment(plottedUnknown, unknownColor, if (isRussian) "Без данных" else "Without data"))
                     }
 
                     val formattedVal = if (total == 0L) {
                         ""
-                    } else if (total == 1L) {
+                    } else if (total == 1L && includeUnknownSegment) {
                         when {
                             s == 1L -> "S"
                             f == 1L -> "F"
@@ -890,23 +914,26 @@ object DiscreteChartBucketer {
                     val s = monthBuckets.sumOf { it.satisfiedCount }.toLong()
                     val f = monthBuckets.sumOf { it.notSatisfiedCount }.toLong()
                     val u = monthBuckets.sumOf { it.unknownCount }.toLong()
-                    val total = s + f + u
+                    val plottedUnknown = if (includeUnknownSegment) u else 0L
+                    val total = s + f + plottedUnknown
 
                     val segments = buildList {
                         if (s > 0L) add(ChartColumnSegment(s, successColor, if (isRussian) "Достигнута" else "Satisfied"))
                         if (f > 0L) add(ChartColumnSegment(f, errorColor, if (isRussian) "Не достигнута" else "Not satisfied"))
-                        if (u > 0L) add(ChartColumnSegment(u, unknownColor, if (isRussian) "Без данных" else "Without data"))
+                        if (plottedUnknown > 0L) add(ChartColumnSegment(plottedUnknown, unknownColor, if (isRussian) "Без данных" else "Without data"))
                     }
 
                     val monthName = if (isRussian) RU_MONTHS[monthNum - 1] else EN_MONTHS[monthNum - 1]
                     val fromDate = LocalDate(targetYear, monthNum, 1)
                     val toDate = LocalDate(targetYear, monthNum, fromDate.monthLength)
-                    val desc = if (total == 0L) {
+                    val desc = if (s + f + u == 0L) {
                         if (isRussian) "$monthName: нет данных" else "$monthName: No data"
                     } else if (isRussian) {
-                        "$monthName: Достигнуто $s, Не достигнуто $f, Без данных $u"
+                        if (includeUnknownSegment) "$monthName: Достигнуто $s, Не достигнуто $f, Без данных $u"
+                        else "$monthName: Достигнуто $s, Не достигнуто $f"
                     } else {
-                        "$monthName: Satisfied $s, Not satisfied $f, Without data $u"
+                        if (includeUnknownSegment) "$monthName: Satisfied $s, Not satisfied $f, Without data $u"
+                        else "$monthName: Satisfied $s, Not satisfied $f"
                     }
 
                     ChartColumnItem(
@@ -934,12 +961,13 @@ object DiscreteChartBucketer {
                         val s = ymBuckets.sumOf { it.satisfiedCount }.toLong()
                         val f = ymBuckets.sumOf { it.notSatisfiedCount }.toLong()
                         val u = ymBuckets.sumOf { it.unknownCount }.toLong()
-                        val total = s + f + u
+                        val plottedUnknown = if (includeUnknownSegment) u else 0L
+                        val total = s + f + plottedUnknown
 
                         val segments = buildList {
                             if (s > 0L) add(ChartColumnSegment(s, successColor, if (isRussian) "Достигнута" else "Satisfied"))
                             if (f > 0L) add(ChartColumnSegment(f, errorColor, if (isRussian) "Не достигнута" else "Not satisfied"))
-                            if (u > 0L) add(ChartColumnSegment(u, unknownColor, if (isRussian) "Без данных" else "Without data"))
+                            if (plottedUnknown > 0L) add(ChartColumnSegment(plottedUnknown, unknownColor, if (isRussian) "Без данных" else "Without data"))
                         }
 
                         val mName = if (isRussian) RU_MONTHS[m - 1] else EN_MONTHS[m - 1]
@@ -947,9 +975,11 @@ object DiscreteChartBucketer {
                         val fromDate = ymBuckets.first().date
                         val toDate = ymBuckets.last().date
                         val desc = if (isRussian) {
-                            "$label: Достигнуто $s, Не достигнуто $f, Без данных $u"
+                            if (includeUnknownSegment) "$label: Достигнуто $s, Не достигнуто $f, Без данных $u"
+                            else "$label: Достигнуто $s, Не достигнуто $f"
                         } else {
-                            "$label: Satisfied $s, Not satisfied $f, Without data $u"
+                            if (includeUnknownSegment) "$label: Satisfied $s, Not satisfied $f, Without data $u"
+                            else "$label: Satisfied $s, Not satisfied $f"
                         }
 
                         ChartColumnItem(
@@ -970,21 +1000,24 @@ object DiscreteChartBucketer {
                         val s = yBuckets.sumOf { it.satisfiedCount }.toLong()
                         val f = yBuckets.sumOf { it.notSatisfiedCount }.toLong()
                         val u = yBuckets.sumOf { it.unknownCount }.toLong()
-                        val total = s + f + u
+                        val plottedUnknown = if (includeUnknownSegment) u else 0L
+                        val total = s + f + plottedUnknown
 
                         val segments = buildList {
                             if (s > 0L) add(ChartColumnSegment(s, successColor, if (isRussian) "Достигнута" else "Satisfied"))
                             if (f > 0L) add(ChartColumnSegment(f, errorColor, if (isRussian) "Не достигнута" else "Not satisfied"))
-                            if (u > 0L) add(ChartColumnSegment(u, unknownColor, if (isRussian) "Без данных" else "Without data"))
+                            if (plottedUnknown > 0L) add(ChartColumnSegment(plottedUnknown, unknownColor, if (isRussian) "Без данных" else "Without data"))
                         }
 
                         val label = "$y"
                         val fromDate = yBuckets.first().date
                         val toDate = yBuckets.last().date
                         val desc = if (isRussian) {
-                            "$y год: Достигнуто $s, Не достигнуто $f, Без данных $u"
+                            if (includeUnknownSegment) "$y год: Достигнуто $s, Не достигнуто $f, Без данных $u"
+                            else "$y год: Достигнуто $s, Не достигнуто $f"
                         } else {
-                            "Year $y: Satisfied $s, Not satisfied $f, Without data $u"
+                            if (includeUnknownSegment) "Year $y: Satisfied $s, Not satisfied $f, Without data $u"
+                            else "Year $y: Satisfied $s, Not satisfied $f"
                         }
 
                         ChartColumnItem(
@@ -1005,12 +1038,13 @@ object DiscreteChartBucketer {
                         val s = chunkBuckets.sumOf { it.satisfiedCount }.toLong()
                         val f = chunkBuckets.sumOf { it.notSatisfiedCount }.toLong()
                         val u = chunkBuckets.sumOf { it.unknownCount }.toLong()
-                        val total = s + f + u
+                        val plottedUnknown = if (includeUnknownSegment) u else 0L
+                        val total = s + f + plottedUnknown
 
                         val segments = buildList {
                             if (s > 0L) add(ChartColumnSegment(s, successColor, if (isRussian) "Достигнута" else "Satisfied"))
                             if (f > 0L) add(ChartColumnSegment(f, errorColor, if (isRussian) "Не достигнута" else "Not satisfied"))
-                            if (u > 0L) add(ChartColumnSegment(u, unknownColor, if (isRussian) "Без данных" else "Without data"))
+                            if (plottedUnknown > 0L) add(ChartColumnSegment(plottedUnknown, unknownColor, if (isRussian) "Без данных" else "Without data"))
                         }
 
                         val firstYear = chunkYears.first()

@@ -189,7 +189,8 @@ class StatisticsHabitInsightsViewTest : BaseAndroidJVMTest() {
             listOf(habit), today.minus(10), today, "test", 1L,
             EffectiveReadCalendarContext("UTC", DayOfWeek.MONDAY, 0, 0)
         ).getValue(HabitRef(habit.uuid!!))
-        assertEquals(null, snapshot.streakResult.streaks)
-        assertEquals(HabitInsight.Stable, StatisticsHabitInsightsView.computeInsight(habit, snapshot, today))
+        assertEquals(org.isoron.uhabits.core.models.projection.EffectiveReadExactness.INCOMPLETE, snapshot.streakResult.exactness)
+        assertEquals(listOf(org.isoron.uhabits.core.models.Streak(today.minus(10), today.minus(1))), snapshot.streakResult.streaks)
+        assertEquals(HabitInsight.Streak(10), StatisticsHabitInsightsView.computeInsight(habit, snapshot, today))
     }
 }

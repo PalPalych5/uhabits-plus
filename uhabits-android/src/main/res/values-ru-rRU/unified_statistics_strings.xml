@@ -157,7 +157,7 @@
     <string name="unified_statistics_habits_chart_daily">Дневные цели</string>
     <string name="unified_statistics_habits_chart_weekly">Недельные цели</string>
     <string name="unified_statistics_habits_chart_monthly">Месячные цели</string>
-    <string name="unified_statistics_habits_chart_legend">Достигнута %1$d · Не достигнута %2$d · Без данных %3$d</string>
+    <string name="unified_statistics_habits_chart_legend">Достигнуто: %1$d · Не достигнуто: %2$d · Без данных: %3$d</string>
     <string name="unified_statistics_habits_chart_empty">Нет закрытых циклов в периоде</string>
 
     <string name="unified_statistics_habits_ongoing_title">Текущие циклы</string>
@@ -206,7 +206,7 @@
     <string name="unified_statistics_overview_dynamics_subtitle">Дневные цели, задачи и фокус на одной временной шкале</string>
     <string name="unified_statistics_overview_dynamics_habits">Дневные цели</string>
     <string name="unified_statistics_overview_dynamics_tasks">Завершения (шт.)</string>
-    <string name="unified_statistics_overview_dynamics_focus">Фокус (мин)</string>
+    <string name="unified_statistics_overview_dynamics_focus">Фокус</string>
     <string name="unified_statistics_overview_dynamics_unknown_notice">Есть дни без записей или с неполными данными</string>
     <string name="unified_statistics_drilldown_cycles_count">%1$d циклов</string>
 

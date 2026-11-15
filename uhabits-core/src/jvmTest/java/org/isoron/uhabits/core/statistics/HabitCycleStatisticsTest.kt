@@ -9,6 +9,7 @@ import org.isoron.uhabits.core.models.Frequency
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.HabitGoal
 import org.isoron.uhabits.core.models.HabitType
+import org.isoron.uhabits.core.models.MissingDataPolicy
 import org.isoron.uhabits.core.models.NumericalHabitType
 import org.isoron.uhabits.core.models.memory.MemoryModelFactory
 import org.isoron.uhabits.core.models.projection.EffectiveHabitDay
@@ -427,7 +428,15 @@ class HabitCycleStatisticsTest {
         )
         assertEquals(HabitCycleOutcome.SATISFIED, resultA.weekly.cycles.single().outcome)
 
-        // Case B: L = 5,000L with unknown days -> UNKNOWN
+        // Case B: L = 5,000L with unknown days under MissingDataPolicy.UNKNOWN -> UNKNOWN
+        val unknownPolicyHabit = factory.buildHabit().apply {
+            type = HabitType.NUMERICAL
+            frequency = Frequency.WEEKLY
+            targetType = NumericalHabitType.AT_MOST
+            targetValue = 10.0
+            unit = "cups"
+            missingDataPolicy = MissingDataPolicy.UNKNOWN
+        }
         val incompleteDays = (0..6).map { idx ->
             val date = LocalDate(2026, 10, 19).plus(idx)
             if (idx == 0) buildDay(date, 0, manualValue = 5_000L, isNumerical = true)
@@ -435,9 +444,16 @@ class HabitCycleStatisticsTest {
         }
         val resultB = HabitCycleStatisticsAggregator.aggregate(
             context,
-            listOf(StatisticsHabitInput(habit, incompleteDays))
+            listOf(StatisticsHabitInput(unknownPolicyHabit, incompleteDays))
         )
         assertEquals(HabitCycleOutcome.UNKNOWN, resultB.weekly.cycles.single().outcome)
+
+        // Case C: L = 5,000L on completed week with unknown days under default DEFAULT_ZERO -> SATISFIED
+        val resultC = HabitCycleStatisticsAggregator.aggregate(
+            context,
+            listOf(StatisticsHabitInput(habit, incompleteDays))
+        )
+        assertEquals(HabitCycleOutcome.SATISFIED, resultC.weekly.cycles.single().outcome)
     }
 
     @Test

@@ -206,7 +206,7 @@
     <string name="unified_statistics_overview_dynamics_subtitle">Daily goals, tasks and focus on a shared timeline</string>
     <string name="unified_statistics_overview_dynamics_habits">Daily goals</string>
     <string name="unified_statistics_overview_dynamics_tasks">Completions (pcs)</string>
-    <string name="unified_statistics_overview_dynamics_focus">Focus (min)</string>
+    <string name="unified_statistics_overview_dynamics_focus">Focus</string>
     <string name="unified_statistics_overview_dynamics_unknown_notice">There are days without entries or with incomplete data</string>
     <string name="unified_statistics_drilldown_cycles_count">%1$d cycles</string>
 
@@ -235,4 +235,21 @@
     <string name="unified_statistics_cycle_contribution_active">Active credit: +%1$s (%2$s)</string>
     <string name="unified_statistics_cycle_contribution_excluded">Excluded (SKIP/not included): +%1$s (%2$s)</string>
     <string name="unified_statistics_cycle_contribution_revoked">Revoked (Tombstone): -%1$s (%2$s)</string>
+
+    <!-- Redesign Strings -->
+    <string name="unified_statistics_pulse_title">Period pulse</string>
+    <string name="unified_statistics_pulse_daily_label">Daily goals</string>
+    <string name="unified_statistics_pulse_daily_empty">No daily goals</string>
+    <string name="unified_statistics_pulse_tasks_overdue">%1$d overdue</string>
+    <string name="unified_statistics_pulse_tasks_created">%1$d created</string>
+    <string name="unified_statistics_dynamics_metric_habits">Habits</string>
+    <string name="unified_statistics_dynamics_metric_tasks">Tasks</string>
+    <string name="unified_statistics_dynamics_metric_focus">Focus</string>
+    <string name="unified_statistics_legend_done">Achieved: %1$d</string>
+    <string name="unified_statistics_legend_missed">Not achieved: %1$d</string>
+    <string name="unified_statistics_habits_progress_title">Goals &amp; limits</string>
+    <string name="unified_statistics_tasks_empty_title">No tasks in this period</string>
+    <string name="unified_statistics_tasks_empty_subtitle">Try another period or switch back to all sections.</string>
+    <string name="unified_statistics_focus_by_source_title">Focus source</string>
+    <string name="unified_statistics_sessions_pill">%1$d sessions</string>
 </resources>

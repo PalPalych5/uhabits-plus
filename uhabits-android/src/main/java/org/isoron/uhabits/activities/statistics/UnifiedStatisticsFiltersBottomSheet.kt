@@ -76,7 +76,7 @@ class UnifiedStatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
         val owner = app.component
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(palette.surface)
+            setBackgroundColor(palette.dialogSurface)
             setPadding(dp(16f), dp(16f), dp(16f), dp(24f))
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -303,17 +303,9 @@ class UnifiedStatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
             dismissAllowingStateLoss()
             return
         }
-        dialog?.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+        org.isoron.uhabits.activities.common.dialogs.CustomDialogs.styleBottomSheet(dialog, requireContext(), palette)
         (dialog as? BottomSheetDialog)?.let { sheetDialog ->
             sheetDialog.findViewById<FrameLayout>(com.google.android.material.R.id.design_bottom_sheet)?.let { sheet ->
-                sheet.background = GradientDrawable().apply {
-                    setColor(palette.surface)
-                    val r = dp(16f).toFloat()
-                    cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
-                    if (palette.isPureBlack) {
-                        setStroke(dp(1f), palette.border)
-                    }
-                }
                 BottomSheetBehavior.from(sheet).state = BottomSheetBehavior.STATE_EXPANDED
             }
         }

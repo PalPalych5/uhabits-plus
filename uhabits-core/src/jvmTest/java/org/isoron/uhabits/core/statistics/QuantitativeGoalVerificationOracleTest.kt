@@ -139,7 +139,7 @@ class QuantitativeGoalVerificationOracleTest {
                     goal.targetType == NumericalHabitType.AT_MOST -> {
                         if (sum > targetNative) {
                             HabitCycleOutcome.NOT_SATISFIED
-                        } else if (isOngoing || unknownDays > 0) {
+                        } else if (isOngoing || (unknownDays > 0 && habit.effectiveMissingDataPolicy() == org.isoron.uhabits.core.models.MissingDataPolicy.UNKNOWN)) {
                             HabitCycleOutcome.UNKNOWN
                         } else {
                             HabitCycleOutcome.SATISFIED
@@ -307,7 +307,7 @@ class QuantitativeGoalVerificationOracleTest {
                     goal.targetType == NumericalHabitType.AT_MOST -> {
                         if (sum > targetNative) {
                             HabitCycleOutcome.NOT_SATISFIED
-                        } else if (isOngoing || unknownDays > 0) {
+                        } else if (isOngoing || (unknownDays > 0 && habit.effectiveMissingDataPolicy() == org.isoron.uhabits.core.models.MissingDataPolicy.UNKNOWN)) {
                             HabitCycleOutcome.UNKNOWN
                         } else {
                             HabitCycleOutcome.SATISFIED
@@ -548,6 +548,7 @@ class QuantitativeGoalVerificationOracleTest {
             targetType = NumericalHabitType.AT_MOST
             targetValue = 100.0
             frequency = Frequency(1, 7)
+            missingDataPolicy = org.isoron.uhabits.core.models.MissingDataPolicy.UNKNOWN
         }
         val goalAtMost = HabitGoal(weekStart, Frequency(1, 7), NumericalHabitType.AT_MOST, 100.0, "")
 

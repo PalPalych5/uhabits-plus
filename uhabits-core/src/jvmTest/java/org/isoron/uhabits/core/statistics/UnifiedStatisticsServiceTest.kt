@@ -1353,6 +1353,184 @@ class UnifiedStatisticsServiceTest {
         }
     }
 
+    @Test
+    fun syntheticMultiMonthDatasetAcrossDomainsAndScopesMatchesIndependentTotals() {
+        val zone = ZoneId.of("Asia/Novosibirsk")
+        fun localEpochMs(year: Int, month: Int, day: Int, hour: Int, min: Int = 0): Long =
+            java.time.LocalDateTime.of(year, month, day, hour, min).atZone(zone).toInstant().toEpochMilli()
+
+        val habits = MemoryHabitList()
+        val tasks = MemoryUserTaskRepository()
+        val focus = MemoryFocusSessionRepository()
+        val contributions = MemoryContributionRepository()
+        val orgStore = MemoryOrganizationStore()
+
+        val workId = ContainerId("sphere-work")
+        val deepWorkId = ContainerId("sub-deep-work")
+        val healthId = ContainerId("sphere-health")
+        orgStore.seedBaseline(
+            containersList = listOf(
+                Container(workId, null, "Work", null, null, 0, false, 1L, 1L, null, OrganizationRevision(1L)),
+                Container(deepWorkId, workId, "Deep Work", null, null, 0, false, 1L, 1L, null, OrganizationRevision(1L)),
+                Container(healthId, null, "Health", null, null, 1, false, 1L, 1L, null, OrganizationRevision(1L)),
+            ),
+            placementsList = listOf(
+                HabitPlacement(HabitRef("syn-water"), healthId, 1, PlacementOrigin.USER_CHANGE, OrganizationRevision(1L)),
+                HabitPlacement(HabitRef("syn-study"), deepWorkId, 1, PlacementOrigin.USER_CHANGE, OrganizationRevision(1L)),
+            ),
+        )
+
+        val jan1 = LocalDate(2026, 1, 1)
+        val mar31 = LocalDate(2026, 3, 31)
+
+        // 1. Boolean Daily habit in Health (10 satisfied, 2 skipped)
+        val hWater = factory.buildHabit().apply {
+            uuid = "syn-water"
+            name = "Water"
+            frequency = Frequency.DAILY
+            goalHistory = mutableListOf(HabitGoal(jan1, Frequency.DAILY, NumericalHabitType.AT_LEAST, 1.0, ""))
+            (0 until 10).forEach { originalEntries.add(Entry(jan1.plus(it), Entry.YES_MANUAL)) }
+            originalEntries.add(Entry(jan1.plus(10), Entry.SKIP))
+            originalEntries.add(Entry(jan1.plus(11), Entry.SKIP))
+        }
+        habits.add(hWater)
+
+        // 2. Numerical AT_LEAST Daily habit in Deep Work with manual entry + Focus Contribution
+        val hStudy = factory.buildHabit().apply {
+            uuid = "syn-study"
+            name = "Study Minutes"
+            type = org.isoron.uhabits.core.models.HabitType.NUMERICAL
+            targetType = NumericalHabitType.AT_LEAST
+            targetValue = 30.0
+            unit = "min"
+            frequency = Frequency.DAILY
+            goalHistory = mutableListOf(HabitGoal(jan1, Frequency.DAILY, NumericalHabitType.AT_LEAST, 30.0, "min"))
+            originalEntries.add(Entry(LocalDate(2026, 2, 1), 30_000)) // 30 min manual
+        }
+        habits.add(hStudy)
+
+        // 3. Numerical AT_MOST Weekly habit (Unassigned)
+        val hSugar = factory.buildHabit().apply {
+            uuid = "syn-sugar"
+            name = "Limit Sweets"
+            type = org.isoron.uhabits.core.models.HabitType.NUMERICAL
+            targetType = NumericalHabitType.AT_MOST
+            targetValue = 2.0
+            unit = "pcs"
+            frequency = Frequency.WEEKLY
+            goalHistory = mutableListOf(HabitGoal(jan1, Frequency.WEEKLY, NumericalHabitType.AT_MOST, 2.0, "pcs"))
+            originalEntries.add(Entry(LocalDate(2026, 2, 2), 1000)) // 1 <= 2 (satisfied)
+        }
+        habits.add(hSugar)
+
+        // 4. Tasks across Jan-Mar in Work, Health, and Unassigned
+        val taskSpecs = listOf(
+            Tuple4("t-work-1", deepWorkId, TaskStatus.COMPLETED, localEpochMs(2026, 1, 15, 14)),
+            Tuple4("t-work-2", workId, TaskStatus.COMPLETED, localEpochMs(2026, 2, 20, 11)),
+            Tuple4("t-health-1", healthId, TaskStatus.PENDING, localEpochMs(2026, 3, 5, 9)),
+            Tuple4("t-unassigned-1", null as ContainerId?, TaskStatus.COMPLETED, localEpochMs(2026, 3, 18, 18)),
+        )
+        taskSpecs.forEach { (id, container, status, ts) ->
+            tasks.save(
+                UserTask(
+                    id = TaskId(id),
+                    title = id,
+                    containerId = container,
+                    status = status,
+                    due = TaskDue.Day(LocalDate(2026, 3, 10).toTaskDueDate()),
+                    createdAt = ts - 3_600_000L,
+                    updatedAt = ts,
+                    completedAt = if (status == TaskStatus.COMPLETED) ts else null,
+                ),
+            )
+        }
+
+        // 5. Focus sessions + contribution at 01:30 local time (checks civil day vs habitHourOffset=3)
+        val feb10Morning = localEpochMs(2026, 2, 10, 1, 30)
+        focus.record(
+            FocusSession(
+                id = FocusSessionId("f-work-1"),
+                startedAt = feb10Morning - 1_800_000L,
+                endedAt = feb10Morning,
+                durationMs = 1_800_000L, // 30m
+                containerId = deepWorkId,
+                primaryTargetType = FocusPrimaryTargetType.HABIT,
+                habit = HabitRef("syn-study"),
+                source = FocusSessionSource.TIMER,
+                createdAt = feb10Morning,
+                updatedAt = feb10Morning,
+            ),
+        )
+        contributions.record(
+            Contribution(
+                id = ContributionId("c-study-feb9"),
+                sourceType = ContributionSourceType.FOCUS_SESSION,
+                sourceId = "f-work-1",
+                targetHabit = HabitRef("syn-study"),
+                contributedValue = 30_000L,
+                effectiveTimestamp = feb10Morning,
+                createdAt = feb10Morning,
+                updatedAt = feb10Morning,
+            ),
+        )
+        val mar1Noon = localEpochMs(2026, 3, 1, 12, 0)
+        focus.record(
+            FocusSession(
+                id = FocusSessionId("f-unassigned-1"),
+                startedAt = mar1Noon - 900_000L,
+                endedAt = mar1Noon,
+                durationMs = 900_000L, // 15m
+                containerId = null,
+                primaryTargetType = FocusPrimaryTargetType.TASK,
+                taskId = TaskId("t-unassigned-1"),
+                source = FocusSessionSource.MANUAL,
+                createdAt = mar1Noon,
+                updatedAt = mar1Noon,
+            ),
+        )
+
+        val baseCtx = StatisticsQueryContext(
+            from = jan1,
+            to = mar31,
+            timezoneId = zone.id,
+            firstWeekday = DayOfWeek.MONDAY,
+            habitHourOffset = 3,
+            habitMinuteOffset = 0,
+            datasetId = "syn-multi-month",
+            revision = 1L,
+            now = localEpochMs(2026, 4, 5, 10),
+            sectionScope = StatisticsSectionScope.All,
+        )
+        val service = UnifiedStatisticsService(habits, tasks, focus, contributions, orgStore, orgStore)
+
+        val allReport = service.read(baseCtx, { StatisticsReadIdentity(baseCtx.datasetId, baseCtx.revision) })
+        assertTrue(allReport.readIssues.isEmpty())
+        assertEquals(3, allReport.tasks!!.completedCount)
+        assertEquals(4, allReport.tasks!!.createdCount)
+        assertEquals(2_700_000L, allReport.focus!!.totalDurationMs)
+        assertEquals(2, allReport.focus!!.sessionCount)
+        // Civil bucket for Feb 10 holds 30m (offset 3h does NOT shift Focus day)
+        assertEquals(1_800_000L, allReport.focus!!.dailyBuckets.first { it.date == LocalDate(2026, 2, 10) }.durationMs)
+        // Monthly cadence is empty because no monthly habit exists
+        assertEquals(0, allReport.habits!!.monthly.eligibleCount)
+        assertEquals(0, allReport.habits!!.monthly.ongoingCount)
+        assertTrue(allReport.habits!!.daily.satisfiedCount >= 12) // 10 water + 2 study (Feb 1 manual + Feb 9 habit-day contribution)
+
+        // Work sphere partition (includes descendant Deep Work)
+        val workCtx = baseCtx.copy(sectionScope = StatisticsSectionScope.Container(workId, includeDescendants = true))
+        val workReport = service.read(workCtx, { StatisticsReadIdentity(workCtx.datasetId, workCtx.revision) })
+        assertEquals(2, workReport.tasks!!.completedCount)
+        assertEquals(1_800_000L, workReport.focus!!.totalDurationMs)
+        assertEquals(setOf("syn-study"), workReport.habits!!.habitSummaries.map { it.habitUuid }.toSet())
+
+        // Unassigned partition
+        val unassignedCtx = baseCtx.copy(sectionScope = StatisticsSectionScope.Unassigned)
+        val unassignedReport = service.read(unassignedCtx, { StatisticsReadIdentity(unassignedCtx.datasetId, unassignedCtx.revision) })
+        assertEquals(1, unassignedReport.tasks!!.completedCount)
+        assertEquals(900_000L, unassignedReport.focus!!.totalDurationMs)
+        assertEquals(setOf("syn-sugar"), unassignedReport.habits!!.habitSummaries.map { it.habitUuid }.toSet())
+    }
+
     private fun createStandardService(): UnifiedStatisticsService {
         val orgStore = MemoryOrganizationStore()
         return UnifiedStatisticsService(

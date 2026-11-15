@@ -145,6 +145,11 @@ class FocusSessionDetailBottomSheet : BottomSheetDialogFragment() {
         outState.putString("querySignature", querySignature)
     }
 
+    override fun onStart() {
+        super.onStart()
+        org.isoron.uhabits.activities.common.dialogs.CustomDialogs.styleBottomSheet(dialog, requireContext(), palette)
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -164,7 +169,7 @@ class FocusSessionDetailBottomSheet : BottomSheetDialogFragment() {
         }
 
         val root = FrameLayout(context).apply {
-            setBackgroundColor(palette.surface)
+            setBackgroundColor(palette.dialogSurface)
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,

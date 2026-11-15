@@ -572,4 +572,33 @@ class UnifiedStatisticsStateTest {
         assertEquals("Deleted section (deleted-)", snapshot.resolveContainerName("deleted-c-id", isRussian = false))
         assertEquals("Удалённый раздел (deleted-)", snapshot.resolveContainerName("deleted-c-id", isRussian = true))
     }
+
+    @Test
+    fun testFormatCompactDurationMs_focusChartLabelsAndExactAccessibility() {
+        assertEquals("0", UnifiedStatisticsStateUtils.formatCompactDurationMs(0L, isRussian = true))
+        assertEquals("1с", UnifiedStatisticsStateUtils.formatCompactDurationMs(500L, isRussian = true))
+        assertEquals("52м", UnifiedStatisticsStateUtils.formatCompactDurationMs(51 * 60_000L + 30_200L, isRussian = true))
+        assertEquals("1ч", UnifiedStatisticsStateUtils.formatCompactDurationMs(3_600_000L, isRussian = true))
+        assertEquals("1ч15м", UnifiedStatisticsStateUtils.formatCompactDurationMs(4_500_000L, isRussian = true))
+        assertEquals("52m", UnifiedStatisticsStateUtils.formatCompactDurationMs(51 * 60_000L + 30_200L, isRussian = false))
+        assertEquals("1h15m", UnifiedStatisticsStateUtils.formatCompactDurationMs(4_500_000L, isRussian = false))
+
+        val day = LocalDate(2026, 11, 1)
+        val focusResult = org.isoron.uhabits.core.statistics.FocusStatisticsResult(
+            totalDurationMs = 3_090_200L,
+            sessionCount = 1,
+            averageSessionDurationMs = 3_090_200L,
+            sessions = emptyList(),
+            dailyBuckets = listOf(
+                org.isoron.uhabits.core.statistics.FocusDailyBucket(day, 3_090_200L, 1, emptyList()),
+            ),
+            sectionBreakdowns = emptyList(),
+            targetBreakdowns = emptyList(),
+            targetTypeSummaries = emptyList(),
+            dataState = org.isoron.uhabits.core.statistics.StatisticsDataState.COMPLETE,
+        )
+        val cols = DiscreteChartBucketer.buildFocusColumns(UnifiedPeriod.WEEK, focusResult, day, isRussian = true)
+        assertEquals("52м", cols.single().formattedValue)
+        assertTrue(cols.single().contentDescription.contains("51 мин 30.2 с"))
+    }
 }

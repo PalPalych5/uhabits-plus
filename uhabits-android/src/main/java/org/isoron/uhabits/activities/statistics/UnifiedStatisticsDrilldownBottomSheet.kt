@@ -195,6 +195,11 @@ class UnifiedStatisticsDrilldownBottomSheet : BottomSheetDialogFragment() {
         outState.putString(ARG_HABIT_SEARCH_QUERY, habitSearchQuery)
     }
 
+    override fun onStart() {
+        super.onStart()
+        org.isoron.uhabits.activities.common.dialogs.CustomDialogs.styleBottomSheet(dialog, requireContext(), palette)
+    }
+
     override fun onCreateView(
         inflater: LayoutInflater,
         container: ViewGroup?,
@@ -204,7 +209,7 @@ class UnifiedStatisticsDrilldownBottomSheet : BottomSheetDialogFragment() {
 
         val root = FrameLayout(context).apply {
             tag = if (kind == KIND_HABIT_CYCLES || kind == KIND_HABIT_LIST) "habitDrilldownSheet" else "unifiedDrilldownSheet"
-            setBackgroundColor(palette.surface)
+            setBackgroundColor(palette.dialogSurface)
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,

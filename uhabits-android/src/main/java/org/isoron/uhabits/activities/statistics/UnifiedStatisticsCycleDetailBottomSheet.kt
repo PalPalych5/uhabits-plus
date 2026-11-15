@@ -116,6 +116,7 @@ class UnifiedStatisticsCycleDetailBottomSheet : BottomSheetDialogFragment() {
                 com.google.android.material.R.id.design_bottom_sheet
             )
             if (bottomSheet != null) {
+                org.isoron.uhabits.activities.common.dialogs.CustomDialogs.styleBottomSheet(dialog, requireContext(), palette)
                 val behavior = BottomSheetBehavior.from(bottomSheet)
                 behavior.state = BottomSheetBehavior.STATE_EXPANDED
                 behavior.skipCollapsed = true
@@ -132,7 +133,7 @@ class UnifiedStatisticsCycleDetailBottomSheet : BottomSheetDialogFragment() {
         val context = requireContext()
         val root = FrameLayout(context).apply {
             tag = "habitCycleDetailSheet"
-            setBackgroundColor(palette.surface)
+            setBackgroundColor(palette.dialogSurface)
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT

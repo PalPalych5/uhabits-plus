@@ -229,22 +229,21 @@ class DiscreteColumnBarChart @JvmOverloads constructor(
     // -------------------------------------------------------------------------
 
     private fun calculateMinColumnPitch(): Float {
+        val compactWeek = items.size in 1..7
+        val minPitchDp = if (compactWeek) 36f else MIN_TOUCH_TARGET_DP
+        val textPadDp = if (compactWeek) 8f else 16f
         val maxLabelW = items.maxOfOrNull { labelTextPaint.measureText(it.label) } ?: 0f
-        val maxValueW = items.maxOfOrNull { valueTextPaint.measureText(it.formattedValue) } ?: 0f
-        return maxOf(dp(MIN_TOUCH_TARGET_DP), maxLabelW + dp(16f), maxValueW + dp(16f))
+        val maxValueW = items.maxOfOrNull {
+            if (it.value > 0L) valueTextPaint.measureText(it.formattedValue) else 0f
+        } ?: 0f
+        return maxOf(dp(minPitchDp), maxLabelW + dp(textPadDp), maxValueW + dp(textPadDp))
     }
 
     private fun calculateYAxisWidth(): Float {
-        if (items.isEmpty()) return dp(28f)
-        val maxValue = items.maxOfOrNull { it.value } ?: 0L
-        val maxLabel = formatYTick(maxValue)
-        val midLabel = formatYTick(maxValue / 2L)
-        val zeroLabel = formatYTick(0L)
-        val widest = maxOf(
-            gridTextPaint.measureText(maxLabel),
-            gridTextPaint.measureText(midLabel),
-            gridTextPaint.measureText(zeroLabel)
-        )
+        if (items.isEmpty()) return dp(24f)
+        val rawMaxLong = items.maxOfOrNull { it.value } ?: 0L
+        val ticks = computeYTickValues(rawMaxLong, ::formatYTick)
+        val widest = ticks.maxOfOrNull { (_, text) -> gridTextPaint.measureText(text) } ?: 0f
         return widest + dp(10f)
     }
 
@@ -311,31 +310,33 @@ class DiscreteColumnBarChart @JvmOverloads constructor(
         gridLinePaint.color = dividerColor
         gridTextPaint.color = onSurfaceVariantColor
 
-        // Baseline (0)
+        // Baseline (0) and deduplicated Y scale ticks (mid & max)
+        val rawMaxLong = items.maxOfOrNull { it.value } ?: 0L
+        val ticks = computeYTickValues(rawMaxLong, ::formatYTick)
         baselinePaint.color = outlineColor
         baselinePaint.strokeWidth = dp(1f)
         canvas.drawLine(chartLeft, bottomBaseline, chartRight, bottomBaseline, baselinePaint)
-        if (showYAxis) {
+        if (showYAxis && ticks.isNotEmpty()) {
             val zeroY = bottomBaseline - (gridTextPaint.descent() + gridTextPaint.ascent()) / 2f
-            canvas.drawText(formatYTick(0L), chartLeft - dp(4f), zeroY, gridTextPaint)
-        }
+            canvas.drawText(ticks.first().second, chartLeft - dp(4f), zeroY, gridTextPaint)
 
-        // Ticks for max and mid
-        val rawMaxLong = items.maxOfOrNull { it.value } ?: 0L
-        if (showYAxis && rawMaxLong > 0L) {
-            // Top grid line
+            ticks.drop(1).forEach { (tickVal, tickText) ->
+                val y = if (tickVal == rawMaxLong) {
+                    bottomBaseline - maxBarHeight
+                } else {
+                    bottomBaseline - maxBarHeight * (tickVal.toDouble() / rawMaxLong).toFloat()
+                }
+                canvas.drawLine(chartLeft, y, chartRight, y, gridLinePaint)
+                val textY = y - (gridTextPaint.descent() + gridTextPaint.ascent()) / 2f
+                canvas.drawText(tickText, chartLeft - dp(4f), textY, gridTextPaint)
+            }
+        } else if (rawMaxLong > 0L) {
             val topY = bottomBaseline - maxBarHeight
             canvas.drawLine(chartLeft, topY, chartRight, topY, gridLinePaint)
-            val topTextY = topY - (gridTextPaint.descent() + gridTextPaint.ascent()) / 2f
-            canvas.drawText(formatYTick(rawMaxLong), chartLeft - dp(4f), topTextY, gridTextPaint)
-
-            // Mid grid line if >= 2
             if (rawMaxLong >= 2L) {
                 val midVal = rawMaxLong / 2L
                 val midY = bottomBaseline - maxBarHeight * (midVal.toDouble() / rawMaxLong).toFloat()
                 canvas.drawLine(chartLeft, midY, chartRight, midY, gridLinePaint)
-                val midTextY = midY - (gridTextPaint.descent() + gridTextPaint.ascent()) / 2f
-                canvas.drawText(formatYTick(midVal), chartLeft - dp(4f), midTextY, gridTextPaint)
             }
         }
 
@@ -417,14 +418,6 @@ class DiscreteColumnBarChart @JvmOverloads constructor(
     private fun formatYTick(valLong: Long): String {
         if (valueFormatter != null) {
             return valueFormatter!!.invoke(valLong)
-        }
-        if (unitLabel != null) {
-            return "$valLong $unitLabel"
-        }
-        // Duration auto-formatting if raw ms duration is detected
-        if (valLong >= 60_000L) {
-            val isRussian = context.resources.configuration.locales[0].language == "ru"
-            return UnifiedStatisticsStateUtils.formatDurationMs(valLong, isRussian)
         }
         return valLong.toString()
     }
@@ -634,6 +627,29 @@ class DiscreteColumnBarChart @JvmOverloads constructor(
 
     companion object {
         const val MIN_TOUCH_TARGET_DP = 48f
+
+        fun computeYTickValues(rawMaxLong: Long, formatter: (Long) -> String): List<Pair<Long, String>> {
+            val result = mutableListOf<Pair<Long, String>>()
+            val seen = mutableSetOf<String>()
+            val zeroLabel = formatter(0L)
+            result.add(0L to zeroLabel)
+            seen.add(zeroLabel)
+
+            if (rawMaxLong > 0L) {
+                val topLabel = formatter(rawMaxLong)
+                if (rawMaxLong >= 2L) {
+                    val midVal = rawMaxLong / 2L
+                    val midLabel = formatter(midVal)
+                    if (midVal in 1L until rawMaxLong && midLabel != topLabel && seen.add(midLabel)) {
+                        result.add(midVal to midLabel)
+                    }
+                }
+                if (seen.add(topLabel)) {
+                    result.add(rawMaxLong to topLabel)
+                }
+            }
+            return result
+        }
 
         fun computePureDesiredHeight(
             valueFontSpacing: Float,
