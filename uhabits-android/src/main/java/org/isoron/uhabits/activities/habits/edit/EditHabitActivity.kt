@@ -29,7 +29,7 @@ import org.isoron.uhabits.activities.common.dialogs.FrequencyPickerDialog
 import org.isoron.uhabits.activities.common.dialogs.NumericalInputValidator
 import org.isoron.uhabits.activities.common.dialogs.UHabitColorPickerBottomSheet
 import org.isoron.uhabits.activities.common.dialogs.WeekdayPickerDialog
-import org.isoron.uhabits.activities.common.icons.IconPickerBottomSheet
+import org.isoron.uhabits.activities.common.icons.UHabitIconPickerBottomSheet
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.habits.edit.views.HabitFormActions
 import org.isoron.uhabits.activities.habits.edit.views.HabitFormScreen
@@ -540,9 +540,10 @@ class EditHabitActivity : AppCompatActivity(), HabitFormActions {
     }
 
     override fun onPickIcon() {
-        val picker = IconPickerBottomSheet().apply {
+        val picker = UHabitIconPickerBottomSheet.newInstance(
+            initialIconRef = iconRef,
             previewColor = androidColor
-            initialIconRef = iconRef
+        ).apply {
             onIconSelected = { picked ->
                 iconRef = picked
                 formState.iconRef = picked
