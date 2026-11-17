@@ -1,21 +1,4 @@
-/*
- * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
- *
- * This file is part of Loop Habit Tracker.
- *
- * Loop Habit Tracker is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.
- *
- * Loop Habit Tracker is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 
 package org.isoron.uhabits.activities.tasks
 
@@ -196,7 +179,7 @@ class TasksAdapter(
 
                 val containerItem = task.containerId?.let { containers[it] }
                 val containerName = if (hideContainerContext) null else {
-                    containerItem?.name ?: if (task.isCompleted) null else "Входящие"
+                    containerItem?.name ?: if (task.isCompleted) null else itemView.context.getString(R.string.task_smart_inbox)
                 }
                 val containerColor = containerItem?.color?.let {
                     TaskThemeUtils.resolvePaletteColor(itemView.context, it, palette.accent)
@@ -241,12 +224,12 @@ class TasksAdapter(
             applyRowProfile()
             applySelectionBackground(isSelected)
             itemView.isActivated = isSelected
-            ViewCompat.setStateDescription(itemView, if (isSelected) "Выбрано" else null)
+            ViewCompat.setStateDescription(itemView, if (isSelected) itemView.context.getString(R.string.task_row_state_selected) else null)
             btnCheck?.contentDescription = when {
-                selectionActive && isSelected -> "Снять выделение: ${task.title}"
-                selectionActive -> "Выбрать: ${task.title}"
-                isCompleted -> "Возобновить: ${task.title}"
-                else -> "Завершить: ${task.title}"
+                selectionActive && isSelected -> itemView.context.getString(R.string.task_row_a11y_deselect_title, task.title)
+                selectionActive -> itemView.context.getString(R.string.task_row_a11y_select_title, task.title)
+                isCompleted -> itemView.context.getString(R.string.task_row_a11y_reopen_title, task.title)
+                else -> itemView.context.getString(R.string.task_row_a11y_complete_title, task.title)
             }
 
             // 1. Title & Strikethrough
@@ -301,8 +284,8 @@ class TasksAdapter(
                     btn.visibility = View.GONE
                 } else {
                     btn.visibility = View.VISIBLE
-                    btn.contentDescription = "Действия с задачей: ${task.title}"
-                    TooltipCompat.setTooltipText(btn, "Действия")
+                    btn.contentDescription = itemView.context.getString(R.string.task_row_a11y_actions_title, task.title)
+                    TooltipCompat.setTooltipText(btn, itemView.context.getString(R.string.task_detail_actions))
                     ivTaskMore?.setColorFilter(palette.onSurfaceVariant)
                     btn.setOnClickListener {
                         onShowContextMenu?.invoke(task) ?: onTaskLongClicked(task, it)
@@ -345,20 +328,20 @@ class TasksAdapter(
             accessibilityActionIds.clear()
 
             onChangeDue?.let { action ->
-                val id = ViewCompat.addAccessibilityAction(itemView, "Изменить срок") { _, _ ->
+                val id = ViewCompat.addAccessibilityAction(itemView, itemView.context.getString(R.string.task_quick_menu_change_due)) { _, _ ->
                     action(task)
                     true
                 }
                 if (id != View.NO_ID) accessibilityActionIds.add(id)
             }
             onMoveContainer?.let { action ->
-                val id = ViewCompat.addAccessibilityAction(itemView, "Переместить в раздел") { _, _ ->
+                val id = ViewCompat.addAccessibilityAction(itemView, itemView.context.getString(R.string.task_quick_menu_move_container)) { _, _ ->
                     action(task)
                     true
                 }
                 if (id != View.NO_ID) accessibilityActionIds.add(id)
             }
-            val selectLabel = if (isSelected) "Снять выделение" else "Выбрать задачу"
+            val selectLabel = itemView.context.getString(if (isSelected) R.string.task_row_a11y_deselect else R.string.task_row_a11y_select)
             val selectId = ViewCompat.addAccessibilityAction(itemView, selectLabel) { view, _ ->
                 onTaskLongClicked(task, view)
                 true
@@ -366,14 +349,14 @@ class TasksAdapter(
             if (selectId != View.NO_ID) accessibilityActionIds.add(selectId)
 
             onShowContextMenu?.let { action ->
-                val id = ViewCompat.addAccessibilityAction(itemView, "Действия с задачей") { _, _ ->
+                val id = ViewCompat.addAccessibilityAction(itemView, itemView.context.getString(R.string.task_row_a11y_actions)) { _, _ ->
                     action(task)
                     true
                 }
                 if (id != View.NO_ID) accessibilityActionIds.add(id)
             }
 
-            val toggleLabel = if (task.isCompleted) "Возобновить задачу" else "Завершить задачу"
+            val toggleLabel = itemView.context.getString(if (task.isCompleted) R.string.task_row_a11y_reopen else R.string.task_row_a11y_complete)
             val toggleId = ViewCompat.addAccessibilityAction(itemView, toggleLabel) { _, _ ->
                 onToggleComplete(task)
                 true
@@ -439,20 +422,21 @@ class TasksAdapter(
             val meta = SpannableStringBuilder()
             val spokenParts = mutableListOf<String>()
 
+            val ctx = itemView.context
             // 1. Priority Hierarchy (Eisenhower matrix: Important & Urgent)
             if (!task.isCompleted) {
                 when {
                     task.important == true && task.urgent == true -> {
-                        meta.appendProperty(R.drawable.ic_cat_flame, "Срочно и важно", dangerColor())
-                        spokenParts.add("Приоритет: срочно и важно")
+                        meta.appendProperty(R.drawable.ic_cat_flame, ctx.getString(R.string.task_row_priority_urgent_important), dangerColor())
+                        spokenParts.add(ctx.getString(R.string.task_row_priority_urgent_important_spoken))
                     }
                     task.important == true -> {
-                        meta.appendProperty(R.drawable.ic_cat_star, "Важно", warningColor())
-                        spokenParts.add("Приоритет: важно")
+                        meta.appendProperty(R.drawable.ic_cat_star, ctx.getString(R.string.task_detail_important), warningColor())
+                        spokenParts.add(ctx.getString(R.string.task_row_priority_important_spoken))
                     }
                     task.urgent == true -> {
-                        meta.appendProperty(R.drawable.ic_cat_flame, "Срочно", warningColor())
-                        spokenParts.add("Приоритет: срочно")
+                        meta.appendProperty(R.drawable.ic_cat_flame, ctx.getString(R.string.task_detail_urgent), warningColor())
+                        spokenParts.add(ctx.getString(R.string.task_row_priority_urgent_spoken))
                     }
                 }
             }
@@ -462,7 +446,7 @@ class TasksAdapter(
                 when (val due = task.due) {
                     is TaskDue.None -> {
                         if (task.hasPendingLegacyPlan) {
-                            val label = "План: ${task.legacyPlanDate}"
+                            val label = ctx.getString(R.string.task_row_plan_prefix, task.legacyPlanDate)
                             meta.appendProperty(R.drawable.ic_cat_calendar, label, palette.onSurfaceVariant)
                             spokenParts.add(label)
                         }
@@ -472,10 +456,10 @@ class TasksAdapter(
                         val overdue = task.isOverdue(today, nowMillis)
                         val isToday = task.isDueToday(today, nowMillis)
                         val label = when {
-                            overdue -> "Просрочено · ${d.day}.${d.month.toString().padStart(2, '0')}"
-                            isToday -> "Сегодня"
-                            d.daysSince2000 == today.daysSince2000 + 1 -> "Завтра"
-                            else -> TaskDueDisplayFormatter.format(due, TaskDueDisplayFormatter.selectedLocale(itemView.context))
+                            overdue -> ctx.getString(R.string.task_row_overdue_label, "${d.day}.${d.month.toString().padStart(2, '0')}")
+                            isToday -> ctx.getString(R.string.task_due_today)
+                            d.daysSince2000 == today.daysSince2000 + 1 -> ctx.getString(R.string.task_due_tomorrow)
+                            else -> TaskDueDisplayFormatter.format(ctx, due)
                         }
                         val color = when {
                             overdue -> dangerColor()
@@ -491,9 +475,9 @@ class TasksAdapter(
                         val cal = java.util.Calendar.getInstance().apply { timeInMillis = due.epochMillis }
                         val timeStr = timeFormat.format(Date(due.epochMillis))
                         val label = when {
-                            overdue -> "Просрочено · ${cal.get(java.util.Calendar.DAY_OF_MONTH)}.${(cal.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')}, $timeStr"
-                            isToday -> "Сегодня, $timeStr"
-                            else -> TaskDueDisplayFormatter.format(due, TaskDueDisplayFormatter.selectedLocale(itemView.context))
+                            overdue -> ctx.getString(R.string.task_row_overdue_label, "${cal.get(java.util.Calendar.DAY_OF_MONTH)}.${(cal.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')}, $timeStr")
+                            isToday -> ctx.getString(R.string.task_row_today_timed, timeStr)
+                            else -> TaskDueDisplayFormatter.format(ctx, due)
                         }
                         val color = when {
                             overdue -> dangerColor()
@@ -508,16 +492,18 @@ class TasksAdapter(
 
             val completedAt = task.completedAt
             if (task.isCompleted && completedAt != null && completedAt > 0L) {
-                val label = "Выполнено " + SimpleDateFormat("d MMM", TaskDueDisplayFormatter.selectedLocale(itemView.context)).format(Date(completedAt))
+                val dateStr = SimpleDateFormat("d MMM", TaskDueDisplayFormatter.selectedLocale(ctx)).format(Date(completedAt))
+                val label = ctx.getString(R.string.task_row_completed_on, dateStr)
                 meta.appendProperty(R.drawable.ic_action_check, label, palette.onSurfaceVariant)
                 spokenParts.add(label)
             }
 
             // 3. Organizational Container Context (suppressed if context matches)
             if (!hideContainerContext) {
-                val containerName = task.containerId?.let { containers[it]?.name ?: "Раздел" } ?: if (task.isCompleted) "Без раздела" else "Входящие"
+                val containerName = task.containerId?.let { containers[it]?.name ?: ctx.getString(R.string.task_row_container_fallback) }
+                    ?: ctx.getString(if (task.isCompleted) R.string.task_row_no_container else R.string.task_smart_inbox)
                 meta.appendProperty(R.drawable.ic_cat_folder, containerName, palette.onSurfaceVariant)
-                spokenParts.add("Раздел: $containerName")
+                spokenParts.add(ctx.getString(R.string.task_row_container_spoken, containerName))
             }
 
             // 4. Subtasks Progress
@@ -526,7 +512,7 @@ class TasksAdapter(
                 val icon = if (counts.first == counts.second) R.drawable.ic_cat_check_square else R.drawable.ic_cat_list_todo
                 val subtaskColor = if (counts.first == counts.second && !task.isCompleted) palette.accent else palette.onSurfaceVariant
                 meta.appendProperty(icon, "${counts.first}/${counts.second}", subtaskColor)
-                spokenParts.add("подзадачи: ${counts.first} из ${counts.second}")
+                spokenParts.add(ctx.getString(R.string.task_row_subtasks_spoken, counts.first, counts.second))
             }
 
             // 5. Tags
@@ -540,13 +526,13 @@ class TasksAdapter(
                 }
                 val tagColor = if (task.isCompleted) palette.onSurfaceVariant else MainTabsThemeBridge.withAlpha(palette.accent, 0.9f)
                 meta.appendProperty(R.drawable.ic_cat_tag, tagText, tagColor)
-                spokenParts.add("теги: ${tags.joinToString(", ") { it.name }}")
+                spokenParts.add(ctx.getString(R.string.task_row_tags_spoken, tags.joinToString(", ") { it.name }))
             }
 
             // 6. Notes indicator (hierarchy hint)
             if (task.description.isNotBlank()) {
-                meta.appendProperty(R.drawable.ic_cat_file_text, "Заметка", palette.onSurfaceVariant)
-                spokenParts.add("есть заметка")
+                meta.appendProperty(R.drawable.ic_cat_file_text, ctx.getString(R.string.task_row_notes_label), palette.onSurfaceVariant)
+                spokenParts.add(ctx.getString(R.string.task_row_notes_spoken))
             }
 
             // 7. Linked Habit indicator (hierarchy hint)

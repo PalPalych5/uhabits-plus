@@ -35,7 +35,7 @@
             android:padding="12dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:src="@drawable/ic_toolbar_more_vertical"
-            android:contentDescription="Действия со списком" />
+            android:contentDescription="@string/task_list_actions_desc" />
     </LinearLayout>
 
     <!-- Multi-selection Action Bar: Compact (48dp) -->
@@ -57,7 +57,7 @@
             android:padding="10dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:src="@drawable/ic_close"
-            android:contentDescription="Выйти из режима выбора" />
+            android:contentDescription="@string/task_selection_exit_desc" />
 
         <TextView
             android:id="@+id/tvSelectionCount"
@@ -80,7 +80,7 @@
             android:padding="10dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:src="@drawable/ic_cat_calendar"
-            android:contentDescription="Изменить срок выбранных" />
+            android:contentDescription="@string/task_selection_due_desc" />
 
         <ImageButton
             android:id="@+id/btnSelectionContainer"
@@ -89,7 +89,7 @@
             android:padding="10dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:src="@drawable/ic_cat_folder"
-            android:contentDescription="Переместить выбранные в раздел" />
+            android:contentDescription="@string/task_selection_move_desc" />
 
         <ImageButton
             android:id="@+id/btnSelectionComplete"
@@ -98,7 +98,7 @@
             android:padding="10dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:src="@drawable/ic_action_check"
-            android:contentDescription="Завершить выбранные" />
+            android:contentDescription="@string/task_selection_complete_desc" />
 
         <ImageButton
             android:id="@+id/btnSelectionDelete"
@@ -107,7 +107,7 @@
             android:padding="10dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:src="@drawable/ic_settings_trash"
-            android:contentDescription="Удалить выбранные" />
+            android:contentDescription="@string/task_selection_delete_desc" />
 
         <ImageButton
             android:id="@+id/btnSelectionMore"
@@ -116,7 +116,7 @@
             android:padding="10dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:src="@drawable/ic_toolbar_more_vertical"
-            android:contentDescription="Действия с задачей"
+            android:contentDescription="@string/task_row_a11y_actions"
             android:visibility="gone" />
     </LinearLayout>
 
@@ -159,7 +159,7 @@
             android:clickable="false"
             android:focusable="false"
             android:visibility="gone"
-            android:contentDescription="Фильтр по тегам" />
+            android:contentDescription="@string/task_tags_filter_desc" />
 
         <TextView
             android:id="@+id/tvTasksDate"
@@ -207,7 +207,7 @@
                 android:layout_marginTop="16dp"
                 android:textSize="16sp"
                 android:fontFamily="sans-serif-medium"
-                android:text="Нет задач" />
+                android:text="@string/task_empty_all_title" />
 
             <TextView
                 android:id="@+id/tvEmptyMessage"
@@ -216,7 +216,7 @@
                 android:layout_marginTop="6dp"
                 android:textSize="13sp"
                 android:gravity="center"
-                android:text="Добавьте задачу через строку внизу" />
+                android:text="@string/task_empty_all_message" />
         </LinearLayout>
     </FrameLayout>
 
@@ -259,7 +259,7 @@
                 android:layout_marginStart="12dp"
                 android:textSize="14sp"
                 android:fontFamily="sans-serif"
-                android:text="Добавить задачу…" />
+                android:text="@string/task_quick_add_hint" />
         </LinearLayout>
 
         <!-- Expanded Composer View (above IME) -->
@@ -285,7 +285,7 @@
                     android:layout_height="match_parent"
                     android:layout_weight="1"
                     android:background="@null"
-                    android:hint="Добавить задачу…"
+                    android:hint="@string/task_quick_add_hint"
                     android:textSize="16sp"
                     android:fontFamily="sans-serif"
                     android:imeOptions="actionDone"
@@ -299,7 +299,7 @@
                     android:padding="10dp"
                     android:background="?android:attr/selectableItemBackgroundBorderless"
                     android:src="@drawable/ic_chevron_up"
-                    android:contentDescription="Развернуть в полный редактор" />
+                    android:contentDescription="@string/task_quick_add_expand_desc" />
 
                 <ImageButton
                     android:id="@+id/btnQuickAddSubmit"
@@ -309,7 +309,7 @@
                     android:padding="10dp"
                     android:background="?android:attr/selectableItemBackgroundBorderless"
                     android:src="@drawable/ic_toolbar_add"
-                    android:contentDescription="Добавить" />
+                    android:contentDescription="@string/task_quick_add_submit_desc" />
             </LinearLayout>
 
             <!-- Compact Metadata Options Row (40dp) -->
@@ -332,7 +332,7 @@
                     android:paddingEnd="12dp"
                     android:textSize="13sp"
                     android:fontFamily="sans-serif-medium"
-                    android:text="Задать срок"
+                    android:text="@string/task_due_set_prompt"
                     android:background="?android:attr/selectableItemBackground"
                     android:clickable="true"
                     android:focusable="true"
@@ -350,7 +350,7 @@
                     android:layout_marginStart="8dp"
                     android:textSize="13sp"
                     android:fontFamily="sans-serif-medium"
-                    android:text="Входящие"
+                    android:text="@string/task_smart_inbox"
                     android:maxLines="1"
                     android:ellipsize="end"
                     android:background="?android:attr/selectableItemBackground"
@@ -367,7 +367,7 @@
                     android:layout_marginStart="8dp"
                     android:textSize="13sp"
                     android:fontFamily="sans-serif-medium"
-                    android:text="Теги"
+                    android:text="@string/task_tags_label"
                     android:maxLines="1"
                     android:ellipsize="end"
                     android:background="?android:attr/selectableItemBackground"

@@ -95,7 +95,8 @@ fun TaskRowCompose(
 ) {
     val context = LocalContext.current
     val locale = TaskDueDisplayFormatter.selectedLocale(context)
-    val timeFormat = SimpleDateFormat("HH:mm", locale)
+    val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
+    val timeFormat = SimpleDateFormat(if (is24Hour) "HH:mm" else "h:mm a", locale)
 
     // 1. Build metadata tokens
     val tokens = mutableListOf<TaskMetaToken>()
@@ -107,9 +108,9 @@ fun TaskRowCompose(
                 tokens.add(
                     TaskMetaToken(
                         iconRes = R.drawable.ic_cat_flame,
-                        label = "Срочно и важно",
+                        label = context.getString(R.string.task_row_priority_urgent_important),
                         color = Color(if (colors.danger != 0) colors.danger else 0xFFEF5350.toInt()),
-                        spokenText = "Приоритет: срочно и важно"
+                        spokenText = context.getString(R.string.task_row_priority_urgent_important_spoken)
                     )
                 )
             }
@@ -117,9 +118,9 @@ fun TaskRowCompose(
                 tokens.add(
                     TaskMetaToken(
                         iconRes = R.drawable.ic_cat_star,
-                        label = "Важно",
+                        label = context.getString(R.string.task_detail_important),
                         color = Color(if (colors.warning != 0) colors.warning else 0xFFFFB74D.toInt()),
-                        spokenText = "Приоритет: важно"
+                        spokenText = context.getString(R.string.task_row_priority_important_spoken)
                     )
                 )
             }
@@ -127,9 +128,9 @@ fun TaskRowCompose(
                 tokens.add(
                     TaskMetaToken(
                         iconRes = R.drawable.ic_cat_flame,
-                        label = "Срочно",
+                        label = context.getString(R.string.task_detail_urgent),
                         color = Color(if (colors.warning != 0) colors.warning else 0xFFFFB74D.toInt()),
-                        spokenText = "Приоритет: срочно"
+                        spokenText = context.getString(R.string.task_row_priority_urgent_spoken)
                     )
                 )
             }
@@ -141,7 +142,7 @@ fun TaskRowCompose(
         when (val due = task.due) {
             is TaskDue.None -> {
                 if (task.hasPendingLegacyPlan) {
-                    val label = "План: ${task.legacyPlanDate}"
+                    val label = context.getString(R.string.task_row_plan_prefix, task.legacyPlanDate)
                     tokens.add(
                         TaskMetaToken(
                             iconRes = R.drawable.ic_cat_calendar,
@@ -159,9 +160,9 @@ fun TaskRowCompose(
                 val isTomorrow = d.daysSince2000 == today.daysSince2000 + 1
                 val label = when {
                     overdue -> "${d.day}.${d.month.toString().padStart(2, '0')}"
-                    isDueToday -> "Сегодня"
-                    isTomorrow -> "Завтра"
-                    else -> TaskDueDisplayFormatter.format(due, locale)
+                    isDueToday -> context.getString(R.string.task_due_today)
+                    isTomorrow -> context.getString(R.string.task_due_tomorrow)
+                    else -> TaskDueDisplayFormatter.format(context, due)
                 }
                 val dueColor = when {
                     overdue -> Color(if (colors.danger != 0) colors.danger else 0xFFEF5350.toInt())
@@ -173,7 +174,10 @@ fun TaskRowCompose(
                         iconRes = R.drawable.ic_cat_calendar,
                         label = label,
                         color = dueColor,
-                        spokenText = if (overdue) "Просрочено: $label" else "Срок: $label"
+                        spokenText = context.getString(
+                            if (overdue) R.string.task_row_due_overdue_spoken else R.string.task_row_due_spoken,
+                            label
+                        )
                     )
                 )
             }
@@ -184,8 +188,8 @@ fun TaskRowCompose(
                 val timeStr = timeFormat.format(Date(due.epochMillis))
                 val label = when {
                     overdue -> "${cal.get(Calendar.DAY_OF_MONTH)}.${(cal.get(Calendar.MONTH) + 1).toString().padStart(2, '0')}, $timeStr"
-                    isDueToday -> "Сегодня, $timeStr"
-                    else -> TaskDueDisplayFormatter.format(due, locale)
+                    isDueToday -> context.getString(R.string.task_row_today_timed, timeStr)
+                    else -> TaskDueDisplayFormatter.format(context, due)
                 }
                 val dueColor = when {
                     overdue -> Color(if (colors.danger != 0) colors.danger else 0xFFEF5350.toInt())
@@ -197,7 +201,10 @@ fun TaskRowCompose(
                         iconRes = R.drawable.ic_cat_calendar_clock,
                         label = label,
                         color = dueColor,
-                        spokenText = if (overdue) "Просрочено: $label" else "Срок со временем: $label"
+                        spokenText = context.getString(
+                            if (overdue) R.string.task_row_due_overdue_spoken else R.string.task_row_due_timed_spoken,
+                            label
+                        )
                     )
                 )
             }
@@ -206,7 +213,7 @@ fun TaskRowCompose(
         val completedAt = task.completedAt
         if (completedAt != null && completedAt > 0L) {
             val dateStr = SimpleDateFormat("d MMM", locale).format(Date(completedAt))
-            val label = "Выполнено $dateStr"
+            val label = context.getString(R.string.task_row_completed_on, dateStr)
             tokens.add(
                 TaskMetaToken(
                     iconRes = R.drawable.ic_action_check,
@@ -228,7 +235,7 @@ fun TaskRowCompose(
                     color = Color(colors.secondary),
                     isColoredDot = true,
                     dotColor = Color(containerColor),
-                    spokenText = "Раздел: $containerName"
+                    spokenText = context.getString(R.string.task_row_container_spoken, containerName)
                 )
             )
         } else {
@@ -237,7 +244,7 @@ fun TaskRowCompose(
                     iconRes = R.drawable.ic_cat_folder,
                     label = containerName,
                     color = Color(colors.secondary),
-                    spokenText = "Раздел: $containerName"
+                    spokenText = context.getString(R.string.task_row_container_spoken, containerName)
                 )
             )
         }
@@ -254,7 +261,7 @@ fun TaskRowCompose(
                 iconRes = icon,
                 label = "$completed/$total",
                 color = subColor,
-                spokenText = "Подзадачи: $completed из $total"
+                spokenText = context.getString(R.string.task_row_subtasks_spoken, completed, total)
             )
         )
     }
@@ -273,7 +280,7 @@ fun TaskRowCompose(
                 iconRes = R.drawable.ic_cat_tag,
                 label = tagText,
                 color = tagColor,
-                spokenText = "Теги: ${tags.joinToString(", ") { it.name }}"
+                spokenText = context.getString(R.string.task_row_tags_spoken, tags.joinToString(", ") { it.name })
             )
         )
     }
@@ -285,7 +292,7 @@ fun TaskRowCompose(
                 iconRes = R.drawable.ic_cat_file_text,
                 label = "",
                 color = Color(colors.secondary),
-                spokenText = "есть заметка"
+                spokenText = context.getString(R.string.task_row_notes_spoken)
             )
         )
     }
@@ -297,16 +304,18 @@ fun TaskRowCompose(
                 iconRes = R.drawable.ic_cat_repeat,
                 label = "",
                 color = Color(colors.secondary),
-                spokenText = "связана с привычкой"
+                spokenText = context.getString(R.string.task_row_habit_linked_spoken)
             )
         )
     }
 
     // 3. Accessibility spoken string
+    val stateSelected = context.getString(R.string.task_row_state_selected)
+    val stateCompleted = context.getString(R.string.task_row_state_completed)
     val spokenDescription = buildString {
         append(task.title)
-        if (isSelected) append("; выбрано")
-        if (isCompleted) append("; завершено")
+        if (isSelected) { append("; "); append(stateSelected.lowercase(locale)) }
+        if (isCompleted) { append("; "); append(stateCompleted.lowercase(locale)) }
         tokens.forEach { token ->
             if (token.spokenText.isNotBlank()) {
                 append("; ")
@@ -321,6 +330,12 @@ fun TaskRowCompose(
         else -> Color.Transparent
     }
 
+    val actionChangeDueLabel = context.getString(R.string.task_quick_menu_change_due)
+    val actionMoveContainerLabel = context.getString(R.string.task_quick_menu_move_container)
+    val actionSelectLabel = context.getString(if (isSelected) R.string.task_row_a11y_deselect else R.string.task_row_a11y_select)
+    val actionToggleLabel = context.getString(if (isCompleted) R.string.task_row_a11y_reopen else R.string.task_row_a11y_complete)
+    val actionMenuLabel = context.getString(R.string.task_row_a11y_actions)
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -333,32 +348,32 @@ fun TaskRowCompose(
             .semantics(mergeDescendants = true) {
                 this.contentDescription = spokenDescription
                 if (isSelected) {
-                    this.stateDescription = "Выбрано"
+                    this.stateDescription = stateSelected
                 } else if (isCompleted) {
-                    this.stateDescription = "Завершено"
+                    this.stateDescription = stateCompleted
                 }
                 this.customActions = listOfNotNull(
                     onChangeDue?.let { action ->
-                        CustomAccessibilityAction("Изменить срок") {
+                        CustomAccessibilityAction(actionChangeDueLabel) {
                             action()
                             true
                         }
                     },
                     onMoveContainer?.let { action ->
-                        CustomAccessibilityAction("Переместить в раздел") {
+                        CustomAccessibilityAction(actionMoveContainerLabel) {
                             action()
                             true
                         }
                     },
-                    CustomAccessibilityAction(if (isSelected) "Снять выделение" else "Выбрать задачу") {
+                    CustomAccessibilityAction(actionSelectLabel) {
                         onTaskLongClicked()
                         true
                     },
-                    CustomAccessibilityAction(if (isCompleted) "Возобновить задачу" else "Завершить задачу") {
+                    CustomAccessibilityAction(actionToggleLabel) {
                         onToggleComplete()
                         true
                     },
-                    CustomAccessibilityAction("Действия с задачей") {
+                    CustomAccessibilityAction(actionMenuLabel) {
                         onShowContextMenu()
                         true
                     }
@@ -443,12 +458,15 @@ private fun TaskCheckboxAffordance(
         label = "checkScale"
     )
 
+    val context = LocalContext.current
     val actionLabel = when {
-        selectionActive && isSelected -> "Снять выделение: $taskTitle"
-        selectionActive -> "Выбрать: $taskTitle"
-        isCompleted -> "Возобновить: $taskTitle"
-        else -> "Завершить: $taskTitle"
+        selectionActive && isSelected -> context.getString(R.string.task_row_a11y_deselect_title, taskTitle)
+        selectionActive -> context.getString(R.string.task_row_a11y_select_title, taskTitle)
+        isCompleted -> context.getString(R.string.task_row_a11y_reopen_title, taskTitle)
+        else -> context.getString(R.string.task_row_a11y_complete_title, taskTitle)
     }
+    val selectedState = context.getString(R.string.task_row_state_selected)
+    val completedState = context.getString(R.string.task_row_state_completed)
 
     Box(
         modifier = Modifier
@@ -462,9 +480,9 @@ private fun TaskCheckboxAffordance(
                 this.role = Role.Checkbox
                 this.contentDescription = actionLabel
                 if (isSelected) {
-                    this.stateDescription = "Выбрано"
+                    this.stateDescription = selectedState
                 } else if (isCompleted) {
-                    this.stateDescription = "Завершено"
+                    this.stateDescription = completedState
                 }
             },
         contentAlignment = Alignment.Center

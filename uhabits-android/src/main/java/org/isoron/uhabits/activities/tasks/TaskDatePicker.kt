@@ -7,21 +7,34 @@ import org.isoron.uhabits.R
 import java.util.Calendar
 import java.util.TimeZone
 
-/** Calendar-only selection: convert Material's UTC date without shifting the local day. */
+/**
+ * Legacy unused picker.
+ * NOTE: The active production task due date and time picker is [TaskDuePickerBottomSheet].
+ */
+@Deprecated("Unused legacy picker; active production picker is TaskDuePickerBottomSheet")
 object TaskDatePicker {
     fun showTime(context: android.content.Context, initial: Long, apply: (Long) -> Unit) {
         val current = Calendar.getInstance().apply { timeInMillis = initial }
-        android.app.TimePickerDialog(context, { _, hour, minute ->
-            val selected = Calendar.getInstance().apply {
-                timeInMillis = initial
-                set(Calendar.HOUR_OF_DAY, hour)
-                set(Calendar.MINUTE, minute)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
+        val hour = current.get(Calendar.HOUR_OF_DAY)
+        val minute = current.get(Calendar.MINUTE)
+        val is24Hour = android.text.format.DateFormat.is24HourFormat(context)
+        org.isoron.uhabits.activities.common.dialogs.CustomDialogs.showTimePickerDialog(
+            context = context,
+            title = context.getString(R.string.reminder),
+            initialHour = hour,
+            initialMinute = minute,
+            is24Hour = is24Hour,
+            onConfirm = { h, m ->
+                val selected = Calendar.getInstance().apply {
+                    timeInMillis = initial
+                    set(Calendar.HOUR_OF_DAY, h)
+                    set(Calendar.MINUTE, m)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                apply(selected.timeInMillis)
             }
-            apply(selected.timeInMillis)
-        }, current.get(Calendar.HOUR_OF_DAY), current.get(Calendar.MINUTE),
-            android.text.format.DateFormat.is24HourFormat(context)).show()
+        )
     }
 
     fun show(manager: FragmentManager, initial: LocalDate, title: String, apply: (LocalDate) -> Unit) {

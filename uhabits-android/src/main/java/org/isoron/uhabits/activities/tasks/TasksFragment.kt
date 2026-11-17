@@ -1,21 +1,4 @@
-/*
- * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
- *
- * This file is part of Loop Habit Tracker.
- *
- * Loop Habit Tracker is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.
- *
- * Loop Habit Tracker is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 
 package org.isoron.uhabits.activities.tasks
 
@@ -207,8 +190,6 @@ class TasksFragment : Fragment() {
     private lateinit var quickDueView: TextView
     private lateinit var quickContainerView: TextView
     private lateinit var quickTagsView: TextView
-
-    private val dateFormatRu = SimpleDateFormat("EEE, d MMMM", Locale("ru"))
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -523,12 +504,11 @@ class TasksFragment : Fragment() {
     private fun setupOverflowMenu() {
         tvTasksTagFilter.visibility = View.GONE
         btnTasksOverflow.setOnClickListener {
-            val ru = TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru"
             val entries = mutableListOf<CompactPopupMenu.Entry>()
             if (calendarMode) {
                 val prefs = TaskCalendarPreferences(requireContext())
                 val isShown = calendarViewController?.showHabits ?: (calendarShowHabits ?: prefs.showHabits)
-                val habitsTitle = if (ru) "Показывать привычки" else getString(R.string.task_calendar_menu_show_habits)
+                val habitsTitle = getString(R.string.task_calendar_menu_show_habits)
                 entries += CompactPopupMenu.Entry.Item(
                     id = 10,
                     title = habitsTitle,
@@ -538,18 +518,18 @@ class TasksFragment : Fragment() {
                 entries += CompactPopupMenu.Entry.Divider
                 entries += CompactPopupMenu.Entry.Item(
                     id = 3,
-                    title = if (ru) "Настройки" else getString(R.string.settings),
+                    title = getString(R.string.settings),
                 )
             } else {
                 entries += CompactPopupMenu.Entry.Item(
                     id = 1,
-                    title = if (ru) "Все задачи" else TaskSmartView.ALL.displayName,
+                    title = TaskSmartView.ALL.label(requireContext()),
                     iconRes = if (selectedContainerFilter == null && activeSmartView == TaskSmartView.ALL) R.drawable.ic_tabler_check else null,
                     selected = selectedContainerFilter == null && activeSmartView == TaskSmartView.ALL,
                 )
                 entries += CompactPopupMenu.Entry.Item(
                     id = 2,
-                    title = if (ru) "Завершённые" else TaskSmartView.COMPLETED.displayName,
+                    title = TaskSmartView.COMPLETED.label(requireContext()),
                     iconRes = if (selectedContainerFilter == null && activeSmartView == TaskSmartView.COMPLETED) R.drawable.ic_tabler_check else null,
                     selected = selectedContainerFilter == null && activeSmartView == TaskSmartView.COMPLETED,
                 )
@@ -562,7 +542,7 @@ class TasksFragment : Fragment() {
                 entries += CompactPopupMenu.Entry.Divider
                 entries += CompactPopupMenu.Entry.Item(
                     id = 3,
-                    title = if (ru) "Настройки" else getString(R.string.settings),
+                    title = getString(R.string.settings),
                 )
             }
             CompactPopupMenu.show(
@@ -699,18 +679,18 @@ class TasksFragment : Fragment() {
         tasksSelectionBar.visibility = View.VISIBLE
         val compactFont = resources.configuration.screenWidthDp <= 380 && resources.configuration.fontScale > 1.15f
         tvSelectionCount.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, if (compactFont) 14f else 16f)
-        tvSelectionCount.text = "Выбрано: $count"
-        tvSelectionCount.contentDescription = "Выбрано задач: $count"
+        tvSelectionCount.text = getString(R.string.task_selection_count, count)
+        tvSelectionCount.contentDescription = getString(R.string.task_selection_count_desc, count)
         btnSelectionMore.visibility = if (count == 1) View.VISIBLE else View.GONE
 
         val selectedTasks = selectedTasksFromSnapshot()
         val allCompleted = selectedTasks.isNotEmpty() && selectedTasks.all { it.isCompleted }
         if (allCompleted) {
             btnSelectionComplete.setImageResource(R.drawable.ic_cat_refresh_cw)
-            btnSelectionComplete.contentDescription = "Вернуть в активные"
+            btnSelectionComplete.contentDescription = getString(R.string.task_selection_reopen_desc)
         } else {
             btnSelectionComplete.setImageResource(R.drawable.ic_action_check)
-            btnSelectionComplete.contentDescription = "Завершить выбранные"
+            btnSelectionComplete.contentDescription = getString(R.string.task_selection_complete_desc)
         }
     }
 
@@ -771,14 +751,14 @@ class TasksFragment : Fragment() {
             }
         } catch (e: Exception) {
             android.util.Log.e("TasksFragment", "Failed to update task due", e)
-            Toast.makeText(requireContext(), "Не удалось обновить срок. Попробуйте ещё раз.", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.task_action_due_update_failed), Toast.LENGTH_LONG).show()
             loadTasks()
             return
         }
         clearSelection()
         loadTasks()
         if (entries.isNotEmpty()) {
-            val msg = if (entries.size == 1) "Срок задачи обновлён" else "Срок обновлён (${entries.size})"
+            val msg = if (entries.size == 1) getString(R.string.task_action_due_updated_single) else getString(R.string.task_action_due_updated_multi, entries.size)
             showUndoSnackbar(msg, entries)
         }
     }
@@ -803,14 +783,14 @@ class TasksFragment : Fragment() {
             }
         } catch (e: Exception) {
             android.util.Log.e("TasksFragment", "Failed to move task container", e)
-            Toast.makeText(requireContext(), "Не удалось переместить задачи. Попробуйте ещё раз.", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.task_action_move_failed), Toast.LENGTH_LONG).show()
             loadTasks()
             return
         }
         clearSelection()
         loadTasks()
         if (entries.isNotEmpty()) {
-            val msg = if (entries.size == 1) "Задача перемещена" else "Задачи перемещены (${entries.size})"
+            val msg = if (entries.size == 1) getString(R.string.task_action_moved_single) else getString(R.string.task_action_moved_multi, entries.size)
             showUndoSnackbar(msg, entries)
         }
     }
@@ -833,7 +813,7 @@ class TasksFragment : Fragment() {
             }
         } catch (e: Exception) {
             android.util.Log.e("TasksFragment", "Failed to update completion state", e)
-            Toast.makeText(requireContext(), "Не удалось обновить статус задач. Попробуйте ещё раз.", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.task_action_status_failed), Toast.LENGTH_LONG).show()
             loadTasks()
             return
         }
@@ -842,10 +822,10 @@ class TasksFragment : Fragment() {
         loadTasks()
         if (entries.isNotEmpty()) {
             val msg = when {
-                entries.size == 1 && targetCompleted -> "Задача завершена"
-                entries.size == 1 && !targetCompleted -> "Задача возвращена в активные"
-                targetCompleted -> "Завершено задач: ${entries.size}"
-                else -> "Возвращено в активные: ${entries.size}"
+                entries.size == 1 && targetCompleted -> getString(R.string.task_action_completed_single)
+                entries.size == 1 && !targetCompleted -> getString(R.string.task_action_reopened_single)
+                targetCompleted -> getString(R.string.task_action_completed_multi, entries.size)
+                else -> getString(R.string.task_action_reopened_multi, entries.size)
             }
             showUndoSnackbar(msg, entries)
         }
@@ -861,22 +841,22 @@ class TasksFragment : Fragment() {
         deleteConfirmationDialog?.dismiss()
 
         val title = if (uniqueIds.size == 1) {
-            "Удалить задачу?"
+            getString(R.string.task_detail_delete_confirm_title)
         } else {
-            "Удалить выбранные задачи (${uniqueIds.size})?"
+            getString(R.string.task_delete_multi_title, uniqueIds.size)
         }
         val message = if (uniqueIds.size == 1) {
-            "Задача и её подзадачи будут удалены без возможности отмены."
+            getString(R.string.task_delete_single_irreversible)
         } else {
-            "Выбранные задачи и их подзадачи будут удалены без возможности отмены."
+            getString(R.string.task_delete_multi_irreversible)
         }
         val dialog = AlertDialog.Builder(requireContext())
             .setTitle(title)
             .setMessage(message)
-            .setNegativeButton("Отмена") { _, _ ->
+            .setNegativeButton(getString(android.R.string.cancel)) { _, _ ->
                 pendingDeleteConfirmationIds.clear()
             }
-            .setPositiveButton("Удалить") { _, _ ->
+            .setPositiveButton(getString(R.string.delete)) { _, _ ->
                 val toDelete = pendingDeleteConfirmationIds.toList()
                 pendingDeleteConfirmationIds.clear()
                 executeDeleteTasks(toDelete)
@@ -902,7 +882,7 @@ class TasksFragment : Fragment() {
             }
         } catch (e: Exception) {
             android.util.Log.e("TasksFragment", "Failed to delete tasks", e)
-            Toast.makeText(requireContext(), "Не удалось удалить задачи. Попробуйте ещё раз.", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.task_action_delete_failed), Toast.LENGTH_LONG).show()
             loadTasks()
             return
         }
@@ -924,7 +904,7 @@ class TasksFragment : Fragment() {
         snackbar.setBackgroundTint(bgColor)
         snackbar.setTextColor(Color.WHITE)
         snackbar.setActionTextColor(if (palette.isDark) palette.accent else Color.parseColor("#7CC4FA"))
-        snackbar.setAction("Отменить") {
+        snackbar.setAction(getString(R.string.task_action_undo)) {
             performUndo(entries)
         }
         activeSnackbar = snackbar
@@ -947,7 +927,7 @@ class TasksFragment : Fragment() {
             }
         } catch (e: Exception) {
             android.util.Log.e("TasksFragment", "Failed to undo task operation", e)
-            Toast.makeText(requireContext(), "Не удалось отменить действие.", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.task_action_undo_failed), Toast.LENGTH_LONG).show()
             loadTasks()
             return 0
         }
@@ -957,14 +937,13 @@ class TasksFragment : Fragment() {
     }
 
     private fun updateSmartViewLabel() {
-        val ru = TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru"
         tvTitle.text = if (calendarMode) {
-            if (ru) "Календарь" else "Calendar"
+            getString(R.string.task_view_calendar)
         } else {
             selectedContainerFilter?.let { workspaceSnapshot?.availableContainers.orEmpty().find { item -> item.key == it.value }?.name }
                 ?: if (matrixMode) {
-                    if (ru) "Матрица" else "Matrix"
-                } else activeSmartView.displayName
+                    getString(R.string.task_view_matrix)
+                } else activeSmartView.label(requireContext())
         }
     }
 
@@ -1006,12 +985,12 @@ class TasksFragment : Fragment() {
         groupedAdapter = TaskListAdapter()
         overdueAdapter = taskAdapter()
         completedAdapter = taskAdapter()
-        overdueHeader = TaskSectionAdapter("Просроченные") {
+        overdueHeader = TaskSectionAdapter(getString(R.string.task_smart_overdue)) {
             overdueExpanded = !overdueExpanded
             workspaceSnapshot?.let(::renderTasks)
         }
-        activeHeader = TaskSectionAdapter("Сегодня")
-        completedHeader = TaskSectionAdapter("Завершённые") {
+        activeHeader = TaskSectionAdapter(getString(R.string.task_smart_today))
+        completedHeader = TaskSectionAdapter(getString(R.string.task_smart_completed)) {
             completedExpanded = !completedExpanded
             workspaceSnapshot?.let(::renderTasks)
         }
@@ -1079,7 +1058,7 @@ class TasksFragment : Fragment() {
             quickContainerView.compoundDrawablePadding = dpInt(6f)
 
             val containerItem = workspaceSnapshot?.availableContainers.orEmpty().find { it.key == quickContainer?.value }
-            val containerText = containerItem?.name ?: "Входящие"
+            val containerText = containerItem?.name ?: getString(R.string.task_smart_inbox)
             quickContainerView.text = containerText
             quickContainerView.setTextColor(if (hasContainer) palette.onSurface else palette.onSurfaceVariant)
 
@@ -1102,7 +1081,7 @@ class TasksFragment : Fragment() {
                 val firstTag = "#${selectedTagNames.first()}"
                 if (selectedTagNames.size > 1) "$firstTag +${selectedTagNames.size - 1}" else firstTag
             } else {
-                "Теги"
+                getString(R.string.task_tags_label)
             }
 
             updateSubmitButtonState()
@@ -1273,7 +1252,7 @@ class TasksFragment : Fragment() {
             } } catch (e: Exception) {
                 android.util.Log.e("TasksFragment", "Task creation failed", e)
                 btnQuickAddSubmit.isEnabled = true
-                Toast.makeText(requireContext(), "Не удалось создать задачу. Попробуйте ещё раз.", Toast.LENGTH_LONG).show()
+                Toast.makeText(requireContext(), getString(R.string.task_detail_create_error), Toast.LENGTH_LONG).show()
                 return
             }
 
@@ -1478,7 +1457,7 @@ class TasksFragment : Fragment() {
         completedAdapter.updateData(if (completedExpanded) sections.completed else emptyList(), subtaskMap, containerItemMap, today, nowMillis, currentSelection, taskTagMap)
         overdueHeader.update(sections.overdue.isNotEmpty(), overdueExpanded, palette)
         activeHeader.update(sections.groups.isEmpty() && sections.overdue.isNotEmpty() && sections.active.isNotEmpty(), true, palette,
-            if (activeSmartView == TaskSmartView.TODAY) "Сегодня" else "Задачи")
+            if (activeSmartView == TaskSmartView.TODAY) getString(R.string.task_smart_today) else getString(R.string.tasks_title))
         completedHeader.update(sections.completed.isNotEmpty(), completedExpanded, palette)
 
         // Subtitle count and info row visibility
@@ -1487,20 +1466,22 @@ class TasksFragment : Fragment() {
             val overdueCount = sections.overdue.size
             val activeCount = sections.active.size
             val totalPending = activeCount + overdueCount
+            val countText = resources.getQuantityString(R.plurals.task_count, totalPending, totalPending)
             tvSubtitle.text = when {
                 activeSmartView == TaskSmartView.TODAY && overdueCount > 0 && activeCount > 0 ->
-                    "$totalPending ${pluralTasks(totalPending)} · $overdueCount просрочено"
+                    getString(R.string.task_overdue_with_count, countText, overdueCount)
                 activeSmartView == TaskSmartView.TODAY && overdueCount > 0 && activeCount == 0 ->
-                    "$overdueCount просрочено"
+                    getString(R.string.task_overdue_count, overdueCount)
                 else ->
-                    "$totalPending ${pluralTasks(totalPending)}"
+                    countText
             }
             tvSubtitle.visibility = if (!matrixMode && activeSmartView == TaskSmartView.COMPLETED) View.GONE else View.VISIBLE
 
             // Date indicator on the right (shown in TODAY mode)
             if (!matrixMode && activeSmartView == TaskSmartView.TODAY) {
-                val dateStr = dateFormatRu.format(Date(nowMillis))
-                tvTasksDate.text = dateStr.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale("ru")) else it.toString() }
+                val locale = TaskDueDisplayFormatter.selectedLocale(requireContext())
+                val dateStr = SimpleDateFormat("EEE, d MMMM", locale).format(Date(nowMillis))
+                tvTasksDate.text = dateStr.replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
                 tvTasksDate.visibility = View.VISIBLE
             } else {
                 tvTasksDate.visibility = View.GONE
@@ -1527,58 +1508,46 @@ class TasksFragment : Fragment() {
     }
 
     private fun updateEmptyMessage() {
-        val ru = TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru"
         if (selectedTagFilter.isNotEmpty()) {
-            tvEmptyTitle.text = if (ru) "Нет задач с выбранными тегами" else "No tasks with selected tags"
-            tvEmptyMessage.text = if (ru) "Сбросьте фильтр по тегам или выберите другие теги" else "Clear tag filter or select other tags"
+            tvEmptyTitle.text = getString(R.string.task_empty_tags_title)
+            tvEmptyMessage.text = getString(R.string.task_empty_tags_message)
             return
         }
         if (selectedContainerFilter != null) {
-            tvEmptyTitle.text = if (ru) "В этом разделе нет задач" else "No tasks in this container"
-            tvEmptyMessage.text = if (ru) "Выберите другой режим или добавьте задачу ниже" else "Select another mode or add a task below"
+            tvEmptyTitle.text = getString(R.string.task_empty_container_title)
+            tvEmptyMessage.text = getString(R.string.task_empty_container_message)
             return
         }
         if (matrixMode) {
-            tvEmptyTitle.text = if (ru) "Матрица пуста" else "Matrix is empty"
-            tvEmptyMessage.text = if (ru) "Добавьте новую задачу через строку внизу" else "Add a new task using the field below"
+            tvEmptyTitle.text = getString(R.string.task_empty_matrix_title)
+            tvEmptyMessage.text = getString(R.string.task_empty_matrix_message)
             return
         }
         when (activeSmartView) {
             TaskSmartView.TODAY -> {
-                tvEmptyTitle.text = "Сегодня пока нет задач"
-                tvEmptyMessage.text = "Нет задач со сроком на сегодня"
+                tvEmptyTitle.text = getString(R.string.task_empty_today_title)
+                tvEmptyMessage.text = getString(R.string.task_empty_today_message)
             }
             TaskSmartView.OVERDUE -> {
-                tvEmptyTitle.text = "Нет просроченных задач"
-                tvEmptyMessage.text = "Все задачи со сроком выполняются вовремя"
+                tvEmptyTitle.text = getString(R.string.task_empty_overdue_title)
+                tvEmptyMessage.text = getString(R.string.task_empty_overdue_message)
             }
             TaskSmartView.INBOX -> {
-                tvEmptyTitle.text = "Входящие пусты"
-                tvEmptyMessage.text = "Здесь появляются задачи без раздела"
+                tvEmptyTitle.text = getString(R.string.task_empty_inbox_title)
+                tvEmptyMessage.text = getString(R.string.task_empty_inbox_message)
             }
             TaskSmartView.UPCOMING -> {
-                tvEmptyTitle.text = "Нет предстоящих задач"
-                tvEmptyMessage.text = "Здесь отображаются задачи с будущим сроком"
+                tvEmptyTitle.text = getString(R.string.task_empty_upcoming_title)
+                tvEmptyMessage.text = getString(R.string.task_empty_upcoming_message)
             }
             TaskSmartView.ALL -> {
-                tvEmptyTitle.text = "Нет активных задач"
-                tvEmptyMessage.text = "Добавьте новую задачу через строку внизу"
+                tvEmptyTitle.text = getString(R.string.task_empty_all_title)
+                tvEmptyMessage.text = getString(R.string.task_empty_all_message)
             }
             TaskSmartView.COMPLETED -> {
-                tvEmptyTitle.text = "Нет завершённых задач"
-                tvEmptyMessage.text = "Выполняйте задачи, нажимая на кружок слева"
+                tvEmptyTitle.text = getString(R.string.task_empty_completed_title)
+                tvEmptyMessage.text = getString(R.string.task_empty_completed_message)
             }
-        }
-    }
-
-    private fun pluralTasks(count: Int): String {
-        val rem10 = count % 10
-        val rem100 = count % 100
-        return when {
-            rem100 in 11..19 -> "задач"
-            rem10 == 1 -> "задача"
-            rem10 in 2..4 -> "задачи"
-            else -> "задач"
         }
     }
 
@@ -1648,7 +1617,7 @@ class TasksFragment : Fragment() {
                 value.resourceId
             })
             setOnClickListener { openNavigation() }
-            contentDescription = "Открыть навигацию задач"
+            contentDescription = getString(R.string.task_nav_open_desc)
             visibility = if (wide) View.GONE else View.VISIBLE
         }
         header.addView(hamburger, 0, LinearLayout.LayoutParams(dpInt(48f), dpInt(48f)))
@@ -1662,11 +1631,14 @@ class TasksFragment : Fragment() {
             setColorFilter(palette.onSurfaceVariant)
             setOnClickListener {
                 clearSelection()
-                val ru = TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru"
-                val labels = if (ru) listOf("Список", "Календарь", "Матрица") else listOf("List", "Calendar", "Matrix")
+                val labels = listOf(
+                    getString(R.string.task_view_list),
+                    getString(R.string.task_view_calendar),
+                    getString(R.string.task_view_matrix),
+                )
                 CustomDialogs.showSingleChoiceDialog(
                     context = requireContext(),
-                    title = if (ru) "Вид" else "View",
+                    title = getString(R.string.task_view_title),
                     options = labels,
                     selectedIndex = if (matrixMode) 2 else if (calendarMode) 1 else 0,
                 ) { choice ->
@@ -1704,7 +1676,7 @@ class TasksFragment : Fragment() {
         shellRoot.getChildAt(0).importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         drawerScrim = View(requireContext()).apply {
             setBackgroundColor(Color.argb(120, 0, 0, 0))
-            contentDescription = "Закрыть навигацию задач"
+            contentDescription = getString(R.string.task_nav_close_desc)
             isFocusable = true
             setOnClickListener { closeNavigation() }
         }
@@ -1813,7 +1785,7 @@ class TasksFragment : Fragment() {
                 setPaddingRelative(dpInt(8f), 0, 0, 0); fontFeatureSettings = "tnum"
             }, LinearLayout.LayoutParams(-2, -2))
         }
-        contentDescription = label + (count?.let { ", $it ${pluralTasks(it)}" } ?: "")
+        contentDescription = label + (count?.let { ", " + resources.getQuantityString(R.plurals.task_count, it, it) } ?: "")
     }
 
     private fun renderNavigation() {
@@ -1829,9 +1801,9 @@ class TasksFragment : Fragment() {
         }
         if (wide) {
             listOf(
-                Triple("Habits", "Привычки", R.drawable.ic_tasks_completed),
-                Triple("Tasks", "Задачи", R.drawable.ic_cat_list_todo),
-                Triple("Statistics", "Статистика", R.drawable.ic_settings_statistics),
+                Triple("Habits", getString(R.string.task_nav_habits), R.drawable.ic_tasks_completed),
+                Triple("Tasks", getString(R.string.tasks_title), R.drawable.ic_cat_list_todo),
+                Triple("Statistics", getString(R.string.task_nav_statistics), R.drawable.ic_settings_statistics),
             ).forEach { (key, name, icon) ->
                 navigationColumn.addView(navigationRow(name, icon, selected = key == "Tasks") {
                     clearSelection()
@@ -1839,7 +1811,7 @@ class TasksFragment : Fragment() {
                 })
             }
             divider()
-        } else navigationColumn.addView(navText("Задачи").apply {
+        } else navigationColumn.addView(navText(getString(R.string.tasks_title)).apply {
             textSize = 22f; typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
             setPaddingRelative(dpInt(16f), dpInt(8f), dpInt(16f), dpInt(12f))
         })
@@ -1868,7 +1840,7 @@ class TasksFragment : Fragment() {
             val count = roots.count { smart.matches(it, getToday(), System.currentTimeMillis()) }
             val iconRes = smartIcons[smart] ?: R.drawable.ic_cat_list_todo
             navigationColumn.addView(navigationRow(
-                label = smart.displayName,
+                label = smart.label(requireContext()),
                 icon = iconRes,
                 count = count.takeUnless { smart == TaskSmartView.COMPLETED },
                 selected = selectedContainerFilter == null && activeSmartView == smart,
@@ -1903,7 +1875,7 @@ class TasksFragment : Fragment() {
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }, LinearLayout.LayoutParams(dpInt(16f), dpInt(16f)).apply { marginEnd = dpInt(8f) })
             addView(TextView(requireContext()).apply {
-                text = if (smartViewsExpanded) "Меньше представлений" else "Ещё представления..."
+                text = getString(if (smartViewsExpanded) R.string.task_nav_less_views else R.string.task_nav_more_views)
                 textSize = 12f
                 setTextColor(palette.onSurfaceVariant)
             }, LinearLayout.LayoutParams(0, -2, 1f))
@@ -1978,7 +1950,7 @@ class TasksFragment : Fragment() {
         } else {
             localTreeRoot?.let { id ->
                 navigationColumn.addView(navigationRow(
-                    label = snapshot.containers[id]?.parentId?.let { snapshot.containers[it]?.name } ?: "Все разделы",
+                    label = snapshot.containers[id]?.parentId?.let { snapshot.containers[it]?.name } ?: getString(R.string.containers_root_all),
                     icon = R.drawable.ic_tasks_parent,
                     action = { localTreeRoot = snapshot.containers[id]?.parentId; renderNavigation() }
                 ))
@@ -2028,7 +2000,7 @@ class TasksFragment : Fragment() {
                     androidx.core.view.ViewCompat.addAccessibilityAction(
                         this, sectionString(R.string.section_actions_description, item.name)
                     ) { view, _ -> showSectionContextMenu(view, item); true }
-                    contentDescription = item.name + (if (count > 0) ", $count ${pluralTasks(count)}" else "")
+                    contentDescription = item.name + (if (count > 0) ", " + resources.getQuantityString(R.plurals.task_count, count, count) else "")
                 }
 
                 // Chevron or spacer
@@ -2135,12 +2107,12 @@ class TasksFragment : Fragment() {
             if (local != null) addContainer(local, 0) else snapshot.children[null].orEmpty().forEach { addContainer(it, 0) }
         }
             divider()
-            navigationColumn.addView(navigationRow("Настройки", R.drawable.ic_nav_settings) {
-            clearSelection()
-            closeNavigation()
-            workspaceNavigator?.invoke("Settings")
-        })
-    }
+            navigationColumn.addView(navigationRow(getString(R.string.settings), R.drawable.ic_nav_settings) {
+                clearSelection()
+                closeNavigation()
+                workspaceNavigator?.invoke("Settings")
+            })
+        }
 
     private fun renderCalendar(
         tasks: List<UserTask>,
@@ -2148,7 +2120,12 @@ class TasksFragment : Fragment() {
         sessions: List<org.isoron.uhabits.core.focus.FocusSession> = historyFocusSessions
     ) {
         representationButton.setImageResource(if (calendarMode) R.drawable.ic_cat_list_todo else R.drawable.ic_cat_calendar)
-        representationButton.contentDescription = "Представление: " + if (matrixMode) "Матрица" else if (calendarMode) "Календарь" else "Список"
+        val modeLabel = getString(
+            if (matrixMode) R.string.task_view_matrix
+            else if (calendarMode) R.string.task_view_calendar
+            else R.string.task_view_list
+        )
+        representationButton.contentDescription = getString(R.string.task_view_desc_format, modeLabel)
         calendarPanel.visibility = if (calendarMode) View.VISIBLE else View.GONE
         if (!calendarMode) return
 
@@ -2208,23 +2185,22 @@ class TasksFragment : Fragment() {
     }
 
     private fun showPlannedHabitDialog(plannedHabit: PlannedHabit) {
-        val ru = TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru"
         val habit = component.habitList.getById(plannedHabit.habitId)
         val details = buildString {
             if (plannedHabit.reminderHour != null && plannedHabit.reminderMinute != null) {
                 val time = String.format(Locale.getDefault(), "%02d:%02d", plannedHabit.reminderHour, plannedHabit.reminderMinute)
-                append(if (ru) "Напоминание запланировано на $time." else "Reminder scheduled at $time.")
+                append(getString(R.string.task_planned_habit_reminder, time))
             } else {
-                append(if (ru) "Запланировано по регулярному расписанию." else "Scheduled according to regular recurrence.")
+                append(getString(R.string.task_planned_habit_regular))
             }
             append("\n\n")
-            append(if (ru) "Привычки и задачи остаются раздельными сущностями. Просмотр календаря не изменяет прогресс привычки." else "Habits and tasks remain distinct entities. Viewing the calendar does not alter habit progress.")
+            append(getString(R.string.task_planned_habit_note))
         }
 
         AlertDialog.Builder(requireContext())
             .setTitle(plannedHabit.name)
             .setMessage(details)
-            .setPositiveButton(if (ru) "Открыть привычку" else "Open habit") { _, _ ->
+            .setPositiveButton(getString(R.string.task_planned_habit_open)) { _, _ ->
                 if (habit != null) {
                     val intent = Intent(requireContext(), ShowHabitActivity::class.java).apply {
                         data = Uri.parse(habit.uriString)
@@ -2232,19 +2208,19 @@ class TasksFragment : Fragment() {
                     startActivity(intent)
                 }
             }
-            .setNegativeButton(if (ru) "Закрыть" else "Close", null)
+            .setNegativeButton(getString(R.string.task_due_close), null)
             .show()
     }
 
     internal fun showTaskQuickMenu(task: UserTask) {
         val isSelected = task.id in selectedTaskIds
         val actions = arrayOf(
-            "Изменить срок",
-            "Переместить в раздел",
-            "Редактировать",
-            if (task.isCompleted) "Отметить невыполненной" else "Завершить",
-            if (isSelected) "Снять выделение" else "Выбрать",
-            "Удалить",
+            getString(R.string.task_quick_menu_change_due),
+            getString(R.string.task_quick_menu_move_container),
+            getString(R.string.task_quick_menu_edit),
+            getString(if (task.isCompleted) R.string.task_quick_menu_reopen else R.string.task_quick_menu_complete),
+            getString(if (isSelected) R.string.task_quick_menu_deselect else R.string.task_quick_menu_select),
+            getString(R.string.delete),
         )
         AlertDialog.Builder(requireContext())
             .setTitle(task.title)
@@ -2293,7 +2269,7 @@ class TasksFragment : Fragment() {
                     }
                     loadTasks()
                 } else {
-                    Toast.makeText(requireContext(), "Не удалось создать раздел", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), getString(R.string.task_container_create_failed), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -2317,7 +2293,7 @@ class TasksFragment : Fragment() {
                 if (editRes.isSuccess) {
                     loadTasks()
                 } else {
-                    Toast.makeText(requireContext(), "Не удалось обновить раздел", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(requireContext(), getString(R.string.task_container_update_failed), Toast.LENGTH_SHORT).show()
                 }
             }
         }

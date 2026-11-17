@@ -125,8 +125,8 @@ class TaskDuePickerBottomSheet : BottomSheetDialogFragment() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         val header = frame(56)
         header.addView(View(context).apply { background = rounded(p.divider, 2) }, android.widget.FrameLayout.LayoutParams(dp(36), dp(4), android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(8) })
-        header.place(label("Срок", 22f, true), -1, 40, 0, 16)
-        header.place(iconAction(R.drawable.ic_close, "Закрыть") { dismiss() }, 48, 48, -12, 8, true)
+        header.place(label(getString(R.string.task_due_title), 22f, true), -1, 40, 0, 16)
+        header.place(iconAction(R.drawable.ic_close, getString(R.string.task_due_close)) { dismiss() }, 48, 48, -12, 8, true)
         body.addView(header)
         val summary = label("", 17f, true)
         body.addView(summary, LinearLayout.LayoutParams(-1, dp(24)))
@@ -144,8 +144,8 @@ class TaskDuePickerBottomSheet : BottomSheetDialogFragment() {
         val footerActions = frame(71); footer.addView(footerActions)
         lateinit var refresh: () -> Unit
         fun chooseDay(day: LocalDate) { edited = true; date = day; displayMonth = java.time.YearMonth.from(day); refresh() }
-        footerActions.place(action("Очистить", alignStart = true) { edited = true; date = null; time = null; refresh() }, 96, 48, 0, 10)
-        val confirm = action("Применить", 44, primary = true) {
+        footerActions.place(action(getString(R.string.task_due_clear), alignStart = true) { edited = true; date = null; time = null; refresh() }, 96, 48, 0, 10)
+        val confirm = action(getString(R.string.task_due_apply), 44, primary = true) {
             view?.clearFocus()
             if (!validDataset()) { dismiss(); return@action }
             if (!clockInputValid) return@action
@@ -167,7 +167,7 @@ class TaskDuePickerBottomSheet : BottomSheetDialogFragment() {
             val validInput = time == null || (hour != null && hour in 0..23 && minute != null && minute in 0..59)
             val gap = date != null && time != null && DuePickerClock.resolve(date!!, time!!, zone, original) == null
             clockInputValid = validInput && !gap
-            error.text = if (gap) "Это время отсутствует при переходе на летнее время. Выберите другое время." else if (!validInput) "Введите часы 00–23 и минуты 00–59" else ""
+            error.text = if (gap) getString(R.string.task_due_dst_gap_error) else if (!validInput) getString(R.string.task_due_invalid_time_error) else ""
             error.visibility = if (clockInputValid) View.GONE else View.VISIBLE
             confirm.isEnabled = clockInputValid; confirm.alpha = if (clockInputValid) 1f else .45f
             val local = date?.let { day -> time?.let { clock -> LocalDateTime.of(day, clock) } }
@@ -201,18 +201,18 @@ class TaskDuePickerBottomSheet : BottomSheetDialogFragment() {
             val timed = time != null
             val row = frame(55); timeHost.addView(row)
             row.place(icon(R.drawable.ic_settings_clock), 20, 20, 0, 18)
-            row.place(label(if (timed) "Время" else "Добавить время", 15f, muted = !timed), if (timed) 100 else 240, 48, 32, 4)
+            row.place(label(if (timed) getString(R.string.task_due_time_label) else getString(R.string.task_due_add_time), 15f, muted = !timed), if (timed) 100 else 240, 48, 32, 4)
             if (!timed) {
                 row.place(icon(R.drawable.ic_toolbar_add), 18, 18, 5, 19, true)
-                row.isClickable = true; row.isFocusable = true; row.contentDescription = "Добавить время"
+                row.isClickable = true; row.isFocusable = true; row.contentDescription = getString(R.string.task_due_add_time)
                 row.setOnClickListener {
                     edited = true; date = date ?: LocalDate.now(zone); time = LocalTime.now(zone).withSecond(0).withNano(0)
                     refresh()
                 }
             } else {
                 val t = time!!
-                hourInput = timeEditor(t.hour, "Часы", 23) { time = time?.withHour(it) }
-                minuteInput = timeEditor(t.minute, "Минуты", 59) { time = time?.withMinute(it) }
+                hourInput = timeEditor(t.hour, getString(R.string.task_due_hours_desc), 23) { time = time?.withHour(it) }
+                minuteInput = timeEditor(t.minute, getString(R.string.task_due_minutes_desc), 59) { time = time?.withMinute(it) }
                 // The field is visually 44x32; its wrapper receives a full 48dp touch area.
                 fun clockField(input: android.widget.EditText, right: Int) {
                     val target = android.widget.FrameLayout(context).apply {
@@ -222,9 +222,9 @@ class TaskDuePickerBottomSheet : BottomSheetDialogFragment() {
                     target.addView(input, android.widget.FrameLayout.LayoutParams(dp(44), dp(32), android.view.Gravity.CENTER))
                     row.place(target, 48, 48, right, 4, true)
                 }
-                clockField(hourInput!!, 111); clockField(minuteInput!!, 55)
-                row.place(label(":", 18f, muted = true).apply { gravity = android.view.Gravity.CENTER }, 12, 48, 101, 4, true)
-                row.place(action("Убрать", size = 12f) { edited = true; time = null; refresh() }, 55, 48, -3, 4, true)
+                clockField(hourInput!!, 121); clockField(minuteInput!!, 65)
+                row.place(label(":", 18f, muted = true).apply { gravity = android.view.Gravity.CENTER }, 12, 48, 111, 4, true)
+                row.place(action(getString(R.string.task_due_remove_time), size = 12f) { edited = true; time = null; refresh() }, 68, 48, -3, 4, true)
                 zoneCaption = label("", 11f, muted = true).apply { setPadding(dp(32), 0, 0, 0) }
                 timeHost.addView(zoneCaption, LinearLayout.LayoutParams(-1, dp(24)))
             }
@@ -239,11 +239,11 @@ class TaskDuePickerBottomSheet : BottomSheetDialogFragment() {
         }
         refresh = {
             val locale = TaskDueDisplayFormatter.selectedLocale(requireContext())
-            summary.text = date?.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM", locale))?.replaceFirstChar { it.titlecase(locale) } ?: "Без срока"
+            summary.text = date?.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM", locale))?.replaceFirstChar { it.titlecase(locale) } ?: getString(R.string.task_due_none)
             shortcuts.removeAllViews()
             val today = LocalDate.now(zone)
-            shortcuts.place(action("Сегодня", 28, fill = date == today, stroke = date != today) { chooseDay(today) }, 84, 48, 0, -6)
-            shortcuts.place(action("Завтра", 28, fill = date == today.plusDays(1), stroke = date != today.plusDays(1)) { chooseDay(today.plusDays(1)) }, 82, 48, 92, -6)
+            shortcuts.place(action(getString(R.string.task_due_today), 28, fill = date == today, stroke = date != today) { chooseDay(today) }, 84, 48, 0, -6)
+            shortcuts.place(action(getString(R.string.task_due_tomorrow), 28, fill = date == today.plusDays(1), stroke = date != today.plusDays(1)) { chooseDay(today.plusDays(1)) }, 96, 48, 92, -6)
             val month = displayMonth ?: java.time.YearMonth.from(date ?: today)
             displayMonth = month
             monthLabel.text = month.format(java.time.format.DateTimeFormatter.ofPattern("LLLL yyyy", locale)).replaceFirstChar { it.titlecase(locale) }
@@ -277,7 +277,7 @@ class TaskDuePickerBottomSheet : BottomSheetDialogFragment() {
                         cell.addView(numberView, android.widget.FrameLayout.LayoutParams(dp(34), dp(34), android.view.Gravity.TOP or android.view.Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(-1) })
                         if (day == today && !selected) cell.addView(View(context).apply { background = rounded(p.onSurfaceVariant, 2) }, android.widget.FrameLayout.LayoutParams(dp(3), dp(3), android.view.Gravity.CENTER_HORIZONTAL or android.view.Gravity.BOTTOM).apply { bottomMargin = dp(15) })
                         cell.isClickable = true; cell.isFocusable = true; cell.isSelected = selected
-                        cell.contentDescription = day.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", locale)) + if (selected) ", выбрано" else ""
+                        cell.contentDescription = day.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", locale)) + if (selected) getString(R.string.task_due_selected_suffix) else ""
                         cell.setOnClickListener { chooseDay(day) }
                     }
                     row.addView(cell, LinearLayout.LayoutParams(0, dp(48), 1f))
@@ -288,8 +288,8 @@ class TaskDuePickerBottomSheet : BottomSheetDialogFragment() {
             wantedHeight = dp(56 + 24 + 48 + 32 + 24 + rows * 48 + (if (time == null) 56 else 80) + 72)
             resize()
         }
-        monthBar.place(iconAction(R.drawable.ic_chevron_left, "Предыдущий месяц") { displayMonth = displayMonth!!.minusMonths(1); refresh() }, 48, 48, 39, -8, true)
-        monthBar.place(iconAction(R.drawable.ic_chevron_right, "Следующий месяц") { displayMonth = displayMonth!!.plusMonths(1); refresh() }, 48, 48, -12, -8, true)
+        monthBar.place(iconAction(R.drawable.ic_chevron_left, getString(R.string.task_due_prev_month)) { displayMonth = displayMonth!!.minusMonths(1); refresh() }, 48, 48, 39, -8, true)
+        monthBar.place(iconAction(R.drawable.ic_chevron_right, getString(R.string.task_due_next_month)) { displayMonth = displayMonth!!.plusMonths(1); refresh() }, 48, 48, -12, -8, true)
         refresh()
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             bottomInset = maxOf(insets.getInsets(WindowInsetsCompat.Type.ime()).bottom, insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom)

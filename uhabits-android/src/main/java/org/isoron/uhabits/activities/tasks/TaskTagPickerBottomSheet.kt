@@ -9,12 +9,12 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.widget.PopupMenu
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -22,7 +22,11 @@ import androidx.core.widget.doAfterTextChanged
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 import org.isoron.uhabits.HabitsApplication
+import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.core.userTasks.tags.TaskTag
 import org.isoron.uhabits.inject.HabitsApplicationComponent
@@ -57,14 +61,14 @@ class TaskTagPickerBottomSheet : BottomSheetDialogFragment() {
                 }
             }
         }
-        root.addView(label(if (arguments?.getBoolean("filter") == true) "Фильтр по тегам" else "Теги", 22f, true).apply {
+        root.addView(label(getString(if (arguments?.getBoolean("filter") == true) R.string.task_tags_filter_desc else R.string.task_tags_label), 22f, true).apply {
             setPadding(0, dp(8), 0, dp(8))
         })
-        root.addView(label("Общие для задач во всех разделах", 13f).apply {
+        root.addView(label(getString(R.string.task_tag_picker_subtitle), 13f).apply {
             setTextColor(palette.onSurfaceVariant); setPadding(0, 0, 0, dp(8))
         })
         search = EditText(requireContext()).apply {
-            hint = "Найти или создать тег"; contentDescription = "Поиск тегов"
+            hint = getString(R.string.task_tag_picker_search_hint); contentDescription = getString(R.string.task_tag_picker_search_desc)
             setSingleLine(); textSize = 15f; setTextColor(palette.onSurface)
             setHintTextColor(palette.onSurfaceVariant)
             background = rounded(palette.surfaceVariant, 8)
@@ -74,8 +78,8 @@ class TaskTagPickerBottomSheet : BottomSheetDialogFragment() {
         rows = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
         root.addView(ScrollView(requireContext()).apply { addView(rows) }, LinearLayout.LayoutParams(-1, 0, 1f))
         val footer = LinearLayout(requireContext()).apply { gravity = Gravity.CENTER_VERTICAL }
-        footer.addView(action("Сбросить выбор") { selected.clear(); render() }, LinearLayout.LayoutParams(0, dp(48), 1f))
-        footer.addView(action("Применить") {
+        footer.addView(action(getString(R.string.task_tag_picker_clear_selection)) { selected.clear(); render() }, LinearLayout.LayoutParams(0, dp(48), 1f))
+        footer.addView(action(getString(R.string.task_due_apply)) {
             if (current()) { applied = true; dismiss() }
         }, LinearLayout.LayoutParams(-2, dp(48)))
         root.addView(footer)
@@ -103,36 +107,45 @@ class TaskTagPickerBottomSheet : BottomSheetDialogFragment() {
                 text = tag.name; textSize = 15f; setTextColor(palette.onSurface)
                 buttonTintList = android.content.res.ColorStateList.valueOf(palette.accent)
                 isChecked = tag.id in selected; maxLines = 2; ellipsize = TextUtils.TruncateAt.END
-                contentDescription = "Тег: ${tag.name}"
+                contentDescription = getString(R.string.task_tag_picker_tag_desc, tag.name)
                 setOnCheckedChangeListener { _, checked -> if (checked) selected.add(tag.id) else selected.remove(tag.id) }
             }
             row.addView(check, LinearLayout.LayoutParams(0, -2, 1f))
             row.addView(action("⋮") { anchor -> showActions(anchor, tag) }.apply {
-                contentDescription = "Действия с тегом ${tag.name}"
+                contentDescription = getString(R.string.task_tag_picker_actions_desc, tag.name)
             }, LinearLayout.LayoutParams(dp(48), dp(48)))
             rows.addView(row)
         }
-        if (matches.isEmpty()) rows.addView(label(if (query.isBlank()) "Тегов пока нет" else "Теги не найдены", 14f).apply {
+        if (matches.isEmpty()) rows.addView(label(getString(if (query.isBlank()) R.string.task_tag_picker_empty else R.string.task_tag_picker_not_found), 14f).apply {
             setTextColor(palette.onSurfaceVariant); setPadding(0, dp(20), 0, dp(16))
         })
-        rows.addView(action(if (query.isBlank()) "+ Создать тег" else "+ Создать «${query.trim().take(40)}»") {
+        val createLabel = if (query.isBlank()) {
+            getString(R.string.task_tag_picker_create_new)
+        } else {
+            getString(R.string.task_tag_picker_create_named, query.trim().take(40))
+        }
+        rows.addView(action(createLabel) {
             editName(null)
         })
     }
 
     private fun showActions(anchor: View, tag: TaskTag) {
         PopupMenu(requireContext(), anchor).apply {
-            menu.add("Переименовать").setOnMenuItemClickListener { editName(tag); true }
-            menu.add("Удалить").setOnMenuItemClickListener {
-                AlertDialog.Builder(requireContext()).setTitle("Удалить тег «${tag.name}»?")
-                    .setMessage("Тег будет снят со всех задач. Задачи сохранятся.")
-                    .setNegativeButton("Отмена", null).setPositiveButton("Удалить") { _, _ ->
-                        if (current()) try {
-                            component.taskTagRepository.delete(tag.id); selected.remove(tag.id); render()
-                        } catch (e: Exception) {
-                            android.widget.Toast.makeText(requireContext(), "Не удалось удалить тег", android.widget.Toast.LENGTH_LONG).show()
-                        }
-                    }.show()
+            menu.add(R.string.task_tag_picker_rename).setOnMenuItemClickListener { editName(tag); true }
+            menu.add(R.string.delete).setOnMenuItemClickListener {
+                CustomDialogs.showConfirmDialog(
+                    context = requireContext(),
+                    title = getString(R.string.task_tag_picker_delete_title, tag.name),
+                    message = getString(R.string.task_tag_picker_delete_message),
+                    isDestructive = true,
+                    positiveText = getString(R.string.delete)
+                ) {
+                    if (current()) try {
+                        component.taskTagRepository.delete(tag.id); selected.remove(tag.id); render()
+                    } catch (e: Exception) {
+                        android.widget.Toast.makeText(requireContext(), R.string.task_tag_picker_delete_failed, android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
                 true
             }
             show()
@@ -140,28 +153,35 @@ class TaskTagPickerBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun editName(tag: TaskTag?) {
-        val input = EditText(requireContext()).apply {
-            setSingleLine(); hint = "Название тега"; setText(tag?.name ?: query.trim())
+        val dialog = CustomDialogs.showInputDialog(
+            context = requireContext(),
+            title = getString(if (tag == null) R.string.task_tag_picker_new_title else R.string.task_tag_picker_rename_title),
+            initialValue = tag?.name ?: query.trim(),
+            hint = getString(R.string.task_tag_picker_name_hint),
+            positiveText = getString(R.string.save)
+        ) {}
+        val inputLayout = dialog.findViewById<TextInputLayout>(R.id.input_layout)
+        val input = dialog.findViewById<TextInputEditText>(R.id.input_edit_text)
+        input?.apply {
             filters = arrayOf(android.text.InputFilter.LengthFilter(80))
             setSelectAllOnFocus(true)
+            doAfterTextChanged { inputLayout?.error = null }
         }
-        val dialog = AlertDialog.Builder(requireContext()).setTitle(if (tag == null) "Новый тег" else "Название тега")
-            .setView(input).setNegativeButton("Отмена", null).setPositiveButton("Сохранить", null).create()
-        dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                if (!current()) { dialog.dismiss(); return@setOnClickListener }
-                try {
-                    val name = input.text.toString().trim()
-                    require(name.isNotEmpty()) { "Введите название тега" }
-                    val saved = if (tag == null) component.taskTagRepository.create(name)
-                        else component.taskTagRepository.rename(tag.id, name)
-                    if (tag == null) selected.add(saved.id)
-                    search.setText(""); render(); dialog.dismiss()
-                } catch (e: IllegalArgumentException) { input.error = e.message ?: "Такой тег уже существует" }
-                catch (e: Exception) { input.error = "Не удалось сохранить тег" }
+        dialog.findViewById<Button>(R.id.button_positive)?.setOnClickListener {
+            if (!current()) { dialog.dismiss(); return@setOnClickListener }
+            try {
+                val name = input?.text?.toString()?.trim().orEmpty()
+                require(name.isNotEmpty()) { getString(R.string.task_tag_picker_name_required) }
+                val saved = if (tag == null) component.taskTagRepository.create(name)
+                    else component.taskTagRepository.rename(tag.id, name)
+                if (tag == null) selected.add(saved.id)
+                search.setText(""); render(); dialog.dismiss()
+            } catch (e: IllegalArgumentException) {
+                inputLayout?.error = e.message ?: getString(R.string.task_tag_picker_duplicate_error)
+            } catch (e: Exception) {
+                inputLayout?.error = getString(R.string.task_tag_picker_save_failed)
             }
         }
-        dialog.show()
     }
 
     override fun onStart() {

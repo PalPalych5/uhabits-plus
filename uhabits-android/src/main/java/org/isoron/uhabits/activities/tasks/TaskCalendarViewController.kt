@@ -1,21 +1,4 @@
-/*
- * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
- *
- * This file is part of Loop Habit Tracker.
- *
- * Loop Habit Tracker is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.
- *
- * Loop Habit Tracker is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 
 package org.isoron.uhabits.activities.tasks
 
@@ -115,6 +98,28 @@ class TaskCalendarViewController(
     private val locale: Locale
         get() = TaskDueDisplayFormatter.selectedLocale(context)
 
+    private fun getWeekdayAbbreviations(): List<String> {
+        return (1..7).map { day ->
+            java.time.DayOfWeek.of(day)
+                .getDisplayName(java.time.format.TextStyle.SHORT, locale)
+                .replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
+                .trimEnd('.')
+        }
+    }
+
+    private fun resolveSessionTitle(session: FocusSession): String {
+        return FocusHistoryProjector.resolveTitle(
+            session = session,
+            tasksMap = tasks.associateBy { it.id },
+            habitsMap = habits.associateBy { it.uuid.orEmpty() },
+            containersMap = containers,
+            defaultTaskLabel = context.getString(R.string.task_calendar_target_task),
+            defaultHabitLabel = context.getString(R.string.task_calendar_target_habit),
+            defaultContainerLabel = context.getString(R.string.task_calendar_target_container),
+            defaultFocusLabel = context.getString(R.string.task_calendar_target_focus)
+        )
+    }
+
     private fun dpInt(value: Float): Int = TaskThemeUtils.dpInt(context, value)
 
     fun updatePalette(newPalette: SettingsThemePalette) {
@@ -146,7 +151,7 @@ class TaskCalendarViewController(
             setContent {
                 TaskCalendarControlsCompose(
                     colors = UHabitComposeColors.fromPalette(palette), title = getPeriodTitle(),
-                    today = selectedDay == getToday(), ru = locale.language == "ru",
+                    today = selectedDay == getToday(),
                     compactPhone = compactRow && !wide,
                     mode = mode, scale = scale,
                     onPrevious = { navigatePeriod(-1) }, onNext = { navigatePeriod(1) },
@@ -248,11 +253,7 @@ class TaskCalendarViewController(
             orientation = LinearLayout.HORIZONTAL
             setPaddingRelative(dpInt(8f), dpInt(6f), dpInt(8f), dpInt(6f))
         }
-        val weekdayNames = if (locale.language == "ru") {
-            listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
-        } else {
-            listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-        }
+        val weekdayNames = getWeekdayAbbreviations()
         for (wName in weekdayNames) {
             weekdaysRow.addView(TextView(context).apply {
                 text = wName
@@ -434,7 +435,7 @@ class TaskCalendarViewController(
         // 1. Tasks Section
         val dayTasks = agenda.allDayTasks + agenda.timedTasks.map { it.task }
         if (dayTasks.isNotEmpty()) {
-            parent.addView(buildSectionHeader(if (locale.language == "ru") "Задачи" else "Tasks", dayTasks.size))
+            parent.addView(buildSectionHeader(context.getString(R.string.task_calendar_section_tasks), dayTasks.size))
 
             for (task in dayTasks) {
                 parent.addView(buildTaskRow(task))
@@ -444,7 +445,7 @@ class TaskCalendarViewController(
         // 2. Habits Section
         val dayHabits = agenda.allDayHabits + agenda.timedHabits
         if (dayHabits.isNotEmpty()) {
-            parent.addView(buildSectionHeader(if (locale.language == "ru") "Привычки" else "Habits", dayHabits.size))
+            parent.addView(buildSectionHeader(context.getString(R.string.task_calendar_section_habits), dayHabits.size))
 
             for (habit in dayHabits) {
                 parent.addView(buildHabitRow(habit))
@@ -465,12 +466,7 @@ class TaskCalendarViewController(
         val taskEvents = TaskCalendarEvents.from(tasks)
         val weekPlannedHabits = if (showHabits) PlannedHabitProjector.projectForRange(habits, weekStart, weekDays.last()) else emptyList()
 
-        val ru = locale.language == "ru"
-        val weekdayAbbreviations = if (ru) {
-            listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
-        } else {
-            listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-        }
+        val weekdayAbbreviations = getWeekdayAbbreviations()
 
         val timeColWidth = dpInt(48f)
         val hourSlotHeight = dpInt(56f)
@@ -507,7 +503,7 @@ class TaskCalendarViewController(
             minimumHeight = dpInt(48f)
             if (hasAnyAllDay) {
                 addView(TextView(context).apply {
-                    text = if (ru) "Весь\nдень" else "All\nday"
+                    text = context.getString(R.string.task_calendar_all_day_multiline)
                     textSize = 9f
                     gravity = Gravity.CENTER
                     setTextColor(palette.onSurfaceVariant)
@@ -943,8 +939,6 @@ class TaskCalendarViewController(
         val agendaHabits = if (showHabits) habits else emptyList()
         val agenda = TaskCalendarEvents.buildAgendaForDay(tasks, agendaHabits, selectedDay)
 
-        val ru = locale.language == "ru"
-
         // 1. PINNED All-Day Section (if all-day tasks or habits exist, pinned above timeline)
         if (agenda.allDayTasks.isNotEmpty() || agenda.allDayHabits.isNotEmpty()) {
             val allDayContainer = LinearLayout(context).apply {
@@ -954,7 +948,7 @@ class TaskCalendarViewController(
             }
 
             allDayContainer.addView(TextView(context).apply {
-                text = if (ru) "Весь день" else "All day"
+                text = context.getString(R.string.task_calendar_all_day)
                 textSize = 11f
                 typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 setTextColor(palette.onSurfaceVariant)
@@ -1263,11 +1257,10 @@ class TaskCalendarViewController(
         val tags = taskTags[task.id].orEmpty()
 
         val subtext = buildString {
-            val ru = locale.language == "ru"
             if (timeStr != null) {
-                append(if (ru) "Срок · $timeStr" else "Due · $timeStr")
+                append(context.getString(R.string.task_calendar_due_timed_format, timeStr))
             } else {
-                append(if (ru) "Срок: весь день" else "Due: all day")
+                append(context.getString(R.string.task_calendar_due_all_day))
             }
             if (containerName != null) append(" · $containerName")
             if (tags.isNotEmpty()) append(" · ").append(tags.joinToString(" ") { "#${it.name}" })
@@ -1315,12 +1308,11 @@ class TaskCalendarViewController(
             setTextColor(palette.onSurface)
         })
 
-        val ru = locale.language == "ru"
         val subtitle = if (habit.reminderHour != null && habit.reminderMinute != null) {
-            val time = String.format(Locale.getDefault(), "%02d:%02d", habit.reminderHour, habit.reminderMinute)
-            if (ru) "Привычка · Напоминание $time" else "Habit · Reminder $time"
+            val time = String.format(locale, "%02d:%02d", habit.reminderHour, habit.reminderMinute)
+            context.getString(R.string.task_calendar_habit_reminder_format, time)
         } else {
-            if (ru) "Привычка · По расписанию" else "Habit · Scheduled"
+            context.getString(R.string.task_calendar_habit_scheduled)
         }
 
         labels.addView(TextView(context).apply {
@@ -1335,7 +1327,7 @@ class TaskCalendarViewController(
 
         // Distinct Pill tag "Привычка" / "Habit"
         val tagBadge = TextView(context).apply {
-            text = if (ru) "Привычка" else "Habit"
+            text = context.getString(R.string.task_calendar_habit_pill)
             textSize = 10f
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setTextColor(habitColor)
@@ -1390,11 +1382,7 @@ class TaskCalendarViewController(
             orientation = LinearLayout.HORIZONTAL
             setPaddingRelative(dpInt(8f), dpInt(6f), dpInt(8f), dpInt(6f))
         }
-        val weekdayNames = if (locale.language == "ru") {
-            listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
-        } else {
-            listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-        }
+        val weekdayNames = getWeekdayAbbreviations()
         for (wName in weekdayNames) {
             weekdaysRow.addView(TextView(context).apply {
                 text = wName
@@ -1524,7 +1512,6 @@ class TaskCalendarViewController(
     }
 
     private fun renderHistoryAgenda(parent: LinearLayout, day: LocalDate) {
-        val ru = locale.language == "ru"
         val headerRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -1535,7 +1522,7 @@ class TaskCalendarViewController(
         val dayTitle = SimpleDateFormat("EEEE, d MMMM", locale).format(cal.time).replaceFirstChar { it.uppercase(locale) }
 
         val tvDayHeader = TextView(context).apply {
-            text = (if (ru) "История: " else "History: ") + dayTitle
+            text = context.getString(R.string.task_calendar_history_day_prefix, dayTitle)
             textSize = 15f
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setTextColor(palette.onSurface)
@@ -1571,9 +1558,14 @@ class TaskCalendarViewController(
 
         val hasEstimated = summary.hasEstimatedDayAllocation
         val prefix = if (hasEstimated) "~" else ""
-        val estNote = if (hasEstimated) (if (ru) " (расчётная оценка)" else " (estimated)") else ""
-        val summaryText = (if (ru) "Всего работы: " else "Total work: ") +
-            "$prefix${formatDurationFull(summary.totalWorkDurationMs)}$estNote · ${summary.sessionCount} ${sessionWord(summary.sessionCount)}"
+        val estNote = if (hasEstimated) context.getString(R.string.task_calendar_estimated_note) else ""
+        val sessionsCountStr = context.resources.getQuantityString(
+            R.plurals.task_calendar_sessions_count,
+            summary.sessionCount,
+            summary.sessionCount
+        )
+        val summaryText = context.getString(R.string.task_calendar_total_work_label) + " " +
+            "$prefix${formatDurationFull(summary.totalWorkDurationMs)}$estNote · $sessionsCountStr"
         summaryCard.addView(TextView(context).apply {
             text = summaryText
             textSize = 13f
@@ -1582,12 +1574,8 @@ class TaskCalendarViewController(
         })
 
         if (summary.hasOverlaps) {
-            val busyLabel = if (ru) {
-                "Интервал занятости (границы сессий с учётом пауз и пересечений): "
-            } else {
-                "Session envelope interval (including pauses and overlaps): "
-            }
-            val busyText = busyLabel + formatDurationFull(summary.mergedBusyDurationMs)
+            val busyLabel = context.getString(R.string.task_calendar_session_envelope_label)
+            val busyText = "$busyLabel " + formatDurationFull(summary.mergedBusyDurationMs)
             summaryCard.addView(TextView(context).apply {
                 text = busyText
                 textSize = 11f
@@ -1601,7 +1589,7 @@ class TaskCalendarViewController(
         })
 
         // Session Cards
-        parent.addView(buildSectionHeader(if (ru) "Записи работы" else "Work sessions", summary.segments.size))
+        parent.addView(buildSectionHeader(context.getString(R.string.task_calendar_section_work_sessions), summary.segments.size))
 
         val sessionsLayout = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -1626,12 +1614,7 @@ class TaskCalendarViewController(
         val weekStart = selectedDay.startOfWeek(DayOfWeek.MONDAY)
         val weekDays = (0..6).map { weekStart.plus(it) }
 
-        val ru = locale.language == "ru"
-        val weekdayAbbreviations = if (ru) {
-            listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
-        } else {
-            listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-        }
+        val weekdayAbbreviations = getWeekdayAbbreviations()
 
         val timeColWidth = dpInt(48f)
         val hourSlotHeight = dpInt(56f)
@@ -1652,9 +1635,9 @@ class TaskCalendarViewController(
             minimumHeight = dpInt(52f)
             val hasDstDay = weekDays.any { FocusHistoryProjector.getDayLengthHours(it) != 24 }
             val spacerLabel = if (hasDstDay) {
-                if (ru) "От\n00:00" else "From\n00:00"
+                context.getString(R.string.task_calendar_history_from_midnight)
             } else {
-                if (ru) "Факт" else "Fact"
+                context.getString(R.string.task_calendar_history_fact)
             }
             addView(TextView(context).apply {
                 text = spacerLabel
@@ -1979,7 +1962,6 @@ class TaskCalendarViewController(
     // HISTORY: DAY VIEW
     // -----------------------------------------------------------------------------------------
     private fun renderHistoryDayView() {
-        val ru = locale.language == "ru"
         val summary = FocusHistoryProjector.buildSummaryForDay(focusSessions, selectedDay)
         val dayHours = FocusHistoryProjector.getDayLengthHours(selectedDay)
         val dayStartMs = startOfLocalDay(selectedDay, 0, 0)
@@ -1993,9 +1975,14 @@ class TaskCalendarViewController(
 
         val hasEstimated = summary.hasEstimatedDayAllocation
         val prefix = if (hasEstimated) "~" else ""
-        val estNote = if (hasEstimated) (if (ru) " (расчётная оценка)" else " (estimated)") else ""
-        val totalWorkText = (if (ru) "Всего работы: " else "Total work: ") +
-            "$prefix${formatDurationFull(summary.totalWorkDurationMs)}$estNote · ${summary.sessionCount} ${sessionWord(summary.sessionCount)}"
+        val estNote = if (hasEstimated) context.getString(R.string.task_calendar_estimated_note) else ""
+        val sessionsCountStr = context.resources.getQuantityString(
+            R.plurals.task_calendar_sessions_count,
+            summary.sessionCount,
+            summary.sessionCount
+        )
+        val totalWorkText = context.getString(R.string.task_calendar_total_work_label) + " " +
+            "$prefix${formatDurationFull(summary.totalWorkDurationMs)}$estNote · $sessionsCountStr"
         summaryContainer.addView(TextView(context).apply {
             text = totalWorkText
             textSize = 13f
@@ -2004,12 +1991,8 @@ class TaskCalendarViewController(
         })
 
         if (summary.hasOverlaps) {
-            val busyLabel = if (ru) {
-                "Интервал занятости (границы сессий с учётом пауз и пересечений): "
-            } else {
-                "Session envelope interval (including pauses and overlaps): "
-            }
-            val busyText = busyLabel + formatDurationFull(summary.mergedBusyDurationMs)
+            val busyLabel = context.getString(R.string.task_calendar_session_envelope_label)
+            val busyText = "$busyLabel " + formatDurationFull(summary.mergedBusyDurationMs)
             summaryContainer.addView(TextView(context).apply {
                 text = busyText
                 textSize = 11f
@@ -2279,12 +2262,7 @@ class TaskCalendarViewController(
             orientation = LinearLayout.VERTICAL
         }
 
-        val title = FocusHistoryProjector.resolveTitle(
-            seg.session,
-            tasks.associateBy { it.id },
-            habits.associateBy { it.uuid.orEmpty() },
-            containers
-        )
+        val title = resolveSessionTitle(seg.session)
 
         textContainer.addView(TextView(context).apply {
             text = title
@@ -2324,9 +2302,8 @@ class TaskCalendarViewController(
         })
 
         if (isEst) {
-            val ru = locale.language == "ru"
             textContainer.addView(TextView(context).apply {
-                text = if (ru) "Расчётная оценка из-за пауз через полночь" else "Estimated partition due to midnight pauses"
+                text = context.getString(R.string.task_calendar_estimated_midnight_partition)
                 textSize = 10f
                 setTextColor(palette.accent)
                 setPadding(0, dpInt(2f), 0, 0)
@@ -2379,9 +2356,8 @@ class TaskCalendarViewController(
             setTextColor(palette.accent)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
-        val ru = locale.language == "ru"
         headerRow.addView(TextView(context).apply {
-            text = prefix + formatDurationCompact(seg.segmentDurationMs) + (if (isEst) (if (ru) " (~оценка)" else " (~est)") else "")
+            text = prefix + formatDurationCompact(seg.segmentDurationMs) + (if (isEst) context.getString(R.string.task_calendar_estimated_compact_suffix) else "")
             textSize = 9f
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setTextColor(palette.onSurfaceVariant)
@@ -2389,12 +2365,7 @@ class TaskCalendarViewController(
 
         root.addView(headerRow)
 
-        val title = FocusHistoryProjector.resolveTitle(
-            seg.session,
-            tasks.associateBy { it.id },
-            habits.associateBy { it.uuid.orEmpty() },
-            containers
-        )
+        val title = resolveSessionTitle(seg.session)
         if (blockHeight >= dpInt(36f)) {
             root.addView(TextView(context).apply {
                 text = title
@@ -2444,12 +2415,7 @@ class TaskCalendarViewController(
             ellipsize = android.text.TextUtils.TruncateAt.END
         })
 
-        val title = FocusHistoryProjector.resolveTitle(
-            seg.session,
-            tasks.associateBy { it.id },
-            habits.associateBy { it.uuid.orEmpty() },
-            containers
-        )
+        val title = resolveSessionTitle(seg.session)
         if (blockHeight >= dpInt(32f)) {
             root.addView(TextView(context).apply {
                 text = title
@@ -2531,12 +2497,7 @@ class TaskCalendarViewController(
             orientation = LinearLayout.VERTICAL
         }
 
-        val title = FocusHistoryProjector.resolveTitle(
-            seg.session,
-            tasks.associateBy { it.id },
-            habits.associateBy { it.uuid.orEmpty() },
-            containers
-        )
+        val title = resolveSessionTitle(seg.session)
         textCol.addView(TextView(context).apply {
             text = title
             textSize = 14f
@@ -2581,7 +2542,6 @@ class TaskCalendarViewController(
         cluster: List<FocusHistorySegment>,
         clusterHeight: Int
     ): View {
-        val ru = locale.language == "ru"
         val fontScale = context.resources.configuration.fontScale
         val minHeaderHeight = dpInt(maxOf(48f, 44f * fontScale))
         val clusterKey = cluster.map { it.session.id.value }.sorted().joinToString(",")
@@ -2607,7 +2567,7 @@ class TaskCalendarViewController(
             }
             setPaddingRelative(dpInt(12f), dpInt(6f), dpInt(12f), dpInt(6f))
             setSelectableBackground()
-            contentDescription = (if (ru) "Одновременные сессии (${cluster.size}), " else "Concurrent sessions (${cluster.size}), ") + intervalStr
+            contentDescription = context.getString(R.string.task_calendar_concurrent_sessions_desc, cluster.size, intervalStr)
             setOnClickListener {
                 showClusterDisclosureDialog(cluster)
             }
@@ -2625,7 +2585,7 @@ class TaskCalendarViewController(
             orientation = LinearLayout.VERTICAL
         }
         val tvTitle = TextView(context).apply {
-            text = if (ru) "Одновременные сессии (${cluster.size})" else "Concurrent sessions (${cluster.size})"
+            text = context.getString(R.string.task_calendar_concurrent_sessions_title, cluster.size)
             textSize = 13f
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setTextColor(palette.onSurface)
@@ -2633,7 +2593,7 @@ class TaskCalendarViewController(
         titleCol.addView(tvTitle)
 
         val tvSub = TextView(context).apply {
-            text = "$intervalStr · " + (if (ru) "нажмите для списка" else "tap to view list")
+            text = "$intervalStr · " + context.getString(R.string.task_calendar_concurrent_sessions_tap)
             textSize = 11f
             setTextColor(palette.onSurfaceVariant)
         }
@@ -2656,7 +2616,6 @@ class TaskCalendarViewController(
         cluster: List<FocusHistorySegment>,
         blockHeight: Int
     ): View {
-        val ru = locale.language == "ru"
         val clusterKey = cluster.map { it.session.id.value }.sorted().joinToString(",")
         val firstSeg = cluster.minByOrNull { it.segmentStartMs }!!
         val lastSeg = cluster.maxByOrNull { it.segmentEndMs }!!
@@ -2679,14 +2638,14 @@ class TaskCalendarViewController(
             }
             setSelectableBackground()
             tag = "history_cluster:$clusterKey"
-            contentDescription = (if (ru) "${cluster.size} сессий, " else "${cluster.size} sessions, ") + intervalStr
+            contentDescription = context.getString(R.string.task_calendar_cluster_sessions_desc, cluster.size, intervalStr)
             setOnClickListener {
                 showClusterDisclosureDialog(cluster)
             }
         }
 
         root.addView(TextView(context).apply {
-            text = if (ru) "${cluster.size} сессии ▾" else "${cluster.size} sessions ▾"
+            text = context.resources.getQuantityString(R.plurals.task_calendar_cluster_sessions_btn, cluster.size, cluster.size)
             textSize = 12f
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setTextColor(palette.accent)
@@ -2704,8 +2663,7 @@ class TaskCalendarViewController(
     }
 
     private fun showClusterDisclosureDialog(cluster: List<FocusHistorySegment>) {
-        val ru = locale.language == "ru"
-        val title = if (ru) "Одновременные сессии (${cluster.size})" else "Concurrent sessions (${cluster.size})"
+        val title = context.getString(R.string.task_calendar_concurrent_sessions_title, cluster.size)
         val fontScale = context.resources.configuration.fontScale
         val minRowHeight = dpInt(maxOf(48f, 44f * fontScale))
 
@@ -2733,23 +2691,17 @@ class TaskCalendarViewController(
         dialog = AlertDialog.Builder(context)
             .setTitle(title)
             .setView(scroll)
-            .setPositiveButton(if (ru) "Закрыть" else "Close", null)
+            .setPositiveButton(context.getString(R.string.task_calendar_dialog_close), null)
             .show()
     }
 
     private fun showSessionDetailsDialog(session: FocusSession) {
-        val ru = locale.language == "ru"
-        val title = FocusHistoryProjector.resolveTitle(
-            session,
-            tasks.associateBy { it.id },
-            habits.associateBy { it.uuid.orEmpty() },
-            containers
-        )
+        val title = resolveSessionTitle(session)
         val targetKindName = when (session.primaryTargetType) {
-            FocusPrimaryTargetType.TASK -> if (ru) "Задача" else "Task"
-            FocusPrimaryTargetType.HABIT -> if (ru) "Привычка" else "Habit"
-            FocusPrimaryTargetType.CONTAINER -> if (ru) "Раздел" else "Container"
-            null -> if (ru) "Сессия фокуса" else "Focus session"
+            FocusPrimaryTargetType.TASK -> context.getString(R.string.task_calendar_target_task)
+            FocusPrimaryTargetType.HABIT -> context.getString(R.string.task_calendar_target_habit)
+            FocusPrimaryTargetType.CONTAINER -> context.getString(R.string.task_calendar_target_container)
+            null -> context.getString(R.string.task_calendar_target_focus)
         }
 
         val startCal = Calendar.getInstance().apply { timeInMillis = session.startedAt }
@@ -2774,20 +2726,12 @@ class TaskCalendarViewController(
             "$startPart – $endPart"
         }
 
-        val durationMin = session.durationMs / 60000L
-        val durationStr = if (durationMin >= 60) {
-            val h = durationMin / 60
-            val m = durationMin % 60
-            if (m == 0L) if (ru) "$h ч" else "${h}h" else if (ru) "$h ч $m мин" else "${h}h ${m}m"
-        } else {
-            if (ru) "$durationMin мин" else "${durationMin}m"
-        }
-
+        val durationStr = formatDurationFull(session.durationMs)
         val elapsedMin = (session.endedAt - session.startedAt) / 60000L
         val sourceStr = if (session.source == FocusSessionSource.TIMER) {
-            if (ru) "Таймер фокуса" else "Focus timer"
+            context.getString(R.string.task_calendar_source_timer)
         } else {
-            if (ru) "Вручную" else "Manual"
+            context.getString(R.string.task_calendar_source_manual)
         }
 
         val crossesMidnight = run {
@@ -2799,35 +2743,34 @@ class TaskCalendarViewController(
         val isEstimatedPartition = crossesMidnight && hasPauses
 
         val message = StringBuilder().apply {
-            append(if (ru) "Тип: " else "Type: ").append(targetKindName).append("\n")
-            append(if (ru) "Интервал: " else "Interval: ").append(timeStr).append("\n")
-            append(if (ru) "Полная длительность: " else "Full session duration: ").append(durationStr)
+            append(context.getString(R.string.task_calendar_dialog_type_label, targetKindName)).append("\n")
+            append(context.getString(R.string.task_calendar_dialog_interval_label, timeStr)).append("\n")
+            append(context.getString(R.string.task_calendar_dialog_duration_label, durationStr))
             if (hasPauses) {
-                append(if (ru) " (с учётом пауз; общий интервал $elapsedMin мин)" else " (with pauses; elapsed interval ${elapsedMin}m)")
+                append(context.getString(R.string.task_calendar_dialog_pauses_note, elapsedMin))
             }
             if (isEstimatedPartition) {
                 append("\n")
-                append(if (ru) "Распределение по суткам: расчётная оценка; границы пауз не сохранены. Полная длительность сессии: $durationStr"
-                       else "Daily distribution: estimated; pause boundaries are not stored. Full session duration: $durationStr")
+                append(context.getString(R.string.task_calendar_dialog_midnight_note, durationStr))
             }
             append("\n")
-            append(if (ru) "Источник: " else "Source: ").append(sourceStr)
+            append(context.getString(R.string.task_calendar_dialog_source_label, sourceStr))
         }.toString()
 
         val builder = AlertDialog.Builder(context)
             .setTitle(title)
             .setMessage(message)
-            .setPositiveButton(if (ru) "Закрыть" else "Close", null)
+            .setPositiveButton(context.getString(R.string.task_calendar_dialog_close), null)
 
         val relatedTask = session.taskId?.let { tid -> tasks.find { it.id == tid } }
         if (relatedTask != null) {
-            builder.setNeutralButton(if (ru) "К задаче" else "To task") { _, _ ->
+            builder.setNeutralButton(context.getString(R.string.task_calendar_dialog_to_task)) { _, _ ->
                 onTaskClicked(relatedTask)
             }
         } else if (session.habit != null) {
             val habit = habits.find { it.uuid == session.habit?.uuid }
             if (habit != null) {
-                builder.setNeutralButton(if (ru) "К привычке" else "To habit") { _, _ ->
+                builder.setNeutralButton(context.getString(R.string.task_calendar_dialog_to_habit)) { _, _ ->
                     onHabitClicked(
                         PlannedHabit(
                             habitId = habit.id ?: 0L,
@@ -2881,45 +2824,25 @@ class TaskCalendarViewController(
 
     private fun formatDurationCompact(ms: Long): String {
         val totalMin = ms / 60000L
-        if (totalMin <= 0L) return if (locale.language == "ru") "0м" else "0m"
+        if (totalMin <= 0L) return context.getString(R.string.task_duration_compact_zero)
         val h = totalMin / 60L
         val m = totalMin % 60L
-        return if (locale.language == "ru") {
-            if (h > 0L && m > 0L) "${h}ч ${m}м"
-            else if (h > 0L) "${h}ч"
-            else "${m}м"
-        } else {
-            if (h > 0L && m > 0L) "${h}h ${m}m"
-            else if (h > 0L) "${h}h"
-            else "${m}m"
+        return when {
+            h > 0L && m > 0L -> context.getString(R.string.task_duration_compact_hm, h, m)
+            h > 0L -> context.getString(R.string.task_duration_compact_h, h)
+            else -> context.getString(R.string.task_duration_compact_m, m)
         }
     }
 
     private fun formatDurationFull(ms: Long): String {
         val totalMin = ms / 60000L
-        if (totalMin <= 0L) return if (locale.language == "ru") "0 мин" else "0 min"
+        if (totalMin <= 0L) return context.getString(R.string.task_duration_full_zero)
         val h = totalMin / 60L
         val m = totalMin % 60L
-        return if (locale.language == "ru") {
-            if (h > 0L && m > 0L) "$h ч $m мин"
-            else if (h > 0L) "$h ч"
-            else "$m мин"
-        } else {
-            if (h > 0L && m > 0L) "$h h $m min"
-            else if (h > 0L) "$h h"
-            else "$m min"
-        }
-    }
-
-    private fun sessionWord(count: Int): String {
-        if (locale.language != "ru") return if (count == 1) "session" else "sessions"
-        val n = count % 100
-        val n1 = n % 10
         return when {
-            n in 11..19 -> "сессий"
-            n1 == 1 -> "сессия"
-            n1 in 2..4 -> "сессии"
-            else -> "сессий"
+            h > 0L && m > 0L -> context.getString(R.string.task_duration_full_hm, h, m)
+            h > 0L -> context.getString(R.string.task_duration_full_h, h)
+            else -> context.getString(R.string.task_duration_full_m, m)
         }
     }
 }

@@ -1,21 +1,4 @@
-/*
- * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
- *
- * This file is part of Loop Habit Tracker.
- *
- * Loop Habit Tracker is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.
- *
- * Loop Habit Tracker is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 
 package org.isoron.uhabits.activities.tasks
 
@@ -30,7 +13,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,8 +48,10 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -111,7 +95,9 @@ data class TaskDetailUiState(
     val linkedHabit: LinkedHabitState?,
     val pendingLegacyPlanDate: String?,
     val saveStatusText: String,
-    val canCreate: Boolean
+    val canCreate: Boolean,
+    val isSaveError: Boolean = false,
+    val isSaving: Boolean = false
 )
 
 data class SubtaskItemState(
@@ -175,13 +161,13 @@ fun TaskDetailComposeScreen(
         modifier = modifier
             .fillMaxWidth()
             .wrapContentHeight()
-            .clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-            .background(Color(colors.surface))
     ) {
         // --- 1. Top Drag Handle & Action Bar ---
         TaskDetailTopBar(
             isCreateMode = state.isCreateMode,
             saveStatusText = state.saveStatusText,
+            isSaveError = state.isSaveError,
+            isSaving = state.isSaving,
             canCreate = state.canCreate,
             colors = colors,
             onClose = onClose,
@@ -242,7 +228,7 @@ fun TaskDetailComposeScreen(
                         Box {
                             if (state.title.isEmpty()) {
                                 BasicText(
-                                    text = if (state.isCreateMode) "Что нужно сделать?" else "Название задачи",
+                                    text = stringResource(if (state.isCreateMode) R.string.task_detail_title_hint_create else R.string.task_detail_title_hint_edit),
                                     style = TextStyle(
                                         fontSize = 18.5.sp,
                                         fontWeight = FontWeight.Normal,
@@ -263,7 +249,7 @@ fun TaskDetailComposeScreen(
                 onValueChange = onNotesChange,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(start = 36.dp, top = 6.dp, bottom = 12.dp)
+                    .padding(start = 40.dp, top = 6.dp, bottom = 12.dp)
                     .heightIn(min = 44.dp),
                 textStyle = TextStyle(
                     fontSize = 14.5.sp,
@@ -280,7 +266,7 @@ fun TaskDetailComposeScreen(
                     Box {
                         if (state.notes.isEmpty()) {
                             BasicText(
-                                text = "Добавить заметку...",
+                                text = stringResource(R.string.task_detail_notes_hint),
                                 style = TextStyle(
                                     fontSize = 14.5.sp,
                                     color = Color(colors.secondary).copy(alpha = 0.5f),
@@ -321,11 +307,13 @@ fun TaskDetailComposeScreen(
 
                 // Importance (Eisenhower Matrix) Chip
                 DetailMatrixChip(
-                    label = when (state.important) {
-                        true -> "Важно"
-                        false -> "Не важно"
-                        null -> "Важность"
-                    },
+                    label = stringResource(
+                        when (state.important) {
+                            true -> R.string.task_detail_important
+                            false -> R.string.task_detail_not_important
+                            null -> R.string.task_detail_importance
+                        }
+                    ),
                     iconRes = R.drawable.ic_cat_star,
                     isActive = state.important == true,
                     isExplicitNegative = state.important == false,
@@ -336,11 +324,13 @@ fun TaskDetailComposeScreen(
 
                 // Urgency (Eisenhower Matrix) Chip
                 DetailMatrixChip(
-                    label = when (state.urgent) {
-                        true -> "Срочно"
-                        false -> "Не срочно"
-                        null -> "Срочность"
-                    },
+                    label = stringResource(
+                        when (state.urgent) {
+                            true -> R.string.task_detail_urgent
+                            false -> R.string.task_detail_not_urgent
+                            null -> R.string.task_detail_urgency
+                        }
+                    ),
                     iconRes = R.drawable.ic_cat_flame,
                     isActive = state.urgent == true,
                     isExplicitNegative = state.urgent == false,
@@ -383,11 +373,12 @@ fun TaskDetailComposeScreen(
                 onDeleteSubtask = onDeleteSubtask
             )
 
-            // Hairline Divider
-            DetailHairlineDivider(colors)
-
             // --- 5. Focus & Habit Integrations (Sleek Compact Container) ---
-            if (state.hasFocusFeature || state.linkedHabit != null || !state.isCreateMode) {
+            val showIntegrations = state.hasFocusFeature || state.linkedHabit != null || !state.isCreateMode
+            if (showIntegrations) {
+                // Hairline Divider
+                DetailHairlineDivider(colors)
+
                 IntegrationGroupContainer(
                     hasFocusFeature = state.hasFocusFeature,
                     focusSummary = state.focusSummary,
@@ -413,6 +404,8 @@ fun TaskDetailComposeScreen(
 private fun TaskDetailTopBar(
     isCreateMode: Boolean,
     saveStatusText: String,
+    isSaveError: Boolean,
+    isSaving: Boolean,
     canCreate: Boolean,
     colors: UHabitComposeColors,
     onClose: () -> Unit,
@@ -421,6 +414,9 @@ private fun TaskDetailTopBar(
     onRetrySave: () -> Unit = {}
 ) {
     if (isCreateMode) {
+        val configuration = LocalConfiguration.current
+        val useStackedHeader = configuration.screenWidthDp < 360 && configuration.fontScale >= 1.4f
+
         Column(
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -443,8 +439,8 @@ private fun TaskDetailTopBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
-                    .padding(horizontal = 12.dp),
+                    .heightIn(min = 48.dp)
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Cancel Text Button
@@ -455,7 +451,9 @@ private fun TaskDetailTopBar(
                         .padding(horizontal = 8.dp, vertical = 6.dp)
                 ) {
                     BasicText(
-                        text = "Отмена",
+                        text = stringResource(android.R.string.cancel),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         style = TextStyle(
                             fontSize = 14.sp,
                             color = Color(colors.secondary),
@@ -464,20 +462,29 @@ private fun TaskDetailTopBar(
                     )
                 }
 
-                Spacer(modifier = Modifier.weight(1f))
-
-                // Title
-                BasicText(
-                    text = "Новая задача",
-                    style = TextStyle(
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(colors.foreground),
-                        fontFamily = FontFamily.Default
-                    )
-                )
-
-                Spacer(modifier = Modifier.weight(1f))
+                if (useStackedHeader) {
+                    Spacer(modifier = Modifier.weight(1f))
+                } else {
+                    // Title
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        BasicText(
+                            text = stringResource(R.string.task_detail_new_task),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = TextStyle(
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(colors.foreground),
+                                fontFamily = FontFamily.Default
+                            )
+                        )
+                    }
+                }
 
                 // Create Button (Filled pill)
                 val buttonBg = if (canCreate) Color(colors.accent) else Color(colors.secondary).copy(alpha = 0.25f)
@@ -499,7 +506,9 @@ private fun TaskDetailTopBar(
                         .padding(horizontal = 16.dp, vertical = 7.dp)
                 ) {
                     BasicText(
-                        text = "Создать",
+                        text = stringResource(R.string.task_detail_create),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         style = TextStyle(
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
@@ -509,11 +518,27 @@ private fun TaskDetailTopBar(
                     )
                 }
             }
+
+            if (useStackedHeader) {
+                BasicText(
+                    text = stringResource(R.string.task_detail_new_task),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 6.dp),
+                    style = TextStyle(
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(colors.foreground),
+                        fontFamily = FontFamily.Default
+                    )
+                )
+            }
         }
     } else {
-        val isError = saveStatusText.contains("Не удалось", ignoreCase = true) ||
-            saveStatusText.contains("Ошибка", ignoreCase = true)
-        val isSaving = saveStatusText.contains("Сохранение", ignoreCase = true)
+        val showError = isSaveError || saveStatusText.isNotEmpty()
+        val showSaving = isSaving
 
         Box(
             modifier = Modifier
@@ -533,7 +558,7 @@ private fun TaskDetailTopBar(
             ) {
                 Image(
                     painter = painterResource(R.drawable.ic_chevron_down),
-                    contentDescription = "Свернуть",
+                    contentDescription = stringResource(R.string.task_detail_collapse),
                     colorFilter = ColorFilter.tint(Color(colors.secondary)),
                     modifier = Modifier.size(20.dp)
                 )
@@ -553,7 +578,7 @@ private fun TaskDetailTopBar(
                 modifier = Modifier.align(Alignment.CenterEnd),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (isError) {
+                if (showError) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -563,7 +588,7 @@ private fun TaskDetailTopBar(
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         BasicText(
-                            text = "⚠️ Повторить",
+                            text = stringResource(R.string.task_detail_retry_save),
                             style = TextStyle(
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium,
@@ -573,9 +598,9 @@ private fun TaskDetailTopBar(
                         )
                     }
                     Spacer(modifier = Modifier.width(4.dp))
-                } else if (isSaving) {
+                } else if (showSaving) {
                     BasicText(
-                        text = "Сохранение…",
+                        text = stringResource(R.string.task_detail_saving),
                         style = TextStyle(
                             fontSize = 12.sp,
                             color = Color(colors.secondary).copy(alpha = 0.7f),
@@ -595,7 +620,7 @@ private fun TaskDetailTopBar(
                 ) {
                     Image(
                         painter = painterResource(R.drawable.ic_toolbar_more_vertical),
-                        contentDescription = "Действия",
+                        contentDescription = stringResource(R.string.task_detail_actions),
                         colorFilter = ColorFilter.tint(Color(colors.secondary)),
                         modifier = Modifier.size(18.dp)
                     )
@@ -645,7 +670,7 @@ private fun TaskDetailCheckAffordance(
             ) {
                 Image(
                     painter = painterResource(R.drawable.ic_action_check),
-                    contentDescription = "Выполнено",
+                    contentDescription = stringResource(R.string.task_detail_completed_desc),
                     colorFilter = ColorFilter.tint(Color(colors.secondary)),
                     modifier = Modifier
                         .size(12.dp)
@@ -711,7 +736,7 @@ private fun DetailDueChip(
         )
         Spacer(modifier = Modifier.width(5.dp))
         BasicText(
-            text = if (hasDue) formatted else "Срок",
+            text = if (hasDue) formatted else stringResource(R.string.task_detail_due),
             style = TextStyle(
                 fontSize = 12.5.sp,
                 fontWeight = if (hasDue) FontWeight.Medium else FontWeight.Normal,
@@ -730,7 +755,7 @@ private fun DetailDueChip(
             ) {
                 Image(
                     painter = painterResource(R.drawable.ic_close),
-                    contentDescription = "Очистить срок",
+                    contentDescription = stringResource(R.string.task_detail_clear_due),
                     colorFilter = ColorFilter.tint(contentColor.copy(alpha = 0.7f)),
                     modifier = Modifier.size(10.dp)
                 )
@@ -746,7 +771,7 @@ private fun DetailContainerChip(
     colors: UHabitComposeColors,
     onClick: () -> Unit
 ) {
-    val name = containerName ?: "Входящие"
+    val name = containerName ?: stringResource(R.string.task_detail_inbox)
     val hasContainer = !containerName.isNullOrBlank()
 
     Row(
@@ -863,7 +888,7 @@ private fun DetailAddTagChip(
         if (!compact) {
             Spacer(modifier = Modifier.width(4.dp))
             BasicText(
-                text = "+ Тег",
+                text = stringResource(R.string.task_detail_add_tag),
                 style = TextStyle(
                     fontSize = 12.5.sp,
                     color = Color(colors.secondary),
@@ -937,7 +962,7 @@ private fun SubtasksSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             BasicText(
-                text = "Подзадачи",
+                text = stringResource(R.string.task_detail_subtasks),
                 style = TextStyle(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -948,7 +973,7 @@ private fun SubtasksSection(
             Spacer(modifier = Modifier.weight(1f))
             if (total > 0) {
                 BasicText(
-                    text = if (allCompleted) "Все выполнены ($total)" else "$completed / $total",
+                    text = if (allCompleted) stringResource(R.string.task_detail_subtasks_all_done, total) else "$completed / $total",
                     style = TextStyle(
                         fontSize = 12.sp,
                         fontWeight = if (allCompleted) FontWeight.Medium else FontWeight.Normal,
@@ -994,7 +1019,7 @@ private fun SubtasksSection(
             ) {
                 Image(
                     painter = painterResource(R.drawable.ic_toolbar_add),
-                    contentDescription = "Добавить подзадачу",
+                    contentDescription = stringResource(R.string.task_detail_add_subtask_desc),
                     colorFilter = ColorFilter.tint(
                         if (newSubtaskText.isNotBlank()) Color(colors.accent) else Color(colors.secondary).copy(alpha = 0.4f)
                     ),
@@ -1032,7 +1057,7 @@ private fun SubtasksSection(
                     Box {
                         if (newSubtaskText.isEmpty()) {
                             BasicText(
-                                text = "Добавить подзадачу...",
+                                text = stringResource(R.string.task_detail_add_subtask_hint),
                                 style = TextStyle(
                                     fontSize = 14.sp,
                                     color = Color(colors.secondary).copy(alpha = 0.5f)
@@ -1080,7 +1105,7 @@ private fun SubtaskRowItem(
                 ) {
                     Image(
                         painter = painterResource(R.drawable.ic_action_check),
-                        contentDescription = "Выполнено",
+                        contentDescription = stringResource(R.string.task_detail_completed_desc),
                         colorFilter = ColorFilter.tint(Color(colors.secondary)),
                         modifier = Modifier.size(10.dp)
                     )
@@ -1126,7 +1151,7 @@ private fun SubtaskRowItem(
         ) {
             Image(
                 painter = painterResource(R.drawable.ic_close),
-                contentDescription = "Удалить подзадачу",
+                contentDescription = stringResource(R.string.task_detail_delete_subtask_desc),
                 colorFilter = ColorFilter.tint(Color(colors.secondary).copy(alpha = 0.5f)),
                 modifier = Modifier.size(12.dp)
             )
@@ -1162,6 +1187,7 @@ private fun IntegrationGroupContainer(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 48.dp)
                     .clickable(onClick = onFocusClick)
                     .padding(horizontal = 12.dp, vertical = 9.dp)
             ) {
@@ -1174,9 +1200,11 @@ private fun IntegrationGroupContainer(
 
                 Spacer(modifier = Modifier.width(10.dp))
 
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                     BasicText(
-                        text = "Фокус",
+                        text = stringResource(R.string.task_detail_focus),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                         style = TextStyle(
                             fontSize = 13.5.sp,
                             fontWeight = FontWeight.Medium,
@@ -1186,7 +1214,9 @@ private fun IntegrationGroupContainer(
                     )
                     Spacer(modifier = Modifier.height(1.dp))
                     BasicText(
-                        text = focusSummary ?: "Запустить сессию фокуса",
+                        text = focusSummary ?: stringResource(R.string.task_detail_focus_start_prompt),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                         style = TextStyle(
                             fontSize = 11.5.sp,
                             color = Color(colors.secondary),
@@ -1202,7 +1232,7 @@ private fun IntegrationGroupContainer(
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
                     BasicText(
-                        text = "Начать",
+                        text = stringResource(R.string.task_detail_start),
                         style = TextStyle(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
@@ -1229,6 +1259,7 @@ private fun IntegrationGroupContainer(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(min = 48.dp)
                     .clickable(onClick = onHabitLinkClick)
                     .padding(horizontal = 12.dp, vertical = 9.dp)
             ) {
@@ -1241,9 +1272,11 @@ private fun IntegrationGroupContainer(
 
                 Spacer(modifier = Modifier.width(10.dp))
 
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                     BasicText(
-                        text = "Привязка к привычке",
+                        text = stringResource(R.string.task_detail_habit_link),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                         style = TextStyle(
                             fontSize = 13.5.sp,
                             fontWeight = FontWeight.Medium,
@@ -1253,7 +1286,9 @@ private fun IntegrationGroupContainer(
                     )
                     Spacer(modifier = Modifier.height(1.dp))
                     BasicText(
-                        text = "Синхронизация прогресса",
+                        text = stringResource(R.string.task_detail_habit_link_subtitle),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                         style = TextStyle(
                             fontSize = 11.5.sp,
                             color = Color(colors.secondary),
@@ -1269,7 +1304,7 @@ private fun IntegrationGroupContainer(
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
                     BasicText(
-                        text = "+ Привязать",
+                        text = stringResource(R.string.task_detail_link_action),
                         style = TextStyle(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
@@ -1311,7 +1346,9 @@ private fun IntegrationGroupContainer(
                         )
                         Spacer(modifier = Modifier.height(1.dp))
                         BasicText(
-                            text = "${linkedHabit.unit} · " + (if (linkedHabit.timeAccrualEnabled) "Учёт времени включён" else "Без начисления"),
+                            text = "${linkedHabit.unit} · " + stringResource(
+                                if (linkedHabit.timeAccrualEnabled) R.string.task_detail_accrual_on else R.string.task_detail_accrual_off
+                            ),
                             style = TextStyle(
                                 fontSize = 11.5.sp,
                                 color = Color(colors.secondary),
@@ -1328,7 +1365,7 @@ private fun IntegrationGroupContainer(
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         BasicText(
-                            text = "Сменить",
+                            text = stringResource(R.string.task_detail_change),
                             style = TextStyle(
                                 fontSize = 12.sp,
                                 color = Color(colors.accent),
@@ -1349,7 +1386,7 @@ private fun IntegrationGroupContainer(
                     ) {
                         Image(
                             painter = painterResource(R.drawable.ic_close),
-                            contentDescription = "Отвязать",
+                            contentDescription = stringResource(R.string.task_detail_unlink),
                             colorFilter = ColorFilter.tint(Color(colors.secondary)),
                             modifier = Modifier.size(12.dp)
                         )
@@ -1365,7 +1402,7 @@ private fun IntegrationGroupContainer(
                             .padding(top = 2.dp)
                     ) {
                         BasicText(
-                            text = "Учитывать время в прогресс привычки",
+                            text = stringResource(R.string.task_detail_accrual_toggle_label),
                             modifier = Modifier.weight(1f),
                             style = TextStyle(
                                 fontSize = 12.sp,
@@ -1404,11 +1441,7 @@ private fun CustomCompactSwitch(
             .size(width = 38.dp, height = 22.dp)
             .clip(CircleShape)
             .background(trackBg)
-            .toggleable(
-                value = checked,
-                role = Role.Switch,
-                onValueChange = onCheckedChange
-            )
+            .clickable { onCheckedChange(!checked) }
             .padding(2.dp),
         contentAlignment = Alignment.CenterStart
     ) {
@@ -1443,7 +1476,7 @@ private fun LegacyPlanBanner(
             .padding(10.dp)
     ) {
         BasicText(
-            text = "В задаче есть запланированная дата: $planDate. Сделать её сроком задачи?",
+            text = stringResource(R.string.task_detail_legacy_plan_prompt, planDate),
             style = TextStyle(
                 fontSize = 13.sp,
                 color = Color(colors.foreground),
@@ -1463,7 +1496,7 @@ private fun LegacyPlanBanner(
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 BasicText(
-                    text = "Отклонить",
+                    text = stringResource(R.string.task_detail_dismiss),
                     style = TextStyle(
                         fontSize = 12.5.sp,
                         color = Color(colors.secondary),
@@ -1479,7 +1512,7 @@ private fun LegacyPlanBanner(
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 BasicText(
-                    text = "Принять",
+                    text = stringResource(R.string.task_detail_accept),
                     style = TextStyle(
                         fontSize = 12.5.sp,
                         fontWeight = FontWeight.Medium,
@@ -1497,8 +1530,8 @@ private fun DetailHairlineDivider(colors: UHabitComposeColors) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(1.dp)
-            .padding(vertical = 6.dp)
-            .background(Color(colors.divider).copy(alpha = 0.6f))
+            .padding(vertical = 8.dp)
+            .height(0.5.dp)
+            .background(Color(colors.divider).copy(alpha = 0.35f))
     )
 }

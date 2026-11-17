@@ -1,21 +1,4 @@
-/*
- * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
- *
- * This file is part of Loop Habit Tracker.
- *
- * Loop Habit Tracker is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.
- *
- * Loop Habit Tracker is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 
 package org.isoron.uhabits.activities.tasks
 
@@ -31,12 +14,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
-import android.view.inputmethod.EditorInfo
-import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
-import androidx.appcompat.widget.PopupMenu
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -52,6 +30,7 @@ import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import org.isoron.platform.io.runInTransaction
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.settings.SettingsThemePalette
 import org.isoron.uhabits.compose.UHabitComposeColors
@@ -223,7 +202,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                         selectedTagIds = next
                         currentSaveStatus = ""
                     } catch (e: Exception) {
-                        currentSaveStatus = "Не удалось сохранить теги"
+                        currentSaveStatus = getString(R.string.task_detail_save_tags_error)
                     }
                 }
                 updateUiState()
@@ -346,11 +325,11 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                 currentFocusSummary = if (minutes >= 60) {
                     val h = minutes / 60
                     val m = minutes % 60
-                    "Затрачено: $h ч $m мин"
+                    getString(R.string.task_detail_focus_spent_hours_minutes, h, m)
                 } else if (minutes > 0) {
-                    "Затрачено: $minutes мин"
+                    getString(R.string.task_detail_focus_spent_minutes, minutes)
                 } else {
-                    "Запустить сессию фокуса"
+                    getString(R.string.task_detail_focus_start_prompt)
                 }
                 updateUiState()
             }
@@ -453,14 +432,12 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     private fun updateUiState() {
         if (!isAdded || context == null) return
         val context = requireContext()
-        val locale = TaskDueDisplayFormatter.selectedLocale(context)
-        val ru = locale.language == "ru"
 
         val containerItem = selectedContainerId?.let { cid ->
             organizationFacade.availableContainers().find { it.key == cid.value }
         }
 
-        val formattedDue = TaskDueDisplayFormatter.format(selectedDue, locale)
+        val formattedDue = TaskDueDisplayFormatter.format(context, selectedDue)
         val isOverdue = when (val due = selectedDue) {
             is TaskDue.Day -> runCatching {
                 val day = LocalDate.parse(due.date.isoDate)
@@ -497,7 +474,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                 LinkedHabitState(
                     uuid = h.uuid ?: uuid,
                     name = h.name,
-                    unit = h.unit.ifBlank { if (ru) "мин" else "min" },
+                    unit = h.unit.ifBlank { getString(R.string.task_detail_default_minute_unit) },
                     color = TaskThemeUtils.resolvePaletteColor(context, h.color, palette.accent),
                     isArchived = h.isArchived,
                     isIncompatible = !isCompatibleHabit(h),
@@ -525,50 +502,59 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             linkedHabit = linkedHabitState,
             pendingLegacyPlanDate = currentTask?.takeIf { it.hasPendingLegacyPlan }?.legacyPlanDate,
             saveStatusText = currentSaveStatus,
-            canCreate = currentTitle.isNotBlank()
+            canCreate = currentTitle.isNotBlank(),
+            isSaveError = currentSaveStatus.isNotEmpty()
         )
     }
 
     private fun showImportanceDialog() {
         val app = requireContext().applicationContext as? HabitsApplication
         if (app?.component !== launchComponent || taskDeleted) return
-        val ru = TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru"
-        val options = if (ru) arrayOf("Не определено", "Важно", "Не важно") else arrayOf("Not set", "Important", "Not important")
+        val options = listOf(
+            getString(R.string.task_detail_not_set),
+            getString(R.string.task_detail_important),
+            getString(R.string.task_detail_not_important)
+        )
         val choiceIndex = when (selectedImportant) { null -> 0; true -> 1; false -> 2 }
 
-        AlertDialog.Builder(requireContext())
-            .setTitle(if (ru) "Важность" else "Important")
-            .setSingleChoiceItems(options, choiceIndex) { dialog, choice ->
-                selectedImportant = when (choice) { 1 -> true; 2 -> false; else -> null }
-                updateUiState()
-                if (!isCreateMode) {
-                    saveChanges()
-                }
-                dialog.dismiss()
+        CustomDialogs.showSingleChoiceDialog(
+            context = requireContext(),
+            title = getString(R.string.task_detail_importance),
+            options = options,
+            selectedIndex = choiceIndex
+        ) { choice ->
+            if (HabitsApplication.component !== launchComponent || taskDeleted) return@showSingleChoiceDialog
+            selectedImportant = when (choice) { 1 -> true; 2 -> false; else -> null }
+            updateUiState()
+            if (!isCreateMode) {
+                saveChanges()
             }
-            .setNegativeButton(getCancelButtonText(requireContext()), null)
-            .show()
+        }
     }
 
     private fun showUrgencyDialog() {
         val app = requireContext().applicationContext as? HabitsApplication
         if (app?.component !== launchComponent || taskDeleted) return
-        val ru = TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru"
-        val options = if (ru) arrayOf("Не определено", "Срочно", "Не срочно") else arrayOf("Not set", "Urgent", "Not urgent")
+        val options = listOf(
+            getString(R.string.task_detail_not_set),
+            getString(R.string.task_detail_urgent),
+            getString(R.string.task_detail_not_urgent)
+        )
         val choiceIndex = when (selectedUrgent) { null -> 0; true -> 1; false -> 2 }
 
-        AlertDialog.Builder(requireContext())
-            .setTitle(if (ru) "Срочность" else "Urgent")
-            .setSingleChoiceItems(options, choiceIndex) { dialog, choice ->
-                selectedUrgent = when (choice) { 1 -> true; 2 -> false; else -> null }
-                updateUiState()
-                if (!isCreateMode) {
-                    saveChanges()
-                }
-                dialog.dismiss()
+        CustomDialogs.showSingleChoiceDialog(
+            context = requireContext(),
+            title = getString(R.string.task_detail_urgency),
+            options = options,
+            selectedIndex = choiceIndex
+        ) { choice ->
+            if (HabitsApplication.component !== launchComponent || taskDeleted) return@showSingleChoiceDialog
+            selectedUrgent = when (choice) { 1 -> true; 2 -> false; else -> null }
+            updateUiState()
+            if (!isCreateMode) {
+                saveChanges()
             }
-            .setNegativeButton(getCancelButtonText(requireContext()), null)
-            .show()
+        }
     }
 
     private fun showTagsPicker() {
@@ -624,7 +610,6 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     private fun editSubtask(id: String) {
         val app = requireContext().applicationContext as? HabitsApplication
         if (app?.component !== launchComponent || taskDeleted) return
-        val ru = TaskDueDisplayFormatter.selectedLocale(requireContext()).language == "ru"
 
         val initialTitle = if (isCreateMode) {
             val idx = id.toIntOrNull()
@@ -633,43 +618,32 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             launchComponent.userTaskRepository.getById(TaskId(id))?.title ?: ""
         }
 
-        val input = EditText(requireContext()).apply {
-            setText(initialTitle)
-            setSelection(text.length)
-            setSingleLine(true)
-            imeOptions = EditorInfo.IME_ACTION_DONE
-            setPaddingRelative(dpInt(16f), dpInt(12f), dpInt(16f), dpInt(12f))
-        }
-        val container = FrameLayout(requireContext()).apply {
-            setPadding(dpInt(8f), dpInt(4f), dpInt(8f), dpInt(4f))
-            addView(input)
-        }
-        AlertDialog.Builder(requireContext())
-            .setTitle(if (ru) "Редактировать подзадачу" else "Edit subtask")
-            .setView(container)
-            .setPositiveButton(if (ru) "Сохранить" else "Save") { _, _ ->
-                if (HabitsApplication.component !== launchComponent || taskDeleted) return@setPositiveButton
-                val newTitle = input.text?.toString()?.trim().orEmpty()
-                if (newTitle.isNotBlank() && newTitle != initialTitle) {
-                    if (isCreateMode) {
-                        val idx = id.toIntOrNull()
-                        if (idx != null && idx in draftSubtasks.indices) {
-                            draftSubtasks[idx] = draftSubtasks[idx].copy(title = newTitle)
-                            updateUiState()
-                        }
-                    } else {
-                        try {
-                            taskService.updateTask(TaskId(id), title = newTitle)
-                            updateUiState()
-                            onTaskUpdatedListener?.invoke()
-                        } catch (e: Exception) {
-                            Toast.makeText(requireContext(), if (ru) "Не удалось обновить подзадачу" else "Could not update subtask", Toast.LENGTH_SHORT).show()
-                        }
+        CustomDialogs.showInputDialog(
+            context = requireContext(),
+            title = getString(R.string.task_detail_edit_subtask_title),
+            initialValue = initialTitle,
+            positiveText = getString(R.string.save)
+        ) { rawTitle ->
+            if (HabitsApplication.component !== launchComponent || taskDeleted) return@showInputDialog
+            val newTitle = rawTitle.trim()
+            if (newTitle.isNotBlank() && newTitle != initialTitle) {
+                if (isCreateMode) {
+                    val idx = id.toIntOrNull()
+                    if (idx != null && idx in draftSubtasks.indices) {
+                        draftSubtasks[idx] = draftSubtasks[idx].copy(title = newTitle)
+                        updateUiState()
+                    }
+                } else {
+                    try {
+                        taskService.updateTask(TaskId(id), title = newTitle)
+                        updateUiState()
+                        onTaskUpdatedListener?.invoke()
+                    } catch (e: Exception) {
+                        Toast.makeText(requireContext(), getString(R.string.task_detail_edit_subtask_failed), Toast.LENGTH_SHORT).show()
                     }
                 }
             }
-            .setNegativeButton(getCancelButtonText(requireContext()), null)
-            .show()
+        }
     }
 
     private fun startFocusSession() {
@@ -681,9 +655,12 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         val manager = launchComponent.timerSessionManager
         val active = manager.snapshot()
         if (active.hasActiveSession && !manager.isCurrentTask(id)) {
-            AlertDialog.Builder(requireContext())
-                .setMessage(getString(R.string.task_focus_conflict, active.habitName))
-                .setPositiveButton(android.R.string.ok, null).show()
+            CustomDialogs.showInfoDialog(
+                context = requireContext(),
+                title = getString(R.string.task_detail_focus_conflict_title),
+                message = getString(R.string.task_focus_conflict, active.habitName),
+                positiveText = getString(android.R.string.ok)
+            )
             return
         }
         if (parentFragmentManager.findFragmentByTag(TaskFocusBottomSheet.TAG) == null) {
@@ -716,48 +693,40 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             !habit.isArchived && isCompatibleHabit(habit)
         }
 
-        val selectedLocale = TaskDueDisplayFormatter.selectedLocale(requireContext())
-        val ru = selectedLocale.language == "ru"
-        val cancelText = getCancelButtonText(requireContext())
-
         if (eligibleHabits.isEmpty()) {
-            AlertDialog.Builder(requireContext())
-                .setTitle(if (ru) "Привязка к привычке" else "Link to habit")
-                .setMessage(if (ru) "Нет доступных числовых привычек с минутами. Создайте числовую привычку с единицей измерения «мин» или «минуты»."
-                    else "No numerical minute habits available. Create a numerical habit with unit 'min' or 'minutes'.")
-                .setPositiveButton(android.R.string.ok, null)
-                .show()
+            CustomDialogs.showInfoDialog(
+                context = requireContext(),
+                title = getString(R.string.task_detail_habit_link),
+                message = getString(R.string.task_detail_habit_link_empty),
+                positiveText = getString(android.R.string.ok)
+            )
             return
         }
 
-        val habitNames = eligibleHabits.map { "${it.name} (${it.unit})" }.toTypedArray()
+        val habitNames = eligibleHabits.map { "${it.name} (${it.unit})" }
         val currentIndex = eligibleHabits.indexOfFirst { it.uuid == selectedLinkedHabitUuid }
 
-        AlertDialog.Builder(requireContext())
-            .setTitle(if (ru) "Выберите привычку" else "Select habit")
-            .setSingleChoiceItems(habitNames, currentIndex) { dialog, which ->
-                val chosen = eligibleHabits[which]
-                val habitChanged = chosen.uuid != selectedLinkedHabitUuid
-                selectedLinkedHabitUuid = chosen.uuid
-                selectedHabitTimeAccrualEnabled = true
-                if (habitChanged || selectedHabitLinkEffectiveFrom == null) {
-                    selectedHabitLinkEffectiveFrom = System.currentTimeMillis()
-                }
-                updateUiState()
-                if (!isCreateMode) {
-                    saveChanges()
-                }
-                dialog.dismiss()
+        CustomDialogs.showSingleChoiceDialog(
+            context = requireContext(),
+            title = getString(R.string.task_detail_select_habit),
+            options = habitNames,
+            selectedIndex = currentIndex,
+            neutralText = if (selectedLinkedHabitUuid != null) getString(R.string.task_detail_unlink) else null,
+            onNeutral = if (selectedLinkedHabitUuid != null) { { unlinkHabit() } } else null
+        ) { which ->
+            if (HabitsApplication.component !== launchComponent || taskDeleted) return@showSingleChoiceDialog
+            val chosen = eligibleHabits[which]
+            val habitChanged = chosen.uuid != selectedLinkedHabitUuid
+            selectedLinkedHabitUuid = chosen.uuid
+            selectedHabitTimeAccrualEnabled = true
+            if (habitChanged || selectedHabitLinkEffectiveFrom == null) {
+                selectedHabitLinkEffectiveFrom = System.currentTimeMillis()
             }
-            .setNegativeButton(cancelText, null)
-            .apply {
-                if (selectedLinkedHabitUuid != null) {
-                    setNeutralButton(if (ru) "Отвязать" else "Unlink") { _, _ ->
-                        unlinkHabit()
-                    }
-                }
+            updateUiState()
+            if (!isCreateMode) {
+                saveChanges()
             }
-            .show()
+        }
     }
 
     private fun unlinkHabit() {
@@ -775,10 +744,12 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
         val updated = try {
             taskService.resolveLegacyPlan(t.id, accept = true)
         } catch (_: org.isoron.uhabits.core.userTasks.InvalidLegacyPlanException) {
-            AlertDialog.Builder(requireContext())
-                .setMessage("Не удалось распознать старую дату. Исходное значение сохранено. Выберите корректный срок вручную или нажмите «Отклонить».")
-                .setPositiveButton(android.R.string.ok, null)
-                .show()
+            CustomDialogs.showInfoDialog(
+                context = requireContext(),
+                title = getString(R.string.task_detail_invalid_date_title),
+                message = getString(R.string.task_detail_invalid_date_message),
+                positiveText = getString(android.R.string.ok)
+            )
             return
         }
         currentTask = updated
@@ -812,21 +783,22 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
 
     private fun showMoreOptionsMenu() {
         val context = context ?: return
-        val ru = TaskDueDisplayFormatter.selectedLocale(context).language == "ru"
-        val items = mutableListOf<String>()
-        items.add(if (ru) "Удалить задачу" else "Delete task")
+        val items = mutableListOf<CharSequence>()
+        items.add(getString(R.string.task_detail_delete_task))
         if (selectedLinkedHabitUuid != null) {
-            items.add(if (ru) "Отвязать привычку" else "Unlink habit")
+            items.add(getString(R.string.task_detail_unlink_habit))
         }
 
-        AlertDialog.Builder(context)
-            .setItems(items.toTypedArray()) { _, which ->
-                when (which) {
-                    0 -> confirmDelete()
-                    1 -> unlinkHabit()
-                }
+        CustomDialogs.showSimpleListDialog(
+            context = context,
+            title = getString(R.string.task_detail_actions),
+            items = items
+        ) { which ->
+            when (which) {
+                0 -> confirmDelete()
+                1 -> unlinkHabit()
             }
-            .show()
+        }
     }
 
     private fun submitCreateTask() {
@@ -870,7 +842,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
             }
         } catch (e: Exception) {
             android.util.Log.e("TaskDetailBottomSheet", "Task creation failed", e)
-            Toast.makeText(requireContext(), "Не удалось создать задачу. Попробуйте ещё раз.", Toast.LENGTH_LONG).show()
+            Toast.makeText(requireContext(), getString(R.string.task_detail_create_error), Toast.LENGTH_LONG).show()
             return
         }
 
@@ -886,20 +858,23 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
     }
 
     private fun confirmDelete() {
-        taskId?.let { id ->
-            AlertDialog.Builder(requireContext())
-                .setTitle("Удалить задачу?")
-                .setMessage("Задача и все её подзадачи будут удалены.")
-                .setPositiveButton("Удалить") { _, _ ->
-                    saveHandler.removeCallbacks(pendingSave)
-                    taskService.deleteTask(id, cascadeSubtasks = true)
-                    taskDeleted = true
-                    currentTask = null
-                    onTaskUpdatedListener?.invoke()
-                    dismiss()
-                }
-                .setNegativeButton("Отмена", null)
-                .show()
+        val id = taskId ?: return
+        val context = context ?: return
+        CustomDialogs.showConfirmDialog(
+            context = context,
+            title = getString(R.string.task_detail_delete_confirm_title),
+            message = getString(R.string.task_detail_delete_confirm_message),
+            isDestructive = true,
+            positiveText = getString(R.string.delete),
+            negativeText = getString(android.R.string.cancel)
+        ) {
+            if (HabitsApplication.component !== launchComponent || taskDeleted) return@showConfirmDialog
+            saveHandler.removeCallbacks(pendingSave)
+            taskService.deleteTask(id, cascadeSubtasks = true)
+            taskDeleted = true
+            currentTask = null
+            onTaskUpdatedListener?.invoke()
+            dismiss()
         }
     }
 
@@ -954,7 +929,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                 )
             } catch (e: Exception) {
                 android.util.Log.e("TaskDetailBottomSheet", "Failed to update task", e)
-                currentSaveStatus = "Не удалось сохранить"
+                currentSaveStatus = getString(R.string.task_detail_save_error)
                 updateUiState()
                 return
             }
@@ -965,7 +940,7 @@ class TaskDetailBottomSheet : BottomSheetDialogFragment() {
                 savedTask = taskService.setCompleted(task.id, isCompleted)
             } catch (e: Exception) {
                 android.util.Log.e("TaskDetailBottomSheet", "Failed to update task completion", e)
-                currentSaveStatus = "Не удалось сохранить"
+                currentSaveStatus = getString(R.string.task_detail_save_error)
                 updateUiState()
                 return
             }

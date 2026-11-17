@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -24,13 +25,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.isoron.uhabits.R
 import org.isoron.uhabits.compose.LocalUHabitComposeColors
 import org.isoron.uhabits.compose.UHabitComposeColors
 import org.isoron.uhabits.compose.UHabitComposeTheme
 
 @Composable
 internal fun TaskCalendarControlsCompose(
-    colors: UHabitComposeColors, title: String, today: Boolean, ru: Boolean,
+    colors: UHabitComposeColors, title: String, today: Boolean,
     compactPhone: Boolean, mode: CalendarMode, scale: CalendarScale,
     onPrevious: () -> Unit, onNext: () -> Unit, onToday: () -> Unit,
     onMode: (CalendarMode) -> Unit, onScale: (CalendarScale) -> Unit
@@ -56,15 +58,19 @@ internal fun TaskCalendarControlsCompose(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.weight(1f, fill = false)
                 ) {
+                    val prevPeriodLabel = stringResource(R.string.task_calendar_prev_period)
+                    val nextPeriodLabel = stringResource(R.string.task_calendar_next_period)
+                    val goToTodayLabel = stringResource(R.string.task_calendar_go_to_today)
+
                     // Previous period button
                     Box(
                         modifier = Modifier
                             .size(36.dp)
                             .clip(CircleShape)
                             .semantics {
-                                contentDescription = if (ru) "Предыдущий период" else "Previous period"
+                                contentDescription = prevPeriodLabel
                             }
-                            .clickable(role = Role.Button, onClickLabel = if (ru) "Предыдущий период" else "Previous period", onClick = onPrevious),
+                            .clickable(role = Role.Button, onClickLabel = prevPeriodLabel, onClick = onPrevious),
                         contentAlignment = Alignment.Center
                     ) {
                         BasicText("‹", style = TextStyle(color = Color(c.foreground), fontSize = 22.sp, fontWeight = FontWeight.Bold))
@@ -75,7 +81,7 @@ internal fun TaskCalendarControlsCompose(
                         modifier = Modifier
                             .padding(horizontal = 6.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable(role = Role.Button, onClickLabel = if (ru) "Перейти к сегодня" else "Go to today", onClick = onToday)
+                            .clickable(role = Role.Button, onClickLabel = goToTodayLabel, onClick = onToday)
                             .padding(horizontal = 6.dp, vertical = 4.dp),
                         contentAlignment = Alignment.Center
                     ) {
@@ -95,9 +101,9 @@ internal fun TaskCalendarControlsCompose(
                             .size(36.dp)
                             .clip(CircleShape)
                             .semantics {
-                                contentDescription = if (ru) "Следующий период" else "Next period"
+                                contentDescription = nextPeriodLabel
                             }
-                            .clickable(role = Role.Button, onClickLabel = if (ru) "Следующий период" else "Next period", onClick = onNext),
+                            .clickable(role = Role.Button, onClickLabel = nextPeriodLabel, onClick = onNext),
                         contentAlignment = Alignment.Center
                     ) {
                         BasicText("›", style = TextStyle(color = Color(c.foreground), fontSize = 22.sp, fontWeight = FontWeight.Bold))
@@ -105,7 +111,7 @@ internal fun TaskCalendarControlsCompose(
                 }
 
                 // Today button: sleek chip
-                val todayLabel = if (ru) "Сегодня" else "Today"
+                val todayLabel = stringResource(R.string.task_calendar_today)
                 val todayBg = if (today) Color(c.accent).copy(alpha = 0.12f) else Color(c.surfaceVariant).copy(alpha = 0.5f)
                 val todayTextColor = if (today) Color(c.accent) else Color(c.foreground)
                 Box(
@@ -139,11 +145,15 @@ internal fun TaskCalendarControlsCompose(
                 // Mode Switcher
                 if (compactPhone) {
                     val target = if (mode == CalendarMode.PLANNING) CalendarMode.HISTORY else CalendarMode.PLANNING
-                    val label = if (mode == CalendarMode.PLANNING) { if (ru) "План ↔" else "Plan ↔" } else { if (ru) "История ↔" else "History ↔" }
-                    val desc = if (mode == CalendarMode.PLANNING) {
-                        if (ru) "План, переключить на историю" else "Plan, switch to history"
+                    val label = if (mode == CalendarMode.PLANNING) {
+                        stringResource(R.string.task_calendar_mode_plan_toggle)
                     } else {
-                        if (ru) "История, переключить на план" else "History, switch to plan"
+                        stringResource(R.string.task_calendar_mode_history_toggle)
+                    }
+                    val desc = if (mode == CalendarMode.PLANNING) {
+                        stringResource(R.string.task_calendar_mode_switch_to_history)
+                    } else {
+                        stringResource(R.string.task_calendar_mode_switch_to_plan)
                     }
                     Box(
                         modifier = Modifier
@@ -170,8 +180,8 @@ internal fun TaskCalendarControlsCompose(
                             .padding(2.dp)
                     ) {
                         val isPlanning = mode == CalendarMode.PLANNING
-                        val planLabel = if (ru) "Планирование" else "Planning"
-                        val histLabel = if (ru) "История" else "History"
+                        val planLabel = stringResource(R.string.task_calendar_mode_planning)
+                        val histLabel = stringResource(R.string.task_calendar_mode_history)
 
                         Box(
                             modifier = Modifier
@@ -227,9 +237,9 @@ internal fun TaskCalendarControlsCompose(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val scaleItems = listOf(
-                        CalendarScale.MONTH to (if (ru) "Месяц" else "Month"),
-                        CalendarScale.WEEK to (if (ru) "Неделя" else "Week"),
-                        CalendarScale.DAY to (if (ru) "День" else "Day")
+                        CalendarScale.MONTH to stringResource(R.string.task_calendar_scale_month),
+                        CalendarScale.WEEK to stringResource(R.string.task_calendar_scale_week),
+                        CalendarScale.DAY to stringResource(R.string.task_calendar_scale_day)
                     )
 
                     scaleItems.forEach { (value, label) ->
@@ -241,7 +251,7 @@ internal fun TaskCalendarControlsCompose(
                                 .background(if (isSelected) Color(c.accent) else Color.Transparent)
                                 .semantics { selected = isSelected }
                                 .clickable(role = Role.Tab) { onScale(value) }
-                                .padding(horizontal = 10.dp),
+                            .padding(horizontal = 10.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             BasicText(

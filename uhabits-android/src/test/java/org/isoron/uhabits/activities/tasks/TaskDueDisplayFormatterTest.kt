@@ -22,4 +22,22 @@ class TaskDueDisplayFormatterTest {
         assertEquals("23 окт., 18:00", TaskDueDisplayFormatter.format(timed, Locale.forLanguageTag("ru-RU")))
         assertEquals("Задать срок", TaskDueDisplayFormatter.format(TaskDue.None, Locale.US))
     }
+
+    @Test
+    fun respectsTwelveHourPreferenceAndCustomNoDueLabel() {
+        val time = LocalDateTime.of(2026, 10, 23, 18, 5)
+            .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val timed = TaskDue.Timed.local(time, ZoneId.systemDefault().id)
+        val formatted12 = TaskDueDisplayFormatter.format(
+            due = timed,
+            locale = Locale.US,
+            is24Hour = false,
+            noDueLabel = "Set due date",
+        )
+        assertEquals("23 Oct, 6:05 PM", formatted12)
+        assertEquals(
+            "Set due date",
+            TaskDueDisplayFormatter.format(TaskDue.None, Locale.US, is24Hour = false, noDueLabel = "Set due date")
+        )
+    }
 }

@@ -26,6 +26,7 @@ import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import org.isoron.uhabits.HabitsApplication
+import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.facade.OrganizationalItem
@@ -65,10 +66,10 @@ class TaskContainerPickerBottomSheet : BottomSheetDialogFragment() {
         root.addView(FrameLayout(requireContext()).apply {
             addView(View(context).apply { background = rounded(palette.divider, 4) },
                 FrameLayout.LayoutParams(dp(36), dp(4), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply { topMargin = dp(8) })
-            addView(label("Раздел", 22f, palette.onSurface, true).apply { gravity = Gravity.CENTER_VERTICAL },
+            addView(label(getString(R.string.task_container_picker_title), 22f, palette.onSurface, true).apply { gravity = Gravity.CENTER_VERTICAL },
                 FrameLayout.LayoutParams(-1, dp(48), Gravity.BOTTOM))
             val closeAction = FrameLayout(context).apply {
-                isClickable = true; isFocusable = true; contentDescription = "Закрыть выбор раздела"
+                isClickable = true; isFocusable = true; contentDescription = getString(R.string.task_container_picker_close_desc)
                 addView(android.widget.ImageView(context).apply {
                     setImageResource(org.isoron.uhabits.R.drawable.ic_close)
                     imageTintList = android.content.res.ColorStateList.valueOf(palette.onSurfaceVariant)
@@ -86,8 +87,8 @@ class TaskContainerPickerBottomSheet : BottomSheetDialogFragment() {
         searchFrame.addView(PickerIcon("search", palette.onSurfaceVariant),
             FrameLayout.LayoutParams(dp(38), -1, Gravity.START))
         search = EditText(requireContext()).apply {
-            hint = "Найти раздел"
-            contentDescription = "Поиск раздела по названию"
+            hint = getString(R.string.task_container_picker_search_hint)
+            contentDescription = getString(R.string.task_container_picker_search_desc)
             setSingleLine(true)
             textSize = 15f
             includeFontPadding = false
@@ -99,7 +100,7 @@ class TaskContainerPickerBottomSheet : BottomSheetDialogFragment() {
         }
         searchFrame.addView(search, FrameLayout.LayoutParams(-1, -1).apply { leftMargin = dp(38); rightMargin = dp(44) })
         val clear = PickerIcon("close_small", palette.onSurfaceVariant).apply {
-            contentDescription = "Очистить поиск"
+            contentDescription = getString(R.string.task_container_picker_clear_search_desc)
             visibility = if (query.isEmpty()) View.GONE else View.VISIBLE
             setOnClickListener { search.setText("") }
         }
@@ -135,7 +136,7 @@ class TaskContainerPickerBottomSheet : BottomSheetDialogFragment() {
         val items = component.organizationFacade.availableContainers()
         val paths = items.associate { it.key to component.organizationFacade.containerPath(ContainerId(it.key)) }
         val searching = query.isNotBlank()
-        if (!searching) addRow(null, "Входящие", null, 0, selected == null, false)
+        if (!searching) addRow(null, getString(R.string.task_smart_inbox), null, 0, selected == null, false)
         val matching = items.filter { it.name.contains(query.trim(), ignoreCase = true) }
         for (item in matching) {
             val path = paths[item.key].orEmpty()
@@ -144,7 +145,7 @@ class TaskContainerPickerBottomSheet : BottomSheetDialogFragment() {
             addRow(item, item.name, parentPath.takeIf { searching && it.isNotEmpty() },
                 if (searching) 0 else (path.size - 1).coerceAtLeast(0), selected == item.key, hasChildren && !searching)
         }
-        if (matching.isEmpty()) rows.addView(label(if (searching) "Разделы не найдены" else "Разделов пока нет", 15f, palette.onSurfaceVariant).apply {
+        if (matching.isEmpty()) rows.addView(label(getString(if (searching) R.string.task_container_picker_not_found else R.string.task_container_picker_empty), 15f, palette.onSurfaceVariant).apply {
             setPadding(0, dp(12), 0, dp(12)); minimumHeight = dp(48)
         })
         renderFooter(items.firstOrNull { it.key == selected })
@@ -158,7 +159,7 @@ class TaskContainerPickerBottomSheet : BottomSheetDialogFragment() {
             gravity = Gravity.CENTER_VERTICAL
             minimumHeight = dp(if (!searching && selected && depth >= 3) 64 else if (path != null) 52 else 48)
             isClickable = true; isFocusable = true
-            contentDescription = title + if (selected) ", выбран" else ""
+            contentDescription = if (selected) getString(R.string.task_container_picker_selected_format, title) else title
             setOnClickListener { select(item) }
         }
         if (!searching) row.addView(FrameLayout(requireContext()).apply {
@@ -190,13 +191,13 @@ class TaskContainerPickerBottomSheet : BottomSheetDialogFragment() {
         val fullPath = selected?.let { component.organizationFacade.containerPath(ContainerId(it.key)).joinToString(" / ") { it.name } }.orEmpty()
         val line = LinearLayout(requireContext()).apply { gravity = Gravity.CENTER_VERTICAL; orientation = LinearLayout.HORIZONTAL }
         if (searching) line.addView(PickerIcon("check", palette.accent), LinearLayout.LayoutParams(dp(24), dp(48)))
-        line.addView(label(if (searching) selected?.name ?: "Входящие" else fullPath.ifEmpty { "Входящие" }, 12f, palette.onSurfaceVariant).apply {
+        line.addView(label(if (searching) selected?.name ?: getString(R.string.task_smart_inbox) else fullPath.ifEmpty { getString(R.string.task_smart_inbox) }, 12f, palette.onSurfaceVariant).apply {
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END
         }, LinearLayout.LayoutParams(0, -2, 1f))
-        if (selected != null) line.addView(label(if (pathExpanded) "Скрыть путь" else if (searching) "Путь" else "Показать путь", 12f, palette.onSurfaceVariant, true).apply {
+        if (selected != null) line.addView(label(getString(if (pathExpanded) R.string.task_container_picker_hide_path else if (searching) R.string.task_container_picker_path else R.string.task_container_picker_show_path), 12f, palette.onSurfaceVariant, true).apply {
             gravity = Gravity.CENTER_VERTICAL or Gravity.END
             minimumWidth = dp(if (searching) 48 else 108); minimumHeight = dp(48)
-            contentDescription = if (pathExpanded) "Скрыть полный путь" else "Показать полный путь"
+            contentDescription = getString(if (pathExpanded) R.string.task_container_picker_hide_path_desc else R.string.task_container_picker_show_path_desc)
             isFocusable = true
             setOnClickListener { pathExpanded = !pathExpanded; renderFooter(selected); updateSheetHeight() }
         }, LinearLayout.LayoutParams(-2, dp(48)))
