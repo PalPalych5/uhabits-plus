@@ -41,10 +41,7 @@ class FrequencyCardViewTest : BaseViewTest() {
     override fun setUp() {
         super.setUp()
         val habit = fixtures.createLongHabit()
-        view = LayoutInflater
-            .from(targetContext)
-            .inflate(R.layout.show_habit, null)
-            .findViewById<View>(R.id.frequencyCard) as FrequencyCardView
+        view = FrequencyCardView(targetContext)
         view.setState(
             FrequencyCardPresenter.buildState(
                 habit = habit,

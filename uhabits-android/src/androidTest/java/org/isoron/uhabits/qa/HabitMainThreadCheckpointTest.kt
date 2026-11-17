@@ -317,7 +317,7 @@ class HabitMainThreadCheckpointTest {
                     while (!rendered && SystemClock.elapsedRealtime() < deadline) {
                         detail.onActivity {
                             val views = descendants(it.window.decorView).toList()
-                            rendered = views.filterIsInstance<TimerCardView>().any { view -> view.isShown && view.height > 0 } &&
+                            rendered = views.filterIsInstance<androidx.compose.ui.platform.ComposeView>().any { view -> view.isShown && view.height > 0 } &&
                                 views.filterIsInstance<TextView>().any { view -> view.isShown && view.text.toString() == focus.name }
                         }
                         if (!rendered) Thread.sleep(20)

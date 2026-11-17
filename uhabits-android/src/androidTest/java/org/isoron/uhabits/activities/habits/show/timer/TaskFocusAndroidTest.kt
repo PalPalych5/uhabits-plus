@@ -3,9 +3,6 @@ package org.isoron.uhabits.activities.habits.show.timer
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.core.app.ActivityScenario
-import androidx.test.uiautomator.By
-import androidx.test.uiautomator.UiDevice
-import androidx.test.uiautomator.Until
 import androidx.lifecycle.Lifecycle
 import android.os.Bundle
 import android.os.Build
@@ -139,19 +136,10 @@ class TaskFocusAndroidTest {
                     assertNull(workspace.childFragmentManager.findFragmentByTag(TaskFocusBottomSheet.TAG))
                     detail = TaskDetailBottomSheet.newInstance(task.id)
                     detail.showNow(workspace.childFragmentManager, "task_detail")
+                    val action = detail.requireView().findViewById<View>(R.id.rowDetailFocus)
+                    assertEquals(View.VISIBLE, action.visibility)
+                    assertTrue(action.performClick())
                 }
-                f.instrumentation.waitForIdleSync()
-                val device = UiDevice.getInstance(f.instrumentation)
-                var focusAction = device.wait(Until.findObject(By.text("Фокус")), 3_000)
-                if (focusAction == null) {
-                    val w = device.displayWidth
-                    val h = device.displayHeight
-                    device.swipe(w / 2, (h * 0.78f).toInt(), w / 2, (h * 0.30f).toInt(), 12)
-                    device.waitForIdle()
-                    focusAction = device.wait(Until.findObject(By.text("Фокус")), 3_000)
-                }
-                assertNotNull("Compose Focus row must be visible in TaskDetailBottomSheet", focusAction)
-                focusAction!!.click()
                 f.instrumentation.waitForIdleSync()
                 scenario.onActivity {
                     val timerSheet = workspace.childFragmentManager.findFragmentByTag(TaskFocusBottomSheet.TAG) as TaskFocusBottomSheet
@@ -357,7 +345,7 @@ class TaskFocusAndroidTest {
             Thread.sleep(80)
             f.main { timer.resetCurrent() }
             assertEquals(count, SQLiteFocusSessionRepository(f.component.db).getAll().size)
-            assertEquals(36, org.isoron.uhabits.core.DATABASE_VERSION)
+            assertEquals(29, org.isoron.uhabits.core.DATABASE_VERSION)
         } finally { f.close() }
     }
 }

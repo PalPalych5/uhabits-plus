@@ -149,7 +149,7 @@ object CommonSteps : BaseUserInterfaceTest() {
                     .check(ViewAssertions.matches(ViewMatchers.isDisplayed()))
 
             Screen.SHOW_HABIT ->
-                Espresso.onView(ViewMatchers.withId(R.id.subtitleCard))
+                Espresso.onView(ViewMatchers.withId(R.id.composeView))
                     .check(ViewAssertions.matches(ViewMatchers.isDisplayed()))
 
             Screen.EDIT_HABIT ->

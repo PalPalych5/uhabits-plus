@@ -42,10 +42,7 @@ class SubtitleCardViewTest : BaseViewTest() {
     @Before
     override fun setUp() {
         super.setUp()
-        view = LayoutInflater
-            .from(targetContext)
-            .inflate(R.layout.show_habit, null)
-            .findViewById(R.id.subtitleCard)
+        view = SubtitleCardView(targetContext)
         view.setState(
             SubtitleCardState(
                 color = PaletteColor(7),

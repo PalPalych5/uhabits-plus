@@ -14,16 +14,27 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.graphics.ColorUtils
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.view.WindowInsetsControllerCompat
 import org.isoron.platform.gui.toInt
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
+import org.isoron.uhabits.activities.habits.show.timer.PomodoroAlertHealth
 import org.isoron.uhabits.activities.habits.show.timer.PomodoroAlertIssue
 import org.isoron.uhabits.activities.habits.show.timer.PomodoroCompletionNotifier
 import org.isoron.uhabits.activities.habits.show.timer.TimerSessionManager
+import org.isoron.uhabits.core.timer.TimerMode
+import org.isoron.uhabits.activities.habits.show.views.HabitDetailsScreen
 import org.isoron.uhabits.activities.habits.show.views.TimerCardView
+import org.isoron.uhabits.activities.habits.show.views.TimerUiState
+import org.isoron.uhabits.activities.habits.show.views.computeTimerUiState
 import org.isoron.uhabits.activities.settings.SettingsThemePalette
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
 import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.isMinuteUnit
 import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitPresenter
@@ -66,15 +77,147 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
     private var habitUnit: String = ""
     private var isTimerEnabled: Boolean = false
     private var isNumerical: Boolean = false
-    private var currentFocusProgress: FocusProgressPresentation? = null
+    private var currentFocusProgress by mutableStateOf<FocusProgressPresentation?>(null)
 
     var toolbarForegroundColor: Int = Color.WHITE
         private set
     private var currentTitleColor: Int = Color.WHITE
 
+    // Presentation state
+    private var showHabitState by mutableStateOf<ShowHabitState?>(null)
+    private var isEffectiveReadUnavailable by mutableStateOf(false)
+    private var effectiveUnavailableNoticeText by mutableStateOf<String?>(null)
+    private var composeColors by mutableStateOf(resolveComposeColors())
+
+    // Timer state & management
+    private var habit: Habit? = null
+    private var manager: TimerSessionManager? = null
+    private var requestNotificationPermission: ((onReady: () -> Unit) -> Unit)? = null
+    private var alertHealthProvider: (() -> PomodoroAlertHealth)? = null
+    private var onFixAlertIssue: ((PomodoroAlertIssue) -> Unit)? = null
+    private var isTimerVisible by mutableStateOf(false)
+    private var timerActiveColor by mutableIntStateOf(0)
+    private var timerUiState by mutableStateOf<TimerUiState?>(null)
+    private var timerAlertIssue by mutableStateOf<PomodoroAlertIssue?>(null)
+
+    // Dedicated timer card wrapper instance for contract & test compatibility
+    private val timerCardInstance = TimerCardView(context)
+    val timerCard: TimerCardView get() = timerCardInstance
+    val currentTimerHabit: Habit? get() = habit
+
+    private var presenter: ShowHabitPresenter? = null
+    private val scoreLabels = resources.getStringArray(R.array.strengthIntervalNames)
+    private val barNumericalLabels = resources.getStringArray(R.array.strengthIntervalNames)
+    private val barBoolLabels = resources.getStringArray(R.array.strengthIntervalNamesWithoutDay)
+
+    private val timerListener = TimerSessionManager.Listener {
+        post { syncTimerState() }
+    }
+
+    private fun resolveComposeColors(): UHabitComposeColors {
+        val palette = MainTabsThemeBridge.resolve(context)
+        return UHabitComposeColors.fromPalette(
+            palette,
+            cardCornerRadiusDp = palette.habitsCardCornerRadius,
+            showCardBorders = palette.showHabitCardBorders
+        )
+    }
+
     init {
         binding.toolbar.applyToolbarInsets()
+        binding.composeView.applyBottomInset()
         addView(binding.root)
+
+        binding.composeView.apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                UHabitComposeTheme(composeColors) {
+                    val state = showHabitState
+                    if (state != null) {
+                        HabitDetailsScreen(
+                            state = state,
+                            colors = composeColors,
+                            focusProgress = currentFocusProgress,
+                            isEffectiveReadUnavailable = isEffectiveReadUnavailable,
+                            effectiveUnavailableNoticeText = effectiveUnavailableNoticeText,
+                            isTimerVisible = isTimerVisible,
+                            timerUiState = timerUiState,
+                            timerActiveColor = timerActiveColor,
+                            timerAlertIssue = timerAlertIssue,
+                            onToggleTimer = { toggleTimer() },
+                            onSwitchTimerMode = { mode -> habit?.let { manager?.switchMode(it, mode) } },
+                            onResetTimer = { manager?.resetCurrent() },
+                            onFinishTimer = { manager?.finishCurrent() },
+                            onTakeTimerBreak = { manager?.takeBreakCurrent() },
+                            onUpdateTimerDurations = { focus, rest -> habit?.let { manager?.updateDurations(it, focus, rest) } },
+                            onFixTimerAlertIssue = { issue -> onFixAlertIssue?.invoke(issue) },
+                            scoreLabels = scoreLabels,
+                            onScorePeriodSelected = { pos -> presenter?.scoreCardPresenter?.onSpinnerPosition(pos) },
+                            barNumericalLabels = barNumericalLabels,
+                            barBoolLabels = barBoolLabels,
+                            onBarNumericalPeriodSelected = { pos -> presenter?.barCardPresenter?.onNumericalSpinnerPosition(pos) },
+                            onBarBoolPeriodSelected = { pos -> presenter?.barCardPresenter?.onBoolSpinnerPosition(pos) },
+                            onEditHistory = { presenter?.historyCardPresenter?.onClickEditButton() },
+                            onEffectiveNoticeClick = {
+                                val provenance = when {
+                                    state.quantityUnavailable -> R.string.effective_read_quantity_unavailable
+                                    state.hasIncompleteCoverage -> R.string.effective_read_incomplete
+                                    else -> R.string.effective_read_provenance
+                                }
+                                AlertDialog.Builder(context)
+                                    .setTitle(R.string.focus_credit_breakdown)
+                                    .setMessage(provenance)
+                                    .setPositiveButton(android.R.string.ok, null)
+                                    .show()
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        manager?.addListener(timerListener)
+        syncTimerState()
+    }
+
+    override fun onDetachedFromWindow() {
+        manager?.removeListener(timerListener)
+        super.onDetachedFromWindow()
+    }
+
+    private fun toggleTimer() {
+        val currentManager = manager ?: return
+        val currentHabit = habit ?: return
+        val action: () -> Unit = {
+            currentManager.startOrPause(currentHabit)
+        }
+        val requester = requestNotificationPermission
+        if (requester != null && !currentManager.snapshot().hasActiveSession) {
+            requester(action)
+        } else {
+            action()
+        }
+    }
+
+    private fun syncTimerState() {
+        timerUiState = computeTimerUiState(
+            manager = manager,
+            isTask = false,
+            taskId = null,
+            habit = habit
+        )
+        timerAlertIssue = alertHealthProvider?.invoke()?.let { health ->
+            when {
+                !health.notificationsEnabled -> PomodoroAlertIssue.NOTIFICATIONS_DISABLED
+                !health.channelEnabled -> PomodoroAlertIssue.CHANNEL_DISABLED
+                !health.hasSound && !health.hasVibration -> PomodoroAlertIssue.CHANNEL_SILENT
+                !health.exactAlarmsEnabled -> PomodoroAlertIssue.EXACT_ALARMS_DISABLED
+                else -> null
+            }
+        }
     }
 
     private fun setupCohesiveToolbar(data: ShowHabitState) {
@@ -91,7 +234,7 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
         currentTitleColor = titleColor
 
         binding.container.setBackgroundColor(surfaceSpec.canvasColor)
-        binding.scrollView.setBackgroundColor(surfaceSpec.canvasColor)
+        binding.composeView.setBackgroundColor(surfaceSpec.canvasColor)
         binding.toolbarDivider.setBackgroundColor(surfaceSpec.dividerColor)
         binding.toolbarDivider.visibility = if (surfaceSpec.showToolbarDivider) VISIBLE else GONE
 
@@ -133,94 +276,27 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
 
     fun setState(data: ShowHabitState) {
         isNumerical = data.isNumerical
+        isEffectiveReadUnavailable = false
+        effectiveUnavailableNoticeText = null
         setupCohesiveToolbar(data)
 
-        binding.subtitleCard.setHabitState(
-            state = data,
-            focusProgress = currentFocusProgress
-        )
+        showHabitState = data
 
-        // Maintain state on legacy views for backward-compatibility and tests,
-        // while concealing duplicate frames in favor of the unified Editorial Header.
-        binding.overviewCard.setState(data.overview)
-        binding.notesCard.setState(data.notes)
-        binding.targetCard.setState(data.target)
-        binding.targetCard.setGoalAchievement(data.goalAchievement)
-        binding.overviewCard.visibility = if (!data.isNumerical) VISIBLE else GONE
-        binding.notesCard.visibility = GONE
-        binding.targetCard.visibility = if (data.isNumerical) VISIBLE else GONE
-
-        binding.streakCard.setState(data.streaks)
-        binding.scoreCard.setState(data.scores)
-        binding.frequencyCard.setState(data.frequency)
-        binding.historyCard.setState(data.history)
-        binding.historyCard.visibility = VISIBLE
-        binding.barCard.setState(data.bar)
-        binding.scoreCard.visibility = if (data.scoreUnavailable) GONE else VISIBLE
-        binding.streakCard.visibility = if (data.streakUnavailable) GONE else VISIBLE
-        binding.barCard.visibility = if (data.quantityUnavailable) GONE else VISIBLE
-        binding.frequencyCard.visibility = if (data.quantityUnavailable) GONE else VISIBLE
-
-        // Suppress redundant effective-readincomplete notice in normal operation; only show when quantity is genuinely unavailable.
-        val showNotice = data.quantityUnavailable
-        binding.effectiveReadNotice.visibility = if (showNotice) VISIBLE else GONE
-        val provenance = when {
-            data.quantityUnavailable -> org.isoron.uhabits.R.string.effective_read_quantity_unavailable
-            data.hasIncompleteCoverage -> org.isoron.uhabits.R.string.effective_read_incomplete
-            else -> org.isoron.uhabits.R.string.effective_read_provenance
-        }
-        binding.effectiveReadNotice.setText(when {
-            data.quantityUnavailable -> R.string.effective_read_summary_unavailable
-            data.hasIncompleteCoverage -> R.string.effective_read_summary_incomplete
-            else -> R.string.effective_read_summary
-        })
-        binding.effectiveReadNotice.setOnClickListener {
-            AlertDialog.Builder(context).setTitle(R.string.focus_credit_breakdown)
-                .setMessage(provenance).setPositiveButton(android.R.string.ok, null).show()
-        }
-
-        binding.timerCard.setColor(data.theme.color(data.color).toInt())
-        val isTimerVisible = data.isNumerical && isTimerEnabled && habitUnit.isMinuteUnit()
-        binding.timerCard.visibility = if (isTimerVisible) View.VISIBLE else View.GONE
-
-        val app = context.applicationContext as? org.isoron.uhabits.HabitsApplication
-        val isClassic = app?.component?.preferences?.isClassicSectionLayout ?: false
-        val density = resources.displayMetrics.density
-        val sideMargin = if (isClassic) 0 else (16 * density).toInt()
-        val bottomMargin = if (isClassic) 0 else (10 * density).toInt()
-        val bottomPad = (32 * density).toInt()
-        val topPad = if (isClassic) 0 else (12 * density).toInt()
-        binding.linearLayout.setPadding(0, topPad, 0, bottomPad)
-        for (i in 0 until binding.linearLayout.childCount) {
-            val child = binding.linearLayout.getChildAt(i)
-            (child.layoutParams as? android.view.ViewGroup.MarginLayoutParams)?.apply {
-                leftMargin = sideMargin
-                rightMargin = sideMargin
-                marginStart = sideMargin
-                marginEnd = sideMargin
-                topMargin = 0
-                this.bottomMargin = bottomMargin
-            }
-        }
-
-        binding.linearLayout.applyBottomInset()
+        timerActiveColor = data.theme.color(data.color).toInt()
+        val timerVisible = data.isNumerical && isTimerEnabled && habitUnit.isMinuteUnit()
+        isTimerVisible = timerVisible
+        timerCardInstance.setColor(timerActiveColor)
+        timerCardInstance.visibility = if (timerVisible) View.VISIBLE else View.GONE
     }
 
     /** Integrity failure must not leave a previous/manual-only result visible. Editing stays manual. */
     fun setEffectiveReadUnavailable() {
-        listOf(
-            binding.overviewCard, binding.targetCard, binding.scoreCard, binding.streakCard,
-            binding.historyCard, binding.barCard, binding.frequencyCard
-        ).forEach { it.visibility = GONE }
-        binding.effectiveReadNotice.visibility = VISIBLE
-        binding.effectiveReadNotice.setText(org.isoron.uhabits.R.string.effective_read_unavailable)
-        binding.effectiveReadNotice.setOnClickListener(null)
+        isEffectiveReadUnavailable = true
+        effectiveUnavailableNoticeText = context.getString(R.string.effective_read_unavailable)
     }
 
     fun setListener(presenter: ShowHabitPresenter) {
-        binding.scoreCard.setListener(presenter.scoreCardPresenter)
-        binding.historyCard.setListener(presenter.historyCardPresenter)
-        binding.barCard.setListener(presenter.barCardPresenter)
+        this.presenter = presenter
     }
 
     fun initTimer(
@@ -230,29 +306,75 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
         requestNotificationPermission: (onReady: () -> Unit) -> Unit,
         onFixAlertIssue: (PomodoroAlertIssue) -> Unit
     ) {
+        if (isAttachedToWindow) this.manager?.removeListener(timerListener)
         habitUnit = habit.unit
         isTimerEnabled = habit.timerEnabled
-        binding.timerCard.setNotificationPermissionRequester(requestNotificationPermission)
-        binding.timerCard.setAlertHealth(completionNotifier::health, onFixAlertIssue)
-        binding.timerCard.setHabit(habit, manager)
-    }
+        this.habit = habit
+        this.manager = manager
+        this.requestNotificationPermission = requestNotificationPermission
+        this.alertHealthProvider = completionNotifier::health
+        this.onFixAlertIssue = onFixAlertIssue
+        manager.prepare(habit)
+        if (isAttachedToWindow) manager.addListener(timerListener)
 
-    val timerCard: TimerCardView get() = binding.timerCard
+        timerCardInstance.setNotificationPermissionRequester(requestNotificationPermission)
+        timerCardInstance.setAlertHealth(completionNotifier::health, onFixAlertIssue)
+        timerCardInstance.setHabit(habit, manager)
+        syncTimerState()
+    }
 
     fun updateHabit(habit: Habit) {
         habitUnit = habit.unit
         isTimerEnabled = habit.timerEnabled
-        binding.timerCard.updateHabit(habit)
+        this.habit = habit
+        manager?.prepare(habit)
+        timerCardInstance.updateHabit(habit)
+        syncTimerState()
     }
 
-    fun refreshTimerAlertHealth() = binding.timerCard.refreshAlertHealth()
+    fun refreshTimerAlertHealth() {
+        timerCardInstance.refreshAlertHealth()
+        syncTimerState()
+    }
 
-    fun resetCalendarEditMode() = binding.historyCard.resetEditMode()
+    fun resetCalendarEditMode() = Unit
+
+    fun updateAppearance() {
+        val app = context.applicationContext as? org.isoron.uhabits.HabitsApplication
+        val isClassic = app?.component?.preferences?.isClassicSectionLayout ?: false
+        val palette = MainTabsThemeBridge.resolve(context)
+        val surfaceSpec = resolveShowHabitSurfaceSpec(palette, isClassic)
+
+        toolbarForegroundColor = surfaceSpec.iconColor
+        currentTitleColor = surfaceSpec.iconColor
+
+        binding.container.setBackgroundColor(surfaceSpec.canvasColor)
+        binding.composeView.setBackgroundColor(surfaceSpec.canvasColor)
+        binding.toolbarDivider.setBackgroundColor(surfaceSpec.dividerColor)
+        binding.toolbarDivider.visibility = if (surfaceSpec.showToolbarDivider) VISIBLE else GONE
+        binding.toolbar.setBackgroundColor(surfaceSpec.toolbarColor)
+        binding.toolbar.setTitleTextColor(currentTitleColor)
+
+        (context as? AppCompatActivity)?.let { activity ->
+            activity.window.statusBarColor = surfaceSpec.statusBarColor
+            activity.window.navigationBarColor = surfaceSpec.navigationBarColor
+            val insetsController = WindowInsetsControllerCompat(activity.window, binding.root)
+            insetsController.isAppearanceLightStatusBars = surfaceSpec.isLightSystemBars
+            insetsController.isAppearanceLightNavigationBars = surfaceSpec.isLightSystemBars
+        }
+
+        harmonizeToolbar(toolbarForegroundColor)
+
+        val habitColors = UHabitComposeColors.fromPalette(
+            palette,
+            cardCornerRadiusDp = palette.habitsCardCornerRadius,
+            showCardBorders = palette.showHabitCardBorders
+        )
+        composeColors = habitColors
+        timerCardInstance.updateColors(habitColors)
+    }
 
     fun setFocusProgress(progress: FocusProgressPresentation?, unavailable: Boolean = false) {
         this.currentFocusProgress = progress
-        binding.targetCard.setFocusProgress(progress, unavailable)
-        binding.targetCard.visibility = if (isNumerical) VISIBLE else GONE
-        binding.subtitleCard.setFocusProgress(progress)
     }
 }

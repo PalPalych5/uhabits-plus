@@ -40,10 +40,7 @@ class NotesCardViewTest : BaseViewTest() {
     @Before
     override fun setUp() {
         super.setUp()
-        view = LayoutInflater
-            .from(targetContext)
-            .inflate(R.layout.show_habit, null)
-            .findViewById(R.id.notesCard)
+        view = NotesCardView(targetContext)
         view.setState(NotesCardState(description = "This is a test description"))
         measureView(view, 800f, 200f)
     }

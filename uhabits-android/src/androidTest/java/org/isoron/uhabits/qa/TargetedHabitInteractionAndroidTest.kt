@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 Álinson Santos Xavier and contributors. GPL-3.0-or-later. */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 package org.isoron.uhabits.qa
 
 import android.content.Context
@@ -786,10 +786,7 @@ class TargetedHabitInteractionAndroidTest {
             scenario.onActivity { activity ->
                 assertTrue("ShowHabitActivity must be active", activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
                 assertFalse("Activity must not be finishing", activity.isFinishing)
-                assertNotNull("Overview card must exist", activity.findViewById<View>(R.id.overviewCard))
-                assertNotNull("Target card must exist", activity.findViewById<View>(R.id.targetCard))
-                assertNotNull("Score card must exist", activity.findViewById<View>(R.id.scoreCard))
-                assertNotNull("History card must exist", activity.findViewById<View>(R.id.historyCard))
+                assertNotNull("Compose view must exist", activity.findViewById<View>(R.id.composeView))
             }
         }
 

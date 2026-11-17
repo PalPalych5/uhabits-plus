@@ -30,14 +30,26 @@ class ScoreCardView @JvmOverloads constructor(
     private var cardState by mutableStateOf<ScoreCardState?>(null)
     private var presenter: ScoreCardPresenter? = null
     private val labels = resources.getStringArray(R.array.strengthIntervalNames)
+    private var composeColors by mutableStateOf(resolveComposeColors())
+
+    private fun resolveComposeColors(): UHabitComposeColors {
+        val palette = MainTabsThemeBridge.resolve(context)
+        return UHabitComposeColors.fromPalette(
+            palette,
+            cardCornerRadiusDp = palette.habitsCardCornerRadius,
+            showCardBorders = palette.showHabitCardBorders
+        )
+    }
+
+    fun updateColors(colors: UHabitComposeColors = resolveComposeColors()) {
+        composeColors = colors
+    }
 
     init {
         val composeView = ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
-                val palette = MainTabsThemeBridge.resolve(context)
-                val colors = UHabitComposeColors.fromPalette(palette, cardCornerRadiusDp = palette.statisticsCardCornerRadius, showCardBorders = palette.showHabitCardBorders)
-                UHabitComposeTheme(colors) {
+                UHabitComposeTheme(composeColors) {
                     val current = cardState
                     if (current != null) {
                         HabitStatisticsSection(

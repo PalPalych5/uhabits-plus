@@ -83,7 +83,7 @@ import org.isoron.uhabits.utils.showMessage
 import org.isoron.uhabits.utils.showSendFileScreen
 import org.isoron.uhabits.widgets.WidgetUpdater
 
-class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoron.uhabits.core.models.ModelObservable.Listener {
+class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoron.uhabits.core.models.ModelObservable.Listener, Preferences.Listener {
 
     private lateinit var commandRunner: CommandRunner
     private lateinit var menu: ShowHabitMenu
@@ -148,6 +148,7 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
         habit = selectedHabit
         initialDatasetId = appComponent.session.datasetId
         preferences = appComponent.preferences
+        preferences.addListener(this)
         commandRunner = appComponent.commandRunner
         widgetUpdater = appComponent.widgetUpdater
         focusCredit = appComponent.focusCreditController
@@ -271,9 +272,26 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
     }
 
     override fun onDestroy() {
+        if (::preferences.isInitialized) {
+            preferences.removeListener(this)
+        }
         scope.cancel()
         effectiveHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
+    }
+
+    override fun onCardCornersChanged() {
+        runOnUiThread {
+            view.updateAppearance()
+            screen.refresh()
+        }
+    }
+
+    override fun onHabitListAppearanceChanged() {
+        runOnUiThread {
+            view.updateAppearance()
+            screen.refresh()
+        }
     }
 
     override fun onCommandFinished(command: Command) {

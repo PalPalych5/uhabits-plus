@@ -1,7 +1,4 @@
-/*
- * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
- * SPDX-License-Identifier: GPL-3.0-or-later
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 
 package org.isoron.uhabits.activities.habits.show.views
 
@@ -47,6 +44,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -56,8 +54,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.viewinterop.AndroidView
 import org.isoron.platform.gui.AndroidDataView
+import org.isoron.uhabits.activities.common.views.CompactPopupMenu
+import org.isoron.uhabits.activities.habits.show.timer.PomodoroAlertIssue
+import org.isoron.uhabits.core.timer.TimerMode
 import org.isoron.platform.gui.toInt
 import org.isoron.platform.time.JavaLocalDateFormatter
 import org.isoron.uhabits.R
@@ -490,50 +496,131 @@ fun HabitOverview(
 
     HabitSectionCard(modifier = modifier) {
         HabitSectionHeader(title = stringResource(R.string.overview))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Primary Unit: Ring + Score Percentage + Label
+        val fontScale = LocalDensity.current.fontScale
+        val isLargeFont = fontScale > 1.25f
+
+        if (!isLargeFont) {
             Row(
-                modifier = Modifier.weight(1.35f),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                val percentage = state.scoreToday.let { if (it.isNaN()) 0f else it.toFloat().coerceIn(0f, 1f) }
-                Canvas(modifier = Modifier.size(30.dp)) {
-                    val strokeWidth = 5.dp.toPx()
-                    val halfStroke = strokeWidth / 2f
-                    val arcSize = size.minDimension - strokeWidth
-                    drawCircle(
-                        color = Color(colors.foreground).copy(alpha = 0.15f),
-                        radius = arcSize / 2f,
-                        style = Stroke(width = strokeWidth)
-                    )
-                    if (percentage >= 1f) {
+                // Primary Unit: Ring + Score Percentage + Label
+                Row(
+                    modifier = Modifier.weight(1.55f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    val percentage = state.scoreToday.let { if (it.isNaN()) 0f else it.toFloat().coerceIn(0f, 1f) }
+                    Canvas(modifier = Modifier.size(30.dp)) {
+                        val strokeWidth = 5.dp.toPx()
+                        val halfStroke = strokeWidth / 2f
+                        val arcSize = size.minDimension - strokeWidth
                         drawCircle(
-                            color = accentColor,
+                            color = Color(colors.foreground).copy(alpha = 0.15f),
                             radius = arcSize / 2f,
                             style = Stroke(width = strokeWidth)
                         )
-                    } else if (percentage > 0f) {
-                        drawArc(
-                            color = accentColor,
-                            startAngle = -90f,
-                            sweepAngle = percentage * 360f,
-                            useCenter = false,
-                            topLeft = androidx.compose.ui.geometry.Offset(halfStroke, halfStroke),
-                            size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
-                            style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                        if (percentage >= 1f) {
+                            drawCircle(
+                                color = accentColor,
+                                radius = arcSize / 2f,
+                                style = Stroke(width = strokeWidth)
+                            )
+                        } else if (percentage > 0f) {
+                            drawArc(
+                                color = accentColor,
+                                startAngle = -90f,
+                                sweepAngle = percentage * 360f,
+                                useCenter = false,
+                                topLeft = androidx.compose.ui.geometry.Offset(halfStroke, halfStroke),
+                                size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
+                                style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(horizontalAlignment = Alignment.Start) {
+                        BasicText(
+                            text = String.format("%.0f%%", state.scoreToday * 100),
+                            style = TextStyle(
+                                color = accentColor,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Normal
+                            )
+                        )
+                        BasicText(
+                            text = stringResource(R.string.score),
+                            style = TextStyle(
+                                color = Color(colors.secondary),
+                                fontSize = 13.sp
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
-                Spacer(modifier = Modifier.width(8.dp))
-                Column(horizontalAlignment = Alignment.Start) {
+
+                // Column 2: Month Diff
+                Column(
+                    modifier = Modifier.weight(0.85f),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    val isPositive = state.scoreMonthDiff >= 0
+                    val color = if (isPositive) accentColor else Color(colors.secondary)
                     BasicText(
-                        text = String.format("%.0f%%", state.scoreToday * 100),
+                        text = formatDiff(state.scoreMonthDiff),
+                        style = TextStyle(
+                            color = color,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    )
+                    BasicText(
+                        text = stringResource(R.string.month),
+                        style = TextStyle(
+                            color = Color(colors.secondary),
+                            fontSize = 13.sp
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // Column 3: Year Diff
+                Column(
+                    modifier = Modifier.weight(0.8f),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    val isPositive = state.scoreYearDiff >= 0
+                    val color = if (isPositive) accentColor else Color(colors.secondary)
+                    BasicText(
+                        text = formatDiff(state.scoreYearDiff),
+                        style = TextStyle(
+                            color = color,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    )
+                    BasicText(
+                        text = stringResource(R.string.year),
+                        style = TextStyle(
+                            color = Color(colors.secondary),
+                            fontSize = 13.sp
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // Column 4: Total Count (numeric value colored with habit accent)
+                Column(
+                    modifier = Modifier.weight(0.8f),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    BasicText(
+                        text = "${state.totalCount}",
                         style = TextStyle(
                             color = accentColor,
                             fontSize = 15.sp,
@@ -541,83 +628,156 @@ fun HabitOverview(
                         )
                     )
                     BasicText(
-                        text = stringResource(R.string.score),
+                        text = stringResource(R.string.total),
                         style = TextStyle(
                             color = Color(colors.secondary),
                             fontSize = 13.sp
-                        )
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
-
-            // Column 2: Month Diff
+        } else {
+            // Accessibility enlarged font scale (>= 1.3x up to 2.0x): responsive 2-row layout prevents text truncation
             Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.CenterHorizontally
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
             ) {
-                val isPositive = state.scoreMonthDiff >= 0
-                val color = if (isPositive) accentColor else Color(colors.secondary)
-                BasicText(
-                    text = formatDiff(state.scoreMonthDiff),
-                    style = TextStyle(
-                        color = color,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Normal
-                    )
-                )
-                BasicText(
-                    text = stringResource(R.string.month),
-                    style = TextStyle(
-                        color = Color(colors.secondary),
-                        fontSize = 13.sp
-                    )
-                )
-            }
+                // Row 1: Primary Score (left) & Total Count (right)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1.4f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Start
+                    ) {
+                        val percentage = state.scoreToday.let { if (it.isNaN()) 0f else it.toFloat().coerceIn(0f, 1f) }
+                        Canvas(modifier = Modifier.size(30.dp)) {
+                            val strokeWidth = 5.dp.toPx()
+                            val halfStroke = strokeWidth / 2f
+                            val arcSize = size.minDimension - strokeWidth
+                            drawCircle(
+                                color = Color(colors.foreground).copy(alpha = 0.15f),
+                                radius = arcSize / 2f,
+                                style = Stroke(width = strokeWidth)
+                            )
+                            if (percentage >= 1f) {
+                                drawCircle(
+                                    color = accentColor,
+                                    radius = arcSize / 2f,
+                                    style = Stroke(width = strokeWidth)
+                                )
+                            } else if (percentage > 0f) {
+                                drawArc(
+                                    color = accentColor,
+                                    startAngle = -90f,
+                                    sweepAngle = percentage * 360f,
+                                    useCenter = false,
+                                    topLeft = androidx.compose.ui.geometry.Offset(halfStroke, halfStroke),
+                                    size = androidx.compose.ui.geometry.Size(arcSize, arcSize),
+                                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(horizontalAlignment = Alignment.Start) {
+                            BasicText(
+                                text = String.format("%.0f%%", state.scoreToday * 100),
+                                style = TextStyle(
+                                    color = accentColor,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Normal
+                                )
+                            )
+                            BasicText(
+                                text = stringResource(R.string.score),
+                                style = TextStyle(
+                                    color = Color(colors.secondary),
+                                    fontSize = 13.sp
+                                )
+                            )
+                        }
+                    }
 
-            // Column 3: Year Diff
-            Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                val isPositive = state.scoreYearDiff >= 0
-                val color = if (isPositive) accentColor else Color(colors.secondary)
-                BasicText(
-                    text = formatDiff(state.scoreYearDiff),
-                    style = TextStyle(
-                        color = color,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Normal
-                    )
-                )
-                BasicText(
-                    text = stringResource(R.string.year),
-                    style = TextStyle(
-                        color = Color(colors.secondary),
-                        fontSize = 13.sp
-                    )
-                )
-            }
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        BasicText(
+                            text = "${state.totalCount}",
+                            style = TextStyle(
+                                color = accentColor,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Normal
+                            )
+                        )
+                        BasicText(
+                            text = stringResource(R.string.total),
+                            style = TextStyle(
+                                color = Color(colors.secondary),
+                                fontSize = 13.sp
+                            )
+                        )
+                    }
+                }
 
-            // Column 4: Total Count (numeric value colored with habit accent)
-            Column(
-                modifier = Modifier.weight(1f),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                BasicText(
-                    text = "${state.totalCount}",
-                    style = TextStyle(
-                        color = accentColor,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Normal
-                    )
-                )
-                BasicText(
-                    text = stringResource(R.string.total),
-                    style = TextStyle(
-                        color = Color(colors.secondary),
-                        fontSize = 13.sp
-                    )
-                )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Row 2: Month Diff (left) & Year Diff (right)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1.4f),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        val isPositive = state.scoreMonthDiff >= 0
+                        val color = if (isPositive) accentColor else Color(colors.secondary)
+                        BasicText(
+                            text = formatDiff(state.scoreMonthDiff),
+                            style = TextStyle(
+                                color = color,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Normal
+                            )
+                        )
+                        BasicText(
+                            text = stringResource(R.string.month),
+                            style = TextStyle(
+                                color = Color(colors.secondary),
+                                fontSize = 13.sp
+                            )
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        val isPositive = state.scoreYearDiff >= 0
+                        val color = if (isPositive) accentColor else Color(colors.secondary)
+                        BasicText(
+                            text = formatDiff(state.scoreYearDiff),
+                            style = TextStyle(
+                                color = color,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Normal
+                            )
+                        )
+                        BasicText(
+                            text = stringResource(R.string.year),
+                            style = TextStyle(
+                                color = Color(colors.secondary),
+                                fontSize = 13.sp
+                            )
+                        )
+                    }
+                }
             }
         }
     }
@@ -1049,6 +1209,269 @@ fun HabitFrequencySection(
                     .fillMaxWidth()
                     .height(180.dp)
                     .clipToBounds()
+            )
+        }
+    }
+}
+
+/** Notice banner displayed when automatic effective read has integrity or coverage issues. */
+@Composable
+fun HabitEffectiveReadNotice(
+    state: ShowHabitState,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = LocalUHabitComposeColors.current
+    val noticeText = when {
+        state.quantityUnavailable -> stringResource(R.string.effective_read_summary_unavailable)
+        state.hasIncompleteCoverage -> stringResource(R.string.effective_read_summary_incomplete)
+        else -> stringResource(R.string.effective_read_summary)
+    }
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        contentAlignment = Alignment.CenterStart
+    ) {
+        BasicText(
+            text = noticeText,
+            style = TextStyle(
+                color = Color(colors.foreground).copy(alpha = 0.7f),
+                fontSize = 12.sp,
+                lineHeight = 16.sp
+            )
+        )
+    }
+}
+
+/**
+ * Unified Jetpack Compose screen for Habit Details.
+ *
+ * Replaces the fragmented XML ScrollView + 10 individual ComposeView wrappers
+ * with a single coherent native Compose dashboard.
+ */
+@Composable
+fun HabitDetailsScreen(
+    state: ShowHabitState,
+    colors: UHabitComposeColors = LocalUHabitComposeColors.current,
+    modifier: Modifier = Modifier,
+    scrollState: ScrollState = rememberScrollState(),
+    focusProgress: FocusProgressPresentation? = null,
+    isEffectiveReadUnavailable: Boolean = false,
+    effectiveUnavailableNoticeText: String? = null,
+    // Timer state and interactions
+    isTimerVisible: Boolean = false,
+    timerUiState: TimerUiState? = null,
+    timerActiveColor: Int = colors.accent,
+    timerAlertIssue: PomodoroAlertIssue? = null,
+    onToggleTimer: (() -> Unit)? = null,
+    onSwitchTimerMode: ((TimerMode) -> Unit)? = null,
+    onResetTimer: (() -> Unit)? = null,
+    onFinishTimer: (() -> Unit)? = null,
+    onTakeTimerBreak: (() -> Unit)? = null,
+    onUpdateTimerDurations: ((Int, Int) -> Unit)? = null,
+    onFixTimerAlertIssue: ((PomodoroAlertIssue) -> Unit)? = null,
+    // Period selectors & labels
+    scoreLabels: Array<String> = emptyArray(),
+    onScorePeriodSelected: ((Int) -> Unit)? = null,
+    barNumericalLabels: Array<String> = emptyArray(),
+    barBoolLabels: Array<String> = emptyArray(),
+    onBarNumericalPeriodSelected: ((Int) -> Unit)? = null,
+    onBarBoolPeriodSelected: ((Int) -> Unit)? = null,
+    // History callbacks
+    onEditHistory: (() -> Unit)? = null,
+    onDateClickedListener: OnDateClickedListener? = null,
+    // Effective read notice
+    onEffectiveNoticeClick: (() -> Unit)? = null
+) {
+    val context = LocalContext.current
+    val hostView = LocalView.current
+    val isClassic = colors.isClassicSectionLayout
+    val horizontalMargin = if (isClassic) 0.dp else 16.dp
+    val topPadding = if (isClassic) 0.dp else 12.dp
+    val interCardSpacing = if (isClassic) 0.dp else 10.dp
+    val bottomPadding = 32.dp
+
+    val readOnlyDateClickListener = remember(onDateClickedListener) {
+        onDateClickedListener ?: object : OnDateClickedListener {
+            override fun onDateShortPress(date: org.isoron.platform.time.LocalDate) = Unit
+            override fun onDateLongPress(date: org.isoron.platform.time.LocalDate) = Unit
+        }
+    }
+
+    var selectedStreakPeriod by remember { mutableStateOf(StreakPeriod.ALL) }
+    val streakPeriodOptions = remember {
+        listOf(
+            StreakPeriod.WEEK to R.string.reports_tab_week,
+            StreakPeriod.MONTH to R.string.reports_tab_month,
+            StreakPeriod.ALL to R.string.reports_tab_all
+        )
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(scrollState)
+            .padding(horizontal = horizontalMargin)
+            .padding(top = topPadding, bottom = bottomPadding),
+        verticalArrangement = Arrangement.spacedBy(interCardSpacing)
+    ) {
+        // 1. Subtitle & Narrative Header (Always visible)
+        HabitDetailsEditorialHeader(
+            state = state,
+            focusProgress = focusProgress
+        )
+
+        if (isEffectiveReadUnavailable) {
+            val text = effectiveUnavailableNoticeText ?: stringResource(R.string.effective_read_unavailable)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                BasicText(
+                    text = text,
+                    style = TextStyle(
+                        color = Color(colors.foreground).copy(alpha = 0.7f),
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+                )
+            }
+            return@Column
+        }
+
+        // 2. Timer (Visible for numerical minute habits with timer enabled)
+        if (isTimerVisible && timerUiState != null) {
+            FocusTimerContent(
+                state = timerUiState,
+                colors = colors.copy(accent = timerActiveColor),
+                onSwitchMode = { mode -> onSwitchTimerMode?.invoke(mode) },
+                onTogglePlayPause = { onToggleTimer?.invoke() },
+                onReset = { onResetTimer?.invoke() },
+                onFinish = { onFinishTimer?.invoke() },
+                onTakeBreak = { onTakeTimerBreak?.invoke() },
+                onUpdateDurations = { focus, rest -> onUpdateTimerDurations?.invoke(focus, rest) },
+                alertIssue = timerAlertIssue,
+                onFixAlertIssue = { issue -> onFixTimerAlertIssue?.invoke(issue) }
+            )
+        }
+
+        // 3. Overview (Binary habits only)
+        if (!state.isNumerical) {
+            HabitOverview(
+                state = state.overview
+            )
+        }
+
+        // 4. Target Progress (Numerical habits only)
+        if (state.isNumerical) {
+            HabitTargetProgress(
+                progress = focusProgress,
+                state = state.target,
+                unavailable = state.quantityUnavailable,
+                goalAchievement = state.goalAchievement
+            )
+        }
+
+        // 5. Effective Read Notice (When automatic quantity read has integrity/coverage issues)
+        if (state.quantityUnavailable) {
+            HabitEffectiveReadNotice(
+                state = state,
+                onClick = { onEffectiveNoticeClick?.invoke() }
+            )
+        }
+
+        // 6. Score Trend Section
+        if (!state.scoreUnavailable) {
+            HabitStatisticsSection(
+                state = state.scores,
+                periodLabel = scoreLabels.getOrElse(state.scores.spinnerPosition) { "" },
+                onSelectPeriod = { anchorRect ->
+                    CompactPopupMenu.show(
+                        anchor = hostView,
+                        anchorRectOnScreen = anchorRect,
+                        entries = scoreLabels.mapIndexed { index, label ->
+                            CompactPopupMenu.Entry.Item(
+                                id = index,
+                                title = label,
+                                selected = index == state.scores.spinnerPosition
+                            )
+                        },
+                        onItemClick = { pos -> onScorePeriodSelected?.invoke(pos) }
+                    )
+                }
+            )
+        }
+
+        // 7. Bar History Section
+        if (!state.quantityUnavailable) {
+            val barLabels = if (state.bar.isNumerical) barNumericalLabels else barBoolLabels
+            val barPos = if (state.bar.isNumerical) state.bar.numericalSpinnerPosition else state.bar.boolSpinnerPosition
+            HabitBarHistorySection(
+                state = state.bar,
+                periodLabel = barLabels.getOrElse(barPos) { "" },
+                onSelectPeriod = { anchorRect ->
+                    CompactPopupMenu.show(
+                        anchor = hostView,
+                        anchorRectOnScreen = anchorRect,
+                        entries = barLabels.mapIndexed { index, label ->
+                            CompactPopupMenu.Entry.Item(
+                                id = index,
+                                title = label,
+                                selected = index == barPos
+                            )
+                        },
+                        onItemClick = { pos ->
+                            if (state.bar.isNumerical) onBarNumericalPeriodSelected?.invoke(pos)
+                            else onBarBoolPeriodSelected?.invoke(pos)
+                        }
+                    )
+                }
+            )
+        }
+
+        // 8. History Calendar Grid
+        HabitHistoryCalendar(
+            state = state.history,
+            onEditClicked = { onEditHistory?.invoke() },
+            onDateClickedListener = readOnlyDateClickListener
+        )
+
+        // 9. Streaks Summary (Ordered: latest streak first, then best streaks)
+        if (!state.streakUnavailable) {
+            val activeLabelRes = streakPeriodOptions.firstOrNull { it.first == selectedStreakPeriod }?.second
+                ?: R.string.reports_tab_all
+            HabitStreakSummary(
+                state = state.streaks,
+                selectedPeriod = selectedStreakPeriod,
+                periodLabel = context.getString(activeLabelRes),
+                onSelectPeriod = { anchorRect ->
+                    CompactPopupMenu.show(
+                        anchor = hostView,
+                        anchorRectOnScreen = anchorRect,
+                        entries = streakPeriodOptions.mapIndexed { index, (period, labelRes) ->
+                            CompactPopupMenu.Entry.Item(
+                                id = index,
+                                title = context.getString(labelRes),
+                                selected = period == selectedStreakPeriod
+                            )
+                        },
+                        onItemClick = { index ->
+                            streakPeriodOptions.getOrNull(index)?.first?.let { selectedStreakPeriod = it }
+                        }
+                    )
+                }
+            )
+        }
+
+        // 10. Frequency Breakdown Section
+        if (!state.quantityUnavailable) {
+            HabitFrequencySection(
+                state = state.frequency
             )
         }
     }

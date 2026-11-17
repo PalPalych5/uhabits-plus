@@ -40,10 +40,7 @@ class OverviewCardViewTest : BaseViewTest() {
     @Before
     override fun setUp() {
         super.setUp()
-        view = LayoutInflater
-            .from(targetContext)
-            .inflate(R.layout.show_habit, null)
-            .findViewById<View>(R.id.overviewCard) as OverviewCardView
+        view = OverviewCardView(targetContext)
         view.setState(
             OverviewCardState(
                 scoreToday = 0.74f,

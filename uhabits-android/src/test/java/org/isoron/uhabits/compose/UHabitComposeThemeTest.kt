@@ -1,7 +1,4 @@
-/*
- * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
- * SPDX-License-Identifier: GPL-3.0-or-later
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 package org.isoron.uhabits.compose
 
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -201,5 +198,54 @@ class UHabitComposeThemeTest {
             amoledFlatChartTheme.cardBackgroundColor,
             equalTo(org.isoron.platform.gui.Color(0xFF000000.toInt()))
         )
+    }
+
+    @Test
+    fun testHabitCardsFollowHabitsCardCornerRadiusByDefault() {
+        val palette = lightPalette(habitsRadius = 14, statsRadius = 24, showBorders = true)
+        val defaultColors = UHabitComposeColors.fromPalette(palette)
+        assertThat(defaultColors.cardCornerRadiusDp, equalTo(14))
+        assertThat(defaultColors.habitsCardCornerRadiusDp, equalTo(14))
+        assertThat(defaultColors.statisticsCardCornerRadiusDp, equalTo(24))
+
+        // When user modifies habits corner radius to 0 (crisp rectangle / Classic)
+        val flatPalette = lightPalette(habitsRadius = 0, statsRadius = 24, showBorders = true)
+        val flatColors = UHabitComposeColors.fromPalette(flatPalette)
+        assertThat(flatColors.cardCornerRadiusDp, equalTo(0))
+        assertThat(flatColors.resolveCardShape(), equalTo(RectangleShape))
+    }
+
+    @Test
+    fun testClassicSectionLayoutCharacteristics() {
+        val amoledClassicPalette = amoledPalette(showBorders = true).copy(isClassicSectionLayout = true)
+        val amoledClassicColors = UHabitComposeColors.fromPalette(amoledClassicPalette)
+        assertThat(amoledClassicColors.isClassicSectionLayout, equalTo(true))
+        assertThat(amoledClassicColors.resolveSectionSurfaceColor(), equalTo(androidx.compose.ui.graphics.Color.Black))
+
+        val lightClassicPalette = lightPalette().copy(isClassicSectionLayout = true)
+        val lightClassicColors = UHabitComposeColors.fromPalette(lightClassicPalette)
+        assertThat(lightClassicColors.isClassicSectionLayout, equalTo(true))
+        assertThat(lightClassicColors.resolveSectionSurfaceColor(), equalTo(androidx.compose.ui.graphics.Color(lightClassicPalette.surface)))
+    }
+
+    @Test
+    fun testShowHabitSurfaceSpecCardsVsClassic() {
+        val amoledPalette = amoledPalette(showBorders = true)
+        val amoledCardsSpec = org.isoron.uhabits.activities.habits.show.resolveShowHabitSurfaceSpec(
+            amoledPalette,
+            isClassicSectionLayout = false
+        )
+        assertThat(amoledCardsSpec.showToolbarDivider, equalTo(false))
+        assertThat(amoledCardsSpec.canvasColor, equalTo(amoledPalette.background))
+
+        val amoledClassicSpec = org.isoron.uhabits.activities.habits.show.resolveShowHabitSurfaceSpec(
+            amoledPalette,
+            isClassicSectionLayout = true
+        )
+        assertThat(amoledClassicSpec.showToolbarDivider, equalTo(true))
+        assertThat(amoledClassicSpec.canvasColor, equalTo(android.graphics.Color.BLACK))
+        assertThat(amoledClassicSpec.toolbarColor, equalTo(android.graphics.Color.BLACK))
+        assertThat(amoledClassicSpec.statusBarColor, equalTo(android.graphics.Color.BLACK))
+        assertThat(amoledClassicSpec.navigationBarColor, equalTo(android.graphics.Color.BLACK))
     }
 }

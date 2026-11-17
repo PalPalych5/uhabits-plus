@@ -24,88 +24,10 @@
         android:layout_below="@id/toolbar"
         android:visibility="gone" />
 
-    <ScrollView
-        android:id="@+id/scrollView"
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/composeView"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_below="@id/toolbarDivider"
-        android:background="?windowBackgroundColor"
-        android:clipToPadding="false"
-        android:scrollbars="none">
-
-        <LinearLayout
-            style="@style/CardList"
-            android:id="@+id/linearLayout"
-            android:paddingTop="6dp"
-            android:paddingBottom="32dp"
-            android:clipToPadding="false">
-
-            <org.isoron.uhabits.activities.habits.show.views.SubtitleCardView
-                android:id="@+id/subtitleCard"
-                style="@style/ShowHabit.Subtitle" />
-
-            <org.isoron.uhabits.activities.habits.show.views.TimerCardView
-                android:id="@+id/timerCard"
-                style="@style/ShowHabit.Card"
-                android:visibility="gone" />
-
-            <org.isoron.uhabits.activities.habits.show.views.NotesCardView
-                android:id="@+id/notesCard"
-                style="@style/ShowHabit.Card"
-                android:gravity="center" />
-
-            <org.isoron.uhabits.activities.habits.show.views.OverviewCardView
-                android:id="@+id/overviewCard"
-                style="@style/ShowHabit.Card" />
-
-            <org.isoron.uhabits.activities.habits.show.views.TargetCardView
-                android:id="@+id/targetCard"
-                style="@style/ShowHabit.Card" />
-
-            <TextView
-                android:id="@+id/effectiveReadNotice"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="16dp"
-                android:layout_marginEnd="16dp"
-                android:layout_marginBottom="10dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
-                android:paddingTop="10dp"
-                android:paddingBottom="10dp"
-                android:minHeight="44dp"
-                android:gravity="center_vertical"
-                android:background="?attr/selectableItemBackground"
-                android:clickable="true"
-                android:focusable="true"
-                android:textSize="12sp"
-                android:textColor="?contrast100"
-                android:visibility="gone" />
-
-            <org.isoron.uhabits.activities.habits.show.views.ScoreCardView
-                android:id="@+id/scoreCard"
-                style="@style/ShowHabit.Card"
-                android:gravity="center" />
-
-            <org.isoron.uhabits.activities.habits.show.views.BarCardView
-                android:id="@+id/barCard"
-                style="@style/ShowHabit.Card"
-                android:gravity="center" />
-
-            <org.isoron.uhabits.activities.habits.show.views.HistoryCardView
-                android:id="@+id/historyCard"
-                style="@style/ShowHabit.Card"
-                android:gravity="center" />
-
-            <org.isoron.uhabits.activities.habits.show.views.StreakCardView
-                android:id="@+id/streakCard"
-                style="@style/ShowHabit.Card" />
-
-            <org.isoron.uhabits.activities.habits.show.views.FrequencyCardView
-                android:id="@+id/frequencyCard"
-                style="@style/ShowHabit.Card" />
-
-        </LinearLayout>
-    </ScrollView>
+        android:layout_below="@id/toolbarDivider" />
 
 </RelativeLayout>

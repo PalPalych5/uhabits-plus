@@ -1,7 +1,4 @@
-/*
- * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
- * SPDX-License-Identifier: GPL-3.0-or-later
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 
 package org.isoron.uhabits.activities.habits.show.views
 
@@ -49,6 +46,19 @@ class TimerCardView @JvmOverloads constructor(
     private var timerUiState by mutableStateOf(TimerUiState())
     private var composeColors by mutableStateOf<UHabitComposeColors?>(null)
 
+    private fun resolveComposeColors(): UHabitComposeColors {
+        val palette = MainTabsThemeBridge.resolve(context)
+        return UHabitComposeColors.fromPalette(
+            palette,
+            cardCornerRadiusDp = palette.habitsCardCornerRadius,
+            showCardBorders = palette.showHabitCardBorders
+        )
+    }
+
+    fun updateColors(colors: UHabitComposeColors = resolveComposeColors()) {
+        composeColors = colors
+    }
+
     private val listener = TimerSessionManager.Listener {
         post { syncState() }
     }
@@ -56,8 +66,7 @@ class TimerCardView @JvmOverloads constructor(
     private val composeView: ComposeView
 
     init {
-        val palette = MainTabsThemeBridge.resolve(context)
-        composeColors = UHabitComposeColors.fromPalette(palette, cardCornerRadiusDp = palette.statisticsCardCornerRadius, showCardBorders = palette.showHabitCardBorders)
+        composeColors = resolveComposeColors()
 
         composeView = ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)

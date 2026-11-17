@@ -153,71 +153,57 @@ class SectionsManagementAndroidTest {
             instrumentation.waitForIdleSync()
             device.waitForIdle()
 
-            waitForCondition(2000L, "IconPickerBottomSheet attached") {
+            waitForCondition(2000L, "UHabitIconPickerBottomSheet attached") {
                 var ok = false
                 scenario.onActivity { activity ->
-                    val picker = activity.supportFragmentManager.findFragmentByTag("container_icon_picker") as? org.isoron.uhabits.activities.common.icons.IconPickerBottomSheet
+                    val picker = activity.supportFragmentManager.findFragmentByTag("container_icon_picker") as? org.isoron.uhabits.activities.common.icons.UHabitIconPickerBottomSheet
                     ok = (picker != null && picker.dialog?.isShowing == true && picker.view != null)
                 }
                 ok
             }
             takeShot("02b-icon-picker") {
                 scenario.onActivity { activity ->
-                    val picker = activity.supportFragmentManager.findFragmentByTag("container_icon_picker") as? org.isoron.uhabits.activities.common.icons.IconPickerBottomSheet
-                    assertNotNull("IconPickerBottomSheet must exist", picker)
+                    val picker = activity.supportFragmentManager.findFragmentByTag("container_icon_picker") as? org.isoron.uhabits.activities.common.icons.UHabitIconPickerBottomSheet
+                    assertNotNull("UHabitIconPickerBottomSheet must exist", picker)
                 }
             }
 
             // Step 2c: Category filter (Работа)
-            scenario.onActivity { activity ->
-                val picker = activity.supportFragmentManager.findFragmentByTag("container_icon_picker") as? org.isoron.uhabits.activities.common.icons.IconPickerBottomSheet
-                val chip = picker?.requireView()?.findViewWithTag<View>(org.isoron.uhabits.activities.common.icons.IconCategory.WORK)
-                chip?.performClick()
-            }
+            device.findObject(androidx.test.uiautomator.By.text("💼 Работа"))?.click()
             instrumentation.waitForIdleSync()
             device.waitForIdle()
             takeShot("02c-icon-picker-category") {
                 scenario.onActivity { activity ->
-                    val picker = activity.supportFragmentManager.findFragmentByTag("container_icon_picker") as? org.isoron.uhabits.activities.common.icons.IconPickerBottomSheet
-                    assertNotNull("IconPickerBottomSheet must exist", picker)
+                    val picker = activity.supportFragmentManager.findFragmentByTag("container_icon_picker") as? org.isoron.uhabits.activities.common.icons.UHabitIconPickerBottomSheet
+                    assertNotNull("UHabitIconPickerBottomSheet must exist", picker)
                 }
             }
 
             // Step 2d: Search query ("портфель")
-            scenario.onActivity { activity ->
-                val picker = activity.supportFragmentManager.findFragmentByTag("container_icon_picker") as? org.isoron.uhabits.activities.common.icons.IconPickerBottomSheet
-                val searchInput = picker?.requireView()?.findViewWithTag<EditText>("icon_picker_search")
-                searchInput?.setText("портфель")
-            }
+            device.findObject(androidx.test.uiautomator.By.clazz("android.widget.EditText"))?.text = "портфель"
             instrumentation.waitForIdleSync()
             device.waitForIdle()
             takeShot("02d-icon-picker-search") {
                 scenario.onActivity { activity ->
-                    val picker = activity.supportFragmentManager.findFragmentByTag("container_icon_picker") as? org.isoron.uhabits.activities.common.icons.IconPickerBottomSheet
-                    assertNotNull("IconPickerBottomSheet must exist", picker)
+                    val picker = activity.supportFragmentManager.findFragmentByTag("container_icon_picker") as? org.isoron.uhabits.activities.common.icons.UHabitIconPickerBottomSheet
+                    assertNotNull("UHabitIconPickerBottomSheet must exist", picker)
                 }
             }
 
             // Step 2e: Emoji tab
-            scenario.onActivity { activity ->
-                val picker = activity.supportFragmentManager.findFragmentByTag("container_icon_picker") as? org.isoron.uhabits.activities.common.icons.IconPickerBottomSheet
-                val searchInput = picker?.requireView()?.findViewWithTag<EditText>("icon_picker_search")
-                searchInput?.setText("")
-                val emojiTab = picker?.requireView()?.findViewWithTag<View>("icon_picker_tab_emoji")
-                emojiTab?.performClick()
-            }
+            device.findObject(androidx.test.uiautomator.By.text("Emoji"))?.click()
             instrumentation.waitForIdleSync()
             device.waitForIdle()
             takeShot("02e-icon-picker-emoji") {
                 scenario.onActivity { activity ->
-                    val picker = activity.supportFragmentManager.findFragmentByTag("container_icon_picker") as? org.isoron.uhabits.activities.common.icons.IconPickerBottomSheet
-                    assertNotNull("IconPickerBottomSheet must exist", picker)
+                    val picker = activity.supportFragmentManager.findFragmentByTag("container_icon_picker") as? org.isoron.uhabits.activities.common.icons.UHabitIconPickerBottomSheet
+                    assertNotNull("UHabitIconPickerBottomSheet must exist", picker)
                 }
             }
 
             // Pick icon 'briefcase' and close picker
             scenario.onActivity { activity ->
-                val picker = activity.supportFragmentManager.findFragmentByTag("container_icon_picker") as? org.isoron.uhabits.activities.common.icons.IconPickerBottomSheet
+                val picker = activity.supportFragmentManager.findFragmentByTag("container_icon_picker") as? org.isoron.uhabits.activities.common.icons.UHabitIconPickerBottomSheet
                 picker?.onIconSelected?.invoke(org.isoron.uhabits.core.containers.IconRef.Vector("briefcase"))
                 picker?.dismiss()
                 activity.supportFragmentManager.executePendingTransactions()

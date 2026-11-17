@@ -44,14 +44,26 @@ class NotesCardView @JvmOverloads constructor(
 ) : FrameLayout(context, attrs, defStyleAttr) {
 
     private var cardState by mutableStateOf<NotesCardState?>(null)
+    private var composeColors by mutableStateOf(resolveComposeColors())
+
+    private fun resolveComposeColors(): UHabitComposeColors {
+        val palette = MainTabsThemeBridge.resolve(context)
+        return UHabitComposeColors.fromPalette(
+            palette,
+            cardCornerRadiusDp = palette.habitsCardCornerRadius,
+            showCardBorders = palette.showHabitCardBorders
+        )
+    }
+
+    fun updateColors(colors: UHabitComposeColors = resolveComposeColors()) {
+        composeColors = colors
+    }
 
     init {
         val composeView = ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
-                val palette = MainTabsThemeBridge.resolve(context)
-                val colors = UHabitComposeColors.fromPalette(palette, cardCornerRadiusDp = palette.statisticsCardCornerRadius, showCardBorders = palette.showHabitCardBorders)
-                UHabitComposeTheme(colors) {
+                UHabitComposeTheme(composeColors) {
                     val desc = cardState?.description
                     if (!desc.isNullOrEmpty()) {
                         HabitSectionCard {
@@ -63,13 +75,13 @@ class NotesCardView @JvmOverloads constructor(
                                     modifier = Modifier
                                         .size(width = 3.dp, height = 20.dp)
                                         .clip(CircleShape)
-                                        .background(Color(colors.accent))
+                                        .background(Color(composeColors.accent))
                                 )
                                 Spacer(Modifier.width(10.dp))
                                 BasicText(
                                     text = desc,
                                     style = TextStyle(
-                                        color = Color(colors.foreground).copy(alpha = 0.9f),
+                                        color = Color(composeColors.foreground).copy(alpha = 0.9f),
                                         fontSize = 14.sp,
                                         lineHeight = 20.sp
                                     )
