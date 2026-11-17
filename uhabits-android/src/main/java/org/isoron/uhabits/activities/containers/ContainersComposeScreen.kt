@@ -1,13 +1,4 @@
-/*
- * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
- *
- * This file is part of Loop Habit Tracker.
- *
- * Loop Habit Tracker is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 
 package org.isoron.uhabits.activities.containers
 
@@ -78,6 +69,7 @@ fun ContainersComposeScreen(
     habitList: HabitList,
     colors: UHabitComposeColors,
     initialContainerId: ContainerId? = null,
+    externalRefreshTrigger: Int = 0,
     onBackFinish: () -> Unit,
     onOpenStatistics: (ContainerId) -> Unit,
     onAddHabitInContainer: (ContainerId?) -> Unit,
@@ -126,6 +118,7 @@ fun ContainersComposeScreen(
 
         // Data refresh counter
         var refreshTrigger by remember { mutableStateOf(0) }
+        val effectiveRefresh = refreshTrigger + externalRefreshTrigger
         fun refresh() { refreshTrigger++ }
 
         Box(
@@ -139,7 +132,7 @@ fun ContainersComposeScreen(
                         facade = facade,
                         habitList = habitList,
                         colors = colors,
-                        refreshTrigger = refreshTrigger,
+                        refreshTrigger = effectiveRefresh,
                         onBack = { handleBack() },
                         onNavigate = { navigateTo(it) },
                         onCreateContainer = {
@@ -167,7 +160,7 @@ fun ContainersComposeScreen(
                         facade = facade,
                         habitList = habitList,
                         colors = colors,
-                        refreshTrigger = refreshTrigger,
+                        refreshTrigger = effectiveRefresh,
                         onBack = { handleBack() },
                         onNavigate = { navigateTo(it) },
                         onOpenAncestors = { showAncestorsSheet = true },
@@ -202,7 +195,7 @@ fun ContainersComposeScreen(
                         facade = facade,
                         habitList = habitList,
                         colors = colors,
-                        refreshTrigger = refreshTrigger,
+                        refreshTrigger = effectiveRefresh,
                         onBack = { handleBack() },
                         onAssignHabit = { habit ->
                             showAssignHabitSheet = habit
@@ -214,7 +207,7 @@ fun ContainersComposeScreen(
                     ArchiveScreen(
                         facade = facade,
                         colors = colors,
-                        refreshTrigger = refreshTrigger,
+                        refreshTrigger = effectiveRefresh,
                         onBack = { handleBack() },
                         onRestoreContainer = { container ->
                             facade.unarchiveContainer(container.id)
@@ -1468,235 +1461,32 @@ private fun HabitCardRow(
 private fun CreateEditContainerBottomSheet(
     containerToEdit: Container?,
     initialParentId: ContainerId?,
-    cQueries: ContainerQueries?,
+    cQueries: ContainerQueries? = null,
     colors: UHabitComposeColors,
-    previewComposeColorPicker: Boolean,
+    previewComposeColorPicker: Boolean = true,
     onDismiss: () -> Unit,
     onSave: (name: String, parentId: ContainerId?, color: PaletteColor?, icon: IconRef) -> Unit
 ) {
-    var name by rememberSaveable(containerToEdit?.id) { mutableStateOf(containerToEdit?.name ?: "") }
-    var colorIndex by rememberSaveable(containerToEdit?.id) { mutableStateOf(containerToEdit?.color?.paletteIndex) }
-    var iconStorage by rememberSaveable(containerToEdit?.id) { mutableStateOf(containerToEdit?.icon) }
-    val selectedColor = colorIndex?.let(::PaletteColor)
-    val selectedIcon = IconRef.fromString(iconStorage)
-    val selectedParentId = containerToEdit?.parentId ?: initialParentId
-
-    var isIconPickerOpen by remember { mutableStateOf(false) }
-    var showComposeColorPicker by rememberSaveable { mutableStateOf(false) }
-    val activity = LocalContext.current as FragmentActivity
-    ColorPickerBackHandler(enabled = showComposeColorPicker) {
-        showComposeColorPicker = false
-    }
-    ColorPickerBackHandler(enabled = !showComposeColorPicker && !isIconPickerOpen) {
-        onDismiss()
-    }
+    ColorPickerBackHandler(enabled = true, onBack = onDismiss)
 
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.5f))
+            .clickable { onDismiss() },
         contentAlignment = Alignment.BottomCenter
     ) {
-        Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.5f)).clickable {
-            if (showComposeColorPicker) showComposeColorPicker = false else onDismiss()
-        })
-        if (showComposeColorPicker) {
-            val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.92f).dp
-            Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().imePadding()
-                .heightIn(max = maxHeight).clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-                .background(Color(colors.surface))) {
-                UHabitColorPickerContent(
-                    selectedColor = selectedColor,
-
-                    onApply = {
-                        colorIndex = it.paletteIndex
-                        showComposeColorPicker = false
-                    },
-                    onDismiss = { showComposeColorPicker = false },
-                )
-            }
-        } else {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                .background(Color(colors.surface))
-                .clickable(enabled = false) {}
-                .navigationBarsPadding()
-                .padding(20.dp)
-        ) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                BasicText(
-                    text = if (containerToEdit != null) "Изменить раздел" else "Новый раздел",
-                    style = TextStyle(color = Color(colors.foreground), fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                )
-
-                Box(
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .clickable { onDismiss() }
-                        .padding(4.dp)
-                ) {
-                    Image(
-                        painter = painterResource(R.drawable.ic_tabler_x),
-                        contentDescription = "Закрыть",
-                        colorFilter = ColorFilter.tint(Color(colors.secondary)),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(14.dp))
-
-            // Name input
-            BasicText("Название раздела", style = TextStyle(color = Color(colors.secondary), fontSize = 12.sp))
-            Spacer(Modifier.height(4.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color(colors.surfaceVariant))
-                    .border(1.dp, Color(colors.divider), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 12.dp, vertical = 10.dp)
-            ) {
-                BasicTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    modifier = Modifier
-                        .weight(1f)
-                        .semantics { contentDescription = "Поле ввода названия" },
-                    textStyle = TextStyle(color = Color(colors.foreground), fontSize = 15.sp, fontWeight = FontWeight.Medium),
-                    singleLine = true,
-                    decorationBox = { inner ->
-                        Box {
-                            if (name.isEmpty()) BasicText("Например: Здоровье, Работа...", style = TextStyle(color = Color(colors.secondary), fontSize = 15.sp))
-                            inner()
-                        }
-                    }
-                )
-            }
-
-            Spacer(Modifier.height(14.dp))
-
-            // Color & Icon controls
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                // Color Picker button
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(colors.surfaceVariant))
-                        .border(1.dp, Color(colors.divider), RoundedCornerShape(8.dp))
-                        .semantics { contentDescription = "Выбор цвета" }
-                        .clickable {
-                            val manager = activity.supportFragmentManager
-                            if (previewComposeColorPicker) {
-                                showComposeColorPicker = true
-                            } else if (manager.findFragmentByTag("compose_container_color_picker") == null && !manager.isStateSaved) {
-                                val color = selectedColor?.toFixedAndroidColor() ?: colors.accent
-                                val theme = when {
-                                    colors.isPureBlack -> ColorPickerDialog.THEME_AMOLED
-                                    colors.isDark -> ColorPickerDialog.THEME_DARK
-                                    else -> ColorPickerDialog.THEME_LIGHT
-                                }
-                                ColorPickerDialog.newInstance(color, color, name.trim(), theme).apply {
-                                    setListener { colorIndex = it.paletteIndex }
-                                    show(manager, "compose_container_color_picker")
-                                }
-                            }
-                        }
-                        .padding(10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(16.dp)
-                                .clip(CircleShape)
-                                .background(if (selectedColor != null) Color(android.graphics.Color.parseColor(selectedColor!!.toCsvColor())) else Color(colors.accent))
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        BasicText("Выбрать цвет", style = TextStyle(color = Color(colors.foreground), fontSize = 13.sp))
-                    }
-                }
-
-                // Icon Picker button
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(colors.surfaceVariant))
-                        .border(1.dp, Color(colors.divider), RoundedCornerShape(8.dp))
-                        .semantics { contentDescription = "Выбор значка" }
-                        .clickable { isIconPickerOpen = true }
-                        .padding(10.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        when (val icon = selectedIcon) {
-                            is IconRef.Emoji -> BasicText(icon.value, style = TextStyle(fontSize = 16.sp))
-                            is IconRef.Vector -> Image(painter = painterResource(IconPack.getDrawableRes(icon.key)), contentDescription = null,
-                                colorFilter = ColorFilter.tint(Color(colors.secondary)), modifier = Modifier.size(16.dp))
-                            else -> Image(painter = painterResource(R.drawable.ic_tabler_folder), contentDescription = null,
-                                colorFilter = ColorFilter.tint(Color(colors.secondary)), modifier = Modifier.size(16.dp))
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        BasicText(if (selectedIcon is IconRef.None) "Значок" else "Выбран", style = TextStyle(color = Color(colors.foreground), fontSize = 13.sp))
-                    }
-                }
-            }
-
-            if (isIconPickerOpen) {
-                Dialog(onDismissRequest = { isIconPickerOpen = false }) {
-                    Column(Modifier.fillMaxWidth().imePadding().clip(RoundedCornerShape(16.dp)).background(Color(colors.surface))) {
-                        UHabitIconPickerContent(
-                            selectedIcon = selectedIcon,
-                            tintColor = colors.accent,
-                            onIconSelected = {
-                                iconStorage = IconRef.toStorageString(it)
-                                isIconPickerOpen = false
-                            }
-                        )
-                        BasicText("Отмена", modifier = Modifier.align(Alignment.End).clickable { isIconPickerOpen = false }.padding(16.dp),
-                            style = TextStyle(color = Color(colors.secondary), fontSize = 14.sp))
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(18.dp))
-
-            // Action buttons
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(44.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(Color(colors.surfaceVariant))
-                        .clickable { onDismiss() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    BasicText("Отмена", style = TextStyle(color = Color(colors.secondary), fontSize = 14.sp, fontWeight = FontWeight.SemiBold))
-                }
-
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(44.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(if (name.trim().isNotEmpty()) Color(colors.accent) else Color(colors.accent).copy(alpha = 0.4f))
-                        .clickable(enabled = name.trim().isNotEmpty()) {
-                            onSave(name.trim(), selectedParentId, selectedColor, selectedIcon)
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    BasicText("Сохранить", style = TextStyle(color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold))
-                }
-            }
-        }
+        Box(modifier = Modifier.clickable(enabled = false) {}) {
+            UHabitContainerFormContent(
+                initialName = containerToEdit?.name ?: "",
+                initialParentId = containerToEdit?.parentId ?: initialParentId,
+                initialColor = containerToEdit?.color ?: PaletteColor(10),
+                initialIcon = IconRef.fromString(containerToEdit?.icon),
+                isEdit = containerToEdit != null,
+                presentation = ContainerFormPresentation.COMPACT_SPLIT_BUTTONS,
+                onDismiss = onDismiss,
+                onSave = onSave
+            )
         }
     }
 }

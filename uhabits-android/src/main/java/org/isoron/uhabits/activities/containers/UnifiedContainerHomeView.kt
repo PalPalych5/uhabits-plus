@@ -1,21 +1,4 @@
-/*
- * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
- *
- * This file is part of Loop Habit Tracker.
- *
- * Loop Habit Tracker is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.
- *
- * Loop Habit Tracker is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 
 package org.isoron.uhabits.activities.containers
 
@@ -44,7 +27,7 @@ import org.isoron.platform.time.getToday
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.views.CompactPopupMenu
 import org.isoron.uhabits.activities.common.icons.IconPack
-import org.isoron.uhabits.activities.common.icons.IconPickerBottomSheet
+import org.isoron.uhabits.activities.common.icons.UHabitIconPickerBottomSheet
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.habits.edit.HabitTypeDialog
 import org.isoron.uhabits.activities.habits.list.views.CheckmarkButtonViewFactory
@@ -1333,9 +1316,10 @@ class UnifiedContainerHomeView(
                 1 -> {
                     val habitUuid = habit.uuid ?: return@show
                     val currentIdentity = facade.getHabitVisualIdentity(habitUuid)
-                    val picker = IconPickerBottomSheet().apply {
+                    val picker = UHabitIconPickerBottomSheet.newInstance(
+                        initialIconRef = currentIdentity?.iconRef ?: IconRef.None,
                         previewColor = currentTheme().color(habit.color).toInt()
-                        initialIconRef = currentIdentity?.iconRef ?: IconRef.None
+                    ).apply {
                         onIconSelected = { picked ->
                             if (picked is IconRef.None) {
                                 facade.removeHabitVisualIdentity(habitUuid)

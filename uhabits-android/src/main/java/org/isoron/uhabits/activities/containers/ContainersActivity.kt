@@ -1,21 +1,4 @@
-/*
- * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
- *
- * This file is part of Loop Habit Tracker.
- *
- * Loop Habit Tracker is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.
- *
- * Loop Habit Tracker is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
- * or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
- * more details.
- *
- * You should have received a copy of the GNU General Public License along
- * with this program. If not, see <http://www.gnu.org/licenses/>.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 
 package org.isoron.uhabits.activities.containers
 
@@ -24,6 +7,9 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.view.WindowCompat
@@ -77,6 +63,8 @@ class ContainersActivity : AppCompatActivity() {
         insetsController.isAppearanceLightStatusBars = !palette.isDark
         insetsController.isAppearanceLightNavigationBars = !palette.isDark
 
+        var externalRefreshTrigger by mutableStateOf(0)
+
         val composeView = ComposeView(this).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
@@ -85,6 +73,7 @@ class ContainersActivity : AppCompatActivity() {
                     habitList = habitList,
                     colors = composeColors,
                     initialContainerId = initialContainerId,
+                    externalRefreshTrigger = externalRefreshTrigger,
                     onBackFinish = { finish() },
                     onOpenStatistics = { containerId ->
                         ContainerStatisticsActivity.start(this@ContainersActivity, containerId)
@@ -104,14 +93,36 @@ class ContainersActivity : AppCompatActivity() {
             }
         }
         setContentView(composeView)
+
+        if (intent.getBooleanExtra(EXTRA_SHOW_CREATE_DIALOG, false) && savedInstanceState == null) {
+            val dialog = CreateContainerDialog.newInstance().apply {
+                containerQueries = facade.containerQueries
+                onSaveWithIcon = { name, parentId, color, icon ->
+                    facade.createContainer(
+                        name = name,
+                        parentId = parentId,
+                        color = color,
+                        icon = org.isoron.uhabits.core.containers.IconRef.toStorageString(icon)
+                    )
+                    externalRefreshTrigger++
+                }
+            }
+            dialog.show(supportFragmentManager, "create_container_dialog")
+        }
     }
 
     companion object {
         const val EXTRA_CONTAINER_ID = "extra_container_id"
+        const val EXTRA_SHOW_CREATE_DIALOG = "extra_show_create_dialog"
 
-        fun intent(context: Context, containerId: ContainerId? = null): Intent {
+        fun intent(
+            context: Context,
+            containerId: ContainerId? = null,
+            showCreateDialog: Boolean = false
+        ): Intent {
             return Intent(context, ContainersActivity::class.java).apply {
                 containerId?.let { putExtra(EXTRA_CONTAINER_ID, it.value) }
+                if (showCreateDialog) putExtra(EXTRA_SHOW_CREATE_DIALOG, true)
             }
         }
     }
