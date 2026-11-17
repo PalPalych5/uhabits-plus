@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 Alinson Santos Xavier and contributors. GPL-3.0-or-later. */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 package org.isoron.uhabits.core.userTasks
 
 import org.isoron.platform.time.LocalDate

@@ -1,13 +1,4 @@
-/*
- * Copyright (C) 2016-2025 Álinson Santos Xavier <git@axavier.org>
- *
- * This file is part of Loop Habit Tracker.
- *
- * Loop Habit Tracker is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by the
- * Free Software Foundation, either version 3 of the License, or (at your
- * option) any later version.
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 package org.isoron.uhabits.core.ui.screens.statistics
 
 import org.isoron.platform.time.DayOfWeek

@@ -1,7 +1,4 @@
-/*
- * Copyright (C) 2016-2026 Álinson Santos Xavier <git@axavier.org> and contributors
- * SPDX-License-Identifier: GPL-3.0-or-later
- */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 
 package org.isoron.uhabits.activities.habits.edit.views
 

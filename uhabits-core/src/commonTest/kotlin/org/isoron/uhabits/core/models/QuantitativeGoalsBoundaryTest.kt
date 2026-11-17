@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 Álinson Santos Xavier and contributors. GPL-3.0-or-later. */
+/* SPDX-License-Identifier: GPL-3.0-or-later */
 package org.isoron.uhabits.core.models
 
 import org.isoron.platform.time.DayOfWeek
