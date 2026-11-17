@@ -356,6 +356,12 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!--
+            AppCompat per-app language (AppLocalesMetadataHolderService).
+            Per official AndroidX documentation, android:enabled MUST remain "false" when
+            autoStoreLocales="true" (AndroidX reads its metadata via MATCH_DISABLED_COMPONENTS
+            and uses the enabled state as a locale synchronization marker).
+        -->
         <service
             android:name="androidx.appcompat.app.AppLocalesMetadataHolderService"
             android:enabled="false"

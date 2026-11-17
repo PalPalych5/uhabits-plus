@@ -48,7 +48,11 @@ class SharedPreferencesStorage(
     init {
         sharedPrefs.registerOnSharedPreferenceChangeListener(this)
         if (session.preferencesNamespace.isBlank()) {
-            PreferenceManager.setDefaultValues(context, R.xml.preferences, false)
+            try {
+                PreferenceManager.setDefaultValues(context, R.xml.preferences, false)
+            } catch (_: Throwable) {
+                // Ignore in headless unit test environments
+            }
         }
     }
 
@@ -61,8 +65,17 @@ class SharedPreferencesStorage(
     override fun getBoolean(key: String, defValue: Boolean) =
         sharedPrefs.getBoolean(key, defValue)
 
-    override fun getInt(key: String, defValue: Int) =
-        sharedPrefs.getInt(key, defValue)
+    override fun getInt(key: String, defValue: Int): Int {
+        return try {
+            sharedPrefs.getInt(key, defValue)
+        } catch (_: ClassCastException) {
+            try {
+                sharedPrefs.getString(key, null)?.toIntOrNull() ?: defValue
+            } catch (_: Throwable) {
+                defValue
+            }
+        }
+    }
 
     override fun getLong(key: String, defValue: Long) =
         sharedPrefs.getLong(key, defValue)
@@ -109,8 +122,30 @@ class SharedPreferencesStorage(
                 preferences.isShowSphereNamesEnabled = getBoolean(key, true)
             "pref_habit_group_separators" ->
                 preferences.areHabitGroupSeparatorsEnabled = getBoolean(key, false)
-            "pref_show_habit_card_borders" ->
-                preferences.showHabitCardBorders = getBoolean(key, true)
+            "pref_show_habit_card_borders" -> {
+                val value = getBoolean(key, true)
+                if (preferences.showHabitCardBorders != value) {
+                    preferences.showHabitCardBorders = value
+                }
+            }
+            "pref_habits_card_corner_radius" -> {
+                val value = getInt(key, 8)
+                if (preferences.habitsCardCornerRadius != value) {
+                    preferences.habitsCardCornerRadius = value
+                }
+            }
+            "pref_statistics_card_corner_radius" -> {
+                val value = getInt(key, 8)
+                if (preferences.statisticsCardCornerRadius != value) {
+                    preferences.statisticsCardCornerRadius = value
+                }
+            }
+            "pref_section_layout_mode" -> {
+                val value = getString(key, Preferences.SECTION_LAYOUT_CARDS)
+                if (preferences.sectionLayoutMode != value) {
+                    preferences.sectionLayoutMode = value
+                }
+            }
             "pref_show_score_rings" -> {
                 preferences.showScoreRings = getBoolean(key, true)
             }

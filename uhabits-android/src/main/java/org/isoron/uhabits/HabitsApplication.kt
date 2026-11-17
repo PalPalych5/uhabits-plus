@@ -81,18 +81,32 @@ open class HabitsApplication : Application() {
         org.isoron.uhabits.production.ProductionPreparationStartup.runBeforeDependencyInjection(this)
         org.isoron.uhabits.utils.HabitsStartupTrace.mark("application.recovery.end")
 
+        // Per-app language initialisation & controlled migration.
+        //
+        // AppCompatDelegate.setApplicationLocales() is a no-op on API 33+ during
+        // Application.onCreate() because sActivityDelegates is empty until an AppCompatActivity
+        // is created. On API < 33 it works immediately in Application.onCreate().
+        //
+        // Once migrated (KEY_LOCALE_MIGRATED = true), AppCompat / framework LocaleManager is the
+        // source of truth: we never overwrite framework-managed per-app locales back to
+        // pref_app_language; instead we sync pref_app_language from AppCompat if the user
+        // changed the language in Android 13+ system settings.
         val sharedPrefs = PreferenceManager.getDefaultSharedPreferences(this)
-        if (!sharedPrefs.contains("pref_app_language")) {
-            sharedPrefs.edit().putString("pref_app_language", "ru-RU").apply()
-            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("ru-RU"))
-        } else {
-            val appLanguage = sharedPrefs.getString("pref_app_language", "ru-RU") ?: "ru-RU"
-            val locales = AppCompatDelegate.getApplicationLocales()
-            val currentLanguageTag = if (locales.isEmpty) "" else locales.toLanguageTags()
-            if (currentLanguageTag != appLanguage) {
-                AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(appLanguage))
-            }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            applyLocaleDecision(sharedPrefs)
         }
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityCreated(activity: android.app.Activity, savedInstanceState: android.os.Bundle?) = Unit
+            override fun onActivityStarted(activity: android.app.Activity) {
+                if (activity !is androidx.appcompat.app.AppCompatActivity) return
+                applyLocaleDecision(sharedPrefs)
+            }
+            override fun onActivityResumed(activity: android.app.Activity) = Unit
+            override fun onActivityPaused(activity: android.app.Activity) = Unit
+            override fun onActivityStopped(activity: android.app.Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, outState: android.os.Bundle) = Unit
+            override fun onActivityDestroyed(activity: android.app.Activity) = Unit
+        })
 
         org.isoron.uhabits.utils.HabitsStartupTrace.mark("session.resolve.begin")
         val session = org.isoron.uhabits.utils.HabitsStartupTrace.offlineFixtureSession(this, sessionManager.resolveSessionOnStartup())
@@ -261,6 +275,32 @@ open class HabitsApplication : Application() {
         notifyDatasetListeners()
     }
 
+    private fun applyLocaleDecision(sharedPrefs: android.content.SharedPreferences) {
+        val locales = AppCompatDelegate.getApplicationLocales()
+        val appCompatTag = if (locales.isEmpty) "" else locales.toLanguageTags()
+        val decision = AppLocaleSync.reconcile(
+            hasPrefStored = sharedPrefs.contains(AppLocaleSync.PREF_APP_LANGUAGE),
+            storedPref = sharedPrefs.getString(AppLocaleSync.PREF_APP_LANGUAGE, null),
+            isMigrated = sharedPrefs.getBoolean(AppLocaleSync.PREF_LOCALE_MIGRATED, false),
+            appCompatTag = appCompatTag,
+        )
+        if (decision.updatedPref != null || decision.markMigrated) {
+            sharedPrefs.edit().apply {
+                if (decision.updatedPref != null) {
+                    putString(AppLocaleSync.PREF_APP_LANGUAGE, decision.updatedPref)
+                }
+                if (decision.markMigrated) {
+                    putBoolean(AppLocaleSync.PREF_LOCALE_MIGRATED, true)
+                }
+            }.apply()
+        }
+        if (decision.pushToAppCompat != null) {
+            AppCompatDelegate.setApplicationLocales(
+                LocaleListCompat.forLanguageTags(decision.pushToAppCompat)
+            )
+        }
+    }
+
     /** Variant seam; ordinary builds retain the live local calendar and offset behavior. */
     internal open fun currentHabitDate(hourOffset: Int, minuteOffset: Int) = computeToday(hourOffset, minuteOffset)
 
@@ -298,6 +338,71 @@ open class HabitsApplication : Application() {
             } catch (e: ClassNotFoundException) {
                 false
             }
+        }
+    }
+}
+
+/**
+ * Pure, testable precedence rules for per-app language initialization and migration.
+ *
+ * Precedence:
+ * 1. Before one-time migration (`!isMigrated`):
+ *    - If AppCompat/framework already has a non-empty locale (e.g., set via Android 13+ system
+ *      settings before first launch), adopt it into `pref_app_language` and mark migrated.
+ *    - Otherwise seed `ru-RU` on fresh install or migrate the non-empty legacy `pref_app_language`
+ *      into AppCompat once, and mark migrated.
+ * 2. After migration (`isMigrated == true`):
+ *    - AppCompat / framework LocaleManager is authoritative. Never overwrite it back to
+ *      `pref_app_language`. If `appCompatTag` differs from `storedPref` (e.g., user changed
+ *      language in Android 13+ system settings), update `pref_app_language` to match `appCompatTag`.
+ */
+internal object AppLocaleSync {
+    const val PREF_APP_LANGUAGE = "pref_app_language"
+    const val PREF_LOCALE_MIGRATED = "pref_app_language_migrated_v1"
+    const val DEFAULT_LANGUAGE = "ru-RU"
+
+    data class Decision(
+        val pushToAppCompat: String? = null,
+        val updatedPref: String? = null,
+        val markMigrated: Boolean = false,
+    )
+
+    fun reconcile(
+        hasPrefStored: Boolean,
+        storedPref: String?,
+        isMigrated: Boolean,
+        appCompatTag: String,
+    ): Decision {
+        if (!isMigrated) {
+            if (appCompatTag.isNotEmpty()) {
+                return Decision(
+                    pushToAppCompat = null,
+                    updatedPref = if (!hasPrefStored || storedPref != appCompatTag) appCompatTag else null,
+                    markMigrated = true,
+                )
+            }
+            val target = if (!hasPrefStored) {
+                DEFAULT_LANGUAGE
+            } else {
+                storedPref?.takeIf { it.isNotEmpty() }
+            }
+            return Decision(
+                pushToAppCompat = target,
+                updatedPref = if (!hasPrefStored) DEFAULT_LANGUAGE else null,
+                markMigrated = true,
+            )
+        }
+
+        // Post-migration: framework / AppCompat is authoritative.
+        val normalizedStored = storedPref.orEmpty()
+        return if (normalizedStored != appCompatTag) {
+            Decision(
+                pushToAppCompat = null,
+                updatedPref = appCompatTag,
+                markMigrated = false,
+            )
+        } else {
+            Decision()
         }
     }
 }
