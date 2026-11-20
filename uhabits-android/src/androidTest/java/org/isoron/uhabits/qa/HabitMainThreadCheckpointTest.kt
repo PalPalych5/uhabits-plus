@@ -11,17 +11,18 @@ import android.view.Choreographer
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
-import android.widget.EditText
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.Until
 import kotlinx.coroutines.runBlocking
 import org.isoron.platform.io.queryInt
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.HabitsApplication
-import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.dialogs.NumberDialog
 import org.isoron.uhabits.activities.habits.list.views.*
 import org.isoron.uhabits.activities.habits.show.ShowHabitActivity
@@ -262,9 +263,11 @@ class HabitMainThreadCheckpointTest {
                     if (dialog == null) Thread.sleep(20)
                 }
                 checkNotNull(dialog) { "Numerical editor did not appear" }
+                checkNotNull(
+                    UiDevice.getInstance(ins).wait(Until.findObject(By.res("habitNumberValue")), 5_000L),
+                ).text = "17"
                 awaitCommit {
                     measured("numerical-save", scenario) {
-                        dialog!!.requireDialog().findViewById<EditText>(R.id.value).setText("17")
                         dialog!!.save()
                     }
                 }

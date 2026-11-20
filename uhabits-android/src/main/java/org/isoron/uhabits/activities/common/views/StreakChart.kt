@@ -20,55 +20,36 @@ package org.isoron.uhabits.activities.common.views
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
 import android.view.ViewGroup
-import org.isoron.platform.time.JavaLocalDateFormatter
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.R
 import org.isoron.uhabits.core.models.Streak
-import org.isoron.uhabits.utils.InterfaceUtils.dpToPixels
-import org.isoron.uhabits.utils.InterfaceUtils.getDimension
 import org.isoron.uhabits.utils.StyledResources
 import java.util.LinkedList
-import java.util.Locale
 import java.util.Random
 import kotlin.math.floor
-import kotlin.math.max
-import kotlin.math.min
 
 class StreakChart : View {
-    private var paint: Paint? = null
-    private var minLength: Long = 0
-    private var maxLength: Long = 0
+    private val renderer = StreakChartRenderer()
     private var maxLengthOverride: Long? = null
-    private lateinit var colors: IntArray
-    private lateinit var textColors: IntArray
-    private var rect: RectF? = null
-    private var baseSize = 0
     private var primaryColor = 0
+    private var trackColor = 0
+    private var labelColor = 0
+    private var filledTextColor = 0
     private var trackColorOverride: Int? = null
     private var labelColorOverride: Int? = null
     private var filledTextColorOverride: Int? = null
-    private var streaks: List<Streak>? = null
+    private var streaks: List<Streak> = emptyList()
     private var isBackgroundTransparent = false
-    private var dateFormatter: JavaLocalDateFormatter? = null
-    private var internalWidth = 0
-    private var em = 0f
-    private var maxLabelWidth = 0f
-    private var textMargin = 0f
-    private var shouldShowLabels = false
-    private val textColor = 0
 
     constructor(context: Context?) : super(context) {
-        init()
+        initColors()
     }
 
     constructor(context: Context?, attrs: AttributeSet?) : super(context, attrs) {
-        init()
+        initColors()
     }
 
     /**
@@ -78,18 +59,18 @@ class StreakChart : View {
      * @return max number of visible streaks
      */
     val maxStreakCount: Int
-        get() = floor((measuredHeight / baseSize).toDouble()).toInt()
+        get() = floor((measuredHeight / renderer.resolveBaseSize(context)).toDouble()).toInt()
 
     fun populateWithRandomData() {
         var start = getToday()
-        val streaks: MutableList<Streak> = LinkedList()
+        val generated: MutableList<Streak> = LinkedList()
         for (i in 0..9) {
             val length = Random().nextInt(100)
             val end = start.plus(length)
-            streaks.add(Streak(start, end))
+            generated.add(Streak(start, end))
             start = end.plus(1)
         }
-        setStreaks(streaks)
+        setStreaks(generated)
     }
 
     fun setColor(color: Int) {
@@ -112,159 +93,48 @@ class StreakChart : View {
     }
 
     fun setStreaks(streaks: List<Streak>?) {
-        this.streaks = streaks
+        this.streaks = streaks ?: emptyList()
         initColors()
-        updateMaxMinLengths()
         requestLayout()
     }
 
     fun setMaxLengthOverride(maxLength: Long?) {
         maxLengthOverride = maxLength
-        updateMaxMinLengths()
         postInvalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (streaks!!.isEmpty()) return
-        rect!![0f, 0f, internalWidth.toFloat()] = baseSize.toFloat()
-        for (s in streaks!!) {
-            drawRow(canvas, s, rect)
-            rect!!.offset(0f, baseSize.toFloat())
-        }
+        renderer.draw(
+            context = context,
+            canvas = canvas,
+            width = width,
+            streaks = streaks,
+            maxLengthOverride = maxLengthOverride,
+            primaryColor = primaryColor,
+            trackColor = trackColor,
+            labelColor = labelColor,
+            filledTextColor = filledTextColor
+        )
     }
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
-        var widthSpec = widthSpec
-        var heightSpec = heightSpec
+        var resolvedWidthSpec = widthSpec
+        var resolvedHeightSpec = heightSpec
         val params = layoutParams
         if (params != null && params.height == ViewGroup.LayoutParams.WRAP_CONTENT) {
             val width = MeasureSpec.getSize(widthSpec)
-            val height = streaks!!.size * baseSize
-            heightSpec = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
-            widthSpec = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY)
+            val height = streaks.size * renderer.resolveBaseSize(context)
+            resolvedHeightSpec = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+            resolvedWidthSpec = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY)
         }
-        setMeasuredDimension(widthSpec, heightSpec)
-    }
-
-    override fun onSizeChanged(
-        width: Int,
-        height: Int,
-        oldWidth: Int,
-        oldHeight: Int
-    ) {
-        this.internalWidth = width
-        val context = context
-        val minTextSize = getDimension(context, R.dimen.tinyTextSize)
-        val maxTextSize = getDimension(context, R.dimen.regularTextSize)
-        val textSize = baseSize * 0.5f
-        paint!!.textSize = max(min(textSize, maxTextSize), minTextSize)
-        em = paint!!.fontSpacing
-        textMargin = 0.5f * em
-        updateMaxMinLengths()
-    }
-
-    private fun drawRow(canvas: Canvas, streak: Streak, rect: RectF?) {
-        if (maxLength == 0L || streak.length <= 0) return
-        val percentage = streak.length.toFloat() / maxLength
-        var availableWidth = internalWidth - 2 * maxLabelWidth
-        if (shouldShowLabels) availableWidth -= 2 * textMargin
-        var barWidth = percentage * availableWidth
-        val minBarWidth = paint!!.measureText(streak.length.toLong().toString()) + em
-        barWidth = max(barWidth, minBarWidth)
-        val gap = (internalWidth - barWidth) / 2
-        val paddingTopBottom = baseSize * 0.05f
-        paint!!.color = percentageToColor(percentage)
-        val round = dpToPixels(context, 2f)
-        canvas.drawRoundRect(
-            rect!!.left + gap,
-            rect.top + paddingTopBottom,
-            rect.right - gap,
-            rect.bottom - paddingTopBottom,
-            round,
-            round,
-            paint!!
-        )
-        val yOffset = rect.centerY() + 0.3f * em
-        paint!!.color = percentageToTextColor(percentage)
-        paint!!.textAlign = Paint.Align.CENTER
-        canvas.drawText(
-            streak.length.toLong().toString(),
-            rect.centerX(),
-            yOffset,
-            paint!!
-        )
-        if (shouldShowLabels) {
-            val df = dateFormatter!!
-            val startLabel = df.longFormat(streak.start)
-            val endLabel = df.longFormat(streak.end)
-            paint!!.color = textColors[1]
-            paint!!.textAlign = Paint.Align.RIGHT
-            canvas.drawText(startLabel, gap - textMargin, yOffset, paint!!)
-            paint!!.textAlign = Paint.Align.LEFT
-            canvas.drawText(endLabel, internalWidth - gap + textMargin, yOffset, paint!!)
-        }
-    }
-
-    private fun init() {
-        initPaints()
-        initColors()
-        streaks = emptyList()
-        dateFormatter = JavaLocalDateFormatter(Locale.getDefault())
-        rect = RectF()
-        baseSize = resources.getDimensionPixelSize(R.dimen.baseSize)
+        setMeasuredDimension(resolvedWidthSpec, resolvedHeightSpec)
     }
 
     private fun initColors() {
-        val red = Color.red(primaryColor)
-        val green = Color.green(primaryColor)
-        val blue = Color.blue(primaryColor)
         val res = StyledResources(context)
-        colors = IntArray(4)
-        colors[3] = primaryColor
-        colors[2] = Color.argb(192, red, green, blue)
-        colors[1] = Color.argb(96, red, green, blue)
-        colors[0] = trackColorOverride ?: res.getColor(R.attr.contrast20)
-        textColors = IntArray(3)
-        textColors[2] = filledTextColorOverride ?: TargetChart.resolveFilledBarTextColor(primaryColor)
-        textColors[1] = labelColorOverride ?: res.getColor(R.attr.contrast60)
-        textColors[0] = labelColorOverride ?: res.getColor(R.attr.contrast80)
-    }
-
-    private fun initPaints() {
-        paint = Paint()
-        paint!!.textAlign = Paint.Align.CENTER
-        paint!!.isAntiAlias = true
-    }
-
-    private fun percentageToColor(percentage: Float): Int {
-        if (percentage >= 1.0f) return colors[3]
-        if (percentage >= 0.8f) return colors[2]
-        return if (percentage >= 0.5f) colors[1] else colors[0]
-    }
-
-    private fun percentageToTextColor(percentage: Float): Int {
-        return if (percentage >= 0.5f) textColors[2] else textColors[1]
-    }
-
-    private fun updateMaxMinLengths() {
-        maxLength = 0
-        minLength = Long.MAX_VALUE
-        maxLabelWidth = 0f
-        shouldShowLabels = true
-        val df = dateFormatter ?: return
-        for (s in streaks!!) {
-            if (s.length <= 0) continue
-            maxLength = max(maxLength, s.length.toLong())
-            minLength = min(minLength, s.length.toLong())
-            val lw1 = paint!!.measureText(df.longFormat(s.start))
-            val lw2 = paint!!.measureText(df.longFormat(s.end))
-            maxLabelWidth = max(maxLabelWidth, max(lw1, lw2))
-        }
-        maxLength = max(maxLength, maxLengthOverride ?: 0)
-        if (internalWidth - 2 * maxLabelWidth < internalWidth * 0.25f) {
-            maxLabelWidth = 0f
-            shouldShowLabels = false
-        }
+        trackColor = trackColorOverride ?: res.getColor(R.attr.contrast20)
+        labelColor = labelColorOverride ?: res.getColor(R.attr.contrast60)
+        filledTextColor = filledTextColorOverride ?: TargetChart.resolveFilledBarTextColor(primaryColor)
     }
 }

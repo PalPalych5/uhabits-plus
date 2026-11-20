@@ -111,12 +111,6 @@
             android:id="@+id/actionSearch"
             android:title="@string/search"
             app:showAsAction="never" />
-
-        <item
-            android:id="@+id/actionTodayEvaluation"
-            android:visible="false"
-            android:title="@string/today_eval_menu_item"
-            app:showAsAction="never" />
     </group>
 
 </menu>

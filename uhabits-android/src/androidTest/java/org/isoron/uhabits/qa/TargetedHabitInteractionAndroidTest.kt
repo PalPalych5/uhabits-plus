@@ -15,6 +15,9 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.Until
 import org.isoron.platform.io.queryLong
 import org.isoron.platform.time.DayOfWeek
 import org.isoron.platform.time.LocalDate
@@ -786,8 +789,9 @@ class TargetedHabitInteractionAndroidTest {
             scenario.onActivity { activity ->
                 assertTrue("ShowHabitActivity must be active", activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
                 assertFalse("Activity must not be finishing", activity.isFinishing)
-                assertNotNull("Compose view must exist", activity.findViewById<View>(R.id.composeView))
             }
+            assertTrue("Habit details toolbar must be visible", UiDevice.getInstance(instrumentation)
+                .wait(Until.hasObject(By.res("action_edit_habit")), 5_000L))
         }
 
         // 6. Verify UnifiedStatisticsService computes non-empty statistics

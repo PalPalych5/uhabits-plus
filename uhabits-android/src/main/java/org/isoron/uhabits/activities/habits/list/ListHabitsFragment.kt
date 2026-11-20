@@ -3,9 +3,6 @@ package org.isoron.uhabits.activities.habits.list
 import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
-import android.view.Menu
-import android.view.MenuInflater
-import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
@@ -49,14 +46,10 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
     lateinit var prefs: Preferences
     private lateinit var menuController: ListHabitsMenu
     private var displayMode = ListHabitsDisplayMode.NORMAL
+    private var archiveSearchQuery = ""
     private var initialized = false
     private var startupPending = false
     private var pendingIntent: Intent? = null
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setHasOptionsMenu(true)
-    }
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -67,7 +60,8 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
         if (savedInstanceState != null) {
             rootView.dataOffset = savedInstanceState.getInt(STATE_DATA_OFFSET, rootView.dataOffset)
             if (savedInstanceState.getBoolean(STATE_SEARCH_ACTIVE)) {
-                menuController.behavior.onSearchQueryChanged(savedInstanceState.getString(STATE_SEARCH_QUERY).orEmpty())
+                val restoredQuery = savedInstanceState.getString(STATE_SEARCH_QUERY).orEmpty()
+                applySearchQuery(restoredQuery)
                 menuController.openSearch()
             }
         }
@@ -79,7 +73,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
         if (initialized) {
             outState.putInt(STATE_DATA_OFFSET, rootView.dataOffset)
             outState.putBoolean(STATE_SEARCH_ACTIVE, menuController.isSearchActive)
-            outState.putString(STATE_SEARCH_QUERY, menuController.behavior.searchQuery)
+            outState.putString(STATE_SEARCH_QUERY, currentSearchQuery())
         }
     }
 
@@ -106,11 +100,20 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
         taskRunner = appComponent.taskRunner
         menuController = component.listHabitsMenu
         rootView.bindSelectionMenu(component.listHabitsSelectionMenu)
-        rootView.onToolbarAction = { id -> menuController.menu?.findItem(id)?.let { onOptionsItemSelected(it) } }
+        rootView.onToolbarAction = { id -> onToolbarActionSelected(id) }
         rootView.onToolbarBack = { handleBack() }
         rootView.onToolbarQuery = { query ->
-            menuController.behavior.onSearchQueryChanged(query)
-            activity.invalidateOptionsMenu()
+            applySearchQuery(query)
+            refreshToolbarState(overrideQuery = query)
+        }
+        menuController.onSearchQueryChanged = { query ->
+            if (displayMode == ListHabitsDisplayMode.ARCHIVE) {
+                applyArchiveFilter(query)
+            }
+            refreshToolbarState()
+        }
+        menuController.onMenuStateChanged = {
+            refreshToolbarState()
         }
         component.listHabitsSelectionMenu.onSelectionModeChanged = { selecting ->
             (activity as? MainNavigationHost)?.setHabitCreationAvailable(
@@ -164,7 +167,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
     override fun onStart() {
         super.onStart()
         appComponent.syncCoordinator.addListener(this)
-        activity?.invalidateOptionsMenu()
+        refreshToolbarState()
     }
 
     override fun onStop() {
@@ -175,7 +178,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
     override fun onSyncStateChanged(isSyncing: Boolean, lastResult: SyncRunResult?) {
         activity?.runOnUiThread {
             if (!isAdded) return@runOnUiThread
-            activity?.invalidateOptionsMenu()
+            refreshToolbarState()
             if (!isSyncing && manualSyncInitiated) {
                 manualSyncInitiated = false
                 if (lastResult != null) {
@@ -221,14 +224,14 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
 
     override fun onResume() {
         super.onResume()
-        (activity as? MainActivity)?.setHabitsSearchActive(menuController.isSearchActive)
-        activateToolbar()
+        refreshToolbarState()
         adapter.refresh()
         screen.onAttached()
-        adapter.notifyDataSetChanged()
+        rootView.refreshDisplayState()
         rootView.postInvalidate()
+        val selecting = component.listHabitsSelectionMenu.selectedCount > 0
         (activity as? MainNavigationHost)?.setHabitCreationAvailable(
-            displayMode == ListHabitsDisplayMode.NORMAL
+            !selecting && displayMode == ListHabitsDisplayMode.NORMAL
         )
     }
 
@@ -246,15 +249,16 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
     }
 
     override fun onQuestionMarksChanged() {
-        requireActivity().invalidateOptionsMenu()
         if (displayMode == ListHabitsDisplayMode.NORMAL) {
             menuController.behavior.onPreferencesChanged()
         }
-        adapter.notifyDataSetChanged()
+        refreshToolbarState()
+        rootView.refreshDisplayState()
     }
 
     override fun onCardCornersChanged() {
-        adapter.notifyDataSetChanged()
+        refreshToolbarState()
+        rootView.refreshDisplayState()
     }
 
     override fun onHabitListAppearanceChanged() {
@@ -265,139 +269,51 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             adapter.primaryOrder = org.isoron.uhabits.core.models.HabitList.Order.BY_POSITION
         }
         adapter.applyDayTierSortOrder()
+        refreshToolbarState()
         rootView.refreshDisplayState()
-        adapter.notifyDataSetChanged()
-        requireActivity().invalidateOptionsMenu()
     }
 
-    override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
-        menuController.onCreate(inflater, menu)
+    private fun currentSearchQuery(): String =
+        if (displayMode == ListHabitsDisplayMode.ARCHIVE) archiveSearchQuery else menuController.behavior.searchQuery
+
+    private fun applySearchQuery(query: String) {
         if (displayMode == ListHabitsDisplayMode.ARCHIVE) {
-            adapter.setFilter(
-                HabitMatcher(isArchivedAllowed = true, isArchivedRequired = true)
-            )
-        }
-        updateMenuVisibility(menu)
-        rootView.applyToolbarIconTint(menu)
-    }
-
-    override fun onPrepareOptionsMenu(menu: Menu) {
-        menuController.onPrepare(menu)
-        val syncItem = menu.findItem(R.id.actionSync)
-        val syncCoordinator = appComponent.syncCoordinator
-        val syncEnabled = syncCoordinator.isSyncReady() && !menuController.isSearchActive && displayMode == ListHabitsDisplayMode.NORMAL
-        if (syncItem != null) {
-            syncItem.isVisible = syncEnabled
-            if (syncCoordinator.isSyncing) {
-                syncItem.setActionView(R.layout.menu_item_sync_progress)
-                syncItem.isEnabled = false
-            } else {
-                syncItem.setActionView(null)
-                syncItem.isEnabled = true
-            }
-        }
-        updateMenuVisibility(menu)
-        updateToolbarNavigation()
-        rootView.applyToolbarIconTint(menu)
-        updateComposeToolbar(menu)
-        super.onPrepareOptionsMenu(menu)
-    }
-
-    private fun updateComposeToolbar(menu: Menu) {
-        (activity as? MainActivity)?.setHabitsSearchActive(menuController.isSearchActive)
-        fun items(vararg ids: Int) = ids.asIterable().mapNotNull { id ->
-            menu.findItem(id)?.takeIf { it.isVisible }?.let { HabitToolbarItem(id, it.title.toString(), it.isChecked, it.isEnabled) }
-        }
-        val sortOrder = prefs.defaultPrimaryOrder
-        val selectedSort = when (sortOrder) {
-            org.isoron.uhabits.core.models.HabitList.Order.BY_NAME_ASC, org.isoron.uhabits.core.models.HabitList.Order.BY_NAME_DESC -> R.id.actionSortName
-            org.isoron.uhabits.core.models.HabitList.Order.BY_COLOR_ASC, org.isoron.uhabits.core.models.HabitList.Order.BY_COLOR_DESC -> R.id.actionSortColor
-            org.isoron.uhabits.core.models.HabitList.Order.BY_SCORE_ASC, org.isoron.uhabits.core.models.HabitList.Order.BY_SCORE_DESC -> R.id.actionSortScore
-            org.isoron.uhabits.core.models.HabitList.Order.BY_STATUS_ASC, org.isoron.uhabits.core.models.HabitList.Order.BY_STATUS_DESC -> R.id.actionSortStatus
-            org.isoron.uhabits.core.models.HabitList.Order.BY_SPHERE -> R.id.actionSortSphere
-            org.isoron.uhabits.core.models.HabitList.Order.BY_DAY_TIER -> R.id.actionSortLevel
-            else -> R.id.actionSortManual
-        }
-        val descending = sortOrder in setOf(
-            org.isoron.uhabits.core.models.HabitList.Order.BY_NAME_DESC,
-            org.isoron.uhabits.core.models.HabitList.Order.BY_COLOR_DESC,
-            org.isoron.uhabits.core.models.HabitList.Order.BY_SCORE_DESC,
-            org.isoron.uhabits.core.models.HabitList.Order.BY_STATUS_DESC
-        )
-        val directionalSorts = setOf(
-            R.id.actionSortName,
-            R.id.actionSortColor,
-            R.id.actionSortScore,
-            R.id.actionSortStatus
-        )
-        val searchEndMarginDp = when {
-            prefs.isClassicSectionLayout -> 0
-            prefs.showHabitCardBorders -> 4
-            else -> 2
-        }
-        val sync = menu.findItem(R.id.actionSync)
-        rootView.updateComposeToolbar(HabitToolbarState(
-            title = getString(if (displayMode == ListHabitsDisplayMode.ARCHIVE) R.string.archive_title else R.string.habits_title),
-            archive = displayMode == ListHabitsDisplayMode.ARCHIVE,
-            searching = menuController.isSearchActive,
-            query = menuController.behavior.searchQuery,
-            searchEndMarginDp = searchEndMarginDp,
-            cardEndMarginDp = searchEndMarginDp,
-            syncVisible = sync?.isVisible == true,
-            syncing = sync?.isEnabled == false,
-            filters = items(R.id.actionHideArchived, R.id.actionHideCompleted),
-            sorts = items(
-                R.id.actionSortManual,
-                R.id.actionSortName,
-                R.id.actionSortColor,
-                R.id.actionSortScore,
-                R.id.actionSortStatus,
-                R.id.actionSortSphere,
-                R.id.actionSortLevel
-            ).map { item ->
-                val isSelected = item.id == selectedSort
-                item.copy(
-                    checked = isSelected,
-                    supportsDirection = item.id in directionalSorts,
-                    isDescending = isSelected && descending
-                )
-            },
-            overflow = items(R.id.actionSkipDay, R.id.actionSearch, R.id.actionTodayEvaluation, R.id.actionContainers)
-        ))
-    }
-
-    private fun updateToolbarNavigation() {
-        if (displayMode == ListHabitsDisplayMode.NORMAL) {
-            rootView.setScreenTitle(if (menuController.isSearchActive) "" else getString(R.string.habits_title))
-        }
-        if (displayMode == ListHabitsDisplayMode.ARCHIVE) {
-            rootView.tbar.setNavigationIcon(R.drawable.ic_settings_back)
-            rootView.tbar.setNavigationOnClickListener {
-                (activity as? MainNavigationHost)?.navigateBack()
-            }
-        } else if (menuController.isSearchActive) {
-            rootView.tbar.setNavigationIcon(R.drawable.ic_settings_back)
-            rootView.tbar.setNavigationContentDescription(android.R.string.cancel)
-            rootView.tbar.setNavigationOnClickListener {
-                menuController.closeSearch()
-            }
+            archiveSearchQuery = query
+            applyArchiveFilter(query)
         } else {
-            rootView.tbar.navigationIcon = null
-            rootView.tbar.setNavigationOnClickListener(null)
+            menuController.behavior.onSearchQueryChanged(query)
         }
     }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        if (item.itemId == android.R.id.home) {
-            if (menuController.isSearchActive) {
-                menuController.closeSearch()
-                return true
-            }
-            if (displayMode == ListHabitsDisplayMode.ARCHIVE) {
-                return (activity as MainNavigationHost).navigateBack()
-            }
-        }
-        if (item.itemId == R.id.actionAddHabit) {
+    private fun applyArchiveFilter(query: String = "") {
+        archiveSearchQuery = query
+        adapter.setFilter(
+            HabitMatcher(
+                isArchivedAllowed = true,
+                isArchivedRequired = true,
+                searchQuery = query
+            )
+        )
+        adapter.refresh()
+    }
+
+    private fun refreshToolbarState(overrideQuery: String? = null) {
+        if (!initialized) return
+        val archive = displayMode == ListHabitsDisplayMode.ARCHIVE
+        val syncCoordinator = appComponent.syncCoordinator
+        (activity as? MainActivity)?.setHabitsSearchActive(menuController.isSearchActive)
+        rootView.updateComposeToolbar(
+            menuController.buildToolbarState(
+                archive = archive,
+                syncReady = syncCoordinator.isSyncReady(),
+                isSyncing = syncCoordinator.isSyncing,
+                query = overrideQuery ?: currentSearchQuery()
+            )
+        )
+    }
+
+    private fun onToolbarActionSelected(itemId: Int): Boolean {
+        if (itemId == R.id.actionAddHabit) {
             val intent = org.isoron.uhabits.intents.IntentFactory().startEditActivity(
                 requireActivity(),
                 org.isoron.uhabits.core.models.HabitType.YES_NO.value,
@@ -406,7 +322,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             startActivity(intent)
             return true
         }
-        if (item.itemId == R.id.actionSync) {
+        if (itemId == R.id.actionSync) {
             if (prefs.isSyncReviewRequired) {
                 showSyncReviewDialog()
             } else {
@@ -414,7 +330,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             }
             return true
         }
-        if (item.itemId == R.id.actionSkipDay) {
+        if (itemId == R.id.actionSkipDay) {
             SkipDayDialogController(
                 fragment = this,
                 habitList = appComponent.habitList,
@@ -424,8 +340,9 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             return true
         }
 
-        requireActivity().invalidateOptionsMenu()
-        return menuController.onItemSelected(item) || super.onOptionsItemSelected(item)
+        val handled = menuController.onActionSelected(itemId)
+        refreshToolbarState()
+        return handled
     }
 
     private var manualSyncInitiated = false
@@ -447,7 +364,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
 
     private fun triggerManualSync(allowAfterReview: Boolean = false) {
         manualSyncInitiated = true
-        activity?.invalidateOptionsMenu()
+        refreshToolbarState()
         viewLifecycleOwner.lifecycleScope.launch {
             val result = appComponent.syncCoordinator.runSync(
                 manual = true,
@@ -455,7 +372,7 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
             )
             if (manualSyncInitiated) {
                 manualSyncInitiated = false
-                activity?.invalidateOptionsMenu()
+                refreshToolbarState()
                 showManualSyncResultToast(result)
             }
         }
@@ -479,41 +396,20 @@ class ListHabitsFragment : Fragment(), Preferences.Listener, SyncCoordinator.Lis
     }
 
     private fun applyDisplayMode() {
-        val activity = requireActivity() as AppCompatActivity
+        val activity = requireActivity()
         if (displayMode == ListHabitsDisplayMode.ARCHIVE) {
-            rootView.setScreenTitle(getString(R.string.archive_title))
-            rootView.showContainerHomeView(false)
-            adapter.setFilter(
-                HabitMatcher(isArchivedAllowed = true, isArchivedRequired = true)
-            )
+            applyArchiveFilter(if (menuController.isSearchActive) archiveSearchQuery else "")
         } else {
-            rootView.setScreenTitle(getString(R.string.habits_title))
-            rootView.showContainerHomeView(false)
+            archiveSearchQuery = ""
             menuController.behavior.onPreferencesChanged()
+            adapter.refresh()
         }
-        adapter.refresh()
-        activateToolbar()
-        activity.invalidateOptionsMenu()
+        refreshToolbarState()
+        rootView.refreshDisplayState()
+        val selecting = component.listHabitsSelectionMenu.selectedCount > 0
         (activity as? MainNavigationHost)?.setHabitCreationAvailable(
-            displayMode == ListHabitsDisplayMode.NORMAL
+            !selecting && displayMode == ListHabitsDisplayMode.NORMAL
         )
-    }
-
-    private fun activateToolbar() {
-        val activity = requireActivity() as AppCompatActivity
-        activity.setSupportActionBar(rootView.tbar)
-        activity.supportActionBar?.setDisplayHomeAsUpEnabled(
-            displayMode == ListHabitsDisplayMode.ARCHIVE
-        )
-        rootView.applyToolbarIconTint()
-    }
-
-    private fun updateMenuVisibility(menu: Menu) {
-        val inNormalMode = displayMode == ListHabitsDisplayMode.NORMAL && !menuController.isSearchActive
-        menu.findItem(R.id.action_filter)?.isVisible = inNormalMode
-        menu.findItem(R.id.actionSkipDay)?.isVisible = inNormalMode
-        menu.findItem(R.id.actionAddHabit)?.isVisible = inNormalMode
-        menu.findItem(R.id.actionSync)?.isVisible = inNormalMode && appComponent.syncCoordinator.isSyncReady()
     }
 
     fun onHostStartup() {

@@ -27,9 +27,6 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.view.HapticFeedbackConstants
-import android.view.Menu
-import android.view.MenuItem
-import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
@@ -75,7 +72,6 @@ import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitMenuPresenter
 import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitPresenter
 import org.isoron.uhabits.core.ui.views.OnDateClickedListener
 import org.isoron.uhabits.intents.IntentFactory
-import org.isoron.uhabits.utils.applyRootViewInsets
 import org.isoron.uhabits.utils.currentTheme
 import org.isoron.uhabits.utils.dismissCurrentAndShow
 import org.isoron.uhabits.utils.dismissCurrentDialog
@@ -86,7 +82,6 @@ import org.isoron.uhabits.widgets.WidgetUpdater
 class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoron.uhabits.core.models.ModelObservable.Listener, Preferences.Listener {
 
     private lateinit var commandRunner: CommandRunner
-    private lateinit var menu: ShowHabitMenu
     private lateinit var view: ShowHabitView
     private lateinit var habit: Habit
     private lateinit var habitList: org.isoron.uhabits.core.models.HabitList
@@ -182,11 +177,11 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
             }
         }
 
-        menu = ShowHabitMenu(
+        view.setToolbarMenu(ShowHabitMenu(
             activity = this,
             presenter = menuPresenter,
             preferences = preferences
-        )
+        ))
 
         scope.launch {
             val manager = withContext(Dispatchers.IO) {
@@ -203,29 +198,10 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
             }
         }
         view.setListener(presenter)
-        view.applyRootViewInsets()
         setContentView(view)
     }
 
-    override fun onCreateOptionsMenu(m: Menu): Boolean {
-        val result = menu.onCreateOptionsMenu(m)
-        val iconTint = view.toolbarForegroundColor
-        for (i in 0 until m.size()) {
-            m.getItem(i).icon?.setTint(iconTint)
-        }
-        view.harmonizeToolbar(iconTint)
-        return result
-    }
-
     fun editHistory() = presenter.historyCardPresenter.onClickEditButton()
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        if (item.itemId == android.R.id.home) {
-            finish()
-            return true
-        }
-        return menu.onOptionsItemSelected(item)
-    }
 
     override fun onResume() {
         super.onResume()
@@ -395,11 +371,11 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
                                         effectiveReads?.snapshots(habits, from, to).orEmpty()
                                     }
                                 }
-                                menu = ShowHabitMenu(
+                                view.setToolbarMenu(ShowHabitMenu(
                                     activity = this@ShowHabitActivity,
                                     presenter = menuPresenter,
                                     preferences = preferences
-                                )
+                                ))
                                 supportFragmentManager.findFragmentByTag("historyEditor")?.let {
                                     (it as? HistoryEditorDialog)?.setOnDateClickedListener(presenter.historyCardPresenter)
                                 }
@@ -550,12 +526,6 @@ class ShowHabitActivity : AppCompatActivity(), CommandRunner.Listener, org.isoro
             }
             dialog.onToggle = { v, n -> callback.onNotesSaved(v, n) }
             dialog.dismissCurrentAndShow(supportFragmentManager, "checkmarkDialog")
-        }
-
-        private fun getPopupAnchor(): View? {
-            val dialog =
-                supportFragmentManager.findFragmentByTag("historyEditor") as HistoryEditorDialog?
-            return dialog?.dataView
         }
 
         override fun showEditHabitScreen(habit: Habit) {

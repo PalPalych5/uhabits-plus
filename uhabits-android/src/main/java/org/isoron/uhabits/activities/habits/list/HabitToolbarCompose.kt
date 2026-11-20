@@ -44,6 +44,7 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import org.isoron.uhabits.R
 import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.core.models.HabitList
 
 internal data class HabitToolbarItem(
     val id: Int,
@@ -59,6 +60,136 @@ internal data class HabitToolbarState(
     val filters: List<HabitToolbarItem> = emptyList(), val sorts: List<HabitToolbarItem> = emptyList(),
     val overflow: List<HabitToolbarItem> = emptyList()
 )
+
+internal data class HabitToolbarLabels(
+    val habitsTitle: String,
+    val archiveTitle: String,
+    val hideArchived: String,
+    val hideCompleted: String,
+    val hideEntered: String,
+    val sortManual: String,
+    val sortByName: String,
+    val sortByColor: String,
+    val sortByScore: String,
+    val sortByStatus: String,
+    val sortBySphere: String,
+    val sortByLevel: String,
+    val skipDay: String,
+    val search: String
+)
+
+internal fun buildHabitToolbarState(
+    archive: Boolean,
+    searching: Boolean,
+    query: String,
+    showArchived: Boolean,
+    showCompleted: Boolean,
+    areQuestionMarksEnabled: Boolean,
+    isSkipEnabled: Boolean,
+    primaryOrder: HabitList.Order,
+    isHabitSpheresEnabled: Boolean,
+    isDayTiersEnabled: Boolean,
+    isClassicLayout: Boolean,
+    showCardBorders: Boolean,
+    syncReady: Boolean,
+    isSyncing: Boolean,
+    labels: HabitToolbarLabels
+): HabitToolbarState {
+    val endMarginDp = when {
+        isClassicLayout -> 0
+        showCardBorders -> 4
+        else -> 2
+    }
+    val inNormalMode = !archive && !searching
+
+    val filters = if (inNormalMode) {
+        listOf(
+            HabitToolbarItem(
+                id = R.id.actionHideArchived,
+                title = labels.hideArchived,
+                checked = !showArchived,
+                enabled = true
+            ),
+            HabitToolbarItem(
+                id = R.id.actionHideCompleted,
+                title = if (areQuestionMarksEnabled || isSkipEnabled) labels.hideEntered else labels.hideCompleted,
+                checked = !showCompleted,
+                enabled = true
+            )
+        )
+    } else {
+        emptyList()
+    }
+
+    val effectiveOrder = when {
+        !isHabitSpheresEnabled && primaryOrder == HabitList.Order.BY_SPHERE -> HabitList.Order.BY_POSITION
+        !isDayTiersEnabled && primaryOrder == HabitList.Order.BY_DAY_TIER -> HabitList.Order.BY_POSITION
+        else -> primaryOrder
+    }
+
+    val selectedSortId = when (effectiveOrder) {
+        HabitList.Order.BY_NAME_ASC, HabitList.Order.BY_NAME_DESC -> R.id.actionSortName
+        HabitList.Order.BY_COLOR_ASC, HabitList.Order.BY_COLOR_DESC -> R.id.actionSortColor
+        HabitList.Order.BY_SCORE_ASC, HabitList.Order.BY_SCORE_DESC -> R.id.actionSortScore
+        HabitList.Order.BY_STATUS_ASC, HabitList.Order.BY_STATUS_DESC -> R.id.actionSortStatus
+        HabitList.Order.BY_SPHERE -> R.id.actionSortSphere
+        HabitList.Order.BY_DAY_TIER -> R.id.actionSortLevel
+        HabitList.Order.BY_POSITION -> R.id.actionSortManual
+    }
+    val isDescending = effectiveOrder == HabitList.Order.BY_NAME_DESC ||
+        effectiveOrder == HabitList.Order.BY_COLOR_DESC ||
+        effectiveOrder == HabitList.Order.BY_SCORE_DESC ||
+        effectiveOrder == HabitList.Order.BY_STATUS_DESC
+
+    val sorts = if (inNormalMode) {
+        buildList {
+            add(HabitToolbarItem(R.id.actionSortManual, labels.sortManual))
+            add(HabitToolbarItem(R.id.actionSortName, labels.sortByName, supportsDirection = true))
+            add(HabitToolbarItem(R.id.actionSortColor, labels.sortByColor, supportsDirection = true))
+            add(HabitToolbarItem(R.id.actionSortScore, labels.sortByScore, supportsDirection = true))
+            add(HabitToolbarItem(R.id.actionSortStatus, labels.sortByStatus, supportsDirection = true))
+            if (isHabitSpheresEnabled) {
+                add(HabitToolbarItem(R.id.actionSortSphere, labels.sortBySphere))
+            }
+            if (isDayTiersEnabled) {
+                add(HabitToolbarItem(R.id.actionSortLevel, labels.sortByLevel))
+            }
+        }.map { item ->
+            val selected = item.id == selectedSortId
+            item.copy(
+                checked = selected,
+                isDescending = selected && isDescending
+            )
+        }
+    } else {
+        emptyList()
+    }
+
+    val overflow = when {
+        inNormalMode -> listOf(
+            HabitToolbarItem(R.id.actionSkipDay, labels.skipDay),
+            HabitToolbarItem(R.id.actionSearch, labels.search)
+        )
+        archive && !searching -> listOf(
+            HabitToolbarItem(R.id.actionSearch, labels.search)
+        )
+        else -> emptyList()
+    }
+
+    return HabitToolbarState(
+        title = if (archive) labels.archiveTitle else labels.habitsTitle,
+        archive = archive,
+        searching = searching,
+        query = query,
+        searchEndMarginDp = endMarginDp,
+        cardEndMarginDp = endMarginDp,
+        syncing = inNormalMode && syncReady && isSyncing,
+        syncVisible = inNormalMode && syncReady,
+        filters = filters,
+        sorts = sorts,
+        overflow = overflow
+    )
+}
 
 internal fun computeToolbarActionCentersFromEndDp(
     actionCount: Int,

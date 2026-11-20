@@ -7,9 +7,12 @@ import androidx.lifecycle.Lifecycle
 import android.os.Bundle
 import android.os.Build
 import android.os.ParcelFileDescriptor
-import android.view.View
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.Until
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.tasks.revealTaskDetailControl
 import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.activities.tasks.TaskDetailBottomSheet
@@ -136,21 +139,26 @@ class TaskFocusAndroidTest {
                     assertNull(workspace.childFragmentManager.findFragmentByTag(TaskFocusBottomSheet.TAG))
                     detail = TaskDetailBottomSheet.newInstance(task.id)
                     detail.showNow(workspace.childFragmentManager, "task_detail")
-                    val action = detail.requireView().findViewById<View>(R.id.rowDetailFocus)
-                    assertEquals(View.VISIBLE, action.visibility)
-                    assertTrue(action.performClick())
                 }
+                val device = UiDevice.getInstance(f.instrumentation)
+                device.revealTaskDetailControl("taskDetailFocus").click()
                 f.instrumentation.waitForIdleSync()
-                scenario.onActivity {
-                    val timerSheet = workspace.childFragmentManager.findFragmentByTag(TaskFocusBottomSheet.TAG) as TaskFocusBottomSheet
+                lateinit var startLabel: String
+                scenario.onActivity { activity ->
+                    assertTrue(workspace.childFragmentManager.findFragmentByTag(TaskFocusBottomSheet.TAG) is TaskFocusBottomSheet)
                     assertFalse("Preparation must not start work", f.component.timerSessionManager.snapshot().hasActiveSession)
                     assertNull(f.component.timerSessionManager.currentTarget)
-                    val confirm = findStartButton(timerSheet.requireView())
-                    assertTrue(confirm.performClick())
+                    startLabel = activity.getString(R.string.timer_start)
+                }
+                requireNotNull(device.wait(Until.findObject(By.desc(startLabel)), 5_000)) {
+                    "Focus timer start control missing"
+                }.click()
+                f.instrumentation.waitForIdleSync()
+                scenario.onActivity {
                     assertTrue(f.component.timerSessionManager.isTaskTarget(task.id))
                     assertTrue(f.component.timerSessionManager.snapshot().isRunning)
                     assertSame(detail, workspace.childFragmentManager.findFragmentByTag("task_detail"))
-                    timerSheet.dismiss()
+                    (workspace.childFragmentManager.findFragmentByTag(TaskFocusBottomSheet.TAG) as TaskFocusBottomSheet).dismiss()
                 }
                 f.instrumentation.waitForIdleSync()
                 scenario.onActivity { activity ->
@@ -167,16 +175,6 @@ class TaskFocusAndroidTest {
             }
             assertFalse(f.component.userTaskRepository.getById(task.id)!!.isCompleted)
         } finally { f.close() }
-    }
-
-    private fun findStartButton(root: View): View {
-        if (root is android.widget.Button && root.text.toString() == "Начать") return root
-        if (root is android.view.ViewGroup) {
-            for (i in 0 until root.childCount) {
-                runCatching { findStartButton(root.getChildAt(i)) }.getOrNull()?.let { return it }
-            }
-        }
-        error("Focus confirmation button missing")
     }
 
     @Test fun idleTaskPomodoroConfigurationAndBreakReuseCanonicalRuntime() {

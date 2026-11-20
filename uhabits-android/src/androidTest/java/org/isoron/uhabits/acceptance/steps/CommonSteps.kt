@@ -149,8 +149,7 @@ object CommonSteps : BaseUserInterfaceTest() {
                     .check(ViewAssertions.matches(ViewMatchers.isDisplayed()))
 
             Screen.SHOW_HABIT ->
-                Espresso.onView(ViewMatchers.withId(R.id.composeView))
-                    .check(ViewAssertions.matches(ViewMatchers.isDisplayed()))
+                assertTrue(device.wait(Until.hasObject(By.res("action_edit_habit")), 5_000L))
 
             Screen.EDIT_HABIT ->
                 Espresso.onView(ViewMatchers.withId(R.id.questionInput))
@@ -185,7 +184,7 @@ object CommonSteps : BaseUserInterfaceTest() {
 
     fun changeFrequencyToDaily(habitName: String) {
         clickText(habitName)
-        Espresso.onView(ViewMatchers.withId(R.id.action_edit_habit)).perform(ViewActions.click())
+        requireNotNull(device.wait(Until.findObject(By.res("action_edit_habit")), 5_000L)).click()
         EditHabitSteps.pickDailyFrequency()
         EditHabitSteps.clickSave()
         pressBack()
@@ -193,7 +192,7 @@ object CommonSteps : BaseUserInterfaceTest() {
 
     fun changeFrequencyToMonthly(habitName: String) {
         clickText(habitName)
-        Espresso.onView(ViewMatchers.withId(R.id.action_edit_habit)).perform(ViewActions.click())
+        requireNotNull(device.wait(Until.findObject(By.res("action_edit_habit")), 5_000L)).click()
         EditHabitSteps.pickMonthFrequency()
         EditHabitSteps.clickSave()
         pressBack()

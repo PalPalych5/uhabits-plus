@@ -26,6 +26,21 @@ import android.graphics.RectF
 import android.util.AttributeSet
 import android.view.View
 import android.view.ViewGroup
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.habits.list.views.toShortString
 import org.isoron.uhabits.utils.InterfaceUtils.dpToPixels
@@ -33,31 +48,24 @@ import org.isoron.uhabits.utils.InterfaceUtils.getDimension
 import org.isoron.uhabits.utils.StyledResources
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 class TargetChart : View {
-    private var paint: Paint? = null
+    private val renderer = TargetChartRenderer(context)
+    private val styled = StyledResources(context)
     private var baseSize = 0
     private var primaryColor = 0
-    private var mediumContrastTextColor = 0
-    private var highContrastReverseTextColor = 0
-    private var lowContrastTextColor = 0
+    private var mediumContrastTextColor = styled.getColor(R.attr.contrast60)
+    private var lowContrastTextColor = styled.getColor(R.attr.contrast20)
     private var barTextColorOverride: Int? = null
-    private val rect = RectF()
-    private val barRect = RectF()
     private var values = emptyList<Double>()
     private var labels = emptyList<String>()
     private var targets = emptyList<Double>()
     private var isAtMost = false
-    private var maxLabelSize = 0f
-    private var tinyTextSize = 0f
 
-    constructor(context: Context?) : super(context) {
-        init()
-    }
+    constructor(context: Context?) : super(context)
 
-    constructor(context: Context?, attrs: AttributeSet?) : super(context, attrs) {
-        init()
-    }
+    constructor(context: Context?, attrs: AttributeSet?) : super(context, attrs)
 
     fun setColor(color: Int) {
         primaryColor = color
@@ -73,25 +81,16 @@ class TargetChart : View {
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        if (labels.isEmpty()) return
-        maxLabelSize = 0f
-        for (label in labels) {
-            paint!!.textSize = tinyTextSize
-            val len = paint!!.measureText(label)
-            maxLabelSize = max(maxLabelSize, len)
-        }
-        val marginTop = (height - baseSize * labels.size) / 2.0f
-        rect[0f, marginTop, width.toFloat()] = marginTop + baseSize
-        for (i in labels.indices) {
-            drawRow(canvas, i, rect)
-            rect.offset(0f, baseSize.toFloat())
-        }
+        renderer.draw(
+            canvas, width, height, baseSize, labels, values, targets, isAtMost,
+            primaryColor, lowContrastTextColor, mediumContrastTextColor, barTextColorOverride
+        )
     }
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
         var widthSpec = widthSpec
         var heightSpec = heightSpec
-        baseSize = resources.getDimensionPixelSize(R.dimen.baseSize)
+        baseSize = renderer.rowHeight
         val width = MeasureSpec.getSize(widthSpec)
         var height = labels.size * baseSize
         val params = layoutParams
@@ -102,92 +101,6 @@ class TargetChart : View {
         heightSpec = MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
         widthSpec = MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY)
         setMeasuredDimension(widthSpec, heightSpec)
-    }
-
-    private fun drawRow(canvas: Canvas, row: Int, rect: RectF) {
-        val padding = dpToPixels(context, 4f)
-        val round = dpToPixels(context, 2f)
-        val stop = maxLabelSize + padding * 2
-        paint!!.color = mediumContrastTextColor
-
-        // Draw label
-        paint!!.textSize = tinyTextSize
-        paint!!.textAlign = Paint.Align.RIGHT
-        var yTextAdjust = (paint!!.descent() + paint!!.ascent()) / 2.0f
-        canvas.drawText(
-            labels[row],
-            rect.left + stop - padding,
-            rect.centerY() - yTextAdjust,
-            paint!!
-        )
-
-        // Draw background box
-        paint!!.color = lowContrastTextColor
-        barRect[rect.left + stop + padding, rect.top + baseSize * 0.05f, rect.right - padding] =
-            rect.bottom - baseSize * 0.05f
-        canvas.drawRoundRect(barRect, round, round, paint!!)
-        var percentage = if (targets[row] > 0) {
-            (values[row] / targets[row]).toFloat()
-        } else {
-            1.0f
-        }
-        percentage = min(1.0f, percentage)
-
-        // Draw completed box
-        var completedWidth = percentage * barRect.width()
-        if (completedWidth > 0 && completedWidth < 2 * round) {
-            completedWidth = 2 * round
-        }
-        val remainingWidth = barRect.width() - completedWidth
-        paint!!.color = primaryColor
-        barRect[barRect.left, barRect.top, barRect.left + completedWidth] = barRect.bottom
-        canvas.drawRoundRect(barRect, round, round, paint!!)
-
-        // Draw values
-        paint!!.color = Color.WHITE
-        paint!!.textSize = tinyTextSize
-        paint!!.textAlign = Paint.Align.CENTER
-        yTextAdjust = (paint!!.descent() + paint!!.ascent()) / 2.0f
-        val remaining = max(0.0, targets[row] - values[row])
-        val isExceededAtMost = isAtMost && values[row] > targets[row]
-        val completedText = if (isExceededAtMost) {
-            val combined = "${values[row].toShortString()} / ${targets[row].toShortString()}"
-            if (completedWidth > paint!!.measureText(combined) + 2 * padding) combined else values[row].toShortString()
-        } else {
-            values[row].toShortString()
-        }
-        val remainingText = remaining.toShortString()
-        if (completedWidth > paint!!.measureText(completedText) + 2 * padding) {
-            paint!!.color = barTextColorOverride ?: resolveFilledBarTextColor(primaryColor)
-            canvas.drawText(
-                completedText,
-                barRect.centerX(),
-                barRect.centerY() - yTextAdjust,
-                paint!!
-            )
-        }
-        if (remaining > 0.0 && remainingWidth > paint!!.measureText(remainingText) + 2 * padding) {
-            paint!!.color = mediumContrastTextColor
-            barRect[rect.left + stop + padding + completedWidth, barRect.top, rect.right - padding] =
-                barRect.bottom
-            canvas.drawText(
-                remainingText,
-                barRect.centerX(),
-                barRect.centerY() - yTextAdjust,
-                paint!!
-            )
-        }
-    }
-
-    private fun init() {
-        paint = Paint()
-        paint!!.textAlign = Paint.Align.CENTER
-        paint!!.isAntiAlias = true
-        val res = StyledResources(context)
-        lowContrastTextColor = res.getColor(R.attr.contrast20)
-        mediumContrastTextColor = res.getColor(R.attr.contrast60)
-        highContrastReverseTextColor = res.getColor(R.attr.contrast0)
-        tinyTextSize = getDimension(context, R.dimen.tinyTextSize)
     }
 
     fun setValues(values: List<Double>) {
@@ -235,6 +148,111 @@ class TargetChart : View {
             } else {
                 Color.WHITE
             }
+        }
+    }
+}
+
+private class TargetChartRenderer(context: Context) {
+    val rowHeight = context.resources.getDimensionPixelSize(R.dimen.baseSize)
+    private val padding = dpToPixels(context, 4f)
+    private val radius = dpToPixels(context, 2f)
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = getDimension(context, R.dimen.tinyTextSize)
+    }
+    private val bar = RectF()
+
+    fun draw(
+        canvas: Canvas,
+        width: Int,
+        height: Int,
+        baseSize: Int,
+        labels: List<String>,
+        values: List<Double>,
+        targets: List<Double>,
+        isAtMost: Boolean,
+        fillColor: Int,
+        trackColor: Int,
+        labelColor: Int,
+        barTextColor: Int? = null
+    ) {
+        val labelWidth = labels.maxOfOrNull(paint::measureText) ?: return
+        val stop = labelWidth + 2 * padding
+        val marginTop = (height - baseSize * labels.size) / 2f
+        val textOffset = (paint.descent() + paint.ascent()) / 2f
+        val completedTextColor = barTextColor ?: TargetChart.resolveFilledBarTextColor(fillColor)
+        labels.forEachIndexed { index, label ->
+            val top = marginTop + index * baseSize
+            val centerY = top + baseSize / 2f
+            val value = values[index]
+            val target = targets[index]
+            paint.color = labelColor
+            paint.textAlign = Paint.Align.RIGHT
+            canvas.drawText(label, stop - padding, centerY - textOffset, paint)
+
+            bar.set(stop + padding, top + baseSize * 0.05f, width - padding, top + baseSize * 0.95f)
+            paint.color = trackColor
+            canvas.drawRoundRect(bar, radius, radius, paint)
+
+            val percentage = if (target > 0) min(1f, (value / target).toFloat()) else 1f
+            var completedWidth = percentage * bar.width()
+            if (completedWidth > 0 && completedWidth < 2 * radius) completedWidth = 2 * radius
+            val remainingWidth = bar.width() - completedWidth
+            bar.right = bar.left + completedWidth
+            paint.color = fillColor
+            canvas.drawRoundRect(bar, radius, radius, paint)
+
+            val valueText = value.toShortString()
+            val combined = "$valueText / ${target.toShortString()}"
+            val completedText = if (isAtMost && value > target &&
+                completedWidth > paint.measureText(combined) + 2 * padding
+            ) combined else valueText
+            paint.textAlign = Paint.Align.CENTER
+            if (completedWidth > paint.measureText(completedText) + 2 * padding) {
+                paint.color = completedTextColor
+                canvas.drawText(completedText, bar.centerX(), centerY - textOffset, paint)
+            }
+
+            val remaining = max(0.0, target - value)
+            val remainingText = remaining.toShortString()
+            if (remaining > 0 && remainingWidth > paint.measureText(remainingText) + 2 * padding) {
+                paint.color = labelColor
+                bar.left = bar.right
+                bar.right = width - padding
+                canvas.drawText(remainingText, bar.centerX(), centerY - textOffset, paint)
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalComposeUiApi::class)
+internal fun TargetProgressChart(
+    labels: List<String>,
+    values: List<Double>,
+    targets: List<Double>,
+    unit: String,
+    isAtMost: Boolean,
+    fillColor: Int,
+    trackColor: Int,
+    labelColor: Int
+) {
+    val context = LocalContext.current
+    val renderer = remember(context) { TargetChartRenderer(context) }
+    val height = with(LocalDensity.current) { (renderer.rowHeight * labels.size).toDp() }
+    val summary = labels.indices.joinToString(". ") { index ->
+        "${labels[index]} ${values[index].toShortString()} / ${targets[index].toShortString()} $unit".trim()
+    }
+    Canvas(
+        Modifier.fillMaxWidth().height(height).semantics {
+            contentDescription = summary
+            testTagsAsResourceId = true
+        }.testTag("habitTargetProgress"),
+    ) {
+        drawIntoCanvas { canvas ->
+            renderer.draw(
+                canvas.nativeCanvas, size.width.roundToInt(), size.height.roundToInt(), renderer.rowHeight,
+                labels, values, targets, isAtMost, fillColor, trackColor, labelColor
+            )
         }
     }
 }

@@ -20,21 +20,15 @@
 package org.isoron.uhabits.activities.habits.list
 
 import android.content.Context
-import android.view.Menu
-import android.view.MenuInflater
-import android.view.MenuItem
 import androidx.appcompat.app.AppCompatActivity
 import me.tatarka.inject.annotations.Inject
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.containers.ContainersActivity
 import org.isoron.uhabits.core.models.HabitList
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.ui.screens.habits.list.ListHabitsMenuBehavior
 import org.isoron.uhabits.inject.ActivityContext
 import org.isoron.uhabits.inject.ActivityScope
-import org.isoron.uhabits.HabitsApplication
-import org.isoron.uhabits.activities.containers.ContainersActivity
-import org.isoron.uhabits.core.containers.session.DatasetMode
-import org.isoron.uhabits.utils.StyledResources
 
 @Inject
 @ActivityScope
@@ -44,138 +38,130 @@ class ListHabitsMenu(
     val behavior: ListHabitsMenuBehavior
 ) {
     val activity = context as AppCompatActivity
-    var menu: Menu? = null
-        private set
     var isSearchActive = false
         private set
     var onSearchQueryChanged: ((String) -> Unit)? = null
+    var onMenuStateChanged: (() -> Unit)? = null
 
     fun closeSearch() {
         if (!isSearchActive) return
         isSearchActive = false
         behavior.onSearchQueryChanged("")
         onSearchQueryChanged?.invoke("")
-        activity.invalidateOptionsMenu()
+        onMenuStateChanged?.invoke()
     }
 
     fun openSearch() {
         isSearchActive = true
-        activity.invalidateOptionsMenu()
+        onMenuStateChanged?.invoke()
     }
 
-    fun onPrepare(menu: Menu) {
-        this.menu = menu
-        menu.setGroupVisible(R.id.actionItems, !isSearchActive)
-        menu.findItem(R.id.actionSearchContainer)?.isVisible = isSearchActive
-
-        // In PR8, Containers is the unified hierarchical home screen in experimental mode,
-        // so no separate ContainersActivity entry is displayed.
-        menu.findItem(R.id.actionContainers)?.isVisible = false
-        menu.findItem(R.id.actionTodayEvaluation)?.isVisible = false
-    }
-
-    fun onCreate(inflater: MenuInflater, menu: Menu) {
-        this.menu = menu
-        menu.clear()
-        inflater.inflate(R.menu.list_habits, menu)
-        createMenuItems(menu)
-        updateArrows(menu)
-    }
-
-    private fun createMenuItems(menu: Menu) {
-        val hideArchivedItem = menu.findItem(R.id.actionHideArchived)
-        val hideCompletedItem = menu.findItem(R.id.actionHideCompleted)
-        hideArchivedItem.isChecked = !preferences.showArchived
-        hideCompletedItem.isChecked = !preferences.showCompleted
-        if (preferences.areQuestionMarksEnabled || preferences.isSkipEnabled) {
-            hideCompletedItem.title = activity.resources.getString(R.string.hide_entered)
-        } else {
-            hideCompletedItem.title = activity.resources.getString(R.string.hide_completed)
-        }
-    }
-
-    private fun updateArrows(menu: Menu) {
-        val styledResources = StyledResources(activity)
-        val sortManual = menu.findItem(R.id.actionSortManual)
-        val sortName = menu.findItem(R.id.actionSortName)
-        val sortColor = menu.findItem(R.id.actionSortColor)
-        val sortScore = menu.findItem(R.id.actionSortScore)
-        val sortStatus = menu.findItem(R.id.actionSortStatus)
-        val sortSphere = menu.findItem(R.id.actionSortSphere)
-        val sortLevel = menu.findItem(R.id.actionSortLevel)
-        sortSphere.isVisible = preferences.isHabitSpheresEnabled
+    fun normalizeSortOrder() {
         if (!preferences.isHabitSpheresEnabled && preferences.defaultPrimaryOrder == HabitList.Order.BY_SPHERE) {
             preferences.defaultPrimaryOrder = HabitList.Order.BY_POSITION
         }
-        sortLevel.isVisible = preferences.isDayTiersEnabled
         if (!preferences.isDayTiersEnabled && preferences.defaultPrimaryOrder == HabitList.Order.BY_DAY_TIER) {
             preferences.defaultPrimaryOrder = HabitList.Order.BY_POSITION
         }
-        val arrowUp = styledResources.getDrawable(R.attr.iconArrowUp)
-        val arrowDown = styledResources.getDrawable(R.attr.iconArrowDown)
-        when (preferences.defaultPrimaryOrder) {
-            HabitList.Order.BY_NAME_ASC -> sortName.icon = arrowDown
-            HabitList.Order.BY_NAME_DESC -> sortName.icon = arrowUp
-            HabitList.Order.BY_COLOR_ASC -> sortColor.icon = arrowDown
-            HabitList.Order.BY_COLOR_DESC -> sortColor.icon = arrowUp
-            HabitList.Order.BY_SCORE_ASC -> sortScore.icon = arrowDown
-            HabitList.Order.BY_SCORE_DESC -> sortScore.icon = arrowUp
-            HabitList.Order.BY_STATUS_ASC -> sortStatus.icon = arrowDown
-            HabitList.Order.BY_STATUS_DESC -> sortStatus.icon = arrowUp
-            HabitList.Order.BY_POSITION -> sortManual.icon = arrowUp
-            HabitList.Order.BY_SPHERE -> sortSphere.icon = arrowUp
-            HabitList.Order.BY_DAY_TIER -> sortLevel.icon = arrowUp
-        }
     }
 
-    fun onItemSelected(item: MenuItem): Boolean {
-        when (item.itemId) {
+    internal fun buildToolbarState(
+        archive: Boolean,
+        syncReady: Boolean,
+        isSyncing: Boolean,
+        query: String = behavior.searchQuery
+    ): HabitToolbarState {
+        normalizeSortOrder()
+        val res = activity.resources
+        return buildHabitToolbarState(
+            archive = archive,
+            searching = isSearchActive,
+            query = query,
+            showArchived = preferences.showArchived,
+            showCompleted = preferences.showCompleted,
+            areQuestionMarksEnabled = preferences.areQuestionMarksEnabled,
+            isSkipEnabled = preferences.isSkipEnabled,
+            primaryOrder = preferences.defaultPrimaryOrder,
+            isHabitSpheresEnabled = preferences.isHabitSpheresEnabled,
+            isDayTiersEnabled = preferences.isDayTiersEnabled,
+            isClassicLayout = preferences.isClassicSectionLayout,
+            showCardBorders = preferences.showHabitCardBorders,
+            syncReady = syncReady,
+            isSyncing = isSyncing,
+            labels = HabitToolbarLabels(
+                habitsTitle = res.getString(R.string.habits_title),
+                archiveTitle = res.getString(R.string.archive_title),
+                hideArchived = res.getString(R.string.hide_archived),
+                hideCompleted = res.getString(R.string.hide_completed),
+                hideEntered = res.getString(R.string.hide_entered),
+                sortManual = res.getString(R.string.manually),
+                sortByName = res.getString(R.string.by_name),
+                sortByColor = res.getString(R.string.by_color),
+                sortByScore = res.getString(R.string.by_score),
+                sortByStatus = res.getString(R.string.by_status),
+                sortBySphere = res.getString(R.string.by_sphere),
+                sortByLevel = res.getString(R.string.by_level),
+                skipDay = res.getString(R.string.action_skip_day),
+                search = res.getString(R.string.search)
+            )
+        )
+    }
+
+    fun onActionSelected(itemId: Int): Boolean {
+        when (itemId) {
             R.id.actionHideArchived -> {
                 behavior.onToggleShowArchived()
-                activity.invalidateOptionsMenu()
+                onMenuStateChanged?.invoke()
                 return true
             }
 
             R.id.actionHideCompleted -> {
                 behavior.onToggleShowCompleted()
-                activity.invalidateOptionsMenu()
+                onMenuStateChanged?.invoke()
                 return true
             }
 
             R.id.actionSortColor -> {
                 behavior.onSortByColor()
+                onMenuStateChanged?.invoke()
                 return true
             }
 
             R.id.actionSortManual -> {
                 behavior.onSortByManually()
+                onMenuStateChanged?.invoke()
                 return true
             }
 
             R.id.actionSortName -> {
                 behavior.onSortByName()
+                onMenuStateChanged?.invoke()
                 return true
             }
 
             R.id.actionSortScore -> {
                 behavior.onSortByScore()
+                onMenuStateChanged?.invoke()
                 return true
             }
 
             R.id.actionSortStatus -> {
                 behavior.onSortByStatus()
+                onMenuStateChanged?.invoke()
                 return true
             }
 
             R.id.actionSortSphere -> {
                 if (!preferences.isHabitSpheresEnabled) return true
                 behavior.onSortBySphere()
+                onMenuStateChanged?.invoke()
                 return true
             }
 
             R.id.actionSortLevel -> {
                 if (!preferences.isDayTiersEnabled) return true
                 behavior.onSortByLevel()
+                onMenuStateChanged?.invoke()
                 return true
             }
 
@@ -186,11 +172,6 @@ class ListHabitsMenu(
 
             R.id.actionContainers -> {
                 activity.startActivity(ContainersActivity.intent(activity))
-                return true
-            }
-
-            R.id.actionTodayEvaluation -> {
-                activity.startActivity(org.isoron.uhabits.activities.today.TodayActivity.createIntent(activity))
                 return true
             }
 

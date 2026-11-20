@@ -8,17 +8,17 @@ import android.view.Choreographer
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
-import android.widget.EditText
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.Until
 import kotlinx.coroutines.runBlocking
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.io.queryLong
 import org.isoron.platform.io.queryString
 import org.isoron.uhabits.HabitsApplication
-import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.dialogs.NumberDialog
 import org.isoron.uhabits.activities.habits.list.views.CheckmarkButtonView
 import org.isoron.uhabits.activities.habits.list.views.HabitCardListView
@@ -295,10 +295,10 @@ class HabitInteractionLagBenchmarkTest {
                             numBtn.performClick()
                         }
                         drain()
+                        checkNotNull(device.wait(Until.findObject(By.res("habitNumberValue")), 5_000L)).text = value
                         scenario.onActivity { activity ->
                             val dialog = activity.supportFragmentManager.findFragmentByTag("numberDialog") as? NumberDialog
                             checkNotNull(dialog)
-                            dialog.requireDialog().findViewById<EditText>(R.id.value).setText(value)
                             dialog.save()
                         }
                         drain()

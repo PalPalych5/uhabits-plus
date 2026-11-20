@@ -111,6 +111,10 @@ import kotlinx.coroutines.launch
 import org.isoron.platform.time.JavaLocalDateFormatter
 import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.habits.list.HabitSelectionToolbar
+import org.isoron.uhabits.activities.habits.list.HabitToolbarCompose
+import org.isoron.uhabits.activities.habits.list.HabitToolbarState
+import org.isoron.uhabits.activities.habits.list.ListHabitsSelectionMenu
 import org.isoron.uhabits.activities.habits.list.MAX_CHECKMARK_COUNT
 import org.isoron.uhabits.compose.LocalUHabitComposeColors
 import org.isoron.uhabits.compose.UHabitComposeColors
@@ -123,6 +127,89 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
+
+/**
+ * Single consolidated Jetpack Compose Habits screen combining:
+ * - Active toolbar ([HabitSelectionToolbar] or [HabitToolbarCompose])
+ * - Primary [HabitListScreenCompose] and its loading, empty and error states
+ * - Root-level [HabitCelebrationOverlay] aligned to window coordinates
+ */
+@Composable
+internal fun HabitWorkspaceScreenCompose(
+    toolbarState: HabitToolbarState,
+    selectionMenu: ListHabitsSelectionMenu?,
+    listState: HabitListScreenUiState,
+    dataOffset: Int,
+    celebrationState: HabitCelebrationState?,
+    onHostOriginChanged: (Offset) -> Unit = {},
+    onToolbarAction: (Int) -> Unit,
+    onToolbarBack: () -> Unit,
+    onToolbarQuery: (String) -> Unit,
+    onDataOffsetChanged: (Int) -> Unit,
+    onRetryRefresh: () -> Unit,
+    onRowClick: (Int) -> Unit,
+    onRowLongClick: (Int) -> Unit,
+    onMoveRow: (Int, Int) -> Unit,
+    onCheckmarkToggle: (Habit, LocalDate, Int, String, Offset) -> Unit,
+    onHabitDateEdit: (Habit, LocalDate, Offset) -> Unit,
+    onDismissHint: () -> Unit,
+    onMeaningfulContentDrawn: () -> Unit = {},
+    modifier: Modifier = Modifier,
+    colors: UHabitComposeColors = LocalUHabitComposeColors.current
+) {
+    val isSelectionActive = selectionMenu != null &&
+        selectionMenu.selectionRevision.let { selectionMenu.selectedCount > 0 }
+
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxSize()
+            .background(colors.backgroundColor)
+            .onGloballyPositioned { coords ->
+                if (coords.isAttached) {
+                    onHostOriginChanged(coords.positionInWindow())
+                }
+            }
+    ) {
+        if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) return@BoxWithConstraints
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (isSelectionActive && selectionMenu != null) {
+                HabitSelectionToolbar(selectionMenu, colors)
+            } else {
+                HabitToolbarCompose(
+                    state = toolbarState,
+                    colors = colors,
+                    onAction = onToolbarAction,
+                    onBack = onToolbarBack,
+                    onQuery = onToolbarQuery
+                )
+            }
+
+            HabitListScreenCompose(
+                state = listState,
+                dataOffset = dataOffset,
+                onDataOffsetChanged = onDataOffsetChanged,
+                onRetryRefresh = onRetryRefresh,
+                onRowClick = onRowClick,
+                onRowLongClick = onRowLongClick,
+                onMoveRow = onMoveRow,
+                onCheckmarkToggle = onCheckmarkToggle,
+                onHabitDateEdit = onHabitDateEdit,
+                onDismissHint = onDismissHint,
+                searchActive = toolbarState.searching,
+                onMeaningfulContentDrawn = onMeaningfulContentDrawn,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                colors = colors,
+            )
+        }
+
+        if (celebrationState != null) {
+            HabitCelebrationOverlay(
+                state = celebrationState,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+}
 
 /**
  * Pure Jetpack Compose rendering of the primary Habits list body:
@@ -166,11 +253,8 @@ fun HabitListScreenCompose(
             .fillMaxSize()
             .background(colors.backgroundColor)
     ) {
-        val availableWidthPx = if (constraints.hasBoundedWidth) {
-            constraints.maxWidth.toFloat()
-        } else {
-            with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
-        }
+        if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) return@BoxWithConstraints
+        val availableWidthPx = constraints.maxWidth.toFloat()
         val buttonCount = remember(availableWidthPx, nameWidthPx, buttonWidthPx) {
             computeCheckmarkCount(
                 availableWidthPx = availableWidthPx,

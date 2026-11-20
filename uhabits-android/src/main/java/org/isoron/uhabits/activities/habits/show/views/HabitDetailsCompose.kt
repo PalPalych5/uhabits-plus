@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,18 +60,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.viewinterop.AndroidView
-import org.isoron.platform.gui.AndroidDataView
 import org.isoron.uhabits.activities.common.views.CompactPopupMenu
+import org.isoron.uhabits.activities.common.views.ScrollableDataChart
 import org.isoron.uhabits.activities.habits.show.timer.PomodoroAlertIssue
 import org.isoron.uhabits.core.timer.TimerMode
 import org.isoron.platform.gui.toInt
 import org.isoron.platform.time.JavaLocalDateFormatter
 import org.isoron.uhabits.R
-import org.isoron.uhabits.activities.common.views.FrequencyChart
-import org.isoron.uhabits.activities.common.views.ScoreChart
-import org.isoron.uhabits.activities.common.views.StreakChart
+import org.isoron.uhabits.activities.common.views.FrequencyChartCanvas
+import org.isoron.uhabits.activities.common.views.ScoreChartCanvas
+import org.isoron.uhabits.activities.common.views.StreakChartCanvas
 import org.isoron.uhabits.activities.common.views.TargetChart
+import org.isoron.uhabits.activities.common.views.TargetProgressChart
 import org.isoron.uhabits.activities.habits.edit.formatFrequency
 import org.isoron.uhabits.activities.habits.list.views.toShortString
 import org.isoron.uhabits.activities.habits.show.FocusProgressPresentation
@@ -815,33 +816,15 @@ fun HabitTargetProgress(
             val values = indices.map { state.values[it] }
             val targets = indices.map { state.targets[it] }
 
-            AndroidView(
-                factory = { ctx ->
-                    TargetChart(ctx).apply {
-                        setColor(androidColor)
-                        setSurfaceColors(
-                            trackColor = trackColor,
-                            labelColor = colors.secondary
-                        )
-                        setIsAtMost(isAtMost)
-                        setLabels(labels)
-                        setTargets(targets)
-                        setValues(values)
-                    }
-                },
-                update = { chart ->
-                    chart.setColor(androidColor)
-                    chart.setSurfaceColors(
-                        trackColor = trackColor,
-                        labelColor = colors.secondary
-                    )
-                    chart.setIsAtMost(isAtMost)
-                    chart.setLabels(labels)
-                    chart.setTargets(targets)
-                    chart.setValues(values)
-                    chart.postInvalidate()
-                },
-                modifier = Modifier.fillMaxWidth()
+            TargetProgressChart(
+                labels = labels,
+                targets = targets,
+                values = values,
+                unit = state.unit,
+                isAtMost = isAtMost,
+                fillColor = androidColor,
+                trackColor = trackColor,
+                labelColor = colors.secondary
             )
         }
     }
@@ -869,39 +852,23 @@ fun HabitHistoryCalendar(
             }
         )
 
-        AndroidView(
-            factory = { ctx ->
-                AndroidDataView(ctx).apply {
-                    view = HistoryChart(
-                        today = state.today,
-                        paletteColor = state.color,
-                        theme = harmonizedTheme,
-                        dateFormatter = JavaLocalDateFormatter(Locale.getDefault()),
-                        series = state.series,
-                        defaultSquare = state.defaultSquare,
-                        notesIndicators = state.notesIndicators,
-                        firstWeekday = state.firstWeekday,
-                        onDateClickedListener = onDateClickedListener
-                    )
-                }
-            },
-            update = { chart ->
-                val existingOffset = (chart.view as? HistoryChart)?.dataOffset ?: 0
-                chart.view = HistoryChart(
-                    today = state.today,
-                    paletteColor = state.color,
-                    theme = harmonizedTheme,
-                    dateFormatter = JavaLocalDateFormatter(Locale.getDefault()),
-                    series = state.series,
-                    defaultSquare = state.defaultSquare,
-                    notesIndicators = state.notesIndicators,
-                    firstWeekday = state.firstWeekday,
-                    onDateClickedListener = onDateClickedListener
-                ).apply {
-                    dataOffset = existingOffset
-                }
-                chart.postInvalidate()
-            },
+        val chart = remember(state, harmonizedTheme, onDateClickedListener) {
+            HistoryChart(
+                today = state.today,
+                paletteColor = state.color,
+                theme = harmonizedTheme,
+                dateFormatter = JavaLocalDateFormatter(Locale.getDefault()),
+                series = state.series,
+                defaultSquare = state.defaultSquare,
+                notesIndicators = state.notesIndicators,
+                firstWeekday = state.firstWeekday,
+                onDateClickedListener = onDateClickedListener
+            )
+        }
+        ScrollableDataChart(
+            renderer = chart,
+            label = stringResource(R.string.calendar),
+            dateGestures = true,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(160.dp)
@@ -939,42 +906,17 @@ fun HabitStatisticsSection(
             HabitEmptyState(stringResource(R.string.reports_no_data))
         } else {
             val chartHeight = 200.dp
-            val lastBucketSize = remember { androidx.compose.runtime.mutableIntStateOf(state.bucketSize) }
-            AndroidView(
-                factory = { ctx ->
-                    ScoreChart(ctx).apply {
-                        setScores(state.scores)
-                        reset()
-                        setBucketSize(state.bucketSize)
-                        setColor(androidColor)
-                        setIsTransparencyEnabled(true)
-                        setSurfaceColors(
-                            textColor = colors.secondary,
-                            gridColor = colors.border,
-                            backgroundColor = surfaceColor.toArgb()
-                        )
-                    }
-                },
-                update = { chart ->
-                    chart.setScores(state.scores)
-                    if (lastBucketSize.intValue != state.bucketSize) {
-                        lastBucketSize.intValue = state.bucketSize
-                        chart.reset()
-                    }
-                    chart.setBucketSize(state.bucketSize)
-                    chart.setColor(androidColor)
-                    chart.setIsTransparencyEnabled(true)
-                    chart.setSurfaceColors(
-                        textColor = colors.secondary,
-                        gridColor = colors.border,
-                        backgroundColor = surfaceColor.toArgb()
-                    )
-                    chart.postInvalidate()
-                },
+            ScoreChartCanvas(
+                scores = state.scores,
+                bucketSize = state.bucketSize,
+                primaryColor = androidColor,
+                textColor = colors.secondary,
+                gridColor = colors.border,
+                backgroundColor = surfaceColor.toArgb(),
+                isTransparencyEnabled = true,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(chartHeight)
-                    .clipToBounds()
             )
         }
     }
@@ -1008,38 +950,23 @@ fun HabitBarHistorySection(
             HabitEmptyState(stringResource(R.string.reports_no_data))
         } else {
             val currentPeriodIndex = if (state.isNumerical) state.numericalSpinnerPosition else state.boolSpinnerPosition
-            val lastPeriodIndex = remember { androidx.compose.runtime.mutableIntStateOf(currentPeriodIndex) }
-            AndroidView(
-                factory = { ctx ->
-                    AndroidDataView(ctx).apply {
-                        view = BarChart(harmonizedTheme, JavaLocalDateFormatter(Locale.getDefault())).apply {
-                            series = mutableListOf(state.entries.map { it.value / 1000.0 })
-                            this.colors = mutableListOf(harmonizedTheme.color(state.color.paletteIndex))
-                            axis = state.entries.map { it.date }
-                        }
-                        resetDataOffset()
-                    }
-                },
-                update = { chart ->
-                    val periodChanged = lastPeriodIndex.intValue != currentPeriodIndex
-                    val existingOffset = if (periodChanged) 0 else ((chart.view as? BarChart)?.dataOffset ?: 0)
-                    lastPeriodIndex.intValue = currentPeriodIndex
-                    chart.view = BarChart(harmonizedTheme, JavaLocalDateFormatter(Locale.getDefault())).apply {
+            key(currentPeriodIndex) {
+                val chart = remember(state, harmonizedTheme) {
+                    BarChart(harmonizedTheme, JavaLocalDateFormatter(Locale.getDefault())).apply {
                         series = mutableListOf(state.entries.map { it.value / 1000.0 })
                         this.colors = mutableListOf(harmonizedTheme.color(state.color.paletteIndex))
                         axis = state.entries.map { it.date }
-                        dataOffset = existingOffset
                     }
-                    if (periodChanged) {
-                        chart.resetDataOffset()
-                    }
-                    chart.postInvalidate()
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(200.dp)
-                    .clipToBounds()
-            )
+                }
+                ScrollableDataChart(
+                    renderer = chart,
+                    label = periodLabel,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .clipToBounds()
+                )
+            }
         }
     }
 }
@@ -1090,34 +1017,16 @@ fun HabitStreakSummary(
                     style = TextStyle(color = Color(colors.secondary), fontSize = 12.sp, fontWeight = FontWeight.Medium),
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
-                AndroidView(
-                    factory = { ctx ->
-                        StreakChart(ctx).apply {
-                            setColor(androidColor)
-                            setSurfaceColors(
-                                trackColor = trackColor,
-                                labelColor = colors.secondary,
-                                filledBarTextColor = barTextColor
-                            )
-                            sharedMaxLength?.let { setMaxLengthOverride(it) }
-                            setStreaks(listOfNotNull(validLatest))
-                        }
-                    },
-                    update = { chart ->
-                        chart.setColor(androidColor)
-                        chart.setSurfaceColors(
-                            trackColor = trackColor,
-                            labelColor = colors.secondary,
-                            filledBarTextColor = barTextColor
-                        )
-                        sharedMaxLength?.let { chart.setMaxLengthOverride(it) }
-                        chart.setStreaks(listOfNotNull(validLatest))
-                        chart.postInvalidate()
-                    },
+                StreakChartCanvas(
+                    streaks = listOfNotNull(validLatest),
+                    maxLengthOverride = sharedMaxLength,
+                    primaryColor = androidColor,
+                    trackColor = trackColor,
+                    labelColor = colors.secondary,
+                    filledTextColor = barTextColor,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(20.dp)
-                        .clipToBounds()
                 )
                 if (hasBest) {
                     Spacer(Modifier.height(10.dp))
@@ -1131,34 +1040,16 @@ fun HabitStreakSummary(
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
                 val chartHeight = (displayBest.size * 20).dp
-                AndroidView(
-                    factory = { ctx ->
-                        StreakChart(ctx).apply {
-                            setColor(androidColor)
-                            setSurfaceColors(
-                                trackColor = trackColor,
-                                labelColor = colors.secondary,
-                                filledBarTextColor = barTextColor
-                            )
-                            sharedMaxLength?.let { setMaxLengthOverride(it) }
-                            setStreaks(displayBest)
-                        }
-                    },
-                    update = { chart ->
-                        chart.setColor(androidColor)
-                        chart.setSurfaceColors(
-                            trackColor = trackColor,
-                            labelColor = colors.secondary,
-                            filledBarTextColor = barTextColor
-                        )
-                        sharedMaxLength?.let { chart.setMaxLengthOverride(it) }
-                        chart.setStreaks(displayBest)
-                        chart.postInvalidate()
-                    },
+                StreakChartCanvas(
+                    streaks = displayBest,
+                    maxLengthOverride = sharedMaxLength,
+                    primaryColor = androidColor,
+                    trackColor = trackColor,
+                    labelColor = colors.secondary,
+                    filledTextColor = barTextColor,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(chartHeight)
-                        .clipToBounds()
                 )
             }
         }
@@ -1181,34 +1072,16 @@ fun HabitFrequencySection(
         if (state.frequency.isEmpty()) {
             HabitEmptyState(stringResource(R.string.reports_no_data))
         } else {
-            AndroidView(
-                factory = { ctx ->
-                    FrequencyChart(ctx).apply {
-                        setFrequency(state.frequency)
-                        setIsNumerical(state.isNumerical)
-                        setFirstWeekday(state.firstWeekday)
-                        setColor(androidColor)
-                        setSurfaceColors(
-                            labelColor = colors.secondary,
-                            gridColor = gridColor
-                        )
-                    }
-                },
-                update = { chart ->
-                    chart.setFrequency(state.frequency)
-                    chart.setIsNumerical(state.isNumerical)
-                    chart.setFirstWeekday(state.firstWeekday)
-                    chart.setColor(androidColor)
-                    chart.setSurfaceColors(
-                        labelColor = colors.secondary,
-                        gridColor = gridColor
-                    )
-                    chart.postInvalidate()
-                },
+            FrequencyChartCanvas(
+                frequency = state.frequency,
+                isNumerical = state.isNumerical,
+                firstWeekday = state.firstWeekday,
+                primaryColor = androidColor,
+                textColor = colors.secondary,
+                gridColor = gridColor,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(180.dp)
-                    .clipToBounds()
             )
         }
     }

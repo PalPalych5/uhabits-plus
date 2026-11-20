@@ -8,6 +8,9 @@ import android.view.ViewTreeObserver
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.Until
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
@@ -17,8 +20,6 @@ import org.isoron.uhabits.activities.habits.list.views.HabitCardListView
 import org.isoron.uhabits.activities.common.dialogs.NumberDialog
 import org.isoron.uhabits.utils.DemoDataGenerator
 import org.isoron.platform.time.LocalDate
-import org.isoron.uhabits.R
-import android.widget.EditText
 import org.isoron.uhabits.core.containers.session.DatasetMode
 import org.isoron.uhabits.core.containers.session.DatasetCapabilities
 import org.isoron.uhabits.database.AndroidSqlTiming
@@ -161,9 +162,11 @@ class HabitTapPerformanceAndroidTest {
                         check(button.performClick())
                     }
                     drain()
+                    checkNotNull(
+                        UiDevice.getInstance(ins).wait(Until.findObject(By.res("habitNumberValue")), 5_000L),
+                    ).text = value
                     scenario.onActivity { activity ->
                         val dialog = activity.supportFragmentManager.findFragmentByTag("numberDialog") as NumberDialog
-                        dialog.requireDialog().findViewById<EditText>(R.id.value).setText(value)
                         dialog.save()
                     }
                     ins.waitForIdleSync()

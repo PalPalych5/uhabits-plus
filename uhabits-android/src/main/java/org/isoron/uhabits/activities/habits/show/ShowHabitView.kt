@@ -6,18 +6,32 @@
 package org.isoron.uhabits.activities.habits.show
 
 import android.content.Context
-import android.content.res.ColorStateList
 import android.graphics.Color
-import android.view.LayoutInflater
 import android.view.View
 import android.widget.FrameLayout
-import android.widget.ImageView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color as ComposeColor
+import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.view.WindowInsetsControllerCompat
 import org.isoron.platform.gui.toInt
@@ -29,6 +43,7 @@ import org.isoron.uhabits.activities.habits.show.timer.PomodoroCompletionNotifie
 import org.isoron.uhabits.activities.habits.show.timer.TimerSessionManager
 import org.isoron.uhabits.core.timer.TimerMode
 import org.isoron.uhabits.activities.habits.show.views.HabitDetailsScreen
+import org.isoron.uhabits.activities.habits.show.views.ShowHabitToolbar
 import org.isoron.uhabits.activities.habits.show.views.TimerCardView
 import org.isoron.uhabits.activities.habits.show.views.TimerUiState
 import org.isoron.uhabits.activities.habits.show.views.computeTimerUiState
@@ -39,9 +54,6 @@ import org.isoron.uhabits.core.models.Habit
 import org.isoron.uhabits.core.models.isMinuteUnit
 import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitPresenter
 import org.isoron.uhabits.core.ui.screens.habits.show.ShowHabitState
-import org.isoron.uhabits.databinding.ShowHabitBinding
-import org.isoron.uhabits.utils.applyBottomInset
-import org.isoron.uhabits.utils.applyToolbarInsets
 
 data class ShowHabitSurfaceSpec(
     val canvasColor: Int,
@@ -73,15 +85,12 @@ fun resolveShowHabitSurfaceSpec(
 }
 
 class ShowHabitView(context: Context) : FrameLayout(context) {
-    private val binding = ShowHabitBinding.inflate(LayoutInflater.from(context))
     private var habitUnit: String = ""
     private var isTimerEnabled: Boolean = false
-    private var isNumerical: Boolean = false
     private var currentFocusProgress by mutableStateOf<FocusProgressPresentation?>(null)
 
-    var toolbarForegroundColor: Int = Color.WHITE
-        private set
-    private var currentTitleColor: Int = Color.WHITE
+    private var surfaceSpec by mutableStateOf(resolveSurface())
+    private var toolbarMenu by mutableStateOf<ShowHabitMenu?>(null)
 
     // Presentation state
     private var showHabitState by mutableStateOf<ShowHabitState?>(null)
@@ -124,16 +133,31 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
     }
 
     init {
-        binding.toolbar.applyToolbarInsets()
-        binding.composeView.applyBottomInset()
-        addView(binding.root)
-
-        binding.composeView.apply {
+        val composeView = ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 UHabitComposeTheme(composeColors) {
                     val state = showHabitState
-                    if (state != null) {
+                    Column(
+                        Modifier.fillMaxSize()
+                            .background(ComposeColor(surfaceSpec.canvasColor))
+                            .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.displayCutout).only(WindowInsetsSides.Horizontal)),
+                    ) {
+                        val menu = toolbarMenu
+                        if (menu != null) {
+                            ShowHabitToolbar(
+                                title = state?.title.orEmpty(),
+                                surface = surfaceSpec,
+                                onBack = { (context as? AppCompatActivity)?.finish() },
+                                onEdit = menu::edit,
+                                onMore = { bounds -> menu.showOverflowMenu(this@ShowHabitView, bounds) },
+                            )
+                        }
+                        Box(
+                            Modifier.weight(1f).fillMaxWidth()
+                                .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime).only(WindowInsetsSides.Bottom)),
+                        ) {
+                            if (state != null) {
                         HabitDetailsScreen(
                             state = state,
                             colors = composeColors,
@@ -171,10 +195,18 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
                                     .show()
                             }
                         )
+                            }
+                        }
                     }
                 }
             }
         }
+        addView(composeView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        applyWindowAppearance()
+    }
+
+    internal fun setToolbarMenu(menu: ShowHabitMenu) {
+        toolbarMenu = menu
     }
 
     override fun onAttachedToWindow() {
@@ -220,65 +252,24 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
         }
     }
 
-    private fun setupCohesiveToolbar(data: ShowHabitState) {
-        val activity = context as? AppCompatActivity
-        val app = context.applicationContext as? org.isoron.uhabits.HabitsApplication
-        val isClassic = app?.component?.preferences?.isClassicSectionLayout ?: false
+    private fun resolveSurface(): ShowHabitSurfaceSpec {
         val palette = MainTabsThemeBridge.resolve(context)
-        val surfaceSpec = resolveShowHabitSurfaceSpec(palette, isClassic)
-
-        val iconColor = surfaceSpec.iconColor
-        val titleColor = surfaceSpec.iconColor
-
-        toolbarForegroundColor = iconColor
-        currentTitleColor = titleColor
-
-        binding.container.setBackgroundColor(surfaceSpec.canvasColor)
-        binding.composeView.setBackgroundColor(surfaceSpec.canvasColor)
-        binding.toolbarDivider.setBackgroundColor(surfaceSpec.dividerColor)
-        binding.toolbarDivider.visibility = if (surfaceSpec.showToolbarDivider) VISIBLE else GONE
-
-        binding.toolbar.elevation = 0f
-        binding.toolbar.title = data.title
-        binding.toolbar.setBackgroundColor(surfaceSpec.toolbarColor)
-        binding.toolbar.setTitleTextColor(titleColor)
-
-        if (activity != null) {
-            activity.window.statusBarColor = surfaceSpec.statusBarColor
-            activity.window.navigationBarColor = surfaceSpec.navigationBarColor
-            activity.setSupportActionBar(binding.toolbar)
-            activity.supportActionBar?.setDisplayHomeAsUpEnabled(true)
-            activity.supportActionBar?.setHomeAsUpIndicator(R.drawable.ic_settings_back)
-            val insetsController = WindowInsetsControllerCompat(activity.window, activity.window.decorView)
-            insetsController.isAppearanceLightStatusBars = surfaceSpec.isLightSystemBars
-            insetsController.isAppearanceLightNavigationBars = surfaceSpec.isLightSystemBars
-        }
-        binding.toolbar.setTitleTextColor(currentTitleColor)
-        binding.toolbar.navigationIcon?.setTint(iconColor)
-        binding.toolbar.overflowIcon?.setTint(iconColor)
-        for (i in 0 until binding.toolbar.menu.size()) {
-            val item = binding.toolbar.menu.getItem(i)
-            item.icon?.setTint(iconColor)
-            (item.actionView as? ImageView)?.imageTintList = ColorStateList.valueOf(iconColor)
-        }
+        return resolveShowHabitSurfaceSpec(palette, palette.isClassicSectionLayout)
     }
 
-    fun harmonizeToolbar(onSurfaceColor: Int) {
-        binding.toolbar.setTitleTextColor(currentTitleColor)
-        binding.toolbar.navigationIcon?.setTint(toolbarForegroundColor)
-        binding.toolbar.overflowIcon?.setTint(toolbarForegroundColor)
-        for (i in 0 until binding.toolbar.menu.size()) {
-            val item = binding.toolbar.menu.getItem(i)
-            item.icon?.setTint(toolbarForegroundColor)
-            (item.actionView as? ImageView)?.imageTintList = ColorStateList.valueOf(toolbarForegroundColor)
+    private fun applyWindowAppearance() {
+        val activity = context as? AppCompatActivity ?: return
+        activity.window.statusBarColor = surfaceSpec.statusBarColor
+        activity.window.navigationBarColor = surfaceSpec.navigationBarColor
+        WindowInsetsControllerCompat(activity.window, activity.window.decorView).apply {
+            isAppearanceLightStatusBars = surfaceSpec.isLightSystemBars
+            isAppearanceLightNavigationBars = surfaceSpec.isLightSystemBars
         }
     }
 
     fun setState(data: ShowHabitState) {
-        isNumerical = data.isNumerical
         isEffectiveReadUnavailable = false
         effectiveUnavailableNoticeText = null
-        setupCohesiveToolbar(data)
 
         showHabitState = data
 
@@ -340,30 +331,9 @@ class ShowHabitView(context: Context) : FrameLayout(context) {
     fun resetCalendarEditMode() = Unit
 
     fun updateAppearance() {
-        val app = context.applicationContext as? org.isoron.uhabits.HabitsApplication
-        val isClassic = app?.component?.preferences?.isClassicSectionLayout ?: false
         val palette = MainTabsThemeBridge.resolve(context)
-        val surfaceSpec = resolveShowHabitSurfaceSpec(palette, isClassic)
-
-        toolbarForegroundColor = surfaceSpec.iconColor
-        currentTitleColor = surfaceSpec.iconColor
-
-        binding.container.setBackgroundColor(surfaceSpec.canvasColor)
-        binding.composeView.setBackgroundColor(surfaceSpec.canvasColor)
-        binding.toolbarDivider.setBackgroundColor(surfaceSpec.dividerColor)
-        binding.toolbarDivider.visibility = if (surfaceSpec.showToolbarDivider) VISIBLE else GONE
-        binding.toolbar.setBackgroundColor(surfaceSpec.toolbarColor)
-        binding.toolbar.setTitleTextColor(currentTitleColor)
-
-        (context as? AppCompatActivity)?.let { activity ->
-            activity.window.statusBarColor = surfaceSpec.statusBarColor
-            activity.window.navigationBarColor = surfaceSpec.navigationBarColor
-            val insetsController = WindowInsetsControllerCompat(activity.window, binding.root)
-            insetsController.isAppearanceLightStatusBars = surfaceSpec.isLightSystemBars
-            insetsController.isAppearanceLightNavigationBars = surfaceSpec.isLightSystemBars
-        }
-
-        harmonizeToolbar(toolbarForegroundColor)
+        surfaceSpec = resolveShowHabitSurfaceSpec(palette, palette.isClassicSectionLayout)
+        applyWindowAppearance()
 
         val habitColors = UHabitComposeColors.fromPalette(
             palette,

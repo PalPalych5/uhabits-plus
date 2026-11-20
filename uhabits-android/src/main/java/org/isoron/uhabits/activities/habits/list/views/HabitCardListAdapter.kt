@@ -342,6 +342,7 @@ class HabitCardListAdapter(
         val k = selected.indexOf(h)
         if (k < 0) selected.add(h) else selected.remove(h)
         notifyDataSetChanged()
+        observable.notifyListeners()
     }
 
     init {
