@@ -37,6 +37,7 @@ if ($ListOrphans) {
     return
 }
 if (!$Action) { throw 'Supply -Action { param($serial) ... }; no implicit device mutations are performed.' }
+if ($WipeData -and !$Temporary) { throw 'WipeData is allowed only for a newly owned temporary AVD.' }
 if (!$Sdk -or !(Test-Path -LiteralPath $Sdk -PathType Container)) { throw 'ANDROID_HOME / -Sdk must identify an existing SDK.' }
 if ($Port -lt 5554 -or $Port -gt 5682 -or $Port % 2) { throw 'Use an even emulator console port between 5554 and 5682.' }
 if ($AvdName -notmatch '^[A-Za-z0-9_.-]+$') { throw 'Unsafe AVD name.' }
@@ -62,7 +63,7 @@ $ownedEmulatorStartedUtc = $null
 $operationFailure = $null
 $manifestPath = Join-Path $StateRoot "$runId.json"
 $saved = @{}
-foreach ($key in @('ANDROID_AVD_HOME', 'TEMP', 'TMP')) { $saved[$key] = [Environment]::GetEnvironmentVariable($key, 'Process') }
+foreach ($key in @('ANDROID_AVD_HOME', 'TEMP', 'TMP', 'UHABIT_QA_MANIFEST', 'UHABIT_QA_RUN_ID')) { $saved[$key] = [Environment]::GetEnvironmentVariable($key, 'Process') }
 $record = [ordered]@{ runId = $runId; avd = $AvdName; home = $AvdHome; temporary = [bool]$Temporary; port = $Port; ownerPid = $PID; ownerStartedUtc = (Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o'); status = 'leased'; emulatorPid = $null }
 function Save-Manifest { $record | ConvertTo-Json | Set-Content -LiteralPath $manifestPath -Encoding UTF8 }
 function Invoke-Adb([string[]]$Arguments) {
@@ -141,8 +142,9 @@ try {
     $record['processTemp'] = $runTemp
     Save-Manifest
     New-Item -ItemType Directory -Force -Path $runTemp | Out-Null
-    $env:TEMP = $runTemp
-    $env:TMP = $runTemp
+    # Preserve global Windows TEMP/TMP to avoid breaking netsimd socket/named-pipe IPC
+    # $env:TEMP = $runTemp
+    # $env:TMP = $runTemp
     $connections = @(Get-NetTCPConnection -State Listen -ErrorAction Stop | Where-Object { $_.LocalPort -eq $Port -or $_.LocalPort -eq ($Port + 1) })
     $matching = @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object { $_.Name -match '^(emulator|qemu-system.*|qemu-img|cmd)\.exe$' -and $_.CommandLine -match ('(?<![A-Za-z0-9_.-])' + [regex]::Escape($AvdName) + '(?![A-Za-z0-9_.-])') })
     if ($matching.Count -and !$connections.Count) { throw 'AVD is already running on another port; refusing parallel access.' }
@@ -157,10 +159,14 @@ try {
             $record.status = 'creating'; Save-Manifest
             'no' | & $manager create avd -n $AvdName -k $Package --device $Device -p (Join-Path $AvdHome "$AvdName.avd")
             if ($LASTEXITCODE -ne 0) { throw 'AVD creation failed; inspect the retained manifest.' }
+            $baselineConfig = Join-Path 'D:\DevData\Android\avd' 'UHabit_Next_Dev_API35.avd\config.ini'
+            if (Test-Path -LiteralPath $baselineConfig) {
+                Copy-Item -LiteralPath $baselineConfig -Destination (Join-Path $AvdHome "$AvdName.avd\config.ini") -Force
+            }
         }
         # Capture the exact process; shared persistent guests are deliberately left running.
         $launchArguments = @('-avd', $AvdName, '-port', $Port, '-no-snapshot', '-no-audio')
-        if ($Headless) { $launchArguments += '-no-window' }
+        if ($Headless) { $launchArguments += @('-no-window', '-gpu', 'swiftshader') }
         if ($WipeData) { $launchArguments += '-wipe-data' }
         $ownedEmulator = Start-Process -FilePath $emulator -ArgumentList $launchArguments -PassThru -WindowStyle Hidden
         $ownedEmulatorStartedUtc = $ownedEmulator.StartTime.ToUniversalTime()
@@ -173,7 +179,7 @@ try {
     do {
         Start-Sleep -Seconds 2
         $bootAttempts++
-        if ($bootAttempts -gt 5) {
+        if ($bootAttempts -gt 60) {
             $matching = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^(emulator|qemu-system.*)\.exe$' -and $_.CommandLine -match [regex]::Escape($AvdName) })
             if ($matching.Count -eq 0) { throw "Emulator process for $AvdName exited prematurely." }
         }
@@ -187,6 +193,10 @@ try {
     } until ($bootExit -eq 0 -and ($boot -join '').Trim() -eq '1')
     Assert-Identity
     $record.status = 'running'; Save-Manifest
+    if ($Temporary) {
+        $env:UHABIT_QA_MANIFEST = $manifestPath
+        $env:UHABIT_QA_RUN_ID = $runId
+    }
     & $Action "emulator-$Port"
     $record.status = 'completed'; Save-Manifest
 } catch {

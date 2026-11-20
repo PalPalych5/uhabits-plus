@@ -34,6 +34,8 @@ sqliteJdbc = "3.45.1.0"
 uiautomator = "2.3.0"
 documentfile = "1.0.1"
 securityCrypto = "1.1.0-alpha06"
+roborazzi = "1.78.0"
+robolectric = "4.14.1"
 
 [libraries]
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
@@ -80,6 +82,10 @@ sqlite-jdbc = { module = "org.xerial:sqlite-jdbc", version.ref = "sqliteJdbc" }
 uiautomator = { group = "androidx.test.uiautomator", name = "uiautomator", version.ref = "uiautomator" }
 documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
 security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
+roborazzi = { group = "io.github.takahirom.roborazzi", name = "roborazzi", version.ref = "roborazzi" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
 
 [plugins]
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
@@ -90,3 +96,4 @@ ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 ktlint-plugin = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlint-plugin" }
 mokkery = { id = "dev.mokkery", version.ref = "mokkery" }
 shadow = { id = "com.github.johnrengelman.shadow", version.ref = "shadow" }
+roborazzi = { id = "io.github.takahirom.roborazzi", version.ref = "roborazzi" }

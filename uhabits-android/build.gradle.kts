@@ -17,6 +17,7 @@
  * with this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import io.github.takahirom.roborazzi.RoborazziExtension
 import java.util.Properties
 
 plugins {
@@ -26,6 +27,21 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.ktlint.plugin)
     alias(libs.plugins.mokkery)
+}
+
+val screenshotTests = providers.gradleProperty("screenshotTests").orNull == "true"
+if (screenshotTests) {
+    pluginManager.apply("io.github.takahirom.roborazzi")
+    extensions.configure<RoborazziExtension> {
+        outputDir.set(layout.projectDirectory.dir("src/test/snapshots/images"))
+    }
+    tasks.withType<Test>().matching { it.name == "testDebugUnitTest" }.configureEach {
+        filter.includeTestsMatching("*ScreenshotTest")
+        systemProperty(
+            "roborazzi.record.filePathStrategy",
+            "relativePathFromRoborazziContextOutputDirectory"
+        )
+    }
 }
 
 tasks.compileLint {
@@ -65,6 +81,7 @@ val prepareLegalAssets by tasks.registering(Sync::class) {
 // Narrow, explicitly opt-in smoke APK. Normal androidTest keeps the complete suite.
 val calendarSmoke = providers.gradleProperty("calendarSmokeSources").orNull == "true"
 val statisticsQa = providers.gradleProperty("statisticsQaSources").orNull == "true"
+val dueMigrationTest = providers.gradleProperty("dueMigrationTest").orNull == "true"
 val prepareCalendarSmokeSources by tasks.registering(Sync::class) {
     from("src/androidTest/java") {
         include("**/TaskDraftQaRunner.kt", "**/TaskDraftLifecycleTest.kt", "**/TaskListVisualTest.kt", "**/TaskCalendarVisualTest.kt")
@@ -80,6 +97,24 @@ val prepareStatisticsQaSources by tasks.registering(Sync::class) {
         )
     }
     into(layout.buildDirectory.dir("generated/statisticsQaSources"))
+}
+val prepareDatabaseMigrationSources by tasks.registering(Sync::class) {
+    from("src/androidTest/java") {
+        include(
+            "**/TaskDueMigrationRunner.kt",
+            "**/TaskDueMigrationAndroidTest.kt",
+            "**/DatabaseUpgradeIntegrityAndroidTest.kt"
+        )
+    }
+    into(layout.buildDirectory.dir("generated/databaseMigrationSources"))
+}
+if (dueMigrationTest) {
+    require(!calendarSmoke && !statisticsQa && providers.gradleProperty("taskDraftQaTest").orNull != "true") {
+        "Database migration tests use their own runner and source selection"
+    }
+    tasks.matching { it.name == "compileDebugAndroidTestKotlin" || it.name == "compileDebugAndroidTestJavaWithJavac" || it.name == "kspDebugAndroidTestKotlin" }.configureEach {
+        dependsOn(prepareDatabaseMigrationSources)
+    }
 }
 if (calendarSmoke) {
     require(providers.gradleProperty("taskDraftQaTest").orNull == "true") { "Calendar smoke requires TaskDraftQaRunner" }
@@ -101,7 +136,9 @@ android {
         getByName("main") {
             assets.srcDirs("src/main/assets", prepareAndroidCoreAssets, prepareLegalAssets)
         }
-        if (calendarSmoke) getByName("androidTest").java.setSrcDirs(listOf(layout.buildDirectory.dir("generated/calendarSmokeSources")))
+        if (screenshotTests) getByName("testDebug").java.srcDir("src/screenshotTest/java")
+        if (dueMigrationTest) getByName("androidTest").java.setSrcDirs(listOf(layout.buildDirectory.dir("generated/databaseMigrationSources")))
+        else if (calendarSmoke) getByName("androidTest").java.setSrcDirs(listOf(layout.buildDirectory.dir("generated/calendarSmokeSources")))
         else if (statisticsQa) getByName("androidTest").java.setSrcDirs(listOf(layout.buildDirectory.dir("generated/statisticsQaSources")))
     }
 
@@ -114,7 +151,7 @@ android {
         // Database-only migration checks must not execute the application's legacy test reset.
         testInstrumentationRunner = if (providers.gradleProperty("taskDraftQaTest").orNull == "true")
             "org.isoron.uhabits.activities.tasks.TaskDraftQaRunner"
-        else if (providers.gradleProperty("dueMigrationTest").orNull == "true")
+        else if (dueMigrationTest)
             "org.isoron.uhabits.database.TaskDueMigrationRunner"
         else "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -225,6 +262,7 @@ android {
     lint.abortOnError = false
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = screenshotTests
     }
 }
 
@@ -278,4 +316,12 @@ dependencies {
     testImplementation(libs.junit.junit)
     testImplementation(libs.sqlite.jdbc)
     testImplementation("org.json:json:20240303")
+    if (screenshotTests) {
+        "testDebugImplementation"(libs.junit)
+        "testDebugImplementation"(libs.roborazzi)
+        "testDebugImplementation"(libs.robolectric)
+        "testDebugImplementation"(libs.compose.ui.test.junit4)
+        // Robolectric resolves the host activity from the packaged debug manifest.
+        debugImplementation(libs.compose.ui.test.manifest)
+    }
 }

@@ -10,6 +10,7 @@ import org.isoron.platform.io.TestDatabaseHelper
 import org.isoron.platform.io.getVersion
 import org.isoron.platform.io.migrateTo
 import org.isoron.platform.io.queryLong
+import org.isoron.platform.io.querySingle
 import org.isoron.platform.io.queryString
 import org.isoron.platform.io.run
 import org.isoron.platform.io.runInTransaction
@@ -37,12 +38,12 @@ import org.isoron.uhabits.core.models.projection.HabitDayAdjustment
 import org.isoron.uhabits.core.models.projection.SQLiteHabitDayAdjustmentRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
-import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.sql.SQLException
+import kotlin.test.assertFailsWith
 
 class HabitDayAdjustmentsMigrationV35ToV36Test {
 
@@ -65,6 +66,44 @@ class HabitDayAdjustmentsMigrationV35ToV36Test {
     private fun tableExists(db: Database, table: String): Boolean =
         db.queryLong("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='$table'") > 0L
 
+    private fun assertExistingFacts(db: Database, day: LocalDate) {
+        assertEquals(
+            listOf("h-focus-uuid", "Focus Habit", 3, 7, day.unixTime, 10_000L, "manual part", 1),
+            db.querySingle(
+                """
+                SELECT h.uuid, h.name, h.freq_num, h.freq_den, r.timestamp, r.value, r.notes, e.timer_enabled
+                FROM Habits h JOIN Repetitions r ON r.habit = h.id
+                JOIN HabitExtensions e ON e.habit_id = h.id
+                WHERE h.id = 101
+                """.trimIndent()
+            ) {
+                listOf(it.getText(0), it.getText(1), it.getInt(2), it.getInt(3),
+                    it.getLong(4), it.getLong(5), it.getText(6), it.getInt(7))
+            }
+        )
+        assertEquals(
+            listOf("task-2", "task-1", "c-work", "h-focus-uuid", "COMPLETED", 4, 5000L, 1),
+            db.querySingle(
+                """
+                SELECT t.id, p.id, c.uuid, h.uuid, t.status, t.sort_order, t.completed_at, t.habit_time_accrual_enabled
+                FROM UserTasks t JOIN UserTasks p ON p.id = t.parent_task_id
+                JOIN Containers c ON c.uuid = t.container_id
+                JOIN Habits h ON h.uuid = t.linked_habit_uuid
+                WHERE t.id = 'task-2'
+                """.trimIndent()
+            ) {
+                listOf(it.getText(0), it.getText(1), it.getText(2), it.getText(3),
+                    it.getText(4), it.getInt(5), it.getLong(6), it.getInt(7))
+            }
+        )
+        val focus = requireNotNull(SQLiteFocusSessionRepository(db).getById(FocusSessionId("fs-1")))
+        assertEquals(HabitRef("h-focus-uuid"), focus.habit)
+        assertEquals(1_762_732_800_000L, focus.startedAt)
+        assertEquals(1_762_734_300_000L, focus.endedAt)
+        assertEquals(1_500_000L, focus.durationMs)
+        assertEquals(25_000L, SQLiteContributionRepository(db).getActiveTotalForHabit(HabitRef("h-focus-uuid")))
+    }
+
     @Test
     fun upgrade35To36AndBackupRestorePreservesExistingFactsAndAdjustments() = runTest {
         val dbFile = tempFolder.newFile("uhabits-v35-upgrade.db")
@@ -78,7 +117,7 @@ class HabitDayAdjustmentsMigrationV35ToV36Test {
             // Seed Habits, Repetitions, HabitExtensions, Containers, UserTasks, FocusSessions, Contributions at v35
             db.run(
                 "INSERT INTO Habits(id, name, freq_num, freq_den, color, position, archived, type, target_value, target_type, unit, uuid) " +
-                    "VALUES (101, 'Focus Habit', 1, 1, 1, 0, 0, 1, 60.0, 0, 'min', 'h-focus-uuid')"
+                    "VALUES (101, 'Focus Habit', 3, 7, 1, 0, 0, 1, 60.0, 0, 'min', 'h-focus-uuid')"
             )
             db.run(
                 "INSERT INTO HabitExtensions(habit_id, day_tier, timer_enabled) " +
@@ -117,6 +156,13 @@ class HabitDayAdjustmentsMigrationV35ToV36Test {
                 "INSERT INTO UserTasks(id, title, description, container_id, status, planned_date, deadline, due_kind, due_date, due_time_millis, due_zone, sort_order, created_at, updated_at) " +
                     "VALUES ('task-1', 'Existing Task', 'Body', 'c-work', 'PENDING', NULL, NULL, 'NONE', NULL, NULL, NULL, 0, 1000, 1000)"
             )
+            db.run(
+                """
+                INSERT INTO UserTasks(id, title, parent_task_id, container_id, linked_habit_uuid,
+                    habit_time_accrual_enabled, habit_link_effective_from, status, sort_order, completed_at, created_at, updated_at)
+                VALUES ('task-2', 'Completed subtask', 'task-1', 'c-work', 'h-focus-uuid', 1, 2000, 'COMPLETED', 4, 5000, 1000, 5000)
+                """.trimIndent()
+            )
             FocusSessionSchema.createSchema(db)
             ContributionSchema.createSchema(db)
             val focusRepo = SQLiteFocusSessionRepository(db)
@@ -152,17 +198,16 @@ class HabitDayAdjustmentsMigrationV35ToV36Test {
             val cmds = SQLParser.parse(v36Sql)
             assertTrue(cmds.size >= 2)
             val failingV36Sql = cmds.take(2).joinToString(";\n") + ";\nINVALID_SQL_FOR_ROLLBACK_TEST;"
-            try {
+            val failure = assertFailsWith<SQLException> {
                 db.runInTransaction {
                     db.migrateTo(36) { version -> if (version == 36) failingV36Sql else TestDatabaseHelper.loadMigrationSQL(version) }
                 }
-                fail("Interrupted 35->36 migration must fail")
-            } catch (_: Exception) {
-                // expected
             }
+            assertTrue(failure.message.orEmpty().contains("INVALID_SQL_FOR_ROLLBACK_TEST"))
             assertEquals(35, db.getVersion())
             assertFalse(tableExists(db, "HabitDayAdjustments"))
             assertFalse("missing_data_policy" in getColumns(db, "HabitExtensions"))
+            assertExistingFacts(db, day)
 
             // Now apply real 35 -> 36 upgrade in-place
             db.runInTransaction {
@@ -174,12 +219,7 @@ class HabitDayAdjustmentsMigrationV35ToV36Test {
             assertEquals("ok", db.queryString("PRAGMA integrity_check"))
             assertEquals(0L, db.queryLong("SELECT count(*) FROM pragma_foreign_key_check()"))
 
-            // Verify all existing facts untouched
-            assertEquals(10000L, db.queryLong("SELECT value FROM Repetitions WHERE habit = 101"))
-            assertEquals(1L, db.queryLong("SELECT timer_enabled FROM HabitExtensions WHERE habit_id = 101"))
-            assertEquals(25_000L, contribRepo.getActiveTotalForHabit(HabitRef("h-focus-uuid")))
-            assertNotNull(focusRepo.getById(FocusSessionId("fs-1")))
-            assertEquals(1L, db.queryLong("SELECT count(*) FROM UserTasks WHERE id = 'task-1'"))
+            assertExistingFacts(db, day)
 
             // Write an adjustment row + missing_data_policy override
             val adjRepo = SQLiteHabitDayAdjustmentRepository(db)
@@ -197,6 +237,7 @@ class HabitDayAdjustmentsMigrationV35ToV36Test {
         try {
             val adjRepoSrc = SQLiteHabitDayAdjustmentRepository(reopened)
             val day = LocalDate(2026, 11, 10)
+            assertExistingFacts(reopened, day)
             assertEquals(-15_000L, adjRepoSrc.getByHabitAndDate(HabitRef("h-focus-uuid"), day)?.adjustmentMillis)
             assertEquals(1L, reopened.queryLong("SELECT missing_data_policy FROM HabitExtensions WHERE habit_id = 101"))
 
@@ -212,8 +253,7 @@ class HabitDayAdjustmentsMigrationV35ToV36Test {
             val adjRepoRestored = SQLiteHabitDayAdjustmentRepository(restoredDb)
             assertEquals(-15_000L, adjRepoRestored.getByHabitAndDate(HabitRef("h-focus-uuid"), day)?.adjustmentMillis)
             assertEquals(1L, restoredDb.queryLong("SELECT missing_data_policy FROM HabitExtensions WHERE habit_id = 101"))
-            assertEquals(25_000L, SQLiteContributionRepository(restoredDb).getActiveTotalForHabit(HabitRef("h-focus-uuid")))
-            assertEquals(10_000L, restoredDb.queryLong("SELECT value FROM Repetitions WHERE habit = 101"))
+            assertExistingFacts(restoredDb, day)
         } finally {
             reopened.close()
             backupDb.close()

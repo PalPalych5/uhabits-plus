@@ -21,8 +21,9 @@ A small set of carefully inspected artifacts (e.g. 10–15 high-contrast frames 
 Apply after routine development, local bug fixes, chart adjustments, string/label updates, or minor refactorings:
 - **Scope**:
   - Relevant JVM and Android unit tests (`:uhabits-core:jvmTest`, `:uhabits-android:testDebugUnitTest`).
+  - Opt-in [Compose screenshot verification](../../docs/BUILD.md#compose-screenshot-tests) for affected components with goldens.
   - Targeted compilation and APK assembly (`assembleDebug`, `assembleDebugAndroidTest`).
-  - Single standard smoke run on an isolated AVD (`light_standard_100`), running only the specific journey covering the modified feature.
+  - One smoke run on an isolated AVD (`light_standard_100`) when the change needs device or UI integration evidence. Exercise the affected journey.
 - **Rule**: If the change does not touch Android runtime, UI rendering, or resources, **skip instrumentation entirely** — fast unit/integration tests are sufficient.
 
 ### Level 2 — Targeted QA (Risk-Based Verification)
@@ -57,11 +58,32 @@ is reserved exclusively for:
 - **Zero Real Data Touch**: Never execute `uninstall`, `pm clear`, or wipe data on physical devices or non-QA environments.
 - **Persistence Verification**: Database schema migrations, backup/restore fidelity, and dataset switching are verified via dedicated contract and roundtrip tests, not visual instrumentation passes.
 
+## Active vs. Quarantined Runners
+
+- **Active Safe Boundary**:
+  - `tools/qa/with-avd.ps1 -Temporary` — owns temporary AVD lifecycle, `-WipeData` is restricted to `-Temporary`.
+  - `tools/qa/launch_avd.py` — thin Python wrapper delegating to `with-avd.ps1` (pass `--temporary` for isolated runs; without it, defaults to persistent `UHabit_Next_Dev_API35`).
+  - `tools/qa/qa_safety.py` (`verify_disposable`) — verifies explicit serial, active temporary manifest, live owner process ancestry, boot state, AVD identity, and installed package.
+  - `tools/qa/qa_capture.py` / `tools/qa/capture_asserted.py` — strict foreground-activity, fresh-hierarchy, and visible-label screenshot capture.
+- **Historical PR-Specific PowerShell Runners (Unapproved for General QA)**:
+  - `pr10-run-isolated.ps1`, `pr11-run-isolated.ps1`, `pr11-run-targeted.ps1`, `pr12-run-isolated.ps1`, `pr12-run-targeted.ps1`, `pr13-final-gaps.ps1`, `pr14-run-isolated.ps1`, `pr14-upgrade-test.ps1`, `run-gap6-qa.ps1`, `run-habit-link-visual.ps1`, `run-sections-qa.ps1`, `run-targeted-qa-api35.ps1` — archived single-milestone scripts with hardcoded emulator/ADB assumptions. Retained for historical reference only; do not treat as approved or safe general-purpose QA runners.
+- **Quarantined Legacy Runners (Do Not Execute)**:
+  - `tools/qa/verify_container_dialogs.py` is a fail-closed stub (original unsafe implementation retained only in Git history).
+  - Legacy mutating Python runners (`capture_habit_details_baseline.py`, `capture_habit_details_matrix.py`, `habit_details_test_fixture.py`, `verify_consolidated_habit_details.py`, `verify_habit_details_interactions.py`, `verify_shared_components.py`, `run_appearance_verification.py`, `run_consistency_and_classic_verification.py`, `verify_details_composition.py`, `run_benchmark.py`, `run_post_navigation_attribution.py`, `run_qa_avd.py`, `install_apks.py`) are quarantined via `qa_safety.legacy_runner_disabled`.
+  - `tools/qa/run-ui-review.ps1` and `tools/qa/measure-habits-startup.ps1` target persistent named AVDs and mutate device/app state; do not run against valuable data.
+
+### Android CLI in an owned QA run
+
+In Antigravity, check `agy plugin list` for the official `android-cli-plugin` before installing tooling. Inside the active `with-avd.ps1 -Temporary` action, keep the guest offline and pass its lease-provided `$serial` explicitly to Android CLI. Use `android run --device=$serial $apk` to deploy and launch a prebuilt debug APK in one call, or `android install --device=$serial $apk` for installation alone. Passing the APK path avoids a second Gradle build.
+
+For a visual spot check, use `android screen capture --device=$serial --output=$png` and inspect the image. Use `qa_capture.py` for asserted QA evidence. Keep the existing ADB hierarchy workflow for scripted selection. Validate the CLI's `layout --flat` output on the target before relying on CLI selectors. In Android CLI 1.1, `layout --diff` is a no-op.
+
 ---
 
-## Execution Discipline
+## Agent and Orchestration Discipline (Codex / Orca / AGY)
 
-- Evaluate the risk profile and select the appropriate QA level (Level 1, 2, or 3).
-- Do not launch full QA matrices for minor fixes, documentation updates, or routine development.
+- The **Coordinator** is responsible for evaluating the risk profile and selecting the appropriate QA level (Level 1, 2, or 3).
+- **Subagents / Workers** must never launch independent full QA matrices or spin up uncoordinated AVDs.
 - Avoid duplicate concurrent AVD runs for the same verification scope.
-- Always cleanly stop temporary AVDs and clean up test resources after test sessions.
+- After an interruption, check Git status and the previous build result before starting again. Use `with-avd.ps1 -ListOrphans` to inspect dead-owner leases. Continue interacting with a guest only from its owning action.
+- Always cleanly stop temporary AVDs and clean up orphan resources after test sessions.

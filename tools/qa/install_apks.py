@@ -1,3 +1,6 @@
+from qa_safety import legacy_runner_disabled
+legacy_runner_disabled(__file__)
+
 import subprocess
 import os
 
