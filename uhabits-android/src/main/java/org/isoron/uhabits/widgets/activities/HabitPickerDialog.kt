@@ -19,18 +19,36 @@
 
 package org.isoron.uhabits.widgets.activities
 
-import android.app.Activity
 import android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID
 import android.appwidget.AppWidgetManager.INVALID_APPWIDGET_ID
 import android.content.Intent
 import android.os.Bundle
-import android.widget.ArrayAdapter
-import android.widget.Button
-import android.widget.ListView
-import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
+import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
 import org.isoron.uhabits.core.preferences.WidgetPreferences
 import org.isoron.uhabits.widgets.WidgetUpdater
 
@@ -44,7 +62,7 @@ class NumericalHabitPickerDialog : HabitPickerDialog() {
     override fun getEmptyMessage() = R.string.no_numerical_habits
 }
 
-open class HabitPickerDialog : Activity() {
+open class HabitPickerDialog : ComponentActivity() {
 
     private var widgetId = 0
     private lateinit var widgetPreferences: WidgetPreferences
@@ -63,36 +81,47 @@ open class HabitPickerDialog : Activity() {
         widgetUpdater = component.widgetUpdater
         widgetId = intent.extras?.getInt(EXTRA_APPWIDGET_ID, INVALID_APPWIDGET_ID) ?: 0
 
-        val habitIds = ArrayList<Long>()
-        val habitNames = ArrayList<String>()
-        for (h in habitList) {
-            if (h.isArchived) continue
-            if (h.isNumerical and shouldHideNumerical()) continue
-            if (!h.isNumerical and shouldHideBoolean()) continue
-            habitIds.add(h.id!!)
-            habitNames.add(h.name)
-        }
-
-        if (habitNames.isEmpty()) {
-            setContentView(R.layout.widget_empty_activity)
-            findViewById<TextView>(R.id.message).setText(getEmptyMessage())
-            return
-        }
-
-        setContentView(R.layout.widget_configure_activity)
-        val listView = findViewById<ListView>(R.id.listView)
-        val saveButton = findViewById<Button>(R.id.buttonSave)
-
-        with(listView) {
-            adapter = ArrayAdapter(
-                context,
-                android.R.layout.simple_list_item_1,
-                habitNames
-            )
-            setOnItemClickListener { parent, view, position, id ->
-                confirm(mutableListOf(habitIds[position]))
+        val hideNumerical = shouldHideNumerical()
+        val hideBoolean = shouldHideBoolean()
+        val habits = habitList.asSequence()
+            .filterNot { it.isArchived || (if (it.isNumerical) hideNumerical else hideBoolean) }
+            .map { requireNotNull(it.id) to it.name }
+            .toList()
+        val colors = UHabitComposeColors.fromPalette(MainTabsThemeBridge.resolve(this))
+        setContentView(ComposeView(this).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                UHabitComposeTheme(colors) {
+                    if (habits.isEmpty()) {
+                        Box(
+                            Modifier.width(250.dp).heightIn(min = 150.dp).padding(16.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                stringResource(getEmptyMessage()),
+                                color = colors.foregroundColor,
+                                fontSize = 16.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else {
+                        LazyColumn {
+                            itemsIndexed(habits, key = { _, habit -> habit.first }) { index, (id, name) ->
+                                Box(
+                                    Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                        .clickable(role = Role.Button) { confirm(listOf(id)) }
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    Text(name, color = colors.foregroundColor, fontSize = 16.sp)
+                                }
+                                if (index < habits.lastIndex) HorizontalDivider(color = colors.dividerColor)
+                            }
+                        }
+                    }
+                }
             }
-        }
+        })
     }
 
     fun confirm(selectedIds: List<Long>) {

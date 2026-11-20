@@ -18,6 +18,31 @@
   -->
 
 <resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="ThemeOverlay.UHabit.TaskPickerBottomSheet" parent="ThemeOverlay.MaterialComponents.BottomSheetDialog">
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:enforceNavigationBarContrast" tools:targetApi="29">false</item>
+        <item name="bottomSheetStyle">@style/Widget.UHabit.TaskPickerBottomSheet</item>
+    </style>
+
+    <!-- Each picker supplies its own rounded surface and bottom insets. -->
+    <style name="Widget.UHabit.TaskPickerBottomSheet" parent="Widget.MaterialComponents.BottomSheet.Modal">
+        <item name="android:background">@android:color/transparent</item>
+        <item name="android:elevation">0dp</item>
+        <item name="backgroundTint">@null</item>
+        <item name="shapeAppearance">@null</item>
+        <item name="shapeAppearanceOverlay">@null</item>
+        <item name="paddingBottomSystemWindowInsets">false</item>
+    </style>
+
+    <style name="ThemeOverlay.UHabit.NativeSurfaceTaskPickerBottomSheet" parent="ThemeOverlay.UHabit.TaskPickerBottomSheet">
+        <item name="bottomSheetStyle">@style/Widget.UHabit.NativeSurfaceTaskPickerBottomSheet</item>
+    </style>
+
+    <!-- The native surface also covers Material's navigation-bar padding. -->
+    <style name="Widget.UHabit.NativeSurfaceTaskPickerBottomSheet" parent="Widget.UHabit.TaskPickerBottomSheet">
+        <item name="paddingBottomSystemWindowInsets">true</item>
+    </style>
+
     <style name="AppBaseTheme" parent="@style/Theme.MaterialComponents.Light.NoActionBar">
         <item name="aboutScreenColor">@color/blue_800</item>
         <item name="actionBarPopupTheme">@style/ThemeOverlay.AppCompat.Light</item>

@@ -18,7 +18,6 @@ import org.isoron.uhabits.activities.settings.SettingsSectionFragment
 import org.isoron.uhabits.activities.settings.SettingsSectionId
 import org.isoron.uhabits.activities.containers.statistics.ContainerStatisticsActivity
 import org.isoron.uhabits.activities.statistics.StatisticsActivity
-import org.isoron.uhabits.activities.today.TodayActivity
 import org.isoron.uhabits.activities.habits.edit.HabitTypeDialog
 import org.isoron.uhabits.activities.habits.show.ShowHabitActivity
 import org.isoron.uhabits.activities.blocks.ManageBlocksActivity
@@ -99,13 +98,6 @@ object UiReviewExtraCoverage {
             returnToggle?.click(); device.waitForIdle()
             clickText("Список")
             device.waitForIdle()
-        }
-        attempt("tasks", "day-overview") {
-            scenario.onActivity { it.startActivity(TodayActivity.createIntent(context)) }
-            run {
-                capture("tasks", "day-overview")
-                device.pressBack()
-            }
         }
         attempt("tasks", "completion-reopening-subtasks") {
             scenario.onActivity {

@@ -14,17 +14,19 @@ import android.text.InputType
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.DatePicker
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.RadioButton
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.ComposeView
+import androidx.core.view.doOnAttach
 import androidx.core.widget.CompoundButtonCompat
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -36,6 +38,8 @@ import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.settings.AccentColorManager
 import org.isoron.uhabits.activities.settings.SettingsThemePalette
 import org.isoron.uhabits.activities.settings.SettingsThemePaletteResolver
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
 
 /**
  * Helper class for creating and displaying beautifully styled, theme-consistent dialogs.
@@ -440,6 +444,40 @@ object CustomDialogs {
         walk(view)
     }
 
+    private fun createTransparentDialog(context: Context): AlertDialog =
+        MaterialAlertDialogBuilder(context, R.style.CustomTransparentDialogTheme).create()
+
+    private fun showComposeAlertDialog(
+        dialog: AlertDialog,
+        supportsIme: Boolean = false,
+        content: @Composable () -> Unit
+    ): AlertDialog {
+        val dialogContext = dialog.context
+        val palette = resolvePalette(dialogContext)
+        val accentColor = resolveAccentColor(dialogContext)
+        val errorColor = resolveErrorColor(dialogContext)
+        val colors = UHabitComposeColors.fromPalette(
+            palette = palette.copy(accent = accentColor),
+            danger = errorColor
+        )
+        val composeView = ComposeView(dialogContext).apply {
+            setContent { UHabitComposeTheme(colors = colors, content = content) }
+        }
+        dialog.setView(composeView, 0, 0, 0, 0)
+        dialog.show()
+        dialog.window?.let { window ->
+            window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            window.decorView.setPadding(0, 0, 0, 0)
+            if (supportsIme) {
+                // AlertController checks for text editors before Compose attaches its children.
+                window.clearFlags(WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM)
+                @Suppress("DEPRECATION")
+                window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+            }
+        }
+        return dialog
+    }
+
     fun showConfirmDialog(
         context: Context,
         title: CharSequence,
@@ -451,46 +489,23 @@ object CustomDialogs {
         @androidx.annotation.ColorInt iconTint: Int? = null,
         onConfirm: () -> Unit
     ): AlertDialog {
-        val builder = MaterialAlertDialogBuilder(context, R.style.CustomTransparentDialogTheme)
-        val dialog = builder.create()
-        val dialogContext = dialog.context
-
-        val view = LayoutInflater.from(dialogContext)
-            .inflate(R.layout.dialog_custom_confirm, null)
-        val dialogIcon    = view.findViewById<ImageView>(R.id.dialog_icon)
-        val dialogTitle   = view.findViewById<TextView>(R.id.dialog_title)
-        val dialogMessage = view.findViewById<TextView>(R.id.dialog_message)
-        val btnNegative   = view.findViewById<Button>(R.id.button_negative)
-        val btnPositive   = view.findViewById<Button>(R.id.button_positive)
-
-        if (iconRes != null && dialogIcon != null) {
-            dialogIcon.visibility = View.VISIBLE
-            dialogIcon.setImageResource(iconRes)
-            if (iconTint != null) {
-                dialogIcon.setColorFilter(iconTint)
-            }
-        } else {
-            dialogIcon?.visibility = View.GONE
+        val dialog = createTransparentDialog(context)
+        return showComposeAlertDialog(dialog) {
+            CustomConfirmDialogContent(
+                title = title,
+                message = message,
+                isDestructive = isDestructive,
+                positiveText = positiveText,
+                negativeText = negativeText,
+                iconRes = iconRes,
+                iconTint = iconTint,
+                onConfirm = {
+                    onConfirm()
+                    dialog.dismiss()
+                },
+                onDismiss = dialog::dismiss
+            )
         }
-
-        dialogTitle.text   = title
-        dialogMessage.text = message
-
-        btnNegative.text = negativeText
-        btnPositive.text = positiveText
-
-        dialog.setView(view, 0, 0, 0, 0)
-
-        btnNegative.setOnClickListener { dialog.dismiss() }
-        btnPositive.setOnClickListener {
-            onConfirm()
-            dialog.dismiss()
-        }
-
-        dialog.show()
-        styleDialogShell(dialog, view)
-        styleText(dialogTitle, dialogMessage, btnNegative, btnPositive, null, isDestructive)
-        return dialog
     }
 
     fun showInfoDialog(
@@ -499,30 +514,25 @@ object CustomDialogs {
         message: CharSequence,
         positiveText: CharSequence = context.getString(R.string.done_label)
     ): AlertDialog {
-        val builder = MaterialAlertDialogBuilder(context, R.style.CustomTransparentDialogTheme)
-        val dialog = builder.create()
-        val dialogContext = dialog.context
-
-        val view = LayoutInflater.from(dialogContext)
-            .inflate(R.layout.dialog_custom_confirm, null)
-        val dialogTitle = view.findViewById<TextView>(R.id.dialog_title)
-        val dialogMessage = view.findViewById<TextView>(R.id.dialog_message)
-        val btnNegative = view.findViewById<Button>(R.id.button_negative)
-        val btnPositive = view.findViewById<Button>(R.id.button_positive)
-
-        dialogTitle.text = title
-        dialogMessage.text = message
-        btnNegative.visibility = View.GONE
-        btnPositive.text = positiveText
-        btnPositive.setOnClickListener { dialog.dismiss() }
-
-        dialog.setView(view, 0, 0, 0, 0)
-        dialog.show()
-        styleDialogShell(dialog, view)
-        styleText(dialogTitle, dialogMessage, null, btnPositive, null, false)
-        return dialog
+        val dialog = createTransparentDialog(context)
+        return showComposeAlertDialog(dialog) {
+            CustomConfirmDialogContent(
+                title = title,
+                message = message,
+                isDestructive = false,
+                positiveText = positiveText,
+                negativeText = null,
+                onConfirm = dialog::dismiss,
+                onDismiss = dialog::dismiss
+            )
+        }
     }
 
+    /**
+     * Kept View-backed on [R.layout.dialog_custom_input] because external callers
+     * (e.g. TaskTagPickerBottomSheet) look up [R.id.input_layout], [R.id.input_edit_text],
+     * and [R.id.button_positive] on the returned [AlertDialog] for inline validation.
+     */
     fun showInputDialog(
         context: Context,
         title: CharSequence,
@@ -592,55 +602,44 @@ object CustomDialogs {
         positiveText: CharSequence = context.getString(android.R.string.ok),
         onConfirm: (String, String) -> Unit
     ): AlertDialog {
-        val builder = MaterialAlertDialogBuilder(context, R.style.CustomTransparentDialogTheme)
-        val dialog = builder.create()
-        val dialogContext = dialog.context
-
-        val view = LayoutInflater.from(dialogContext)
+        val dialog = createTransparentDialog(context)
+        val fields = LayoutInflater.from(dialog.context)
             .inflate(R.layout.dialog_custom_credentials, null)
-        val dialogTitle = view.findViewById<TextView>(R.id.dialog_title)
-        val primaryInputLayout = view.findViewById<TextInputLayout>(R.id.primary_input_layout)
-        val primaryInput = view.findViewById<TextInputEditText>(R.id.primary_input_edit_text)
-        val secondaryInputLayout = view.findViewById<TextInputLayout>(R.id.secondary_input_layout)
-        val secondaryInput = view.findViewById<TextInputEditText>(R.id.secondary_input_edit_text)
-        val btnNegative = view.findViewById<Button>(R.id.button_negative)
-        val btnPositive = view.findViewById<Button>(R.id.button_positive)
+        val primaryLayout = fields.findViewById<TextInputLayout>(R.id.primary_input_layout)
+        val secondaryLayout = fields.findViewById<TextInputLayout>(R.id.secondary_input_layout)
+        val primary = fields.findViewById<TextInputEditText>(R.id.primary_input_edit_text)
+        val secondary = fields.findViewById<TextInputEditText>(R.id.secondary_input_edit_text)
 
-        dialogTitle.text = title
-        primaryInputLayout.hint = primaryHint
-        secondaryInputLayout.hint = secondaryHint
-        primaryInput.setText(initialPrimaryValue)
-        primaryInput.setSelection(initialPrimaryValue.length)
-        primaryInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
-        secondaryInput.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        secondaryInput.imeOptions = EditorInfo.IME_ACTION_DONE
-
-        btnNegative.text = context.getString(android.R.string.cancel)
-        btnPositive.text = positiveText
-
-        dialog.setView(view, 0, 0, 0, 0)
-
-        btnNegative.setOnClickListener { dialog.dismiss() }
-        btnPositive.setOnClickListener {
-            onConfirm(
-                primaryInput.text?.toString().orEmpty(),
-                secondaryInput.text?.toString().orEmpty()
-            )
-            dialog.dismiss()
+        primaryLayout.hint = primaryHint
+        secondaryLayout.hint = secondaryHint
+        primary.setText(initialPrimaryValue)
+        primary.setSelection(initialPrimaryValue.length)
+        secondary.imeOptions = EditorInfo.IME_ACTION_DONE
+        styleTextInput(primaryLayout, primary)
+        styleTextInput(secondaryLayout, secondary)
+        primary.doOnAttach {
+            primary.requestFocus()
+            primary.postDelayed({
+                if (dialog.isShowing && primary.isFocused) {
+                    val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                    imm?.showSoftInput(primary, InputMethodManager.SHOW_IMPLICIT)
+                }
+            }, 150)
         }
 
-        primaryInput.requestFocus()
-        primaryInput.postDelayed({
-            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            imm?.showSoftInput(primaryInput, InputMethodManager.SHOW_IMPLICIT)
-        }, 150)
-
-        dialog.show()
-        styleDialogShell(dialog, view)
-        styleText(dialogTitle, null, btnNegative, btnPositive, null, isDestructive = false)
-        styleTextInput(primaryInputLayout, primaryInput)
-        styleTextInput(secondaryInputLayout, secondaryInput)
-        return dialog
+        return showComposeAlertDialog(dialog, supportsIme = true) {
+            CustomCredentialsDialogContent(
+                title = title,
+                fields = fields,
+                positiveText = positiveText,
+                negativeText = context.getString(android.R.string.cancel),
+                onConfirm = {
+                    onConfirm(primary.text?.toString().orEmpty(), secondary.text?.toString().orEmpty())
+                    dialog.dismiss()
+                },
+                onDismiss = dialog::dismiss
+            )
+        }
     }
 
     fun showSingleChoiceDialog(
@@ -653,76 +652,32 @@ object CustomDialogs {
         onNeutral: (() -> Unit)? = null,
         onSelect: (Int) -> Unit
     ): AlertDialog {
-        val builder = MaterialAlertDialogBuilder(context, R.style.CustomTransparentDialogTheme)
-        val dialog = builder.create()
-        val dialogContext = dialog.context
-
-        val view = LayoutInflater.from(dialogContext)
-            .inflate(R.layout.dialog_custom_single_choice, null)
-        val dialogTitle = view.findViewById<TextView>(R.id.dialog_title)
-        val dialogMessage = view.findViewById<TextView>(R.id.dialog_message)
-        val optionsContainer = view.findViewById<LinearLayout>(R.id.options_container)
-        val buttonNeutral = view.findViewById<Button>(R.id.button_neutral)
-        val buttonNegative = view.findViewById<Button>(R.id.button_negative)
-
-        dialogTitle.text = title
-        if (message.isNullOrBlank()) {
-            dialogMessage.visibility = View.GONE
-        } else {
-            dialogMessage.visibility = View.VISIBLE
-            dialogMessage.text = message
-        }
-
-        var currentSelection = selectedIndex.takeIf { it in options.indices } ?: -1
-        val palette = resolvePalette(dialogContext)
-        val accentColor = resolveAccentColor(dialogContext)
-        val rows = mutableListOf<View>()
-        val radios = mutableListOf<RadioButton>()
-
-        options.forEachIndexed { index, option ->
-            val row = LayoutInflater.from(dialogContext)
-                .inflate(R.layout.item_dialog_choice, optionsContainer, false)
-            val radio = row.findViewById<RadioButton>(R.id.choice_radio)
-            val label = row.findViewById<TextView>(R.id.choice_label)
-
-            radio.isChecked = index == currentSelection
-            label.text = option
-            styleChoiceRow(radio, label)
-            styleChoiceRowBackground(row, palette, if (index == currentSelection) accentColor else null)
-            row.setOnClickListener {
-                currentSelection = index
-                radios.forEachIndexed { radioIndex, item -> item.isChecked = radioIndex == index }
-                rows.forEachIndexed { rowIndex, r ->
-                    styleChoiceRowBackground(r, palette, if (rowIndex == index) accentColor else null)
-                }
-                onSelect(index)
-                dialog.dismiss()
-            }
-
-            rows += row
-            radios += radio
-            optionsContainer.addView(row)
-        }
-
-        if (!neutralText.isNullOrBlank() && onNeutral != null) {
-            buttonNeutral.visibility = View.VISIBLE
-            buttonNeutral.text = neutralText
-            buttonNeutral.setOnClickListener {
+        val dialog = createTransparentDialog(context)
+        val handleNeutral: (() -> Unit)? = if (!neutralText.isNullOrBlank() && onNeutral != null) {
+            {
                 onNeutral()
                 dialog.dismiss()
             }
         } else {
-            buttonNeutral.visibility = View.GONE
+            null
         }
-
-        buttonNegative.text = context.getString(android.R.string.cancel)
-        buttonNegative.setOnClickListener { dialog.dismiss() }
-
-        dialog.setView(view, 0, 0, 0, 0)
-        dialog.show()
-        styleDialogShell(dialog, view)
-        styleText(dialogTitle, dialogMessage, buttonNegative, null, buttonNeutral, isDestructive = false)
-        return dialog
+        val choices = options.toList()
+        return showComposeAlertDialog(dialog) {
+            CustomSingleChoiceDialogContent(
+                title = title,
+                options = choices,
+                selectedIndex = selectedIndex,
+                message = message,
+                neutralText = neutralText,
+                negativeText = context.getString(android.R.string.cancel),
+                onSelect = { index ->
+                    onSelect(index)
+                    dialog.dismiss()
+                },
+                onNeutral = handleNeutral,
+                onDismiss = dialog::dismiss
+            )
+        }
     }
 
     fun showDatePickerDialog(
@@ -734,41 +689,18 @@ object CustomDialogs {
         onConfirm: (LocalDate) -> Unit
     ): AlertDialog {
         val dialog = MaterialAlertDialogBuilder(context, R.style.CustomTransparentDialogTheme).create()
-        val dialogContext = dialog.context
-        val view = LayoutInflater.from(dialogContext)
-            .inflate(R.layout.dialog_custom_date_picker, null)
-        val dialogTitle = view.findViewById<TextView>(R.id.dialog_title)
-        val datePicker = view.findViewById<DatePicker>(R.id.date_picker)
-        val btnNegative = view.findViewById<Button>(R.id.button_negative)
-        val btnPositive = view.findViewById<Button>(R.id.button_positive)
-
-        dialogTitle.text = title
-        btnNegative.text = context.getString(android.R.string.cancel)
-        btnPositive.text = positiveText
-        datePicker.init(initialDate.year, initialDate.month - 1, initialDate.day) { _, year, monthOfYear, dayOfMonth ->
-            onDateChanged?.invoke(LocalDate(year, monthOfYear + 1, dayOfMonth))
+        val picker = LayoutInflater.from(dialog.context).inflate(R.layout.dialog_custom_date_picker, null) as DatePicker
+        picker.init(initialDate.year, initialDate.month - 1, initialDate.day) { _, year, month, day ->
+            onDateChanged?.invoke(LocalDate(year, month + 1, day))
         }
-
-        dialog.setView(view, 0, 0, 0, 0)
-        btnNegative.setOnClickListener { dialog.dismiss() }
-        btnPositive.setOnClickListener {
-            onConfirm(
-                LocalDate(
-                    datePicker.year,
-                    datePicker.month + 1,
-                    datePicker.dayOfMonth
-                )
-            )
-            dialog.dismiss()
+        styleDatePickerHeader(picker, resolvePalette(dialog.context))
+        dialog.showPlatformPicker(title, picker, positiveText) {
+            onConfirm(LocalDate(picker.year, picker.month + 1, picker.dayOfMonth))
         }
-
-        dialog.show()
-        styleDialogShell(dialog, view)
-        styleText(dialogTitle, null, btnNegative, btnPositive, null, isDestructive = false)
-        styleDatePickerHeader(datePicker, resolvePalette(dialogContext))
         return dialog
     }
 
+    @Suppress("DEPRECATION")
     fun showTimePickerDialog(
         context: Context,
         title: CharSequence,
@@ -780,53 +712,26 @@ object CustomDialogs {
         onConfirm: (hour: Int, minute: Int) -> Unit
     ): AlertDialog {
         val dialog = MaterialAlertDialogBuilder(context, R.style.CustomTransparentDialogTheme).create()
-        val dialogContext = dialog.context
-        val view = LayoutInflater.from(dialogContext)
-            .inflate(R.layout.dialog_custom_time_picker, null)
-        val dialogTitle = view.findViewById<TextView>(R.id.dialog_title)
-        val timePicker = view.findViewById<android.widget.TimePicker>(R.id.time_picker)
-        val btnNeutral = view.findViewById<Button>(R.id.button_neutral)
-        val btnNegative = view.findViewById<Button>(R.id.button_negative)
-        val btnPositive = view.findViewById<Button>(R.id.button_positive)
-
-        dialogTitle.text = title
-        timePicker.setIs24HourView(is24Hour)
+        val picker = LayoutInflater.from(dialog.context)
+            .inflate(R.layout.dialog_custom_time_picker, null) as android.widget.TimePicker
+        picker.setIs24HourView(is24Hour)
+        val startHour = if (initialHour >= 0) initialHour else 12
+        val startMinute = if (initialMinute >= 0) initialMinute else 0
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-            timePicker.hour = if (initialHour >= 0) initialHour else 12
-            timePicker.minute = if (initialMinute >= 0) initialMinute else 0
+            picker.hour = startHour
+            picker.minute = startMinute
         } else {
-            @Suppress("DEPRECATION")
-            timePicker.currentHour = if (initialHour >= 0) initialHour else 12
-            @Suppress("DEPRECATION")
-            timePicker.currentMinute = if (initialMinute >= 0) initialMinute else 0
+            picker.currentHour = startHour
+            picker.currentMinute = startMinute
         }
-
-        btnNegative.text = context.getString(android.R.string.cancel)
-        btnNegative.setOnClickListener { dialog.dismiss() }
-
-        btnPositive.text = context.getString(android.R.string.ok)
-        btnPositive.setOnClickListener {
-            val h = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) timePicker.hour else @Suppress("DEPRECATION") timePicker.currentHour
-            val m = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) timePicker.minute else @Suppress("DEPRECATION") timePicker.currentMinute
-            onConfirm(h, m)
-            dialog.dismiss()
-        }
-
-        if (!neutralText.isNullOrBlank() && onNeutral != null) {
-            btnNeutral.visibility = View.VISIBLE
-            btnNeutral.text = neutralText
-            btnNeutral.setOnClickListener {
-                onNeutral()
-                dialog.dismiss()
+        dialog.showPlatformPicker(title, picker, context.getString(android.R.string.ok), neutralText, onNeutral) {
+            picker.clearFocus()
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                onConfirm(picker.hour, picker.minute)
+            } else {
+                onConfirm(picker.currentHour, picker.currentMinute)
             }
-        } else {
-            btnNeutral.visibility = View.GONE
         }
-
-        dialog.setView(view, 0, 0, 0, 0)
-        dialog.show()
-        styleDialogShell(dialog, view)
-        styleText(dialogTitle, null, btnNegative, btnPositive, btnNeutral, isDestructive = false)
         return dialog
     }
 
@@ -838,61 +743,21 @@ object CustomDialogs {
         emptyStateMessage: CharSequence? = null,
         onSelect: (Int) -> Unit
     ): AlertDialog {
-        val builder = MaterialAlertDialogBuilder(context, R.style.CustomTransparentDialogTheme)
-        val dialog = builder.create()
-        val dialogContext = dialog.context
-
-        val view = LayoutInflater.from(dialogContext)
-            .inflate(R.layout.dialog_custom_single_choice, null)
-        val dialogTitle = view.findViewById<TextView>(R.id.dialog_title)
-        val dialogMessage = view.findViewById<TextView>(R.id.dialog_message)
-        val optionsContainer = view.findViewById<LinearLayout>(R.id.options_container)
-        val buttonNeutral = view.findViewById<Button>(R.id.button_neutral)
-        val buttonNegative = view.findViewById<Button>(R.id.button_negative)
-
-        dialogTitle.text = title
-        buttonNeutral.visibility = View.GONE
-        buttonNegative.text = context.getString(android.R.string.cancel)
-        buttonNegative.setOnClickListener { dialog.dismiss() }
-
-        val palette = resolvePalette(dialogContext)
-
-        if (items.isEmpty()) {
-            dialogMessage.visibility = View.VISIBLE
-            dialogMessage.text = emptyStateMessage ?: context.getString(R.string.backup_restore_no_backups)
-        } else {
-            dialogMessage.visibility = View.GONE
-            items.forEachIndexed { index, item ->
-                val row = LayoutInflater.from(dialogContext)
-                    .inflate(R.layout.item_dialog_choice, optionsContainer, false)
-                val radio = row.findViewById<RadioButton>(R.id.choice_radio)
-                val label = row.findViewById<TextView>(R.id.choice_label)
-
-                radio.visibility = View.GONE
-
-                val summary = summaries?.getOrNull(index)
-                if (summary != null && summary.isNotEmpty()) {
-                    label.text = android.text.Html.fromHtml("<b>$item</b><br/><small>$summary</small>")
-                } else {
-                    label.text = item
-                }
-
-                label.setTextColor(palette.onSurface)
-                styleChoiceRowBackground(row, palette)
-
-                row.setOnClickListener {
+        val dialog = createTransparentDialog(context)
+        val rows = resolveSimpleListRows(items, summaries)
+        return showComposeAlertDialog(dialog) {
+            CustomSimpleListDialogContent(
+                title = title,
+                rows = rows,
+                emptyStateMessage = emptyStateMessage ?: context.getString(R.string.backup_restore_no_backups),
+                negativeText = context.getString(android.R.string.cancel),
+                onSelect = { index ->
                     onSelect(index)
                     dialog.dismiss()
-                }
-                optionsContainer.addView(row)
-            }
+                },
+                onDismiss = dialog::dismiss
+            )
         }
-
-        dialog.setView(view, 0, 0, 0, 0)
-        dialog.show()
-        styleDialogShell(dialog, view)
-        styleText(dialogTitle, dialogMessage, buttonNegative, null, null, isDestructive = false)
-        return dialog
     }
 
     fun showCustomViewDialog(

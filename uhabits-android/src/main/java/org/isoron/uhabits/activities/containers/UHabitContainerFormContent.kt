@@ -50,7 +50,7 @@ import org.isoron.uhabits.core.models.PaletteColor
 import org.isoron.uhabits.utils.currentTheme
 
 enum class ContainerFormPresentation {
-    /** Full layout for CreateContainerDialog (Tasks & UnifiedContainerHomeView) with parent row & 20 swatches */
+    /** Full layout for CreateContainerDialog with the parent row and 20 swatches. */
     FULL_WITH_PARENT_AND_SWATCHES,
 
     /** Compact layout for ContainersComposeScreen with dedicated action buttons */

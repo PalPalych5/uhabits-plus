@@ -1,3 +1,6 @@
+from qa_safety import legacy_runner_disabled
+legacy_runner_disabled(__file__)
+
 """Run one isolated disposable offline arm; preserve all previous evidence."""
 import argparse
 import json

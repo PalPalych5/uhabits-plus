@@ -7,7 +7,9 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.Until
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.main.MainActivity
@@ -49,11 +51,14 @@ class SettingsNavigationBackTest {
             instrumentation.waitForIdleSync()
             scenario.onActivity { activity -> assertHomeVisible(activity) }
 
+            var backLabel = ""
             scenario.onActivity { activity ->
                 openAppearance(activity)
-                val toolbar = activity.findViewById<androidx.appcompat.widget.Toolbar>(R.id.settingsDetailToolbar)
-                assertNotNull(toolbar)
-                toolbar.findViewById<android.widget.ImageButton>(androidx.appcompat.R.id.home).performClick()
+                backLabel = activity.getString(R.string.settings_back)
+            }
+            requireNotNull(device.wait(Until.findObject(By.desc(backLabel)), 5_000L)).click()
+            instrumentation.waitForIdleSync()
+            scenario.onActivity { activity ->
                 activeSettings(activity).childFragmentManager.executePendingTransactions()
                 assertHomeVisible(activity)
             }
@@ -63,19 +68,35 @@ class SettingsNavigationBackTest {
     @Test
     fun developerSectionVisibilityTracksPreference() {
         val app = context.applicationContext as HabitsApplication
-        val title = context.getString(R.string.pref_developer_section_title)
-        app.component.preferences.isDeveloper = false
-
-        ActivityScenario.launch<MainActivity>(MainActivity.intent(context, MainDestination.SETTINGS)).use {
-            device.waitForIdle()
-            assertFalse(device.hasObject(By.text(title)))
+        val preferences = app.component.preferences
+        val previous = preferences.isDeveloper
+        try {
+            for (isDeveloper in listOf(false, true)) {
+                preferences.isDeveloper = isDeveloper
+                val intent = MainActivity.intent(context, MainDestination.SETTINGS)
+                ActivityScenario.launch<MainActivity>(intent).use { scenario ->
+                    var title = ""
+                    scenario.onActivity { title = it.getString(R.string.pref_developer_section_title) }
+                    device.waitForIdle()
+                    assertEquals(isDeveloper, canFindSettingsSection(title))
+                }
+            }
+        } finally {
+            preferences.isDeveloper = previous
         }
+    }
 
-        app.component.preferences.isDeveloper = true
-        ActivityScenario.launch<MainActivity>(MainActivity.intent(context, MainDestination.SETTINGS)).use {
+    private fun canFindSettingsSection(title: String): Boolean {
+        val selector = By.descStartsWith(title)
+        repeat(5) {
+            if (device.hasObject(selector)) return true
+            val list = device.findObject(By.scrollable(true)) ?: return false
+            list.setGestureMargin(device.displayWidth / 10)
+            val canContinue = list.scroll(Direction.DOWN, 0.9f)
             device.waitForIdle()
-            assertTrue(device.hasObject(By.text(title)))
+            if (!canContinue) return device.hasObject(selector)
         }
+        return device.hasObject(selector)
     }
 
     @Test

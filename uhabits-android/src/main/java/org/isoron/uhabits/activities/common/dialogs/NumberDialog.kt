@@ -25,8 +25,6 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.widget.EditText
-import androidx.appcompat.app.AppCompatDialog
 import androidx.appcompat.app.AppCompatDialogFragment
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -41,6 +39,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.settings.SettingsThemePaletteResolver
@@ -65,9 +65,14 @@ class NumberDialog : AppCompatDialogFragment() {
     private var hasEffectiveTotal: Boolean = false
     private var validationErrorState by mutableStateOf<String?>(null)
 
-    internal var valueView: EditText? = null
+    private var numericInput by mutableStateOf(TextFieldValue())
 
     companion object CompanionFormat {
+        private const val STATE_VALUE = "numberValue"
+        private const val STATE_SELECTION_START = "numberSelectionStart"
+        private const val STATE_SELECTION_END = "numberSelectionEnd"
+        private const val STATE_NOTES = "numberNotes"
+
         sealed class SaveResolution {
             data class Success(val totalValue: Double) : SaveResolution()
         }
@@ -96,7 +101,7 @@ class NumberDialog : AppCompatDialogFragment() {
 
         val color = arguments?.getInt("color", 0) ?: 0
         originalNotes = requireArguments().getString("notes", "") ?: ""
-        currentNotes = originalNotes
+        currentNotes = savedInstanceState?.getString(STATE_NOTES) ?: originalNotes
         originalValue = requireArguments().getDouble("value", 0.0)
         originalRawValue = arguments?.getInt("originalRawValue", Int.MIN_VALUE)
             ?.takeIf { it != Int.MIN_VALUE }
@@ -117,6 +122,15 @@ class NumberDialog : AppCompatDialogFragment() {
         )
         initialEffectiveMillis = initialDisplayMillis
         val initialFormatted = formatMillisForInput(initialDisplayMillis)
+        val restoredValue = savedInstanceState?.getString(STATE_VALUE)
+        val input = restoredValue ?: initialFormatted
+        numericInput = TextFieldValue(
+            text = input,
+            selection = TextRange(
+                savedInstanceState?.getInt(STATE_SELECTION_START)?.coerceIn(0, input.length) ?: 0,
+                savedInstanceState?.getInt(STATE_SELECTION_END)?.coerceIn(0, input.length) ?: input.length,
+            ),
+        )
 
         val palette = SettingsThemePaletteResolver.resolve(requireContext(), prefs)
         val colors = UHabitComposeColors.fromPalette(palette)
@@ -129,7 +143,7 @@ class NumberDialog : AppCompatDialogFragment() {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 UHabitComposeTheme(colors = colors) {
-                    var notesState by remember { mutableStateOf(originalNotes) }
+                    var notesState by remember { mutableStateOf(currentNotes) }
 
                     Box(
                         modifier = Modifier
@@ -151,7 +165,7 @@ class NumberDialog : AppCompatDialogFragment() {
                             }
                         ) {
                             NumberDialogContent(
-                                initialFormattedValue = initialFormatted,
+                                value = numericInput,
                                 habitColorArgb = color,
                                 notes = notesState,
                                 onNotesChanged = {
@@ -161,10 +175,11 @@ class NumberDialog : AppCompatDialogFragment() {
                                 isSkipEnabled = prefs.isSkipEnabled,
                                 isUnknownEnabled = prefs.areQuestionMarksEnabled,
                                 validationError = validationErrorState,
-                                onValueTextChanged = {
-                                    if (validationErrorState != null) {
+                                onValueChange = { updated ->
+                                    if (updated.text != numericInput.text) {
                                         validationErrorState = null
                                     }
+                                    numericInput = updated
                                 },
                                 onSaveClicked = { save() },
                                 onSkipClicked = {
@@ -179,9 +194,6 @@ class NumberDialog : AppCompatDialogFragment() {
                                 },
                                 onCancelClicked = {
                                     dialog.dismiss()
-                                },
-                                onEditTextAttached = { editText ->
-                                    valueView = editText
                                 },
                                 colors = colors
                             )
@@ -210,10 +222,18 @@ class NumberDialog : AppCompatDialogFragment() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(STATE_VALUE, numericInput.text)
+        outState.putInt(STATE_SELECTION_START, numericInput.selection.start)
+        outState.putInt(STATE_SELECTION_END, numericInput.selection.end)
+        outState.putString(STATE_NOTES, currentNotes)
+    }
+
     override fun onDismiss(dialog: DialogInterface) {
         super.onDismiss(dialog)
 
-        if (!dismissedViaSaveAction) {
+        if (!dismissedViaSaveAction && activity?.isChangingConfigurations != true) {
             val currentNotesTrimmed = currentNotes.trim()
             if (currentNotesTrimmed != originalNotes.trim()) {
                 try {
@@ -231,27 +251,24 @@ class NumberDialog : AppCompatDialogFragment() {
         onDismiss()
     }
 
-    fun save() {
-        val valueStr = valueView?.text?.toString() ?: ""
-        when (val result = NumericalInputValidator.validateEntryInput(valueStr)) {
+    fun save(): Boolean =
+        when (val result = NumericalInputValidator.validateEntryInput(numericInput.text)) {
             is NumericalInputValidator.ValidationResult.Valid -> {
                 validationErrorState = null
                 dismissedViaSaveAction = true
                 onToggle(result.value, currentNotes.trim())
                 requireDialog().dismiss()
+                true
             }
             is NumericalInputValidator.ValidationResult.OutOfRange -> {
                 val msg = getString(R.string.validation_number_out_of_range)
                 validationErrorState = msg
-                valueView?.error = null
-                valueView?.requestFocus()
+                false
             }
             is NumericalInputValidator.ValidationResult.InvalidFormat -> {
                 val msg = getString(R.string.validation_invalid_number_format)
                 validationErrorState = msg
-                valueView?.error = null
-                valueView?.requestFocus()
+                false
             }
         }
-    }
 }

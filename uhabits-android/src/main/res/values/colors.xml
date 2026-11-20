@@ -145,4 +145,7 @@
     <color name="theme_on_surface_variant_dark">#AEB3BD</color>
     <color name="theme_on_surface_amoled">#F4F4F5</color>
     <color name="theme_on_surface_variant_amoled">#A7A9AF</color>
+    <color name="statistics_goal_satisfied">#4CAF50</color>
+    <color name="statistics_goal_missed">#E53935</color>
+    <color name="statistics_progress_track_amoled">#1A1F28</color>
 </resources>

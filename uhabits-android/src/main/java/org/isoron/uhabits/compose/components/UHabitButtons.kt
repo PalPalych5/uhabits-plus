@@ -73,7 +73,7 @@ fun UHabitActionChip(
     }
     val chipSurfaceColor = when {
         isSelected -> effectiveAccent.copy(alpha = if (colors.isPureBlack) 0.25f else 0.15f)
-        colors.isPureBlack -> Color(0xFF141414)
+        colors.isPureBlack -> Color(colors.surfaceVariant)
         colors.isDark -> Color(colors.surfaceVariant).copy(alpha = 0.25f)
         else -> Color(colors.surfaceVariant).copy(alpha = 0.35f)
     }
@@ -161,7 +161,7 @@ fun UHabitSegmentedPillTab(
 ) {
     val accent = Color(colors.accent)
     val unselectedContainer = if (colors.isPureBlack) {
-        Color(0xFF121418)
+        Color(colors.surfaceVariant)
     } else if (colors.isDark) {
         Color(colors.surfaceVariant).copy(alpha = 0.55f)
     } else {

@@ -173,7 +173,7 @@ class UiReviewCaptureTest {
                         ?: error("Overflow action unavailable")
                     overflow.click(); device.waitForIdle(); capture("habits", "overflow"); device.pressBack()
                 }
-                attempt("habits", "details") { clickDescription("Читать книгу"); check(device.wait(androidx.test.uiautomator.Until.hasObject(By.res(java.util.regex.Pattern.compile(".*:id/action_edit_habit"))), 5000)) { "Habit details did not open" }; capture("habits", "details"); device.swipe(600, 1700, 600, 650, 20); capture("habits", "history-statistics"); device.pressBack() }
+                attempt("habits", "details") { clickDescription("Читать книгу"); check(device.wait(androidx.test.uiautomator.Until.hasObject(By.res("action_edit_habit")), 5000)) { "Habit details did not open" }; capture("habits", "details"); device.swipe(600, 1700, 600, 650, 20); capture("habits", "history-statistics"); device.pressBack() }
                 route(MainDestination.TASKS); capture("tasks", "today")
                 attempt("tasks", "creation") { device.findObject(By.res(context.packageName, "layoutQuickAddCollapsed")).click(); capture("tasks", "creation"); device.pressBack() }
                 for (label in listOf("Входящие", "Все задачи", "Предстоящие", "Завершённые")) attempt("tasks", label) {
@@ -267,7 +267,7 @@ class UiReviewCaptureTest {
         val owner = device.currentPackageName
         val systemFilePicker = state == "restore-picker-empty" && owner?.endsWith("documentsui") == true
         check(owner == context.packageName || systemFilePicker) { "Expected app screen, found $owner" }
-        fun hasControl(id: String) = device.findObject(By.res(java.util.regex.Pattern.compile(".*:id/$id"))) != null
+        fun hasControl(id: String) = device.findObject(By.res(java.util.regex.Pattern.compile("(?:.*:id/)?$id"))) != null
         when (state) {
             "details", "history-statistics" -> check(hasControl("action_edit_habit")) { "Expected Habit detail toolbar" }
             "План-custom-calendar", "Дедлайн-custom-calendar" -> check(hasControl("mtrl_calendar_main_pane")) { "Expected Material calendar" }

@@ -1,15 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 package org.isoron.uhabits.activities.common.dialogs
 
-import android.text.Editable
-import android.text.TextWatcher
-import android.text.method.DigitsKeyListener
-import android.view.Gravity
-import android.view.KeyEvent
-import android.view.MotionEvent
-import android.view.inputmethod.EditorInfo
-import android.widget.EditText
-import androidx.appcompat.widget.AppCompatEditText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -32,6 +23,8 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -39,33 +32,50 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import org.isoron.platform.gui.AndroidDataView
 import org.isoron.uhabits.R
+import org.isoron.uhabits.activities.common.views.ScrollableDataChart
 import org.isoron.uhabits.compose.LocalUHabitComposeColors
 import org.isoron.uhabits.compose.UHabitComposeColors
 import org.isoron.uhabits.compose.UHabitElevationAndBorders
@@ -77,9 +87,8 @@ import org.isoron.uhabits.core.models.Entry.Companion.NO
 import org.isoron.uhabits.core.models.Entry.Companion.SKIP
 import org.isoron.uhabits.core.models.Entry.Companion.UNKNOWN
 import org.isoron.uhabits.core.models.Entry.Companion.YES_MANUAL
+import org.isoron.uhabits.core.ui.views.HistoryChart
 import org.isoron.uhabits.utils.InterfaceUtils
-import org.isoron.uhabits.utils.requestFocusWithKeyboard
-import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
 import java.util.Locale
 
@@ -292,20 +301,20 @@ fun CheckmarkDialogContent(
  * - Single 48dp tactile bottom row combining the numerical input cell with SAVE, SKIP, and ? actions.
  */
 @Composable
-fun NumberDialogContent(
-    initialFormattedValue: String,
+@OptIn(ExperimentalComposeUiApi::class)
+internal fun NumberDialogContent(
+    value: TextFieldValue,
     habitColorArgb: Int,
     notes: String,
     onNotesChanged: (String) -> Unit,
     isSkipEnabled: Boolean,
     isUnknownEnabled: Boolean,
     validationError: String?,
-    onValueTextChanged: (String) -> Unit,
-    onSaveClicked: () -> Unit,
+    onValueChange: (TextFieldValue) -> Unit,
+    onSaveClicked: () -> Boolean,
     onSkipClicked: () -> Unit,
     onUnknownClicked: () -> Unit,
     onCancelClicked: () -> Unit,
-    onEditTextAttached: (EditText) -> Unit,
     modifier: Modifier = Modifier,
     colors: UHabitComposeColors = LocalUHabitComposeColors.current
 ) {
@@ -321,6 +330,22 @@ fun NumberDialogContent(
     val borderColor = colors.dialogBorderColor
     val dividerColor = colors.resolveDividerColor()
     val errorColor = if (surfaceColor.luminance() < 0.5f) Color(0xFFEF9A9A) else Color(0xFFC62828)
+    val separator = DecimalFormatSymbols.getInstance().decimalSeparator
+    val numberFocus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val windowFocused = LocalWindowInfo.current.isWindowFocused
+    var initialFocusRequested by remember { mutableStateOf(false) }
+    LaunchedEffect(windowFocused) {
+        if (windowFocused && !initialFocusRequested) {
+            initialFocusRequested = true
+            numberFocus.requestFocus()
+            withFrameNanos { }
+            keyboard?.show()
+        }
+    }
+    val submit: () -> Unit = {
+        if (!onSaveClicked()) numberFocus.requestFocus()
+    }
 
     Column(
         modifier = modifier
@@ -397,7 +422,6 @@ fun NumberDialogContent(
                 .height(48.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Number input cell hosting actual EditText with id R.id.value
             Box(
                 modifier = Modifier
                     .defaultMinSize(minWidth = 56.dp)
@@ -405,48 +429,33 @@ fun NumberDialogContent(
                     .fillMaxHeight(),
                 contentAlignment = Alignment.Center
             ) {
-                AndroidView(
-                    modifier = Modifier.fillMaxWidth(),
-                    factory = { ctx ->
-                        AppCompatEditText(ctx).apply {
-                            id = R.id.value
-                            background = null
-                            gravity = Gravity.CENTER
-                            textSize = 15f
-                            setTextColor(colors.foreground)
-                            setHintTextColor(neutralColor.copy(alpha = 0.5f).hashCode())
-                            inputType = EditorInfo.TYPE_CLASS_NUMBER or EditorInfo.TYPE_NUMBER_FLAG_DECIMAL
-                            val separator = DecimalFormatSymbols.getInstance().decimalSeparator
-                            keyListener = DigitsKeyListener.getInstance("0123456789$separator")
-                            setSelectAllOnFocus(true)
-                            setText(initialFormattedValue)
-                            selectAll()
-                            addTextChangedListener(object : TextWatcher {
-                                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-                                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-                                override fun afterTextChanged(s: Editable?) {
-                                    val textStr = s?.toString() ?: ""
-                                    onValueTextChanged(textStr)
-                                }
-                            })
-                            setOnKeyListener { _, keyCode, event ->
-                                if (event.action == MotionEvent.ACTION_DOWN && keyCode == KeyEvent.KEYCODE_ENTER) {
-                                    onSaveClicked()
-                                    true
-                                } else false
-                            }
-                            onEditTextAttached(this)
-                            post {
-                                requestFocusWithKeyboard()
-                                selectAll()
-                                postDelayed({
-                                    if (hasFocus() && text?.toString() == initialFormattedValue) {
-                                        selectAll()
-                                    }
-                                }, 270L)
-                            }
+                BasicTextField(
+                    value = value,
+                    onValueChange = { change ->
+                        if (change.text.all { it in '0'..'9' || it == separator }) onValueChange(change)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(numberFocus)
+                        .onPreviewKeyEvent { event ->
+                            if (event.key != Key.Enter && event.key != Key.NumPadEnter) return@onPreviewKeyEvent false
+                            if (event.type == KeyEventType.KeyDown) submit()
+                            true
                         }
-                    }
+                        .semantics {
+                            testTagsAsResourceId = true
+                            if (validationError != null) error(validationError)
+                        }
+                        .testTag("habitNumberValue"),
+                    textStyle = TextStyle(
+                        color = Color(colors.foreground),
+                        fontSize = 15.sp,
+                        textAlign = TextAlign.Center,
+                    ),
+                    singleLine = true,
+                    cursorBrush = SolidColor(habitColor),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { submit() }),
                 )
             }
 
@@ -469,7 +478,7 @@ fun NumberDialogContent(
                     .fillMaxHeight()
                     .clickable(
                         role = Role.Button,
-                        onClick = onSaveClicked
+                        onClick = submit
                     )
                     .padding(horizontal = 10.dp)
                     .semantics { contentDescription = saveDesc },
@@ -560,8 +569,7 @@ fun NumberDialogContent(
 @Composable
 fun HistoryEditorDialogContent(
     habitName: String,
-    habitColorArgb: Int,
-    dataView: AndroidDataView,
+    chart: HistoryChart,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
     colors: UHabitComposeColors = LocalUHabitComposeColors.current
@@ -582,12 +590,13 @@ fun HistoryEditorDialogContent(
         contentPadding = PaddingValues(12.dp)
     ) {
         Box(modifier = Modifier.fillMaxWidth()) {
-            // Enlarged History Chart host (316dp height yields ~38dp date cells across 7 weekday rows + header)
-            AndroidView(
+            ScrollableDataChart(
+                renderer = chart,
+                label = dialogDescription,
+                dateGestures = true,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(316.dp),
-                factory = { dataView }
+                    .height(316.dp)
             )
 
             // Compact top-right Close action aligned on the same top header row as month/year labels

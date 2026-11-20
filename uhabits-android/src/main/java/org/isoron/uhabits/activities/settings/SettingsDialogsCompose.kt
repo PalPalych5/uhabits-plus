@@ -397,7 +397,7 @@ internal fun PomodoroDurationDialogContent(
     val parsed = PomodoroDurationSpec.parseValidMinutes(fieldValue.text, isBreak)
     val isError = fieldValue.text.isNotEmpty() && parsed == null
     val borderColor = when {
-        isError -> Color(0xFFD32F2F)
+        isError -> colors.dangerColor
         isFocused -> Color(colors.accent)
         else -> Color(colors.border)
     }
@@ -464,7 +464,7 @@ internal fun PomodoroDurationDialogContent(
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = rangeHint,
-                color = if (isError) Color(0xFFD32F2F) else Color(colors.secondary),
+                color = if (isError) colors.dangerColor else Color(colors.secondary),
                 fontSize = 12.sp,
                 lineHeight = 16.sp,
                 modifier = Modifier.padding(horizontal = 4.dp),

@@ -38,17 +38,23 @@ import android.os.Process
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.Log
+import android.graphics.RectF
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.app.AlertDialog
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.FileProvider
 import androidx.core.os.LocaleListCompat
@@ -56,8 +62,6 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -120,11 +124,14 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     private lateinit var syncCoordinator: SyncCoordinator
     private var widgetUpdater: WidgetUpdater? = null
 
-    private lateinit var recyclerView: RecyclerView
-    protected val isRecyclerViewInitialized: Boolean
-        get() = ::recyclerView.isInitialized
-    private lateinit var adapter: CustomSettingsAdapter
+    private lateinit var composeView: ComposeView
     private var visibleItems: List<SettingItem> = emptyList()
+    private var uiItems by mutableStateOf<List<SettingItem>>(emptyList())
+    private var uiColors by mutableStateOf<UHabitComposeColors?>(null)
+    private var hiddenSectionId by mutableStateOf<SettingsSectionId?>(null)
+    private var bottomInsetPx by mutableIntStateOf(0)
+    private var lazyListState = LazyListState()
+    private val sectionBoundsInHost = mutableMapOf<SettingsSectionId, RectF>()
     private var manualSyncInProgress = false
     private var activeAppearanceDialog: AlertDialog? = null
     private var activeAppearanceDialogKey: String? = null
@@ -161,6 +168,14 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState != null) {
+            val savedIndex = savedInstanceState.getInt(STATE_SCROLL_INDEX, 0).coerceAtLeast(0)
+            val savedOffset = savedInstanceState.getInt(STATE_SCROLL_OFFSET, 0).coerceAtLeast(0)
+            lazyListState = LazyListState(
+                firstVisibleItemIndex = savedIndex,
+                firstVisibleItemScrollOffset = savedOffset,
+            )
+        }
         val appContext = requireContext().applicationContext
         if (appContext is HabitsApplication) {
             prefs = appContext.component.preferences
@@ -180,54 +195,56 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        return inflater.inflate(R.layout.fragment_custom_settings, container, false)
+        return ComposeView(requireContext()).apply {
+            id = R.id.settingsComposeView
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+        }
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         val palette = SettingsThemePaletteResolver.resolve(requireContext(), prefs)
         view.setBackgroundColor(palette.background)
+        uiColors = UHabitComposeColors.fromPalette(palette)
 
-        recyclerView = view.findViewById(R.id.settingsRecyclerView)
-        recyclerView.setBackgroundColor(palette.background)
-        view.addOnLayoutChangeListener { _, left, _, right, _, _, _, _, _ ->
-            val maxWidth = resources.getDimensionPixelSize(R.dimen.settings_content_max_width)
-            val targetWidth = min(right - left, maxWidth)
-            when (val params = recyclerView.layoutParams) {
-                is FrameLayout.LayoutParams -> {
-                    if (params.width != targetWidth || params.gravity != android.view.Gravity.CENTER_HORIZONTAL) {
-                        params.width = targetWidth
-                        params.gravity = android.view.Gravity.CENTER_HORIZONTAL
-                        recyclerView.layoutParams = params
-                    }
-                }
-                is LinearLayout.LayoutParams -> {
-                    if (params.width != targetWidth || params.gravity != android.view.Gravity.CENTER_HORIZONTAL) {
-                        params.width = targetWidth
-                        params.gravity = android.view.Gravity.CENTER_HORIZONTAL
-                        recyclerView.layoutParams = params
-                    }
-                }
-            }
-        }
-        recyclerView.layoutManager = LinearLayoutManager(requireContext())
-        recyclerView.itemAnimator = SettingsItemAnimator { motionEnabled() }
-        val contentTopSpacing = ((if (useCompactTopInset) 4 else 8) * resources.displayMetrics.density).toInt()
-        val contentBottomSpacing = recyclerView.paddingBottom
-        ViewCompat.setOnApplyWindowInsetsListener(recyclerView) { recycler, insets ->
+        composeView = view.findViewById(R.id.settingsComposeView)
+        composeView.setBackgroundColor(palette.background)
+        composeView.setViewCompositionStrategy(
+            ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed,
+        )
+
+        ViewCompat.setOnApplyWindowInsetsListener(composeView) { _, insets ->
             val systemBarsInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            val bottomInset = if (useCompactTopInset) 0 else systemBarsInsets.bottom
-            recycler.setPadding(
-                recycler.paddingLeft,
-                contentTopSpacing,
-                recycler.paddingRight,
-                bottomInset + contentBottomSpacing
-            )
+            bottomInsetPx = if (useCompactTopInset) 0 else systemBarsInsets.bottom
             insets
         }
 
-        adapter = CustomSettingsAdapter(requireContext(), prefs, emptyList())
-        recyclerView.adapter = adapter
+        val topSpacingDp = if (useCompactTopInset) 4.dp else 8.dp
+        composeView.setContent {
+            val colors = uiColors ?: return@setContent
+            val bottomInsetDp = with(LocalDensity.current) { bottomInsetPx.toDp() }
+            SettingsListContent(
+                items = uiItems,
+                colors = colors,
+                listState = lazyListState,
+                contentPadding = PaddingValues(
+                    top = topSpacingDp,
+                    bottom = 16.dp + bottomInsetDp,
+                ),
+                motionEnabled = motionEnabled(),
+                hiddenSectionId = hiddenSectionId,
+                onSectionBoundsChanged = { sectionId, rect ->
+                    sectionBoundsInHost[sectionId] = rect
+                },
+                onSectionClick = { section ->
+                    val source = createTransitionSource(section.sectionId)
+                    section.onClick(source)
+                },
+            )
+        }
 
         (childFragmentManager.findFragmentByTag(TAG_ACCENT_COLOR_PICKER) as? UHabitColorPickerBottomSheet)
             ?.let(::bindAccentColorPickerListener)
@@ -268,6 +285,8 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
+        outState.putInt(STATE_SCROLL_INDEX, lazyListState.firstVisibleItemIndex)
+        outState.putInt(STATE_SCROLL_OFFSET, lazyListState.firstVisibleItemScrollOffset)
         if (activeAppearanceDialog?.isShowing == true) {
             activeAppearanceDialogKey?.let { key ->
                 outState.putString(STATE_ACTIVE_APPEARANCE_DIALOG, key)
@@ -332,7 +351,11 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
     }
 
     private fun rebuildSettingsList() {
-        if (!isAdded || !::adapter.isInitialized) return
+        if (!isAdded || !::composeView.isInitialized) return
+        val palette = SettingsThemePaletteResolver.resolve(requireContext(), prefs)
+        view?.setBackgroundColor(palette.background)
+        composeView.setBackgroundColor(palette.background)
+        uiColors = UHabitComposeColors.fromPalette(palette)
         val sections = buildList {
             add(buildAppearanceSection())
             add(buildHabitsSection())
@@ -364,7 +387,7 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
                 SettingsListComposer.composeDetail(section)
             }
         }
-        adapter.updateItems(visibleItems)
+        uiItems = visibleItems
     }
 
     internal fun detailSectionId(): SettingsSectionId? = arguments
@@ -372,31 +395,44 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         ?.let { runCatching { SettingsSectionId.valueOf(it) }.getOrNull() }
 
     protected fun saveListScrollState(): android.os.Parcelable? =
-        if (::recyclerView.isInitialized) recyclerView.layoutManager?.onSaveInstanceState() else null
+        if (::composeView.isInitialized) {
+            Bundle().apply {
+                putInt(STATE_SCROLL_INDEX, lazyListState.firstVisibleItemIndex)
+                putInt(STATE_SCROLL_OFFSET, lazyListState.firstVisibleItemScrollOffset)
+            }
+        } else {
+            null
+        }
 
     protected fun restoreListScrollState(state: android.os.Parcelable?) {
-        if (state == null || !::recyclerView.isInitialized) return
-        recyclerView.post { recyclerView.layoutManager?.onRestoreInstanceState(state) }
+        val bundle = state as? Bundle ?: return
+        if (!::composeView.isInitialized) return
+        val index = bundle.getInt(STATE_SCROLL_INDEX, 0).coerceAtLeast(0)
+        val offset = bundle.getInt(STATE_SCROLL_OFFSET, 0).coerceAtLeast(0)
+        lazyListState.requestScrollToItem(index, offset)
     }
 
     internal fun captureHomeScrollState(): android.os.Parcelable? = saveListScrollState()
 
     internal fun restoreHomeScrollState(state: android.os.Parcelable?, onReady: () -> Unit) {
-        if (!::recyclerView.isInitialized) {
+        if (!::composeView.isInitialized) {
             onReady()
             return
         }
-        if (state != null) {
-            recyclerView.layoutManager?.onRestoreInstanceState(state)
+        val bundle = state as? Bundle
+        if (bundle != null) {
+            val index = bundle.getInt(STATE_SCROLL_INDEX, 0).coerceAtLeast(0)
+            val offset = bundle.getInt(STATE_SCROLL_OFFSET, 0).coerceAtLeast(0)
+            lazyListState.requestScrollToItem(index, offset)
         }
-        recyclerView.awaitPostLayout(onReady)
+        composeView.awaitPostLayout(onReady)
     }
 
     internal fun resolveSectionSource(
         sectionId: SettingsSectionId,
         onResolved: (SettingsTransitionSource?) -> Unit,
     ) {
-        if (!::recyclerView.isInitialized) {
+        if (!::composeView.isInitialized) {
             onResolved(null)
             return
         }
@@ -405,19 +441,35 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             onResolved(null)
             return
         }
-        val existing = recyclerView.findViewHolderForAdapterPosition(position)?.itemView
-        if (existing != null) {
-            onResolved(SettingsTransitionSource(sectionId, existing))
+        val existingBounds = sectionBoundsInHost[sectionId]
+        val isVisibleInHost = existingBounds != null &&
+            existingBounds.bottom > 0f &&
+            existingBounds.top < composeView.height.toFloat()
+        if (isVisibleInHost) {
+            onResolved(createTransitionSource(sectionId))
             return
         }
-        recyclerView.scrollToPosition(position)
-        recyclerView.awaitPostLayout {
-            val source = recyclerView.findViewHolderForAdapterPosition(position)?.itemView?.let { card ->
-                SettingsTransitionSource(sectionId, card)
+        lazyListState.requestScrollToItem(position)
+        composeView.awaitPostLayout {
+            val bounds = sectionBoundsInHost[sectionId]
+            val source = if (bounds != null && bounds.width() > 1f && bounds.height() > 1f) {
+                createTransitionSource(sectionId)
+            } else {
+                null
             }
             onResolved(source)
         }
     }
+
+    private fun createTransitionSource(sectionId: SettingsSectionId): SettingsTransitionSource =
+        SettingsTransitionSource(
+            sectionId = sectionId,
+            hostView = composeView,
+            boundsInHost = { sectionBoundsInHost[sectionId] },
+            setHidden = { hidden ->
+                hiddenSectionId = if (hidden) sectionId else null
+            },
+        )
 
     private fun motionEnabled(): Boolean = !prefs.isConfettiAnimationDisabled &&
         (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || ValueAnimator.areAnimatorsEnabled())
@@ -779,18 +831,6 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
             )
         }
         if (isExp) {
-            items.add(
-                navigation(
-                    "pref_today_evaluation",
-                    R.drawable.ic_settings_terminal,
-                    getString(R.string.today_eval_experiment_pref_title),
-                    getString(R.string.today_eval_experiment_pref_summary),
-                    showIcon = true
-                ) {
-                    val intent = org.isoron.uhabits.activities.today.TodayActivity.createIntent(requireContext())
-                    requireContext().startActivity(intent)
-                }
-            )
             items.add(
                 navigation(
                     "pref_container_ui_experiments",
@@ -2061,6 +2101,8 @@ open class SettingsFragment : Fragment(), OnSharedPreferenceChangeListener {
         internal const val ARG_DETAIL_SECTION = "settingsDetailSection"
         private const val TAG_ACCENT_COLOR_PICKER = "accentColorPicker"
         private const val STATE_ACTIVE_APPEARANCE_DIALOG = "activeAppearanceDialog"
+        private const val STATE_SCROLL_INDEX = "settingsScrollIndex"
+        private const val STATE_SCROLL_OFFSET = "settingsScrollOffset"
         private const val STATE_DRAFT_HABITS_CORNER_DP = "draftHabitsCornerDp"
         private const val STATE_DRAFT_STATS_CORNER_DP = "draftStatsCornerDp"
         private const val STATE_DRAFT_DAY_TIER_ORDER = "draftDayTierOrder"

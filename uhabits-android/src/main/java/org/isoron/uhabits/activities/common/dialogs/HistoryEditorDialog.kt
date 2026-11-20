@@ -30,14 +30,16 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
-import org.isoron.platform.gui.AndroidDataView
-import org.isoron.platform.gui.toInt
 import org.isoron.platform.time.JavaLocalDateFormatter
 import org.isoron.platform.time.getToday
 import org.isoron.uhabits.HabitsApplication
@@ -70,11 +72,10 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener, M
     internal var habitBinding: HistoryEditorHabitBinding? = null
     private var effectiveReads: EffectiveHabitReadController? = null
     private val onEffectiveChange: () -> Unit = {
-        if (::dataView.isInitialized) dataView.post { if (isResumed) refreshData() }
+        scheduleRefresh()
     }
-    lateinit var dataView: AndroidDataView
-
-    private var chart: HistoryChart? = null
+    private var composeHost: ComposeView? = null
+    private var chart by mutableStateOf<HistoryChart?>(null)
     private var onDateClickedListener: OnDateClickedListener? = null
     private lateinit var themeSwitcher: AndroidThemeSwitcher
 
@@ -114,9 +115,6 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener, M
             squareSpacing = 2.0
             dataOffset = savedOffset
         }
-        dataView = AndroidDataView(requireContext(), null)
-        dataView.view = chart!!
-
         val palette = SettingsThemePaletteResolver.resolve(requireContext(), preferences)
         val colors = UHabitComposeColors.fromPalette(palette)
         val dialog = Dialog(requireContext(), R.style.CustomTransparentDialogTheme)
@@ -129,6 +127,7 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener, M
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 UHabitComposeTheme(colors = colors) {
+                    val renderer = chart ?: return@UHabitComposeTheme
                     val currentColors = LocalUHabitComposeColors.current
                     val dialogSurface = currentColors.dialogSurfaceColor
                     val harmonizedTheme = rememberHarmonizedChartTheme(
@@ -136,7 +135,7 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener, M
                         colors = currentColors,
                         surfaceColor = dialogSurface
                     )
-                    chart?.theme = harmonizedTheme
+                    SideEffect { renderer.theme = harmonizedTheme }
 
                     Box(
                         modifier = Modifier
@@ -162,10 +161,7 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener, M
                         ) {
                             HistoryEditorDialogContent(
                                 habitName = habit.name,
-                                habitColorArgb = themeSwitcher.currentTheme.color(habit.color).toInt(),
-                                dataView = dataView.apply {
-                                    (parent as? ViewGroup)?.removeView(this)
-                                },
+                                chart = renderer,
                                 onDismiss = { dismiss() },
                                 colors = currentColors
                             )
@@ -175,6 +171,7 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener, M
             }
         }
 
+        composeHost = composeView
         dialog.setContentView(composeView)
         dialog.window?.apply {
             setBackgroundDrawableResource(android.R.color.transparent)
@@ -202,6 +199,7 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener, M
 
     override fun onDismiss(dialog: DialogInterface) {
         super.onDismiss(dialog)
+        composeHost = null
         currentDialog = null
     }
 
@@ -224,8 +222,10 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener, M
         super.onPause()
     }
 
-    override fun onModelChange() {
-        if (::dataView.isInitialized) dataView.post { if (isResumed) refreshData() }
+    override fun onModelChange() = scheduleRefresh()
+
+    private fun scheduleRefresh() {
+        composeHost?.post { if (isResumed) refreshData() }
     }
 
     fun setOnDateClickedListener(listener: OnDateClickedListener) {
@@ -270,10 +270,22 @@ class HistoryEditorDialog : AppCompatDialogFragment(), CommandRunner.Listener, M
             dismissAllowingStateLoss()
             return
         }
-        chart?.series = model.series
-        chart?.defaultSquare = model.defaultSquare
-        chart?.notesIndicators = model.notesIndicators
-        dataView.postInvalidate()
+        val previous = chart ?: return
+        chart = HistoryChart(
+            dateFormatter = previous.dateFormatter,
+            firstWeekday = previous.firstWeekday,
+            paletteColor = habit.color,
+            series = model.series,
+            defaultSquare = model.defaultSquare,
+            notesIndicators = model.notesIndicators,
+            theme = currentTheme,
+            today = previous.today,
+            onDateClickedListener = previous.onDateClickedListener,
+            padding = previous.padding
+        ).apply {
+            squareSpacing = previous.squareSpacing
+            dataOffset = previous.dataOffset
+        }
     }
 
     override fun onCommandFinished(command: Command) {

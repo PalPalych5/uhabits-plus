@@ -1,6 +1,7 @@
 package org.isoron.uhabits.qa
 
 import android.content.Intent
+import android.graphics.Point
 import android.os.Build
 import android.os.Debug
 import android.os.Looper
@@ -10,9 +11,11 @@ import android.os.Trace
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import kotlinx.coroutines.runBlocking
 import org.isoron.platform.io.queryLong
@@ -504,17 +507,12 @@ class PostNavigationPresentationAttributionTest {
                     }
                     return requireNotNull(button) { "Target has no visible laid-out checkmark after bounded viewport preparation" }
                 }
-                fun input(button: View, requireFixtureCalendar: Boolean = false) {
+                fun inputAt(requireFixtureCalendar: Boolean = false, target: () -> Point) {
                     val systemCheck = System.nanoTime()
                     QaEmulatorUi.clearSystemUiError()
                     event("harness.systemCheck.end", JSONObject().put("durationNanos", System.nanoTime() - systemCheck))
-                    val xy = IntArray(2)
-                    activity.onActivity { a ->
-                        check(a.hasWindowFocus())
-                        val rect = android.graphics.Rect()
-                        check(button.getGlobalVisibleRect(rect) && rect.width() > 0 && rect.height() > 0)
-                        xy[0] = rect.centerX(); xy[1] = rect.centerY()
-                    }
+                    activity.onActivity { a -> check(a.hasWindowFocus()) }
+                    val xy = target()
                     val down = SystemClock.uptimeMillis()
                     for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
                         if (requireFixtureCalendar) {
@@ -523,8 +521,17 @@ class PostNavigationPresentationAttributionTest {
                                 .put("actualDay", actualToday.toString()).put("motionAction", action))
                             check(actualToday == today) { "Fixture calendar drift immediately before input: $actualToday != $today" }
                         }
-                        val motion = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, xy[0].toFloat(), xy[1].toFloat(), 0)
+                        val motion = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, xy.x.toFloat(), xy.y.toFloat(), 0)
                         try { ins.sendPointerSync(motion) } finally { motion.recycle() }
+                    }
+                }
+                fun input(button: View, requireFixtureCalendar: Boolean = false) {
+                    inputAt(requireFixtureCalendar) {
+                        val rect = android.graphics.Rect()
+                        activity.onActivity {
+                            check(button.getGlobalVisibleRect(rect) && rect.width() > 0 && rect.height() > 0)
+                        }
+                        Point(rect.centerX(), rect.centerY())
                     }
                 }
                 fun listeners(owner: Any): Int = synchronized(owner) {
@@ -562,45 +569,43 @@ class PostNavigationPresentationAttributionTest {
                     val navigationResult = JSONObject().put("navigationOperation", navigationOp).put("destination", destination.name)
                         .put("scenario", phase).put("target", habits.first().name).put("targetHabitId", habits.first().id)
                     navigationOperations.add(navigationResult)
-                    val id = when (destination) {
-                        MainDestination.HABITS -> org.isoron.uhabits.R.id.btnNavHabits
-                        MainDestination.TASKS -> org.isoron.uhabits.R.id.btnNavTasks
-                        MainDestination.STATISTICS -> org.isoron.uhabits.R.id.btnNavReports
+                    val tag = when (destination) {
+                        MainDestination.HABITS -> "btnNavHabits"
+                        MainDestination.TASKS -> "btnNavTasks"
+                        MainDestination.STATISTICS -> "btnNavReports"
                         else -> error("Unsupported measured destination $destination")
                     }
-                    var navigationButton: View? = null
+                    var originalCallback: Window.Callback? = null
                     val returningToHabits = destination == MainDestination.HABITS
                     navigationExpectedValue = component.db.queryLong("SELECT value FROM Repetitions WHERE habit=${habits.first().id} AND timestamp=${today.unixTime}").toInt()
                     navigationRevision = component.effectiveReadRevision.value
-                    activity.onActivity { a ->
-                        navigationButton = a.findViewById<View>(id).also { button ->
-                            check(button.isShown)
-                            if (returningToHabits) button.setOnTouchListener { v, motion ->
-                                // Match MainActivity.setupScaleOnPress while the measurement listener is installed.
-                                when (motion.action) {
-                                    MotionEvent.ACTION_DOWN -> v.animate().scaleX(0.98f).scaleY(0.98f).setDuration(80).start()
-                                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> v.animate().scaleX(1f).scaleY(1f).setDuration(150).start()
-                                }
-                                if (motion.action == MotionEvent.ACTION_UP) {
-                                    val acceptedAt = System.nanoTime()
-                                    navigationDrawOperation = navigationOp
-                                    navigationResult.put("acceptedInputNanos", acceptedAt).put("revision", navigationRevision)
-                                        .put("expectedManualValue", navigationExpectedValue)
-                                    event("navigation.input.up", JSONObject().put("operation", 0L).put("navigationOperation", navigationOp)
-                                        .put("timestampNanos", acceptedAt))
-                                    Trace.beginSection("habit.nav.input.$navigationOp"); Trace.endSection()
-                                }
-                                false
-                            }
-                        }
-                    }
                     val start = System.nanoTime()
-                    try { input(requireNotNull(navigationButton)) } finally {
-                        if (returningToHabits) activity.onActivity { a ->
-                            requireNotNull(navigationButton).setOnTouchListener(null)
-                            a.javaClass.getDeclaredMethod("setupScaleOnPress", View::class.java).apply { isAccessible = true }
-                                .invoke(a, requireNotNull(navigationButton))
+                    try {
+                        inputAt {
+                            val bounds = requireNotNull(device.findObject(By.res(tag))) { "Missing workspace tab $tag" }.visibleBounds
+                            if (returningToHabits) activity.onActivity { a ->
+                                val previous = a.window.callback
+                                originalCallback = previous
+                                a.window.callback = object : Window.Callback by previous {
+                                    override fun dispatchTouchEvent(motion: MotionEvent): Boolean {
+                                        if (motion.actionMasked == MotionEvent.ACTION_UP &&
+                                            bounds.contains(motion.rawX.toInt(), motion.rawY.toInt())) {
+                                            val acceptedAt = System.nanoTime()
+                                            navigationDrawOperation = navigationOp
+                                            navigationResult.put("acceptedInputNanos", acceptedAt).put("revision", navigationRevision)
+                                                .put("expectedManualValue", navigationExpectedValue)
+                                            event("navigation.input.up", JSONObject().put("operation", 0L).put("navigationOperation", navigationOp)
+                                                .put("timestampNanos", acceptedAt))
+                                            Trace.beginSection("habit.nav.input.$navigationOp"); Trace.endSection()
+                                        }
+                                        return previous.dispatchTouchEvent(motion)
+                                    }
+                                }
+                            }
+                            Point(bounds.centerX(), bounds.centerY())
                         }
+                    } finally {
+                        originalCallback?.let { callback -> activity.onActivity { it.window.callback = callback } }
                     }
                     drain(); SystemClock.sleep(250); drain()
                     navigationResult.put("durationToDrainNanos", System.nanoTime() - start)
@@ -618,15 +623,18 @@ class PostNavigationPresentationAttributionTest {
                         "afterStatistics" -> { navigate(MainDestination.STATISTICS); navigate(MainDestination.HABITS) }
                         "afterStatisticsDateChange" -> {
                             navigate(MainDestination.STATISTICS)
-                            var previousButton: View? = null
                             var previousDate: Any? = null
                             activity.onActivity { a ->
                                 val statistics = a.supportFragmentManager.fragments.filterIsInstance<org.isoron.uhabits.activities.statistics.StatisticsFragment>().first()
                                 val date = statistics.javaClass.getDeclaredField("currentAnchorDate").apply { isAccessible = true }
                                 previousDate = date.get(statistics)
-                                previousButton = requireNotNull(statistics.requireView().findViewById<View>(org.isoron.uhabits.R.id.btnPrev))
                             }
-                            input(requireNotNull(previousButton))
+                            inputAt {
+                                val bounds = requireNotNull(device.findObject(By.res("btnPrev"))) {
+                                    "Missing Statistics previous-period action"
+                                }.visibleBounds
+                                Point(bounds.centerX(), bounds.centerY())
+                            }
                             activity.onActivity { a ->
                                 val statistics = a.supportFragmentManager.fragments.filterIsInstance<org.isoron.uhabits.activities.statistics.StatisticsFragment>().first()
                                 val date = statistics.javaClass.getDeclaredField("currentAnchorDate").apply { isAccessible = true }

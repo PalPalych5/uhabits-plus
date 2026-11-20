@@ -189,18 +189,19 @@ class SettingsHostConsolidationTest {
     }
 
     @Test
-    fun consolidatedAdapterAndSectionHostPreserveScrollAndComposeContracts() {
-        val adapterSource = readSettingsSource("CustomSettingsAdapter.kt")
+    fun consolidatedComposeListAndSectionHostPreserveScrollAndComposeContracts() {
+        val listComposeSource = readSettingsSource("SettingsListCompose.kt")
         val fragmentSource = readSettingsSource("SettingsFragment.kt")
         val sectionFragmentSource = readSettingsSource("SettingsSectionFragment.kt")
 
-        assertFalse(adapterSource.contains("composePomodoro"))
-        assertFalse(adapterSource.contains("SectionViewHolder"))
-        assertFalse(adapterSource.contains("RowViewHolder"))
-        assertFalse(adapterSource.contains("SettingsSwitchView"))
-        assertTrue(adapterSource.contains("private class ComposeHolder"))
+        assertTrue(listComposeSource.contains("internal fun SettingsListContent"))
+        assertTrue(listComposeSource.contains("LazyColumn"))
+        assertTrue(listComposeSource.contains("key = { it.stableKey }"))
 
         assertFalse(fragmentSource.contains("useComposeRows"))
+        assertFalse(fragmentSource.contains("CustomSettingsAdapter"))
+        assertFalse(fragmentSource.contains("RecyclerView"))
+        assertTrue(fragmentSource.contains("SettingsListContent"))
 
         assertTrue(sectionFragmentSource.contains("STATE_HOME_SCROLL"))
         assertTrue(sectionFragmentSource.contains("SettingsReturnCoordinator.runPreparedReturn"))

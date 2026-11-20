@@ -8,7 +8,10 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-import run_post_navigation_attribution as runner
+# The historical runner is quarantined in production. Import it only under a
+# mock here; every ADB operation exercised below is also mocked.
+with patch('qa_safety.legacy_runner_disabled'):
+    import run_post_navigation_attribution as runner
 
 
 class PostNavigationRunnerTest(unittest.TestCase):

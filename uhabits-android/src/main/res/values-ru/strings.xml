@@ -1173,6 +1173,7 @@
     <string name="task_due_time_label">Время</string>
     <string name="task_due_add_time">Добавить время</string>
     <string name="task_due_hours_desc">Часы</string>
+    <string name="task_due_invalid_time_12h_error">Введите часы 1–12 и минуты 00–59</string>
     <string name="task_due_minutes_desc">Минуты</string>
     <string name="task_due_remove_time">Убрать</string>
     <string name="task_due_none">Без срока</string>

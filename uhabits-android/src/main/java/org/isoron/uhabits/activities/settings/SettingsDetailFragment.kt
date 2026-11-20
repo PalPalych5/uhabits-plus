@@ -65,8 +65,8 @@ class SettingsDetailFragment : SettingsFragment() {
 
     internal fun transitionToolbar(): View? = view?.findViewById(R.id.settingsDetailToolbar)
 
-    internal fun transitionBody(): androidx.recyclerview.widget.RecyclerView? =
-        view?.findViewById(R.id.settingsRecyclerView)
+    internal fun transitionBody(): View? =
+        view?.findViewById(R.id.settingsComposeView)
 
     private fun sectionTitle(id: SettingsSectionId): String = getString(
         when (id) {

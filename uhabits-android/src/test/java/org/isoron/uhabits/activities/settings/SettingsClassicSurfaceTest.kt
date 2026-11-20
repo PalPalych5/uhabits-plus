@@ -134,7 +134,7 @@ class SettingsClassicSurfaceTest {
         assertEquals(3, withDev.size)
         assertFalse((withDev[1] as SettingItem.Section).presentation.isLast)
         assertTrue((withDev[2] as SettingItem.Section).presentation.isLast)
-        assertFalse(SettingsItemDiff.contentSame(withoutDev[1], withDev[1]))
+        assertFalse(withoutDev[1].presentation == withDev[1].presentation)
     }
 
     @Test
@@ -144,7 +144,7 @@ class SettingsClassicSurfaceTest {
         val morphLayerSource = readSettingsSource("SettingsMorphLayer.kt")
 
         assertTrue(homeSource.contains("colors.isClassicSectionLayout && !item.presentation.isLast"))
-        assertTrue(fragmentSource.contains("recyclerView.setBackgroundColor(palette.background)"))
+        assertTrue(fragmentSource.contains("composeView.setBackgroundColor(palette.background)"))
         assertTrue(morphLayerSource.contains("if (liftPx > 0f && drawCardShadow)"))
     }
 

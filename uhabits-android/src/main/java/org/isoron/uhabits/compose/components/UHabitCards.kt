@@ -46,11 +46,7 @@ fun UHabitSectionCard(
     content: @Composable ColumnScope.() -> Unit
 ) {
     if (colors.isClassicSectionLayout) {
-        val dividerColor = when {
-            colors.isPureBlack -> Color(0xFF181818)
-            colors.isDark -> Color.White.copy(alpha = 0.08f)
-            else -> Color.Black.copy(alpha = 0.08f)
-        }
+        val dividerColor = colors.resolveDividerColor()
         Column(
             modifier = modifier
                 .fillMaxWidth()

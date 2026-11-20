@@ -10,7 +10,6 @@ import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
-import androidx.recyclerview.widget.RecyclerView
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import kotlin.math.min
@@ -36,11 +35,9 @@ class SettingsCardMorphController(
 
     private var animator: ValueAnimator? = null
     private var layer: SettingsMorphLayer? = null
-    private var sourceView: View? = null
+    private var activeSource: SettingsTransitionSource? = null
     private var detailRoot: View? = null
     private var bottomNavigation: View? = null
-    private var detailRecycler: RecyclerView? = null
-    private var savedItemAnimator: RecyclerView.ItemAnimator? = null
     private var terminalActionRunning = false
 
     fun reserveForward(): Boolean = stateMachine.reserveForward()
@@ -63,26 +60,23 @@ class SettingsCardMorphController(
         source: SettingsTransitionSource,
         detailRoot: View,
         detailToolbar: View,
-        detailBody: RecyclerView,
+        detailBody: View,
         bottomNavigation: View,
         onDetailCommitted: () -> Unit,
         onComplete: (backQueued: Boolean) -> Unit,
     ) {
         if (state != State.PREPARING_FORWARD) return
         terminalActionRunning = false
-        this.sourceView = source.container
+        this.activeSource = source
         this.detailRoot = detailRoot
         this.bottomNavigation = bottomNavigation
-        this.detailRecycler = detailBody
-        savedItemAnimator = detailBody.itemAnimator
-        detailBody.itemAnimator = null
 
         overlayHost.visibility = View.INVISIBLE
         overlayHost.post {
             if (state != State.PREPARING_FORWARD) return@post
             val prepared = prepareLayer(source, detailRoot, detailToolbar, detailBody, bottomNavigation)
             if (!prepared) {
-                fallbackForward("forward_prepare_failed", source.container, detailRoot, bottomNavigation, onDetailCommitted, onComplete)
+                fallbackForward("forward_prepare_failed", source, detailRoot, bottomNavigation, onDetailCommitted, onComplete)
                 return@post
             }
             val morphLayer = checkNotNull(layer)
@@ -91,7 +85,7 @@ class SettingsCardMorphController(
                 override fun onPreDraw(): Boolean {
                     morphLayer.viewTreeObserver.removeOnPreDrawListener(this)
                     if (state != State.PREPARING_FORWARD) return true
-                    source.container.alpha = 0f
+                    source.setHidden(true)
                     stateMachine.startAnimatingForward()
                     startForwardAnimator(
                         morphLayer,
@@ -111,12 +105,12 @@ class SettingsCardMorphController(
     fun prepareReturnCover(
         detailRoot: View,
         detailToolbar: View,
-        detailBody: RecyclerView,
+        detailBody: View,
         bottomNavigation: View,
     ): Boolean {
         if (state != State.PREPARING_RETURN) return false
         terminalActionRunning = false
-        this.sourceView = null
+        this.activeSource = null
         this.detailRoot = detailRoot
         this.bottomNavigation = bottomNavigation
 
@@ -133,9 +127,6 @@ class SettingsCardMorphController(
             bodySnapshot?.recycle()
             return false
         }
-        this.detailRecycler = detailBody
-        savedItemAnimator = detailBody.itemAnimator
-        detailBody.itemAnimator = null
         val app = detailRoot.context.applicationContext as HabitsApplication
         val palette = SettingsThemePaletteResolver.resolve(detailRoot.context, app.component.preferences)
         val morphLayer = SettingsMorphLayer(overlayHost.context)
@@ -174,20 +165,13 @@ class SettingsCardMorphController(
             fallbackReturn("return_source_unavailable", detailRoot, bottomNavigation, onHomeCommitted, onComplete)
             return
         }
-        val sourceBounds = source.container.boundsInAncestor(overlayHost)
+        val sourceBounds = source.boundsInAncestor(overlayHost)
         if (sourceBounds == null || !sourceBounds.isUsable()) {
             fallbackReturn("return_source_bounds_unusable", detailRoot, bottomNavigation, onHomeCommitted, onComplete)
             return
         }
-        source.container.animate().setListener(null).cancel()
-        source.container.scaleX = 1f
-        source.container.scaleY = 1f
-        source.container.isPressed = false
-        source.container.background?.jumpToCurrentState()
-        val sourceAlpha = source.container.alpha
-        source.container.alpha = 1f
-        val snapshot = capture(source.container)
-        source.container.alpha = sourceAlpha
+        source.setHidden(false)
+        val snapshot = source.captureBitmap()
         if (snapshot == null) {
             fallbackReturn("return_source_capture_failed", detailRoot, bottomNavigation, onHomeCommitted, onComplete)
             return
@@ -196,9 +180,9 @@ class SettingsCardMorphController(
         val palette = SettingsThemePaletteResolver.resolve(detailRoot.context, app.component.preferences)
         val surfaceSpec = SettingsMorphSurfaceSpec.fromPalette(
             palette = palette,
-            cardCornerRadiusPx = source.container.resources.getDimension(R.dimen.settings_card_radius),
+            cardCornerRadiusPx = source.hostView.resources.getDimension(R.dimen.settings_card_radius),
         )
-        this.sourceView = source.container
+        this.activeSource = source
         morphLayer.attachReturnSource(
             sourceBounds = sourceBounds,
             sourceBitmap = snapshot,
@@ -207,7 +191,7 @@ class SettingsCardMorphController(
             sourceCornerRadius = surfaceSpec.sourceCornerRadius,
             drawShadow = surfaceSpec.drawShadow,
         )
-        source.container.alpha = 0f
+        source.setHidden(true)
         stateMachine.startAnimatingReturn()
         startReturnAnimator(morphLayer, detailRoot, bottomNavigation, onHomeCommitted, onComplete)
     }
@@ -227,19 +211,16 @@ class SettingsCardMorphController(
         source: SettingsTransitionSource?,
         detailRoot: View,
         detailToolbar: View,
-        detailBody: RecyclerView,
+        detailBody: View,
         bottomNavigation: View,
         onHomeCommitted: () -> Unit,
         onComplete: () -> Unit,
     ) {
         if (state != State.PREPARING_RETURN) return
         terminalActionRunning = false
-        this.sourceView = source?.container
+        this.activeSource = source
         this.detailRoot = detailRoot
         this.bottomNavigation = bottomNavigation
-        this.detailRecycler = detailBody
-        savedItemAnimator = detailBody.itemAnimator
-        detailBody.itemAnimator = null
 
         if (source == null) {
             fallbackReturn("return_source_unavailable", detailRoot, bottomNavigation, onHomeCommitted, onComplete)
@@ -261,7 +242,7 @@ class SettingsCardMorphController(
                     morphLayer.viewTreeObserver.removeOnPreDrawListener(this)
                     if (state != State.PREPARING_RETURN) return true
                     detailRoot.alpha = 0f
-                    source.container.alpha = 0f
+                    source.setHidden(true)
                     bottomNavigation.visibility = View.VISIBLE
                     bottomNavigation.alpha = 0f
                     bottomNavigation.translationY = 12f * bottomNavigation.resources.displayMetrics.density
@@ -280,7 +261,7 @@ class SettingsCardMorphController(
         detailBody: View,
         bottomNavigation: View,
     ): Boolean {
-        val sourceBounds = source.container.boundsInAncestor(overlayHost) ?: return false
+        val sourceBounds = source.boundsInAncestor(overlayHost) ?: return false
         val detailBounds = detailRoot.boundsInAncestor(overlayHost) ?: return false
         val toolbarBounds = detailToolbar.boundsInAncestor(overlayHost) ?: return false
         val bodyBounds = detailBody.boundsInAncestor(overlayHost) ?: return false
@@ -298,15 +279,8 @@ class SettingsCardMorphController(
             destinationBounds.right = center + maxWidth / 2f
         }
 
-        source.container.animate().setListener(null).cancel()
-        source.container.scaleX = 1f
-        source.container.scaleY = 1f
-        source.container.isPressed = false
-        source.container.background?.jumpToCurrentState()
-        val sourceAlpha = source.container.alpha
-        source.container.alpha = 1f
-        val snapshot = capture(source.container)
-        source.container.alpha = sourceAlpha
+        source.setHidden(false)
+        val snapshot = source.captureBitmap()
         snapshot ?: return false
         val toolbarSnapshot = capture(detailToolbar)
         val bodySnapshot = capture(detailBody)
@@ -320,7 +294,7 @@ class SettingsCardMorphController(
         val palette = SettingsThemePaletteResolver.resolve(detailRoot.context, app.component.preferences)
         val surfaceSpec = SettingsMorphSurfaceSpec.fromPalette(
             palette = palette,
-            cardCornerRadiusPx = source.container.resources.getDimension(R.dimen.settings_card_radius),
+            cardCornerRadiusPx = source.hostView.resources.getDimension(R.dimen.settings_card_radius),
         )
         val morphLayer = SettingsMorphLayer(overlayHost.context)
         morphLayer.prepare(
@@ -350,7 +324,7 @@ class SettingsCardMorphController(
         morphLayer: SettingsMorphLayer,
         detailRoot: View,
         detailToolbar: View,
-        detailBody: RecyclerView,
+        detailBody: View,
         bottomNavigation: View,
         onDetailCommitted: () -> Unit,
         onComplete: (Boolean) -> Unit,
@@ -385,9 +359,9 @@ class SettingsCardMorphController(
                             finalBody?.recycle()
                         }
                         detailRoot.alpha = 1f
+                        activeSource?.setHidden(false)
                         onDetailCommitted()
                         overlayHost.postOnAnimation {
-                            restoreItemAnimator()
                             releaseOverlay()
                             val queued = stateMachine.finishForward()
                             terminalActionRunning = false
@@ -422,12 +396,11 @@ class SettingsCardMorphController(
                     if (terminalActionRunning || state != State.ANIMATING_RETURN) return
                     terminalActionRunning = true
                     onHomeCommitted()
-                    sourceView?.alpha = 1f
+                    activeSource?.setHidden(false)
                     detailRoot.alpha = 0f
                     bottomNavigation.visibility = View.VISIBLE
                     bottomNavigation.alpha = 1f
                     bottomNavigation.translationY = 0f
-                    restoreItemAnimator()
                     releaseOverlay()
                     stateMachine.finishReturn()
                     terminalActionRunning = false
@@ -440,7 +413,7 @@ class SettingsCardMorphController(
 
     private fun fallbackForward(
         reason: String,
-        source: View,
+        source: SettingsTransitionSource,
         detailRoot: View,
         bottomNavigation: View,
         onDetailCommitted: () -> Unit,
@@ -455,11 +428,10 @@ class SettingsCardMorphController(
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
                     if (state != State.ANIMATING_FORWARD) return
-                    source.alpha = 1f
+                    source.setHidden(false)
                     detailRoot.alpha = 1f
                     bottomNavigation.visibility = View.GONE
                     onDetailCommitted()
-                    restoreItemAnimator()
                     val queued = stateMachine.finishForward()
                     onComplete(queued)
                 }
@@ -491,9 +463,8 @@ class SettingsCardMorphController(
                 override fun onAnimationEnd(animation: Animator) {
                     if (state != State.ANIMATING_RETURN) return
                     onHomeCommitted()
-                    sourceView?.alpha = 1f
+                    activeSource?.setHidden(false)
                     bottomNavigation.alpha = 1f
-                    restoreItemAnimator()
                     stateMachine.finishReturn()
                     onComplete()
                 }
@@ -513,27 +484,16 @@ class SettingsCardMorphController(
     }
 
     private fun cleanVisualState(target: SettleTarget) {
-        sourceView?.apply {
-            alpha = 1f
-            scaleX = 1f
-            scaleY = 1f
-            isPressed = false
-        }
+        activeSource?.setHidden(false)
+        activeSource = null
         detailRoot?.alpha = if (target == SettleTarget.DETAIL) 1f else 0f
         bottomNavigation?.apply {
             visibility = if (target == SettleTarget.HOME) View.VISIBLE else View.GONE
             alpha = 1f
             translationY = 0f
         }
-        restoreItemAnimator()
         releaseOverlay()
         terminalActionRunning = false
-    }
-
-    private fun restoreItemAnimator() {
-        detailRecycler?.itemAnimator = savedItemAnimator
-        savedItemAnimator = null
-        detailRecycler = null
     }
 
     private fun releaseOverlay() {

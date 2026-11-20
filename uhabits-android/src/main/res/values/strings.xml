@@ -1153,6 +1153,7 @@
     <string name="task_due_time_label">Time</string>
     <string name="task_due_add_time">Add time</string>
     <string name="task_due_hours_desc">Hours</string>
+    <string name="task_due_invalid_time_12h_error">Enter hours 1–12 and minutes 00–59</string>
     <string name="task_due_minutes_desc">Minutes</string>
     <string name="task_due_remove_time">Remove</string>
     <string name="task_due_none">No due date</string>

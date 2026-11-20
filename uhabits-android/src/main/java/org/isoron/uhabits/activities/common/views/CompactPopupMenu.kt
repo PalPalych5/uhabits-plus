@@ -2,21 +2,32 @@
 
 package org.isoron.uhabits.activities.common.views
 
+import android.content.Context
+import android.content.ContextWrapper
 import android.graphics.Color
 import android.graphics.Rect
 import android.graphics.drawable.ColorDrawable
-import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.LinearLayout
+import android.widget.FrameLayout
 import android.widget.PopupWindow
-import android.widget.TextView
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.findViewTreeLifecycleOwner
+import androidx.lifecycle.findViewTreeViewModelStoreOwner
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.savedstate.SavedStateRegistryOwner
+import androidx.savedstate.findViewTreeSavedStateRegistryOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.google.android.material.color.MaterialColors
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
-import org.isoron.uhabits.utils.StyledResources
 
 object CompactPopupMenu {
     sealed class Entry {
@@ -103,7 +114,15 @@ object CompactPopupMenu {
         onItemClick: (Int) -> Unit,
     ) {
         val context = anchor.context
-        val sres = StyledResources(context)
+        val lifecycle = anchor.findViewTreeLifecycleOwner() ?: context.findOwner<LifecycleOwner>()
+        val savedState = anchor.findViewTreeSavedStateRegistryOwner() ?: context.findOwner<SavedStateRegistryOwner>()
+        if (anchor.windowToken == null || lifecycle == null || savedState == null ||
+            lifecycle.lifecycle.currentState == Lifecycle.State.DESTROYED
+        ) {
+            onDismiss?.invoke()
+            return
+        }
+        val viewModels = anchor.findViewTreeViewModelStoreOwner() ?: context.findOwner<ViewModelStoreOwner>()
         val palette = CustomDialogs.resolvePalette(context)
         val accent = CustomDialogs.resolveAccentColor(context)
         val destructive = MaterialColors.getColor(
@@ -111,93 +130,49 @@ object CompactPopupMenu {
             com.google.android.material.R.attr.colorError,
             ContextCompat.getColor(context, R.color.red_600),
         )
-        fun px(dp: Int) = (dp * context.resources.displayMetrics.density).toInt()
+        val spacing = CompactPopupSpacing(context.resources.displayMetrics.density)
+        val layout = measureCompactPopupMenu(
+            context, entries, spacing, minWidthDp, maxWidthDp, anchor.layoutDirection == View.LAYOUT_DIRECTION_RTL,
+            accent, destructive,
+        )
         val popup = PopupWindow(context)
-        val content = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(px(6), px(6), px(6), px(6))
-            background = GradientDrawable().apply {
-                setColor(palette.dialogSurface)
-                setStroke(px(1).coerceAtLeast(1), palette.dialogBorder)
-                cornerRadius = px(12).toFloat()
-            }
-        }
-        val visibleEntries = entries.filter {
-            it !is Entry.Item || it.visible
-        }
-        visibleEntries.forEach { entry ->
-            when (entry) {
-                Entry.Divider -> content.addView(View(context).apply {
-                    setBackgroundColor(palette.divider)
-                }, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    px(1),
-                ).apply {
-                    topMargin = px(4)
-                    bottomMargin = px(4)
-                })
-
-                is Entry.Item -> content.addView(TextView(context).apply {
-                    text = entry.title
-                    textSize = 14f
-                    gravity = Gravity.CENTER_VERTICAL
-                    includeFontPadding = false
-                    minHeight = px(42)
-                    setPadding(px(12), 0, px(12), 0)
-                    val itemColor = when {
-                        entry.destructive -> destructive
-                        entry.selected -> accent
-                        else -> sres.getColor(R.attr.contrast100)
-                    }
-                    setTextColor(itemColor)
-                    if (entry.iconRes != null) {
-                        val d = ContextCompat.getDrawable(context, entry.iconRes)?.mutate()
-                        d?.setTint(itemColor)
-                        val iconPx = px(20)
-                        d?.setBounds(0, 0, iconPx, iconPx)
-                        setCompoundDrawablesRelative(d, null, null, null)
-                        compoundDrawablePadding = px(12)
-                    }
-                    val ripple = android.util.TypedValue()
-                    context.theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
-                    setBackgroundResource(ripple.resourceId)
-                    if (entry.selected) {
-                        background = GradientDrawable().apply {
-                            setColor(palette.divider)
-                            cornerRadius = px(8).toFloat()
-                        }
-                    }
-                    setOnClickListener {
+        val host = ComposeView(context).apply {
+            id = View.generateViewId()
+            layoutDirection = anchor.layoutDirection
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setContent {
+                CompactPopupMenuContent(layout, spacing, palette) { id ->
+                    if (popup.isShowing) {
                         popup.dismiss()
-                        onItemClick(entry.id)
+                        onItemClick(id)
                     }
-                }, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                ).apply {
-                    topMargin = px(2)
-                    bottomMargin = px(2)
-                })
+                }
             }
         }
-        popup.contentView = content
-        popup.width = ViewGroup.LayoutParams.WRAP_CONTENT
-        popup.height = ViewGroup.LayoutParams.WRAP_CONTENT
+        popup.contentView = FrameLayout(context).apply {
+            // This boundary makes the child the content root for the popup window recomposer.
+            id = android.R.id.content
+            layoutDirection = anchor.layoutDirection
+            setViewTreeLifecycleOwner(lifecycle)
+            setViewTreeSavedStateRegistryOwner(savedState)
+            setViewTreeViewModelStoreOwner(viewModels)
+            addView(host, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        popup.width = layout.width
+        popup.height = layout.height
         popup.isFocusable = true
         popup.isOutsideTouchable = true
         popup.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-        popup.elevation = px(8).toFloat()
+        popup.elevation = spacing.px(8).toFloat()
         popup.animationStyle = R.style.CompactPopupAnimation
-        popup.setOnDismissListener { onDismiss?.invoke() }
-
-        content.measure(
-            View.MeasureSpec.makeMeasureSpec(px(maxWidthDp), View.MeasureSpec.AT_MOST),
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-        )
-        val measuredWidth = content.measuredWidth
-            .coerceAtLeast(px(minWidthDp))
-            .coerceAtMost(px(maxWidthDp))
-        popup.width = measuredWidth
+        val detachListener = object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(view: View) = Unit
+            override fun onViewDetachedFromWindow(view: View) = popup.dismiss()
+        }
+        popup.setOnDismissListener {
+            anchor.removeOnAttachStateChangeListener(detachListener)
+            onDismiss?.invoke()
+        }
 
         val frame = Rect()
         anchor.rootView.getWindowVisibleDisplayFrame(frame)
@@ -216,12 +191,21 @@ object CompactPopupMenu {
         val (x, y) = calculatePopupPosition(
             anchorRect = anchorRect,
             visibleFrame = frame,
-            popupWidth = measuredWidth,
-            popupHeight = content.measuredHeight,
-            horizontalMarginPx = px(horizontalMarginDp),
-            verticalMarginPx = px(8),
-            verticalOffsetPx = px(verticalOffsetDp),
+            popupWidth = layout.width,
+            popupHeight = layout.height,
+            horizontalMarginPx = spacing.px(horizontalMarginDp),
+            verticalMarginPx = spacing.px(8),
+            verticalOffsetPx = spacing.px(verticalOffsetDp),
         )
-        popup.showAtLocation(anchor.rootView, Gravity.TOP or Gravity.START, x, y)
+        // x already uses physical screen coordinates; row layout uses the anchor direction.
+        val screenGravity = Gravity.getAbsoluteGravity(Gravity.TOP or Gravity.START, View.LAYOUT_DIRECTION_LTR)
+        popup.showAtLocation(anchor.rootView, screenGravity, x, y)
+        if (popup.isShowing) anchor.addOnAttachStateChangeListener(detachListener)
+    }
+
+    private inline fun <reified T> Context.findOwner(): T? {
+        var candidate: Context? = this
+        while (candidate is ContextWrapper && candidate !is T) candidate = candidate.baseContext
+        return candidate as? T
     }
 }

@@ -21,12 +21,8 @@ package org.isoron.uhabits.notifications
 import android.content.ContentUris
 import android.os.Bundle
 import android.text.format.DateFormat
-import android.view.View
-import android.widget.AdapterView
-import android.widget.AdapterView.OnItemClickListener
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.FragmentActivity
-import org.isoron.platform.gui.toInt
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
@@ -38,11 +34,11 @@ import org.isoron.uhabits.receivers.ReminderController
 import org.isoron.uhabits.utils.SystemUtils
 import java.util.Calendar
 
-class SnoozeDelayPickerActivity : FragmentActivity(), OnItemClickListener {
+class SnoozeDelayPickerActivity : FragmentActivity() {
     private var habit: Habit? = null
     private var reminderController: ReminderController? = null
     private var dialog: AlertDialog? = null
-    private var androidColor: Int = 0
+    private var showingCustomTime = false
 
     override fun onCreate(bundle: Bundle?) {
         super.onCreate(bundle)
@@ -65,25 +61,28 @@ class SnoozeDelayPickerActivity : FragmentActivity(), OnItemClickListener {
             finish()
             return
         }
-        androidColor = themeSwitcher.currentTheme.color(currentHabit.color).toInt()
         reminderController = appComponent.reminderController
+        showingCustomTime = bundle?.getBoolean(STATE_CUSTOM_TIME) ?: false
+        if (showingCustomTime) showTimePicker() else showPresetPicker(currentHabit)
+        SystemUtils.unlockScreen(this)
+    }
+
+    private fun showPresetPicker(habit: Habit) {
         val options = resources.getStringArray(R.array.snooze_picker_names).toList()
-        val customDialog = CustomDialogs.showSimpleListDialog(
+        dialog = CustomDialogs.showSimpleListDialog(
             context = this,
             title = getString(R.string.select_snooze_delay),
             items = options
         ) { which ->
             val snoozeValues = resources.getIntArray(R.array.snooze_picker_values)
             if (snoozeValues[which] >= 0) {
-                reminderController!!.onSnoozeDelayPicked(habit!!, snoozeValues[which])
+                reminderController?.onSnoozeDelayPicked(habit, snoozeValues[which])
                 finish()
             } else {
+                showingCustomTime = true
                 showTimePicker()
             }
-        }
-        customDialog.setOnDismissListener { finish() }
-        dialog = customDialog
-        SystemUtils.unlockScreen(this)
+        }.apply { setOnDismissListener { if (!showingCustomTime) finish() } }
     }
 
     private fun AndroidThemeSwitcher.setTheme() {
@@ -98,7 +97,7 @@ class SnoozeDelayPickerActivity : FragmentActivity(), OnItemClickListener {
 
     private fun showTimePicker() {
         val calendar = Calendar.getInstance()
-        val customDialog = CustomDialogs.showTimePickerDialog(
+        dialog = CustomDialogs.showTimePickerDialog(
             context = this,
             title = getString(R.string.snooze),
             initialHour = calendar[Calendar.HOUR_OF_DAY],
@@ -111,24 +110,27 @@ class SnoozeDelayPickerActivity : FragmentActivity(), OnItemClickListener {
                 }
                 finish()
             }
-        )
-        customDialog.setOnDismissListener {
-            if (!isFinishing) finish()
-        }
+        ).apply { setOnDismissListener { if (!isFinishing) finish() } }
     }
 
-    override fun onItemClick(parent: AdapterView<*>?, view: View, position: Int, id: Long) {
-        val snoozeValues = resources.getIntArray(R.array.snooze_picker_values)
-        if (snoozeValues[position] >= 0) {
-            reminderController!!.onSnoozeDelayPicked(habit!!, snoozeValues[position])
-            finish()
-        } else {
-            showTimePicker()
-        }
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_CUSTOM_TIME, showingCustomTime)
+    }
+
+    override fun onDestroy() {
+        dialog?.setOnDismissListener(null)
+        dialog?.dismiss()
+        dialog = null
+        super.onDestroy()
     }
 
     override fun finish() {
         super.finish()
         overridePendingTransition(0, 0)
+    }
+
+    private companion object {
+        const val STATE_CUSTOM_TIME = "showingCustomTime"
     }
 }

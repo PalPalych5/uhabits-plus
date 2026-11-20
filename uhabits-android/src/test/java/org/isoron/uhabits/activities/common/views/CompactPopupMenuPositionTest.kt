@@ -6,6 +6,51 @@ import org.junit.Test
 class CompactPopupMenuPositionTest {
 
     @Test
+    fun keepsPixelSpacingAndWidthBoundsAtFractionalDensity() {
+        val spacing = CompactPopupSpacing(1.25f)
+
+        assertEquals(7, spacing.menuPadding)
+        assertEquals(2, spacing.itemMargin)
+        assertEquals(1, spacing.dividerHeight)
+        assertEquals(5, spacing.dividerMargin)
+        assertEquals(40, spacing.iconWidth(hasIcon = true))
+        assertEquals(180, spacing.menuWidth(spacing.itemWidth(22, hasIcon = false), 144, 220))
+        assertEquals(275, spacing.menuWidth(spacing.itemWidth(420, hasIcon = true), 144, 220))
+        assertEquals(191, spacing.rowWidth(275, hasIcon = true))
+        assertEquals(231, spacing.rowWidth(275, hasIcon = false))
+    }
+
+    @Test
+    fun usesMeasuredMultilineHeightOnlyWhenLargerThanTheCompactRow() {
+        val spacing = CompactPopupSpacing(1.25f)
+
+        assertEquals(52, spacing.rowHeight(labelHeight = 38, hasIcon = false))
+        assertEquals(52, spacing.rowHeight(labelHeight = 38, hasIcon = true))
+        assertEquals(76, spacing.rowHeight(labelHeight = 76, hasIcon = true))
+    }
+
+    @Test
+    fun keepsAnchorCoordinatesPhysicalWithinAnInsetVisibleFrame() {
+        val position = CompactPopupMenu.calculatePopupCoordinates(
+            anchorLeft = 480,
+            anchorTop = 220,
+            anchorRight = 530,
+            anchorBottom = 264,
+            frameLeft = 320,
+            frameTop = 60,
+            frameRight = 720,
+            frameBottom = 680,
+            popupWidth = 155,
+            popupHeight = 188,
+            horizontalMarginPx = 8,
+            verticalMarginPx = 8,
+            verticalOffsetPx = 4,
+        )
+
+        assertEquals(375 to 268, position)
+    }
+
+    @Test
     fun placesMenuDirectlyBelowSelectorChipRightAligned() {
         val (x, y) = CompactPopupMenu.calculatePopupCoordinates(
             anchorLeft = 700,

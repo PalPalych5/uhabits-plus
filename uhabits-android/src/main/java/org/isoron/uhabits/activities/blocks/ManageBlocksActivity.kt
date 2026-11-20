@@ -1,560 +1,272 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
+
 package org.isoron.uhabits.activities.blocks
 
-import android.content.res.ColorStateList
-import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.RippleDrawable
+import android.graphics.Color
 import android.os.Bundle
-import android.view.Menu
 import android.view.MenuItem
-import android.view.View
-import android.view.ViewGroup.LayoutParams.MATCH_PARENT
-import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-import android.widget.Button
-import android.widget.EditText
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.LinearLayout.LayoutParams
-import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.view.WindowCompat
+import org.isoron.platform.gui.toInt
+import org.isoron.uhabits.BaseExceptionHandler
 import org.isoron.uhabits.HabitsApplication
-import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
-import org.isoron.uhabits.activities.common.dialogs.ColorPickerDialogFactory
-import org.isoron.uhabits.activities.common.dialogs.UHabitColorPickerBottomSheet
-import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
-import org.isoron.uhabits.activities.settings.SettingsThemePalette
 import org.isoron.uhabits.activities.settings.SettingsThemePaletteResolver
+import org.isoron.uhabits.compose.UHabitComposeColors
 import org.isoron.uhabits.core.database.HabitBlockData
-import org.isoron.uhabits.core.models.HabitBlock
 import org.isoron.uhabits.core.models.PaletteColor
+import org.isoron.uhabits.core.containers.facade.OrganizationAuthorityMode
 import org.isoron.uhabits.core.models.sqlite.SQLModelFactory
 import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
-import org.isoron.uhabits.databinding.ActivityManageBlocksBinding
-import org.isoron.platform.gui.toInt
-import org.isoron.uhabits.utils.dismissCurrentAndShow
-import org.isoron.uhabits.utils.applyRootViewInsets
-import org.isoron.uhabits.utils.applyToolbarInsets
-import org.isoron.uhabits.utils.currentTheme
-import org.isoron.uhabits.utils.dp
-import org.isoron.uhabits.utils.sres
-import java.util.Locale
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 @OptIn(ExperimentalUuidApi::class)
 class ManageBlocksActivity : AppCompatActivity() {
+
     private lateinit var themeSwitcher: AndroidThemeSwitcher
-    private lateinit var binding: ActivityManageBlocksBinding
     private val component
         get() = (applicationContext as HabitsApplication).component
+    private val canEdit
+        get() = component.organizationFacade.mode == OrganizationAuthorityMode.LEGACY
+
+    private var composeColorsState by mutableStateOf<UHabitComposeColors?>(null)
+    private var blocksState by mutableStateOf<List<ManageBlockItemUi>>(emptyList())
+    private var editorState by mutableStateOf(BlockEditorState())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         themeSwitcher = AndroidThemeSwitcher(this, component.preferences)
         themeSwitcher.apply()
+        BaseExceptionHandler.install(this)
 
-        binding = ActivityManageBlocksBinding.inflate(layoutInflater)
-        binding.root.applyRootViewInsets()
-        binding.toolbar.applyToolbarInsets()
-        setContentView(binding.root)
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
 
-        val palette = SettingsThemePaletteResolver.resolve(this, component.preferences)
-        binding.root.setBackgroundColor(palette.background)
-        binding.toolbar.background = android.graphics.drawable.ColorDrawable(palette.background)
-        binding.toolbar.setTitleTextColor(palette.onSurface)
-        binding.blocksScrollView.setBackgroundColor(palette.background)
-        binding.blocksContainer.setBackgroundColor(palette.background)
+        savedInstanceState?.let { restoreEditorState(it) }
 
-        window.statusBarColor = palette.background
-        window.navigationBarColor = if (palette.isPureBlack) palette.background else palette.surface
-        val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)
-        windowInsetsController.isAppearanceLightStatusBars = !palette.isDark
-        windowInsetsController.isAppearanceLightNavigationBars = !palette.isDark
+        refreshThemeState()
+        refreshBlocks()
 
-        setSupportActionBar(binding.toolbar)
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
-        supportActionBar?.setDisplayShowHomeEnabled(true)
-
-        val navIcon = binding.toolbar.navigationIcon
-        if (navIcon != null) {
-            androidx.core.graphics.drawable.DrawableCompat.setTint(navIcon, palette.onSurface)
+        val composeView = ComposeView(this).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                val colors = composeColorsState ?: return@setContent
+                ManageBlocksComposeScreen(
+                    colors = colors,
+                    blocks = blocksState,
+                    canEdit = canEdit,
+                    editorState = editorState,
+                    resolveColor = { paletteColor ->
+                        themeSwitcher.currentTheme.color(paletteColor).toInt()
+                    },
+                    onBack = { finish() },
+                    onAddClick = {
+                        editorState = BlockEditorState(
+                            mode = BlockEditorMode.ADD,
+                            editingBlockId = null,
+                            draftName = "",
+                            selectedColor = PaletteColor(8),
+                            showNameError = false,
+                            showColorPicker = false,
+                        )
+                    },
+                    onBlockClick = { item ->
+                        editorState = BlockEditorState(
+                            mode = BlockEditorMode.EDIT,
+                            editingBlockId = item.id,
+                            draftName = item.name,
+                            selectedColor = item.color,
+                            showNameError = false,
+                            showColorPicker = false,
+                        )
+                    },
+                    onNameChange = { updatedName ->
+                        editorState = editorState.copy(
+                            draftName = updatedName,
+                            showNameError = false,
+                        )
+                    },
+                    onOpenColorPicker = {
+                        editorState = editorState.copy(showColorPicker = true)
+                    },
+                    onDismissColorPicker = {
+                        editorState = editorState.copy(showColorPicker = false)
+                    },
+                    onColorPicked = { picked ->
+                        editorState = editorState.copy(
+                            selectedColor = picked,
+                            showColorPicker = false,
+                        )
+                    },
+                    onSaveDialog = { saveEditorDialog() },
+                    onDeleteDialog = { deleteEditorDialog() },
+                    onDismissDialog = { editorState = BlockEditorState() },
+                )
+            }
         }
+        setContentView(composeView)
+    }
 
+    override fun onResume() {
+        super.onResume()
+        refreshThemeState()
         refreshBlocks()
     }
 
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        val palette = SettingsThemePaletteResolver.resolve(this, component.preferences)
-        menu.add(0, 1, 0, R.string.add_block).apply {
-            setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-            val icon = ContextCompat.getDrawable(this@ManageBlocksActivity, R.drawable.ic_action_add_dark)
-            if (icon != null) {
-                androidx.core.graphics.drawable.DrawableCompat.setTint(icon, palette.onSurface)
-                setIcon(icon)
-            }
-        }
-        return true
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(KEY_EDITOR_MODE, editorState.mode.ordinal)
+        outState.putLong(KEY_EDITING_BLOCK_ID, editorState.editingBlockId ?: -1L)
+        outState.putString(KEY_DRAFT_NAME, editorState.draftName)
+        outState.putInt(KEY_DRAFT_COLOR, editorState.selectedColor.paletteIndex)
+        outState.putBoolean(KEY_SHOW_NAME_ERROR, editorState.showNameError)
+        outState.putBoolean(KEY_SHOW_COLOR_PICKER, editorState.showColorPicker)
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            android.R.id.home -> {
-                finish()
-                true
-            }
-            1 -> {
-                showAddBlockDialog()
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
+        if (item.itemId == android.R.id.home) {
+            finish()
+            return true
+        }
+        return super.onOptionsItemSelected(item)
+    }
+
+    private fun restoreEditorState(savedInstanceState: Bundle) {
+        val modeOrdinal = savedInstanceState.getInt(KEY_EDITOR_MODE, BlockEditorMode.NONE.ordinal)
+        val mode = BlockEditorMode.entries.getOrElse(modeOrdinal) { BlockEditorMode.NONE }
+        if (mode == BlockEditorMode.NONE) return
+
+        val blockIdRaw = savedInstanceState.getLong(KEY_EDITING_BLOCK_ID, -1L)
+        editorState = BlockEditorState(
+            mode = mode,
+            editingBlockId = blockIdRaw.takeIf { it >= 0L },
+            draftName = savedInstanceState.getString(KEY_DRAFT_NAME, "") ?: "",
+            selectedColor = PaletteColor(savedInstanceState.getInt(KEY_DRAFT_COLOR, 8)),
+            showNameError = savedInstanceState.getBoolean(KEY_SHOW_NAME_ERROR, false),
+            showColorPicker = savedInstanceState.getBoolean(KEY_SHOW_COLOR_PICKER, false),
+        )
+    }
+
+    private fun refreshThemeState() {
+        val palette = SettingsThemePaletteResolver.resolve(this, component.preferences)
+        composeColorsState = UHabitComposeColors.fromPalette(palette)
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !palette.isDark
+            isAppearanceLightNavigationBars = !palette.isDark
         }
     }
 
     private fun refreshBlocks() {
         val blocks = component.habitList.getBlocks()
         val allHabits = component.habitList.toList()
-        binding.blocksContainer.removeAllViews()
+        blocksState = buildManageBlockItems(
+            blocks = blocks,
+            allHabits = allHabits,
+            resolveColor = { paletteColor ->
+                themeSwitcher.currentTheme.color(paletteColor).toInt()
+            },
+        )
+    }
 
-        val palette = SettingsThemePaletteResolver.resolve(this, component.preferences)
-
-        if (blocks.isEmpty()) {
-            val emptyContainer = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = android.view.Gravity.CENTER
-                layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
-                    topMargin = dp(48f).toInt()
-                    bottomMargin = dp(48f).toInt()
-                }
-            }
-            val emptyTextView = TextView(this).apply {
-                text = getString(R.string.manage_blocks_empty_state)
-                textSize = 15f
-                gravity = android.view.Gravity.CENTER
-                setTextColor(palette.onSurfaceVariant)
-                layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
-                    leftMargin = dp(24f).toInt()
-                    rightMargin = dp(24f).toInt()
-                    bottomMargin = dp(16f).toInt()
-                }
-            }
-            val createButton = Button(this).apply {
-                text = getString(R.string.add_block)
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    cornerRadius = dp(8f)
-                    setStroke(dp(1f).toInt(), palette.border)
-                    setColor(android.graphics.Color.TRANSPARENT)
-                }
-                setTextColor(palette.onSurface)
-                isAllCaps = false
-                setOnClickListener {
-                    showAddBlockDialog()
-                }
-                val paddingHorizontal = dp(16f).toInt()
-                val paddingVertical = dp(8f).toInt()
-                setPadding(paddingHorizontal, paddingVertical, paddingHorizontal, paddingVertical)
-            }
-            emptyContainer.addView(emptyTextView)
-            emptyContainer.addView(createButton)
-            binding.blocksContainer.addView(emptyContainer)
+    private fun saveEditorDialog() {
+        if (!canEdit) return
+        val trimmedName = validateBlockName(editorState.draftName)
+        if (trimmedName == null) {
+            editorState = editorState.copy(showNameError = true)
             return
         }
 
-        val cardContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val lp = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
-                leftMargin = dp(16f).toInt()
-                rightMargin = dp(16f).toInt()
-                topMargin = dp(16f).toInt()
-                bottomMargin = dp(16f).toInt()
+        val modelFactory = component.modelFactory as SQLModelFactory
+        val repository = modelFactory.habitBlockRepository
+        val syncManager = modelFactory.syncManager
+
+        when (editorState.mode) {
+            BlockEditorMode.ADD -> {
+                val nextPosition = computeNextBlockPosition(component.habitList.getBlocks())
+                val data = HabitBlockData(
+                    name = trimmedName,
+                    color = editorState.selectedColor.paletteIndex,
+                    icon = "label",
+                    position = nextPosition,
+                    isArchived = false,
+                    uuid = Uuid.random().toHexString(),
+                    updatedAt = syncManager.now(),
+                )
+                val id = repository.insert(data)
+                syncManager.enqueueBlockChange(data.copy(id = id), "create")
+                (component.habitList as? SQLiteHabitList)?.reload()
+                editorState = BlockEditorState()
+                refreshBlocks()
             }
-            layoutParams = lp
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(12f)
-                setColor(palette.surface)
+
+            BlockEditorMode.EDIT -> {
+                val targetId = editorState.editingBlockId ?: return
+                val block = component.habitList.getBlocks().firstOrNull { it.id == targetId } ?: return
+                val updated = HabitBlockData(
+                    id = block.id,
+                    name = trimmedName,
+                    color = editorState.selectedColor.paletteIndex,
+                    icon = block.icon,
+                    position = block.position,
+                    isArchived = block.isArchived,
+                    uuid = repository.findById(block.id!!)?.uuid,
+                    updatedAt = syncManager.now(),
+                )
+                repository.update(updated)
+                syncManager.enqueueBlockChange(updated, "block_change")
+                (component.habitList as? SQLiteHabitList)?.reload()
+                editorState = BlockEditorState()
+                refreshBlocks()
             }
-            clipToOutline = true
+
+            BlockEditorMode.NONE -> Unit
         }
-
-        for ((index, block) in blocks.withIndex()) {
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-                gravity = android.view.Gravity.CENTER_VERTICAL
-                minimumHeight = dp(56f).toInt()
-                isClickable = true
-                isFocusable = true
-                val attrs = intArrayOf(android.R.attr.selectableItemBackground)
-                val typedArray = obtainStyledAttributes(attrs)
-                val backgroundResource = typedArray.getResourceId(0, 0)
-                typedArray.recycle()
-                setBackgroundResource(backgroundResource)
-                setOnClickListener { showEditBlockDialog(block) }
-            }
-
-            val colorIndicator = View(this).apply {
-                val size = dp(24f).toInt()
-                layoutParams = LayoutParams(size, size).apply {
-                    leftMargin = dp(16f).toInt()
-                    rightMargin = dp(16f).toInt()
-                }
-                val resolvedColor = themeSwitcher.currentTheme.color(block.color).toInt()
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    cornerRadius = dp(6f)
-                    setColor(resolvedColor)
-                }
-            }
-            row.addView(colorIndicator)
-
-            val textContainer = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                layoutParams = LayoutParams(0, WRAP_CONTENT, 1f).apply {
-                    topMargin = dp(8f).toInt()
-                    bottomMargin = dp(8f).toInt()
-                }
-            }
-            val nameView = TextView(this).apply {
-                text = getBlockDisplayName(block)
-                textSize = 16f
-                setTextColor(palette.onSurface)
-            }
-            textContainer.addView(nameView)
-
-            val count = allHabits.count { it.blockId == block.id }
-            if (count > 0) {
-                val metadataView = TextView(this).apply {
-                    text = getString(R.string.manage_blocks_habit_count, count)
-                    textSize = 13f
-                    setTextColor(palette.onSurfaceVariant)
-                    layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
-                        topMargin = dp(2f).toInt()
-                    }
-                }
-                textContainer.addView(metadataView)
-            }
-            row.addView(textContainer)
-
-            val chevron = ImageView(this).apply {
-                val size = dp(16f).toInt()
-                layoutParams = LayoutParams(size, size).apply {
-                    rightMargin = dp(16f).toInt()
-                    leftMargin = dp(16f).toInt()
-                }
-                setImageResource(R.drawable.ic_chevron_right)
-                imageTintList = ColorStateList.valueOf(palette.onSurfaceVariant)
-            }
-            row.addView(chevron)
-
-            cardContainer.addView(row)
-
-            if (index < blocks.size - 1) {
-                val divider = View(this).apply {
-                    layoutParams = LayoutParams(MATCH_PARENT, dp(1f).toInt()).apply {
-                        leftMargin = dp(56f).toInt()
-                        rightMargin = dp(16f).toInt()
-                    }
-                    setBackgroundColor(palette.divider)
-                }
-                cardContainer.addView(divider)
-            }
-        }
-        binding.blocksContainer.addView(cardContainer)
     }
 
-    private fun showEditBlockDialog(block: HabitBlock) {
-        val repository = (component.modelFactory as SQLModelFactory).habitBlockRepository
-        val syncManager = (component.modelFactory as SQLModelFactory).syncManager
-        val palette = SettingsThemePaletteResolver.resolve(this, component.preferences)
+    private fun deleteEditorDialog() {
+        if (!canEdit) return
+        val targetId = editorState.editingBlockId
+        if (editorState.mode != BlockEditorMode.EDIT || !canDeleteBlock(targetId)) return
+        val block = component.habitList.getBlocks().firstOrNull { it.id == targetId } ?: return
 
-        val dialogView = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24f).toInt(), dp(16f).toInt(), dp(24f).toInt(), dp(16f).toInt())
-        }
+        val modelFactory = component.modelFactory as SQLModelFactory
+        val repository = modelFactory.habitBlockRepository
+        val syncManager = modelFactory.syncManager
+        val deletedAt = syncManager.now()
 
-        val nameInput = EditText(this).apply {
-            setText(getBlockDisplayName(block))
-            hint = getString(R.string.block_name)
-            maxLines = 1
-        }
-        styleBlockNameInput(nameInput, palette)
-        dialogView.addView(nameInput)
-
-        var selectedColor = block.color
-
-        // Custom Styled Color Selector Row
-        val colorRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
-            minimumHeight = dp(48f).toInt()
-            isClickable = true
-            isFocusable = true
-            val attrs = intArrayOf(android.R.attr.selectableItemBackground)
-            val typedArray = obtainStyledAttributes(attrs)
-            val backgroundResource = typedArray.getResourceId(0, 0)
-            typedArray.recycle()
-
-            val bgDrawable = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(8f)
-                setColor(palette.background)
-                setStroke(dp(1f).toInt(), palette.border)
-            }
-            background = RippleDrawable(
-                ColorStateList.valueOf(ContextCompat.getColor(this@ManageBlocksActivity, if (palette.isDark) R.color.grey_800 else R.color.grey_300)),
-                bgDrawable,
-                null
-            )
-
-            layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
-                topMargin = dp(16f).toInt()
-            }
-            setPadding(dp(16f).toInt(), dp(12f).toInt(), dp(16f).toInt(), dp(12f).toInt())
-        }
-
-        val colorLabel = TextView(this).apply {
-            text = getString(R.string.color)
-            textSize = 16f
-            setTextColor(palette.onSurface)
-            layoutParams = LayoutParams(0, WRAP_CONTENT, 1f)
-        }
-        colorRow.addView(colorLabel)
-
-        val swatch = View(this).apply {
-            val size = dp(20f).toInt()
-            layoutParams = LayoutParams(size, size).apply {
-                rightMargin = dp(8f).toInt()
-            }
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(4f)
-                setColor(themeSwitcher.currentTheme.color(selectedColor).toInt())
-            }
-        }
-        colorRow.addView(swatch)
-
-        val colorChevron = ImageView(this).apply {
-            val size = dp(14f).toInt()
-            layoutParams = LayoutParams(size, size)
-            setImageResource(R.drawable.ic_chevron_right)
-            imageTintList = ColorStateList.valueOf(palette.onSurfaceVariant)
-        }
-        colorRow.addView(colorChevron)
-
-        colorRow.setOnClickListener {
-            // colorPickerDialogFactory
-            val picker = UHabitColorPickerBottomSheet.newInstance(selectedColor) // ColorPickerDialogFactory
-            picker.setListener { paletteColor ->
-                selectedColor = paletteColor
-                swatch.background = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    cornerRadius = binding.root.dp(4f)
-                    setColor(themeSwitcher.currentTheme.color(selectedColor).toInt())
-                }
-            }
-            picker.show(supportFragmentManager, "colorPicker")
-        }
-
-        dialogView.addView(colorRow)
-
-        val dialog = CustomDialogs.showCustomViewDialog(
-            context = this,
-            title = getString(R.string.edit_block),
-            contentView = dialogView,
-            positiveText = getString(R.string.save),
-            neutralText = if (block.id ?: 0L > 7L) getString(R.string.delete) else null,
-            onNeutral = if (block.id ?: 0L > 7L) { {
-                val deletedAt = syncManager.now()
-                syncManager.enqueueBlockChange(
-                    HabitBlockData(
-                        id = block.id,
-                        name = block.name,
-                        color = block.color.paletteIndex,
-                        icon = block.icon,
-                        position = block.position,
-                        isArchived = block.isArchived,
-                        uuid = repository.findById(block.id!!)?.uuid,
-                        updatedAt = deletedAt,
-                        deletedAt = deletedAt
-                    ),
-                    "delete"
-                )
-                repository.softDelete(block.id!!, deletedAt)
-                (component.habitList as SQLiteHabitList).reload()
-                refreshBlocks()
-            } } else null
-        ) {}
-        styleBlockNameInput(nameInput, palette)
-
-        dialog.findViewById<Button>(R.id.button_positive)?.setOnClickListener {
-            val name = nameInput.text.toString().trim()
-            if (name.isEmpty()) {
-                nameInput.error = getString(R.string.block_name_validation)
-                return@setOnClickListener
-            }
-            val updated = HabitBlockData(
+        syncManager.enqueueBlockChange(
+            HabitBlockData(
                 id = block.id,
-                name = name,
-                color = selectedColor.paletteIndex,
+                name = block.name,
+                color = block.color.paletteIndex,
                 icon = block.icon,
                 position = block.position,
                 isArchived = block.isArchived,
                 uuid = repository.findById(block.id!!)?.uuid,
-                updatedAt = syncManager.now()
-            )
-            repository.update(updated)
-            syncManager.enqueueBlockChange(updated, "block_change")
-            (component.habitList as SQLiteHabitList).reload()
-            refreshBlocks()
-            dialog.dismiss()
-        }
+                updatedAt = deletedAt,
+                deletedAt = deletedAt,
+            ),
+            "delete",
+        )
+        repository.softDelete(block.id!!, deletedAt)
+        (component.habitList as? SQLiteHabitList)?.reload()
+        editorState = BlockEditorState()
+        refreshBlocks()
     }
 
-    private fun showAddBlockDialog() {
-        val repository = (component.modelFactory as SQLModelFactory).habitBlockRepository
-        val syncManager = (component.modelFactory as SQLModelFactory).syncManager
-        val blocks = component.habitList.getBlocks()
-        val nextPosition = (blocks.maxOfOrNull { it.position } ?: -1) + 1
-        val palette = SettingsThemePaletteResolver.resolve(this, component.preferences)
-
-        val dialogView = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24f).toInt(), dp(16f).toInt(), dp(24f).toInt(), dp(16f).toInt())
-        }
-
-        val nameInput = EditText(this).apply {
-            hint = getString(R.string.block_name)
-            maxLines = 1
-        }
-        styleBlockNameInput(nameInput, palette)
-        dialogView.addView(nameInput)
-
-        var selectedColor = PaletteColor(8)
-
-        // Custom Styled Color Selector Row
-        val colorRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
-            minimumHeight = dp(48f).toInt()
-            isClickable = true
-            isFocusable = true
-            val attrs = intArrayOf(android.R.attr.selectableItemBackground)
-            val typedArray = obtainStyledAttributes(attrs)
-            val backgroundResource = typedArray.getResourceId(0, 0)
-            typedArray.recycle()
-
-            val bgDrawable = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(8f)
-                setColor(palette.background)
-                setStroke(dp(1f).toInt(), palette.border)
-            }
-            background = RippleDrawable(
-                ColorStateList.valueOf(ContextCompat.getColor(this@ManageBlocksActivity, if (palette.isDark) R.color.grey_800 else R.color.grey_300)),
-                bgDrawable,
-                null
-            )
-
-            layoutParams = LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
-                topMargin = dp(16f).toInt()
-            }
-            setPadding(dp(16f).toInt(), dp(12f).toInt(), dp(16f).toInt(), dp(12f).toInt())
-        }
-
-        val colorLabel = TextView(this).apply {
-            text = getString(R.string.color)
-            textSize = 16f
-            setTextColor(palette.onSurface)
-            layoutParams = LayoutParams(0, WRAP_CONTENT, 1f)
-        }
-        colorRow.addView(colorLabel)
-
-        val swatch = View(this).apply {
-            val size = dp(20f).toInt()
-            layoutParams = LayoutParams(size, size).apply {
-                rightMargin = dp(8f).toInt()
-            }
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(4f)
-                setColor(themeSwitcher.currentTheme.color(selectedColor).toInt())
-            }
-        }
-        colorRow.addView(swatch)
-
-        val colorChevron = ImageView(this).apply {
-            val size = dp(14f).toInt()
-            layoutParams = LayoutParams(size, size)
-            setImageResource(R.drawable.ic_chevron_right)
-            imageTintList = ColorStateList.valueOf(palette.onSurfaceVariant)
-        }
-        colorRow.addView(colorChevron)
-
-        colorRow.setOnClickListener {
-            // colorPickerDialogFactory
-            val picker = UHabitColorPickerBottomSheet.newInstance(selectedColor) // ColorPickerDialogFactory
-            picker.setListener { paletteColor ->
-                selectedColor = paletteColor
-                swatch.background = GradientDrawable().apply {
-                    shape = GradientDrawable.RECTANGLE
-                    cornerRadius = binding.root.dp(4f)
-                    setColor(themeSwitcher.currentTheme.color(selectedColor).toInt())
-                }
-            }
-            picker.show(supportFragmentManager, "colorPicker")
-        }
-
-        dialogView.addView(colorRow)
-
-        val dialog = CustomDialogs.showCustomViewDialog(
-            context = this,
-            title = getString(R.string.add_block),
-            contentView = dialogView,
-            positiveText = getString(R.string.save)
-        ) {}
-        styleBlockNameInput(nameInput, palette)
-
-        dialog.findViewById<Button>(R.id.button_positive)?.setOnClickListener {
-            val name = nameInput.text.toString().trim()
-            if (name.isEmpty()) {
-                nameInput.error = getString(R.string.block_name_validation)
-                return@setOnClickListener
-            }
-            val data = HabitBlockData(
-                name = name,
-                color = selectedColor.paletteIndex,
-                icon = "label",
-                position = nextPosition,
-                isArchived = false,
-                uuid = Uuid.random().toHexString(),
-                updatedAt = syncManager.now()
-            )
-            val id = repository.insert(data)
-            syncManager.enqueueBlockChange(data.copy(id = id), "create")
-            (component.habitList as SQLiteHabitList).reload()
-            refreshBlocks()
-            dialog.dismiss()
-        }
-    }
-
-    private fun getBlockDisplayName(block: HabitBlock): String = block.name
-
-    private fun styleBlockNameInput(input: EditText, palette: SettingsThemePalette) {
-        input.backgroundTintList = null
-        input.setHintTextColor(palette.onSurfaceVariant)
-        input.setTextColor(palette.onSurface)
-        input.highlightColor = ColorStateList.valueOf(palette.onSurfaceVariant).defaultColor
-        input.background = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = binding.root.dp(8f)
-            setColor(palette.surfaceVariant)
-            setStroke(binding.root.dp(1f).toInt().coerceAtLeast(1), palette.border)
-        }
-        val padding = binding.root.dp(12f).toInt()
-        input.setPadding(padding, padding, padding, padding)
+    companion object {
+        private const val KEY_EDITOR_MODE = "blockEditorMode"
+        private const val KEY_EDITING_BLOCK_ID = "blockEditingId"
+        private const val KEY_DRAFT_NAME = "blockDraftName"
+        private const val KEY_DRAFT_COLOR = "blockDraftColor"
+        private const val KEY_SHOW_NAME_ERROR = "blockShowNameError"
+        private const val KEY_SHOW_COLOR_PICKER = "blockShowColorPicker"
     }
 }

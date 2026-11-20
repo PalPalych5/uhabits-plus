@@ -14,8 +14,6 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
-import org.isoron.uhabits.activities.common.dialogs.ColorPickerDialog
-import org.isoron.uhabits.activities.common.dialogs.CustomColorBottomSheet
 import org.isoron.uhabits.activities.containers.CreateContainerDialog
 import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
@@ -225,66 +223,22 @@ class SectionsManagementAndroidTest {
                 }
             }
 
-            // Step 3: Open Custom Color Picker from CreateContainerDialog
+            // The precision picker now opens within the existing Compose form.
+            var slidersLabel = ""
+            var applyLabel = ""
             scenario.onActivity { activity ->
-                createDialog?.openColorPickerDialog()
-                activity.supportFragmentManager.executePendingTransactions()
+                slidersLabel = activity.getString(R.string.color_picker_mode_sliders)
+                applyLabel = activity.getString(R.string.done_label)
             }
-            instrumentation.waitForIdleSync()
-            device.waitForIdle()
-
-            waitForCondition(2000L, "ColorPickerDialog attached") {
-                var ok = false
-                scenario.onActivity { activity ->
-                    val colorDialog = activity.supportFragmentManager.findFragmentByTag("container_color_picker") as? ColorPickerDialog
-                    ok = (colorDialog != null && colorDialog.dialog?.isShowing == true && colorDialog.view != null)
-                }
-                ok
-            }
-
-            // Within ColorPickerDialog, click custom_color_row to open CustomColorBottomSheet
-            scenario.onActivity { activity ->
-                val colorDialog = activity.supportFragmentManager.findFragmentByTag("container_color_picker") as? ColorPickerDialog
-                if (colorDialog != null) {
-                    val customRowId = context.resources.getIdentifier("custom_color_row", "id", context.packageName)
-                    if (customRowId != 0) {
-                        colorDialog.requireView().findViewById<View>(customRowId)?.performClick()
-                        colorDialog.childFragmentManager.executePendingTransactions()
-                    }
-                }
-            }
-            instrumentation.waitForIdleSync()
-            device.waitForIdle()
-
-            waitForCondition(2000L, "CustomColorBottomSheet attached") {
-                var ok = false
-                scenario.onActivity { activity ->
-                    val colorDialog = activity.supportFragmentManager.findFragmentByTag("container_color_picker") as? ColorPickerDialog
-                    val sheet = colorDialog?.childFragmentManager?.findFragmentByTag("customColorPicker") as? CustomColorBottomSheet
-                    ok = (sheet != null && sheet.dialog?.isShowing == true && sheet.view != null)
-                }
-                ok
-            }
+            requireNotNull(device.wait(Until.findObject(By.desc("Пользовательский цвет")), 5_000L)).click()
+            requireNotNull(device.wait(Until.findObject(By.text(slidersLabel)), 5_000L)).click()
+            val hexField = requireNotNull(device.wait(Until.findObject(By.clazz("android.widget.EditText")), 5_000L))
+            hexField.setText("#547AA5")
+            device.pressBack()
             takeShot("03-color-picker-custom") {
-                scenario.onActivity { activity ->
-                    val colorDialog = activity.supportFragmentManager.findFragmentByTag("container_color_picker") as? ColorPickerDialog
-                    val sheet = colorDialog?.childFragmentManager?.findFragmentByTag("customColorPicker") as? CustomColorBottomSheet
-                    assertNotNull("CustomColorBottomSheet must exist", sheet)
-                }
+                assertTrue(device.hasObject(By.desc(applyLabel)))
             }
-
-            // Select color and close color picker dialogs
-            scenario.onActivity { activity ->
-                val colorDialog = activity.supportFragmentManager.findFragmentByTag("container_color_picker") as? ColorPickerDialog
-                if (colorDialog != null) {
-                    val sheet = colorDialog.childFragmentManager.findFragmentByTag("customColorPicker") as? CustomColorBottomSheet
-                    sheet?.requireView()?.findViewById<View>(R.id.custom_color_done)?.performClick()
-                    colorDialog.childFragmentManager.executePendingTransactions()
-                    val applyBtn = colorDialog.requireView().findViewById<View>(R.id.color_picker_apply)
-                    applyBtn?.performClick()
-                    activity.supportFragmentManager.executePendingTransactions()
-                }
-            }
+            requireNotNull(device.findObject(By.desc(applyLabel))).click()
             instrumentation.waitForIdleSync()
             device.waitForIdle()
 

@@ -67,7 +67,7 @@ private val expandedSummaryKeys = setOf(
     "syncSignIn", "syncSignOut", "syncNow", "syncReview",
     "pref_sync_base_url", "pref_sync_key", "seedDemoData", "exportSyncDiagnostics",
     "bugReport", "pref_container_experiment", "pref_production_cutover_dev",
-    "pref_today_evaluation", "pref_container_ui_experiments",
+    "pref_container_ui_experiments",
 )
 
 @OptIn(ExperimentalFoundationApi::class)

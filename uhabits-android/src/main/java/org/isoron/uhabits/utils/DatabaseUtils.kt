@@ -679,7 +679,8 @@ object DatabaseUtils {
                 )
                 try {
                     val wrappedDb = AndroidDatabase(migrated)
-                    val intermediateTarget = if (targetVersion >= 30 && backupVersion < 29) 29 else targetVersion
+                    // Legacy block placements need the semantic Next conversion before later SQL upgrades.
+                    val intermediateTarget = minOf(targetVersion, LEGACY_DATABASE_VERSION)
                     if (wrappedDb.getVersion() < intermediateTarget) {
                         runBlocking {
                             wrappedDb.migrateTo(intermediateTarget) { version ->

@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:layout_height="match_parent">
 
     <androidx.appcompat.widget.Toolbar
         android:id="@+id/settingsDetailToolbar"
         android:layout_width="match_parent"
         android:layout_height="56dp"
+        android:layout_alignParentTop="true"
         android:minHeight="56dp"
         android:theme="@style/ThemeOverlay.AppCompat.ActionBar">
 
@@ -32,12 +32,10 @@
         </FrameLayout>
     </androidx.appcompat.widget.Toolbar>
 
-    <androidx.recyclerview.widget.RecyclerView
-        android:id="@+id/settingsRecyclerView"
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/settingsComposeView"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:clipToPadding="false"
-        android:paddingBottom="16dp"
-        android:scrollbars="none" />
-</LinearLayout>
+        android:layout_height="match_parent"
+        android:layout_below="@id/settingsDetailToolbar"
+        android:layout_alignParentBottom="true" />
+</RelativeLayout>

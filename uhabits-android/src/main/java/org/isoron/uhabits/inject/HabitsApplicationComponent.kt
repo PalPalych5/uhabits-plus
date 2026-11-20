@@ -165,34 +165,6 @@ abstract class HabitsApplicationComponent(
         } else null
     }
 
-    val todayEvaluationService: org.isoron.uhabits.core.today.TodayEvaluationService? by lazy {
-        val cQueries = organizationFacade.containerQueries
-        val pQueries = organizationFacade.habitPlacementQueries
-        if (session.isNextArchitecture) {
-            FocusSessionSchema.createSchema(providedDb)
-            org.isoron.uhabits.core.contribution.sqlite.ContributionSchema.createSchema(providedDb)
-            val contribRepo = org.isoron.uhabits.core.contribution.sqlite.SQLiteContributionRepository(providedDb)
-            val adjRepo = org.isoron.uhabits.core.models.projection.SQLiteHabitDayAdjustmentRepository(providedDb)
-            val effectiveHabitValueService = org.isoron.uhabits.core.models.projection.EffectiveHabitValueService(
-                contribRepo,
-                preferences.midnightDelayHours,
-                0,
-                preferences.firstWeekday,
-                adjustmentRepository = adjRepo,
-            )
-            org.isoron.uhabits.core.today.TodayEvaluationService(
-                userTaskRepository = userTaskRepository,
-                habitList = habitList,
-                effectiveHabitValueService = effectiveHabitValueService,
-                containerQueries = cQueries,
-                placementQueries = pQueries,
-                clock = { System.currentTimeMillis() },
-                hourOffset = preferences.midnightDelayHours,
-                minuteOffset = 0
-            )
-        } else null
-    }
-
     val effectiveReadRevision = org.isoron.uhabits.core.models.projection.EffectiveReadRevision(session.datasetId)
     val workspaceReadRevision = org.isoron.uhabits.core.models.projection.EffectiveReadRevision(session.datasetId)
     val organizationReadRevision = org.isoron.uhabits.core.models.projection.EffectiveReadRevision(session.datasetId)
