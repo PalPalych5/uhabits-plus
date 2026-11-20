@@ -2,34 +2,27 @@
 
 package org.isoron.uhabits.activities.statistics
 
-import android.content.res.ColorStateList
-import android.graphics.Color
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import androidx.core.widget.doAfterTextChanged
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updatePadding
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.FragmentManager
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
-import com.google.android.material.button.MaterialButton
 import org.isoron.platform.time.LocalDate
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.settings.SettingsThemePalette
 import org.isoron.uhabits.activities.tasks.TaskDetailBottomSheet
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.focus.FocusPrimaryTargetType
 import org.isoron.uhabits.core.focus.FocusSession
@@ -41,9 +34,10 @@ import org.isoron.uhabits.core.statistics.HabitCycleOutcome
 import org.isoron.uhabits.core.statistics.HabitSummary
 import org.isoron.uhabits.core.statistics.targetsWithin
 import org.isoron.uhabits.core.statistics.StatisticsDataState
+import org.isoron.uhabits.core.statistics.StatisticsQueryContext
+import org.isoron.uhabits.core.statistics.StatisticsSectionScope
 import org.isoron.uhabits.core.userTasks.TaskStatus
 import org.isoron.uhabits.core.userTasks.UserTask
-import org.isoron.uhabits.utils.InterfaceUtils
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -66,8 +60,6 @@ class UnifiedStatisticsDrilldownBottomSheet : BottomSheetDialogFragment() {
     private var pageIndex: Int = 0
     private var datasetId: String? = null
     private var querySignature: String? = null
-    internal var visibleIds: List<String> = emptyList()
-        private set
 
     // Tasks descriptor parameters
     private var taskDescriptorType: String = ""
@@ -96,19 +88,14 @@ class UnifiedStatisticsDrilldownBottomSheet : BottomSheetDialogFragment() {
     private var habitToDays: Int = -1
     private var habitUuidVal: String? = null
     private var habitNameVal: String? = null
-    private var habitSearchQuery: String = ""
+    private var habitSearchQuery by mutableStateOf("")
 
-    private lateinit var listContainer: LinearLayout
-    private lateinit var subtitleView: TextView
-    private lateinit var queryContextView: TextView
-    private lateinit var loadMoreButton: MaterialButton
-    private lateinit var previousPageButton: MaterialButton
-    internal val nextPageButton: MaterialButton get() = loadMoreButton
+    private var content by mutableStateOf(StatisticsDrilldownContent())
+    internal val visibleIds: List<String> get() = content.rows.filter { !it.navigation }.map { it.id }
+    internal val hasNextPage: Boolean get() = content.hasNextPage
 
     private val palette: SettingsThemePalette get() = MainTabsThemeBridge.resolve(requireContext())
     private val isRussian get() = Locale.getDefault().language == "ru"
-
-    private fun dp(value: Float): Int = InterfaceUtils.dpToPixels(requireContext(), value).toInt()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -196,438 +183,216 @@ class UnifiedStatisticsDrilldownBottomSheet : BottomSheetDialogFragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?,
     ): View {
-        val context = requireContext()
-
-        val root = FrameLayout(context).apply {
-            tag = if (kind == KIND_HABIT_CYCLES || kind == KIND_HABIT_LIST) "habitDrilldownSheet" else "unifiedDrilldownSheet"
-            setBackgroundColor(palette.dialogSurface)
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            )
-        }
-
-        val scrollView = ScrollView(context).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-            )
-            isFillViewport = true
-        }
-
-        val contentLayout = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16f), dp(16f), dp(16f), dp(24f))
-        }
-
-        // Title
-        val tvTitle = TextView(context).apply {
-            text = titleText
-            textSize = 19f
-            setTypeface(typeface, Typeface.BOLD)
-            setTextColor(palette.onSurface)
-        }
-        contentLayout.addView(tvTitle)
-
-        // Subtitle
-        subtitleView = TextView(context).apply {
-            text = subtitleText
-            textSize = 14f
-            setTextColor(palette.onSurfaceVariant)
-            setPadding(0, dp(4f), 0, dp(12f))
-        }
-        contentLayout.addView(subtitleView)
-        queryContextView = TextView(context).apply {
-            textSize = 13f
-            setTextColor(palette.onSurfaceVariant)
-            setPadding(0, 0, 0, dp(12f))
-        }
-        contentLayout.addView(queryContextView)
-
-        if (kind == KIND_HABIT_LIST) {
-            val searchInput = android.widget.EditText(context).apply {
-                tag = "habitSearchInput"
-                hint = getString(R.string.unified_statistics_habits_search_hint)
-                setTextColor(palette.onSurface)
-                setHintTextColor(palette.onSurfaceVariant)
-                background = GradientDrawable().apply {
-                    setColor(palette.surfaceVariant)
-                    cornerRadius = dp(8f).toFloat()
-                }
-                setPadding(dp(12f), dp(8f), dp(12f), dp(8f))
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    bottomMargin = dp(12f)
-                }
-                setText(habitSearchQuery)
-                doAfterTextChanged { text ->
-                    val q = text?.toString().orEmpty()
-                    if (q != habitSearchQuery) {
-                        habitSearchQuery = q
-                        pageIndex = 0
-                        populateItems()
-                    }
-                }
-            }
-            contentLayout.addView(searchInput)
-        }
-
-        // Items container
-        listContainer = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        contentLayout.addView(listContainer)
-
-        previousPageButton = MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
-            text = if (isRussian) "Предыдущая страница" else "Previous page"
-            setTextColor(palette.accent)
-            minHeight = dp(48f)
-            setOnClickListener { pageIndex = (pageIndex - 1).coerceAtLeast(0); populateItems() }
-        }
-        contentLayout.addView(previousPageButton)
-        loadMoreButton = MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
-            text = if (isRussian) "Следующая страница" else "Next page"
-            setTextColor(palette.accent)
-            visibility = View.GONE
-            setOnClickListener {
-                pageIndex++
-                populateItems()
-            }
-        }
-        contentLayout.addView(loadMoreButton)
-
-        scrollView.addView(contentLayout)
-        root.addView(scrollView)
-
+        content = StatisticsDrilldownContent(subtitle = subtitleText)
         populateItems()
+        val colors = UHabitComposeColors.fromPalette(palette)
+        val isHabits = kind == KIND_HABIT_CYCLES || kind == KIND_HABIT_LIST
+        return ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                UHabitComposeTheme(colors) {
+                    UnifiedStatisticsDrilldownCompose(
+                        title = titleText,
+                        tag = if (isHabits) "habitDrilldownSheet" else "unifiedDrilldownSheet",
+                        content = content,
+                        searchQuery = habitSearchQuery.takeIf { kind == KIND_HABIT_LIST },
+                        onSearch = { query ->
+                            if (query != habitSearchQuery) {
+                                habitSearchQuery = query
+                                pageIndex = 0
+                                populateItems()
+                            }
+                        },
+                        previousLabel = if (isRussian) "Предыдущая страница" else "Previous page",
+                        nextLabel = if (isRussian) "Следующая страница" else "Next page",
+                        onPrevious = {
+                            if (content.hasPreviousPage) {
+                                pageIndex--
+                                populateItems()
+                            }
+                        },
+                        onNext = {
+                            if (content.hasNextPage) {
+                                pageIndex++
+                                populateItems()
+                            }
+                        },
+                        onRetry = { (parentFragment as? UnifiedStatisticsFragment)?.refresh() },
+                    )
+                }
+            }
+        }
+    }
 
-        return root
+    override fun onDestroyView() {
+        content = StatisticsDrilldownContent()
+        super.onDestroyView()
     }
 
     private fun populateItems() {
-        if (!::listContainer.isInitialized) return
-        listContainer.removeAllViews()
-        visibleIds = emptyList()
-        previousPageButton.visibility = View.GONE
-        loadMoreButton.visibility = View.GONE
-
-        val parentFrag = parentFragment as? UnifiedStatisticsFragment
-        val report = parentFrag?.activeReport
-        val state = parentFrag?.currentState
+        val parent = parentFragment as? UnifiedStatisticsFragment
+        val report = parent?.activeReport
+        val state = parent?.currentState
         val ready = state is UnifiedReportUiState.Success && !state.isRefreshing
-        val signature = report?.context?.let(::statisticsQuerySignature)
         if (report != null) {
+            val signature = statisticsQuerySignature(report.context)
             if (datasetId == null) datasetId = report.context.datasetId
             if (querySignature == null) querySignature = signature
             if (datasetId != report.context.datasetId || querySignature != signature) {
+                content = StatisticsDrilldownContent()
                 dismissAllowingStateLoss()
                 return
             }
         }
-
-        if (report == null || !ready) {
-            val emptyTv = TextView(requireContext()).apply {
-                text = if (state is UnifiedReportUiState.Failure) getString(R.string.unified_statistics_domain_failed)
-                    else getString(R.string.unified_statistics_state_refreshing)
-                setTextColor(palette.onSurfaceVariant)
-                setPadding(0, dp(12f), 0, dp(12f))
-            }
-            listContainer.addView(emptyTv)
-            loadMoreButton.visibility = View.GONE
-            return
-        }
-
-        val nameSnapshot = parentFrag.nameSnapshot
-        val scopeLabel = when (val scope = report.context.sectionScope) {
-            org.isoron.uhabits.core.statistics.StatisticsSectionScope.All -> getString(R.string.unified_statistics_scope_all)
-            org.isoron.uhabits.core.statistics.StatisticsSectionScope.Unassigned -> getString(R.string.unified_statistics_scope_unassigned)
-            is org.isoron.uhabits.core.statistics.StatisticsSectionScope.Container ->
-                nameSnapshot.resolveContainerName(scope.id.value, isRussian) + " · " +
-                    if (scope.includeDescendants) getString(R.string.unified_statistics_scope_mode_subtree)
-                    else getString(R.string.unified_statistics_scope_mode_here)
-        }
-        queryContextView.text = "${formatStatisticsDate(report.context.from)} — ${formatStatisticsDate(report.context.to)}\n$scopeLabel"
-        val unavailable = when (kind) {
-            KIND_TASKS -> report.tasks?.dataState.let { it == null || it == StatisticsDataState.UNAVAILABLE }
-            KIND_FOCUS -> report.focus?.dataState.let { it == null || it == StatisticsDataState.UNAVAILABLE }
-            KIND_HABIT_CYCLES, KIND_HABIT_LIST -> report.habits?.dataState.let { it == null || it == StatisticsDataState.UNAVAILABLE }
-            else -> false
-        }
-        if (unavailable) {
-            listContainer.addView(TextView(requireContext()).apply {
-                text = getString(R.string.unified_statistics_domain_failed)
-                setTextColor(palette.onSurface)
-            })
-            listContainer.addView(MaterialButton(requireContext()).apply {
-                text = getString(R.string.unified_statistics_state_retry)
-                minHeight = dp(48f)
-                setOnClickListener { parentFrag.refresh() }
-            })
-            return
-        }
-        fun page(total: Int): IntRange {
-            pageIndex = pageIndex.coerceIn(0, ((total - 1) / 30).coerceAtLeast(0))
-            previousPageButton.visibility = if (pageIndex > 0) View.VISIBLE else View.GONE
-            loadMoreButton.visibility = if ((pageIndex + 1) * 30 < total) View.VISIBLE else View.GONE
-            return pageIndex * 30 until minOf((pageIndex + 1) * 30, total)
-        }
-
-        if (kind == KIND_TASKS) {
-            val descriptor = reconstructTasksDescriptor()
-            val tasks = DrilldownSelectionResolver.resolveTasks(report, descriptor)
-            subtitleView.text = getString(R.string.unified_statistics_drilldown_tasks_count, tasks.size)
-
-            if (tasks.isEmpty()) {
-                val emptyTv = TextView(requireContext()).apply {
-                    text = getString(R.string.unified_statistics_drilldown_empty)
-                    setTextColor(palette.onSurfaceVariant)
-                    setPadding(0, dp(12f), 0, dp(12f))
-                }
-                listContainer.addView(emptyTv)
-                loadMoreButton.visibility = View.GONE
-                return
-            }
-
-            val visibleTasks = page(tasks.size).map { tasks[it] }
-            visibleIds = visibleTasks.map { it.id.value }
-            visibleTasks.forEach { task ->
-                val row = createTaskRow(task, report.context.today, report.context.now)
-                listContainer.addView(row)
-            }
-
-        } else if (kind == KIND_FOCUS) {
-            val descriptor = reconstructFocusDescriptor()
-            val sessions = DrilldownSelectionResolver.resolveFocus(report, descriptor)
-            subtitleView.text = getString(R.string.unified_statistics_drilldown_sessions_count, sessions.size)
-
-            if (sessions.isEmpty()) {
-                val emptyTv = TextView(requireContext()).apply {
-                    text = getString(R.string.unified_statistics_drilldown_empty)
-                    setTextColor(palette.onSurfaceVariant)
-                    setPadding(0, dp(12f), 0, dp(12f))
-                }
-                listContainer.addView(emptyTv)
-                loadMoreButton.visibility = View.GONE
-                return
-            }
-
-            if (descriptor == FocusDrilldownDescriptor.AllSections) {
-                val branches = report.focus!!.sectionBreakdowns
-                page(branches.size).forEach { index ->
-                    val branch = branches[index]
-                    listContainer.addView(navigationRow(branch.name, branch.durationMs, "section:${branch.category}:${branch.containerId}") {
-                        showForFocus(parentFragmentManager, branch.name, subtitleText,
-                            FocusDrilldownDescriptor.SectionBranch(branch.category, branch.containerId))
-                    })
-                }
-                return
-            }
-            if (descriptor is FocusDrilldownDescriptor.SectionBranch || descriptor is FocusDrilldownDescriptor.TargetType) {
-                val objects = report.focus!!.targetsWithin(sessions)
-                subtitleView.text = if (isRussian) "Первичные объекты · ${objects.size}" else "Primary objects · ${objects.size}"
-                page(objects.size).forEach { index ->
-                    val target = objects[index]
-                    val name = when (target.primaryTargetType) {
-                        FocusPrimaryTargetType.TASK -> nameSnapshot.resolveTaskName(target.targetId, isRussian)
-                        FocusPrimaryTargetType.HABIT -> nameSnapshot.resolveHabitName(target.targetId, isRussian)
-                        FocusPrimaryTargetType.CONTAINER -> nameSnapshot.resolveContainerName(target.targetId, isRussian)
-                        null -> if (isRussian) "Неизвестный объект" else "Unknown target"
-                    }
-                    listContainer.addView(navigationRow(name, target.durationMs, "target:${target.primaryTargetType}:${target.targetId}") {
-                        val branch = descriptor as? FocusDrilldownDescriptor.SectionBranch
-                        showForFocus(parentFragmentManager, name, subtitleText, FocusDrilldownDescriptor.TargetObject(
-                            target.primaryTargetType, target.targetId, branch?.category, branch?.containerId))
-                    })
-                }
-                return
-            }
-            val visibleSessions = page(sessions.size).map { sessions[it] }
-            visibleIds = visibleSessions.map { it.id.value }
-            visibleSessions.forEach { session ->
-                val row = createSessionRow(session, nameSnapshot, report.context.datasetId)
-                listContainer.addView(row)
-            }
-
-        } else if (kind == KIND_HABIT_CYCLES) {
-            val descriptor = reconstructHabitDescriptor()
-            val cycles = DrilldownSelectionResolver.resolveHabitCycles(report, descriptor)
-            subtitleView.text = getString(R.string.unified_statistics_drilldown_cycles_count, cycles.size)
-
-            if (cycles.isEmpty()) {
-                val emptyTv = TextView(requireContext()).apply {
-                    text = getString(R.string.unified_statistics_drilldown_empty)
-                    setTextColor(palette.onSurfaceVariant)
-                    setPadding(0, dp(12f), 0, dp(12f))
-                }
-                listContainer.addView(emptyTv)
-                loadMoreButton.visibility = View.GONE
-                return
-            }
-
-            val visibleCycles = page(cycles.size).map { cycles[it] }
-            visibleIds = visibleCycles.map { it.key.toString() }
-            visibleCycles.forEach { cycle ->
-                val row = createCycleRow(cycle, report.context.datasetId)
-                listContainer.addView(row)
-            }
-
-        } else if (kind == KIND_HABIT_LIST) {
-            val summaries = DrilldownSelectionResolver.resolveHabitSummaries(report, habitSearchQuery)
-            subtitleView.text = if (isRussian) "Всего привычек: ${summaries.size}" else "Total habits: ${summaries.size}"
-
-            if (summaries.isEmpty()) {
-                val emptyTv = TextView(requireContext()).apply {
-                    text = getString(R.string.unified_statistics_drilldown_empty)
-                    setTextColor(palette.onSurfaceVariant)
-                    setPadding(0, dp(12f), 0, dp(12f))
-                }
-                listContainer.addView(emptyTv)
-                loadMoreButton.visibility = View.GONE
-                return
-            }
-
-            val visibleSummaries = page(summaries.size).map { summaries[it] }
-            visibleIds = visibleSummaries.map { it.habitUuid }
-            visibleSummaries.forEach { summary ->
-                val row = createHabitSummaryRow(summary)
-                listContainer.addView(row)
-            }
-        }
-    }
-
-    internal fun refreshReport() { if (view != null) populateItems() }
-
-    private fun navigationRow(name: String, duration: Long, id: String, action: () -> Unit): View =
-        MaterialButton(requireContext(), null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
-            text = "$name\n${UnifiedStatisticsStateUtils.formatDurationMs(duration, isRussian)}  ›"
-            tag = id
-            isAllCaps = false
-            gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            minHeight = dp(48f)
-            setTextColor(palette.onSurface)
-            setOnClickListener { if ((parentFragment as? UnifiedStatisticsFragment)?.isRefreshingState == false) action() }
-        }
-
-    private fun createTaskRow(task: UserTask, today: LocalDate, now: Long): View {
-        val context = requireContext()
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            isClickable = true
-            isFocusable = true
-            tag = task.id.value
-            minimumHeight = dp(48f)
-            background = GradientDrawable().apply {
-                setColor(palette.surfaceVariant)
-                cornerRadius = dp(8f).toFloat()
-            }
-            setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                bottomMargin = dp(8f)
-            }
-            setOnClickListener {
-                if ((parentFragment as? UnifiedStatisticsFragment)?.isRefreshingState != false) return@setOnClickListener
-                TaskDetailBottomSheet.newInstance(task.id).show(parentFragmentManager, "TaskDetailBottomSheet")
-            }
-        }
-
-        val titleTv = TextView(context).apply {
-            text = task.title
-            textSize = 15f
-            setTypeface(typeface, Typeface.BOLD)
-            setTextColor(palette.onSurface)
-        }
-        row.addView(titleTv)
-
-        val metaLayout = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(4f), 0, 0)
-        }
-
-        val statusTv = TextView(context).apply {
-            text = if (task.status == TaskStatus.COMPLETED) {
-                getString(R.string.unified_statistics_due_state_completed)
-            } else if (task.isOverdue(today, now)) {
-                getString(R.string.unified_statistics_due_state_overdue)
-            } else {
-                getString(R.string.unified_statistics_due_state_pending)
-            }
-            textSize = 12f
-            setTextColor(
-                if (task.status == TaskStatus.COMPLETED) palette.accent
-                else if (task.isOverdue(today, now)) palette.accent
-                else palette.onSurfaceVariant
+        if (parent == null || report == null || !ready) {
+            content = content.copy(
+                rows = emptyList(),
+                hasPreviousPage = false,
+                hasNextPage = false,
+                showRetry = false,
+                message = getString(if (state is UnifiedReportUiState.Failure) R.string.unified_statistics_domain_failed
+                    else R.string.unified_statistics_state_refreshing),
             )
-            setTypeface(typeface, Typeface.BOLD)
+            return
         }
-        metaLayout.addView(statusTv)
 
-        row.addView(metaLayout)
-        return row
+        val context = report.context
+        val names = parent.nameSnapshot
+        val scopeLabel = when (val scope = context.sectionScope) {
+            StatisticsSectionScope.All -> getString(R.string.unified_statistics_scope_all)
+            StatisticsSectionScope.Unassigned -> getString(R.string.unified_statistics_scope_unassigned)
+            is StatisticsSectionScope.Container -> names.resolveContainerName(scope.id.value, isRussian) + " · " +
+                if (scope.includeDescendants) getString(R.string.unified_statistics_scope_mode_subtree)
+                else getString(R.string.unified_statistics_scope_mode_here)
+        }
+        val queryContext = "${formatStatisticsDate(context.from)} — ${formatStatisticsDate(context.to)}\n$scopeLabel"
+        val domain = when (kind) {
+            KIND_TASKS -> report.tasks?.dataState
+            KIND_FOCUS -> report.focus?.dataState
+            KIND_HABIT_CYCLES, KIND_HABIT_LIST -> report.habits?.dataState
+            else -> null
+        }
+        if (domain == null || domain == StatisticsDataState.UNAVAILABLE) {
+            content = StatisticsDrilldownContent(
+                subtitle = content.subtitle, queryContext = queryContext,
+                message = getString(R.string.unified_statistics_domain_failed), showRetry = true,
+            )
+            return
+        }
+
+        fun <T> showPage(items: List<T>, subtitle: String, toRow: (T) -> StatisticsDrilldownRow) {
+            pageIndex = pageIndex.coerceIn(0, ((items.size - 1) / PAGE_SIZE).coerceAtLeast(0))
+            val from = pageIndex * PAGE_SIZE
+            val to = minOf(from + PAGE_SIZE, items.size)
+            content = StatisticsDrilldownContent(
+                subtitle = subtitle,
+                queryContext = queryContext,
+                rows = items.subList(from, to).map { item ->
+                    val row = toRow(item)
+                    row.copy(onOpen = {
+                        if (!parent.isRefreshingState && parent.activeReport === report && parent.view != null) row.onOpen()
+                    })
+                },
+                message = getString(R.string.unified_statistics_drilldown_empty).takeIf { items.isEmpty() },
+                hasPreviousPage = pageIndex > 0,
+                hasNextPage = to < items.size,
+            )
+        }
+
+        when (kind) {
+            KIND_TASKS -> {
+                val tasks = DrilldownSelectionResolver.resolveTasks(report, reconstructTasksDescriptor())
+                showPage(tasks, getString(R.string.unified_statistics_drilldown_tasks_count, tasks.size)) {
+                    taskRow(it, context.today, context.now)
+                }
+            }
+            KIND_FOCUS -> {
+                val descriptor = reconstructFocusDescriptor()
+                val sessions = DrilldownSelectionResolver.resolveFocus(report, descriptor)
+                val sessionCount = getString(R.string.unified_statistics_drilldown_sessions_count, sessions.size)
+                when {
+                    sessions.isEmpty() -> showPage(sessions, sessionCount) { sessionRow(it, names, context.datasetId) }
+                    descriptor == FocusDrilldownDescriptor.AllSections -> {
+                        showPage(requireNotNull(report.focus).sectionBreakdowns, sessionCount) { branch ->
+                            navigationRow(branch.name, branch.durationMs, "section:${branch.category}:${branch.containerId}") {
+                                showForFocus(parentFragmentManager, branch.name, subtitleText,
+                                    FocusDrilldownDescriptor.SectionBranch(branch.category, branch.containerId))
+                            }
+                        }
+                    }
+                    descriptor is FocusDrilldownDescriptor.SectionBranch || descriptor is FocusDrilldownDescriptor.TargetType -> {
+                        val objects = requireNotNull(report.focus).targetsWithin(sessions)
+                        val count = if (isRussian) "Первичные объекты · ${objects.size}" else "Primary objects · ${objects.size}"
+                        showPage(objects, count) { target ->
+                            val name = when (target.primaryTargetType) {
+                                FocusPrimaryTargetType.TASK -> names.resolveTaskName(target.targetId, isRussian)
+                                FocusPrimaryTargetType.HABIT -> names.resolveHabitName(target.targetId, isRussian)
+                                FocusPrimaryTargetType.CONTAINER -> names.resolveContainerName(target.targetId, isRussian)
+                                null -> if (isRussian) "Неизвестный объект" else "Unknown target"
+                            }
+                            navigationRow(name, target.durationMs, "target:${target.primaryTargetType}:${target.targetId}") {
+                                val branch = descriptor as? FocusDrilldownDescriptor.SectionBranch
+                                showForFocus(parentFragmentManager, name, subtitleText, FocusDrilldownDescriptor.TargetObject(
+                                    target.primaryTargetType, target.targetId, branch?.category, branch?.containerId,
+                                ))
+                            }
+                        }
+                    }
+                    else -> showPage(sessions, sessionCount) { sessionRow(it, names, context.datasetId) }
+                }
+            }
+            KIND_HABIT_CYCLES -> {
+                val cycles = DrilldownSelectionResolver.resolveHabitCycles(report, reconstructHabitDescriptor())
+                showPage(cycles, getString(R.string.unified_statistics_drilldown_cycles_count, cycles.size)) {
+                    cycleRow(it, context)
+                }
+            }
+            KIND_HABIT_LIST -> {
+                val summaries = DrilldownSelectionResolver.resolveHabitSummaries(report, habitSearchQuery)
+                val count = if (isRussian) "Всего привычек: ${summaries.size}" else "Total habits: ${summaries.size}"
+                val habitSummaries = report.habits?.habitSummaries.orEmpty().groupBy { it.habitUuid }
+                showPage(summaries, count) { summary ->
+                    habitSummaryRow(summary, habitSummaries[summary.habitUuid].orEmpty().ifEmpty { listOf(summary) })
+                }
+            }
+        }
     }
 
-    private fun createSessionRow(
-        session: FocusSession,
-        nameSnapshot: StatisticsEntityNameSnapshot,
-        datasetId: String,
-    ): View {
-        val context = requireContext()
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            isClickable = true
-            isFocusable = true
-            tag = session.id.value
-            minimumHeight = dp(48f)
-            background = GradientDrawable().apply {
-                setColor(palette.surfaceVariant)
-                cornerRadius = dp(8f).toFloat()
-            }
-            setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                bottomMargin = dp(8f)
-            }
-            setOnClickListener {
-                if ((parentFragment as? UnifiedStatisticsFragment)?.isRefreshingState != false) return@setOnClickListener
-                FocusSessionDetailBottomSheet.newInstance(session.id.value, datasetId)
-                    .show(parentFragmentManager, FocusSessionDetailBottomSheet.TAG)
-            }
-        }
+    internal fun refreshReport() {
+        if (view != null) populateItems()
+    }
 
-        val targetName = when (session.primaryTargetType) {
-            FocusPrimaryTargetType.TASK -> nameSnapshot.resolveTaskName(session.taskId?.value, isRussian)
-            FocusPrimaryTargetType.HABIT -> nameSnapshot.resolveHabitName(session.habit?.uuid, isRussian)
-            FocusPrimaryTargetType.CONTAINER -> nameSnapshot.resolveContainerName(session.containerId?.value, isRussian)
+    private fun navigationRow(name: String, duration: Long, id: String, action: () -> Unit) =
+        StatisticsDrilldownRow(id, name, listOf(UnifiedStatisticsStateUtils.formatDurationMs(duration, isRussian)),
+            navigation = true, chevron = true, onOpen = action)
+
+    private fun taskRow(task: UserTask, today: LocalDate, now: Long): StatisticsDrilldownRow {
+        val completed = task.status == TaskStatus.COMPLETED
+        val overdue = task.isOverdue(today, now)
+        val status = getString(when {
+            completed -> R.string.unified_statistics_due_state_completed
+            overdue -> R.string.unified_statistics_due_state_overdue
+            else -> R.string.unified_statistics_due_state_pending
+        })
+        return StatisticsDrilldownRow(task.id.value, task.title,
+            status = status, statusColor = if (completed || overdue) palette.accent else palette.onSurfaceVariant) {
+            TaskDetailBottomSheet.newInstance(task.id).show(parentFragmentManager, "TaskDetailBottomSheet")
+        }
+    }
+
+    private fun sessionRow(session: FocusSession, names: StatisticsEntityNameSnapshot, datasetId: String): StatisticsDrilldownRow {
+        val title = when (session.primaryTargetType) {
+            FocusPrimaryTargetType.TASK -> names.resolveTaskName(session.taskId?.value, isRussian)
+            FocusPrimaryTargetType.HABIT -> names.resolveHabitName(session.habit?.uuid, isRussian)
+            FocusPrimaryTargetType.CONTAINER -> names.resolveContainerName(session.containerId?.value, isRussian)
             null -> if (isRussian) "Без раздела" else "Unassigned"
         }
-
-        val titleTv = TextView(context).apply {
-            text = targetName
-            textSize = 15f
-            setTypeface(typeface, Typeface.BOLD)
-            setTextColor(palette.onSurface)
+        val duration = UnifiedStatisticsStateUtils.formatDurationMs(session.durationMs, isRussian)
+        val ended = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault()).format(Date(session.endedAt))
+        return StatisticsDrilldownRow(session.id.value, title, listOf("$duration · $ended")) {
+            FocusSessionDetailBottomSheet.newInstance(session.id.value, datasetId)
+                .show(parentFragmentManager, FocusSessionDetailBottomSheet.TAG)
         }
-        row.addView(titleTv)
-
-        val durationStr = UnifiedStatisticsStateUtils.formatDurationMs(session.durationMs, isRussian)
-        val timeFormat = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
-        val endedStr = timeFormat.format(Date(session.endedAt))
-
-        val metaTv = TextView(context).apply {
-            text = "$durationStr · $endedStr"
-            textSize = 13f
-            setTextColor(palette.onSurfaceVariant)
-            setPadding(0, dp(4f), 0, 0)
-        }
-        row.addView(metaTv)
-
-        return row
     }
 
     private fun reconstructTasksDescriptor(): TasksDrilldownDescriptor = when (taskDescriptorType) {
@@ -703,16 +468,11 @@ class UnifiedStatisticsDrilldownBottomSheet : BottomSheetDialogFragment() {
             behavior.state = BottomSheetBehavior.STATE_EXPANDED
             behavior.skipCollapsed = true
         }
-
-        ViewCompat.setOnApplyWindowInsetsListener(view) { v, insets ->
-            val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
-            v.updatePadding(bottom = navBars.bottom)
-            insets
-        }
     }
 
     companion object {
         const val TAG = "UnifiedStatisticsDrilldownBottomSheet"
+        private const val PAGE_SIZE = 30
         private const val ARG_TITLE = "arg_title"
         private const val ARG_SUBTITLE = "arg_subtitle"
         private const val ARG_KIND = "arg_kind"
@@ -898,54 +658,9 @@ class UnifiedStatisticsDrilldownBottomSheet : BottomSheetDialogFragment() {
         }
     }
 
-    private fun createCycleRow(cycle: HabitCycle, datasetId: String): View {
-        val context = requireContext()
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            isClickable = true
-            isFocusable = true
-            tag = cycle.key.toString()
-            minimumHeight = dp(48f)
-            background = GradientDrawable().apply {
-                setColor(palette.surfaceVariant)
-                cornerRadius = dp(8f).toFloat()
-            }
-            setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                bottomMargin = dp(8f)
-            }
-            setOnClickListener {
-                if ((parentFragment as? UnifiedStatisticsFragment)?.isRefreshingState != false) return@setOnClickListener
-                UnifiedStatisticsCycleDetailBottomSheet.show(
-                    parentFragmentManager,
-                    cycle.key.toString(),
-                    datasetId,
-                    querySignature
-                )
-            }
-        }
-
-        val topRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
-        val titleTv = TextView(context).apply {
-            text = cycle.habitName
-            textSize = 15f
-            setTypeface(typeface, Typeface.BOLD)
-            setTextColor(palette.onSurface)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        topRow.addView(titleTv)
-
+    private fun cycleRow(cycle: HabitCycle, reportContext: StatisticsQueryContext): StatisticsDrilldownRow {
         val (outcomeLabel, outcomeColor) = when {
-            (parentFragment as? UnifiedStatisticsFragment)?.activeReport?.context?.let {
-                isHistoricalCycleSlice(cycle, it)
-            } == true -> {
+            isHistoricalCycleSlice(cycle, reportContext) -> {
                 Pair(getString(R.string.unified_statistics_habits_historical_cycle_status), palette.onSurfaceVariant)
             }
             cycle.lifecycle == HabitCycleLifecycle.ONGOING -> {
@@ -980,116 +695,47 @@ class UnifiedStatisticsDrilldownBottomSheet : BottomSheetDialogFragment() {
                 Pair(getString(R.string.unified_statistics_cycle_outcome_unavailable), palette.onSurfaceVariant)
             }
         }
-
-        val outcomeTv = TextView(context).apply {
-            text = outcomeLabel
-            textSize = 12f
-            setTypeface(typeface, Typeface.BOLD)
-            setTextColor(outcomeColor)
+        val range = "${formatStatisticsDate(cycle.startDate)} — ${formatStatisticsDate(cycle.endDate)}"
+        return StatisticsDrilldownRow(
+            cycle.key.toString(), cycle.habitName, listOf(range),
+            status = outcomeLabel, statusColor = outcomeColor, inlineStatus = true,
+        ) {
+            UnifiedStatisticsCycleDetailBottomSheet.show(
+                parentFragmentManager, cycle.key.toString(), reportContext.datasetId, querySignature,
+            )
         }
-        topRow.addView(outcomeTv)
-        row.addView(topRow)
-
-        val dateTv = TextView(context).apply {
-            text = "${formatStatisticsDate(cycle.startDate)} — ${formatStatisticsDate(cycle.endDate)}"
-            textSize = 13f
-            setTextColor(palette.onSurfaceVariant)
-            setPadding(0, dp(4f), 0, 0)
-        }
-        row.addView(dateTv)
-
-        return row
     }
 
-    private fun createHabitSummaryRow(summary: HabitSummary): View {
-        val context = requireContext()
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            isClickable = true
-            isFocusable = true
-            tag = summary.habitUuid
-            minimumHeight = dp(48f)
-            background = GradientDrawable().apply {
-                setColor(palette.surfaceVariant)
-                cornerRadius = dp(8f).toFloat()
+    private fun habitSummaryRow(summary: HabitSummary, summaries: List<HabitSummary>): StatisticsDrilldownRow {
+        val metadata = summaries.map { item ->
+            val cadenceStr = when (item.cadence) {
+                HabitCadence.DAILY -> getString(R.string.unified_statistics_cadence_daily)
+                HabitCadence.WEEKLY -> getString(R.string.unified_statistics_cadence_weekly)
+                HabitCadence.MONTHLY -> getString(R.string.unified_statistics_cadence_monthly)
+                HabitCadence.UNSUPPORTED -> getString(R.string.unified_statistics_cadence_unsupported)
             }
-            setPadding(dp(12f), dp(10f), dp(12f), dp(10f))
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ).apply {
-                bottomMargin = dp(8f)
-            }
-            setOnClickListener {
-                if ((parentFragment as? UnifiedStatisticsFragment)?.isRefreshingState != false) return@setOnClickListener
-                showForHabitCycles(
-                    parentFragmentManager,
-                    summary.habitName,
-                    subtitleText,
-                    HabitsDrilldownDescriptor.HabitCycles(summary.habitUuid, summary.habitName)
+            val resultStr = if (item.eligibleCount == 0) {
+                getString(R.string.unified_statistics_cadence_no_closed_cycles)
+            } else if (item.unknownCount > 0) {
+                getString(
+                    R.string.unified_statistics_cadence_result_with_unknown,
+                    item.satisfiedCount,
+                    item.knownCount,
+                    item.unknownCount
+                )
+            } else {
+                getString(
+                    R.string.unified_statistics_cadence_result_format,
+                    item.satisfiedCount,
+                    item.knownCount
                 )
             }
+            "$cadenceStr · $resultStr"
         }
-
-        val topRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+        return StatisticsDrilldownRow(summary.habitUuid, summary.habitName, metadata, chevron = true) {
+            showForHabitCycles(parentFragmentManager, summary.habitName, subtitleText,
+                HabitsDrilldownDescriptor.HabitCycles(summary.habitUuid, summary.habitName))
         }
-
-        val titleTv = TextView(context).apply {
-            text = summary.habitName
-            textSize = 15f
-            setTypeface(typeface, Typeface.BOLD)
-            setTextColor(palette.onSurface)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        topRow.addView(titleTv)
-
-        val chevronTv = TextView(context).apply {
-            text = "›"
-            textSize = 18f
-            setTextColor(palette.onSurfaceVariant)
-        }
-        topRow.addView(chevronTv)
-        row.addView(topRow)
-
-        val summaries = (parentFragment as? UnifiedStatisticsFragment)?.activeReport?.habits
-            ?.habitSummaries?.filter { it.habitUuid == summary.habitUuid }.orEmpty()
-            .ifEmpty { listOf(summary) }
-        summaries.forEach { item ->
-        val cadenceStr = when (item.cadence) {
-            HabitCadence.DAILY -> getString(R.string.unified_statistics_cadence_daily)
-            HabitCadence.WEEKLY -> getString(R.string.unified_statistics_cadence_weekly)
-            HabitCadence.MONTHLY -> getString(R.string.unified_statistics_cadence_monthly)
-            HabitCadence.UNSUPPORTED -> getString(R.string.unified_statistics_cadence_unsupported)
-        }
-        val resultStr = if (item.eligibleCount == 0) {
-            getString(R.string.unified_statistics_cadence_no_closed_cycles)
-        } else if (item.unknownCount > 0) {
-            getString(
-                R.string.unified_statistics_cadence_result_with_unknown,
-                item.satisfiedCount,
-                item.knownCount,
-                item.unknownCount
-            )
-        } else {
-            getString(
-                R.string.unified_statistics_cadence_result_format,
-                item.satisfiedCount,
-                item.knownCount
-            )
-        }
-
-        val metaTv = TextView(context).apply {
-            text = "$cadenceStr · $resultStr"
-            textSize = 13f
-            setTextColor(palette.onSurfaceVariant)
-            setPadding(0, dp(4f), 0, 0)
-        }
-        row.addView(metaTv)
-        }
-
-        return row
     }
 
     private fun reconstructHabitDescriptor(): HabitsDrilldownDescriptor = when (habitDescriptorType) {

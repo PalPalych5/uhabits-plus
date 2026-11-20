@@ -5,18 +5,14 @@ package org.isoron.uhabits.activities.statistics
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Rect
-import android.graphics.drawable.ColorDrawable
 import android.os.SystemClock
-import android.view.View
-import android.view.ViewGroup
-import android.widget.ScrollView
-import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Direction
+import java.util.regex.Pattern
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
-import com.google.android.material.tabs.TabLayout
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
 import org.isoron.platform.time.setToday
@@ -45,8 +41,6 @@ import org.isoron.uhabits.core.userTasks.due.TaskDue
 import org.isoron.uhabits.core.userTasks.due.toTaskDueDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -202,7 +196,7 @@ class StatisticsRedesignVisualMatrixTest {
 
             // R01 + R02 Overview
             assertMinimumTouchTargets(controller)
-            assertNoTextClipping(controller)
+            device.assertStatisticsReportTextBounds()
             controller.onActivity { activity ->
                 val fragment = statsFragment(activity)
                 assertEquals(
@@ -210,97 +204,68 @@ class StatisticsRedesignVisualMatrixTest {
                     "Статистика",
                     fragment.getString(R.string.unified_statistics_title)
                 )
-                findScrollView(fragment)?.scrollTo(0, 0)
-                val uiState = field<UnifiedReportUiState>(fragment, "currentUiState")
-                val currentTab = field<UnifiedAnalyticsTab>(fragment, "currentTab")
-                val content = fragment.view?.findViewWithTag<ViewGroup>("unified_content")
-                val contentTexts = content?.let { collectTexts(it) } ?: emptyList()
-                val overview = requireNotNull(fragment.view?.findViewWithTag<View>("habitOverviewLayout")) {
-                    "Missing habitOverviewLayout: uiState=$uiState, tab=$currentTab, childCount=${content?.childCount}, texts=$contentTexts"
-                }
-                assertNotNull(overview.findViewWithTag<View>("habitCadenceDailyRow"))
-                assertNull("Overview must NOT show secondary weekly row (R02)", overview.findViewWithTag<View>("habitCadenceWeeklyRow"))
-                if (isClassic) {
-                    assertClassicSurfaceCoherence(fragment)
-                }
             }
+            device.scrollStatisticsReportToEdge(Direction.UP)
+            if (isClassic) assertClassicSurfaceCoherence("habitOverviewLayout")
             idle()
+            device.statisticsControl("habitOverviewLayout")
+            device.statisticsControl("habitCadenceDailyRow")
+            assertFalse("Overview must not show a secondary weekly row", device.hasObject(By.res("habitCadenceWeeklyRow")))
             capture("${prefix}_overview")
 
             // R03 + R04 Habits Tab (Current week: ongoing neutral + near cap warning + exceeded danger)
             selectTab(controller, 1)
-            assertNoTextClipping(controller)
-            controller.onActivity { activity ->
-                val fragment = statsFragment(activity)
-                val actionsStrip = requireNotNull(fragment.view?.findViewWithTag<View>("habitAlphaPreviewList"))
-                assertNotNull(actionsStrip.findViewWithTag<View>("habitAllHabitsButton"))
-                assertNotNull(actionsStrip.findViewWithTag<View>("habitCompareEntry"))
-                val textsInView = collectTexts(requireNotNull(fragment.view))
-                assertTrue(
-                    "R04 comfortably-within ongoing limit must clarify ongoing",
-                    textsInView.any { it.contains("период идёт") || it.contains("ongoing") }
-                )
-                if (isClassic) {
-                    assertClassicSurfaceCoherence(fragment)
-                }
-            }
+            device.assertStatisticsReportTextBounds()
+            if (isClassic) assertClassicSurfaceCoherence("habitCadenceCard")
             capture("${prefix}_habits")
+            device.revealStatisticsReportControl("habitAlphaPreviewList")
+            device.revealStatisticsReportControl("habitAllHabitsButton")
+            device.revealStatisticsReportControl("habitCompareEntry")
+            device.revealStatisticsControl(
+                By.text(Pattern.compile("(?s).*(период идёт|ongoing).*")), "unified_content", Direction.UP,
+            )
 
             if (!includeExtendedStates && prefix == "classic_light") {
                 selectTab(controller, 2)
-                assertNoTextClipping(controller)
+                device.assertStatisticsReportTextBounds()
                 capture("${prefix}_tasks_populated")
 
                 selectTab(controller, 3)
-                assertNoTextClipping(controller)
+                device.assertStatisticsReportTextBounds()
                 capture("${prefix}_focus_multi")
             }
 
             if (includeExtendedStates) {
                 // Habits scrolled to bottom action strip
-                controller.onActivity { activity ->
-                    val scroll = findScrollView(statsFragment(activity))
-                    scroll?.post { scroll.fullScroll(View.FOCUS_DOWN) }
-                }
+                device.scrollStatisticsReportToEdge(Direction.DOWN)
                 idle()
                 capture("${prefix}_habits_scroll")
 
                 // Previous closed week -> closed satisfied AT_MOST ("Видеоигры" 120/180 -> SUCCESS)
-                controller.onActivity { activity ->
-                    val fragment = statsFragment(activity)
-                    findScrollView(fragment)?.scrollTo(0, 0)
-                    fragment.view?.findViewWithTag<View>("unified_prev")?.performClick()
-                }
+                device.scrollStatisticsReportToEdge(Direction.UP)
+                device.statisticsControl("unified_prev").click()
                 idle()
                 waitForSettled(controller)
-                assertNoTextClipping(controller)
-                controller.onActivity { activity ->
-                    val content = requireNotNull(statsFragment(activity).view?.findViewWithTag<View>("unified_content"))
-                    assertNotNull(
-                        "Previous closed week must render closed AT_MOST summary card",
-                        content.findViewWithTag<View>("habitOngoingSummary")
-                    )
-                }
+                device.assertStatisticsReportTextBounds()
+                device.revealStatisticsReportControl("habitOngoingSummary")
                 capture("${prefix}_habits_prev_closed_atmost")
 
                 // Return to current week
-                controller.onActivity { activity ->
-                    statsFragment(activity).view?.findViewWithTag<View>("unified_next")?.performClick()
-                }
+                device.statisticsControl("unified_next").click()
                 idle()
                 waitForSettled(controller)
 
                 // Month, Year, All period traversal
                 selectPeriodViaUi(controller, UnifiedPeriod.MONTH)
-                assertNoTextClipping(controller)
+                device.assertStatisticsReportTextBounds()
                 capture("${prefix}_habits_month")
 
                 selectPeriodViaUi(controller, UnifiedPeriod.YEAR)
-                assertNoTextClipping(controller)
+                device.assertStatisticsReportTextBounds()
                 capture("${prefix}_habits_year")
 
                 selectPeriodViaUi(controller, UnifiedPeriod.ALL)
-                assertNoTextClipping(controller)
+                device.assertStatisticsReportTextBounds()
                 capture("${prefix}_habits_all")
 
                 // Restore WEEK for Tasks & Focus
@@ -308,26 +273,16 @@ class StatisticsRedesignVisualMatrixTest {
 
                 // Tasks populated cohorts
                 selectTab(controller, 2)
-                assertNoTextClipping(controller)
+                device.assertStatisticsReportTextBounds()
                 capture("${prefix}_tasks_populated")
 
                 // Tasks empty-state under previous MONTH + ALL (R06: must NOT suggest switching to All sections!)
                 selectPeriodViaUi(controller, UnifiedPeriod.MONTH)
-                controller.onActivity { activity ->
-                    statsFragment(activity).view?.findViewWithTag<View>("unified_prev")?.performClick()
-                }
+                device.statisticsControl("unified_prev").click()
                 idle()
                 waitForSettled(controller)
-                controller.onActivity { activity ->
-                    val fragment = statsFragment(activity)
-                    val content = requireNotNull(fragment.view?.findViewWithTag<View>("unified_content"))
-                    assertNotNull("Empty state card must render on previous month without tasks", content.findViewWithTag<View>("unified_tasks_empty_card"))
-                    val textsInContent = collectTexts(content)
-                    assertFalse(
-                        "R06 empty state under All must NOT ask user to reset scope filter: $textsInContent",
-                        textsInContent.any { it.contains("все разделы", ignoreCase = true) || it.contains("All sections", ignoreCase = true) }
-                    )
-                }
+                device.statisticsControl("unified_tasks_empty_card")
+                assertFalse("Empty state under All must not offer resetting scope", device.hasObject(By.res("unified_tasks_reset_scope")))
                 capture("${prefix}_tasks_empty_all_day")
 
                 // Tasks empty-state under empty scoped container -> suggests switching to All sections
@@ -336,33 +291,22 @@ class StatisticsRedesignVisualMatrixTest {
                 }
                 idle()
                 waitForSettled(controller)
-                controller.onActivity { activity ->
-                    val content = requireNotNull(statsFragment(activity).view?.findViewWithTag<View>("unified_content"))
-                    assertNotNull("Scoped empty state card must render", content.findViewWithTag<View>("unified_tasks_empty_card"))
-                    val textsInContent = collectTexts(content)
-                    assertTrue(
-                        "R06 scoped empty state must offer switching to All sections: $textsInContent",
-                        textsInContent.any { it.contains("все разделы", ignoreCase = true) || it.contains("All sections", ignoreCase = true) }
-                    )
-                }
+                device.statisticsControl("unified_tasks_empty_card")
+                val resetScope = device.statisticsControl("unified_tasks_reset_scope")
                 capture("${prefix}_tasks_empty_scoped")
-
-                // Restore current month (unified_next) then scope = All, waiting for each transition to settle
-                controller.onActivity { activity ->
-                    statsFragment(activity).view?.findViewWithTag<View>("unified_next")?.performClick()
-                }
+                resetScope.click()
                 idle()
                 waitForSettled(controller)
+                controller.onActivity { assertEquals(UnifiedScope.All, statsFragment(it).currentScopeValue) }
 
-                controller.onActivity { activity ->
-                    statsFragment(activity).applyScopedAll()
-                }
+                // Restore the current month after the scope reset.
+                device.statisticsControl("unified_next").click()
                 idle()
                 waitForSettled(controller)
                 selectPeriodViaUi(controller, UnifiedPeriod.WEEK)
 
                 selectTab(controller, 3)
-                assertNoTextClipping(controller)
+                device.assertStatisticsReportTextBounds()
                 controller.onActivity { activity ->
                     val fragment = statsFragment(activity)
                     val uiState = field<UnifiedReportUiState>(fragment, "currentUiState") as? UnifiedReportUiState.Success
@@ -371,10 +315,13 @@ class StatisticsRedesignVisualMatrixTest {
                     val ctx = report?.context
                     val allDbSessions = (component.focusSessionRepository ?: SQLiteFocusSessionRepository(component.db)).getAll()
                     val diag = "size=${focus?.sectionBreakdowns?.size}, typeSizes=${focus?.targetTypeSummaries?.size}, count=${focus?.sessionCount}, dbCount=${allDbSessions.size}, dbEnded=${allDbSessions.map { it.endedAt }}, ctxStart=${ctx?.startMillis}, ctxEnd=${ctx?.endMillis}, from=${ctx?.from}, to=${ctx?.to}, anchor=${fragment.currentAnchorValue}, scope=${ctx?.sectionScope}"
-                    assertNotNull("F3 sections must appear for multiple sections ($diag)", fragment.view?.findViewWithTag<View>("unified_focus_f3_breakdown"))
-                    assertNotNull("F4 source breakdown must appear for multiple sources ($diag)", fragment.view?.findViewWithTag<View>("unified_focus_f4_breakdown"))
+                    assertTrue("Expected several Focus section branches ($diag)", (focus?.sectionBreakdowns?.size ?: 0) > 1)
+                    assertTrue("Expected several Focus source groups ($diag)", (focus?.targetTypeSummaries?.size ?: 0) > 1)
                 }
                 capture("${prefix}_focus_multi")
+                device.revealStatisticsReportControl("unified_focus_f3_breakdown")
+                device.revealStatisticsReportControl("unified_focus_f4_breakdown")
+                device.scrollStatisticsReportToEdge(Direction.UP)
 
                 // Scope to Work (single section + single TASK target type -> R05 hides F3 and F4)
                 controller.onActivity { activity ->
@@ -382,11 +329,10 @@ class StatisticsRedesignVisualMatrixTest {
                 }
                 idle()
                 waitForSettled(controller)
-                controller.onActivity { activity ->
-                    val fragment = statsFragment(activity)
-                    assertNull("R05 must hide F3 when sectionBreakdowns.size <= 1", fragment.view?.findViewWithTag<View>("unified_focus_f3_breakdown"))
-                    assertNull("R05 must hide F4 when targetTypeSummaries.size <= 1", fragment.view?.findViewWithTag<View>("unified_focus_f4_breakdown"))
-                }
+                device.scrollStatisticsReportToEdge(Direction.DOWN)
+                assertFalse("R05 must hide F3 when sectionBreakdowns.size <= 1", device.hasObject(By.res("unified_focus_f3_breakdown")))
+                assertFalse("R05 must hide F4 when targetTypeSummaries.size <= 1", device.hasObject(By.res("unified_focus_f4_breakdown")))
+                device.scrollStatisticsReportToEdge(Direction.UP)
                 capture("${prefix}_focus_scoped_single")
 
                 // Reset scope to All before closing controller
@@ -399,21 +345,18 @@ class StatisticsRedesignVisualMatrixTest {
         }
     }
 
-    private fun assertClassicSurfaceCoherence(fragment: UnifiedStatisticsFragment) {
-        val root = fragment.view?.findViewWithTag<View>("unified_statistics_root")
-            ?: fragment.view as? ViewGroup ?: return
-        val content = fragment.view?.findViewWithTag<ViewGroup>("unified_content") ?: return
-        val rootColor = (root.background as? ColorDrawable)?.color
-        for (i in 0 until content.childCount) {
-            val child = content.getChildAt(i)
-            val lp = child.layoutParams as? ViewGroup.MarginLayoutParams
-            if (lp != null) {
-                assertEquals("Classic section $i must have 0 topMargin (R07)", 0, lp.topMargin)
+    private fun assertClassicSurfaceCoherence(firstCard: String) {
+        val viewport = device.statisticsControl("unified_content").visibleBounds
+        assertEquals("Classic first report section must start at the viewport top", viewport.top,
+            device.statisticsControl(firstCard).visibleBounds.top)
+        if (!component.preferences.isPureBlackEnabled && component.preferences.theme == ThemeSwitcher.THEME_LIGHT) {
+            val screenshot = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+            try {
+                assertEquals("Classic Light must use a white surface", Color.WHITE,
+                    screenshot.getPixel(viewport.right - 2, viewport.top + 2))
+            } finally {
+                screenshot.recycle()
             }
-        }
-        assertEquals("Classic content top padding must be 0dp (R07)", 0, content.paddingTop)
-        if (rootColor != null && !component.preferences.isPureBlackEnabled && component.preferences.theme == ThemeSwitcher.THEME_LIGHT) {
-            assertEquals("Classic Light root background must be white surface", Color.WHITE, rootColor)
         }
     }
 
@@ -626,35 +569,13 @@ class StatisticsRedesignVisualMatrixTest {
     }
 
     private fun selectTab(controller: QaActivityController, index: Int) {
-        controller.onActivity { activity ->
-            val fragment = statsFragment(activity)
-            val tabs = fragment.view?.findViewWithTag<TabLayout>("unified_tabs")
-            requireNotNull(tabs?.getTabAt(index)) { "Missing tab index $index" }.select()
-        }
+        device.selectStatisticsTab(index)
         idle()
         waitForSettled(controller)
     }
 
     private fun selectPeriodViaUi(controller: QaActivityController, period: UnifiedPeriod) {
-        val labelRes = when (period) {
-            UnifiedPeriod.DAY -> R.string.unified_statistics_period_day
-            UnifiedPeriod.WEEK -> R.string.unified_statistics_period_week
-            UnifiedPeriod.MONTH -> R.string.unified_statistics_period_month
-            UnifiedPeriod.YEAR -> R.string.unified_statistics_period_year
-            UnifiedPeriod.ALL -> R.string.unified_statistics_period_all
-        }
-        var target = ""
-        controller.onActivity { activity ->
-            val fragment = statsFragment(activity)
-            target = fragment.getString(labelRes)
-            requireNotNull(fragment.view?.findViewWithTag<View>("unified_period")).performClick()
-        }
-        idle()
-        SystemClock.sleep(250)
-        val item = requireNotNull(device.wait(Until.findObject(By.text(target)), 3000)) {
-            "Period popup option '$target' for $period did not appear"
-        }
-        item.click()
+        device.selectStatisticsPeriod(period)
         idle()
         waitForSettled(controller)
         controller.onActivity { activity ->
@@ -680,51 +601,13 @@ class StatisticsRedesignVisualMatrixTest {
     }
 
     private fun assertMinimumTouchTargets(controller: QaActivityController) {
-        controller.onActivity { activity ->
-            val fragment = statsFragment(activity)
-            val density = activity.resources.displayMetrics.density
-            val rect = Rect()
-            for (tag in listOf("unified_prev", "unified_next", "unified_period", "unified_scope")) {
-                val view = fragment.view?.findViewWithTag<View>(tag) ?: continue
-                if (view.isShown && view.getGlobalVisibleRect(rect)) {
-                    assertTrue("$tag width < 48dp (${view.width / density}dp)", view.width / density >= 47.5f)
-                    assertTrue("$tag height < 48dp (${view.height / density}dp)", view.height / density >= 47.5f)
-                }
-            }
+        var density = 1f
+        var all = false
+        controller.onActivity {
+            density = it.resources.displayMetrics.density
+            all = field<UnifiedPeriod>(statsFragment(it), "currentPeriod") == UnifiedPeriod.ALL
         }
-    }
-
-    private fun assertNoTextClipping(controller: QaActivityController) {
-        controller.onActivity { activity ->
-            val root = statsFragment(activity).view ?: return@onActivity
-            val views = mutableListOf<TextView>()
-            fun walk(v: View) {
-                if (v is TextView && v.isShown && v.width > 0 && v.height > 0) views.add(v)
-                if (v is ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
-            }
-            walk(root)
-            for (tv in views) {
-                val layout = tv.layout ?: continue
-                val txt = tv.text?.toString().orEmpty()
-                if (txt.isBlank()) continue
-                val availH = tv.height - tv.compoundPaddingTop - tv.compoundPaddingBottom
-                assertTrue("TextView clipped '$txt': textH=${layout.height} > availH=$availH", layout.height <= availH + 4)
-            }
-        }
-    }
-
-    private fun collectTexts(root: View): List<String> = buildList {
-        if (root is TextView) add(root.text.toString())
-        if (root is ViewGroup) for (i in 0 until root.childCount) addAll(collectTexts(root.getChildAt(i)))
-    }
-
-    private fun findScrollView(fragment: UnifiedStatisticsFragment): ScrollView? {
-        fun walk(v: View?): ScrollView? {
-            if (v is ScrollView) return v
-            if (v is ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))?.let { return it }
-            return null
-        }
-        return walk(fragment.view)
+        device.assertStatisticsControlSizes(density, all)
     }
 
     private fun capture(name: String) {

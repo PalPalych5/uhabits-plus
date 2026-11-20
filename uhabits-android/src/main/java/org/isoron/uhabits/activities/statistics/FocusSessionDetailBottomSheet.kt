@@ -2,39 +2,60 @@
 
 package org.isoron.uhabits.activities.statistics
 
-import android.graphics.Color
-import android.graphics.Typeface
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.ProgressBar
-import android.widget.ScrollView
-import android.widget.TextView
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updatePadding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
-import com.google.android.material.button.MaterialButton
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.settings.SettingsThemePalette
 import org.isoron.uhabits.activities.tasks.FocusHistoryProjector
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
 import org.isoron.uhabits.core.containers.statistics.HistoricalPathParser
 import org.isoron.uhabits.core.contribution.ContributionSourceType
 import org.isoron.uhabits.core.focus.FocusPrimaryTargetType
 import org.isoron.uhabits.core.focus.FocusSession
 import org.isoron.uhabits.core.focus.FocusSessionId
 import org.isoron.uhabits.core.tasks.Task
-import org.isoron.uhabits.utils.InterfaceUtils
+import kotlinx.coroutines.CancellationException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -50,9 +71,9 @@ class FocusSessionDetailBottomSheet : BottomSheetDialogFragment() {
     private var querySignature: String? = null
     private var pendingTask: Task? = null
     private var reload: (() -> Unit)? = null
-    private var generation = 0
+    @Volatile private var generation = 0
     private var loadedRevision: String? = null
-    private var content: LinearLayout? = null
+    private var detailState by mutableStateOf<DetailState>(DetailState.Loading)
 
     private fun revision(): String {
         val component = (requireContext().applicationContext as HabitsApplication).component
@@ -80,8 +101,7 @@ class FocusSessionDetailBottomSheet : BottomSheetDialogFragment() {
             pendingTask?.cancel()
             generation++
             loadedRevision = null
-            content?.removeAllViews()
-            content?.tag = null
+            detailState = DetailState.Loading
         }
     }
 
@@ -89,14 +109,12 @@ class FocusSessionDetailBottomSheet : BottomSheetDialogFragment() {
         pendingTask?.cancel()
         generation++
         reload = null
-        content = null
+        detailState = DetailState.Loading
         super.onDestroyView()
     }
 
     private val palette: SettingsThemePalette get() = MainTabsThemeBridge.resolve(requireContext())
     private val isRussian get() = Locale.getDefault().language == "ru"
-
-    private fun dp(value: Float): Int = InterfaceUtils.dpToPixels(requireContext(), value).toInt()
 
     private data class ContributionItem(
         val habitName: String,
@@ -117,6 +135,12 @@ class FocusSessionDetailBottomSheet : BottomSheetDialogFragment() {
         val frozenPathStr: String,
         val contributions: List<ContributionItem>,
     )
+
+    private sealed interface DetailState {
+        data object Loading : DetailState
+        data class Unavailable(val retry: Boolean) : DetailState
+        data class Ready(val data: FocusSessionDetailPayload) : DetailState
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -159,319 +183,284 @@ class FocusSessionDetailBottomSheet : BottomSheetDialogFragment() {
             return View(context)
         }
 
-        val root = FrameLayout(context).apply {
-            setBackgroundColor(palette.dialogSurface)
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            )
+        val root = ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                val colors = palette
+                UHabitComposeTheme(UHabitComposeColors.fromPalette(colors)) {
+                    DetailContent(detailState, colors, onRetry = { reload?.invoke() })
+                }
+            }
         }
-
-        val scrollView = ScrollView(context).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-            )
-            isFillViewport = true
-        }
-
-        val contentLayout = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20f), dp(20f), dp(20f), dp(28f))
-        }
-
-        // Header Title
-        val titleView = TextView(context).apply {
-            text = getString(R.string.unified_statistics_session_detail_title)
-            textSize = 20f
-            setTypeface(typeface, Typeface.BOLD)
-            setTextColor(palette.onSurface)
-        }
-        contentLayout.addView(titleView)
 
         val id = sessionId
         if (id == null) {
-            contentLayout.addView(TextView(context).apply {
-                text = getString(R.string.unified_statistics_domain_failed)
-                setTextColor(palette.onSurfaceVariant)
-                setPadding(0, dp(12f), 0, 0)
-            })
-            scrollView.addView(contentLayout)
-            root.addView(scrollView)
+            detailState = DetailState.Unavailable(retry = false)
             return root
         }
-
-        val loadingProgress = ProgressBar(context).apply {
-            isIndeterminate = true
-            layoutParams = LinearLayout.LayoutParams(dp(36f), dp(36f)).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                topMargin = dp(24f)
-                bottomMargin = dp(24f)
-            }
-        }
-        contentLayout.addView(loadingProgress)
-
-        val detailContainer = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-        content = detailContainer
-        contentLayout.addView(detailContainer)
-
-        scrollView.addView(contentLayout)
-        root.addView(scrollView)
-
-        // Asynchronous off-main thread loading
-        val mainHandler = Handler(Looper.getMainLooper())
         val targetComponent = app.component
 
         reload = {
-        pendingTask?.cancel()
-        val requestGeneration = ++generation
-        val requestedRevision = revision()
-        loadedRevision = requestedRevision
-        detailContainer.removeAllViews()
-        detailContainer.tag = null
-        loadingProgress.visibility = View.VISIBLE
-        val detailTask = object : Task {
-            @Volatile private var isCancelled = false
-            private var payload: FocusSessionDetailPayload? = null
-            private var loadError: Throwable? = null
+            pendingTask?.cancel()
+            val requestGeneration = ++generation
+            val requestedRevision = revision()
+            loadedRevision = requestedRevision
+            detailState = DetailState.Loading
+            val detailTask = object : Task {
+                @Volatile private var isCancelled = false
+                private var payload: FocusSessionDetailPayload? = null
 
-            override fun cancel() {
-                isCancelled = true
-            }
+                override fun cancel() {
+                    isCancelled = true
+                }
 
-            override fun isCanceled(): Boolean = isCancelled
+                override fun isCanceled(): Boolean = isCancelled
 
-            override suspend fun doInBackground() {
-                if (isCancelled || requestGeneration != generation || app.isDatasetRebuilding || app.component !== targetComponent || targetComponent.session.datasetId != datasetId) return
+                override suspend fun doInBackground() {
+                    if (isCancelled || requestGeneration != generation || app.isDatasetRebuilding || app.component !== targetComponent || targetComponent.session.datasetId != datasetId) return
 
-                try {
-                    val session = targetComponent.focusSessionRepository?.getById(FocusSessionId(id))
-                    if (session == null) {
-                        loadError = NoSuchElementException("Focus session $id not found")
+                    try {
+                        val session = targetComponent.focusSessionRepository?.getById(FocusSessionId(id)) ?: return
+
+                        val timeFormat = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault())
+                        val startedStr = timeFormat.format(Date(session.startedAt))
+                        val endedStr = timeFormat.format(Date(session.endedAt))
+                        val activeStr = UnifiedStatisticsStateUtils.formatExactDurationMs(session.durationMs, isRussian)
+                        val elapsedMs = (session.endedAt - session.startedAt).coerceAtLeast(0L)
+                        val elapsedStr = UnifiedStatisticsStateUtils.formatExactDurationMs(elapsedMs, isRussian)
+
+                        val segments = FocusHistoryProjector.projectSessionToDays(session)
+                        val isEstimated = segments.any { it.isDayAllocationEstimated }
+
+                        val targetName = when (session.primaryTargetType) {
+                            FocusPrimaryTargetType.TASK -> {
+                                val taskId = session.taskId
+                                if (taskId != null) {
+                                    targetComponent.userTaskRepository.getById(taskId)?.title
+                                        ?: "Deleted task (${taskId.value.take(8)})"
+                                } else "Unnamed"
+                            }
+                            FocusPrimaryTargetType.HABIT -> {
+                                val habitUuid = session.habit?.uuid
+                                if (habitUuid != null) {
+                                    targetComponent.habitList.getByUUID(habitUuid)?.name
+                                        ?: "Deleted habit (${habitUuid.take(8)})"
+                                } else "Unnamed"
+                            }
+                            FocusPrimaryTargetType.CONTAINER -> {
+                                val cid = session.containerId
+                                if (cid != null) {
+                                    targetComponent.organizationFacade.containerQueries?.find(cid, includeDeleted = true)?.name
+                                        ?: "Deleted section (${cid.value.take(8)})"
+                                } else "Unnamed"
+                            }
+                            null -> if (isRussian) "Без раздела" else "Unassigned"
+                        }
+
+                        val targetTypeStr = session.primaryTargetType?.name ?: if (isRussian) "БЕЗ ТИПА" else "NO TYPE"
+
+                        val parsedPath = HistoricalPathParser.parsePath(session.organizationContext)
+                        val pathText = if (parsedPath.isNotEmpty()) {
+                            parsedPath.joinToString(separator = " › ") { it.name ?: it.id.value }
+                        } else if (session.containerId != null) {
+                            val c = targetComponent.organizationFacade.containerQueries?.find(session.containerId!!, includeDeleted = true)
+                            (c?.name ?: session.containerId!!.value) + (if (isRussian) " (текущее размещение)" else " (current placement)")
+                        } else {
+                            if (isRussian) "Без раздела" else "No section"
+                        }
+
+                        val contributionsList = mutableListOf<ContributionItem>()
+                        val rawContribs = requireNotNull(targetComponent.contributionRepository).getBySource(
+                            ContributionSourceType.FOCUS_SESSION,
+                            session.id.value,
+                            includeRemoved = true,
+                        )
+
+                        rawContribs.forEach { c ->
+                            val hName = targetComponent.habitList.getByUUID(c.targetHabit.uuid)?.name
+                                ?: "Deleted habit (${c.targetHabit.uuid.take(8)})"
+
+                            // Ledger quantities are native x1000 Habit values, never Focus milliseconds.
+                            // The ledger has no frozen unit, so do not infer one from today's Habit.
+                            val valStr = "${java.math.BigDecimal.valueOf(c.contributedValue, 3).stripTrailingZeros().toPlainString()} " +
+                                if (isRussian) "ед. значения (единица не сохранена в истории)" else "units (historical unit not recorded)"
+
+                            val removedStr = c.removedAt?.let { timeFormat.format(Date(it)) }
+                            contributionsList.add(ContributionItem(hName, valStr, c.removedAt != null, removedStr))
+                        }
+
+                        payload = FocusSessionDetailPayload(
+                            session = session,
+                            startedStr = startedStr,
+                            endedStr = endedStr,
+                            activeDurationStr = activeStr,
+                            elapsedDurationStr = elapsedStr,
+                            isEstimatedAllocation = isEstimated,
+                            targetTypeStr = targetTypeStr,
+                            targetName = targetName,
+                            frozenPathStr = pathText,
+                            contributions = contributionsList,
+                        )
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // Missing or unreadable facts are shown with the same retry action.
+                    }
+                }
+
+                override fun onPostExecute() {
+                    if (isCancelled || requestGeneration != generation || !isAdded || view == null) return
+                    if (app.isDatasetRebuilding || app.component !== targetComponent || app.component.session.datasetId != datasetId) {
+                        dismissAllowingStateLoss()
                         return
                     }
 
-                    val timeFormat = SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.getDefault())
-                    val startedStr = timeFormat.format(Date(session.startedAt))
-                    val endedStr = timeFormat.format(Date(session.endedAt))
-                    val activeStr = UnifiedStatisticsStateUtils.formatExactDurationMs(session.durationMs, isRussian)
-                    val elapsedMs = (session.endedAt - session.startedAt).coerceAtLeast(0L)
-                    val elapsedStr = UnifiedStatisticsStateUtils.formatExactDurationMs(elapsedMs, isRussian)
-
-                    val segments = FocusHistoryProjector.projectSessionToDays(session)
-                    val isEstimated = segments.any { it.isDayAllocationEstimated }
-
-                    val targetName = when (session.primaryTargetType) {
-                        FocusPrimaryTargetType.TASK -> {
-                            val taskId = session.taskId
-                            if (taskId != null) {
-                                targetComponent.userTaskRepository.getById(taskId)?.title
-                                    ?: "Deleted task (${taskId.value.take(8)})"
-                            } else "Unnamed"
-                        }
-                        FocusPrimaryTargetType.HABIT -> {
-                            val habitUuid = session.habit?.uuid
-                            if (habitUuid != null) {
-                                targetComponent.habitList.getByUUID(habitUuid)?.name
-                                    ?: "Deleted habit (${habitUuid.take(8)})"
-                            } else "Unnamed"
-                        }
-                        FocusPrimaryTargetType.CONTAINER -> {
-                            val cid = session.containerId
-                            if (cid != null) {
-                                targetComponent.organizationFacade.containerQueries?.find(cid, includeDeleted = true)?.name
-                                    ?: "Deleted section (${cid.value.take(8)})"
-                            } else "Unnamed"
-                        }
-                        null -> if (isRussian) "Без раздела" else "Unassigned"
-                    }
-
-                    val targetTypeStr = session.primaryTargetType?.name ?: if (isRussian) "БЕЗ ТИПА" else "NO TYPE"
-
-                    val parsedPath = HistoricalPathParser.parsePath(session.organizationContext)
-                    val pathText = if (parsedPath.isNotEmpty()) {
-                        parsedPath.joinToString(separator = " › ") { it.name ?: it.id.value }
-                    } else if (session.containerId != null) {
-                        val c = targetComponent.organizationFacade.containerQueries?.find(session.containerId!!, includeDeleted = true)
-                        (c?.name ?: session.containerId!!.value) + (if (isRussian) " (текущее размещение)" else " (current placement)")
-                    } else {
-                        if (isRussian) "Без раздела" else "No section"
-                    }
-
-                    val contributionsList = mutableListOf<ContributionItem>()
-                    val rawContribs = requireNotNull(targetComponent.contributionRepository).getBySource(
-                        ContributionSourceType.FOCUS_SESSION,
-                        session.id.value,
-                        includeRemoved = true,
-                    )
-
-                    rawContribs.forEach { c ->
-                        val hName = targetComponent.habitList.getByUUID(c.targetHabit.uuid)?.name
-                            ?: "Deleted habit (${c.targetHabit.uuid.take(8)})"
-
-                        // Ledger quantities are native x1000 Habit values, never Focus milliseconds.
-                        // The ledger has no frozen unit, so do not infer one from today's Habit.
-                        val valStr = "${java.math.BigDecimal.valueOf(c.contributedValue, 3).stripTrailingZeros().toPlainString()} " +
-                            if (isRussian) "ед. значения (единица не сохранена в истории)" else "units (historical unit not recorded)"
-
-                        val removedStr = c.removedAt?.let { timeFormat.format(Date(it)) }
-                        contributionsList.add(ContributionItem(hName, valStr, c.removedAt != null, removedStr))
-                    }
-
-                    payload = FocusSessionDetailPayload(
-                        session = session,
-                        startedStr = startedStr,
-                        endedStr = endedStr,
-                        activeDurationStr = activeStr,
-                        elapsedDurationStr = elapsedStr,
-                        isEstimatedAllocation = isEstimated,
-                        targetTypeStr = targetTypeStr,
-                        targetName = targetName,
-                        frozenPathStr = pathText,
-                        contributions = contributionsList,
-                    )
-                } catch (t: Throwable) {
-                    loadError = t
+                    if (revision() != requestedRevision) { loadedRevision = null; return }
+                    detailState = payload?.let { DetailState.Ready(it) } ?: DetailState.Unavailable(retry = true)
                 }
             }
-
-            override fun onPostExecute() {
-                if (isCancelled || requestGeneration != generation || !isAdded || view == null) return
-                if (app.isDatasetRebuilding || app.component !== targetComponent || app.component.session.datasetId != datasetId) {
-                    dismissAllowingStateLoss()
-                    return
-                }
-
-                if (revision() != requestedRevision) { loadedRevision = null; return }
-                loadingProgress.visibility = View.GONE
-
-                val data = payload
-                if (data != null) {
-                    renderPayload(detailContainer, data)
-                } else {
-                    val errView = TextView(context).apply {
-                        text = getString(R.string.unified_statistics_domain_failed)
-                        setTextColor(palette.onSurface)
-                        setPadding(0, dp(12f), 0, 0)
-                    }
-                    detailContainer.addView(errView)
-                    detailContainer.addView(MaterialButton(context, null, com.google.android.material.R.attr.borderlessButtonStyle).apply {
-                        text = getString(R.string.unified_statistics_state_retry)
-                        minHeight = dp(48f)
-                        setOnClickListener { reload?.invoke() }
-                    })
-                }
-            }
-        }
-        pendingTask = detailTask
-        targetComponent.taskRunner.execute(detailTask)
+            pendingTask = detailTask
+            targetComponent.taskRunner.execute(detailTask)
         }
         reload?.invoke()
 
         return root
     }
 
-    private fun renderPayload(container: LinearLayout, data: FocusSessionDetailPayload) {
-        val context = requireContext()
-        container.tag = "session-detail:${data.session.id.value}"
-
-        // Timing section
-        addSectionHeader(container, getString(R.string.unified_statistics_session_timing_label))
-        addKeyValueRow(container, if (isRussian) "Начало" else "Started", data.startedStr)
-        addKeyValueRow(container, if (isRussian) "Завершение" else "Ended", data.endedStr)
-        addKeyValueRow(container, getString(R.string.unified_statistics_session_active_duration_label), data.activeDurationStr)
-        addKeyValueRow(container, getString(R.string.unified_statistics_session_elapsed_label), data.elapsedDurationStr)
-        addKeyValueRow(container, if (isRussian) "Источник" else "Source", data.session.source.name)
-        addKeyValueRow(container, "Session ID", data.session.id.value)
-
-        if (data.isEstimatedAllocation) {
-            val estimatedBadge = TextView(context).apply {
-                text = getString(R.string.unified_statistics_session_allocation_estimated)
-                textSize = 13f
-                setTextColor(palette.accent)
-                setTypeface(typeface, Typeface.ITALIC)
-                setPadding(0, dp(6f), 0, dp(6f))
-            }
-            container.addView(estimatedBadge)
-        }
-
-        // Primary Target section
-        addSectionHeader(container, getString(R.string.unified_statistics_session_primary_target_label))
-        addKeyValueRow(container, data.targetTypeStr, data.targetName)
-
-        // Frozen path section
-        addSectionHeader(container, getString(R.string.unified_statistics_session_frozen_path_label))
-        val pathView = TextView(context).apply {
-            text = data.frozenPathStr
-            textSize = 14f
-            setTextColor(palette.onSurfaceVariant)
-            setPadding(0, dp(4f), 0, dp(8f))
-        }
-        container.addView(pathView)
-
-        // Contributions section
-        addSectionHeader(container, getString(R.string.unified_statistics_session_contributions_label))
-        if (data.contributions.isEmpty()) {
-            val emptyNotice = TextView(context).apply {
-                text = getString(R.string.unified_statistics_session_no_contributions)
-                textSize = 14f
-                setTextColor(palette.onSurfaceVariant)
-                setPadding(0, dp(4f), 0, dp(4f))
-            }
-            container.addView(emptyNotice)
-        } else {
-            data.contributions.forEach { c ->
-                val rowView = TextView(context).apply {
-                    if (c.isRemoved) {
-                        tag = "unified_session_detail_tombstone"
-                        text = getString(R.string.unified_statistics_session_contribution_tombstone, c.valueStr, c.removedDateStr ?: "")
-                        setTextColor(palette.onSurfaceVariant)
-                        setTypeface(typeface, Typeface.ITALIC)
-                    } else {
-                        text = getString(R.string.unified_statistics_session_contribution_active, c.valueStr, c.habitName)
-                        setTextColor(palette.onSurface)
-                    }
-                    textSize = 14f
-                    setPadding(0, dp(4f), 0, dp(4f))
+    @OptIn(ExperimentalComposeUiApi::class)
+    @Composable
+    private fun DetailContent(
+        state: DetailState,
+        colors: SettingsThemePalette,
+        onRetry: () -> Unit,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(colors.dialogSurface))
+                .navigationBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(start = 20.dp, top = 20.dp, end = 20.dp, bottom = 28.dp)
+                .semantics { testTagsAsResourceId = true },
+        ) {
+            BasicText(
+                text = stringResource(R.string.unified_statistics_session_detail_title),
+                modifier = Modifier.semantics { heading() },
+                style = TextStyle(color = Color(colors.onSurface), fontSize = 20.sp, fontWeight = FontWeight.Bold),
+            )
+            when (state) {
+                DetailState.Loading -> Box(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(Modifier.size(36.dp), color = Color(colors.accent))
                 }
-                container.addView(rowView)
+                is DetailState.Unavailable -> {
+                    BasicText(
+                        text = stringResource(R.string.unified_statistics_domain_failed),
+                        modifier = Modifier.padding(top = 12.dp),
+                        style = TextStyle(color = Color(colors.onSurfaceVariant), fontSize = 14.sp),
+                    )
+                    if (state.retry) {
+                        TextButton(onClick = onRetry) {
+                            Text(stringResource(R.string.unified_statistics_state_retry))
+                        }
+                    }
+                }
+                is DetailState.Ready -> DetailFacts(state.data, colors)
             }
         }
     }
 
-    private fun addSectionHeader(container: LinearLayout, title: String) {
-        val tv = TextView(requireContext()).apply {
-            text = title
-            textSize = 15f
-            setTypeface(typeface, Typeface.BOLD)
-            setTextColor(palette.onSurface)
-            setPadding(0, dp(14f), 0, dp(4f))
+    @Composable
+    private fun DetailFacts(data: FocusSessionDetailPayload, colors: SettingsThemePalette) {
+        val foreground = Color(colors.onSurface)
+        val secondary = Color(colors.onSurfaceVariant)
+        Column(Modifier.fillMaxWidth().testTag("session-detail:${data.session.id.value}")) {
+            SectionHeading(R.string.unified_statistics_session_timing_label, foreground)
+            DetailFact(if (isRussian) "Начало" else "Started", data.startedStr, foreground, secondary)
+            DetailFact(if (isRussian) "Завершение" else "Ended", data.endedStr, foreground, secondary)
+            DetailFact(
+                stringResource(R.string.unified_statistics_session_active_duration_label),
+                data.activeDurationStr, foreground, secondary,
+            )
+            DetailFact(
+                stringResource(R.string.unified_statistics_session_elapsed_label),
+                data.elapsedDurationStr, foreground, secondary,
+            )
+            DetailFact(if (isRussian) "Источник" else "Source", data.session.source.name, foreground, secondary)
+            DetailFact("Session ID", data.session.id.value, foreground, secondary)
+
+            if (data.isEstimatedAllocation) {
+                BasicText(
+                    text = stringResource(R.string.unified_statistics_session_allocation_estimated),
+                    modifier = Modifier.padding(vertical = 6.dp),
+                    style = TextStyle(
+                        color = Color(colors.accent), fontSize = 13.sp, fontStyle = FontStyle.Italic,
+                    ),
+                )
+            }
+
+            SectionHeading(R.string.unified_statistics_session_primary_target_label, foreground)
+            DetailFact(data.targetTypeStr, data.targetName, foreground, secondary)
+            SectionHeading(R.string.unified_statistics_session_frozen_path_label, foreground)
+            BasicText(
+                text = data.frozenPathStr,
+                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                style = TextStyle(color = secondary, fontSize = 14.sp),
+            )
+            SectionHeading(R.string.unified_statistics_session_contributions_label, foreground)
+            if (data.contributions.isEmpty()) {
+                BasicText(
+                    text = stringResource(R.string.unified_statistics_session_no_contributions),
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    style = TextStyle(color = secondary, fontSize = 14.sp),
+                )
+            } else {
+                for (contribution in data.contributions) {
+                    val text = if (contribution.isRemoved) {
+                        stringResource(
+                            R.string.unified_statistics_session_contribution_tombstone,
+                            contribution.valueStr, contribution.removedDateStr.orEmpty(),
+                        )
+                    } else {
+                        stringResource(
+                            R.string.unified_statistics_session_contribution_active,
+                            contribution.valueStr, contribution.habitName,
+                        )
+                    }
+                    val semanticTag = if (contribution.isRemoved) {
+                        Modifier.testTag("unified_session_detail_tombstone")
+                    } else Modifier
+                    BasicText(
+                        text = text,
+                        modifier = semanticTag.padding(vertical = 4.dp),
+                        style = TextStyle(
+                            color = if (contribution.isRemoved) secondary else foreground,
+                            fontSize = 14.sp,
+                            fontStyle = if (contribution.isRemoved) FontStyle.Italic else FontStyle.Normal,
+                        ),
+                    )
+                }
+            }
         }
-        container.addView(tv)
     }
 
-    private fun addKeyValueRow(container: LinearLayout, key: String, value: String) {
-        val row = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(3f), 0, dp(3f))
+    @Composable
+    private fun SectionHeading(title: Int, color: Color) {
+        BasicText(
+            text = stringResource(title),
+            modifier = Modifier.padding(top = 14.dp, bottom = 4.dp).semantics { heading() },
+            style = TextStyle(color = color, fontSize = 15.sp, fontWeight = FontWeight.Bold),
+        )
+    }
+
+    @Composable
+    private fun DetailFact(key: String, value: String, foreground: Color, secondary: Color) {
+        Column(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+            BasicText(key, style = TextStyle(color = secondary, fontSize = 14.sp))
+            BasicText(value, style = TextStyle(color = foreground, fontSize = 14.sp, fontWeight = FontWeight.Bold))
         }
-        val keyView = TextView(requireContext()).apply {
-            text = key
-            textSize = 14f
-            setTextColor(palette.onSurfaceVariant)
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-        }
-        val valueView = TextView(requireContext()).apply {
-            text = value
-            textSize = 14f
-            setTypeface(typeface, Typeface.BOLD)
-            setTextColor(palette.onSurface)
-        }
-        row.addView(keyView)
-        row.addView(valueView)
-        container.addView(row)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -485,11 +474,6 @@ class FocusSessionDetailBottomSheet : BottomSheetDialogFragment() {
             behavior.skipCollapsed = true
         }
 
-        ViewCompat.setOnApplyWindowInsetsListener(view) { v, insets ->
-            val navBars = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
-            v.updatePadding(bottom = navBars.bottom)
-            insets
-        }
     }
 
     companion object {

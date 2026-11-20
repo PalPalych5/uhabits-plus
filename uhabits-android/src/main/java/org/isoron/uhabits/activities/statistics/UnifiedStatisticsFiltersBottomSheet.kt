@@ -2,34 +2,27 @@
 
 package org.isoron.uhabits.activities.statistics
 
-import android.content.res.ColorStateList
-import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.RadioButton
-import android.widget.RadioGroup
-import android.widget.ScrollView
-import android.widget.TextView
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.updatePadding
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.FragmentManager
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
-import com.google.android.material.button.MaterialButton
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
+import org.isoron.uhabits.core.containers.Container
 import org.isoron.uhabits.core.containers.ContainerId
-import org.isoron.uhabits.utils.InterfaceUtils
 
 /**
  * Filter bottom sheet for selecting section scope and subtree mode in Unified Statistics.
@@ -37,13 +30,14 @@ import org.isoron.uhabits.utils.InterfaceUtils
 class UnifiedStatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
 
     private var originDatasetId: String? = null
-    private var selectedScopeType: String = SCOPE_ALL
-    private var selectedContainerId: String? = null
-    private var selectedIncludeDescendants: Boolean = true
+    private var selectedScopeType by mutableStateOf(SCOPE_ALL)
+    private var selectedContainerId by mutableStateOf<String?>(null)
+    private var selectedIncludeDescendants by mutableStateOf(true)
+    private var containers by mutableStateOf(emptyList<UnifiedStatisticsScopeChoice>())
+    private var failed by mutableStateOf(false)
+    private var viewRequest = 0
 
     private val palette get() = MainTabsThemeBridge.resolve(requireContext())
-
-    private fun dp(value: Float): Int = InterfaceUtils.dpToPixels(requireContext(), value).toInt()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,226 +59,84 @@ class UnifiedStatisticsFiltersBottomSheet : BottomSheetDialogFragment() {
         val context = requireContext()
         val app = context.applicationContext as HabitsApplication
         val owner = app.component
-        val root = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(palette.dialogSurface)
-            setPadding(dp(16f), dp(16f), dp(16f), dp(24f))
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        // Title
-        val titleView = TextView(context).apply {
-            text = getString(R.string.unified_statistics_filters_title)
-            textSize = 18f
-            setTextColor(palette.onSurface)
-            setPadding(0, 0, 0, dp(12f))
-        }
-        root.addView(titleView)
-
-        val scrollView = ScrollView(context).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-        }
-
-        val contentLayout = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-
-        val radioGroup = RadioGroup(context).apply {
-            orientation = RadioGroup.VERTICAL
-        }
-
-        // Radio: All sections
-        val rbAll = RadioButton(context).apply {
-            id = View.generateViewId()
-            text = getString(R.string.unified_statistics_scope_all)
-            setTextColor(palette.onSurface)
-            buttonTintList = ColorStateList.valueOf(palette.accent)
-            minHeight = dp(48f)
-            isChecked = selectedScopeType == SCOPE_ALL
-            setOnCheckedChangeListener { _, isChecked ->
-                if (isChecked) {
-                    selectedScopeType = SCOPE_ALL
-                    selectedContainerId = null
-                }
-            }
-        }
-        radioGroup.addView(rbAll)
-
-        // Radio: Unassigned
-        val rbUnassigned = RadioButton(context).apply {
-            id = View.generateViewId()
-            text = getString(R.string.unified_statistics_scope_unassigned)
-            setTextColor(palette.onSurface)
-            buttonTintList = ColorStateList.valueOf(palette.accent)
-            minHeight = dp(48f)
-            isChecked = selectedScopeType == SCOPE_UNASSIGNED
-            setOnCheckedChangeListener { _, isChecked ->
-                if (isChecked) {
-                    selectedScopeType = SCOPE_UNASSIGNED
-                    selectedContainerId = null
-                }
-            }
-        }
-        radioGroup.addView(rbUnassigned)
-
-        fun renderContainers(allContainers: List<org.isoron.uhabits.core.containers.Container>) {
-          allContainers.forEach { c ->
-            val rbContainer = RadioButton(context).apply {
-                id = View.generateViewId()
-                text = c.name
-                setTextColor(palette.onSurface)
-                buttonTintList = ColorStateList.valueOf(palette.accent)
-                minHeight = dp(48f)
-                isChecked = selectedScopeType == SCOPE_CONTAINER && selectedContainerId == c.id.value
-                setOnCheckedChangeListener { _, isChecked ->
-                    if (isChecked) {
-                        selectedScopeType = SCOPE_CONTAINER
-                        selectedContainerId = c.id.value
-                    }
-                }
-            }
-            radioGroup.addView(rbContainer)
-        }
-
-        }
+        val request = ++viewRequest
+        containers = emptyList()
+        failed = false
 
         owner.taskRunner.execute(object : org.isoron.uhabits.core.tasks.Task {
-            private var containers = emptyList<org.isoron.uhabits.core.containers.Container>()
-            private var error: Exception? = null
+            private var choices = emptyList<UnifiedStatisticsScopeChoice>()
+            private var loadFailed = false
+
             override suspend fun doInBackground() {
                 try {
                     val queries = requireNotNull(owner.organizationFacade.containerQueries)
-                    val visited = mutableSetOf<org.isoron.uhabits.core.containers.ContainerId>()
-                    val found = mutableListOf<org.isoron.uhabits.core.containers.Container>()
-                    fun collect(c: org.isoron.uhabits.core.containers.Container, parent: String) {
-                        if (!visited.add(c.id)) return
-                        val label = if (parent.isBlank()) c.name else "$parent / ${c.name}"
-                        found.add(c.copy(name = label))
-                        queries.children(c.id, includeArchived = true).forEach { collect(it, label) }
+                    val visited = mutableSetOf<ContainerId>()
+                    choices = buildList {
+                        fun collect(container: Container, parent: String) {
+                            if (!visited.add(container.id)) return
+                            val label = if (parent.isBlank()) container.name else "$parent / ${container.name}"
+                            add(UnifiedStatisticsScopeChoice(container.id.value, label))
+                            queries.children(container.id, includeArchived = true).forEach { collect(it, label) }
+                        }
+                        queries.roots(includeArchived = true).forEach { collect(it, "") }
                     }
-                    queries.roots(includeArchived = true).forEach { collect(it, "") }
-                    containers = found
-                } catch (e: Exception) { error = e }
+                } catch (_: Exception) {
+                    loadFailed = true
+                }
             }
+
             override fun onPostExecute() {
-                if (!isAdded || app.isDatasetRebuilding || app.component !== owner) return
-                if (error == null) renderContainers(containers)
-                else contentLayout.addView(TextView(context).apply {
-                    text = getString(R.string.unified_statistics_state_failed)
-                    setTextColor(palette.onSurface)
-                })
+                if (request != viewRequest || !isAdded || app.isDatasetRebuilding || app.component !== owner) return
+                containers = choices
+                failed = loadFailed
             }
         })
 
-        contentLayout.addView(radioGroup)
-
-        // Subtree vs HERE toggle
-        val modeHeader = TextView(context).apply {
-            text = getString(R.string.unified_statistics_scope_mode_subtree) + " / " +
-                getString(R.string.unified_statistics_scope_mode_here)
-            textSize = 14f
-            setTextColor(palette.onSurfaceVariant)
-            setPadding(0, dp(12f), 0, dp(6f))
-        }
-        contentLayout.addView(modeHeader)
-
-        val modeGroup = RadioGroup(context).apply {
-            orientation = RadioGroup.VERTICAL
-        }
-
-        val rbSubtree = RadioButton(context).apply {
-            id = View.generateViewId()
-            text = getString(R.string.unified_statistics_scope_mode_subtree)
-            setTextColor(palette.onSurface)
-            buttonTintList = ColorStateList.valueOf(palette.accent)
-            minHeight = dp(48f)
-            isChecked = selectedIncludeDescendants
-            setOnCheckedChangeListener { _, isChecked ->
-                if (isChecked) selectedIncludeDescendants = true
-            }
-        }
-        modeGroup.addView(rbSubtree)
-
-        val rbHere = RadioButton(context).apply {
-            id = View.generateViewId()
-            text = getString(R.string.unified_statistics_scope_mode_here)
-            setTextColor(palette.onSurface)
-            buttonTintList = ColorStateList.valueOf(palette.accent)
-            minHeight = dp(48f)
-            isChecked = !selectedIncludeDescendants
-            setOnCheckedChangeListener { _, isChecked ->
-                if (isChecked) selectedIncludeDescendants = false
-            }
-        }
-        modeGroup.addView(rbHere)
-
-        contentLayout.addView(modeGroup)
-        scrollView.addView(contentLayout)
-        root.addView(scrollView)
-
-        // Action buttons (Reset, Apply)
-        val buttonBar = LinearLayout(context).apply {
-            orientation = if (resources.configuration.fontScale > 1.3f) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
-            gravity = Gravity.END
-            setPadding(0, dp(16f), 0, 0)
-        }
-
-        val btnReset = MaterialButton(
-            context,
-            null,
-            com.google.android.material.R.attr.borderlessButtonStyle
-        ).apply {
-            text = getString(R.string.unified_statistics_filters_reset)
-            setTextColor(palette.onSurfaceVariant)
-            minHeight = dp(48f)
-            setOnClickListener {
-                selectedScopeType = SCOPE_ALL
-                selectedContainerId = null
-                selectedIncludeDescendants = true
-                rbAll.isChecked = true
-                rbSubtree.isChecked = true
-            }
-        }
-        buttonBar.addView(btnReset)
-
-        val btnApply = MaterialButton(context).apply {
-            text = getString(R.string.unified_statistics_filters_apply)
-            setBackgroundColor(palette.accent)
-            setTextColor(if (palette.isDark) Color.BLACK else Color.WHITE)
-            minHeight = dp(48f)
-            setOnClickListener {
-                val currentApp = requireContext().applicationContext as HabitsApplication
-                if (currentApp.isDatasetRebuilding || originDatasetId.isNullOrBlank() || originDatasetId != currentApp.component.session.datasetId) {
-                    dismissAllowingStateLoss()
-                    return@setOnClickListener
+        return ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                UHabitComposeTheme(UHabitComposeColors.fromPalette(palette)) {
+                    UnifiedStatisticsFiltersCompose(
+                        type = selectedScopeType,
+                        containerId = selectedContainerId,
+                        includeDescendants = selectedIncludeDescendants,
+                        containers = containers,
+                        failed = failed,
+                        onScope = { type, id ->
+                            selectedScopeType = type
+                            selectedContainerId = id
+                        },
+                        onIncludeDescendants = { selectedIncludeDescendants = it },
+                        onReset = {
+                            selectedScopeType = SCOPE_ALL
+                            selectedContainerId = null
+                            selectedIncludeDescendants = true
+                        },
+                        onApply = ::applySelection,
+                    )
                 }
-                val bundle = Bundle().apply {
-                    putString(EXTRA_DATASET_ID, originDatasetId)
-                    putString(EXTRA_SCOPE_TYPE, selectedScopeType)
-                    putString(EXTRA_CONTAINER_ID, selectedContainerId)
-                    putBoolean(EXTRA_INCLUDE_DESCENDANTS, selectedIncludeDescendants)
-                }
-                parentFragmentManager.setFragmentResult(RESULT_KEY, bundle)
-                dismiss()
             }
         }
-        val lp = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply {
-            marginStart = dp(8f)
-        }
-        buttonBar.addView(btnApply, lp)
+    }
 
-        root.addView(buttonBar)
-        return root
+    private fun applySelection() {
+        val app = requireContext().applicationContext as HabitsApplication
+        if (app.isDatasetRebuilding || originDatasetId.isNullOrBlank() || originDatasetId != app.component.session.datasetId) {
+            dismissAllowingStateLoss()
+            return
+        }
+        parentFragmentManager.setFragmentResult(RESULT_KEY, Bundle().apply {
+            putString(EXTRA_DATASET_ID, originDatasetId)
+            putString(EXTRA_SCOPE_TYPE, selectedScopeType)
+            putString(EXTRA_CONTAINER_ID, selectedContainerId)
+            putBoolean(EXTRA_INCLUDE_DESCENDANTS, selectedIncludeDescendants)
+        })
+        dismiss()
+    }
+
+    override fun onDestroyView() {
+        viewRequest++
+        super.onDestroyView()
     }
 
     override fun onStart() {

@@ -36,8 +36,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertSame
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.StaleObjectException
+import androidx.test.uiautomator.UiDevice
 import org.isoron.uhabits.core.models.projection.HabitGoalStatus
-import org.isoron.uhabits.activities.statistics.views.CompareCalendarView
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.UUID
@@ -519,6 +521,7 @@ class StatisticsEffectiveAndroidTest {
             ActivityScenario.launch<CompareHabitsActivity>(intent).use { scenario ->
                 instrumentation.waitForIdleSync()
 
+                val device = UiDevice.getInstance(instrumentation)
                 var originalActivity: CompareHabitsActivity? = null
                 scenario.onActivity { originalActivity = it }
                 fun awaitRenderedGoal(expected: Long, status: HabitGoalStatus, minimumRevision: Long) {
@@ -526,17 +529,23 @@ class StatisticsEffectiveAndroidTest {
                     var evidence = "No rendered snapshot"
                     repeat(51) {
                         instrumentation.waitForIdleSync()
+                        val uiGoalText = try {
+                            device.findObject(By.res("compare_goal_${studyHabit.id}"))?.text.orEmpty()
+                        } catch (_: StaleObjectException) {
+                            // The revision replaced the node between discovery and reading.
+                            ""
+                        }
                         scenario.onActivity { activity ->
                             assertSame("Compare must refresh the same Activity", originalActivity, activity)
                             val snapshot = activity.renderedSnapshots[HabitRef(studyHabit.uuid!!)]
                             if (snapshot != null) {
                                 val goal = snapshot.goalAchievementOn(today).progress
-                                val text = activity.window.decorView.findViewWithTag<android.widget.TextView>("compare_goal_${studyHabit.id}")?.text?.toString().orEmpty()
-                                evidence = "total=${goal.value.totalValue}, status=${goal.status}, text=$text"
+                                val text = uiGoalText.ifEmpty { activity.renderedGoalText(studyHabit.id!!).orEmpty() }
+                                evidence = "total=${goal.value.totalValue}, status=${goal.status}, text=$text, uiGoalText=$uiGoalText"
                                 if (snapshot.revision >= minimumRevision && goal.value.totalValue == expected && goal.status == status && text.contains((expected / 1000).toString()) && text.contains("300")) {
-                                    val calendar = activity.window.decorView.findViewWithTag<CompareCalendarView>("compare_calendar_${studyHabit.id}")
-                                    assertNotNull("Actual Compare calendar must be rendered", calendar)
-                                    assertEquals(status, calendar.goalStatusOn(today))
+                                    val renderedCalStatus = activity.renderedCalendarGoalStatus(studyHabit.id!!, today)
+                                    assertNotNull("Actual Compare calendar must be rendered", renderedCalStatus)
+                                    assertEquals(status, renderedCalStatus)
                                     val report = StatisticsReportStateBuilder.build(
                                         habits = listOf(studyHabit), period = StatisticsPeriod.WEEK,
                                         start = goal.from, end = goal.to, today = today,
@@ -578,8 +587,10 @@ class StatisticsEffectiveAndroidTest {
                     assertSame("Live calendar settings must retain the Activity", originalActivity, activity)
                     val snapshot = activity.renderedSnapshots.getValue(HabitRef(studyHabit.uuid!!))
                     assertEquals(newFirstWeekday, snapshot.calendar.firstWeekday)
-                    val calendar = activity.window.decorView.findViewWithTag<CompareCalendarView>("compare_calendar_${studyHabit.id}")
-                    assertEquals(snapshot.goalAchievementOn(today).status, calendar.goalStatusOn(today))
+                    assertEquals(
+                        snapshot.goalAchievementOn(today).status,
+                        activity.renderedCalendarGoalStatus(studyHabit.id!!, today)
+                    )
                 }
             }
         } finally {

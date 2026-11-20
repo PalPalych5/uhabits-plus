@@ -11,8 +11,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.PixelCopy
 import android.view.View
-import android.view.ViewGroup
-import android.widget.TextView
 import androidx.fragment.app.Fragment
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -21,7 +19,7 @@ import androidx.test.runner.lifecycle.Stage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
-import com.google.android.material.tabs.TabLayout
+import androidx.test.uiautomator.Direction
 import org.isoron.platform.time.JavaLocalDateFormatter
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
@@ -174,7 +172,7 @@ class UnifiedStatisticsShellVisualTest {
                 assertMinimumTouchTargets(controller)
 
                 // 7. Assert no clipped text and no touch overlap on visible views
-                assertVisibleTextGeometry(controller)
+                assertVisibleTextGeometry()
 
                 // Regression: Cold initial scoped fragment resolution and saved state precedence
                 verifyColdInitialScopedFragment(controller, seedResult)
@@ -210,13 +208,13 @@ class UnifiedStatisticsShellVisualTest {
                 selectTab(controller, 0)
 
                 // 9. Capture open period controls
-                openPeriodMenu(controller)
+                openPeriodMenu()
                 capture("05-period-picker")
                 device.pressBack()
                 idle()
 
                 // 10. Capture open scope controls
-                openScopeBottomSheet(controller)
+                openScopeBottomSheet()
                 capture("06-scope-picker")
                 device.pressBack()
                 idle()
@@ -259,15 +257,10 @@ class UnifiedStatisticsShellVisualTest {
 
                 // 13. Fast period toggles with pending read stale prevention
                 selectTab(controller, 0)
-                controller.onActivity { activity ->
-                    val fragment = statsFragment(activity)
-                    val prev = getPrevButton(fragment)
-                    val next = getNextButton(fragment)
-                    // Rapid clicks: go back twice, forward once (leaves view on past period)
-                    prev.performClick()
-                    prev.performClick()
-                    next.performClick()
-                }
+                val previous = device.statisticsControl("unified_prev").visibleCenter
+                val next = device.statisticsControl("unified_next").visibleCenter
+                repeat(2) { assertTrue(device.click(previous.x, previous.y)) }
+                assertTrue(device.click(next.x, next.y))
                 idle()
                 waitForSettled(controller)
 
@@ -285,11 +278,7 @@ class UnifiedStatisticsShellVisualTest {
                 }
 
                 // 14. Reset to latest period before inserting, then verify live data mutation invalidation
-                controller.onActivity { activity ->
-                    val fragment = statsFragment(activity)
-                    val next = getNextButton(fragment)
-                    next.performClick()
-                }
+                device.statisticsControl("unified_next").click()
                 idle()
                 waitForSettled(controller)
 
@@ -378,9 +367,8 @@ class UnifiedStatisticsShellVisualTest {
                     val fragment = statsFragment(activity)
                     val uiState = getUiState(fragment)
                     assertTrue("Empty scope must produce a valid state (not failure)", uiState is UnifiedReportUiState.Success)
-                    val statusBanner = getStatusView(fragment)
-                    assertTrue("Error banner must be GONE for empty data", statusBanner == null || statusBanner.visibility == View.GONE)
                 }
+                assertFalse("Empty data must not show an error banner", device.hasObject(By.res("unified_status")))
             }
         } finally {
             instrumentation.runOnMainSync {
@@ -570,100 +558,34 @@ class UnifiedStatisticsShellVisualTest {
     }
 
     private fun selectTab(controller: QaActivityController, tabIndex: Int) {
-        controller.onActivity { activity ->
-            val fragment = statsFragment(activity)
-            val tabLayout = getTabLayout(fragment)
-            val tab = tabLayout.getTabAt(tabIndex)
-            requireNotNull(tab) { "Tab at index $tabIndex not found" }
-            tab.select()
-        }
+        device.selectStatisticsTab(tabIndex)
         idle()
         waitForSettled(controller)
     }
 
     private fun assertTabSelected(controller: QaActivityController, expectedTab: UnifiedAnalyticsTab) {
-        controller.onActivity { activity ->
-            val fragment = statsFragment(activity)
-            val current = getCurrentTab(fragment)
-            assertEquals("Selected analytical tab must match", expectedTab, current)
+        val deadline = SystemClock.uptimeMillis() + 3_000
+        var current: UnifiedAnalyticsTab? = null
+        while (SystemClock.uptimeMillis() < deadline) {
+            controller.onActivity { activity ->
+                val fragment = statsFragment(activity)
+                current = getCurrentTab(fragment)
+            }
+            if (current == expectedTab) return
+            SystemClock.sleep(50)
         }
+        assertEquals("Selected analytical tab must match", expectedTab, current)
     }
 
-    private fun openPeriodMenu(controller: QaActivityController) {
-        controller.onActivity { activity ->
-            val fragment = statsFragment(activity)
-            getPeriodButton(fragment).performClick()
-        }
-        idle()
-        SystemClock.sleep(300)
+    private fun openPeriodMenu() {
+        device.statisticsControl("unified_period").click()
+        device.statisticsControl("unified_period_DAY")
     }
 
-    private fun openScopeBottomSheet(controller: QaActivityController) {
-        controller.onActivity { activity ->
-            val fragment = statsFragment(activity)
-            getScopeButton(fragment).performClick()
-            fragment.childFragmentManager.executePendingTransactions()
-        }
-        idle()
-        val titleText = context.getString(R.string.unified_statistics_filters_title)
-        device.wait(Until.hasObject(By.text(titleText)), 3000)
-        SystemClock.sleep(300)
+    private fun openScopeBottomSheet() {
+        device.statisticsControl("unified_scope").click()
+        device.statisticsControl("unified_scope_apply")
     }
-
-    // -------------------------------------------------------------------------
-    // View Resolvers (Resilient against View Tags or Field Reflection)
-    // -------------------------------------------------------------------------
-
-    private fun getTabLayout(fragment: Fragment): TabLayout =
-        fragment.view?.findViewWithTag<TabLayout>("unified_tabs")
-            ?: runCatching { field<TabLayout>(fragment, "tabLayout") }.getOrNull()
-            ?: requireNotNull(findViewByType(fragment.requireView(), TabLayout::class.java))
-
-    private fun getPeriodButton(fragment: Fragment): View =
-        fragment.view?.findViewWithTag<View>("unified_period")
-            ?: fragment.view?.findViewWithTag<View>("period")
-            ?: runCatching { field<View>(fragment, "btnPeriodSelector") }.getOrNull()
-            ?: requireNotNull(findViewByContentOrClass(fragment.requireView(), "period"))
-
-    private fun getScopeButton(fragment: Fragment): View =
-        fragment.view?.findViewWithTag<View>("unified_scope")
-            ?: fragment.view?.findViewWithTag<View>("scope")
-            ?: runCatching { field<View>(fragment, "btnScopeSelector") }.getOrNull()
-            ?: requireNotNull(findViewByContentOrClass(fragment.requireView(), "scope"))
-
-    private fun getPrevButton(fragment: Fragment): View =
-        fragment.view?.findViewWithTag<View>("unified_prev")
-            ?: fragment.view?.findViewWithTag<View>("prev")
-            ?: runCatching { field<View>(fragment, "btnPrevPeriod") }.getOrNull()
-            ?: requireNotNull(findViewByContent(fragment.requireView(), "Previous"))
-
-    private fun getNextButton(fragment: Fragment): View =
-        fragment.view?.findViewWithTag<View>("unified_next")
-            ?: fragment.view?.findViewWithTag<View>("next")
-            ?: runCatching { field<View>(fragment, "btnNextPeriod") }.getOrNull()
-            ?: requireNotNull(findViewByContent(fragment.requireView(), "Next"))
-
-    private fun getLegacyButton(fragment: Fragment): View =
-        fragment.view?.findViewWithTag<View>("unified_legacy")
-            ?: fragment.view?.findViewWithTag<View>("legacy")
-            ?: runCatching { field<View>(fragment, "btnLegacy") }.getOrNull()
-            ?: requireNotNull(findViewByContent(fragment.requireView(), "legacy"))
-
-    private fun getDateRangeView(fragment: Fragment): TextView =
-        fragment.view?.findViewWithTag<TextView>("unified_date_range")
-            ?: runCatching { field<TextView>(fragment, "tvDateRange") }.getOrNull()
-            ?: requireNotNull(findViewByType(fragment.requireView(), TextView::class.java))
-
-    private fun getStatusView(fragment: Fragment): View? =
-        fragment.view?.findViewWithTag<View>("unified_status")
-            ?: fragment.view?.findViewWithTag<View>("status")
-            ?: runCatching { field<View>(fragment, "statusBanner") }.getOrNull()
-
-    private fun getContentContainer(fragment: Fragment): ViewGroup =
-        fragment.view?.findViewWithTag<ViewGroup>("unified_content")
-            ?: fragment.view?.findViewWithTag<ViewGroup>("content")
-            ?: runCatching { field<ViewGroup>(fragment, "contentContainer") }.getOrNull()
-            ?: requireNotNull(findViewByType(fragment.requireView(), ViewGroup::class.java))
 
     private fun getCurrentTab(fragment: UnifiedStatisticsFragment): UnifiedAnalyticsTab =
         field(fragment, "currentTab")
@@ -700,118 +622,20 @@ class UnifiedStatisticsShellVisualTest {
     // -------------------------------------------------------------------------
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T : View> findViewByType(root: View, clazz: Class<T>): T? {
-        if (clazz.isInstance(root)) return root as T
-        if (root is ViewGroup) {
-            for (i in 0 until root.childCount) {
-                val match = findViewByType(root.getChildAt(i), clazz)
-                if (match != null) return match
-            }
-        }
-        return null
-    }
-
-    private fun findViewByContent(root: View, text: String): View? {
-        if (root.contentDescription?.contains(text, ignoreCase = true) == true) return root
-        if (root is ViewGroup) {
-            for (i in 0 until root.childCount) {
-                val match = findViewByContent(root.getChildAt(i), text)
-                if (match != null) return match
-            }
-        }
-        return null
-    }
-
-    private fun findViewByContentOrClass(root: View, hint: String): View? {
-        if (root.contentDescription?.contains(hint, ignoreCase = true) == true) return root
-        if (root is ViewGroup) {
-            for (i in 0 until root.childCount) {
-                val match = findViewByContentOrClass(root.getChildAt(i), hint)
-                if (match != null) return match
-            }
-        }
-        return null
-    }
-
-    // -------------------------------------------------------------------------
-    // UI & Accessibility Assertions
-    // -------------------------------------------------------------------------
 
     private fun assertMinimumTouchTargets(controller: QaActivityController) {
-        controller.onActivity { activity ->
-            val fragment = statsFragment(activity)
-            val interactiveViews = listOf(
-                getPrevButton(fragment),
-                getNextButton(fragment),
-                getPeriodButton(fragment),
-                getScopeButton(fragment)
-            )
-            val density = activity.resources.displayMetrics.density
-            val rect = android.graphics.Rect()
-            for (v in interactiveViews) {
-                assertTrue("View ${v.tag ?: v.javaClass.simpleName} must be shown", v.isShown)
-                val isGloballyVisible = v.getGlobalVisibleRect(rect)
-                assertTrue(
-                    "View ${v.tag ?: v.javaClass.simpleName} must be globally visible on screen",
-                    isGloballyVisible && rect.width() > 0 && rect.height() > 0
-                )
-
-                val renderedWDp = v.width / density
-                val renderedHDp = v.height / density
-                val visibleWDp = rect.width() / density
-                val visibleHDp = rect.height() / density
-
-                assertTrue(
-                    "Click target ${v.tag ?: v.javaClass.simpleName} rendered width must be >= 48dp, actual=${renderedWDp}dp",
-                    renderedWDp >= 47.5f
-                )
-                assertTrue(
-                    "Click target ${v.tag ?: v.javaClass.simpleName} rendered height must be >= 48dp, actual=${renderedHDp}dp",
-                    renderedHDp >= 47.5f
-                )
-                assertTrue(
-                    "Click target ${v.tag ?: v.javaClass.simpleName} visible width must be >= 48dp, actual=${visibleWDp}dp",
-                    visibleWDp >= 47.5f
-                )
-                assertTrue(
-                    "Click target ${v.tag ?: v.javaClass.simpleName} visible height must be >= 48dp, actual=${visibleHDp}dp",
-                    visibleHDp >= 47.5f
-                )
-            }
-
-            val tabLayout = getTabLayout(fragment)
-            assertTrue("TabLayout height must be >= 48dp", tabLayout.height / density >= 47.5f)
+        var density = 1f
+        var all = false
+        controller.onActivity {
+            density = it.resources.displayMetrics.density
+            all = getCurrentPeriod(statsFragment(it)) == UnifiedPeriod.ALL
         }
+        device.assertStatisticsControlSizes(density, all)
+        assertTrue(device.statisticsControl("unified_tabs").visibleBounds.height() / density >= 47.5f)
     }
 
-    private fun assertVisibleTextGeometry(controller: QaActivityController) {
-        controller.onActivity { activity ->
-            val fragment = statsFragment(activity)
-            val content = getContentContainer(fragment)
-            val textViews = mutableListOf<TextView>()
-
-            fun collect(v: View) {
-                if (v is TextView && v.isShown && v.width > 0 && v.height > 0) textViews.add(v)
-                if (v is ViewGroup) {
-                    for (i in 0 until v.childCount) collect(v.getChildAt(i))
-                }
-            }
-            collect(content)
-
-            for (tv in textViews) {
-                val layout = tv.layout ?: continue
-                val text = tv.text.toString()
-                if (text.isBlank()) continue
-
-                assertTrue("TextView must have line count > 0: '$text'", layout.lineCount > 0)
-                val textH = layout.height
-                val viewH = tv.height - tv.compoundPaddingTop - tv.compoundPaddingBottom
-                assertTrue(
-                    "Visible text must fit within TextView height: textH=$textH vs viewH=$viewH ('$text')",
-                    textH <= viewH + 2
-                )
-            }
-        }
+    private fun assertVisibleTextGeometry() {
+        device.assertStatisticsReportTextBounds()
     }
 
     // -------------------------------------------------------------------------
@@ -954,29 +778,10 @@ class UnifiedStatisticsShellVisualTest {
 
     private fun verifyScopePickerAndRapidScopeChanges(controller: QaActivityController, seed: SeedingResult) {
         fun choose(label: String, here: Boolean) {
-            openScopeBottomSheet(controller)
-            val deadline = SystemClock.uptimeMillis() + 8000
-            var selected = false
-            while (!selected && SystemClock.uptimeMillis() < deadline) {
-                controller.onActivity { activity ->
-                    val sheet = statsFragment(activity).childFragmentManager
-                        .findFragmentByTag(UnifiedStatisticsFiltersBottomSheet.TAG) ?: return@onActivity
-                    val root = sheet.view ?: return@onActivity
-                    fun matching(view: View, text: String): View? {
-                        if ((view is android.widget.RadioButton || view is com.google.android.material.button.MaterialButton) &&
-                            view is TextView && view.text.contains(text)) return view
-                        if (view is ViewGroup) for (i in 0 until view.childCount) matching(view.getChildAt(i), text)?.let { return it }
-                        return null
-                    }
-                    val radio = matching(root, label) ?: return@onActivity
-                    radio.performClick()
-                    if (here) requireNotNull(matching(root, context.getString(R.string.unified_statistics_scope_mode_here))).performClick()
-                    requireNotNull(matching(root, context.getString(R.string.unified_statistics_filters_apply))).performClick()
-                    selected = true
-                }
-                if (!selected) SystemClock.sleep(50)
-            }
-            assertTrue("Actual scope picker must contain $label", selected)
+            openScopeBottomSheet()
+            device.revealStatisticsControl(By.textContains(label), "unified_scope_choices", Direction.DOWN).click()
+            if (here) device.revealStatisticsControl(By.res("unified_scope_here"), "unified_scope_choices", Direction.DOWN).click()
+            device.statisticsControl("unified_scope_apply").click()
             idle()
             waitForSettled(controller)
         }
@@ -1117,23 +922,20 @@ class UnifiedStatisticsShellVisualTest {
             }
             updateLabelsMethod.invoke(fragment)
 
-            // While unresolved, combined period header must display neutral "All" and NOT fake "Since <Today>"
-            val dateRangeView = getDateRangeView(fragment)
-            val unresolvedText = dateRangeView.text.toString()
-            val periodAllLabel = context.getString(R.string.unified_statistics_period_all)
-            assertEquals(
-                "While report is unresolved, period ALL header must show neutral period label",
-                periodAllLabel,
-                unresolvedText
-            )
-
-            // Now trigger actual refresh for period ALL
-            fragment.refresh()
         }
+        assertEquals(
+            "While report is unresolved, period ALL header must show neutral period label",
+            context.getString(R.string.unified_statistics_period_all),
+            device.statisticsControl("unified_date_range").text,
+        )
+        assertFalse(device.hasObject(By.res("unified_prev")))
+        assertFalse(device.hasObject(By.res("unified_next")))
+        controller.onActivity { statsFragment(it).refresh() }
 
         idle()
         waitForSettled(controller)
 
+        val resolvedText = device.statisticsControl("unified_date_range").text.orEmpty()
         controller.onActivity { activity ->
             val fragment = statsFragment(activity)
             val report = requireNotNull(getLoadedReport(fragment)) { "Period ALL report must settle" }
@@ -1143,8 +945,6 @@ class UnifiedStatisticsShellVisualTest {
                 report.context.from
             )
 
-            val dateRangeView = getDateRangeView(fragment)
-            val resolvedText = dateRangeView.text.toString()
             val expectedStartFormatted = JavaLocalDateFormatter(java.util.Locale.getDefault()).longFormat(targetCutoff)
             val expectedSince = context.getString(R.string.unified_statistics_since_date, expectedStartFormatted)
             val expectedHeader = StatisticsRedesignModels.formatPeriodHeaderLabel(
@@ -1195,7 +995,7 @@ class UnifiedStatisticsShellVisualTest {
         val replacement = previous.copy(datasetId = "qa-sheet-switch-${UUID.randomUUID()}")
 
         try {
-            openScopeBottomSheet(controller)
+            openScopeBottomSheet()
 
             controller.onActivity {
                 application.switchDatasetSession(replacement)

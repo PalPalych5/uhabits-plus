@@ -3,17 +3,7 @@
 package org.isoron.uhabits.activities.statistics
 
 import android.content.Context
-import android.graphics.Rect
-import android.graphics.RectF
 import android.os.SystemClock
-import android.view.MotionEvent
-import android.view.View
-import android.view.ViewGroup
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import androidx.core.view.ViewCompat
-import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
 import androidx.core.view.accessibility.AccessibilityNodeProviderCompat
 import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.Fragment
@@ -22,10 +12,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.tabs.TabLayout
 import org.isoron.platform.time.JavaLocalDateFormatter
 import org.isoron.platform.time.LocalDate
 import org.isoron.platform.time.getToday
@@ -37,8 +26,6 @@ import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.activities.statistics.ChartColumnItem
-import org.isoron.uhabits.activities.statistics.views.DiscreteColumnBarChart
-import org.isoron.uhabits.activities.statistics.views.SegmentedCohortBarView
 import org.isoron.uhabits.activities.tasks.TaskDraftLifecycleTest
 import org.isoron.uhabits.activities.tasks.TaskListVisualTest
 import org.isoron.uhabits.core.containers.ContainerId
@@ -573,76 +560,29 @@ class UnifiedStatisticsTaskFocusVisualTest {
                     )
                 }
 
-                // A3. FAIL-CLOSED: Assert T1 Chart exists, verify axes, column items, accessibility provider, and height >= 48dp, then capture
-                controller.onActivity { activity ->
-                    val fragment = statsFragment(activity)
-                    val chart = requireNotNull(fragment.view?.findViewWithTag<DiscreteColumnBarChart>("unified_tasks_t1_chart")) {
-                        "FAIL-CLOSED: unified_tasks_t1_chart view must be present in layout"
-                    }
-                    val items = field<List<ChartColumnItem>>(chart, "items")
-                    assertTrue("T1 chart items must not be empty", items.isNotEmpty())
-                    assertFalse("T1 chart column item contentDescription must not be blank", items.first().contentDescription.isNullOrBlank())
-                    assertTrue("T1 chart Y axis must be enabled", chart.showYAxis)
-                    assertFalse("T1 chart unitLabel must not be blank", chart.unitLabel.isNullOrBlank())
-
-                    // Virtual accessibility provider node verification
-                    val node = assertVirtualAccessibilityNode(chart, 0)
-                    assertFalse("T1 chart virtual node contentDescription must not be blank", node.contentDescription.isNullOrBlank())
-
-                    val scroll = requireNotNull(getContentScrollView(fragment)) { "ScrollView must exist" }
-                    scrollToDescendant(scroll, chart)
-                    val density = activity.resources.displayMetrics.density
-                    assertTrue(
-                        "Chart height must be >= 48dp, actual=${chart.height / density}",
-                        chart.height / density >= 47.5f
-                    )
-                }
-                idle()
-                SystemClock.sleep(200)
+                // A3. Verify the drawn axis and an accessible chart column before capture.
+                var chartDensity = 1f
+                controller.onActivity { chartDensity = it.resources.displayMetrics.density }
+                device.assertStatisticsChart("unified_tasks_t1_chart", chartDensity)
                 capture("02-tasks-t1-chart")
 
-                // A4. FAIL-CLOSED: Assert T3 & T4 Cohort Bars exist, verify segments, accessibility provider, and height >= 48dp, then capture
-                controller.onActivity { activity ->
-                    val fragment = statsFragment(activity)
-                    val t3Cohort = requireNotNull(fragment.view?.findViewWithTag<SegmentedCohortBarView>("unified_tasks_t3_cohort")) {
-                        "FAIL-CLOSED: unified_tasks_t3_cohort view must be present in layout"
-                    }
-                    val t4Cohort = requireNotNull(fragment.view?.findViewWithTag<SegmentedCohortBarView>("unified_tasks_t4_cohort")) {
-                        "FAIL-CLOSED: unified_tasks_t4_cohort view must be present in layout"
-                    }
-                    val t3Segments = field<List<SegmentedCohortBarView.Segment>>(t3Cohort, "segments")
-                    val t4Segments = field<List<SegmentedCohortBarView.Segment>>(t4Cohort, "segments")
-                    assertTrue("T3 segments must not be empty", t3Segments.isNotEmpty())
-                    assertTrue("T4 segments must not be empty", t4Segments.isNotEmpty())
-                    assertFalse("T3 segment label must not be blank", t3Segments.first().label.isBlank())
-                    assertFalse("T4 segment label must not be blank", t4Segments.first().label.isBlank())
-
-                    // Virtual accessibility provider node verifications
-                    val t3Node = assertVirtualAccessibilityNode(t3Cohort, 0)
-                    assertFalse("T3 cohort virtual node contentDescription must not be blank", t3Node.contentDescription.isNullOrBlank())
-                    val t4Node = assertVirtualAccessibilityNode(t4Cohort, 0)
-                    assertFalse("T4 cohort virtual node contentDescription must not be blank", t4Node.contentDescription.isNullOrBlank())
-
-                    val density = activity.resources.displayMetrics.density
-                    assertTrue("T3 Cohort bar height must be >= 48dp", t3Cohort.height / density >= 47.5f)
-                    assertTrue("T4 Cohort bar height must be >= 48dp", t4Cohort.height / density >= 47.5f)
-
-                    val scroll = requireNotNull(getContentScrollView(fragment))
-                    scrollToDescendant(scroll, t3Cohort)
+                // A4. Both cohorts expose every segment, including zero-count segments.
+                listOf(
+                    "unified_tasks_t3_cohort_COMPLETED",
+                    "unified_tasks_t3_cohort_OVERDUE_NOW",
+                    "unified_tasks_t3_cohort_PENDING_NOT_OVERDUE",
+                    "unified_tasks_t4_cohort_COMPLETED",
+                    "unified_tasks_t4_cohort_PENDING",
+                ).forEach { tag ->
+                    val node = device.revealStatisticsReportControl(tag)
+                    assertTrue(node.isClickable && !node.contentDescription.isNullOrBlank())
+                    assertEquals("android.widget.Button", node.className)
                 }
-                idle()
-                SystemClock.sleep(200)
+                device.revealStatisticsReportControl("unified_tasks_t3_cohort_COMPLETED", Direction.UP)
                 capture("03-tasks-cohorts")
 
-                // A5. REAL CLICK PATH: Tap T1 Chart column for today to launch Drilldown Sheet
-                controller.onActivity { activity ->
-                    val fragment = statsFragment(activity)
-                    val chart = requireNotNull(fragment.view?.findViewWithTag<DiscreteColumnBarChart>("unified_tasks_t1_chart"))
-                    val items = field<List<ChartColumnItem>>(chart, "items")
-                    val todayIndex = items.indexOfFirst { it.isToday }
-                    assertTrue("T1 chart must contain a column for today", todayIndex >= 0)
-                    tapColumn(chart, todayIndex)
-                }
+                // A5. Tap the visible chart column for today.
+                device.revealStatisticsChartColumn("unified_tasks_t1_chart", todayTaskColumn(controller)).click()
                 idle()
                 SystemClock.sleep(400)
 
@@ -652,66 +592,26 @@ class UnifiedStatisticsTaskFocusVisualTest {
                 }
                 capture("04-tasks-drilldown-sheet")
 
-                // Verify Bounded Paging Cap: initial child count strictly <= 30
+                // Verify rendered IDs, exact page replacement and real paging controls.
+                var aggregateIds = emptyList<String>()
                 controller.onActivity { activity ->
-                    val fragment = statsFragment(activity)
-                    val report = requireNotNull(getLoadedReport(fragment)) { "Report must not be null" }
-                    val aggregateTasksToday = report.tasks?.dailyCompletedBuckets?.firstOrNull { it.date == getToday() }?.tasks.orEmpty()
-
-                    val initialVisible = tasksSheet.visibleIds
-                    assertEquals(
-                        "FAIL-CLOSED: Initial visible items must strictly equal paging cap DRILLDOWN_PAGE_SIZE = 30",
-                        DRILLDOWN_PAGE_SIZE,
-                        initialVisible.size
-                    )
-
-                    // FAIL-CLOSED: Exact rendered task IDs match ordered aggregate list
-                    val expectedPage1Ids = aggregateTasksToday.take(DRILLDOWN_PAGE_SIZE).map { it.id.value }
-                    assertEquals(
-                        "FAIL-CLOSED: visibleIds on Page 1 must strictly match first 30 aggregate items",
-                        expectedPage1Ids,
-                        initialVisible
-                    )
-
-                    // Also verify View.tag on rows matches exact IDs
-                    val listContainer = field<LinearLayout>(tasksSheet, "listContainer")
-                    val rowTagIds = (0 until listContainer.childCount).map { i ->
-                        listContainer.getChildAt(i).tag?.toString() ?: ""
-                    }
-                    assertEquals(
-                        "FAIL-CLOSED: Row tags on Page 1 must strictly match exact task IDs",
-                        expectedPage1Ids,
-                        rowTagIds
-                    )
-
-                    // Bounded replacing pagination with nextPageButton & previousPageButton
-                    assertEquals(View.VISIBLE, tasksSheet.nextPageButton.visibility)
-
-                    // REAL CLICK PATH: Advance to page 2 (bounded slice <= 30 items)
-                    tasksSheet.nextPageButton.performClick()
-                    val page2Ids = tasksSheet.visibleIds
-                    assertTrue(
-                        "FAIL-CLOSED: Page slice must be bounded <= 30 items, actual=${page2Ids.size}",
-                        page2Ids.size <= DRILLDOWN_PAGE_SIZE
-                    )
-
-                    val expectedRemainingIds = aggregateTasksToday.drop(DRILLDOWN_PAGE_SIZE).map { it.id.value }
-                    assertEquals(
-                        "FAIL-CLOSED: Replacing Page 2 must render remaining 5 items",
-                        expectedRemainingIds,
-                        page2Ids
-                    )
-
-                    // Verify previousPageButton is visible on Page 2 and can return to Page 1
-                    val prevBtn = field<MaterialButton>(tasksSheet, "previousPageButton")
-                    assertEquals("previousPageButton must be visible on Page 2", View.VISIBLE, prevBtn.visibility)
-                    prevBtn.performClick()
-                    assertEquals(
-                        "Returning to Page 1 must restore initial 30 items",
-                        expectedPage1Ids,
-                        tasksSheet.visibleIds
-                    )
+                    val tasks = requireNotNull(statsFragment(activity).lastReport?.tasks)
+                    aggregateIds = tasks.dailyCompletedBuckets.firstOrNull { it.date == getToday() }?.tasks.orEmpty().map { it.id.value }
+                    assertEquals(aggregateIds.take(DRILLDOWN_PAGE_SIZE), tasksSheet.visibleIds)
+                    assertEquals(DRILLDOWN_PAGE_SIZE, tasksSheet.visibleIds.size)
                 }
+                aggregateIds.take(DRILLDOWN_PAGE_SIZE).forEach { id ->
+                    assertTrue("Missing clickable task row $id", device.revealStatisticsDrilldownControl(id).isClickable)
+                }
+                device.revealStatisticsDrilldownControl("statistics_drilldown_next").click()
+                idle()
+                controller.onActivity {
+                    assertEquals(aggregateIds.drop(DRILLDOWN_PAGE_SIZE), tasksSheet.visibleIds)
+                    assertTrue(tasksSheet.visibleIds.size <= DRILLDOWN_PAGE_SIZE)
+                }
+                device.revealStatisticsDrilldownControl("statistics_drilldown_previous").click()
+                idle()
+                controller.onActivity { assertEquals(aggregateIds.take(DRILLDOWN_PAGE_SIZE), tasksSheet.visibleIds) }
 
                 // A6. LIVE MUTATION: Invalidate data while drilldown sheet is open
                 // FAIL-CLOSED: MUST assert fresh report AND exact updated sheet items/count
@@ -735,55 +635,35 @@ class UnifiedStatisticsTaskFocusVisualTest {
                 idle()
                 waitForSettled(controller)
 
+                var expectedIds = emptyList<String>()
                 controller.onActivity { activity ->
-                    val fragment = statsFragment(activity)
-                    val freshReport = requireNotNull(getLoadedReport(fragment)) {
-                        "FAIL-CLOSED: Fresh report must not be null after live mutation"
-                    }
-                    val freshTasks = requireNotNull(freshReport.tasks) {
-                        "FAIL-CLOSED: Fresh tasks result must not be null after live mutation"
-                    }
-                    val todayBucket = freshTasks.dailyCompletedBuckets.firstOrNull { it.date == getToday() }
-                    assertNotNull("Fresh report must have today's bucket", todayBucket)
-                    assertTrue(
-                        "Fresh report today bucket must contain newly created live task",
-                        todayBucket!!.tasks.any { it.id == liveTaskId }
-                    )
-                    assertEquals(
-                        "Completed tasks count must increment by 1",
-                        beforeCompletedCount + 1,
-                        freshTasks.completedCount
-                    )
-
-                    // Assert reactive sheet refresh
+                    val freshTasks = requireNotNull(statsFragment(activity).lastReport?.tasks)
+                    val todayBucket = requireNotNull(freshTasks.dailyCompletedBuckets.firstOrNull { it.date == getToday() })
+                    assertTrue("Fresh report must contain the live task", todayBucket.tasks.any { it.id == liveTaskId })
+                    assertEquals(beforeCompletedCount + 1, freshTasks.completedCount)
                     assertTrue("Drilldown bottom sheet must still be open", tasksSheet.dialog?.isShowing == true)
-                    val expectedIds = todayBucket.tasks.map { it.id.value }
-                    val visible = mutableListOf<String>()
-                    var page = 0
-                    do {
-                        assertEquals("Open sheet must react to fresh report without manual refresh",
-                            expectedIds.drop(page * 30).take(30), tasksSheet.visibleIds)
-                        visible.addAll(tasksSheet.visibleIds)
-                        val hasNext = tasksSheet.nextPageButton.visibility == View.VISIBLE
-                        if (hasNext) { tasksSheet.nextPageButton.performClick(); page++ }
-                    } while (hasNext && page < 10)
-                    assertEquals(expectedIds, visible)
-                    assertTrue(visible.contains(requireNotNull(liveTaskId).value))
+                    expectedIds = todayBucket.tasks.map { it.id.value }
                 }
+                val livePageIds = mutableListOf<String>()
+                for ((page, expected) in expectedIds.chunked(DRILLDOWN_PAGE_SIZE).withIndex()) {
+                    if (page > 0) {
+                        device.revealStatisticsDrilldownControl("statistics_drilldown_next").click()
+                        idle()
+                    }
+                    controller.onActivity {
+                        assertEquals("Open sheet must react to fresh report without manual refresh", expected, tasksSheet.visibleIds)
+                        livePageIds.addAll(tasksSheet.visibleIds)
+                    }
+                }
+                assertEquals(expectedIds, livePageIds)
+                assertTrue(livePageIds.contains(requireNotNull(liveTaskId).value))
 
                 // REAL USER NAVIGATION: Close drilldown sheet with Back
                 device.pressBack()
                 idle()
 
                 // A7. REAL CLICK PATH: Tap T3 Due Overdue segment to launch cohort drilldown
-                controller.onActivity { activity ->
-                    val fragment = statsFragment(activity)
-                    val t3Cohort = requireNotNull(fragment.view?.findViewWithTag<SegmentedCohortBarView>("unified_tasks_t3_cohort"))
-                    val segments = field<List<SegmentedCohortBarView.Segment>>(t3Cohort, "segments")
-                    val overdueIndex = segments.indexOfFirst { it.key == "OVERDUE_NOW" }
-                    assertTrue("T3 cohort must have OVERDUE_NOW segment", overdueIndex >= 0)
-                    tapSegment(t3Cohort, overdueIndex)
-                }
+                device.revealStatisticsReportControl("unified_tasks_t3_cohort_OVERDUE_NOW").click()
                 idle()
                 SystemClock.sleep(400)
 
@@ -794,6 +674,17 @@ class UnifiedStatisticsTaskFocusVisualTest {
                     val ids = requireNotNull(statsFragment(activity).lastReport?.tasks).dueSummary.pendingOverdueNowTasks.map { it.id.value }
                     assertEquals("Overdue sheet must equal the exact current cohort", ids.take(30), overdueSheet.visibleIds)
                     assertTrue(ids.contains(seed.dueTasks.first().id.value))
+                }
+                device.pressBack()
+                idle()
+
+                // The native Created metric must open the report's created-task cohort.
+                device.revealStatisticsReportControl("unified_tasks_created", Direction.UP).click()
+                idle()
+                val createdSheet = requireNotNull(findOpenBottomSheet(controller) as? UnifiedStatisticsDrilldownBottomSheet)
+                controller.onActivity { activity ->
+                    val created = requireNotNull(statsFragment(activity).lastReport?.tasks).createdTasks
+                    assertEquals(created.take(DRILLDOWN_PAGE_SIZE).map { it.id.value }, createdSheet.visibleIds)
                 }
                 device.pressBack()
                 idle()
@@ -836,69 +727,29 @@ class UnifiedStatisticsTaskFocusVisualTest {
                     )
                 }
 
-                // B3. FAIL-CLOSED: Scroll to F1 Chart, assert axes, column items, accessibility provider, and >=48dp height, capture
-                controller.onActivity { activity ->
-                    val fragment = statsFragment(activity)
-                    val chart = requireNotNull(fragment.view?.findViewWithTag<DiscreteColumnBarChart>("unified_focus_f1_chart")) {
-                        "FAIL-CLOSED: unified_focus_f1_chart must exist in Focus tab layout"
-                    }
-                    val items = field<List<ChartColumnItem>>(chart, "items")
-                    assertTrue("F1 chart items must not be empty", items.isNotEmpty())
-                    assertFalse("F1 column item contentDescription must not be blank", items.first().contentDescription.isNullOrBlank())
-                    assertTrue("F1 chart Y axis must be enabled", chart.showYAxis)
-                    assertFalse("F1 chart unitLabel must not be blank", chart.unitLabel.isNullOrBlank())
-
-                    // Virtual accessibility provider node verification
-                    val node = assertVirtualAccessibilityNode(chart, 0)
-                    assertFalse("F1 chart virtual node contentDescription must not be blank", node.contentDescription.isNullOrBlank())
-
-                    val density = activity.resources.displayMetrics.density
-                    assertTrue("F1 chart height must be >= 48dp", chart.height / density >= 47.5f)
-
-                    val scroll = requireNotNull(getContentScrollView(fragment))
-                    scrollToDescendant(scroll, chart)
-                }
-                idle()
-                SystemClock.sleep(200)
+                // B3. Verify the Focus time axis and an accessible chart column.
+                device.assertStatisticsChart("unified_focus_f1_chart", chartDensity)
                 capture("06-focus-f1-chart")
 
                 // B4. FAIL-CLOSED: Scroll to F3 Sections Breakdown, assert hierarchy, capture
-                controller.onActivity { activity ->
-                    val fragment = statsFragment(activity)
-                    val sectionsView = requireNotNull(fragment.view?.findViewWithTag<View>("unified_focus_f3_breakdown")) {
-                        "FAIL-CLOSED: unified_focus_f3_breakdown must exist in Focus tab layout"
-                    }
-                    val scroll = requireNotNull(getContentScrollView(fragment))
-                    scrollToDescendant(scroll, sectionsView)
-                }
-                idle()
-                SystemClock.sleep(200)
+                device.revealStatisticsReportControl("unified_focus_f3_breakdown")
                 capture("07-focus-f3-sections")
 
                 // B5. FAIL-CLOSED: Scroll to F4 Targets Breakdown, verify missing/deleted target label, capture
-                controller.onActivity { activity ->
-                    val fragment = statsFragment(activity)
-                    val targetsView = requireNotNull(fragment.view?.findViewWithTag<View>("unified_focus_f4_breakdown")) {
-                        "FAIL-CLOSED: unified_focus_f4_breakdown must exist in Focus tab layout"
-                    }
-                    val scroll = requireNotNull(getContentScrollView(fragment))
-                    scrollToDescendant(scroll, targetsView)
-
-                    // Deleted-target labels are verified in the primary-object detail path below.
-                }
-                idle()
-                SystemClock.sleep(200)
+                device.revealStatisticsReportControl("unified_focus_f4_breakdown")
                 capture("08-focus-f4-targets")
 
                 // B6. REAL CLICK PATH: Tap F1 Chart column for today to open Focus Drilldown Sheet
+                var focusColumn = -1
                 controller.onActivity { activity ->
                     val fragment = statsFragment(activity)
-                    val chart = requireNotNull(fragment.view?.findViewWithTag<DiscreteColumnBarChart>("unified_focus_f1_chart"))
-                    val items = field<List<ChartColumnItem>>(chart, "items")
-                    val todayIndex = items.indexOfFirst { it.isToday }
-                    assertTrue("F1 chart must contain a column for today", todayIndex >= 0)
-                    tapColumn(chart, todayIndex)
+                    val focus = requireNotNull(fragment.lastReport?.focus)
+                    focusColumn = DiscreteChartBucketer.buildFocusColumns(
+                        fragment.currentPeriodValue, focus, field(fragment, "lastKnownToday"), Locale.getDefault().language == "ru",
+                    ).indexOfFirst { it.isToday }
                 }
+                assertTrue("Focus chart must contain today", focusColumn >= 0)
+                device.revealStatisticsChartColumn("unified_focus_f1_chart", focusColumn).click()
                 idle()
                 SystemClock.sleep(400)
 
@@ -920,29 +771,26 @@ class UnifiedStatisticsTaskFocusVisualTest {
                 // Exact hierarchy paths and loaded payloads, with no first-row fallbacks.
                 openSessionViaHierarchy(controller, ACTIVE_SESSION_ID)
                 capture("10-focus-session-detail-active")
-                controller.onActivity {
-                    val detail = requireNotNull(findDetail(it))
-                    assertNull(detail.view?.findViewWithTag<View>("unified_session_detail_tombstone"))
-                    assertTrue(texts(requireNotNull(detail.view)).any { value -> value.contains("45") })
-                }
+                assertFalse(device.findStatisticsSessionDetailText(ACTIVE_SESSION_ID, By.res("unified_session_detail_tombstone")))
+                assertTrue("Active provenance must include 45", device.findStatisticsSessionDetailText(ACTIVE_SESSION_ID, By.textContains("45")))
                 dismissDialogs(controller)
 
                 openSessionViaHierarchy(controller, TOMBSTONE_SESSION_ID, viaType = true)
                 capture("11-focus-session-detail-tombstone")
-                controller.onActivity {
-                    val detail = requireNotNull(findDetail(it))
-                    val revoked = requireNotNull(detail.view?.findViewWithTag<TextView>("unified_session_detail_tombstone"))
-                    assertEquals(View.VISIBLE, revoked.visibility)
-                    assertTrue("Native ledger quantity must be 20", revoked.text.contains("20"))
-                }
+                assertTrue(
+                    "Native revoked ledger quantity must be 20",
+                    device.findStatisticsSessionDetailText(
+                        TOMBSTONE_SESSION_ID, By.res("unified_session_detail_tombstone").textContains("20"),
+                    ),
+                )
                 dismissDialogs(controller)
 
                 openSessionViaHierarchy(controller, PAUSED_SESSION_ID)
                 capture("11b-focus-session-detail-paused")
-                controller.onActivity {
-                    assertTrue("Paused cross-midnight allocation must be estimated",
-                        texts(requireNotNull(requireNotNull(findDetail(it)).view)).any { value -> value.contains("≈") })
-                }
+                assertTrue(
+                    "Paused cross-midnight allocation must be estimated",
+                    device.findStatisticsSessionDetailText(PAUSED_SESSION_ID, By.textContains("≈")),
+                )
                 dismissDialogs(controller)
 
                 var deletedSessionId = ""
@@ -952,10 +800,11 @@ class UnifiedStatisticsTaskFocusVisualTest {
                 }
                 openSessionViaHierarchy(controller, deletedSessionId, viaType = true)
                 capture("11c-focus-deleted-target")
-                controller.onActivity {
-                    assertTrue(texts(requireNotNull(requireNotNull(findDetail(it)).view))
-                        .any { value -> value.contains("Deleted task") || value.contains("Удалённая задача") })
-                }
+                assertTrue(
+                    "Deleted task label must be rendered",
+                    device.findStatisticsSessionDetailText(deletedSessionId, By.textContains("Deleted task")) ||
+                        device.findStatisticsSessionDetailText(deletedSessionId, By.textContains("Удалённая задача")),
+                )
                 dismissDialogs(controller)
 
                 // =============================================================
@@ -977,15 +826,10 @@ class UnifiedStatisticsTaskFocusVisualTest {
                 selectPeriodViaUi(controller, UnifiedPeriod.ALL)
                 assertPeriodSelected(controller, UnifiedPeriod.ALL)
 
-                controller.onActivity { activity ->
-                    val fragment = statsFragment(activity)
-                    val dateRangeView = getDateRangeView(fragment)
-                    val text = dateRangeView.text.toString()
-                    assertFalse(
-                        "Header in ALL mode must not show fake today start",
-                        text.contains(JavaLocalDateFormatter(Locale.getDefault()).longFormat(getToday()))
-                    )
-                }
+                assertFalse(
+                    "Header in ALL mode must not show fake today start",
+                    device.statisticsControl("unified_date_range").text.orEmpty().contains(JavaLocalDateFormatter(Locale.getDefault()).longFormat(getToday())),
+                )
                 capture("12-exploration-period-all")
 
                 // Restore period to WEEK via UI
@@ -1055,13 +899,7 @@ class UnifiedStatisticsTaskFocusVisualTest {
                 selectTab(controller, 2) // Tasks tab
 
                 // Open drilldown sheet before recreation
-                controller.onActivity { activity ->
-                    val fragment = statsFragment(activity)
-                    val chart = requireNotNull(fragment.view?.findViewWithTag<DiscreteColumnBarChart>("unified_tasks_t1_chart"))
-                    val items = field<List<ChartColumnItem>>(chart, "items")
-                    val todayIndex = items.indexOfFirst { it.isToday }
-                    tapColumn(chart, todayIndex)
-                }
+                device.revealStatisticsChartColumn("unified_tasks_t1_chart", todayTaskColumn(controller)).click()
                 idle()
                 SystemClock.sleep(400)
 
@@ -1102,8 +940,6 @@ class UnifiedStatisticsTaskFocusVisualTest {
                     val fragment = statsFragment(activity)
                     val uiState = getUiState(fragment)
                     assertTrue("Empty scope must produce Success state", uiState is UnifiedReportUiState.Success)
-                    val statusBanner = getStatusView(fragment)
-                    assertTrue("Status banner must be GONE for empty data", statusBanner == null || statusBanner.visibility == View.GONE)
                     val emptyReport = requireNotNull(getLoadedReport(fragment)) { "Empty report must not be null" }
                     val emptyTasks = requireNotNull(emptyReport.tasks) { "Empty tasks report must not be null" }
                     assertEquals("Empty container must yield 0 completed tasks", 0, emptyTasks.completedCount)
@@ -1114,27 +950,24 @@ class UnifiedStatisticsTaskFocusVisualTest {
                     assertEquals("Empty container must yield 0 focus sessions", 0, emptyFocus.sessionCount)
                 }
 
-                // Error state containment check
+                assertFalse("Empty scope must not show an error banner", device.hasObject(By.res("unified_status")))
+                val failureField = UnifiedStatisticsFragment::class.java.getDeclaredField("currentUiState").apply {
+                    isAccessible = true
+                }
+                val renderMethod = UnifiedStatisticsFragment::class.java.getDeclaredMethod("renderCurrentState").apply {
+                    isAccessible = true
+                }
+                lateinit var previousState: UnifiedReportUiState
                 controller.onActivity { activity ->
                     val fragment = statsFragment(activity)
-                    val failureField = UnifiedStatisticsFragment::class.java.getDeclaredField("currentUiState").apply {
-                        isAccessible = true
-                    }
-                    val previousState = failureField.get(fragment)
-                    failureField.set(
-                        fragment,
-                        UnifiedReportUiState.Failure("Simulated domain read failure", emptyList(), getLoadedReport(fragment))
-                    )
-                    val renderMethod = UnifiedStatisticsFragment::class.java.getDeclaredMethod("renderCurrentState").apply {
-                        isAccessible = true
-                    }
+                    previousState = getUiState(fragment)
+                    failureField.set(fragment, UnifiedReportUiState.Failure("Simulated domain read failure", emptyList(), getLoadedReport(fragment)))
                     renderMethod.invoke(fragment)
-
-                    val statusBanner = getStatusView(fragment)
-                    assertNotNull("Status banner must exist for Failure state", statusBanner)
-                    assertEquals("Status banner must be VISIBLE during domain failure", View.VISIBLE, statusBanner!!.visibility)
-
-                    // Restore state
+                }
+                assertFalse(device.statisticsControl("unified_status").visibleBounds.isEmpty)
+                assertTrue(device.hasObject(By.text("Simulated domain read failure")))
+                controller.onActivity { activity ->
+                    val fragment = statsFragment(activity)
                     failureField.set(fragment, previousState)
                     renderMethod.invoke(fragment)
                 }
@@ -1159,38 +992,7 @@ class UnifiedStatisticsTaskFocusVisualTest {
     // -------------------------------------------------------------------------
 
     private fun selectPeriodViaUi(controller: QaActivityController, period: UnifiedPeriod) {
-        val stringRes = when (period) {
-            UnifiedPeriod.DAY -> R.string.unified_statistics_period_day
-            UnifiedPeriod.WEEK -> R.string.unified_statistics_period_week
-            UnifiedPeriod.MONTH -> R.string.unified_statistics_period_month
-            UnifiedPeriod.YEAR -> R.string.unified_statistics_period_year
-            UnifiedPeriod.ALL -> R.string.unified_statistics_period_all
-        }
-        val targetText = context.getString(stringRes)
-
-        controller.onActivity { activity ->
-            val fragment = statsFragment(activity)
-            val btn = fragment.view?.findViewWithTag<View>("unified_period")
-                ?: runCatching { field<View>(fragment, "btnPeriodSelector") }.getOrNull()
-            requireNotNull(btn) { "Period selector button must exist" }.performClick()
-        }
-        idle()
-        SystemClock.sleep(250)
-
-        val item = device.wait(Until.findObject(By.text(targetText)), 2500)
-        if (item != null) {
-            item.click()
-        } else {
-            controller.onActivity { activity ->
-                val fragment = statsFragment(activity)
-                val method = UnifiedStatisticsFragment::class.java.declaredMethods.firstOrNull { it.name == "showPeriodSelectorMenu" }
-                val btn = fragment.view?.findViewWithTag<View>("unified_period")
-                if (method != null && btn != null) {
-                    method.isAccessible = true
-                    method.invoke(fragment, btn)
-                }
-            }
-        }
+        device.selectStatisticsPeriod(period)
         idle()
         waitForSettled(controller)
     }
@@ -1203,45 +1005,22 @@ class UnifiedStatisticsTaskFocusVisualTest {
         }
     }
 
-    private fun tapColumn(chart: DiscreteColumnBarChart, index: Int) {
-        val items = field<List<ChartColumnItem>>(chart, "items")
-        assertTrue("Chart must have items to tap", items.isNotEmpty() && index in items.indices)
-        val x = chart.getColumnCenterX(index)
-        val y = chart.height / 2f
-        val down = MotionEvent.obtain(SystemClock.uptimeMillis(), SystemClock.uptimeMillis(), MotionEvent.ACTION_DOWN, x, y, 0)
-        val up = MotionEvent.obtain(SystemClock.uptimeMillis(), SystemClock.uptimeMillis() + 50, MotionEvent.ACTION_UP, x, y, 0)
-        chart.onTouchEvent(down)
-        chart.onTouchEvent(up)
-        down.recycle()
-        up.recycle()
-    }
-
-    private fun tapSegment(cohortBar: SegmentedCohortBarView, index: Int) {
-        val boundsList = field<List<Pair<SegmentedCohortBarView.Segment, RectF>>>(cohortBar, "segmentBounds")
-        assertTrue("Cohort bar must have segments to tap", boundsList.isNotEmpty() && index in boundsList.indices)
-        val rect = boundsList[index].second
-        val x = rect.centerX()
-        val y = rect.centerY()
-        val down = MotionEvent.obtain(SystemClock.uptimeMillis(), SystemClock.uptimeMillis(), MotionEvent.ACTION_DOWN, x, y, 0)
-        val up = MotionEvent.obtain(SystemClock.uptimeMillis(), SystemClock.uptimeMillis() + 50, MotionEvent.ACTION_UP, x, y, 0)
-        cohortBar.onTouchEvent(down)
-        cohortBar.onTouchEvent(up)
-        down.recycle()
-        up.recycle()
+    private fun todayTaskColumn(controller: QaActivityController): Int {
+        var index = -1
+        controller.onActivity { activity ->
+            val fragment = statsFragment(activity)
+            val tasks = requireNotNull(fragment.lastReport?.tasks)
+            index = DiscreteChartBucketer.buildTaskColumns(
+                fragment.currentPeriodValue, tasks, field(fragment, "lastKnownToday"), Locale.getDefault().language == "ru",
+            ).indexOfFirst { it.isToday }
+        }
+        assertTrue("Tasks chart must contain today's column", index >= 0)
+        return index
     }
 
     // -------------------------------------------------------------------------
     // Navigation, View Finding & Inspection Helpers
     // -------------------------------------------------------------------------
-
-    private fun texts(root: View): List<String> = buildList {
-        if (root is TextView) add(root.text.toString())
-        if (root is ViewGroup) for (index in 0 until root.childCount) addAll(texts(root.getChildAt(index)))
-    }
-
-    private fun findDetail(activity: MainActivity): FocusSessionDetailBottomSheet? =
-        statsFragment(activity).childFragmentManager.fragments.filterIsInstance<FocusSessionDetailBottomSheet>()
-            .lastOrNull { it.dialog?.isShowing == true }
 
     private fun dismissDialogs(controller: QaActivityController) {
         repeat(5) {
@@ -1254,6 +1033,7 @@ class UnifiedStatisticsTaskFocusVisualTest {
 
     private fun openSessionViaHierarchy(controller: QaActivityController, id: String, viaType: Boolean = false) {
         var objectTag = ""
+        var entryTag = ""
         var expected = emptyList<String>()
         controller.onActivity { activity ->
             val fragment = statsFragment(activity)
@@ -1272,45 +1052,37 @@ class UnifiedStatisticsTaskFocusVisualTest {
             expected = DrilldownSelectionResolver.resolveFocus(report, FocusDrilldownDescriptor.TargetObject(
                 type, targetId, if (viaType) null else branch.category, if (viaType) null else branch.containerId))
                 .map { it.id.value }
-            val entryTag = if (viaType) "target-type:${type?.name ?: "UNKNOWN"}"
+            entryTag = if (viaType) "target-type:${type?.name ?: "UNKNOWN"}"
                 else "section:${branch.category}:${branch.containerId?.value}"
-            requireNotNull(fragment.view?.findViewWithTag<View>(entryTag)) { "Missing hierarchy entry $entryTag" }.performClick()
         }
+        device.revealStatisticsReportControl(entryTag).click()
         idle()
-        val objects = requireNotNull(findOpenBottomSheet(controller) as? UnifiedStatisticsDrilldownBottomSheet)
-        controller.onActivity {
-            val row = requireNotNull(objects.view?.findViewWithTag<View>(objectTag)) { "Missing exact primary object $objectTag" }
-            row.performClick()
-        }
+        requireNotNull(findOpenBottomSheet(controller) as? UnifiedStatisticsDrilldownBottomSheet)
+        device.revealStatisticsDrilldownControl(objectTag).click()
         idle()
         val sessions = requireNotNull(findOpenBottomSheet(controller) as? UnifiedStatisticsDrilldownBottomSheet)
         var page = 0
         var selected = false
         while (!selected && page < 20) {
             controller.onActivity {
-                assertEquals("Every visible page must equal its aggregate slice", expected.drop(page * 30).take(30), sessions.visibleIds)
-                assertTrue(sessions.visibleIds.size <= 30)
-                if (id in sessions.visibleIds) {
-                    requireNotNull(sessions.view?.findViewWithTag<View>(id)).performClick()
-                    selected = true
-                } else {
-                    assertEquals("Exact session must exist on a later page", View.VISIBLE, sessions.nextPageButton.visibility)
-                    sessions.nextPageButton.performClick()
-                    page++
-                }
+                assertEquals("Every visible page must equal its aggregate slice",
+                    expected.drop(page * DRILLDOWN_PAGE_SIZE).take(DRILLDOWN_PAGE_SIZE), sessions.visibleIds)
+                assertTrue(sessions.visibleIds.size <= DRILLDOWN_PAGE_SIZE)
+                selected = id in sessions.visibleIds
+                if (!selected) assertTrue("Exact session must exist on a later page", sessions.hasNextPage)
+            }
+            if (selected) {
+                device.revealStatisticsDrilldownControl(id).click()
+            } else {
+                device.revealStatisticsDrilldownControl("statistics_drilldown_next").click()
+                idle()
+                page++
             }
         }
         assertTrue("Exact session row must be reached", selected)
         idle()
-        val deadline = SystemClock.uptimeMillis() + 10_000
-        var loaded = false
-        do {
-            controller.onActivity { activity ->
-                loaded = findDetail(activity)?.view?.findViewWithTag<View>("session-detail:$id") != null
-            }
-            if (!loaded) SystemClock.sleep(50)
-        } while (!loaded && SystemClock.uptimeMillis() < deadline)
-        assertTrue("Exact session detail payload must finish loading: $id", loaded)
+        assertTrue("Exact session detail payload must finish loading: $id",
+            device.wait(Until.hasObject(By.res("session-detail:$id")), 10_000))
     }
 
     private fun navigateToStatistics(controller: QaActivityController) {
@@ -1329,13 +1101,7 @@ class UnifiedStatisticsTaskFocusVisualTest {
     }
 
     private fun selectTab(controller: QaActivityController, tabIndex: Int) {
-        controller.onActivity { activity ->
-            val fragment = statsFragment(activity)
-            val tabLayout = getTabLayout(fragment)
-            val tab = tabLayout.getTabAt(tabIndex)
-            requireNotNull(tab) { "Tab at index $tabIndex not found" }
-            tab.select()
-        }
+        device.selectStatisticsTab(tabIndex)
         idle()
         waitForSettled(controller)
     }
@@ -1347,63 +1113,6 @@ class UnifiedStatisticsTaskFocusVisualTest {
             assertEquals("Selected analytical tab must match", expectedTab, current)
         }
     }
-
-    private fun getTabLayout(fragment: Fragment): TabLayout =
-        fragment.view?.findViewWithTag<TabLayout>("unified_tabs")
-            ?: runCatching { field<TabLayout>(fragment, "tabLayout") }.getOrNull()
-            ?: requireNotNull(findViewByType(fragment.requireView(), TabLayout::class.java))
-
-    private fun getContentScrollView(fragment: Fragment): ScrollView? =
-        fragment.view?.findViewWithTag<ScrollView>("unified_content")
-            ?: fragment.view?.findViewWithTag<ScrollView>("unified_scroll")
-            ?: runCatching { field<ScrollView>(fragment, "contentScrollView") }.getOrNull()
-            ?: findViewByType(fragment.requireView(), ScrollView::class.java)
-
-    private fun scrollToDescendant(scroll: ScrollView, descendant: View) {
-        val rect = Rect()
-        descendant.getDrawingRect(rect)
-        scroll.offsetDescendantRectToMyCoords(descendant, rect)
-        scroll.scrollTo(0, rect.top)
-    }
-
-    private fun assertVirtualAccessibilityNode(
-        hostView: View,
-        virtualId: Int = 0,
-        expectedClass: String = "android.widget.Button",
-    ): AccessibilityNodeInfoCompat {
-        val delegate = requireNotNull(ViewCompat.getAccessibilityDelegate(hostView)) {
-            "View must have an accessibility delegate installed"
-        }
-        val provider = requireNotNull(delegate.getAccessibilityNodeProvider(hostView)) {
-            "Accessibility delegate must provide an AccessibilityNodeProviderCompat"
-        }
-        val node = requireNotNull(provider.createAccessibilityNodeInfo(virtualId)) {
-            "Provider must return virtual AccessibilityNodeInfoCompat for virtualId=$virtualId"
-        }
-        assertFalse(
-            "Virtual node contentDescription must not be blank for accessibility",
-            node.contentDescription.isNullOrBlank()
-        )
-        assertEquals(
-            "Virtual node className must match",
-            expectedClass,
-            node.className?.toString()
-        )
-        assertTrue(
-            "Virtual node must be clickable",
-            node.isClickable
-        )
-        return node
-    }
-
-    private fun getDateRangeView(fragment: Fragment): TextView =
-        fragment.view?.findViewWithTag<TextView>("unified_date_range")
-            ?: runCatching { field<TextView>(fragment, "tvDateRange") }.getOrNull()
-            ?: requireNotNull(findViewByType(fragment.requireView(), TextView::class.java))
-
-    private fun getStatusView(fragment: Fragment): View? =
-        fragment.view?.findViewWithTag<View>("unified_status")
-            ?: runCatching { field<View>(fragment, "statusBanner") }.getOrNull()
 
     private fun getCurrentTab(fragment: UnifiedStatisticsFragment): UnifiedAnalyticsTab =
         field(fragment, "currentTab")
@@ -1541,15 +1250,4 @@ class UnifiedStatisticsTaskFocusVisualTest {
     private fun <T> field(instance: Any, name: String): T =
         instance.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(instance) as T
 
-    @Suppress("UNCHECKED_CAST")
-    private fun <T : View> findViewByType(root: View, clazz: Class<T>): T? {
-        if (clazz.isInstance(root)) return root as T
-        if (root is ViewGroup) {
-            for (i in 0 until root.childCount) {
-                val match = findViewByType(root.getChildAt(i), clazz)
-                if (match != null) return match
-            }
-        }
-        return null
-    }
 }

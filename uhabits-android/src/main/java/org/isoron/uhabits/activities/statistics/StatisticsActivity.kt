@@ -1,65 +1,64 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 package org.isoron.uhabits.activities.statistics
 
-import android.content.res.ColorStateList
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
-import android.view.MotionEvent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.text.SpannableString
-import android.text.style.RelativeSizeSpan
-import android.text.style.ForegroundColorSpan
-import android.text.Spanned
-import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AlertDialog
-import androidx.core.graphics.ColorUtils
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.fragment.app.Fragment
-import com.google.android.material.tabs.TabLayout
-import org.isoron.uhabits.activities.common.views.CompactPopupMenu
-import org.isoron.uhabits.activities.habits.show.views.showPeriodSelectorPopup
 import org.isoron.platform.gui.toInt
-import org.isoron.platform.time.*
+import org.isoron.platform.time.DayOfWeek
+import org.isoron.platform.time.JavaLocalDateFormatter
+import org.isoron.platform.time.LocalDate
+import org.isoron.platform.time.getToday
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.AndroidThemeSwitcher
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
+import org.isoron.uhabits.activities.containers.statistics.ContainerStatisticsActivity
 import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.activities.main.MainNavigationHost
-import org.isoron.uhabits.activities.statistics.views.StatisticsMonthCalendarView
-import org.isoron.uhabits.activities.statistics.views.StatisticsPageTransitionHost
-import org.isoron.uhabits.activities.statistics.views.StatisticsPercentageBarChart
-import org.isoron.uhabits.activities.statistics.views.StatisticsWeekRhythmView
-import org.isoron.uhabits.core.models.*
-import org.isoron.uhabits.core.ui.screens.statistics.*
-import org.isoron.uhabits.core.ui.screens.statistics.formatStatisticsValue
-import org.isoron.uhabits.databinding.ActivityStatisticsBinding
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
+import org.isoron.uhabits.core.containers.ContainerId
+import org.isoron.uhabits.core.models.DayTier
+import org.isoron.uhabits.core.models.DayTierScope
+import org.isoron.uhabits.core.models.Habit
+import org.isoron.uhabits.core.models.ModelObservable
+import org.isoron.uhabits.core.models.PaletteColor
+import org.isoron.uhabits.core.ui.screens.statistics.StatisticsFilterState
+import org.isoron.uhabits.core.ui.screens.statistics.StatisticsGoalTypeFilter
+import org.isoron.uhabits.core.ui.screens.statistics.StatisticsHabitResult
+import org.isoron.uhabits.core.ui.screens.statistics.StatisticsHabitStatusFilter
+import org.isoron.uhabits.core.ui.screens.statistics.StatisticsPeriod
+import org.isoron.uhabits.core.ui.screens.statistics.StatisticsReportState
+import org.isoron.uhabits.core.ui.screens.statistics.StatisticsReportStateBuilder
+import org.isoron.uhabits.core.ui.screens.statistics.StatisticsResultStatus
+import org.isoron.uhabits.core.ui.screens.statistics.StatisticsSphereProgress
 import org.isoron.uhabits.intents.IntentFactory
-import org.isoron.uhabits.utils.InterfaceUtils
-import org.isoron.uhabits.utils.applyToolbarInsets
-import org.isoron.uhabits.utils.dp
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 class StatisticsFragment : Fragment(), ModelObservable.Listener {
-    private data class FocusTotal(val containerId: org.isoron.uhabits.core.containers.ContainerId?, val name: String, val durationMs: Long)
+    private data class FocusTotal(
+        val containerId: ContainerId?,
+        val name: String,
+        val durationMs: Long
+    )
+
     private var focusTotals: List<FocusTotal> = emptyList()
-    private fun dp(value: Float): Float = InterfaceUtils.dpToPixels(requireContext(), value)
     private lateinit var themeSwitcher: AndroidThemeSwitcher
-    private var viewBinding: ActivityStatisticsBinding? = null
-    private val binding get() = viewBinding!!
+    private var isViewCreated = false
     private val component
         get() = (requireContext().applicationContext as HabitsApplication).component
     private val palette get() = MainTabsThemeBridge.resolve(requireContext())
@@ -78,6 +77,12 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     private var pendingTransitionDirection = 0
     private var loadingIndicatorRunnable: Runnable? = null
     private var isObservingData = false
+    private var pageSequence = 0L
+
+    private var composeColorsState by mutableStateOf<UHabitComposeColors?>(null)
+    private var headerState by mutableStateOf(LegacyStatisticsHeaderState())
+    private var pageSnapshotState by mutableStateOf(LegacyStatisticsPageSnapshot())
+
     internal val isObservingDataState: Boolean get() = isObservingData
     internal val activeGeneration: Int get() = activeReportGeneration
     internal val lastRenderedKey: ReportKey? get() = lastRenderedReportKey
@@ -96,7 +101,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
             )
             if (updated != currentFilters) {
                 currentFilters = updated
-                renderActiveFilterChips()
+                refreshHeaderState()
                 requestReportUpdate("filter_selected", forceRender = true)
             }
         }
@@ -126,35 +131,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View {
-        themeSwitcher = AndroidThemeSwitcher(requireActivity(), component.preferences)
-        themeSwitcher.apply()
-
-        viewBinding = ActivityStatisticsBinding.inflate(inflater, container, false)
-        binding.root.setBackgroundColor(palette.background)
-        binding.toolbar.root.apply {
-            applyToolbarInsets()
-            visibility = View.GONE
-            minimumHeight = 0
-            layoutParams = layoutParams.apply {
-                height = ViewGroup.LayoutParams.WRAP_CONTENT
-            }
-        }
-        binding.tabLayout.setBackgroundColor(palette.background)
-        binding.tabLayout.setTabTextColors(palette.onSurfaceVariant, palette.onSurface)
-        binding.tabLayout.setSelectedTabIndicatorColor(palette.accent)
-        binding.tabLayout.tabRippleColor = ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
-        binding.dateNavigationBar.setBackgroundColor(palette.surface)
-        binding.filtersScrollView.setBackgroundColor(palette.surface)
-        binding.filterScope.setTextColor(palette.onSurfaceVariant)
-        binding.btnFilters.setTextColor(palette.accent)
-        binding.btnFilters.iconTint = ColorStateList.valueOf(palette.accent)
-        binding.tvDateRange.setTextColor(palette.onSurface)
-        binding.btnPrev.imageTintList = ColorStateList.valueOf(palette.onSurface)
-        binding.btnNext.imageTintList = ColorStateList.valueOf(palette.onSurface)
-        binding.refreshProgressBar.indeterminateTintList = ColorStateList.valueOf(palette.accent)
-
-        val activity = requireActivity() as AppCompatActivity
-        activity.window.statusBarColor = palette.background
+        refreshThemeState()
 
         dateFormatter = JavaLocalDateFormatter(Locale.getDefault())
         currentTab = ReportTab.values().getOrElse(
@@ -181,12 +158,44 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
             spheresEnabled = component.preferences.isHabitSpheresEnabled
         )
         clampAnchorDateToCurrentPeriod()
+        isViewCreated = true
+        pageSequence = 0L
+        pageSnapshotState = LegacyStatisticsPageSnapshot(
+            pageId = 0L,
+            body = LegacyStatisticsBodyState.Loading,
+            transitionDirection = 0
+        )
+        refreshHeaderState()
 
-        setupTabs()
-        setupListeners()
-        setupScopeSelector()
-        setupFilters()
-        return binding.root
+        val applyTopStatusBarInset = !component.session.isNextArchitecture
+        return ComposeView(requireContext()).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                val colors = composeColorsState ?: UHabitComposeColors.fromPalette(
+                    palette = palette,
+                    cardCornerRadiusDp = palette.statisticsCardCornerRadius
+                )
+                UHabitComposeTheme(colors = colors) {
+                    LegacyStatisticsScreen(
+                        header = headerState,
+                        pageSnapshot = pageSnapshotState,
+                        applyTopStatusBarInset = applyTopStatusBarInset,
+                        shortWeekdayName = { dow -> dateFormatter.shortWeekdayName(dow) },
+                        shortMonthName = { date -> dateFormatter.shortMonthName(date) },
+                        onSelectTab = ::handleTabSelected,
+                        onTabSwipe = ::handleTabSwipe,
+                        onDateNavigate = ::navigateDate,
+                        onSelectTierScope = ::handleTierScopeSelected,
+                        onOpenCompare = ::openCompareHabits,
+                        onOpenFilters = ::openFiltersSheet,
+                        onResetFilters = ::resetFilters,
+                        onOpenHabit = ::openHabitDetails,
+                        onOpenContainerStatistics = ::openContainerStatistics,
+                        colors = colors
+                    )
+                }
+            }
+        }
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
@@ -194,8 +203,21 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         updateObserverRegistration()
     }
 
+    private fun refreshThemeState() {
+        val ctx = context ?: return
+        val act = activity ?: return
+        themeSwitcher = AndroidThemeSwitcher(act, component.preferences)
+        themeSwitcher.apply()
+        val currentPalette = MainTabsThemeBridge.resolve(ctx)
+        composeColorsState = UHabitComposeColors.fromPalette(
+            palette = currentPalette,
+            cardCornerRadiusDp = currentPalette.statisticsCardCornerRadius
+        )
+        act.window.statusBarColor = currentPalette.background
+    }
+
     private fun updateObserverRegistration() {
-        val shouldObserve = isResumed && !isHidden && viewBinding != null
+        val shouldObserve = isResumed && !isHidden && isViewCreated
         if (shouldObserve == isObservingData) return
         isObservingData = shouldObserve
         if (shouldObserve) {
@@ -212,7 +234,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
 
     private val effectiveRevisionListener: () -> Unit = {
         activity?.runOnUiThread {
-            if (isResumed && !isHidden && viewBinding != null) {
+            if (isResumed && !isHidden && isViewCreated) {
                 requestReportUpdate("effective_revision_change", delayMs = 0L, forceRender = true)
             }
         }
@@ -221,12 +243,13 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     override fun onResume() {
         super.onResume()
         updateObserverRegistration()
-        viewBinding?.let {
+        if (isViewCreated) {
+            refreshThemeState()
             currentFilters = currentFilters.copy(
                 dayTiersEnabled = component.preferences.isDayTiersEnabled,
                 spheresEnabled = component.preferences.isHabitSpheresEnabled
             )
-            setupScopeSelector()
+            refreshHeaderState()
             requestReportUpdate("resume", delayMs = 0L, forceRender = true)
         }
         (activity as? MainNavigationHost)?.setHabitCreationAvailable(false)
@@ -235,12 +258,13 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     override fun onHiddenChanged(hidden: Boolean) {
         super.onHiddenChanged(hidden)
         updateObserverRegistration()
-        if (!hidden && viewBinding != null) {
+        if (!hidden && isViewCreated) {
+            refreshThemeState()
             currentFilters = currentFilters.copy(
                 dayTiersEnabled = component.preferences.isDayTiersEnabled,
                 spheresEnabled = component.preferences.isHabitSpheresEnabled
             )
-            setupScopeSelector()
+            refreshHeaderState()
             requestReportUpdate("hidden_change", delayMs = 0L, forceRender = true)
         }
     }
@@ -253,14 +277,14 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     override fun onModelChange() {
         dbVersion++
         activity?.runOnUiThread {
-            if (isResumed && !isHidden && viewBinding != null) {
+            if (isResumed && !isHidden && isViewCreated) {
                 requestReportUpdate("db_change", delayMs = 0L, forceRender = true)
             }
         }
     }
 
     fun refresh() {
-        if (viewBinding != null && isAdded && isResumed && !isHidden) {
+        if (isViewCreated && isAdded && isResumed && !isHidden) {
             requestReportUpdate("external_refresh", delayMs = 0L, forceRender = true)
         }
     }
@@ -288,40 +312,8 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         cancelRefreshingIndicator()
         hasRenderedStatisticsOnce = false
         lastRenderedReportKey = null
-        viewBinding = null
+        isViewCreated = false
         super.onDestroyView()
-    }
-
-    private fun setupTabs() {
-        val tabLayout = binding.tabLayout
-        tabLayout.removeAllTabs()
-        tabLayout.addTab(tabLayout.newTab().setText(R.string.reports_tab_day))
-        tabLayout.addTab(tabLayout.newTab().setText(R.string.reports_tab_week))
-        tabLayout.addTab(tabLayout.newTab().setText(R.string.reports_tab_month))
-        tabLayout.addTab(tabLayout.newTab().setText(R.string.reports_tab_year))
-        tabLayout.addTab(tabLayout.newTab().setText(R.string.reports_tab_all))
-        tabLayout.getTabAt(currentTab.ordinal)?.select()
-
-        tabLayout.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
-            override fun onTabSelected(tab: TabLayout.Tab) {
-                val newTab = when (tab.position) {
-                    0 -> ReportTab.DAY
-                    1 -> ReportTab.WEEK
-                    2 -> ReportTab.MONTH
-                    3 -> ReportTab.YEAR
-                    4 -> ReportTab.ALL
-                    else -> ReportTab.DAY
-                }
-                if (newTab != currentTab) {
-                    pendingTransitionDirection = if (newTab.ordinal > currentTab.ordinal) 1 else -1
-                    currentTab = newTab
-                    clampAnchorDateToCurrentPeriod()
-                    requestReportUpdate("tab_selected")
-                }
-            }
-            override fun onTabUnselected(tab: TabLayout.Tab) {}
-            override fun onTabReselected(tab: TabLayout.Tab) {}
-        })
     }
 
     private fun ReportTab.toStatisticsPeriod(): StatisticsPeriod = when (this) {
@@ -332,175 +324,67 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         ReportTab.ALL -> StatisticsPeriod.ALL
     }
 
-    private fun setupListeners() {
-        binding.btnPrev.background = null
-        binding.btnNext.background = null
-        quietPressFeedback(binding.btnPrev)
-        quietPressFeedback(binding.btnNext)
-        binding.btnPrev.setOnClickListener {
-            navigateDate(-1)
-        }
-        binding.btnNext.setOnClickListener {
-            navigateDate(1)
-        }
-        binding.tabLayout.onHorizontalSwipe = { direction ->
-            binding.tabLayout.getTabAt((currentTab.ordinal + direction).coerceIn(0, ReportTab.entries.lastIndex))?.select()
-        }
-        binding.pageTransitionHost.onHorizontalSwipe = { direction ->
-            navigateDate(direction)
-        }
+    private fun handleTabSelected(newTab: ReportTab) {
+        if (newTab == currentTab) return
+        pendingTransitionDirection = if (newTab.ordinal > currentTab.ordinal) 1 else -1
+        currentTab = newTab
+        clampAnchorDateToCurrentPeriod()
+        refreshHeaderState()
+        requestReportUpdate("tab_selected")
     }
 
-    private fun setupScopeSelector() {
-        if (!component.preferences.isDayTiersEnabled) {
-            binding.scopeSelectorContainer.visibility = View.GONE
-            return
-        }
-        binding.scopeSelectorContainer.visibility = View.VISIBLE
-        binding.tvScopeLabel.setTextColor(palette.onSurfaceVariant)
-        binding.tvScopeValue.setTextColor(palette.onSurface)
-        binding.scopeSelectorArrow.imageTintList = ColorStateList.valueOf(palette.onSurfaceVariant)
-        quietPressFeedback(binding.scopeSelectorContainer)
-
-        updateScopeSelectorUi()
-
-        binding.scopeSelectorContainer.setOnClickListener {
-            val scopes = DayTierScope.entries
-            val entries = scopes.mapIndexed { index, scope ->
-                CompactPopupMenu.Entry.Item(
-                    id = index,
-                    title = scopeLabel(scope),
-                    selected = scope == currentFilters.tierScope
-                )
-            }
-            showPeriodSelectorPopup(
-                anchor = binding.scopeSelectorContainer,
-                arrow = binding.scopeSelectorArrow,
-                entries = entries,
-                onItemClick = { index ->
-                    val selectedScope = scopes[index]
-                    if (selectedScope != currentFilters.tierScope) {
-                        currentFilters = currentFilters.copy(tierScope = selectedScope)
-                        updateScopeSelectorUi()
-                        requestReportUpdate("scope_change", forceRender = true)
-                    }
-                }
-            )
-        }
+    private fun handleTabSwipe(direction: Int) {
+        val nextIndex = (currentTab.ordinal + direction).coerceIn(0, ReportTab.entries.lastIndex)
+        handleTabSelected(ReportTab.entries[nextIndex])
     }
 
-    private fun updateScopeSelectorUi() {
-        if (viewBinding == null) return
-        binding.tvScopeValue.text = scopeLabel(currentFilters.tierScope)
+    private fun handleTierScopeSelected(selectedScope: DayTierScope) {
+        if (selectedScope == currentFilters.tierScope) return
+        currentFilters = currentFilters.copy(tierScope = selectedScope)
+        refreshHeaderState()
+        requestReportUpdate("scope_change", forceRender = true)
     }
 
-    private fun scopeLabel(scope: DayTierScope): String = when (scope) {
-        DayTierScope.MINIMUM -> getString(R.string.tier_scope_minimum)
-        DayTierScope.UP_TO_NORMAL -> getString(R.string.tier_scope_up_to_normal)
-        DayTierScope.UP_TO_IDEAL -> getString(R.string.tier_scope_up_to_ideal)
-        DayTierScope.ALL -> getString(R.string.tier_scope_all)
+    private fun openCompareHabits() {
+        val intent = IntentFactory().startCompareHabitsActivity(requireContext()).apply {
+            putExtra("initial_period", resolveCompareInitialPeriod(currentTab))
+        }
+        startActivity(intent)
     }
 
-    private fun setupFilters() {
-        binding.btnCompare.setTextColor(palette.accent)
-        binding.btnCompare.iconTint = ColorStateList.valueOf(palette.accent)
-        binding.btnCompare.rippleColor = ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
-        quietPressFeedback(binding.btnCompare)
-        binding.btnCompare.setOnClickListener {
-            val initialPeriod = when (currentTab) {
-                ReportTab.DAY, ReportTab.WEEK -> "WEEK"
-                ReportTab.MONTH -> "MONTH"
-                ReportTab.YEAR -> "YEAR"
-                ReportTab.ALL -> "ALL"
-            }
-            val intent = IntentFactory().startCompareHabitsActivity(requireContext()).apply {
-                putExtra("initial_period", initialPeriod)
-            }
-            startActivity(intent)
-        }
-
-        binding.btnFilters.rippleColor = ColorStateList.valueOf(android.graphics.Color.TRANSPARENT)
-        quietPressFeedback(binding.btnFilters)
-        quietPressFeedback(binding.filterScope)
-        binding.btnFilters.setOnClickListener {
-            StatisticsFiltersBottomSheet.show(
-                fragmentManager = childFragmentManager,
-                initialState = currentFilters,
-                blocks = component.habitList.getBlocks(),
-                spheresEnabled = component.preferences.isHabitSpheresEnabled
-            )
-        }
-        binding.filterScope.setOnClickListener { binding.btnFilters.performClick() }
-        renderActiveFilterChips()
+    private fun openFiltersSheet() {
+        StatisticsFiltersBottomSheet.show(
+            fragmentManager = childFragmentManager,
+            initialState = currentFilters,
+            blocks = component.habitList.getBlocks(),
+            spheresEnabled = component.preferences.isHabitSpheresEnabled
+        )
     }
 
-    private fun renderActiveFilterChips() {
-        if (viewBinding == null) return
-        val activeFiltersCount = listOfNotNull(
-            currentFilters.sphereId,
-            currentFilters.habitStatus.takeIf { it != StatisticsHabitStatusFilter.ACTIVE },
-            currentFilters.goalType.takeIf { it != StatisticsGoalTypeFilter.ALL }
-        ).size
+    private fun resetFilters() {
+        currentFilters = StatisticsFilterState(
+            dayTiersEnabled = component.preferences.isDayTiersEnabled,
+            spheresEnabled = component.preferences.isHabitSpheresEnabled
+        )
+        refreshHeaderState()
+        requestReportUpdate("filters_reset", forceRender = true)
+    }
 
-        val labels = mutableListOf<String>()
-        currentFilters.sphereId?.let { sphereId ->
-            component.habitList.getBlocks().firstOrNull { it.id == sphereId }?.let { block ->
-                labels.add(block.name)
-            }
-        }
-        if (currentFilters.habitStatus != StatisticsHabitStatusFilter.ACTIVE) {
-            labels.add(when (currentFilters.habitStatus) {
-                StatisticsHabitStatusFilter.ARCHIVED -> getString(R.string.reports_filter_archived_only)
-                StatisticsHabitStatusFilter.ALL -> getString(R.string.reports_filter_all_habits)
-                else -> ""
-            })
-        }
-        if (currentFilters.goalType != StatisticsGoalTypeFilter.ALL) {
-            labels.add(getString(
-                if (currentFilters.goalType == StatisticsGoalTypeFilter.YES_NO) R.string.reports_filter_boolean_only
-                else R.string.reports_filter_numerical_only
-            ))
-        }
+    private fun openHabitDetails(habit: Habit) {
+        startActivity(IntentFactory().startShowHabitActivity(requireContext(), habit))
+    }
 
-        if (activeFiltersCount > 0) {
-            val scopeText = labels.joinToString(" · ")
-            binding.filterScope.text = scopeText
-            binding.filterScope.contentDescription = scopeText
-            binding.filterScope.visibility = View.VISIBLE
-            binding.btnFilters.text = getString(R.string.statistics_filter_count, activeFiltersCount)
-        } else {
-            binding.filterScope.visibility = View.GONE
-            binding.btnFilters.text = getString(R.string.statistics_filters_button)
-        }
+    private fun openContainerStatistics(containerId: ContainerId) {
+        ContainerStatisticsActivity.start(requireContext(), containerId)
     }
 
     private fun navigateDate(direction: Int) {
         val firstWeekday = component.preferences.firstWeekday
-        if (direction > 0 && isLatestAllowedPeriod(currentAnchorDate, currentTab, firstWeekday)) {
-            return
-        }
+        val nextAnchor = computeNextLegacyAnchorDate(currentAnchorDate, currentTab, direction, firstWeekday)
+            ?: return
         pendingTransitionDirection = direction
-        currentAnchorDate = when (currentTab) {
-            ReportTab.DAY -> currentAnchorDate.plus(direction)
-            ReportTab.WEEK -> currentAnchorDate.plus(direction * 7)
-            ReportTab.MONTH -> {
-                var y = currentAnchorDate.year
-                var m = currentAnchorDate.month + direction
-                if (m < 1) {
-                    m = 12
-                    y -= 1
-                } else if (m > 12) {
-                    m = 1
-                    y += 1
-                }
-                LocalDate(y, m, 1)
-            }
-            ReportTab.YEAR -> {
-                LocalDate(currentAnchorDate.year + direction, currentAnchorDate.month, currentAnchorDate.day)
-            }
-            ReportTab.ALL -> currentAnchorDate
-        }
-        clampAnchorDateToCurrentPeriod()
+        currentAnchorDate = nextAnchor
+        refreshHeaderState()
         requestReportUpdate("date_navigation")
     }
 
@@ -509,71 +393,58 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         return statisticsActiveRange(currentAnchorDate, currentTab, firstWeekday)
     }
 
-    private fun updateReportHeader(start: LocalDate, end: LocalDate) {
-        if (currentTab == ReportTab.ALL) {
-            binding.btnPrev.visibility = View.INVISIBLE
-            binding.btnNext.visibility = View.INVISIBLE
-            binding.tvDateRange.text = getString(R.string.statistics_since_date, dateFormatter.longFormat(start))
-        } else {
-            binding.btnPrev.visibility = View.VISIBLE
-            binding.btnNext.visibility = View.VISIBLE
-            val rangeText = when (currentTab) {
-                ReportTab.DAY -> dateFormatter.longFormat(start)
-                ReportTab.WEEK -> "${dateFormatter.longFormat(start)} - ${dateFormatter.longFormat(start.plus(6))}"
-                ReportTab.MONTH -> "${dateFormatter.longMonthName(start)} ${start.year}"
-                ReportTab.YEAR -> start.year.toString()
-                else -> ""
-            }
-            binding.tvDateRange.text = rangeText
-
-            val firstWeekday = component.preferences.firstWeekday
-            val nextEnabled = !isLatestAllowedPeriod(currentAnchorDate, currentTab, firstWeekday)
-            binding.btnNext.isEnabled = nextEnabled
-            binding.btnNext.alpha = if (nextEnabled) 1.0f else 0.35f
-        }
+    private fun refreshHeaderState(rangeOverride: Pair<LocalDate, LocalDate>? = null) {
+        if (!isViewCreated || !isAdded) return
+        val (start, end) = rangeOverride ?: getActiveRange()
+        val firstWeekday = component.preferences.firstWeekday
+        val rangeText = formatRangeHeaderText(start, end)
+        val showDateArrows = currentTab != ReportTab.ALL
+        val nextEnabled = showDateArrows && !isLatestAllowedPeriod(currentAnchorDate, currentTab, firstWeekday)
+        val blockNamesById = component.habitList.getBlocks()
+            .mapNotNull { block -> block.id?.let { it to block.name } }
+            .toMap()
+        val (activeCount, scopeText) = buildLegacyActiveFilterSummary(
+            filters = currentFilters,
+            blockNamesById = blockNamesById,
+            archivedLabel = getString(R.string.reports_filter_archived_only),
+            allHabitsLabel = getString(R.string.reports_filter_all_habits),
+            booleanOnlyLabel = getString(R.string.reports_filter_boolean_only),
+            numericalOnlyLabel = getString(R.string.reports_filter_numerical_only)
+        )
+        headerState = headerState.copy(
+            selectedTab = currentTab,
+            dateRangeText = rangeText,
+            showDateArrows = showDateArrows,
+            nextEnabled = nextEnabled,
+            dayTiersEnabled = component.preferences.isDayTiersEnabled,
+            selectedTierScope = currentFilters.tierScope,
+            activeFiltersCount = activeCount,
+            activeFilterScopeText = scopeText
+        )
     }
 
-    private fun createPageView(): Pair<ScrollView, LinearLayout> {
-        val scrollView = ScrollView(requireContext()).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-            isFillViewport = true
-            isVerticalScrollBarEnabled = false
-            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
-        }
-        val contentContainer = LinearLayout(requireContext()).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-            )
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16f).toInt(), 0, dp(16f).toInt(), dp(24f).toInt())
-        }
-        scrollView.addView(contentContainer)
-        return Pair(scrollView, contentContainer)
+    private fun formatRangeHeaderText(start: LocalDate, end: LocalDate): String = when (currentTab) {
+        ReportTab.ALL -> getString(R.string.statistics_since_date, dateFormatter.longFormat(start))
+        ReportTab.DAY -> dateFormatter.longFormat(start)
+        ReportTab.WEEK -> "${dateFormatter.longFormat(start)} - ${dateFormatter.longFormat(start.plus(6))}"
+        ReportTab.MONTH -> "${dateFormatter.longMonthName(start)} ${start.year}"
+        ReportTab.YEAR -> start.year.toString()
     }
 
     private fun showInitialLoading() {
         cancelRefreshingIndicator()
-        val (pageScroll, pageContainer) = createPageView()
-        val loadingText = TextView(requireContext()).apply {
-            text = getString(R.string.reports_loading)
-            gravity = Gravity.CENTER
-            textSize = 15f
-            setPadding(0, dp(48f).toInt(), 0, 0)
-            setTextColor(palette.onSurfaceVariant)
-        }
-        pageContainer.addView(loadingText)
-        binding.pageTransitionHost.showInitialPage(pageScroll)
+        pageSnapshotState = LegacyStatisticsPageSnapshot(
+            pageId = pageSequence,
+            body = LegacyStatisticsBodyState.Loading,
+            transitionDirection = 0
+        )
     }
 
     private fun cancelRefreshingIndicator() {
         loadingIndicatorRunnable?.let(reportRequestHandler::removeCallbacks)
         loadingIndicatorRunnable = null
-        if (viewBinding != null) {
-            binding.refreshProgressBar.visibility = View.GONE
+        if (isViewCreated && headerState.isRefreshing) {
+            headerState = headerState.copy(isRefreshing = false)
         }
     }
 
@@ -582,9 +453,9 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         delayMs: Long = REPORT_UPDATE_COALESCE_MS,
         forceRender: Boolean = false
     ) {
-        if (viewBinding == null || !isAdded || !isResumed || isHidden) return
+        if (!isViewCreated || !isAdded || !isResumed || isHidden) return
         activeReportGeneration++
-        if (!hasRenderedStatisticsOnce && binding.pageTransitionHost.getCurrentPage() == null) {
+        if (!hasRenderedStatisticsOnce && pageSnapshotState.body !is LegacyStatisticsBodyState.Loading) {
             showInitialLoading()
         }
         pendingReportForceRender = pendingReportForceRender || forceRender
@@ -593,7 +464,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
             pendingReportRunnable = null
             val shouldForceRender = pendingReportForceRender
             pendingReportForceRender = false
-            if (viewBinding == null || !isAdded || !isResumed || isHidden) return@Runnable
+            if (!isViewCreated || !isAdded || !isResumed || isHidden) return@Runnable
             val key = buildReportKey() ?: return@Runnable
             if (!shouldForceRender && hasRenderedStatisticsOnce && key == lastRenderedReportKey) {
                 cancelRefreshingIndicator()
@@ -612,7 +483,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
     }
 
     private fun buildReportKey(): ReportKey? {
-        if (viewBinding == null || !isAdded) return null
+        if (!isViewCreated || !isAdded) return null
         val (start, end) = getActiveRange()
         val updatedFilters = currentFilters.copy(
             dayTiersEnabled = component.preferences.isDayTiersEnabled,
@@ -631,35 +502,30 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         )
     }
 
-    private fun performViewUpdate(result: StatisticsReportState, previous: StatisticsReportState?) {
-        val (pageScroll, pageContainer) = createPageView()
-        if (result.matchingHabits == 0) {
-            if (component.session.isNextArchitecture) addFocusSection(pageContainer)
-            addNoDataView(pageContainer, noHabits = true)
-        } else {
-            renderStatisticsReport(pageContainer, result, previous)
-        }
-
-        val direction = pendingTransitionDirection
-        pendingTransitionDirection = 0
-
-        if (!hasRenderedStatisticsOnce || binding.pageTransitionHost.getCurrentPage() == null) {
-            binding.pageTransitionHost.showInitialPage(pageScroll)
-        } else {
-            binding.pageTransitionHost.transitionToPage(pageScroll, direction)
-        }
-    }
+    private fun hasActiveUserFilters(): Boolean =
+        currentFilters.sphereId != null ||
+            currentFilters.habitStatus != StatisticsHabitStatusFilter.ACTIVE ||
+            currentFilters.goalType != StatisticsGoalTypeFilter.ALL ||
+            currentFilters.tierScope != DayTierScope.MINIMUM
 
     private fun renderReport(result: StatisticsReportState, previous: StatisticsReportState?, generation: Int) {
-        if (viewBinding == null || !isAdded || !isResumed || isHidden || generation != activeReportGeneration) return
+        if (!isViewCreated || !isAdded || !isResumed || isHidden || generation != activeReportGeneration) return
         cancelRefreshingIndicator()
-        performViewUpdate(result, previous)
+        val body = buildBodyState(result, previous)
+        val direction = pendingTransitionDirection
+        pendingTransitionDirection = 0
+        pageSequence++
+        pageSnapshotState = LegacyStatisticsPageSnapshot(
+            pageId = pageSequence,
+            body = body,
+            transitionDirection = if (hasRenderedStatisticsOnce) direction else 0
+        )
     }
 
     private fun updateReport(reportKey: ReportKey, forceRender: Boolean) {
         val start = reportKey.start
         val end = reportKey.end
-        updateReportHeader(start, end)
+        refreshHeaderState(start to end)
 
         if (!hasRenderedStatisticsOnce) {
             showInitialLoading()
@@ -738,11 +604,11 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
 
             override fun onPostExecute() {
                 val currentKey = buildReportKey()
-                if (viewBinding == null || !isAdded || !isResumed || isHidden || taskGeneration != activeReportGeneration) return
+                if (!isViewCreated || !isAdded || !isResumed || isHidden || taskGeneration != activeReportGeneration) return
                 if (reportKey != currentKey) return
                 val result = calculatedData ?: return
                 focusTotals = calculatedFocusTotals
-                updateReportHeader(result.start, result.end)
+                refreshHeaderState(result.start to result.end)
 
                 renderReport(result, previousData, taskGeneration)
                 hasRenderedStatisticsOnce = true
@@ -751,170 +617,309 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         })
     }
 
-    private fun addNoDataView(parentContainer: LinearLayout, noHabits: Boolean) {
-        val container = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(16f).toInt(), dp(48f).toInt(), dp(16f).toInt(), dp(48f).toInt())
-        }
-        container.addView(
-            TextView(requireContext()).apply {
-                text = getString(
-                    if (noHabits) R.string.statistics_no_habits_for_filters
-                    else R.string.statistics_no_history_for_period
-                )
-                gravity = Gravity.CENTER
-                textSize = 15f
-                setTextColor(palette.onSurfaceVariant)
-            }
-        )
-        if (noHabits && currentFilters != StatisticsFilterState()) {
-            container.addView(
-                TextView(requireContext()).apply {
-                    text = getString(R.string.statistics_reset_filters)
-                    gravity = Gravity.CENTER
-                    textSize = 14f
-                    setTypeface(null, Typeface.BOLD)
-                    setTextColor(palette.accent)
-                    minHeight = dp(48f).toInt()
-                    setPadding(dp(16f).toInt(), dp(14f).toInt(), dp(16f).toInt(), 0)
-                    isClickable = true
-                    isFocusable = true
-                    setOnClickListener {
-                        currentFilters = StatisticsFilterState()
-                        renderActiveFilterChips()
-                        requestReportUpdate("filters_reset", forceRender = true)
-                    }
-                }
+    private fun buildBodyState(
+        report: StatisticsReportState,
+        @Suppress("UNUSED_PARAMETER") previous: StatisticsReportState?
+    ): LegacyStatisticsBodyState {
+        val focusSection = if (component.session.isNextArchitecture) buildFocusSectionUi() else null
+        if (report.matchingHabits == 0) {
+            return LegacyStatisticsBodyState.Empty(
+                noHabits = true,
+                canResetFilters = hasActiveUserFilters(),
+                focusSection = focusSection
             )
         }
-        parentContainer.addView(container)
-    }
 
-    private fun renderStatisticsReport(
-        container: LinearLayout,
-        report: StatisticsReportState,
-        previous: StatisticsReportState?
-    ) {
-        if (component.session.isNextArchitecture) addFocusSection(container)
+        val sections = mutableListOf<LegacyStatisticsSectionUi>()
+        if (focusSection != null) {
+            sections.add(LegacyStatisticsSectionUi.Focus(focusSection))
+        }
+
         when (report.period) {
             StatisticsPeriod.DAY -> {
-                addDayOverviewSection(container, report)
+                sections.add(buildDayOverviewSection(report))
                 if (report.dayTiersEnabled) {
-                    addTierBarsSection(container, report)
+                    sections.add(buildTierBarsSection(report))
                 }
             }
+
             StatisticsPeriod.WEEK -> {
-                addDailyCompletionSection(container, report)
+                sections.add(buildDailyCompletionSection(report))
                 if (report.dayTiersEnabled) {
-                    addTierBarsSection(container, report)
+                    sections.add(buildTierBarsSection(report))
                 }
                 if (report.spheresEnabled) {
-                    addSphereSection(container, report)
+                    buildSphereSection(report)?.let(sections::add)
                 }
-                addHabitChangesSection(container, report)
+                buildHabitChangesSection(report)?.let(sections::add)
             }
+
             StatisticsPeriod.MONTH -> {
-                addMonthCalendarSection(container, report)
+                sections.add(buildMonthCalendarSection(report))
                 if (report.dayTiersEnabled) {
-                    addTierBarsSection(container, report)
+                    sections.add(buildTierBarsSection(report))
                 }
-                addWeekdayRhythmSection(container, report)
+                buildWeekdayRhythmSection(report)?.let(sections::add)
                 if (report.spheresEnabled) {
-                    addSphereSection(container, report)
+                    buildSphereSection(report)?.let(sections::add)
                 }
-                addHabitChangesSection(container, report)
+                buildHabitChangesSection(report)?.let(sections::add)
             }
+
             StatisticsPeriod.YEAR -> {
-                addYearMonthlyBarsSection(container, report)
+                buildYearMonthlyBarsSection(report)?.let(sections::add)
                 if (report.dayTiersEnabled) {
-                    addTierBarsSection(container, report)
+                    sections.add(buildTierBarsSection(report))
                 }
-                addWeekdayRhythmSection(container, report)
+                buildWeekdayRhythmSection(report)?.let(sections::add)
                 if (report.spheresEnabled) {
-                    addSphereSection(container, report)
+                    buildSphereSection(report)?.let(sections::add)
                 }
             }
+
             StatisticsPeriod.ALL -> {
-                addAllTimeHistorySection(container, report)
+                buildAllTimeHistorySection(report)?.let(sections::add)
                 if (report.dayTiersEnabled) {
-                    addTierBarsSection(container, report)
+                    sections.add(buildTierBarsSection(report))
                 }
                 if (report.spheresEnabled) {
-                    addSphereSection(container, report)
+                    buildSphereSection(report)?.let(sections::add)
                 }
-                addWeekdayRhythmSection(container, report)
-                addHabitStabilitySection(container, report)
+                buildWeekdayRhythmSection(report)?.let(sections::add)
+                buildHabitStabilitySection(report)?.let(sections::add)
             }
         }
+
+        return LegacyStatisticsBodyState.Report(sections = sections)
     }
 
-    private fun addFocusSection(container: LinearLayout) {
-        val (card, content) = createSection("Фокус по разделам")
-        content.addView(summaryText(
-            "Сессии, завершённые за период · все задачи и привычки",
-            12f,
-            palette.onSurfaceVariant
-        ), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        fun duration(millis: Long): String {
-            val seconds = millis / 1000
-            return if (seconds >= 3600) "${seconds / 3600} ч ${seconds / 60 % 60} мин"
-                else if (seconds >= 60) "${seconds / 60} мин ${seconds % 60} с" else "$seconds с"
+    private fun buildFocusSectionUi(): LegacyFocusSectionUi = LegacyFocusSectionUi(
+        totalDurationLabel = formatLegacyFocusDuration(focusTotals.sumOf { it.durationMs }),
+        rows = focusTotals.map { total ->
+            LegacyFocusRowUi(
+                containerId = total.containerId,
+                name = total.name,
+                durationLabel = formatLegacyFocusDuration(total.durationMs)
+            )
         }
-        content.addView(TextView(requireContext()).apply {
-            text = "Всего: ${duration(focusTotals.sumOf { it.durationMs })}"
-            textSize = 18f
-            setTextColor(palette.onSurface)
-            setPadding(0, dp(8f).toInt(), 0, dp(8f).toInt())
-        })
-        if (focusTotals.isEmpty()) content.addView(TextView(requireContext()).apply {
-            text = "За этот период ещё нет завершённых сессий"
-            setTextColor(palette.onSurfaceVariant)
-        })
-        focusTotals.forEach { total ->
-            content.addView(TextView(requireContext()).apply {
-                text = "${total.name} · ${duration(total.durationMs)}"
-                textSize = 16f
-                minHeight = dp(48f).toInt()
-                gravity = Gravity.CENTER_VERTICAL
-                setTextColor(palette.onSurface)
-                total.containerId?.let { id ->
-                    val value = android.util.TypedValue()
-                    context.theme.resolveAttribute(android.R.attr.selectableItemBackground, value, true)
-                    setBackgroundResource(value.resourceId)
-                    setOnClickListener {
-                        org.isoron.uhabits.activities.containers.statistics.ContainerStatisticsActivity.start(requireContext(), id)
-                    }
-                }
-            })
-        }
-        content.addView(TextView(requireContext()).apply {
-            text = "Раздел на момент сессии. Время дочерних разделов показано отдельно."
-            textSize = 12f
-            setTextColor(palette.onSurfaceVariant)
-            setPadding(0, dp(8f).toInt(), 0, 0)
-        })
-        container.addView(card)
-    }
+    )
 
-    private fun addDayOverviewSection(container: LinearLayout, report: StatisticsReportState) {
-        val (card, content) = createSection(
-            titleText = getString(R.string.statistics_day_title_default),
-            secondaryText = report.overallProgress?.let { "${(it * 100).roundToInt()}%" }
-        )
-        content.addView(summaryText(getString(R.string.statistics_average_progress), 11f, palette.onSurfaceVariant))
-        val listContainer = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-        }
+    private fun buildDayOverviewSection(report: StatisticsReportState): LegacyStatisticsSectionUi.DayOverview {
         val habitsToDisplay = report.habits.filter {
             !report.dayTiersEnabled || report.tierScope.includes(it.habit.dayTier)
         }
-        habitsToDisplay.forEachIndexed { index, habitResult ->
-            if (index > 0) listContainer.addView(createDivider())
-            listContainer.addView(createReportHabitRow(habitResult))
+        return LegacyStatisticsSectionUi.DayOverview(
+            title = getString(R.string.statistics_day_title_default),
+            overallPercentText = report.overallProgress?.let { "${(it * 100).roundToInt()}%" },
+            subtitle = getString(R.string.statistics_average_progress),
+            habits = habitsToDisplay.map { result ->
+                LegacyDayHabitRowUi(
+                    habit = result.habit,
+                    name = result.habit.name,
+                    colorArgb = themeSwitcher.currentTheme.color(result.habit.color).toInt(),
+                    detailText = formatHabitResult(result),
+                    percentText = "${(result.progress * 100).roundToInt()}%"
+                )
+            }
+        )
+    }
+
+    private fun buildTierBarsSection(report: StatisticsReportState): LegacyStatisticsSectionUi.TierBars {
+        val title = if (report.period == StatisticsPeriod.DAY) {
+            getString(R.string.statistics_day_title_by_level)
+        } else {
+            getString(R.string.statistics_by_level)
         }
-        content.addView(listContainer)
-        container.addView(card)
+        val tiers = listOf(DayTier.MINIMUM, DayTier.NORMAL, DayTier.IDEAL, DayTier.OPTIONAL)
+        val rows = tiers.map { tier ->
+            val progress = report.tierProgress[tier]
+            val counts = report.tierCounts[tier]
+            val pctStr = progress?.let { "${(it * 100).roundToInt()}%" } ?: "—"
+            val valueText = if (report.period == StatisticsPeriod.DAY && progress != null && counts != null && counts.second > 0) {
+                "$pctStr · ${counts.first}/${counts.second}"
+            } else {
+                pctStr
+            }
+            LegacyTierBarRowUi(
+                tier = tier,
+                label = tierLabel(tier),
+                colorArgb = tierColor(tier),
+                valueText = valueText,
+                hasProgress = progress != null,
+                progressFraction = progress?.toFloat()?.coerceIn(0f, 1f) ?: 0f
+            )
+        }
+        return LegacyStatisticsSectionUi.TierBars(title = title, rows = rows)
+    }
+
+    private fun buildDailyCompletionSection(report: StatisticsReportState): LegacyStatisticsSectionUi.PercentageBar {
+        val daysByDate = report.dailyProgress.associateBy { it.date }
+        val today = getToday()
+        val items = (0..6).map { offset ->
+            val date = report.start.plus(offset)
+            val dp = daysByDate[date]
+            val isToday = dp?.isToday ?: (date == today)
+            val isFuture = dp?.isFuture ?: date.isNewerThan(today)
+            LegacyPercentageBarItem(
+                progress = if (isFuture) null else dp?.progress,
+                label = dateFormatter.shortWeekdayName(date.dayOfWeek),
+                isToday = isToday,
+                isFuture = isFuture
+            )
+        }
+        return LegacyStatisticsSectionUi.PercentageBar(
+            title = getString(R.string.statistics_by_day),
+            comparisonText = periodComparison(report),
+            subtitle = getString(R.string.statistics_average_progress),
+            items = items
+        )
+    }
+
+    private fun buildMonthCalendarSection(report: StatisticsReportState): LegacyStatisticsSectionUi.MonthCalendar =
+        LegacyStatisticsSectionUi.MonthCalendar(
+            LegacyMonthCalendarSectionUi(
+                title = getString(R.string.statistics_activity_calendar),
+                comparisonText = periodComparison(report),
+                monthStart = report.start,
+                monthEnd = report.end,
+                firstWeekday = component.preferences.firstWeekday,
+                days = report.dailyProgress,
+                averageProgress = report.overallProgress
+            )
+        )
+
+    private fun buildWeekdayRhythmSection(report: StatisticsReportState): LegacyStatisticsSectionUi.WeekdayRhythm? {
+        val hasData = report.weekdayRhythm.size == 7 &&
+            report.weekdayRhythm.any { it.observations >= 4 && it.progress != null }
+        if (!hasData) return null
+        val items = report.weekdayRhythm.map { item ->
+            LegacyWeekRhythmItem(
+                dayOfWeek = item.dayOfWeek,
+                progress = item.progress,
+                label = dateFormatter.shortWeekdayName(item.dayOfWeek)
+            )
+        }
+        return LegacyStatisticsSectionUi.WeekdayRhythm(
+            title = getString(R.string.statistics_by_weekday),
+            items = items
+        )
+    }
+
+    private fun buildYearMonthlyBarsSection(report: StatisticsReportState): LegacyStatisticsSectionUi.PercentageBar? {
+        val buckets = report.trendBuckets
+        if (buckets.none { it.progress != null }) return null
+        val today = getToday()
+        val items = buckets.map { bucket ->
+            val isFuture = bucket.start.isNewerThan(today)
+            val isCurrent = !isFuture && !bucket.end.isOlderThan(today)
+            LegacyPercentageBarItem(
+                progress = if (isFuture) null else bucket.progress,
+                label = dateFormatter.shortMonthName(bucket.start),
+                isToday = isCurrent,
+                isFuture = isFuture
+            )
+        }
+        return LegacyStatisticsSectionUi.PercentageBar(
+            title = getString(R.string.statistics_by_month),
+            comparisonText = periodComparison(report),
+            subtitle = getString(R.string.statistics_average_progress),
+            items = items
+        )
+    }
+
+    private fun buildAllTimeHistorySection(report: StatisticsReportState): LegacyStatisticsSectionUi.AllTimeHistory? {
+        val buckets = report.trendBuckets
+        if (buckets.count { it.progress != null } < 2) return null
+        val items = buckets.map { bucket ->
+            val label = if (bucket.start.month == 1 && bucket.end.month == 12) {
+                bucket.start.year.toString()
+            } else {
+                dateFormatter.shortMonthName(bucket.start)
+            }
+            LegacyBucketItem(label = label, progress = bucket.progress)
+        }
+        return LegacyStatisticsSectionUi.AllTimeHistory(
+            title = getString(R.string.statistics_long_term_history),
+            subtitle = chartMetricLabel(report),
+            items = items
+        )
+    }
+
+    private fun buildSphereSection(report: StatisticsReportState): LegacyStatisticsSectionUi.Spheres? {
+        if (!component.preferences.isHabitSpheresEnabled) return null
+        if (currentFilters.sphereId != null) return null
+
+        val meaningfulSpheres = report.sphereProgress.filter { it.blockId != null }
+        if (meaningfulSpheres.size <= 1) return null
+
+        val blocks = component.habitList.getBlocks().associateBy { it.id }
+        val ordered = report.sphereProgress.sortedWith(
+            compareByDescending<StatisticsSphereProgress> { it.progress != null }
+                .thenByDescending { it.progress ?: -1.0 }
+        )
+        val fallbackColor = palette.onSurfaceVariant
+        val rows = ordered.map { sphereItem ->
+            val block = sphereItem.blockId?.let(blocks::get)
+            val sphereName = block?.name ?: getString(R.string.statistics_no_sphere)
+            val sphereColor = block?.let { themeSwitcher.currentTheme.color(it.color).toInt() } ?: fallbackColor
+            val progress = sphereItem.progress
+            LegacySphereRowUi(
+                blockId = sphereItem.blockId,
+                name = sphereName,
+                colorArgb = sphereColor,
+                valueText = progress?.let { "${(it * 100).roundToInt()}%" } ?: "—",
+                hasProgress = progress != null,
+                progressFraction = progress?.toFloat()?.coerceIn(0f, 1f) ?: 0f
+            )
+        }
+        return LegacyStatisticsSectionUi.Spheres(
+            title = getString(R.string.statistics_by_sphere),
+            rows = rows
+        )
+    }
+
+    private fun buildHabitChangesSection(report: StatisticsReportState): LegacyStatisticsSectionUi.HabitChanges? {
+        val changes = report.habitChanges
+        if (changes.isEmpty()) return null
+        val titleRes = if (report.period == StatisticsPeriod.MONTH) {
+            R.string.statistics_changes_month_title
+        } else {
+            R.string.statistics_changes_week_title
+        }
+        val ppLabel = getString(R.string.statistics_percentage_points)
+        val rows = changes.map { item ->
+            val sign = if (item.deltaPoints > 0) "+" else ""
+            LegacyHabitChangeRowUi(
+                habit = item.habit,
+                name = item.habit.name,
+                colorArgb = themeSwitcher.currentTheme.color(item.habit.color).toInt(),
+                transitionText = "${(item.previousProgress * 100).roundToInt()}% → ${(item.currentProgress * 100).roundToInt()}%",
+                deltaText = "$sign${item.deltaPoints} $ppLabel"
+            )
+        }
+        return LegacyStatisticsSectionUi.HabitChanges(
+            title = getString(titleRes),
+            subtitle = getString(R.string.statistics_habit_changes_subtitle),
+            rows = rows
+        )
+    }
+
+    private fun buildHabitStabilitySection(report: StatisticsReportState): LegacyStatisticsSectionUi.HabitStability? {
+        val items = report.habitStability
+        if (items.isEmpty()) return null
+        val rows = items.map { item ->
+            LegacyHabitStabilityRowUi(
+                habit = item.habit,
+                name = item.habit.name,
+                colorArgb = themeSwitcher.currentTheme.color(item.habit.color).toInt(),
+                scoreText = "${(item.score * 100).roundToInt()}%",
+                progressFraction = item.score.toFloat().coerceIn(0f, 1f)
+            )
+        }
+        return LegacyStatisticsSectionUi.HabitStability(
+            title = getString(R.string.statistics_habit_stability_title),
+            rows = rows
+        )
     }
 
     private fun periodComparison(report: StatisticsReportState): String? {
@@ -931,7 +936,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
             points < 0 -> "↓"
             else -> "="
         }
-        val absPoints = kotlin.math.abs(points)
+        val absPoints = abs(points)
         return "$arrow $absPoints ${getString(R.string.statistics_percentage_points)}\n${getString(previous)}"
     }
 
@@ -947,725 +952,8 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
         }
     }
 
-    private fun addHabitChangesSection(container: LinearLayout, report: StatisticsReportState) {
-        val changes = report.habitChanges
-        if (changes.isEmpty()) return
-        val titleRes = if (report.period == StatisticsPeriod.MONTH) {
-            R.string.statistics_changes_month_title
-        } else {
-            R.string.statistics_changes_week_title
-        }
-        val (card, content) = createSection(getString(titleRes))
-        content.addView(summaryText(getString(R.string.statistics_habit_changes_subtitle), 11f, palette.onSurfaceVariant))
-        changes.forEach { item ->
-            val points = item.deltaPoints
-            val row = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.VERTICAL
-                minimumHeight = dp(48f).toInt()
-                quietPressFeedback(this)
-                setOnClickListener {
-                    startActivity(IntentFactory().startShowHabitActivity(requireContext(), item.habit))
-                }
-            }
-            val titleRow = LinearLayout(requireContext()).apply { orientation = LinearLayout.HORIZONTAL }
-            titleRow.addView(summaryText("●", 12f, themeSwitcher.currentTheme.color(item.habit.color).toInt()))
-            titleRow.addView(summaryText(item.habit.name, 13f, palette.onSurface).apply {
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                setPadding(dp(8f).toInt(), 0, dp(8f).toInt(), 0)
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            row.addView(titleRow)
-            val values = LinearLayout(requireContext()).apply { orientation = LinearLayout.HORIZONTAL }
-            values.addView(summaryText("${(item.previousProgress * 100).roundToInt()}% → ${(item.currentProgress * 100).roundToInt()}%",
-                12f, palette.onSurfaceVariant), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            val sign = if (points > 0) "+" else ""
-            values.addView(summaryText("$sign$points ${getString(R.string.statistics_percentage_points)}",
-                12f, palette.onSurfaceVariant))
-            row.addView(values)
-            content.addView(row)
-        }
-        container.addView(card)
-    }
-
-    private fun createSection(
-        titleText: String? = null,
-        secondaryText: String? = null
-    ): Pair<LinearLayout, LinearLayout> {
-        val sectionContainer = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            val lp = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                bottomMargin = dp(6f).toInt()
-            }
-            layoutParams = lp
-            elevation = 0f
-            setBackgroundColor(palette.surface)
-            setPadding(dp(16f).toInt(), dp(10f).toInt(), dp(16f).toInt(), dp(10f).toInt())
-        }
-
-        if (titleText != null || secondaryText != null) {
-            val headerRow = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                val lp = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    bottomMargin = dp(6f).toInt()
-                }
-                layoutParams = lp
-            }
-
-            if (titleText != null) {
-                val titleView = TextView(requireContext()).apply {
-                    text = titleText
-                    textSize = 14f
-                    setTypeface(null, Typeface.BOLD)
-                    setTextColor(palette.onSurface)
-                    layoutParams = LinearLayout.LayoutParams(
-                        0,
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        1f
-                    )
-                }
-                headerRow.addView(titleView)
-            }
-
-            if (secondaryText != null) {
-                val secondaryView = TextView(requireContext()).apply {
-                    text = secondaryText
-                    textSize = 12f
-                    setTextColor(palette.onSurfaceVariant)
-                    gravity = Gravity.END
-                    setPadding(dp(8f).toInt(), 0, 0, 0)
-                }
-                headerRow.addView(secondaryView)
-            }
-
-            sectionContainer.addView(headerRow)
-        }
-
-        val contentLayout = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        }
-        sectionContainer.addView(contentLayout)
-
-        return Pair(sectionContainer, contentLayout)
-    }
-
-    private fun formatClosedDaysSecondary(report: StatisticsReportState): String? {
-        return when (report.period) {
-            StatisticsPeriod.DAY -> null
-            StatisticsPeriod.WEEK, StatisticsPeriod.MONTH -> {
-                if (report.eligibleFinishedDays > 0) {
-                    getString(R.string.statistics_finished_days_closed, report.fullyClosedDays, report.eligibleFinishedDays)
-                } else null
-            }
-            StatisticsPeriod.YEAR -> {
-                if (report.eligibleFinishedDays > 0) {
-                    getString(R.string.statistics_finished_days_closed, report.fullyClosedDays, report.eligibleFinishedDays)
-                } else if (report.fullyClosedDays > 0) {
-                    getString(R.string.statistics_fully_closed_days_stat, report.fullyClosedDays)
-                } else null
-            }
-            StatisticsPeriod.ALL -> {
-                if (report.fullyClosedDays > 0) {
-                    getString(R.string.statistics_fully_closed_days_stat, report.fullyClosedDays)
-                } else null
-            }
-        }
-    }
-
-
-
-    private fun addTierBarsSection(container: LinearLayout, report: StatisticsReportState) {
-        val title = if (report.period == StatisticsPeriod.DAY) {
-            getString(R.string.statistics_day_title_by_level)
-        } else {
-            getString(R.string.statistics_by_level)
-        }
-        val (card, content) = createSection(title)
-
-        val tiers = listOf(DayTier.MINIMUM, DayTier.NORMAL, DayTier.IDEAL, DayTier.OPTIONAL)
-        tiers.forEachIndexed { index, tier ->
-            val progress = report.tierProgress[tier]
-            val counts = report.tierCounts[tier]
-
-            val row = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.VERTICAL
-                val topPadding = if (index == 0) 0 else dp(6f).toInt()
-                val bottomPadding = if (index == tiers.size - 1) 0 else dp(4f).toInt()
-                setPadding(0, topPadding, 0, bottomPadding)
-            }
-
-            val headerRow = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-            }
-
-            val dot = View(requireContext()).apply {
-                layoutParams = LinearLayout.LayoutParams(dp(8f).toInt(), dp(8f).toInt()).apply {
-                    rightMargin = dp(8f).toInt()
-                }
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(tierColor(tier))
-                }
-            }
-            val nameView = summaryText(tierLabel(tier), 13f, palette.onSurfaceVariant).apply {
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            }
-            val pctStr = progress?.let { "${(it * 100).roundToInt()}%" } ?: "—"
-            val textStr = if (report.period == StatisticsPeriod.DAY && progress != null && counts != null && counts.second > 0) {
-                "$pctStr · ${counts.first}/${counts.second}"
-            } else {
-                pctStr
-            }
-            val valueView = summaryText(
-                textStr,
-                13f,
-                if (progress != null) palette.onSurface else palette.onSurfaceVariant,
-                bold = progress != null
-            )
-
-            headerRow.addView(dot)
-            headerRow.addView(nameView)
-            headerRow.addView(valueView)
-            row.addView(headerRow)
-
-            val barTrack = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    dp(4f).toInt()
-                ).apply {
-                    topMargin = dp(4f).toInt()
-                }
-                background = GradientDrawable().apply {
-                    setColor(ColorUtils.blendARGB(palette.surface, palette.onSurfaceVariant, 0.14f))
-                    cornerRadius = dp(2f)
-                }
-            }
-
-            val fillWeight = progress?.toFloat()?.coerceIn(0f, 1f) ?: 0f
-            if (fillWeight > 0f) {
-                val fillView = View(requireContext()).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, fillWeight)
-                    background = GradientDrawable().apply {
-                        setColor(tierColor(tier))
-                        cornerRadius = dp(2f)
-                    }
-                }
-                barTrack.addView(fillView)
-            }
-            if (fillWeight < 1f) {
-                val spacer = View(requireContext()).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f - fillWeight)
-                }
-                barTrack.addView(spacer)
-            }
-
-            row.addView(barTrack)
-            content.addView(row)
-        }
-
-        container.addView(card)
-    }
-
-    private fun addDailyCompletionSection(container: LinearLayout, report: StatisticsReportState) {
-        val (card, content) = createSection(
-            titleText = getString(R.string.statistics_by_day),
-            secondaryText = periodComparison(report)
-        )
-        content.addView(summaryText(getString(R.string.statistics_average_progress), 11f, palette.onSurfaceVariant))
-
-        val daysByDate = report.dailyProgress.associateBy { it.date }
-        val barChart = StatisticsPercentageBarChart(requireContext()).apply {
-            val items = (0..6).map { offset ->
-                val date = report.start.plus(offset)
-                val dp = daysByDate[date]
-                val isToday = dp?.isToday ?: (date == getToday())
-                val isFuture = dp?.isFuture ?: date.isNewerThan(getToday())
-                val progress = if (isFuture) null else dp?.progress?.toDouble()
-                StatisticsPercentageBarChart.BarItem(
-                    progress = progress,
-                    label = dateFormatter.shortWeekdayName(date.dayOfWeek),
-                    isToday = isToday,
-                    isFuture = isFuture
-                )
-            }
-            setData(
-                items = items,
-                barColor = palette.accent,
-                onSurfaceVariant = palette.onSurfaceVariant,
-                dividerColor = palette.divider
-            )
-        }
-        content.addView(barChart)
-        container.addView(card)
-    }
-
-    private fun addMonthCalendarSection(container: LinearLayout, report: StatisticsReportState) {
-        val (card, content) = createSection(
-            titleText = getString(R.string.statistics_activity_calendar),
-            secondaryText = periodComparison(report)
-        )
-
-        val calendarView = StatisticsMonthCalendarView(requireContext()).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-            setData(
-                monthStart = report.start,
-                monthEnd = report.end,
-                firstWeekday = component.preferences.firstWeekday,
-                days = report.dailyProgress,
-                averageProgress = report.overallProgress,
-                surfaceColor = palette.surface,
-                onSurfaceColor = palette.onSurface,
-                onSurfaceVariantColor = palette.onSurfaceVariant,
-                accentColor = palette.accent,
-                dividerColor = palette.divider
-            )
-        }
-        content.addView(calendarView)
-        container.addView(card)
-    }
-
-    private fun addWeekdayRhythmSection(container: LinearLayout, report: StatisticsReportState) {
-        val hasData = report.weekdayRhythm.size == 7 && report.weekdayRhythm.any { it.observations >= 4 && it.progress != null }
-        if (!hasData) return
-
-        val (card, content) = createSection(getString(R.string.statistics_by_weekday))
-        val rhythmView = StatisticsWeekRhythmView(requireContext()).apply {
-            val items = report.weekdayRhythm.map { item ->
-                StatisticsWeekRhythmView.RhythmItem(
-                    dayOfWeek = item.dayOfWeek,
-                    progress = item.progress,
-                    label = dateFormatter.shortWeekdayName(item.dayOfWeek)
-                )
-            }
-            setData(
-                data = items,
-                accentColor = palette.accent,
-                onSurfaceVariant = palette.onSurfaceVariant,
-                divider = palette.divider
-            )
-        }
-        content.addView(rhythmView)
-        container.addView(card)
-    }
-
-    private fun addYearMonthlyBarsSection(container: LinearLayout, report: StatisticsReportState) {
-        val buckets = report.trendBuckets
-        if (buckets.none { it.progress != null }) return
-        val (card, content) = createSection(
-            getString(R.string.statistics_by_month), periodComparison(report)
-        )
-        content.addView(summaryText(getString(R.string.statistics_average_progress), 11f, palette.onSurfaceVariant))
-        val barChart = StatisticsPercentageBarChart(requireContext()).apply {
-            val items = buckets.map { bucket ->
-                val isFuture = bucket.start.isNewerThan(getToday())
-                val isCurrent = !isFuture && !bucket.end.isOlderThan(getToday())
-                StatisticsPercentageBarChart.BarItem(
-                    progress = if (isFuture) null else bucket.progress?.toDouble(),
-                    label = dateFormatter.shortMonthName(bucket.start),
-                    isToday = isCurrent,
-                    isFuture = isFuture
-                )
-            }
-            setData(
-                items = items,
-                barColor = palette.accent,
-                onSurfaceVariant = palette.onSurfaceVariant,
-                dividerColor = palette.divider
-            )
-        }
-        content.addView(barChart)
-        container.addView(card)
-    }
-
-    private fun addAllTimeHistorySection(container: LinearLayout, report: StatisticsReportState) {
-        val buckets = report.trendBuckets
-        if (buckets.count { it.progress != null } < 2) return
-        val (card, content) = createSection(getString(R.string.statistics_long_term_history))
-        content.addView(summaryText(chartMetricLabel(report), 11f, palette.onSurfaceVariant))
-        val chart = org.isoron.uhabits.activities.statistics.views.StatisticsBucketChartView(requireContext()).apply {
-            setData(buckets, buckets.map {
-                if (it.start.month == 1 && it.end.month == 12) it.start.year.toString()
-                else dateFormatter.shortMonthName(it.start)
-            }, palette.accent, palette.onSurfaceVariant)
-        }
-        if (buckets.size > 12) {
-            content.addView(HorizontalScrollView(requireContext()).apply {
-                isHorizontalScrollBarEnabled = false
-                addView(chart, ViewGroup.LayoutParams(dp((buckets.size * 30).toFloat()).toInt(), dp(104f).toInt()))
-            })
-        } else content.addView(chart)
-        container.addView(card)
-    }
-
-    private fun addHabitStabilitySection(container: LinearLayout, report: StatisticsReportState) {
-        val items = report.habitStability
-        if (items.isEmpty()) return
-
-        val (card, content) = createSection(getString(R.string.statistics_habit_stability_title))
-
-        val listContainer = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-
-        val maxInitial = 5
-        val initialItems = if (items.size > maxInitial) items.take(maxInitial) else items
-        val remainingItems = if (items.size > maxInitial) items.drop(maxInitial) else emptyList()
-
-        initialItems.forEachIndexed { index, item ->
-            if (index > 0) {
-                listContainer.addView(createDivider())
-            }
-            listContainer.addView(createStabilityRow(item))
-        }
-
-        if (remainingItems.isNotEmpty()) {
-            val expandedContainer = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.VERTICAL
-                visibility = View.GONE
-            }
-            remainingItems.forEach { item ->
-                expandedContainer.addView(createDivider())
-                expandedContainer.addView(createStabilityRow(item))
-            }
-
-            val toggle = summaryText(
-                getString(R.string.statistics_show_more_habits, remainingItems.size),
-                13f,
-                palette.accent,
-                bold = true
-            ).apply {
-                minHeight = dp(40f).toInt()
-                gravity = Gravity.CENTER_VERTICAL
-                isClickable = true
-                isFocusable = true
-                quietPressFeedback(this)
-                setOnClickListener {
-                    val isExpanded = expandedContainer.visibility == View.VISIBLE
-                    expandedContainer.visibility = if (isExpanded) View.GONE else View.VISIBLE
-                    text = if (isExpanded) {
-                        getString(R.string.statistics_show_more_habits, remainingItems.size)
-                    } else {
-                        getString(R.string.statistics_show_less_habits)
-                    }
-                }
-            }
-            listContainer.addView(expandedContainer)
-            listContainer.addView(toggle)
-        }
-
-        content.addView(listContainer)
-        container.addView(card)
-    }
-
-    private fun createDivider(): View = View(requireContext()).apply {
-        layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(1f).toInt().coerceAtLeast(1)
-        )
-        setBackgroundColor(palette.divider)
-    }
-
-    private fun createStabilityRow(item: StatisticsHabitStabilityItem): View {
-        val row = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            val verticalPadding = dp(6f).toInt()
-            setPadding(0, verticalPadding, 0, verticalPadding)
-            minimumHeight = dp(42f).toInt()
-            isClickable = true
-            isFocusable = true
-            quietPressFeedback(this)
-            setOnClickListener {
-                startActivity(IntentFactory().startShowHabitActivity(requireContext(), item.habit))
-            }
-        }
-
-        val topRow = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
-        val dot = View(requireContext()).apply {
-            val size = dp(8f).toInt()
-            layoutParams = LinearLayout.LayoutParams(size, size).apply {
-                rightMargin = dp(8f).toInt()
-            }
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(themeSwitcher.currentTheme.color(item.habit.color).toInt())
-            }
-        }
-        val nameView = summaryText(item.habit.name, 13f, palette.onSurface).apply {
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }
-        val scorePercent = "${(item.score * 100).roundToInt()}%"
-        val scoreView = summaryText(scorePercent, 13f, palette.onSurface, bold = true).apply {
-            setPadding(dp(8f).toInt(), 0, 0, 0)
-        }
-
-        topRow.addView(dot)
-        topRow.addView(nameView)
-        topRow.addView(scoreView)
-        row.addView(topRow)
-
-        val barTrack = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(4f).toInt()
-            ).apply {
-                topMargin = dp(4f).toInt()
-            }
-            background = GradientDrawable().apply {
-                setColor(ColorUtils.blendARGB(palette.surface, palette.onSurfaceVariant, 0.14f))
-                cornerRadius = dp(2f)
-            }
-        }
-
-        val habitColor = themeSwitcher.currentTheme.color(item.habit.color).toInt()
-        val fillWeight = item.score.toFloat().coerceIn(0f, 1f)
-        if (fillWeight > 0f) {
-            val fillView = View(requireContext()).apply {
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, fillWeight)
-                background = GradientDrawable().apply {
-                    setColor(habitColor)
-                    cornerRadius = dp(2f)
-                }
-            }
-            barTrack.addView(fillView)
-        }
-        if (fillWeight < 1f) {
-            val spacer = View(requireContext()).apply {
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f - fillWeight)
-            }
-            barTrack.addView(spacer)
-        }
-
-        row.addView(barTrack)
-        return row
-    }
-
-    private fun addSphereSection(container: LinearLayout, report: StatisticsReportState) {
-        if (!component.preferences.isHabitSpheresEnabled) return
-        if (currentFilters.sphereId != null) return
-
-        val meaningfulSpheres = report.sphereProgress.filter { it.blockId != null }
-        if (meaningfulSpheres.size <= 1) return
-
-        val blocks = component.habitList.getBlocks().associateBy { it.id }
-        val (card, content) = createSection(getString(R.string.statistics_by_sphere))
-
-        val ordered = report.sphereProgress.sortedWith(
-            compareByDescending<StatisticsSphereProgress> { it.progress != null }
-                .thenByDescending { it.progress ?: -1.0 }
-        )
-
-        val listContainer = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-        }
-
-        val maxInitial = 5
-        val initialSpheres = if (ordered.size > maxInitial) ordered.take(maxInitial) else ordered
-        val remainingSpheres = if (ordered.size > maxInitial) ordered.drop(maxInitial) else emptyList()
-
-        initialSpheres.forEachIndexed { index, sphereItem ->
-            listContainer.addView(createSphereRow(sphereItem, blocks, index == 0, index == initialSpheres.size - 1 && remainingSpheres.isEmpty()))
-        }
-
-        if (remainingSpheres.isNotEmpty()) {
-            val expandedContainer = LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.VERTICAL
-                visibility = View.GONE
-            }
-            remainingSpheres.forEachIndexed { index, sphereItem ->
-                expandedContainer.addView(createSphereRow(sphereItem, blocks, isFirst = false, isLast = index == remainingSpheres.size - 1))
-            }
-
-            val toggle = summaryText(
-                getString(R.string.statistics_show_more_habits, remainingSpheres.size),
-                13f,
-                palette.accent,
-                bold = true
-            ).apply {
-                minHeight = dp(40f).toInt()
-                gravity = Gravity.CENTER_VERTICAL
-                isClickable = true
-                isFocusable = true
-                quietPressFeedback(this)
-                setOnClickListener {
-                    val isExpanded = expandedContainer.visibility == View.VISIBLE
-                    expandedContainer.visibility = if (isExpanded) View.GONE else View.VISIBLE
-                    text = if (isExpanded) {
-                        getString(R.string.statistics_show_more_habits, remainingSpheres.size)
-                    } else {
-                        getString(R.string.statistics_show_less_habits)
-                    }
-                }
-            }
-            listContainer.addView(expandedContainer)
-            listContainer.addView(toggle)
-        }
-
-        content.addView(listContainer)
-        container.addView(card)
-    }
-
-    private fun createSphereRow(
-        sphereItem: StatisticsSphereProgress,
-        blocks: Map<Long?, HabitBlock>,
-        isFirst: Boolean,
-        isLast: Boolean
-    ): View {
-        val block = sphereItem.blockId?.let(blocks::get)
-        val sphereName = block?.name ?: getString(R.string.statistics_no_sphere)
-        val sphereColor = block?.let { themeSwitcher.currentTheme.color(it.color).toInt() } ?: palette.onSurfaceVariant
-
-        val row = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            val topPadding = if (isFirst) 0 else dp(6f).toInt()
-            val bottomPadding = if (isLast) 0 else dp(4f).toInt()
-            setPadding(0, topPadding, 0, bottomPadding)
-        }
-
-        val topRow = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
-        val dot = View(requireContext()).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(8f).toInt(), dp(8f).toInt()).apply {
-                rightMargin = dp(8f).toInt()
-            }
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(sphereColor)
-            }
-        }
-
-        val nameView = summaryText(sphereName, 13f, palette.onSurfaceVariant).apply {
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }
-
-        val progress = sphereItem.progress
-        val valueView = summaryText(
-            progress?.let { "${(it * 100).roundToInt()}%" } ?: "—",
-            13f,
-            if (progress != null) palette.onSurface else palette.onSurfaceVariant,
-            bold = progress != null
-        )
-
-        topRow.addView(dot)
-        topRow.addView(nameView)
-        topRow.addView(valueView)
-        row.addView(topRow)
-
-        val barTrack = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(4f).toInt()
-            ).apply {
-                topMargin = dp(4f).toInt()
-            }
-            background = GradientDrawable().apply {
-                setColor(ColorUtils.blendARGB(palette.surface, palette.onSurfaceVariant, 0.14f))
-                cornerRadius = dp(2f)
-            }
-        }
-
-        val fillWeight = progress?.toFloat()?.coerceIn(0f, 1f) ?: 0f
-        if (fillWeight > 0f) {
-            val fillView = View(requireContext()).apply {
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, fillWeight)
-                background = GradientDrawable().apply {
-                    setColor(sphereColor)
-                    cornerRadius = dp(2f)
-                }
-            }
-            barTrack.addView(fillView)
-        }
-        if (fillWeight < 1f) {
-            val spacer = View(requireContext()).apply {
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f - fillWeight)
-            }
-            barTrack.addView(spacer)
-        }
-
-        row.addView(barTrack)
-        return row
-    }
-
-    private fun createReportHabitRow(result: StatisticsHabitResult): View {
-        val row = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(44f).toInt()
-            val vertical = dp(6f).toInt()
-            setPadding(0, vertical, 0, vertical)
-            isClickable = true
-            isFocusable = true
-            quietPressFeedback(this)
-            setOnClickListener {
-                startActivity(IntentFactory().startShowHabitActivity(requireContext(), result.habit))
-            }
-        }
-        row.addView(
-            View(requireContext()).apply {
-                val size = dp(8f).toInt()
-                layoutParams = LinearLayout.LayoutParams(size, size).apply {
-                    rightMargin = dp(8f).toInt()
-                }
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(themeSwitcher.currentTheme.color(result.habit.color).toInt())
-                }
-            }
-        )
-        val texts = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            addView(summaryText(result.habit.name, 13f, palette.onSurface).apply {
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-            })
-            addView(summaryText(formatHabitResult(result), 11f, palette.onSurfaceVariant).apply {
-                setPadding(0, dp(1f).toInt(), 0, 0)
-            })
-        }
-        row.addView(texts)
-        row.addView(
-            summaryText("${(result.progress * 100).roundToInt()}%", 13f, palette.onSurface, bold = true).apply {
-                gravity = Gravity.END
-                setPadding(dp(8f).toInt(), 0, 0, 0)
-            }
-        )
-        return row
-    }
-
     private fun formatHabitResult(result: StatisticsHabitResult): String {
-        val actual = result.actual.formatStatisticsValue()
-        val target = result.target.formatStatisticsValue()
-        val unit = result.unit.trim()
-        val values = if (unit.isEmpty()) "$actual / $target" else "$actual / $target $unit"
-        val status = when (result.status) {
+        val statusLabel = when (result.status) {
             StatisticsResultStatus.PENDING -> getString(R.string.statistics_status_pending)
             StatisticsResultStatus.ON_TRACK -> getString(R.string.statistics_status_on_track)
             StatisticsResultStatus.VIOLATED -> getString(R.string.statistics_status_violated)
@@ -1673,26 +961,7 @@ class StatisticsFragment : Fragment(), ModelObservable.Listener {
             StatisticsResultStatus.SKIPPED -> getString(R.string.statistics_status_skipped)
             StatisticsResultStatus.COMPLETED -> null
         }
-        return if (status == null) values else "$values · $status"
-    }
-
-    private fun summaryText(textValue: String, size: Float, color: Int, bold: Boolean = false) =
-        TextView(requireContext()).apply {
-            text = textValue
-            textSize = size
-            setTextColor(color)
-            fontFeatureSettings = "tnum"
-            if (bold) setTypeface(null, Typeface.BOLD)
-        }
-
-    private fun quietPressFeedback(view: View) {
-        view.setOnTouchListener { touched, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> touched.alpha = 0.62f
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> touched.alpha = 1f
-            }
-            false
-        }
+        return formatLegacyHabitResult(result, statusLabel)
     }
 
     private fun tierLabel(tier: DayTier): String {
