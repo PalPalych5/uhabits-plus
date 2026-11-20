@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.coordinatorlayout.widget.CoordinatorLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/mainRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent">
@@ -11,178 +10,43 @@
         android:layout_height="match_parent"
         android:orientation="horizontal">
 
-        <FrameLayout
+        <androidx.compose.ui.platform.ComposeView
             android:id="@+id/workspaceSidebarHost"
             android:layout_width="240dp"
             android:layout_height="match_parent"
             android:visibility="gone" />
 
-    <LinearLayout
-        android:layout_width="0dp"
-        android:layout_weight="1"
-        android:layout_height="match_parent"
-        android:orientation="vertical">
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical">
 
-        <androidx.appcompat.widget.Toolbar
-            android:id="@+id/workspaceSecondaryToolbar"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:visibility="gone"
-            app:title="@string/reports_title" />
-
-        <androidx.fragment.app.FragmentContainerView
-            android:id="@+id/mainContent"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1" />
-
-        <!-- Container for Custom Bottom Navigation and Sliding Indicator -->
-        <FrameLayout
-            android:id="@+id/bottomNavigationContainer"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="?attr/bottomNavigationBackground">
-
-            <View
-                android:id="@+id/bottomNavigationDivider"
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_gravity="top" />
-
-            <!-- Horizontal Tab Bar (Compact 50dp height) -->
-            <LinearLayout
-                android:id="@+id/bottomNavigation"
+            <androidx.compose.ui.platform.ComposeView
+                android:id="@+id/workspaceSecondaryToolbar"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:minHeight="50dp"
-                android:orientation="horizontal"
-                android:baselineAligned="false">
+                android:visibility="gone" />
 
-                <!-- Habits Item -->
-                <LinearLayout
-                    android:id="@+id/btnNavHabits"
-                    android:layout_width="0dp"
-                    android:layout_height="50dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:gravity="center"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:background="@android:color/transparent">
+            <androidx.fragment.app.FragmentContainerView
+                android:id="@+id/mainContent"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
 
-                    <ImageView
-                        android:id="@+id/iconHabits"
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
-                        android:src="@drawable/ic_nav_habits"
-                        android:contentDescription="@string/habits_title" />
+            <FrameLayout
+                android:id="@+id/bottomNavigationContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/bottomNavigationBackground">
 
-                    <TextView
-                        android:id="@+id/labelHabits"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="1dp"
-                        android:textSize="11sp"
-                        android:singleLine="true"
-                        android:ellipsize="end"
-                        android:text="@string/habits_title" />
-                </LinearLayout>
+                <androidx.compose.ui.platform.ComposeView
+                    android:id="@+id/bottomNavigation"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
 
-                <!-- Tasks Item (visible in experimental mode) -->
-                <LinearLayout
-                    android:id="@+id/btnNavTasks"
-                    android:layout_width="0dp"
-                    android:layout_height="50dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:gravity="center"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:visibility="gone"
-                    android:background="@android:color/transparent">
-
-                    <ImageView
-                        android:id="@+id/iconTasks"
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
-                        android:src="@drawable/ic_nav_tasks"
-                        android:contentDescription="@string/tasks_title" />
-
-                    <TextView
-                        android:id="@+id/labelTasks"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="1dp"
-                        android:textSize="11sp"
-                        android:singleLine="true"
-                        android:ellipsize="end"
-                        android:text="@string/tasks_title" />
-                </LinearLayout>
-
-                <!-- Reports/Statistics Item -->
-                <LinearLayout
-                    android:id="@+id/btnNavReports"
-                    android:layout_width="0dp"
-                    android:layout_height="50dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:gravity="center"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:background="@android:color/transparent">
-
-                    <ImageView
-                        android:id="@+id/iconReports"
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
-                        android:src="@drawable/ic_nav_reports"
-                        android:contentDescription="@string/reports_title" />
-
-                    <TextView
-                        android:id="@+id/labelReports"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="1dp"
-                        android:textSize="11sp"
-                        android:singleLine="true"
-                        android:ellipsize="end"
-                        android:text="@string/reports_title" />
-                </LinearLayout>
-
-                <!-- Settings Item -->
-                <LinearLayout
-                    android:id="@+id/btnNavSettings"
-                    android:layout_width="0dp"
-                    android:layout_height="50dp"
-                    android:layout_weight="1"
-                    android:orientation="vertical"
-                    android:gravity="center"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:background="@android:color/transparent">
-
-                    <ImageView
-                        android:id="@+id/iconSettings"
-                        android:layout_width="24dp"
-                        android:layout_height="24dp"
-                        android:src="@drawable/ic_nav_settings"
-                        android:contentDescription="@string/settings" />
-
-                    <TextView
-                        android:id="@+id/labelSettings"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="1dp"
-                        android:textSize="11sp"
-                        android:singleLine="true"
-                        android:ellipsize="end"
-                        android:text="@string/settings" />
-                </LinearLayout>
-
-            </LinearLayout>
-
-        </FrameLayout>
-    </LinearLayout>
+            </FrameLayout>
+        </LinearLayout>
     </LinearLayout>
 
     <FrameLayout

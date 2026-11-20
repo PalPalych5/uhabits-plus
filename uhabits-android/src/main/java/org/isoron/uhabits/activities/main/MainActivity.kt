@@ -5,7 +5,6 @@ import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.content.Context
 import android.content.Intent
-import android.content.res.ColorStateList
 import android.content.pm.PackageManager.PERMISSION_GRANTED
 import android.os.Build
 import android.os.Bundle
@@ -20,6 +19,11 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts.RequestPermission
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.content.ContextCompat.checkSelfPermission
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
@@ -37,17 +41,15 @@ import org.isoron.uhabits.activities.statistics.StatisticsFragment
 import org.isoron.uhabits.activities.statistics.UnifiedStatisticsFragment
 import org.isoron.uhabits.activities.settings.SettingsSectionFragment
 import org.isoron.uhabits.activities.settings.AccentColorManager
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
 import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.core.models.sqlite.SQLiteHabitList
 import org.isoron.uhabits.core.tasks.Task
 import org.isoron.uhabits.database.AutoBackup
 import org.isoron.uhabits.databinding.ActivityMainBinding
 import org.isoron.uhabits.sync.SyncRunResult
-import android.widget.ImageView
-import android.widget.TextView
 import androidx.core.content.ContextCompat
-import android.annotation.SuppressLint
-import android.view.MotionEvent
 import org.isoron.uhabits.activities.tasks.TasksFragment
 import org.isoron.uhabits.utils.applyRootViewInsets
 import org.isoron.uhabits.utils.restartWithFade
@@ -65,15 +67,13 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     private var isBottomTabTransitionRunning = false
     private var pendingArchiveBack = false
     private var tabTransitionToken = 0
-    private lateinit var habitsTabAnimator: TabAnimator
-    private lateinit var tasksTabAnimator: TabAnimator
-    private lateinit var reportsTabAnimator: TabAnimator
-    private lateinit var settingsTabAnimator: TabAnimator
+    private lateinit var navigationColors: MutableState<UHabitComposeColors>
+    private lateinit var bottomSelection: MutableState<BottomWorkspaceSelection>
+    private var sidebarDestination by mutableStateOf(MainDestination.HABITS)
     private var bottomNavigationNaturalHeight = 0
     private var bottomNavigationAnimationToken = 0
     private var taskQuickAddActive = false
     private var habitsSearchActive = false
-    private lateinit var workspaceSidebar: MainWorkspaceSidebar
     private val experimentalWide: Boolean
         get() = appComponent.session.isNextArchitecture && resources.configuration.screenWidthDp >= 600
 
@@ -139,7 +139,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         val palette = MainTabsThemeBridge.resolve(this)
         binding.mainRoot.setBackgroundColor(palette.background)
         binding.mainContent.setBackgroundColor(palette.background)
-        binding.bottomNavigationDivider.setBackgroundColor(palette.divider)
+        navigationColors = mutableStateOf(UHabitComposeColors.fromPalette(palette))
         window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(palette.background))
         if (intent.getBooleanExtra(EXTRA_RESTORE_SUCCESS, false)) {
             Toast.makeText(this, R.string.restore_backup_success, Toast.LENGTH_LONG).show()
@@ -188,47 +188,19 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         }
     }
 
-    @SuppressLint("ClickableViewAccessibility")
     private fun setupBottomNavigation() {
-        habitsTabAnimator = TabAnimator(binding.iconHabits, binding.labelHabits)
-        tasksTabAnimator = TabAnimator(binding.iconTasks, binding.labelTasks)
-        reportsTabAnimator = TabAnimator(binding.iconReports, binding.labelReports)
-        settingsTabAnimator = TabAnimator(binding.iconSettings, binding.labelSettings)
-
-        binding.btnNavTasks.visibility = if (appComponent.session.isNextArchitecture) View.VISIBLE else View.GONE
-        binding.btnNavSettings.visibility = if (appComponent.session.isNextArchitecture) View.GONE else View.VISIBLE
-
-        binding.btnNavHabits.setOnClickListener {
-            onBottomItemClicked(MainDestination.HABITS)
-        }
-        binding.btnNavTasks.setOnClickListener {
-            onBottomItemClicked(MainDestination.TASKS)
-        }
-        binding.btnNavReports.setOnClickListener {
-            onBottomItemClicked(MainDestination.STATISTICS)
-        }
-        binding.btnNavSettings.setOnClickListener {
-            onBottomItemClicked(MainDestination.SETTINGS)
-        }
-
-        setupScaleOnPress(binding.btnNavHabits)
-        setupScaleOnPress(binding.btnNavTasks)
-        setupScaleOnPress(binding.btnNavReports)
-        setupScaleOnPress(binding.btnNavSettings)
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun setupScaleOnPress(view: View) {
-        view.setOnTouchListener { v, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    v.animate().scaleX(0.98f).scaleY(0.98f).setDuration(80).start()
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(150).start()
+        bottomSelection = mutableStateOf(bottomWorkspaceSelection(navigationState.current, animate = false))
+        binding.bottomNavigation.apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                UHabitComposeTheme(navigationColors.value) {
+                    MainBottomNavigation(
+                        bottomSelection.value,
+                        appComponent.session.isNextArchitecture,
+                        ::onBottomItemClicked
+                    )
                 }
             }
-            false
         }
     }
 
@@ -354,7 +326,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         isBottomTabTransitionRunning = true
         (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionStarted()
         (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? UnifiedStatisticsFragment)?.onTabTransitionStarted()
-        updateBottomSelection(destination, animate = true, previous = source)
+        updateBottomSelection(destination, animate = true)
 
         if (target is ListHabitsFragment) {
             target.setDisplayMode(
@@ -474,47 +446,18 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
         }
     }
 
-    private fun updateBottomSelection(
-        destination: MainDestination,
-        animate: Boolean = false,
-        previous: MainDestination? = null
-    ) {
+    private fun updateBottomSelection(destination: MainDestination, animate: Boolean = false) {
+        bottomSelection.value = bottomWorkspaceSelection(destination, animate)
+    }
+
+    private fun bottomWorkspaceSelection(destination: MainDestination, animate: Boolean): BottomWorkspaceSelection {
         val activeColor = AccentColorManager.getAccentColor(this, prefs)
         val inactiveColor = if (appComponent.session.isNextArchitecture) MainTabsThemeBridge.resolve(this).onSurfaceVariant else ContextCompat.getColor(
             this,
             if (AndroidThemeSwitcher(this, prefs).isNightMode) R.color.grey_500 else R.color.grey_600
         )
 
-        val habitsActive = destination.bottomItemDestination == MainDestination.HABITS
-        val tasksActive = destination.bottomItemDestination == MainDestination.TASKS
-        val reportsActive = destination.bottomItemDestination == MainDestination.STATISTICS
-        val settingsActive = destination.bottomItemDestination == MainDestination.SETTINGS
-
-        // Update colors
-        habitsTabAnimator.updateColors(activeColor, inactiveColor, if (appComponent.session.isNextArchitecture) 1f else 0.54f)
-        if (appComponent.session.isNextArchitecture) {
-            tasksTabAnimator.updateColors(activeColor, inactiveColor, if (appComponent.session.isNextArchitecture) 1f else 0.54f)
-        }
-        reportsTabAnimator.updateColors(activeColor, inactiveColor, if (appComponent.session.isNextArchitecture) 1f else 0.54f)
-        settingsTabAnimator.updateColors(activeColor, inactiveColor, if (appComponent.session.isNextArchitecture) 1f else 0.54f)
-
-        // Animate or snap selection state
-        val shouldAnimate = animate && areSystemAnimationsEnabled()
-        if (shouldAnimate) {
-            habitsTabAnimator.animateTo(habitsActive)
-            if (appComponent.session.isNextArchitecture) {
-                tasksTabAnimator.animateTo(tasksActive)
-            }
-            reportsTabAnimator.animateTo(reportsActive)
-            settingsTabAnimator.animateTo(settingsActive)
-        } else {
-            habitsTabAnimator.snapTo(habitsActive)
-            if (appComponent.session.isNextArchitecture) {
-                tasksTabAnimator.snapTo(tasksActive)
-            }
-            reportsTabAnimator.snapTo(reportsActive)
-            settingsTabAnimator.snapTo(settingsActive)
-        }
+        return BottomWorkspaceSelection(destination, activeColor, inactiveColor, animate && areSystemAnimationsEnabled())
     }
 
     private fun navigateFromBottomTab(destination: MainDestination) {
@@ -895,38 +838,39 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     private fun applyAccentColor() {
+        navigationColors.value = UHabitComposeColors.fromPalette(MainTabsThemeBridge.resolve(this))
         updateBottomSelection(navigationState.current)
-        if (::workspaceSidebar.isInitialized) updateAdaptiveNavigation(navigationState.current)
+        updateAdaptiveNavigation(navigationState.current)
     }
 
     private fun setupAdaptiveNavigation() {
-        workspaceSidebar = MainWorkspaceSidebar(this).apply {
-            onDestination = { navigate(it) }
+        binding.workspaceSidebarHost.apply {
+            androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(this) { sidebar, insets ->
+                val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                val cutout = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.displayCutout())
+                sidebar.setPadding(0, maxOf(bars.top, cutout.top), 0, maxOf(bars.bottom, cutout.bottom))
+                insets
+            }
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                UHabitComposeTheme(navigationColors.value) {
+                    MainWorkspaceSidebar(sidebarDestination, onDestination = ::navigate)
+                }
+            }
         }
-        binding.workspaceSidebarHost.addView(workspaceSidebar)
-        val palette = MainTabsThemeBridge.resolve(this)
         binding.workspaceSecondaryToolbar.apply {
             androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(this) { toolbar, insets ->
                 val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.statusBars())
                 val cutout = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.displayCutout())
                 val top = maxOf(bars.top, cutout.top)
                 toolbar.setPadding(toolbar.paddingLeft, top, toolbar.paddingRight, 0)
-                val totalHeight = (48 * resources.displayMetrics.density).toInt() + top
-                if (toolbar.layoutParams.height != totalHeight) {
-                    toolbar.layoutParams = toolbar.layoutParams.apply { height = totalHeight }
-                }
                 insets
             }
-            setBackgroundColor(palette.background)
-            setTitleTextColor(palette.onSurface)
-            menu.add(0, MENU_WORKSPACE_SETTINGS, 0, R.string.settings).apply {
-                setIcon(R.drawable.ic_nav_settings)
-                icon?.setTint(palette.onSurfaceVariant)
-                setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-            }
-            setOnMenuItemClickListener {
-                navigate(MainDestination.SETTINGS)
-                true
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+            setContent {
+                UHabitComposeTheme(navigationColors.value) {
+                    StatisticsWorkspaceToolbar(onSettings = { navigate(MainDestination.SETTINGS) })
+                }
             }
         }
     }
@@ -943,23 +887,24 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     private fun updateAdaptiveNavigation(destination: MainDestination) {
-        if (!::workspaceSidebar.isInitialized) return
+        val colors = navigationColors.value
         if (appComponent.session.isNextArchitecture) {
-            val palette = MainTabsThemeBridge.resolve(this)
             androidx.core.view.WindowInsetsControllerCompat(window, binding.root).apply {
-                isAppearanceLightStatusBars = !palette.isDark
-                isAppearanceLightNavigationBars = !palette.isDark
+                isAppearanceLightStatusBars = !colors.isDark
+                isAppearanceLightNavigationBars = !colors.isDark
             }
         }
+        binding.workspaceSidebarHost.setBackgroundColor(colors.surface)
+        binding.workspaceSecondaryToolbar.setBackgroundColor(colors.background)
         binding.workspaceSidebarHost.visibility = if (
             experimentalWide && destination != MainDestination.TASKS
         ) View.VISIBLE else View.GONE
-        workspaceSidebar.showSelection(destination)
+        sidebarDestination = destination
         binding.workspaceSecondaryToolbar.visibility = if (
             appComponent.session.isNextArchitecture && !experimentalWide && destination == MainDestination.STATISTICS
         ) View.VISIBLE else View.GONE
         androidx.core.view.ViewCompat.requestApplyInsets(binding.workspaceSecondaryToolbar)
-        androidx.core.view.ViewCompat.requestApplyInsets(workspaceSidebar)
+        androidx.core.view.ViewCompat.requestApplyInsets(binding.workspaceSidebarHost)
         invalidateOptionsMenu()
     }
 
@@ -1119,69 +1064,5 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
             }
     }
 
-    private class TabAnimator(
-        private val iconView: ImageView,
-        private val labelView: TextView
-    ) {
-        private var animator: android.animation.ValueAnimator? = null
-        private var activeColor: Int = 0
-        private var inactiveColor: Int = 0
-        private var minimumAlpha: Float = 0.54f
-
-        var progress: Float = 0f
-            set(value) {
-                field = value
-
-                // Scale icon
-                val scale = 1.0f + (0.06f * value) // Subtle 1.0 to 1.06 scale
-                iconView.scaleX = scale
-                iconView.scaleY = scale
-
-                // Alpha
-                val alpha = minimumAlpha + ((1f - minimumAlpha) * value)
-                iconView.alpha = alpha
-                labelView.alpha = alpha
-
-                // Color blending
-                val color = blendColors(inactiveColor, activeColor, value)
-                iconView.setColorFilter(color)
-                labelView.setTextColor(color)
-            }
-
-        fun updateColors(active: Int, inactive: Int, minimumAlpha: Float = 0.54f) {
-            this.minimumAlpha = minimumAlpha
-            this.activeColor = active
-            this.inactiveColor = inactive
-            progress = progress // Force color re-evaluation
-        }
-
-        fun animateTo(active: Boolean) {
-            val target = if (active) 1f else 0f
-            if (progress == target) return
-            animator?.cancel()
-            animator = android.animation.ValueAnimator.ofFloat(progress, target).apply {
-                duration = 200
-                interpolator = android.view.animation.DecelerateInterpolator()
-                addUpdateListener { animator ->
-                    progress = animator.animatedValue as Float
-                }
-                start()
-            }
-        }
-
-        fun snapTo(active: Boolean) {
-            animator?.cancel()
-            progress = if (active) 1f else 0f
-        }
-
-        private fun blendColors(color1: Int, color2: Int, ratio: Float): Int {
-            val inverseRatio = 1f - ratio
-            val a = (android.graphics.Color.alpha(color1) * inverseRatio + android.graphics.Color.alpha(color2) * ratio).toInt()
-            val r = (android.graphics.Color.red(color1) * inverseRatio + android.graphics.Color.red(color2) * ratio).toInt()
-            val g = (android.graphics.Color.green(color1) * inverseRatio + android.graphics.Color.green(color2) * ratio).toInt()
-            val b = (android.graphics.Color.blue(color1) * inverseRatio + android.graphics.Color.blue(color2) * ratio).toInt()
-            return android.graphics.Color.argb(a, r, g, b)
-        }
-    }
 }
 
