@@ -35,6 +35,7 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -42,6 +43,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
@@ -50,6 +52,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -57,6 +60,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -125,7 +129,7 @@ data class TagItemState(
 /**
  * Modern, ergonomic Jetpack Compose Task Detail Screen.
  */
-@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
 fun TaskDetailComposeScreen(
     state: TaskDetailUiState,
@@ -161,6 +165,7 @@ fun TaskDetailComposeScreen(
         modifier = modifier
             .fillMaxWidth()
             .wrapContentHeight()
+            .semantics { testTagsAsResourceId = true }
     ) {
         // --- 1. Top Drag Handle & Action Bar ---
         TaskDetailTopBar(
@@ -182,6 +187,7 @@ fun TaskDetailComposeScreen(
                 .fillMaxWidth()
                 .wrapContentHeight()
                 .verticalScroll(scrollState)
+                .testTag("taskDetailScroll")
                 .padding(horizontal = 16.dp, vertical = 4.dp)
         ) {
             // Task Title Row (with Circular Checkbox)
@@ -210,6 +216,7 @@ fun TaskDetailComposeScreen(
                     onValueChange = onTitleChange,
                     modifier = Modifier
                         .weight(1f)
+                        .testTag("taskDetailTitle")
                         .padding(top = 2.dp),
                     textStyle = TextStyle(
                         fontSize = 18.5.sp,
@@ -249,6 +256,7 @@ fun TaskDetailComposeScreen(
                 onValueChange = onNotesChange,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .testTag("taskDetailNotes")
                     .padding(start = 40.dp, top = 6.dp, bottom = 12.dp)
                     .heightIn(min = 44.dp),
                 textStyle = TextStyle(
@@ -448,6 +456,7 @@ private fun TaskDetailTopBar(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .clickable(role = Role.Button, onClick = onClose)
+                        .testTag("taskDetailCancel")
                         .padding(horizontal = 8.dp, vertical = 6.dp)
                 ) {
                     BasicText(
@@ -503,6 +512,7 @@ private fun TaskDetailTopBar(
                             role = Role.Button,
                             onClick = onCreateSubmit
                         )
+                        .testTag("taskDetailCreate")
                         .padding(horizontal = 16.dp, vertical = 7.dp)
                 ) {
                     BasicText(
@@ -615,7 +625,8 @@ private fun TaskDetailTopBar(
                     modifier = Modifier
                         .size(36.dp)
                         .clip(CircleShape)
-                        .clickable(role = Role.Button, onClick = onMoreOptionsClick),
+                        .clickable(role = Role.Button, onClick = onMoreOptionsClick)
+                        .testTag("taskDetailEditActions"),
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
@@ -737,6 +748,7 @@ private fun DetailDueChip(
         Spacer(modifier = Modifier.width(5.dp))
         BasicText(
             text = if (hasDue) formatted else stringResource(R.string.task_detail_due),
+            modifier = Modifier.testTag("taskDetailDue"),
             style = TextStyle(
                 fontSize = 12.5.sp,
                 fontWeight = if (hasDue) FontWeight.Medium else FontWeight.Normal,
@@ -781,6 +793,7 @@ private fun DetailContainerChip(
             .background(Color(colors.surfaceVariant).copy(alpha = 0.6f))
             .border(1.dp, Color(colors.border).copy(alpha = 0.6f), RoundedCornerShape(18.dp))
             .clickable(onClick = onClick)
+            .testTag("taskDetailContainer")
             .padding(horizontal = 10.dp, vertical = 6.dp)
     ) {
         if (containerColor != null) {
@@ -801,6 +814,7 @@ private fun DetailContainerChip(
         Spacer(modifier = Modifier.width(5.dp))
         BasicText(
             text = name,
+            modifier = Modifier.testTag("taskDetailContainerLabel"),
             style = TextStyle(
                 fontSize = 12.5.sp,
                 color = Color(colors.foreground),
@@ -1014,7 +1028,8 @@ private fun SubtasksSection(
                                 newSubtaskText = ""
                             }
                         }
-                    ),
+                    )
+                    .testTag("taskDetailAddSubtask"),
                 contentAlignment = Alignment.Center
             ) {
                 Image(
@@ -1034,6 +1049,7 @@ private fun SubtasksSection(
                 onValueChange = { newSubtaskText = it },
                 modifier = Modifier
                     .weight(1f)
+                    .testTag("taskDetailSubtaskInput")
                     .padding(vertical = 6.dp),
                 textStyle = TextStyle(
                     fontSize = 14.sp,
@@ -1189,6 +1205,7 @@ private fun IntegrationGroupContainer(
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
                     .clickable(onClick = onFocusClick)
+                    .testTag("taskDetailFocus")
                     .padding(horizontal = 12.dp, vertical = 9.dp)
             ) {
                 Image(
@@ -1215,6 +1232,7 @@ private fun IntegrationGroupContainer(
                     Spacer(modifier = Modifier.height(1.dp))
                     BasicText(
                         text = focusSummary ?: stringResource(R.string.task_detail_focus_start_prompt),
+                        modifier = Modifier.testTag("taskDetailFocusSummary"),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         style = TextStyle(
@@ -1261,6 +1279,7 @@ private fun IntegrationGroupContainer(
                     .fillMaxWidth()
                     .heightIn(min = 48.dp)
                     .clickable(onClick = onHabitLinkClick)
+                    .testTag("taskDetailHabitLink")
                     .padding(horizontal = 12.dp, vertical = 9.dp)
             ) {
                 Image(
@@ -1337,6 +1356,7 @@ private fun IntegrationGroupContainer(
                     Column(modifier = Modifier.weight(1f)) {
                         BasicText(
                             text = linkedHabit.name,
+                            modifier = Modifier.testTag("taskDetailLinkedHabit"),
                             style = TextStyle(
                                 fontSize = 13.5.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -1349,6 +1369,7 @@ private fun IntegrationGroupContainer(
                             text = "${linkedHabit.unit} · " + stringResource(
                                 if (linkedHabit.timeAccrualEnabled) R.string.task_detail_accrual_on else R.string.task_detail_accrual_off
                             ),
+                            modifier = Modifier.testTag("taskDetailHabitAccrualSummary"),
                             style = TextStyle(
                                 fontSize = 11.5.sp,
                                 color = Color(colors.secondary),
@@ -1381,7 +1402,8 @@ private fun IntegrationGroupContainer(
                         modifier = Modifier
                             .size(28.dp)
                             .clip(CircleShape)
-                            .clickable(onClick = onHabitUnlinkClick),
+                            .clickable(onClick = onHabitUnlinkClick)
+                            .testTag("taskDetailHabitUnlink"),
                         contentAlignment = Alignment.Center
                     ) {
                         Image(
@@ -1430,6 +1452,7 @@ private fun CustomCompactSwitch(
     onCheckedChange: (Boolean) -> Unit
 ) {
     val trackBg = if (checked) Color(colors.accent) else Color(colors.secondary).copy(alpha = 0.25f)
+    val label = stringResource(R.string.task_detail_accrual_toggle_label)
     val thumbOffset by animateFloatAsState(
         targetValue = if (checked) 14f else 0f,
         animationSpec = tween(150),
@@ -1441,7 +1464,9 @@ private fun CustomCompactSwitch(
             .size(width = 38.dp, height = 22.dp)
             .clip(CircleShape)
             .background(trackBg)
-            .clickable { onCheckedChange(!checked) }
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
+            .testTag("taskDetailHabitAccrual")
+            .semantics { contentDescription = label }
             .padding(2.dp),
         contentAlignment = Alignment.CenterStart
     ) {

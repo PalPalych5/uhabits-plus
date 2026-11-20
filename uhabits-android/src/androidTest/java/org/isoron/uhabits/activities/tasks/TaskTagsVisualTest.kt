@@ -1,13 +1,16 @@
 package org.isoron.uhabits.activities.tasks
 
+import android.graphics.Rect
+import android.graphics.RectF
+import android.os.Bundle
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.View
 import android.view.ViewGroup
-import android.widget.TextView
-import androidx.recyclerview.widget.RecyclerView
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
@@ -133,17 +136,10 @@ class TaskTagsVisualTest {
                     }
                     idle()
                     screenshot("$name-picker")
-                    controller.onActivity { activity ->
-                        val fragment = tasks(activity)
-                        val detail = fragment.childFragmentManager.findFragmentByTag("task_detail")!!
-                        val picker = detail.childFragmentManager.findFragmentByTag("detailTags") as TaskTagPickerBottomSheet
-                        val pickerViews = descendants(picker.requireView())
-                        assertTrue(pickerViews.any { it.contentDescription?.toString() == "Тег: Работа" })
-                        assertTrue(pickerViews.any { it.contentDescription?.toString() == "Тег: Важно" })
-                        pickerViews.first { it.contentDescription?.toString() == "Тег: Когда-нибудь" }.performClick()
-                        pickerViews.filterIsInstance<TextView>().first { it.text.toString() == "Применить" }.performClick()
-                        detail.childFragmentManager.executePendingTransactions()
-                    }
+                    assertNotNull(device.findObject(By.desc("Тег: Работа")))
+                    assertNotNull(device.findObject(By.desc("Тег: Важно")))
+                    device.findObject(By.desc("Тег: Когда-нибудь")).click()
+                    device.findObject(By.text("Применить")).click()
                     idle()
                     assertEquals("Picker Apply persists multiple selected tags", setOf(work.id, important.id, empty.id), tags.getTagIds(first.id))
                     controller.onActivity { activity ->
@@ -155,15 +151,8 @@ class TaskTagsVisualTest {
                         detail.childFragmentManager.executePendingTransactions()
                     }
                     idle()
-                    controller.onActivity { activity ->
-                        val fragment = tasks(activity)
-                        val detail = fragment.childFragmentManager.findFragmentByTag("task_detail")!!
-                        val picker = detail.childFragmentManager.findFragmentByTag("detailTags") as TaskTagPickerBottomSheet
-                        val pickerViews = descendants(picker.requireView())
-                        pickerViews.first { it.contentDescription?.toString() == "Тег: Когда-нибудь" }.performClick()
-                        pickerViews.filterIsInstance<TextView>().first { it.text.toString() == "Применить" }.performClick()
-                        detail.childFragmentManager.executePendingTransactions()
-                    }
+                    device.findObject(By.desc("Тег: Когда-нибудь")).click()
+                    device.findObject(By.text("Применить")).click()
                     idle()
                     assertEquals("Picker removal preserves other links", setOf(work.id, important.id), tags.getTagIds(first.id))
                     controller.onActivity { activity ->
@@ -196,25 +185,10 @@ class TaskTagsVisualTest {
                         component.preferences.isPureBlackEnabled = black
                         controller.recreate()
                         select(controller, setOf(work.id))
-                        controller.onActivity { activity ->
-                            val fragment = tasks(activity)
-                            val filterChip = fragment.requireView().findViewById<TextView>(R.id.tvTasksTagFilter)
-                            assertEquals(View.VISIBLE, filterChip.visibility)
-                            assertTrue(filterChip.text.toString().contains("#Работа"))
-                            val recycler = fragment.requireView().findViewById<RecyclerView>(R.id.rvTasks)
-                            val metas = descendants(recycler).filterIsInstance<TextView>().filter {
-                                it.id == R.id.tvTaskMeta && it.isShown && it.text.toString().contains("#Работа")
-                            }
-                            assertTrue("1.3x list must render visible tag metadata", metas.isNotEmpty())
-                            metas.forEach { meta ->
-                                val layout = requireNotNull(meta.layout)
-                                assertTrue("Tag metadata must fit within maxLines=2", layout.lineCount in 1..2)
-                                assertTrue(
-                                    "Tag metadata must not clip vertically",
-                                    layout.height <= meta.height - meta.compoundPaddingTop - meta.compoundPaddingBottom + 2,
-                                )
-                            }
-                        }
+                        val filterChip = requireNotNull(device.findObject(By.res("tvTasksTagFilter")))
+                        val tagLabel = "#Работа"
+                        assertTrue(filterChip.hasObject(By.textContains(tagLabel)) || filterChip.text.orEmpty().contains(tagLabel))
+                        assertVisibleTagMetadata(tagLabel)
                         screenshot("font130-$name-list")
                         select(controller, emptySet())
                     }
@@ -262,7 +236,7 @@ class TaskTagsVisualTest {
             invoke(fragment, "loadTasks")
         }
         awaitLoaded(controller)
-        controller.onActivity { tasks(it).requireView().findViewById<RecyclerView>(R.id.rvTasks).scrollToPosition(0) }
+        controller.onActivity { tasks(it).taskListState.requestScrollToItem(0) }
         idle()
     }
 
@@ -281,11 +255,44 @@ class TaskTagsVisualTest {
     private fun assertRendered(controller: TaskDraftLifecycleTest.QaActivityController, expected: Set<TaskId>) {
         controller.onActivity { activity ->
             val fragment = tasks(activity)
-            val groups = field<Map<String, Pair<TaskSectionAdapter, TasksAdapter>>>(fragment, "groupAdapters")
-            val adapters = groups.values.map { it.second } + listOf(field(fragment, "adapter"), field(fragment, "overdueAdapter"))
-            val ids = adapters.flatMap { field<List<UserTask>>(it, "tasks") }.map { it.id }
+            val ids = fragment.taskListContent?.items.orEmpty()
+                .filterIsInstance<TaskListItem.Row>().map { it.task.id }
             assertEquals("Tag filter must contain only matching root tasks", expected, ids.toSet())
             assertEquals("Tag filter must not duplicate tasks", ids.size, ids.distinct().size)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun assertVisibleTagMetadata(label: String) {
+        val root = requireNotNull(instrumentation.uiAutomation.rootInActiveWindow)
+        val list = accessibilityNodes(root).first { it.viewIdResourceName == "tasksList" }
+        val key = AccessibilityNodeInfo.EXTRA_DATA_TEXT_CHARACTER_LOCATION_KEY
+        val metas = accessibilityNodes(list).filter { node ->
+            node.isVisibleToUser && node.text?.contains(label) == true && key in node.availableExtraData
+        }.toList()
+        assertTrue("1.3x list must render visible tag metadata", metas.isNotEmpty())
+        for (meta in metas) {
+            val length = requireNotNull(meta.text).length
+            val args = Bundle().apply {
+                putInt(AccessibilityNodeInfo.EXTRA_DATA_TEXT_CHARACTER_LOCATION_ARG_START_INDEX, 0)
+                putInt(AccessibilityNodeInfo.EXTRA_DATA_TEXT_CHARACTER_LOCATION_ARG_LENGTH, length)
+            }
+            assertTrue("Tag text must expose measured geometry", meta.refreshWithExtraData(key, args))
+            val characters = requireNotNull(meta.extras.getParcelableArray(key)).filterIsInstance<RectF>()
+            assertEquals("Tag text must expose all character bounds", length, characters.size)
+            assertTrue("Tag metadata must fit within two lines", characters.map { it.top }.distinct().size in 1..2)
+            val bounds = Rect().also(meta::getBoundsInScreen)
+            assertTrue("Tag metadata must not clip vertically", characters.all {
+                it.top >= bounds.top - 1 && it.bottom <= bounds.bottom + 1
+            })
+        }
+    }
+
+    private fun accessibilityNodes(node: AccessibilityNodeInfo): Sequence<AccessibilityNodeInfo> = sequence {
+        yield(node)
+        for (index in 0 until node.childCount) {
+            val child = node.getChild(index) ?: continue
+            yieldAll(accessibilityNodes(child))
         }
     }
 

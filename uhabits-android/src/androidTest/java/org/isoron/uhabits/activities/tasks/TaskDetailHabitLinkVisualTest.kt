@@ -4,19 +4,15 @@ package org.isoron.uhabits.activities.tasks
 
 import android.content.Intent
 import android.os.SystemClock
-import android.view.View
-import android.widget.CompoundButton
-import android.widget.TextView
-import androidx.core.widget.NestedScrollView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import org.isoron.uhabits.HabitsApplication
-import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.core.focus.FocusSession
@@ -125,68 +121,37 @@ class TaskDetailHabitLinkVisualTest {
 
                 when {
                     phase == "light-picker" -> {
-                        val sFocus = openSheet(controller, taskFocus.id)
-                        controller.onActivity {
-                            sFocus.requireView().findViewById<View>(R.id.btnHabitLinkAction).performClick()
-                        }
-                        idle()
-                        device.wait(Until.hasObject(By.text("Выберите привычку")), 4000)
-                        val btnNegative = device.findObject(By.res("android:id/button2"))
-                        assertNotNull("Negative button must exist in picker dialog", btnNegative)
-                        assertTrue(
-                            "Negative button must display localized 'Отмена', actual='${btnNegative.text}'",
-                            btnNegative.text.equals("Отмена", ignoreCase = true)
-                        )
+                        openSheet(controller, taskFocus.id)
+                        openHabitPicker()
+                        assertPickerCancel()
                         capture("03-habit-selection-dialog-light")
                         device.pressBack()
                         idle()
                         dismissSheet(controller)
                     }
                     phase.startsWith("light") -> {
-                        // 1. Task with focus time: Затрачено: 1 ч 25 мин
-                        val sFocus = openSheet(controller, taskFocus.id)
-                        controller.onActivity {
-                            val tvFocus = sFocus.requireView().findViewById<TextView>(R.id.tvDetailFocus)
-                            assertEquals("Затрачено: 1 ч 25 мин", tvFocus.text.toString())
-                        }
+                        openSheet(controller, taskFocus.id)
+                        assertFocusSummary("Затрачено: 1 ч 25 мин")
                         capture("01-task-focus-time")
 
-                        // 3. Habit selection picker dialog inspection
-                        controller.onActivity {
-                            sFocus.requireView().findViewById<View>(R.id.btnHabitLinkAction).performClick()
-                        }
-                        idle()
-                        var pickerShown = device.wait(Until.hasObject(By.text("Выберите привычку")), 3000)
-                        if (!pickerShown) {
-                            device.findObject(By.text("Привязать"))?.click()
-                            idle()
-                            pickerShown = device.wait(Until.hasObject(By.text("Выберите привычку")), 5000)
-                        }
-                        assertTrue("Picker dialog must be shown", pickerShown)
-                        val btnNegative = device.findObject(By.res("android:id/button2"))
-                        assertNotNull("Negative button must exist in picker dialog", btnNegative)
-                        assertTrue(
-                            "Negative button must display localized 'Отмена', actual='${btnNegative.text}'",
-                            btnNegative.text.equals("Отмена", ignoreCase = true)
-                        )
+                        openHabitPicker()
+                        assertPickerCancel()
                         assertTrue("Work habit must be present in picker", device.hasObject(By.text("Глубокая работа (мин)")))
                         assertTrue("English habit must be present in picker", device.hasObject(By.text("Английский язык (минуты)")))
                         assertFalse("Water habit must be filtered out", device.hasObject(By.text("Выпить воды (мл)")))
                         capture("03-habit-selection-dialog")
                         device.pressBack()
                         idle()
+                        assertNull("Cancel must leave the task unlinked", taskRepo.getById(taskFocus.id)?.linkedHabitUuid)
                         dismissSheet(controller)
 
-                        // 2. Task with 0 time: Затрачено: 0 мин
-                        val sZero = openSheet(controller, taskZero.id)
-                        controller.onActivity {
-                            val tvFocus = sZero.requireView().findViewById<TextView>(R.id.tvDetailFocus)
-                            assertEquals("Затрачено: 0 мин", tvFocus.text.toString())
-                        }
+                        openSheet(controller, taskZero.id)
+                        val focusRepo = SQLiteFocusSessionRepository(component.db)
+                        assertEquals("Zero-time task has no recorded focus", 0L, focusRepo.getTotalDurationByTask(taskZero.id))
+                        assertFocusSummary("Запустить сессию фокуса")
                         capture("02-task-zero-time")
 
-                        // Verify committed Pomodoro focus fact updates visible summary via FocusCreditController observer
-                        val focusRepo = SQLiteFocusSessionRepository(component.db)
+                        // Refresh the open editor after a committed Pomodoro focus fact.
                         val pomodoroNow = System.currentTimeMillis()
                         focusRepo.record(
                             FocusSession(
@@ -200,132 +165,77 @@ class TaskDetailHabitLinkVisualTest {
                                 updatedAt = pomodoroNow
                             )
                         )
-                        instrumentation.runOnMainSync {
-                            component.focusCreditController?.notifyChanged()
-                        }
-                        idle()
-                        await {
-                            var updated = false
-                            controller.onActivity {
-                                val tvFocus = sZero.requireView().findViewById<TextView>(R.id.tvDetailFocus)
-                                val text = tvFocus.text.toString()
-                                updated = text == "Затрачено: 1 мин"
-                            }
-                            updated
-                        }
-                        controller.onActivity {
-                            val tvFocus = sZero.requireView().findViewById<TextView>(R.id.tvDetailFocus)
-                            assertEquals("Затрачено: 1 мин", tvFocus.text.toString())
-                        }
+                        instrumentation.runOnMainSync { component.focusCreditController?.notifyChanged() }
+                        assertFocusSummary("Затрачено: 1 мин")
                         capture("02b-pomodoro-live-summary-updated")
                         dismissSheet(controller)
 
-                        // 4. Linked habit with accrual enabled
-                        val sAccrual = openSheet(controller, taskLinkedAccrual.id)
-                        controller.onActivity {
-                            val tvTitle = sAccrual.requireView().findViewById<TextView>(R.id.tvHabitLinkTitle)
-                            val tvSub = sAccrual.requireView().findViewById<TextView>(R.id.tvHabitLinkSubtitle)
-                            val sw = sAccrual.requireView().findViewById<CompoundButton>(R.id.switchHabitAccrual)
-                            assertEquals("Глубокая работа", tvTitle.text.toString())
-                            assertTrue("Subtitle must contain 'Учёт времени включён'", tvSub.text.toString().contains("Учёт времени включён"))
-                            assertTrue("Switch must be checked", sw.isChecked)
-                        }
+                        openSheet(controller, taskLinkedAccrual.id)
+                        assertLinkedHabit(HABIT_WORK, true)
                         capture("04-linked-habit-accrual-enabled")
 
-                        // 4b. Test Activity Recreation / Restart on open sheet
                         controller.recreate()
                         idle()
-                        val sRecreated = requireNotNull(sheet(controller.currentActivity(), "visual-task-detail"))
-                        controller.onActivity {
-                            val tvTitle = sRecreated.requireView().findViewById<TextView>(R.id.tvHabitLinkTitle)
-                            val sw = sRecreated.requireView().findViewById<CompoundButton>(R.id.switchHabitAccrual)
-                            val tvFocus = sRecreated.requireView().findViewById<TextView>(R.id.tvDetailFocus)
-                            assertEquals("Глубокая работа", tvTitle.text.toString())
-                            assertTrue("Switch must survive recreate", sw.isChecked)
-                            assertEquals("Затрачено: 50 мин", tvFocus.text.toString())
-                        }
+                        controller.onActivity { assertNotNull("Detail must survive recreation", sheet(it)) }
+                        assertFocusSummary("Затрачено: 50 мин")
+                        assertLinkedHabit(HABIT_WORK, true)
                         capture("07-sheet-after-recreate")
                         dismissSheet(controller)
 
-                        // 5. Linked habit with accrual disabled
-                        val sNoAccrual = openSheet(controller, taskLinkedNoAccrual.id)
-                        controller.onActivity {
-                            val tvTitle = sNoAccrual.requireView().findViewById<TextView>(R.id.tvHabitLinkTitle)
-                            val tvSub = sNoAccrual.requireView().findViewById<TextView>(R.id.tvHabitLinkSubtitle)
-                            val sw = sNoAccrual.requireView().findViewById<CompoundButton>(R.id.switchHabitAccrual)
-                            assertEquals("Английский язык", tvTitle.text.toString())
-                            assertTrue("Subtitle must contain 'Учёт времени отключён'", tvSub.text.toString().contains("Учёт времени отключён"))
-                            assertFalse("Switch must not be checked", sw.isChecked)
-                        }
+                        openSheet(controller, taskLinkedNoAccrual.id)
+                        assertLinkedHabit(HABIT_ENGLISH, false)
                         capture("05-linked-habit-accrual-disabled")
                         dismissSheet(controller)
 
-                        // 6. Interactive picker selection, switch toggle, and unlinking
-                        val sInteractive = openSheet(controller, taskInteractive.id)
-                        controller.onActivity {
-                            sInteractive.requireView().findViewById<View>(R.id.btnHabitLinkAction).performClick()
-                        }
-                        idle()
-                        device.wait(Until.hasObject(By.text("Выберите привычку")), 4000)
-                        device.findObject(By.text("Глубокая работа (мин)"))?.click()
-                        idle()
-                        await {
-                            var titleMatch = false
-                            controller.onActivity {
-                                val title = sInteractive.requireView().findViewById<TextView>(R.id.tvHabitLinkTitle)
-                                titleMatch = title.text.toString() == "Глубокая работа"
-                            }
-                            titleMatch
-                        }
-                        controller.onActivity {
-                            val sw = sInteractive.requireView().findViewById<CompoundButton>(R.id.switchHabitAccrual)
-                            assertTrue("Accrual defaults to enabled when linked", sw.isChecked)
-                        }
+                        openSheet(controller, taskInteractive.id)
+                        openHabitPicker()
+                        requireNotNull(device.wait(Until.findObject(By.text("Глубокая работа (мин)")), 5_000)).click()
+                        assertLinkedHabit(HABIT_WORK, true)
+                        val workHabit = component.habitList.first { it.name == HABIT_WORK }
+                        await { taskRepo.getById(taskInteractive.id)?.linkedHabitUuid == workHabit.uuid }
+                        val originalBoundary = requireNotNull(taskRepo.getById(taskInteractive.id)?.habitLinkEffectiveFrom)
                         capture("06-interactive-linked-after-picker")
 
-                        // Interactive unlink
-                        controller.onActivity {
-                            sInteractive.requireView().findViewById<View>(R.id.btnHabitUnlink).performClick()
-                        }
-                        idle()
+                        device.revealTaskDetailControl("taskDetailHabitAccrual").click()
+                        assertLinkedHabit(HABIT_WORK, false)
+                        await { taskRepo.getById(taskInteractive.id)?.habitTimeAccrualEnabled == false }
+                        device.revealTaskDetailControl("taskDetailHabitAccrual").click()
+                        assertLinkedHabit(HABIT_WORK, true)
+                        await { taskRepo.getById(taskInteractive.id)?.habitTimeAccrualEnabled == true }
+                        assertTrue(requireNotNull(taskRepo.getById(taskInteractive.id)?.habitLinkEffectiveFrom) >= originalBoundary)
+
+                        device.revealTaskDetailControl("taskDetailHabitUnlink").click()
+                        device.revealTaskDetailControl("taskDetailHabitLink")
+                        assertFalse(device.hasObject(By.res("taskDetailLinkedHabit")))
                         await {
-                            var unlinked = false
-                            controller.onActivity {
-                                val sub = sInteractive.requireView().findViewById<TextView>(R.id.tvHabitLinkSubtitle)
-                                unlinked = sub.text.toString() == "Не привязана"
-                            }
-                            unlinked
+                            val task = requireNotNull(taskRepo.getById(taskInteractive.id))
+                            task.linkedHabitUuid == null && !task.habitTimeAccrualEnabled && task.habitLinkEffectiveFrom == null
                         }
                         dismissSheet(controller)
                     }
                     phase.startsWith("dark") -> {
-                        val sAccrual = openSheet(controller, taskLinkedAccrual.id)
+                        openSheet(controller, taskLinkedAccrual.id)
+                        assertLinkedHabit(HABIT_WORK, true)
                         capture("08-theme-dark-linked")
                         dismissSheet(controller)
 
-                        val sFocus = openSheet(controller, taskFocus.id)
+                        openSheet(controller, taskFocus.id)
+                        assertFocusSummary("Затрачено: 1 ч 25 мин")
                         capture("09-theme-dark-focus-time")
-                        controller.onActivity {
-                            sFocus.requireView().findViewById<View>(R.id.btnHabitLinkAction).performClick()
-                        }
-                        idle()
-                        device.wait(Until.hasObject(By.text("Выберите привычку")), 4000)
+                        openHabitPicker()
                         capture("10-theme-dark-dialog")
                         device.pressBack()
                         idle()
                         dismissSheet(controller)
                     }
                     phase.startsWith("amoled") -> {
-                        val sAccrual = openSheet(controller, taskLinkedAccrual.id)
+                        openSheet(controller, taskLinkedAccrual.id)
+                        assertLinkedHabit(HABIT_WORK, true)
                         capture("11-theme-amoled-linked")
                         dismissSheet(controller)
 
-                        val sFocus = openSheet(controller, taskFocus.id)
-                        controller.onActivity {
-                            sFocus.requireView().findViewById<View>(R.id.btnHabitLinkAction).performClick()
-                        }
-                        idle()
-                        device.wait(Until.hasObject(By.text("Выберите привычку")), 4000)
+                        openSheet(controller, taskFocus.id)
+                        openHabitPicker()
                         capture("12-theme-amoled-dialog")
                         device.pressBack()
                         idle()
@@ -333,20 +243,21 @@ class TaskDetailHabitLinkVisualTest {
                     }
                     phase.startsWith("narrow") -> {
                         controller.onActivity { activity ->
-                            val activityFontScale = activity.resources.configuration.fontScale
-                            assertTrue("Activity resources.configuration.fontScale must be >= 1.25f, was $activityFontScale", activityFontScale >= 1.25f)
+                            val configuration = activity.resources.configuration
+                            assertTrue("Activity font scale must be >= 1.25f", configuration.fontScale >= 1.25f)
+                            args.getString("expectedWidthDp")?.toInt()?.let { expected ->
+                                assertEquals("Compact viewport width in dp", expected, configuration.screenWidthDp)
+                            }
                         }
-                        val sAccrual = openSheet(controller, taskLinkedAccrual.id)
+                        openSheet(controller, taskLinkedAccrual.id)
+                        assertLinkedHabit(HABIT_WORK, true)
                         capture("13-narrow-font13-linked")
                         dismissSheet(controller)
 
-                        val sFocus = openSheet(controller, taskFocus.id)
+                        openSheet(controller, taskFocus.id)
+                        assertFocusSummary("Затрачено: 1 ч 25 мин")
                         capture("14-narrow-font13-focus-time")
-                        controller.onActivity {
-                            sFocus.requireView().findViewById<View>(R.id.btnHabitLinkAction).performClick()
-                        }
-                        idle()
-                        device.wait(Until.hasObject(By.text("Выберите привычку")), 4000)
+                        openHabitPicker()
                         capture("15-narrow-font13-dialog")
                         device.pressBack()
                         idle()
@@ -503,7 +414,7 @@ class TaskDetailHabitLinkVisualTest {
         idle()
     }
 
-    private fun openSheet(controller: QaActivityController, taskId: TaskId, tag: String = "visual-task-detail"): TaskDetailBottomSheet {
+    private fun openSheet(controller: QaActivityController, taskId: TaskId, tag: String = "visual-task-detail") {
         controller.onActivity { activity ->
             val existing = tasks(activity).childFragmentManager.findFragmentByTag(tag)
             if (existing is TaskDetailBottomSheet) {
@@ -513,30 +424,39 @@ class TaskDetailHabitLinkVisualTest {
             TaskDetailBottomSheet.newInstance(taskId).show(tasks(activity).childFragmentManager, tag)
             tasks(activity).childFragmentManager.executePendingTransactions()
         }
-        idle()
-        await {
-            var ready = false
-            controller.onActivity { activity ->
-                val s = sheet(activity, tag)
-                if (s != null && s.isAdded && s.view != null) {
-                    val focusView = s.view?.findViewById<TextView>(R.id.tvDetailFocus)
-                    ready = focusView?.text?.toString()?.startsWith("Затрачено:") == true
-                }
-            }
-            ready
-        }
-        controller.onActivity { activity ->
-            val s = sheet(activity, tag)
-            val scroll = s?.view?.findViewById<NestedScrollView>(R.id.taskDetailScroll)
-            val card = s?.view?.findViewById<View>(R.id.cardHabitLink)
-            if (scroll != null && card != null) {
-                scroll.smoothScrollTo(0, (card.top - 120).coerceAtLeast(0))
-            }
-        }
-        idle()
-        var result: TaskDetailBottomSheet? = null
-        controller.onActivity { activity -> result = sheet(activity, tag) }
-        return requireNotNull(result)
+        device.revealTaskDetailControl("taskDetailFocusSummary")
+    }
+
+    private fun assertFocusSummary(expected: String) {
+        device.revealTaskDetailControl("taskDetailFocusSummary")
+        assertTrue("Expected focus summary: $expected", device.wait(
+            Until.hasObject(By.res("taskDetailFocusSummary").text(expected)),
+            5_000,
+        ))
+    }
+
+    private fun openHabitPicker() {
+        device.revealTaskDetailControl("taskDetailHabitLink").click()
+        assertTrue("Habit picker must open", device.wait(Until.hasObject(By.text("Выберите привычку")), 5_000))
+    }
+
+    private fun assertPickerCancel() {
+        val cancel = requireNotNull(device.findObject(By.res("android:id/button2")))
+        assertTrue("Picker cancel must be localized, actual='${cancel.text}'", cancel.text.equals("Отмена", ignoreCase = true))
+    }
+
+    private fun assertLinkedHabit(expected: String, accrual: Boolean) {
+        val title = device.revealTaskDetailControl("taskDetailLinkedHabit", Direction.UP)
+        assertEquals(expected, title.text)
+        device.revealTaskDetailControl("taskDetailHabitAccrualSummary")
+        val expectedSummary = if (accrual) "Учёт времени включён" else "Без начисления"
+        assertTrue("Linked habit must show accrual state", device.wait(
+            Until.hasObject(By.res("taskDetailHabitAccrualSummary").textContains(expectedSummary)),
+            5_000,
+        ))
+        val toggle = device.revealTaskDetailControl("taskDetailHabitAccrual")
+        assertTrue("Accrual must expose a checkable switch", toggle.isCheckable)
+        assertEquals("Accrual switch state", accrual, toggle.isChecked)
     }
 
     private fun dismissSheet(controller: QaActivityController, tag: String = "visual-task-detail") {
@@ -583,15 +503,6 @@ class TaskDetailHabitLinkVisualTest {
         init {
             instrumentation.startActivitySync(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             awaitResumed()
-        }
-
-        fun currentActivity(): MainActivity {
-            awaitResumed()
-            var current: MainActivity? = null
-            instrumentation.runOnMainSync {
-                current = resumed().firstOrNull()
-            }
-            return requireNotNull(current) { "No resumed MainActivity" }
         }
 
         fun onActivity(action: (MainActivity) -> Unit) {

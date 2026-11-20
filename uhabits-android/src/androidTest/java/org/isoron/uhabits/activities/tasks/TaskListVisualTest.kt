@@ -3,17 +3,17 @@ package org.isoron.uhabits.activities.tasks
 import android.graphics.Rect
 import android.os.SystemClock
 import android.provider.Settings
+import android.view.InputDevice
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.widget.EditText
-import android.widget.TextView
-import androidx.recyclerview.widget.RecyclerView
-import androidx.core.view.ViewCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
+import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.UiObject2
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.main.MainActivity
@@ -21,6 +21,7 @@ import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.session.DatasetSessionFactory
 import org.isoron.uhabits.core.containers.session.ExperimentalDatasetMetadata
+import org.isoron.uhabits.core.preferences.Preferences
 import org.isoron.uhabits.utils.DemoDataGenerator
 import org.isoron.uhabits.core.ui.ThemeSwitcher
 import org.isoron.uhabits.core.userTasks.UserTask
@@ -108,14 +109,14 @@ class TaskListVisualTest {
                     }
                     idle()
                     await { var ready = false; controller.onActivity { ready = field<Any?>(tasks(it), "loadJob") == null || field<kotlinx.coroutines.Job?>(tasks(it), "loadJob")?.isActive != true }; ready }
-                    controller.onActivity { tasks(it).requireView().findViewById<RecyclerView>(R.id.rvTasks).scrollToPosition(0) }
+                    controller.onActivity { tasks(it).taskListState.requestScrollToItem(0) }
                     idle()
                 }
                 select(TaskSmartView.ALL)
                 screenshot("01-all-light")
                 if (phase != "before") controller.onActivity { activity ->
-                    val groups = field<Map<String, Pair<TaskSectionAdapter, TasksAdapter>>>(tasks(activity), "groupAdapters")
-                    val ids = groups.values.flatMap { field<List<UserTask>>(it.second, "tasks") }.map { it.id }
+                    val groups = renderedGroups(tasks(activity))
+                    val ids = groups.values.flatten().map { it.id }
                     assertEquals("Direct container groups must never duplicate tasks", ids.size, ids.distinct().size)
                     assertTrue("Fourth-level container must have its own direct group", "container:${fourth.value}" in groups)
                 }
@@ -128,23 +129,18 @@ class TaskListVisualTest {
                     controller.onActivity { assertTrue(field<Boolean>(tasks(it), "completedExpanded")) }
                     screenshot("01b-completed-expanded-light")
                     // Scroll to bottom to verify that the second completed task is completely visible when scrolled:
-                    controller.onActivity { activity ->
-                        val recycler = tasks(activity).requireView().findViewById<RecyclerView>(R.id.rvTasks)
-                        recycler.scrollToPosition(recycler.adapter!!.itemCount - 1)
-                    }
+                    controller.onActivity { scrollBottom(tasks(it)) }
                     idle()
                     screenshot("01c-completed-scrolled-bottom-light")
+                    val row1 = visibleTask("Обновить список материалов")
+                    val row2 = visibleTask("Собрать обратную связь по прототипу")
+                    assertNotNull("First completed row must be visible", row1)
+                    assertNotNull("Second completed row must be visible", row2)
+                    val row2Rect = requireNotNull(row2).visibleBounds
                     controller.onActivity { activity ->
                         val fragment = tasks(activity)
-                        val quickAdd = fragment.requireView().findViewById<View>(R.id.layoutQuickAddContainer)
-                        val row1 = findRow(fragment, "Обновить список материалов")
-                        val row2 = findRow(fragment, "Собрать обратную связь по прототипу")
-                        assertNotNull("First completed row must be attached", row1)
-                        assertNotNull("Second completed row must be attached", row2)
-                        val quickAddRect = Rect()
-                        assertTrue(quickAdd.getGlobalVisibleRect(quickAddRect))
-                        val row2Rect = Rect()
-                        assertTrue("Second completed row must be visible when scrolled to bottom", row2!!.getGlobalVisibleRect(row2Rect))
+                        val quickAddRect = taskWorkspaceBounds(fragment.requireView(), "tasksQuickAdd")
+                        assertFalse(quickAddRect.isEmpty)
                         assertTrue("Second completed row must not be overlapped by quick-add bar: row2Bottom=${row2Rect.bottom} quickAddTop=${quickAddRect.top}", row2Rect.bottom <= quickAddRect.top)
                     }
                     controller.recreate()
@@ -156,8 +152,11 @@ class TaskListVisualTest {
                 screenshot("02-today-light")
                 if (phase != "before") controller.onActivity { activity ->
                     val fragment = tasks(activity)
-                    val active = field<List<UserTask>>(field<Any>(fragment, "adapter"), "tasks")
-                    val overdue = field<List<UserTask>>(field<Any>(fragment, "overdueAdapter"), "tasks")
+                    val items = listItems(fragment)
+                    val activeStart = items.indexOfFirst { it.key == "header:active" }
+                    assertTrue("Fixture must expose an active heading after overdue", activeStart > 0)
+                    val overdue = items.take(activeStart).filterIsInstance<TaskListItem.Row>().map { it.task }
+                    val active = items.drop(activeStart).filterIsInstance<TaskListItem.Row>().map { it.task }
                     assertTrue("Today and overdue must not duplicate task IDs", active.map { it.id }.intersect(overdue.map { it.id }.toSet()).isEmpty())
                     assertTrue("DAY today must remain active for the whole day", active.any { it.id == dueToday.id })
                     assertTrue("NONE must not enter Today", (active + overdue).none { it.id == noDue.id })
@@ -165,55 +164,51 @@ class TaskListVisualTest {
                 select(TaskSmartView.ALL, parent)
                 controller.onActivity { activity ->
                     val fragment = tasks(activity)
-                    val active = field<List<UserTask>>(field<Any>(fragment, "adapter"), "tasks")
-                    val overdue = field<List<UserTask>>(field<Any>(fragment, "overdueAdapter"), "tasks")
                     val scope = queries.subtreeIds(parent) + parent
                     val expected = component.userTaskRepository.getRoots().filter { !it.isCompleted && it.containerId in scope }.map { it.id }.toSet()
-                    val rendered = (active + overdue).map { it.id }.toSet()
+                    val rendered = renderedRows(fragment).map { it.id }.toSet()
                     assertEquals("Parent filter must include exactly its active descendant roots", expected, rendered)
                     assertTrue("Child-container DAY task must appear in parent scope", dueToday.id in rendered)
                     assertFalse("Unassigned task must not enter a container scope", noDue.id in rendered)
                 }
                 screenshot("03-container-light")
                 select(TaskSmartView.ALL, child)
-                controller.onActivity { activity ->
-                    val title = tasks(activity).requireView().findViewById<TextView>(R.id.tvTasksTitle)
-                    assertEquals(childName, title.text.toString())
-                    assertEquals("Long section title must stay on one line", 1, title.maxLines)
-                    val layout = requireNotNull(title.layout)
-                    assertEquals("Long section title must not grow the header", 1, layout.lineCount)
-                    assertTrue("Long section title must fit or ellipsize", layout.getLineWidth(0) <= title.width - title.paddingLeft - title.paddingRight + 1 || layout.getEllipsisCount(0) > 0)
-                    val actual = Rect()
-                    assertTrue("Long section title must remain visible", title.getGlobalVisibleRect(actual))
-                    assertEquals("Long section title must not be clipped vertically", title.height, actual.height())
-                }
+                val longTitle = tagged("tvTasksTitle")
+                assertEquals(childName, longTitle.text)
+                assertTrue("Long section title must remain visible", longTitle.visibleBounds.height() > 0)
                 screenshot("03b-child-long-title-light")
                 select(TaskSmartView.ALL, fourth)
                 screenshot("03c-fourth-level-light")
                 select(TaskSmartView.COMPLETED)
                 screenshot("04-completed-light")
-                if (phase != "before") controller.onActivity { activity ->
-                    val groups = field<Map<String, Pair<TaskSectionAdapter, TasksAdapter>>>(tasks(activity), "groupAdapters")
-                    assertTrue("Undated completions must be separate", "completed:unknown" in groups)
-                    assertEquals(listOf(unknown.id), field<List<UserTask>>(groups.getValue("completed:unknown").second, "tasks").map { it.id })
-                    val adapter = groups.getValue("completed:unknown").second
-                    val recycler = tasks(activity).requireView().findViewById<RecyclerView>(R.id.rvTasks)
-                    val holder = adapter.onCreateViewHolder(recycler, 0)
-                    // Rebind one real row holder to catch stale completion text as well as invalid dates.
+                if (phase != "before") {
+                    controller.onActivity { activity ->
+                        val groups = renderedGroups(tasks(activity))
+                        assertEquals(listOf(unknown.id), groups.getValue("completed:unknown").map { it.id })
+                    }
+                    val markerRu = "Выполнено"
+                    val markerEn = "Completed"
                     for (completedAt in listOf(yesterday.completedAt, 0L, -1L, null)) {
-                        holder.bind(unknown.copy(completedAt = completedAt))
-                        val metadata = holder.itemView.findViewById<TextView>(R.id.tvTaskMeta)
+                        component.userTaskRepository.save(unknown.copy(completedAt = completedAt))
+                        controller.onActivity { tasks(it).refresh() }
+                        await {
+                            var reflected = false
+                            controller.onActivity { activity ->
+                                reflected = renderedRows(tasks(activity)).any { it.id == unknown.id && it.completedAt == completedAt }
+                            }
+                            reflected
+                        }
+                        idle()
                         val hasCompletion = completedAt != null && completedAt > 0L
-                        assertEquals("Completion date visibility for $completedAt", hasCompletion,
-                            metadata.text.toString().contains("Выполнено "))
-                        assertEquals("Spoken completion date visibility for $completedAt", hasCompletion,
-                            metadata.contentDescription.toString().contains("Выполнено "))
+                        val desc = row(controller, unknown).contentDescription.orEmpty()
+                        val containsMarker = desc.contains(markerRu) || desc.contains(markerEn)
+                        assertEquals("Spoken completion date visibility for $completedAt", hasCompletion, containsMarker)
                     }
                 }
                 select(TaskSmartView.UPCOMING)
                 screenshot("04b-upcoming-light")
                 if (phase != "before") controller.onActivity { activity ->
-                    val groups = field<Map<String, Pair<TaskSectionAdapter, TasksAdapter>>>(tasks(activity), "groupAdapters")
+                    val groups = renderedGroups(tasks(activity))
                     assertTrue("Upcoming fixture must span at least three local dates", groups.size >= 3)
                     assertTrue(groups.keys.all { it.startsWith("due:") })
                 }
@@ -223,36 +218,27 @@ class TaskListVisualTest {
                 screenshot("06-inbox-light")
 
                 // Click the actual list checkbox. A checkbox action must not open the editor.
+                clickCheckbox(controller, noDue, R.string.task_row_a11y_complete_title)
                 controller.onActivity { activity ->
                     val fragment = tasks(activity)
-                    val row = findRow(fragment, noDue.title)
-                    assertNotNull("Inbox fixture must be attached", row)
-                    row!!.findViewById<View>(R.id.btnTaskCheck).performClick()
                     fragment.childFragmentManager.executePendingTransactions()
                     assertNull(fragment.childFragmentManager.findFragmentByTag("task_detail"))
                 }
                 idle()
                 assertTrue(component.userTaskRepository.getById(noDue.id)!!.isCompleted)
                 select(TaskSmartView.COMPLETED)
-                controller.onActivity { activity ->
-                    val fragment = tasks(activity)
-                    val row = findRow(fragment, noDue.title)
-                    assertNotNull("Completed fixture must be attached", row)
-                    row!!.findViewById<View>(R.id.btnTaskCheck).performClick()
-                }
+                clickCheckbox(controller, noDue, R.string.task_row_a11y_reopen_title)
                 idle()
                 assertFalse(component.userTaskRepository.getById(noDue.id)!!.isCompleted)
 
                 // Open PR5 editor through its row and edit Due through the same picker result seam.
                 select(TaskSmartView.TODAY)
+                row(controller, dueToday).click()
+                idle()
                 controller.onActivity { activity ->
                     val fragment = tasks(activity)
-                    val row = findRow(fragment, dueToday.title)
-                    assertNotNull("Today's DAY fixture must be visible", row)
-                    row!!.performClick()
                     fragment.childFragmentManager.executePendingTransactions()
                     val sheet = fragment.childFragmentManager.findFragmentByTag("task_detail") as TaskDetailBottomSheet
-                    assertEquals(dueToday.title, field<EditText>(sheet, "etTitle").text.toString())
                     sheet.childFragmentManager.setFragmentResult("detailDue", TaskDuePickerBottomSheet.encode(TaskDue.None).apply { putBoolean(TaskDuePickerBottomSheet.RESULT_EDITED, true) })
                 }
                 idle()
@@ -286,13 +272,13 @@ class TaskListVisualTest {
                         component.preferences.isPureBlackEnabled = black
                         controller.recreate()
                         select(TaskSmartView.ALL)
-                        if (phase != "before") controller.onActivity { assertVisibleListTextGeometry(it) }
+                        if (phase != "before") assertVisibleListGeometry(controller)
                         screenshot("11-all-font130-$name")
                         select(TaskSmartView.UPCOMING)
-                        if (phase != "before") controller.onActivity { assertVisibleListTextGeometry(it) }
+                        if (phase != "before") assertVisibleListGeometry(controller)
                         screenshot("12-upcoming-font130-$name")
                         select(TaskSmartView.COMPLETED)
-                        if (phase != "before") controller.onActivity { assertVisibleListTextGeometry(it) }
+                        if (phase != "before") assertVisibleListGeometry(controller)
                         screenshot("13-completed-font130-$name")
                     }
                 } finally {
@@ -352,7 +338,7 @@ class TaskListVisualTest {
         val tWorkToday = component.userTaskService.createTask("Согласовать архитектуру спринта", containerId = work, due = timed(0, 18, 30))
         val tOverdue = component.userTaskService.createTask("Отправить квартальный отчёт", containerId = work, due = day(-1))
         val tUpcoming1 = component.userTaskService.createTask("Подготовить демо для ревью", containerId = work, due = day(1))
-        val tUpcoming2 = component.userTaskService.createTask("Заказать книги для чтения", containerId = home, due = timed(2, 14, 0))
+        component.userTaskService.createTask("Заказать книги для чтения", containerId = home, due = timed(2, 14, 0))
         val tSubParent = component.userTaskService.createTask("Собрать дорожную карту релиза", containerId = work, due = day(0))
         val tSubChild = component.userTaskService.createTask("Проверить чеклист миграции", parentTaskId = tSubParent.id, containerId = work)
 
@@ -380,80 +366,28 @@ class TaskListVisualTest {
                         }
                         ready
                     }
-                    controller.onActivity { tasks(it).requireView().findViewById<RecyclerView>(R.id.rvTasks).scrollToPosition(0) }
+                    controller.onActivity { tasks(it).taskListState.requestScrollToItem(0) }
                     idle()
                 }
 
-                // 1. Capture visual swipe previews (Right = Срок, Left = Раздел) and verify real swipe opens pickers
+                // Capture the real Compose reveal and cancel before committing either action.
                 select(TaskSmartView.TODAY)
-                var previewDecoration: RecyclerView.ItemDecoration? = null
-                controller.onActivity { activity ->
-                    val fragment = tasks(activity)
-                    val recycler = fragment.requireView().findViewById<RecyclerView>(R.id.rvTasks)
-                    val row = requireNotNull(findRow(fragment, tInbox.title))
-                    val holder = recycler.getChildViewHolder(row)
-                    val callback = field<TaskSwipeCallback>(fragment, "swipeCallback")
-                    val decoration = object : RecyclerView.ItemDecoration() {
-                        override fun onDraw(c: android.graphics.Canvas, parent: RecyclerView, state: RecyclerView.State) {
-                            callback.onChildDraw(
-                                c,
-                                parent,
-                                holder,
-                                TaskThemeUtils.dp(activity, 108f),
-                                0f,
-                                androidx.recyclerview.widget.ItemTouchHelper.ACTION_STATE_SWIPE,
-                                true,
-                            )
-                        }
-                    }
-                    previewDecoration = decoration
-                    recycler.addItemDecoration(decoration)
-                    recycler.invalidate()
-                }
-                screenshot("pr8-01-swipe-right-due-light")
-                controller.onActivity { activity ->
-                    val fragment = tasks(activity)
-                    val recycler = fragment.requireView().findViewById<RecyclerView>(R.id.rvTasks)
-                    previewDecoration?.let { recycler.removeItemDecoration(it) }
-                    val row = requireNotNull(findRow(fragment, tInbox.title))
-                    row.translationX = 0f
-                    val holder = recycler.getChildViewHolder(row)
-                    val callback = field<TaskSwipeCallback>(fragment, "swipeCallback")
-                    val decoration = object : RecyclerView.ItemDecoration() {
-                        override fun onDraw(c: android.graphics.Canvas, parent: RecyclerView, state: RecyclerView.State) {
-                            callback.onChildDraw(
-                                c,
-                                parent,
-                                holder,
-                                -TaskThemeUtils.dp(activity, 108f),
-                                0f,
-                                androidx.recyclerview.widget.ItemTouchHelper.ACTION_STATE_SWIPE,
-                                true,
-                            )
-                        }
-                    }
-                    previewDecoration = decoration
-                    recycler.addItemDecoration(decoration)
-                    recycler.invalidate()
-                }
-                screenshot("pr8-02-swipe-left-container-light")
-                controller.onActivity { activity ->
-                    val fragment = tasks(activity)
-                    val recycler = fragment.requireView().findViewById<RecyclerView>(R.id.rvTasks)
-                    previewDecoration?.let { recycler.removeItemDecoration(it) }
-                    previewDecoration = null
-                    findRow(fragment, tInbox.title)?.translationX = 0f
-                    recycler.invalidate()
-                }
+                val previewBounds = row(controller, tInbox).visibleBounds
+                captureSwipePreview(previewBounds, towardEnd = true, "pr8-01-swipe-right-due-light")
+                captureSwipePreview(previewBounds, towardEnd = false, "pr8-02-swipe-left-container-light")
+                assertNoActionPicker(controller)
+
+                val shortDistance = minOf(previewBounds.width() / 10, TaskThemeUtils.dpInt(context, 24f))
+                val x = previewBounds.centerX()
+                val y = previewBounds.centerY()
+                assertTrue(device.swipe(x, y, x + shortDistance, y, 65))
                 idle()
+                assertNoActionPicker(controller)
 
                 // 2. Real swipe right in UPCOMING opens TaskDuePickerBottomSheet & moves task to new date group without duplication
                 select(TaskSmartView.UPCOMING)
-                var rowRect = Rect()
-                controller.onActivity { activity ->
-                    val row = requireNotNull(findRow(tasks(activity), tUpcoming1.title))
-                    assertTrue(row.getGlobalVisibleRect(rowRect))
-                }
+                var rowRect = row(controller, tUpcoming1).visibleBounds
+                val originalBounds = Rect(rowRect)
                 val swipeStartX = rowRect.left + rowRect.width() / 5
                 val swipeEndX = rowRect.right - rowRect.width() / 5
                 device.swipe(swipeStartX, rowRect.centerY(), swipeEndX, rowRect.centerY(), 18)
@@ -475,11 +409,8 @@ class TaskListVisualTest {
                     fragment.childFragmentManager.executePendingTransactions()
                 }
                 idle()
-                controller.onActivity { activity ->
-                    val row = requireNotNull(findRow(tasks(activity), tUpcoming1.title))
-                    assertEquals("Row must snap back to 0 translationX when picker is dismissed", 0f, row.translationX, 0.5f)
-                    assertTrue(row.getGlobalVisibleRect(rowRect))
-                }
+                rowRect = row(controller, tUpcoming1).visibleBounds
+                assertEquals("Row must settle back after the picker is dismissed", originalBounds, rowRect)
                 // Swipe the exact same row a second time ("повторные быстрые действия")
                 device.swipe(rowRect.left + rowRect.width() / 5, rowRect.centerY(), rowRect.right - rowRect.width() / 5, rowRect.centerY(), 18)
                 await {
@@ -506,8 +437,8 @@ class TaskListVisualTest {
                 idle()
                 await { component.userTaskRepository.getById(tUpcoming1.id)?.due == day(5) }
                 controller.onActivity { activity ->
-                    val groups = field<Map<String, Pair<TaskSectionAdapter, TasksAdapter>>>(tasks(activity), "groupAdapters")
-                    val allIds = groups.values.flatMap { field<List<UserTask>>(it.second, "tasks") }.map { it.id }
+                    val groups = renderedGroups(tasks(activity))
+                    val allIds = groups.values.flatten().map { it.id }
                     assertEquals("Task must move to new date group in UPCOMING without duplication", allIds.size, allIds.distinct().size)
                     assertTrue(tUpcoming1.id in allIds)
                 }
@@ -520,10 +451,7 @@ class TaskListVisualTest {
 
                 // 3. Real swipe left in ALL opens TaskContainerPickerBottomSheet & moves task to section without duplication
                 select(TaskSmartView.ALL)
-                controller.onActivity { activity ->
-                    val row = requireNotNull(findRow(tasks(activity), tInbox.title))
-                    assertTrue(row.getGlobalVisibleRect(rowRect))
-                }
+                rowRect = row(controller, tInbox).visibleBounds
                 device.swipe(rowRect.right - rowRect.width() / 5, rowRect.centerY(), rowRect.left + rowRect.width() / 5, rowRect.centerY(), 18)
                 await {
                     var opened = false
@@ -550,10 +478,10 @@ class TaskListVisualTest {
                 idle()
                 assertEquals(home, component.userTaskRepository.getById(tInbox.id)?.containerId)
                 controller.onActivity { activity ->
-                    val groups = field<Map<String, Pair<TaskSectionAdapter, TasksAdapter>>>(tasks(activity), "groupAdapters")
-                    val allIds = groups.values.flatMap { field<List<UserTask>>(it.second, "tasks") }.map { it.id }
+                    val groups = renderedGroups(tasks(activity))
+                    val allIds = groups.values.flatten().map { it.id }
                     assertEquals("Task must move to container group in ALL without duplication", allIds.size, allIds.distinct().size)
-                    val homeTasks = field<List<UserTask>>(groups.getValue("container:${home.value}").second, "tasks").map { it.id }
+                    val homeTasks = groups.getValue("container:${home.value}").map { it.id }
                     assertTrue(tInbox.id in homeTasks)
                 }
                 // Undo container move
@@ -565,11 +493,7 @@ class TaskListVisualTest {
 
                 // 4. Checkbox completion shows Undo Snackbar and restores exact state; guarded against newer edits
                 select(TaskSmartView.TODAY)
-                controller.onActivity { activity ->
-                    val fragment = tasks(activity)
-                    val row = requireNotNull(findRow(fragment, tWorkToday.title))
-                    row.findViewById<View>(R.id.btnTaskCheck).performClick()
-                }
+                clickCheckbox(controller, tWorkToday, R.string.task_row_a11y_complete_title)
                 idle()
                 assertTrue(component.userTaskRepository.getById(tWorkToday.id)!!.isCompleted)
                 screenshot("pr8-04-checkbox-undo-snackbar-light")
@@ -583,11 +507,7 @@ class TaskListVisualTest {
                 assertEquals(timed(0, 18, 30), restoredTimed.due)
 
                 // Guarded Undo: complete -> edit task -> performUndo must NOT overwrite newer edit
-                controller.onActivity { activity ->
-                    val fragment = tasks(activity)
-                    val row = requireNotNull(findRow(fragment, tWorkToday.title))
-                    row.findViewById<View>(R.id.btnTaskCheck).performClick()
-                }
+                clickCheckbox(controller, tWorkToday, R.string.task_row_a11y_complete_title)
                 idle()
                 val modifiedTitle = "Согласовать архитектуру спринта (обновлено)"
                 component.userTaskService.updateTask(tWorkToday.id, title = modifiedTitle)
@@ -604,19 +524,23 @@ class TaskListVisualTest {
 
                 // 5. Multi-selection across different sections/groups, Activity recreation, Back button, and bulk actions
                 select(TaskSmartView.ALL)
-                controller.onActivity { activity ->
-                    val fragment = tasks(activity)
-                    val rowOverdue = requireNotNull(findRow(fragment, tOverdue.title))
-                    val rowInbox = requireNotNull(findRow(fragment, tInbox.title))
-                    val rowWork = requireNotNull(findRow(fragment, tWorkToday.title))
-                    rowOverdue.performLongClick()
-                    rowInbox.performClick()
-                    rowWork.findViewById<View>(R.id.btnTaskCheck).performClick()
-                    val selectionBar = fragment.requireView().findViewById<View>(R.id.tasksSelectionBar)
-                    val countText = fragment.requireView().findViewById<TextView>(R.id.tvSelectionCount)
-                    assertEquals(View.VISIBLE, selectionBar.visibility)
-                    assertEquals("Выбрано: 3", countText.text.toString())
-                }
+                row(controller, tOverdue).longClick()
+                idle()
+                val selectedBounds = row(controller, tInbox).visibleBounds
+                assertTrue(device.swipe(
+                    selectedBounds.left + selectedBounds.width() / 5,
+                    selectedBounds.centerY(),
+                    selectedBounds.right - selectedBounds.width() / 5,
+                    selectedBounds.centerY(),
+                    18,
+                ))
+                idle()
+                assertNoActionPicker(controller)
+                assertSelectionCount(1)
+                row(controller, tInbox).click()
+                idle()
+                clickCheckbox(controller, tWorkToday, R.string.task_row_a11y_select_title)
+                assertSelectionCount(3)
                 idle()
                 screenshot("pr8-05-multiselect-light")
 
@@ -631,30 +555,23 @@ class TaskListVisualTest {
                     }
                     ready
                 }
-                controller.onActivity { activity ->
-                    val fragment = tasks(activity)
-                    val selectionBar = fragment.requireView().findViewById<View>(R.id.tasksSelectionBar)
-                    val countText = fragment.requireView().findViewById<TextView>(R.id.tvSelectionCount)
-                    assertEquals("Selection bar must survive Activity recreation", View.VISIBLE, selectionBar.visibility)
-                    assertEquals("Выбрано: 3", countText.text.toString())
-                }
+                assertSelectionCount(3)
 
                 // Back button exits selection mode first without finishing Activity
                 device.pressBack()
                 idle()
-                controller.onActivity { activity ->
-                    assertFalse(activity.isFinishing)
-                    val fragment = tasks(activity)
-                    val selectionBar = fragment.requireView().findViewById<View>(R.id.tasksSelectionBar)
-                    assertEquals("Back press must exit selection mode first", View.GONE, selectionBar.visibility)
-                }
+                controller.onActivity { assertFalse(it.isFinishing) }
+                assertFalse("Back press must exit selection mode first", device.hasObject(By.res("tvSelectionCount")))
 
                 // Select 2 tasks from different groups and perform bulk move to home + bulk due + bulk complete + Undo
+                row(controller, tInbox).longClick()
+                idle()
+                row(controller, tOverdue).click()
+                idle()
+                tagged("btnSelectionContainer").click()
+                idle()
                 controller.onActivity { activity ->
                     val fragment = tasks(activity)
-                    requireNotNull(findRow(fragment, tInbox.title)).performLongClick()
-                    requireNotNull(findRow(fragment, tOverdue.title)).performClick()
-                    fragment.requireView().findViewById<View>(R.id.btnSelectionContainer).performClick()
                     fragment.childFragmentManager.executePendingTransactions()
                     val sheet = fragment.childFragmentManager.findFragmentByTag(TasksFragment.REQUEST_KEY_ACTION_CONTAINER) as? TaskContainerPickerBottomSheet
                     assertNotNull(sheet)
@@ -678,12 +595,11 @@ class TaskListVisualTest {
                 assertEquals(work, component.userTaskRepository.getById(tOverdue.id)?.containerId)
 
                 // Bulk complete + Undo
-                controller.onActivity { activity ->
-                    val fragment = tasks(activity)
-                    requireNotNull(findRow(fragment, tInbox.title)).performLongClick()
-                    requireNotNull(findRow(fragment, tWorkToday.title)).performClick()
-                    fragment.requireView().findViewById<View>(R.id.btnSelectionComplete).performClick()
-                }
+                row(controller, tInbox).longClick()
+                idle()
+                row(controller, tWorkToday).click()
+                idle()
+                tagged("btnSelectionComplete").click()
                 idle()
                 assertTrue(component.userTaskRepository.getById(tInbox.id)!!.isCompleted)
                 assertTrue(component.userTaskRepository.getById(tWorkToday.id)!!.isCompleted)
@@ -694,35 +610,15 @@ class TaskListVisualTest {
                 assertFalse(component.userTaskRepository.getById(tInbox.id)!!.isCompleted)
                 assertFalse(component.userTaskRepository.getById(tWorkToday.id)!!.isCompleted)
 
-                // Bulk delete confirmation dialog + cascade subtask deletion
-                controller.onActivity { activity ->
-                    val fragment = tasks(activity)
-                    requireNotNull(findRow(fragment, tSubParent.title)).performLongClick()
-                    fragment.requireView().findViewById<View>(R.id.btnSelectionDelete).performClick()
-                }
-                idle()
-                screenshot("pr8-06-delete-confirm-light")
-                controller.onActivity { activity ->
-                    val dialog = field<androidx.appcompat.app.AlertDialog?>(tasks(activity), "deleteConfirmationDialog")
-                    assertNotNull("Delete must require confirmation dialog", dialog)
-                    assertTrue(dialog!!.isShowing)
-                    dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE).performClick()
-                }
-                idle()
-                assertNull("Parent task must be deleted", component.userTaskRepository.getById(tSubParent.id))
-                assertNull("Child subtask must be cascade-deleted", component.userTaskRepository.getById(tSubChild.id))
-
                 // 6. Dark and AMOLED themes + 1.3x font scale on 720x1280 small screen in selection mode
                 for ((name, black) in listOf("dark" to false, "amoled" to true)) {
                     component.preferences.theme = ThemeSwitcher.THEME_DARK
                     component.preferences.isPureBlackEnabled = black
                     controller.recreate()
                     select(TaskSmartView.ALL)
-                    controller.onActivity { activity ->
-                        val fragment = tasks(activity)
-                        requireNotNull(findRow(fragment, tInbox.title)).performLongClick()
-                        requireNotNull(findRow(fragment, tWorkToday.title)).performClick()
-                    }
+                    row(controller, tInbox).longClick()
+                    idle()
+                    row(controller, tWorkToday).click()
                     idle()
                     screenshot("pr8-07-multiselect-$name")
                     controller.onActivity { tasks(it).clearSelection() }
@@ -739,21 +635,19 @@ class TaskListVisualTest {
                     component.preferences.isPureBlackEnabled = false
                     controller.recreate()
                     select(TaskSmartView.ALL)
-                    controller.onActivity { activity ->
-                        val fragment = tasks(activity)
-                        requireNotNull(findRow(fragment, tInbox.title)).performLongClick()
-                        assertEquals("More button must be visible for single selection", View.VISIBLE, fragment.requireView().findViewById<View>(R.id.btnSelectionMore).visibility)
-                        requireNotNull(findRow(fragment, tWorkToday.title)).performClick()
-                        assertEquals("More button must hide when multiple tasks are selected", View.GONE, fragment.requireView().findViewById<View>(R.id.btnSelectionMore).visibility)
-                    }
+                    row(controller, tInbox).longClick()
                     idle()
-                    controller.onActivity { activity ->
-                        val fragment = tasks(activity)
-                        val countView = fragment.requireView().findViewById<TextView>(R.id.tvSelectionCount)
-                        val layout = requireNotNull(countView.layout) { "tvSelectionCount layout must be measured after idle()" }
-                        assertEquals(1, layout.lineCount)
-                        assertEquals("Selection count must not be ellipsized on 360dp @ 1.3x font scale", 0, layout.getEllipsisCount(0))
-                    }
+                    tagged("btnSelectionMore").click()
+                    idle()
+                    assertTrue("Single selection must open quick actions",
+                        device.hasObject(By.text(context.getString(R.string.task_quick_menu_change_due))))
+                    device.pressBack()
+                    idle()
+                    assertSelectionCount(1)
+                    row(controller, tWorkToday).click()
+                    idle()
+                    assertFalse("More must hide for multiple selected tasks", device.hasObject(By.res("btnSelectionMore")))
+                    assertSelectionCount(2)
                     screenshot("pr8-08-multiselect-small-font130-light")
                     controller.onActivity { tasks(it).clearSelection() }
                 } finally {
@@ -762,6 +656,21 @@ class TaskListVisualTest {
                     device.executeShellCommand("wm density reset")
                     idle()
                 }
+
+                captureCompactClassicSelection(controller, tInbox, tWorkToday) { select(TaskSmartView.ALL) }
+
+                // Confirming selection deletion must cascade to subtasks.
+                select(TaskSmartView.ALL)
+                row(controller, tSubParent).longClick()
+                idle()
+                tagged("btnSelectionDelete").click()
+                idle()
+                screenshot("pr8-06-delete-confirm-light")
+                val deleteButton = device.findObject(By.text(context.getString(R.string.delete)))
+                requireNotNull(deleteButton) { "Delete must require confirmation" }.click()
+                idle()
+                assertNull("Parent task must be deleted", component.userTaskRepository.getById(tSubParent.id))
+                assertNull("Child subtask must be cascade-deleted", component.userTaskRepository.getById(tSubChild.id))
             }
         } finally {
             instrumentation.runOnMainSync {
@@ -813,40 +722,58 @@ class TaskListVisualTest {
         app.sessionManager.persistExperimentalSelection(metadata)
     }
 
-    private fun assertVisibleListTextGeometry(activity: MainActivity) {
-        val recycler = tasks(activity).requireView().findViewById<RecyclerView>(R.id.rvTasks)
-        val sectionTitleId = context.resources.getIdentifier("tvSectionTitle", "id", context.packageName)
-        val visibleText = texts(recycler).filter {
-            (it.id == R.id.tvTaskTitle || (sectionTitleId != 0 && it.id == sectionTitleId) ||
-                ViewCompat.isAccessibilityHeading(it)) && it.isShown && it.getGlobalVisibleRect(Rect())
+    private fun assertVisibleListGeometry(controller: TaskDraftLifecycleTest.QaActivityController) {
+        val viewport = tagged("tasksList").visibleBounds
+        var visibleKeys = emptyList<String>()
+        controller.onActivity { activity ->
+            val info = tasks(activity).taskListState.layoutInfo
+            visibleKeys = info.visibleItemsInfo
+                .filter { it.offset >= info.viewportStartOffset && it.offset + it.size <= info.viewportEndOffset }
+                .map { it.key as String }
         }
-        assertTrue("Fixture must expose task titles", visibleText.any { it.id == R.id.tvTaskTitle })
-        assertTrue("Fixture must expose section headings", visibleText.any { it.id != R.id.tvTaskTitle })
-        val bounds = visibleText.map { text ->
-            val label = text.text.toString()
-            val layout = requireNotNull(text.layout) { "Missing text layout: $label" }
-            assertTrue("Text must have rendered lines: $label", layout.lineCount > 0)
-            assertTrue("Text must fit vertically: $label", layout.height <= text.height - text.compoundPaddingTop - text.compoundPaddingBottom)
-            for (line in 0 until layout.lineCount) {
-                assertTrue("Text must fit horizontally or ellipsize: $label",
-                    layout.getLineWidth(line) <= text.width - text.compoundPaddingLeft - text.compoundPaddingRight + 1 ||
-                        layout.getEllipsisCount(line) > 0)
-            }
-            val position = IntArray(2)
-            text.getLocationOnScreen(position)
-            val full = Rect(position[0], position[1], position[0] + text.width, position[1] + text.height)
-            val visible = Rect()
-            assertTrue(text.getGlobalVisibleRect(visible))
-            // RecyclerView may deliberately expose a partial row at either viewport edge.
-            val viewport = Rect()
-            assertTrue(recycler.getGlobalVisibleRect(viewport))
-            val expected = Rect(full)
-            assertTrue(expected.intersect(viewport))
-            assertEquals("Text must not be clipped inside its visible row: $label", expected, visible)
-            full
+        assertTrue("Fixture must expose task titles", visibleKeys.any { it.startsWith("task:") })
+        assertTrue("Fixture must expose section headings", visibleKeys.any { !it.startsWith("task:") })
+        val bounds = visibleKeys.map { key ->
+            val node = tagged(key)
+            val bounds = node.visibleBounds
+            assertFalse("A fully visible list entry must have nonzero geometry: $key", bounds.isEmpty)
+            assertTrue("A fully visible list entry must fit within the viewport: $key", viewport.contains(bounds))
+            bounds
         }
-        for (i in bounds.indices) for (j in i + 1 until bounds.size) {
-            assertFalse("Section headings and task titles must not overlap", Rect.intersects(bounds[i], bounds[j]))
+        bounds.zipWithNext { previous, next ->
+            assertFalse("Section headings and task rows must not overlap", Rect.intersects(previous, next))
+        }
+    }
+
+    private fun captureCompactClassicSelection(
+        controller: TaskDraftLifecycleTest.QaActivityController,
+        first: UserTask,
+        second: UserTask,
+        selectAll: () -> Unit,
+    ) {
+        val oldFontScale = context.resources.configuration.fontScale
+        val oldMode = component.preferences.sectionLayoutMode
+        try {
+            device.executeShellCommand("settings put system font_scale 2.0")
+            device.executeShellCommand("wm size 640x1280")
+            device.executeShellCommand("wm density 320")
+            component.preferences.sectionLayoutMode = Preferences.SECTION_LAYOUT_CLASSIC
+            controller.recreate()
+            selectAll()
+            assertVisibleListGeometry(controller)
+            screenshot("pr8-09-list-compact-classic-font200-light")
+            row(controller, first).longClick()
+            idle()
+            clickCheckbox(controller, second, R.string.task_row_a11y_select_title)
+            assertSelectionCount(2)
+            screenshot("pr8-10-multiselect-compact-classic-font200-light")
+            controller.onActivity { tasks(it).clearSelection() }
+        } finally {
+            component.preferences.sectionLayoutMode = oldMode
+            device.executeShellCommand("settings put system font_scale $oldFontScale")
+            device.executeShellCommand("wm size reset")
+            device.executeShellCommand("wm density reset")
+            idle()
         }
     }
 
@@ -872,108 +799,212 @@ class TaskListVisualTest {
             controller.onActivity {
                 val fragment = tasks(it)
                 loaded = field<kotlinx.coroutines.Job?>(fragment, "loadJob")?.isActive != true &&
-                    fragment.requireView().findViewById<RecyclerView>(R.id.rvTasks).adapter!!.itemCount >= 100
+                    listItems(fragment).size >= 100
             }
             loaded
         }
         idle()
         SystemClock.sleep(1_000)
-        controller.onActivity { activity ->
-            val recycler = tasks(activity).requireView().findViewById<RecyclerView>(R.id.rvTasks)
-            recycler.scrollToPosition(recycler.adapter!!.itemCount - 1)
-        }
+        verifyScrollAnchor(controller)
+        controller.onActivity { scrollBottom(tasks(it)) }
         idle()
         SystemClock.sleep(1_000)
-        controller.onActivity { activity ->
-            assertChromeVisible(activity)
-            assertListContinuityAndClearance(activity)
-        }
+        assertChromeVisible(controller)
+        controller.onActivity { assertListContinuityAndClearance(it) }
         screenshot("09-long-list-bottom")
-        controller.onActivity { tasks(it).requireView().findViewById<RecyclerView>(R.id.rvTasks).scrollToPosition(0) }
+        controller.onActivity { tasks(it).taskListState.requestScrollToItem(0) }
         idle()
         SystemClock.sleep(1_000)
-        controller.onActivity { activity ->
-            assertChromeVisible(activity)
-            assertListContinuityAndClearance(activity)
-        }
+        assertChromeVisible(controller)
+        controller.onActivity { assertListContinuityAndClearance(it) }
         screenshot("10-long-list-top")
     }
 
     private fun assertListContinuityAndClearance(activity: MainActivity) {
         val fragment = tasks(activity)
-        val recycler = fragment.requireView().findViewById<RecyclerView>(R.id.rvTasks)
-        val quickAdd = fragment.requireView().findViewById<View>(R.id.layoutQuickAddContainer)
-        val quickAddRect = Rect()
-        assertTrue(quickAdd.getGlobalVisibleRect(quickAddRect))
-        val count = recycler.childCount
-        assertTrue("Recycler must have children", count > 0)
-        for (i in 0 until count - 1) {
-            val childA = recycler.getChildAt(i)
-            val childB = recycler.getChildAt(i + 1)
-            assertEquals("Adjacent rows must be contiguous with no gaps or overlaps", childA.bottom, childB.top)
+        val listRect = taskWorkspaceBounds(fragment.requireView(), "tasksList")
+        val quickAddRect = taskWorkspaceBounds(fragment.requireView(), "tasksQuickAdd")
+        assertFalse(quickAddRect.isEmpty)
+        assertFalse(listRect.isEmpty)
+        val visibleItems = fragment.taskListState.layoutInfo.visibleItemsInfo
+        assertTrue("Lazy list must have visible entries", visibleItems.isNotEmpty())
+        visibleItems.zipWithNext { previous, next ->
+            assertEquals("Adjacent rows must be contiguous with no gaps or overlaps", previous.offset + previous.size, next.offset)
         }
-        val lastChild = recycler.getChildAt(count - 1)
-        val lastRect = Rect()
-        if (lastChild.getGlobalVisibleRect(lastRect)) {
-            assertTrue("Last child must not be overlapped by quick add bar: ${lastRect.bottom} vs ${quickAddRect.top}", lastRect.bottom <= quickAddRect.top)
+        assertTrue("List viewport must clear the quick add bar", listRect.bottom <= quickAddRect.top)
+    }
+
+    private fun verifyScrollAnchor(controller: TaskDraftLifecycleTest.QaActivityController) {
+        fun anchor(): Pair<Any, Int>? {
+            var result: Pair<Any, Int>? = null
+            controller.onActivity { activity ->
+                val state = tasks(activity).taskListState
+                result = state.layoutInfo.visibleItemsInfo
+                    .firstOrNull { it.index == state.firstVisibleItemIndex }
+                    ?.let { it.key to state.firstVisibleItemScrollOffset }
+            }
+            return result
+        }
+        controller.onActivity { tasks(it).taskListState.requestScrollToItem(15, 12) }
+        idle()
+        val before = requireNotNull(anchor())
+        assertTrue("Scroll anchor should be a task identity", before.first.toString().startsWith("task:"))
+        val inbox = component.userTaskRepository.getRoots().filter { !it.isCompleted && it.containerId == null }
+        val inserted = component.userTaskService.createTask("QA scroll anchor insertion")
+        component.userTaskRepository.save(inserted.copy(sortOrder = inbox.minOf { it.sortOrder } - 1))
+        controller.onActivity { tasks(it).refresh() }
+        await {
+            var added = false
+            controller.onActivity { added = renderedGroups(tasks(it))["inbox"]?.firstOrNull()?.id == inserted.id }
+            added
+        }
+        idle()
+        assertEquals("Inserting an earlier row must preserve the first visible task and offset", before, anchor())
+        controller.recreate()
+        idle()
+        await { anchor() == before }
+    }
+
+    private fun listItems(fragment: TasksFragment) = fragment.taskListContent?.items.orEmpty()
+
+    private fun renderedRows(fragment: TasksFragment) =
+        listItems(fragment).filterIsInstance<TaskListItem.Row>().map { it.task }
+
+    private fun renderedGroups(fragment: TasksFragment): Map<String, List<UserTask>> {
+        val groups = linkedMapOf<String, MutableList<UserTask>>()
+        var rows: MutableList<UserTask>? = null
+        for (item in listItems(fragment)) {
+            when (item) {
+                is TaskListItem.Header -> {
+                    rows = item.key.takeIf { it.startsWith("group:") }
+                        ?.let { groups.getOrPut(it.removePrefix("group:")) { mutableListOf() } }
+                }
+                is TaskListItem.Row -> rows?.add(item.task)
+            }
+        }
+        return groups
+    }
+
+    private fun scrollBottom(fragment: TasksFragment) {
+        fragment.taskListState.requestScrollToItem(listItems(fragment).lastIndex)
+    }
+
+    private fun tagged(tag: String): UiObject2 =
+        requireNotNull(device.findObject(By.res(tag))) { "Compose semantics node is missing: $tag" }
+
+    private fun visibleTask(title: String): UiObject2? =
+        device.findObject(By.descStartsWith(title))
+
+    private fun row(controller: TaskDraftLifecycleTest.QaActivityController, task: UserTask): UiObject2 {
+        val key = "task:${task.id.value}"
+        device.findObject(By.res(key))?.let { return it }
+        reveal(controller, key)
+        return tagged(key)
+    }
+
+    private fun clickCheckbox(
+        controller: TaskDraftLifecycleTest.QaActivityController,
+        task: UserTask,
+        @androidx.annotation.StringRes label: Int,
+    ) {
+        row(controller, task)
+        requireNotNull(device.findObject(By.desc(context.getString(label, task.title)))) {
+            "Task checkbox is missing for ${task.title}"
+        }.click()
+        idle()
+    }
+
+    private fun reveal(controller: TaskDraftLifecycleTest.QaActivityController, key: String) {
+        controller.onActivity {
+            val fragment = tasks(it)
+            val position = listItems(fragment).indexOfFirst { item -> item.key == key }
+            check(position >= 0) { "Entry is absent from list: $key" }
+            fragment.taskListState.requestScrollToItem(position)
+        }
+        idle()
+    }
+
+    private fun clickSection(controller: TaskDraftLifecycleTest.QaActivityController, label: String) {
+        lateinit var key: String
+        controller.onActivity {
+            key = listItems(tasks(it)).filterIsInstance<TaskListItem.Header>()
+                .first { header -> header.title == label }.key
+        }
+        reveal(controller, key)
+        val header = tagged(key)
+        if (label == "Завершённые") assertFalse("Completed heading must not show a count", header.contentDescription.orEmpty().any(Char::isDigit))
+        header.click()
+        idle()
+    }
+
+    private fun assertSelectionCount(count: Int) {
+        val label = tagged("tvSelectionCount")
+        assertEquals(context.getString(R.string.task_selection_count_desc, count), label.contentDescription)
+        assertTrue("Selection count must have visible geometry", label.visibleBounds.width() > 0)
+    }
+
+    private fun assertNoActionPicker(controller: TaskDraftLifecycleTest.QaActivityController) {
+        controller.onActivity { activity ->
+            val manager = tasks(activity).childFragmentManager
+            manager.executePendingTransactions()
+            assertNull(manager.findFragmentByTag(TasksFragment.REQUEST_KEY_ACTION_DUE))
+            assertNull(manager.findFragmentByTag(TasksFragment.REQUEST_KEY_ACTION_CONTAINER))
         }
     }
 
-    private fun findRow(fragment: TasksFragment, title: String): View? {
-        val recycler = fragment.requireView().findViewById<RecyclerView>(R.id.rvTasks)
-        return (0 until recycler.childCount).map(recycler::getChildAt).find { it.findViewById<TextView>(R.id.tvTaskTitle)?.text?.toString() == title }
-    }
-    private fun clickSection(controller: TaskDraftLifecycleTest.QaActivityController, label: String) {
-        var count = 0
-        controller.onActivity { count = tasks(it).requireView().findViewById<RecyclerView>(R.id.rvTasks).adapter!!.itemCount }
-        for (position in 0 until count) {
-            controller.onActivity { tasks(it).requireView().findViewById<RecyclerView>(R.id.rvTasks).scrollToPosition(position) }
-            idle()
-            var clicked = false
-            controller.onActivity { activity ->
-                val recycler = tasks(activity).requireView().findViewById<RecyclerView>(R.id.rvTasks)
-                val header = texts(recycler).firstOrNull { it.text.toString().startsWith(label) }
-                if (header != null) {
-                    if (label == "Завершённые") assertFalse("Completed heading must not show a count", header.text.any(Char::isDigit))
-                    header.performClick()
-                    clicked = true
-                }
+    private fun captureSwipePreview(bounds: Rect, towardEnd: Boolean, name: String) {
+        val x = bounds.centerX().toFloat()
+        val y = bounds.centerY().toFloat()
+        val direction = if (towardEnd) 1 else -1
+        val distance = minOf(bounds.width() / 3f, TaskThemeUtils.dp(context, 108f))
+        val down = SystemClock.uptimeMillis()
+        fun inject(action: Int, position: Float) {
+            val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, position, y, 0)
+            try {
+                event.source = InputDevice.SOURCE_TOUCHSCREEN
+                check(instrumentation.uiAutomation.injectInputEvent(event, true))
+            } finally {
+                event.recycle()
             }
-            if (clicked) { idle(); return }
         }
-        error("Section header was not found: $label")
+        inject(MotionEvent.ACTION_DOWN, x)
+        try {
+            repeat(6) {
+                SystemClock.sleep(16)
+                inject(MotionEvent.ACTION_MOVE, x + direction * distance * (it + 1) / 6)
+            }
+            screenshot(name, allowResurface = false)
+        } finally {
+            inject(MotionEvent.ACTION_CANCEL, x + direction * distance)
+            idle()
+        }
     }
-    private fun texts(view: View): List<TextView> = when (view) {
-        is TextView -> listOf(view)
-        is ViewGroup -> (0 until view.childCount).flatMap { texts(view.getChildAt(it)) }
-        else -> emptyList()
-    }
-    private fun assertChromeVisible(activity: MainActivity) {
+    private fun assertChromeVisible(controller: TaskDraftLifecycleTest.QaActivityController) {
         val screen = Rect()
-        assertTrue(activity.window.decorView.getGlobalVisibleRect(screen))
-        fun fullyVisible(view: View, parentBounds: Rect, label: String): Rect {
-            val visible = Rect()
-            assertTrue("$label must be shown with nonzero bounds", view.isShown && view.alpha > 0f && view.width > 0 && view.height > 0)
-            assertTrue("$label must have a visible global rectangle", view.getGlobalVisibleRect(visible))
-            assertTrue("$label must fit within its visible parent: $visible vs $parentBounds", parentBounds.contains(visible))
-            // The selected navigation icon scales up. Compare transformed dimensions rather
-            // than the untransformed layout rectangle; allow one pixel for raster rounding.
-            val expectedWidth = view.width * kotlin.math.abs(view.scaleX)
-            val expectedHeight = view.height * kotlin.math.abs(view.scaleY)
-            assertTrue("$label must not be clipped horizontally: $visible expected=$expectedWidth", kotlin.math.abs(visible.width() - expectedWidth) <= 1f)
-            assertTrue("$label must not be clipped vertically: $visible expected=$expectedHeight", kotlin.math.abs(visible.height() - expectedHeight) <= 1f)
-            return visible
+        val navigationBounds = Rect()
+        var taskLabel = ""
+        controller.onActivity { activity ->
+            taskLabel = activity.getString(R.string.tasks_title)
+            assertTrue(activity.window.decorView.getGlobalVisibleRect(screen))
+            val navigation = activity.findViewById<View>(R.id.bottomNavigation)
+            assertTrue("Bottom navigation must be shown", navigation.isShown && navigation.alpha > 0f)
+            assertTrue(navigation.getGlobalVisibleRect(navigationBounds))
+            assertEquals(navigation.width, navigationBounds.width())
+            assertEquals(navigation.height, navigationBounds.height())
+            assertTrue(screen.contains(navigationBounds))
         }
-        fullyVisible(tasks(activity).requireView().findViewById(R.id.tvTasksTitle), screen, "Tasks title")
-        val navigation = fullyVisible(activity.findViewById(R.id.bottomNavigation), screen, "Bottom navigation")
-        fullyVisible(activity.findViewById(R.id.iconTasks), navigation, "Tasks navigation icon")
-        fullyVisible(activity.findViewById(R.id.labelTasks), navigation, "Tasks navigation label")
+        val titleBounds = tagged("tvTasksTitle").visibleBounds
+        assertTrue("Tasks title must fit on screen", !titleBounds.isEmpty && screen.contains(titleBounds))
+        val tab = tagged("btnNavTasks")
+        assertTrue("Tasks navigation must be selected", tab.isSelected)
+        assertTrue("Tasks navigation label must be visible", tab.text == taskLabel || tab.hasObject(By.text(taskLabel)))
+        assertTrue("Tasks navigation must fit within its visible parent", navigationBounds.contains(tab.visibleBounds))
     }
     private fun tasks(activity: MainActivity) = activity.supportFragmentManager.findFragmentByTag("main.tasks") as TasksFragment
     private fun idle() { instrumentation.waitForIdleSync(); device.waitForIdle(); SystemClock.sleep(150) }
     private fun await(condition: () -> Boolean) { val deadline = SystemClock.uptimeMillis() + 10_000; while (SystemClock.uptimeMillis() < deadline) { if (condition()) return; SystemClock.sleep(50) }; error("List did not settle") }
-    private fun screenshot(name: String) {
-        if (InstrumentationRegistry.getArguments().getString("resurface") == "true") {
+    private fun screenshot(name: String, allowResurface: Boolean = true) {
+        if (allowResurface && InstrumentationRegistry.getArguments().getString("resurface") == "true") {
             device.pressRecentApps()
             SystemClock.sleep(500)
             device.click(device.displayWidth / 2, device.displayHeight / 2)

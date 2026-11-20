@@ -6,17 +6,20 @@ import android.content.Intent
 import android.provider.Settings
 import android.os.Bundle
 import android.os.SystemClock
-import android.view.View
+import android.view.InputDevice
+import android.view.MotionEvent
 import android.view.inputmethod.InputMethodManager
-import android.widget.EditText
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
+import androidx.test.uiautomator.By
+import androidx.test.uiautomator.Direction
+import androidx.test.uiautomator.UiObject2
+import androidx.test.uiautomator.Until
 import org.isoron.uhabits.BuildConfig
 import org.isoron.uhabits.HabitsApplication
-import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.main.MainActivity
 import org.isoron.uhabits.activities.main.MainDestination
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
@@ -69,26 +72,20 @@ class TaskDraftLifecycleTest {
                         }
                         idle()
                         if (quick) {
-                            scenario.onActivity { activity ->
-                                field<View>(sheet(activity), "btnDetailCollapse").performClick()
-                                tasks(activity).childFragmentManager.executePendingTransactions()
-                            }
+                            device.taskControl("taskDetailCancel").click()
                             idle()
                             assertEditorDismissed(scenario, "Atomic Quick Add collapse")
                         }
-                        scenario.onActivity { activity ->
-                            val submit = if (quick) tasks(activity).requireView().findViewById<View>(R.id.btnQuickAddSubmit)
-                                else field<View>(sheet(activity), "btnDetailCreate")
-                            val actualTitle = if (quick) tasks(activity).requireView().findViewById<EditText>(R.id.etQuickAddTitle).text.toString()
-                                else field<EditText>(sheet(activity), "etTitle").text.toString()
-                            evidence("submitting quick=$quick expected=$title actual=$actualTitle")
-                            assertEquals(title, actualTitle)
-                            // Capture current form exception so the instrumentation can inspect rollback.
-                            submit.performClick()
-                            assertTrue("Failed save must allow retry", submit.isEnabled)
-                            evidence("failure quick=$quick immediate=${counts(db)} triggers=${count(db, "SELECT COUNT(*) FROM sqlite_master WHERE type='trigger'")}")
-                        }
-                        idle(); assertEquals("Parent, child and queue must roll back", baseline, counts(db))
+                        val submitTag = if (quick) "btnQuickAddSubmit" else "taskDetailCreate"
+                        val titleTag = if (quick) "etQuickAddTitle" else "taskDetailTitle"
+                        val actualTitle = device.taskControl(titleTag).text
+                        evidence("submitting quick=$quick expected=$title actual=$actualTitle")
+                        assertEquals(title, actualTitle)
+                        device.taskControl(submitTag).click()
+                        idle()
+                        assertTrue("Failed save must allow retry", device.taskControl(submitTag).isEnabled)
+                        evidence("failure quick=$quick immediate=${counts(db)} triggers=${count(db, "SELECT COUNT(*) FROM sqlite_master WHERE type='trigger'")}")
+                        assertEquals("Parent, child and queue must roll back", baseline, counts(db))
                     } finally {
                         db.execSQL("DROP TRIGGER IF EXISTS $trigger")
                         scenario.onActivity { findSheet(it)?.dismissNow(); flushFragments(it) }
@@ -100,10 +97,10 @@ class TaskDraftLifecycleTest {
                     TaskDetailBottomSheet.newInstanceForCreate(TaskDraft(title = "$prefix-double-create", due = due), HabitsApplication.component.session.datasetId)
                         .show(tasks.childFragmentManager, "task_detail_create")
                     tasks.childFragmentManager.executePendingTransactions()
-                    val create = field<View>(sheet(activity), "btnDetailCreate")
-                    create.performClick(); create.performClick()
                 }
+                doubleTap(device.taskControl("taskDetailCreate"))
                 idle()
+                assertEditorDismissed(scenario, "Double-tap Create")
                 db.rawQuery("SELECT COUNT(*) FROM UserTasks WHERE title=?", arrayOf("$prefix-double-create")).use {
                     assertTrue(it.moveToFirst()); assertEquals(1, it.getInt(0))
                 }
@@ -127,13 +124,12 @@ class TaskDraftLifecycleTest {
                 scenario.onActivity { activity ->
                     activity.navigate(MainDestination.TASKS)
                     activity.supportFragmentManager.executePendingTransactions()
-                    val tasks = tasks(activity)
-                    tasks.requireView().findViewById<View>(R.id.layoutQuickAddCollapsed).performClick()
                 }
+                device.taskControl("layoutQuickAddCollapsed").click()
                 idle(); screenshot("00-compact-empty")
+                device.taskControl("etQuickAddTitle").text = prefix
                 scenario.onActivity { activity ->
                     val tasks = tasks(activity)
-                    tasks.requireView().findViewById<EditText>(R.id.etQuickAddTitle).setText(prefix)
                     tasks.childFragmentManager.setFragmentResult("quickDue", TaskDuePickerBottomSheet.encode(due))
                     tasks.childFragmentManager.setFragmentResult("quickContainer", Bundle().apply {
                         putString(TaskContainerPickerBottomSheet.RESULT_CONTAINER_ID, container)
@@ -141,20 +137,12 @@ class TaskDraftLifecycleTest {
                 }
                 idle(); screenshot("01-compact-filled")
                 expand(scenario)
-                scenario.onActivity { activity ->
-                    val sheet = sheet(activity)
-                    field<EditText>(sheet, "etDescription").setText("PR5 lifecycle notes")
-                    field<EditText>(sheet, "etNewSubtask").setText("$prefix-child")
-                    invoke(sheet, "addNewSubtask")
-                }
+                device.enterTaskDraftNotesAndSubtask("PR5 lifecycle notes", "$prefix-child")
                 idle(); screenshot("02-expanded-filled")
                 assertDraft(scenario, container)
                 assertEquals(baseline, counts(db))
 
-                scenario.onActivity {
-                    field<View>(sheet(it), "btnDetailCollapse").performClick()
-                    flushFragments(it)
-                }
+                device.taskControl("taskDetailCancel").click()
                 assertEditorDismissed(scenario, "Collapse")
                 idle(); screenshot("03-compact-collapsed")
                 assertEquals(baseline, counts(db))
@@ -195,25 +183,16 @@ class TaskDraftLifecycleTest {
                     activity.recreateForThemeChange()
                 }
                 idle(); assertDraft(scenario, container)
-                scenario.onActivity { activity ->
-                    assertTrue(MainTabsThemeBridge.resolve(activity).isDark)
-                    assertTrue(field<org.isoron.uhabits.activities.settings.SettingsThemePalette>(sheet(activity), "palette").isDark)
-                }
+                scenario.onActivity { activity -> assertTrue(MainTabsThemeBridge.resolve(activity).isDark) }
                 screenshot("05-expanded-dark")
                 val beforeSubmit = counts(db)
                 evidence("beforeSubmit UserTasks=${beforeSubmit.first} SyncQueue=${beforeSubmit.second}")
                 assertEquals(baseline, beforeSubmit)
 
-                scenario.onActivity { activity ->
-                    field<View>(sheet(activity), "btnDetailCollapse").performClick()
-                    flushFragments(activity)
-                }
+                device.taskControl("taskDetailCancel").click()
                 assertEditorDismissed(scenario, "Collapse before Submit")
                 idle()
-                scenario.onActivity { activity ->
-                    val submit = tasks(activity).requireView().findViewById<View>(R.id.btnQuickAddSubmit)
-                    submit.performClick(); submit.performClick()
-                }
+                doubleTap(device.taskControl("btnQuickAddSubmit"))
                 idle()
                 var savedTaskId: String? = null
                 db.rawQuery("SELECT id,due_kind,due_time_millis,due_zone,description,container_id FROM UserTasks WHERE title=?", arrayOf(prefix)).use { c ->
@@ -292,9 +271,9 @@ class TaskDraftLifecycleTest {
             flushFragments(activity)
             check(findSheet(activity)?.dialog?.isShowing != true) { "Editor dialog is still showing before Expand" }
             check(findSheet(activity) == null) { "Editor already open" }
-            tasks(activity).requireView().findViewById<View>(R.id.btnQuickAddExpand).performClick()
-            tasks(activity).childFragmentManager.executePendingTransactions()
         }
+        device.taskControl("btnQuickAddExpand").click()
+        device.taskControl("taskDetailCreate")
         idle()
     }
     private fun flushFragments(activity: MainActivity) {
@@ -315,16 +294,30 @@ class TaskDraftLifecycleTest {
         error("$action did not dismiss the editor within 5 seconds")
     }
     private fun assertDraft(scenario: QaActivityController, container: String) {
+        assertEquals(prefix, device.revealTaskDetailControl("taskDetailTitle", Direction.UP).text)
         scenario.onActivity { activity ->
-            val draft = invoke(sheet(activity), "buildCurrentDraft") as TaskDraft
+            val saved = Bundle().also(sheet(activity)::onSaveInstanceState)
+            val draft = TaskDraft.fromBundle(requireNotNull(saved.getBundle("draftBundle")))
             assertEquals(prefix, draft.title); assertEquals("PR5 lifecycle notes", draft.description)
             assertEquals(due, draft.due); assertEquals(ContainerId(container), draft.containerId)
             assertEquals(listOf(TaskDraft.DraftSubtask("$prefix-child")), draft.subtasks)
         }
     }
-    @Suppress("UNCHECKED_CAST")
-    private fun <T> field(instance: Any, name: String): T = instance.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(instance) as T
-    private fun invoke(instance: Any, name: String): Any? = instance.javaClass.getDeclaredMethod(name).apply { isAccessible = true }.invoke(instance)
+    private fun doubleTap(control: UiObject2) {
+        val center = control.visibleCenter
+        repeat(2) {
+            val down = SystemClock.uptimeMillis()
+            for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+                val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, center.x.toFloat(), center.y.toFloat(), 0)
+                try {
+                    event.source = InputDevice.SOURCE_TOUCHSCREEN
+                    check(instrumentation.uiAutomation.injectInputEvent(event, false))
+                } finally {
+                    event.recycle()
+                }
+            }
+        }
+    }
 
     /** Follow the app's own theme-restart Activity, rather than retaining a stale launch instance. */
     internal inner class QaActivityController : Closeable {
@@ -383,4 +376,26 @@ class TaskDraftLifecycleTest {
             error("MainActivity instances did not finish within 15 seconds")
         }
     }
+}
+
+internal fun UiDevice.taskControl(tag: String): UiObject2 =
+    requireNotNull(wait(Until.findObject(By.res(tag)), 5_000)) { "Missing task control: $tag" }
+
+internal fun UiDevice.revealTaskDetailControl(tag: String, direction: Direction = Direction.DOWN): UiObject2 {
+    val selector = By.res(tag)
+    val scroll = taskControl("taskDetailScroll")
+    val reverse = if (direction == Direction.DOWN) Direction.UP else Direction.DOWN
+    for (scrollDirection in listOf(direction, reverse)) {
+        for (attempt in 1..6) {
+            findObject(selector)?.takeUnless { it.visibleBounds.isEmpty }?.let { return it }
+            if (!scroll.scroll(scrollDirection, 0.65f)) break
+        }
+    }
+    return taskControl(tag).also { check(!it.visibleBounds.isEmpty) { "$tag is outside the task detail viewport" } }
+}
+
+internal fun UiDevice.enterTaskDraftNotesAndSubtask(notes: String, subtask: String) {
+    revealTaskDetailControl("taskDetailNotes", Direction.UP).text = notes
+    revealTaskDetailControl("taskDetailSubtaskInput").text = subtask
+    revealTaskDetailControl("taskDetailAddSubtask").click()
 }

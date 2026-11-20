@@ -1,18 +1,17 @@
 package org.isoron.uhabits.activities.tasks
 
-import android.content.Context
 import android.graphics.Color
 import android.graphics.Rect
+import android.graphics.RectF
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.View
-import android.view.inputmethod.InputMethodManager
-import android.widget.EditText
-import android.widget.TextView
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import org.isoron.uhabits.HabitsApplication
 import org.isoron.uhabits.R
@@ -37,6 +36,8 @@ class TaskDraftVisualTest {
     private val device = UiDevice.getInstance(instrumentation)
     private val title = "Подготовить план на следующую неделю"
     private val sectionName = "Личные проекты и планы на ближайшие месяцы"
+    private val notes = "Собрать материалы и согласовать следующие шаги."
+    private val subtask = "Проверить список важных дел"
     private val due = TaskDue.Timed.local(LocalDateTime.of(2026, 10, 23, 18, 0)
         .atZone(ZoneId.of("Asia/Novosibirsk")).toInstant().toEpochMilli(), "Asia/Novosibirsk")
 
@@ -53,29 +54,32 @@ class TaskDraftVisualTest {
             harness.QaActivityController().use { controller ->
                 controller.onActivity { activity ->
                     assertEquals("Selected application locale must be Russian", "ru", TaskDueDisplayFormatter.selectedLocale(activity).language)
+                    InstrumentationRegistry.getArguments().getString("expectedWidthDp")?.toInt()?.let { expected ->
+                        assertEquals("Editor viewport width in dp", expected, activity.resources.configuration.screenWidthDp)
+                    }
                     activity.navigate(MainDestination.TASKS)
                     activity.supportFragmentManager.executePendingTransactions()
+                }
+                device.taskControl("layoutQuickAddCollapsed").click()
+                device.taskControl("etQuickAddTitle").apply {
+                    click()
+                    text = title
+                }
+                controller.onActivity { activity ->
                     val tasks = tasks(activity)
-                    tasks.requireView().findViewById<View>(R.id.layoutQuickAddCollapsed).performClick()
-                    val input = tasks.requireView().findViewById<EditText>(R.id.etQuickAddTitle)
-                    input.setText(title)
                     tasks.childFragmentManager.setFragmentResult("quickDue", TaskDuePickerBottomSheet.encode(due))
                     tasks.childFragmentManager.setFragmentResult("quickContainer", Bundle().apply {
                         putString(TaskContainerPickerBottomSheet.RESULT_CONTAINER_ID, container.value)
                     })
-                    input.requestFocus()
-                    (activity.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
-                        .showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
                 }
                 await { var shown = false; controller.onActivity { shown = imeVisible(it) }; shown }
-                var compactDue = ""
+                val compactDue = requireNotNull(device.taskControl("quickDueLabel").text)
+                assertTrue("Due must honor selected Russian locale: $compactDue", compactDue.contains("окт", ignoreCase = true))
+                assertFalse("Due must use a localized date", compactDue.contains("2026-10-23"))
+                assertTrue(compactDue, compactDue.contains("18:00"))
                 controller.onActivity { activity ->
                     val view = tasks(activity).requireView()
-                    compactDue = view.findViewById<TextView>(R.id.quickDue).text.toString()
-                    assertTrue("Due must honor selected Russian locale: $compactDue", compactDue.contains("окт", ignoreCase = true))
-                    assertFalse("Due must use a localized date", compactDue.contains("2026-10-23"))
-                    assertTrue(compactDue, compactDue.contains("18:00"))
-                    val composer = bounds(view.findViewById(R.id.layoutQuickAddContainer))
+                    val composer = taskWorkspaceBounds(view, "tasksQuickAdd")
                     val root = activity.window.decorView
                     val ime = requireNotNull(ViewCompat.getRootWindowInsets(root)).getInsets(WindowInsetsCompat.Type.ime()).bottom
                     val keyboardTop = bounds(root).bottom - ime
@@ -90,36 +94,26 @@ class TaskDraftVisualTest {
                 controller.onActivity { activity ->
                     assertFalse(imeVisible(activity))
                     assertTrue("Navigation must return after compact IME Back", activity.findViewById<View>(R.id.bottomNavigation).isShown)
-                    assertEquals(title, tasks(activity).requireView().findViewById<EditText>(R.id.etQuickAddTitle).text.toString())
-                    tasks(activity).requireView().findViewById<View>(R.id.btnQuickAddExpand).performClick()
-                    tasks(activity).childFragmentManager.executePendingTransactions()
                 }
-                idle()
-                controller.onActivity { activity ->
-                    val sheet = sheet(activity)
-                    field<EditText>(sheet, "etDescription").setText("Собрать материалы и согласовать следующие шаги.")
-                    field<EditText>(sheet, "etNewSubtask").setText("Проверить список важных дел")
-                    invoke(sheet, "addNewSubtask")
-                    val notes = field<EditText>(sheet, "etDescription")
-                    notes.requestFocus()
-                    (activity.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
-                        .showSoftInput(notes, InputMethodManager.SHOW_IMPLICIT)
-                }
+                assertEquals(title, device.taskControl("etQuickAddTitle").text)
+                device.taskControl("btnQuickAddExpand").click()
+                device.enterTaskDraftNotesAndSubtask(notes, subtask)
+                device.revealTaskDetailControl("taskDetailNotes", Direction.UP).click()
                 await {
                     var visible = false
                     controller.onActivity { activity -> visible = dialogImeVisible(sheet(activity)) }
                     visible
                 }
                 screenshot("expanded-ime-diagnostic")
+                val visibleScroll = device.taskControl("taskDetailScroll").visibleBounds
+                val createWithIme = device.taskControl("taskDetailCreate").visibleBounds
                 controller.onActivity { activity ->
                     val sheet = sheet(activity)
                     val root = requireNotNull(sheet.dialog?.window?.decorView)
                     val ime = requireNotNull(ViewCompat.getRootWindowInsets(root)).getInsets(WindowInsetsCompat.Type.ime()).bottom
                     val keyboardTop = device.displayHeight - ime
-                    val scroll = sheet.requireView().findViewById<View>(R.id.taskDetailScroll)
-                    val visibleScroll = Rect()
-                    assertTrue("Expanded content must retain visible space above IME", scroll.getGlobalVisibleRect(visibleScroll) && visibleScroll.height() > 0 && visibleScroll.top < keyboardTop)
-                    assertTrue("Create CTA must remain above expanded IME", bounds(field<View>(sheet, "btnDetailCreate")).bottom <= keyboardTop)
+                    assertTrue("Expanded content must retain visible space above IME", visibleScroll.height() > 0 && visibleScroll.top < keyboardTop)
+                    assertTrue("Create CTA must remain above expanded IME", createWithIme.height() > 0 && createWithIme.bottom <= keyboardTop)
                 }
                 device.pressBack()
                 await {
@@ -127,23 +121,21 @@ class TaskDraftVisualTest {
                     controller.onActivity { activity -> hidden = !dialogImeVisible(sheet(activity)) }
                     hidden
                 }
-                controller.onActivity { activity -> assertEquals(title, field<EditText>(sheet(activity), "etTitle").text.toString()) }
-                var createBounds = Rect()
+                assertEquals(title, device.revealTaskDetailControl("taskDetailTitle", Direction.UP).text)
                 controller.onActivity { activity ->
                     val sheet = sheet(activity)
                     val frame = bounds(sheet.requireView())
                     val screenHeight = device.displayHeight
                     assertTrue("Create should fill most of the phone", frame.height() >= screenHeight * 0.85)
-                    assertEquals(compactDue, field<TextView>(sheet, "tvDueValue").text.toString())
-                    val containerLabel = field<TextView>(sheet, "tvContainerValue")
-                    assertEquals(sectionName, containerLabel.text.toString())
-                    assertTrue("Container label must be within chip", bounds(field<View>(sheet, "chipContainer")).contains(bounds(containerLabel)))
-                    val labelLayout = requireNotNull(containerLabel.layout)
-                    val line = labelLayout.lineCount - 1
-                    assertTrue("Long container must fit or ellipsize", labelLayout.getLineWidth(line) <= containerLabel.width - containerLabel.paddingLeft - containerLabel.paddingRight + 1 || labelLayout.getEllipsisCount(line) > 0)
-                    val create = field<android.widget.Button>(sheet, "btnDetailCreate")
-                    createBounds = bounds(create)
                 }
+                assertEquals(compactDue, device.revealTaskDetailControl("taskDetailDue").text)
+                val containerLabel = device.revealTaskDetailControl("taskDetailContainerLabel")
+                assertEquals(sectionName, containerLabel.text)
+                val labelBounds = containerLabel.visibleBounds
+                val chipBounds = device.taskControl("taskDetailContainer").visibleBounds
+                assertTrue("Long container label must fit within its chip", !labelBounds.isEmpty && chipBounds.contains(labelBounds))
+                assertContainerTextFits(chipBounds)
+                val createBounds = device.taskControl("taskDetailCreate").visibleBounds
                 screenshot("02-create-expanded")
                 val rendered = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
                 assertTrue("CTA bounds must be on screen", Rect(0, 0, rendered.width, rendered.height).contains(createBounds))
@@ -155,10 +147,7 @@ class TaskDraftVisualTest {
                 }
                 rendered.recycle()
                 assertTrue("Create CTA should have a blue fill: $bluePixels/$ctaPixels rendered pixels", bluePixels > ctaPixels / 4)
-                controller.onActivity { activity ->
-                    field<View>(sheet(activity), "btnDetailCollapse").performClick()
-                    tasks(activity).childFragmentManager.executePendingTransactions()
-                }
+                device.taskControl("taskDetailCancel").click()
                 await {
                     var dismissed = false
                     controller.onActivity { activity ->
@@ -168,8 +157,8 @@ class TaskDraftVisualTest {
                     dismissed
                 }
                 // Create the single readable fixture through the existing service, then inspect edit mode.
-                val saved = component.userTaskService.createTask(title, description = "Собрать материалы и согласовать следующие шаги.", containerId = container, due = due)
-                component.userTaskService.createTask("Проверить список важных дел", parentTaskId = saved.id, containerId = container)
+                val saved = component.userTaskService.createTask(title, description = notes, containerId = container, due = due)
+                component.userTaskService.createTask(subtask, parentTaskId = saved.id, containerId = container)
                 controller.onActivity { activity ->
                     assertFalse(MainTabsThemeBridge.resolve(activity).isDark)
                     TaskDetailBottomSheet.newInstance(saved.id).show(tasks(activity).childFragmentManager, "visual-edit")
@@ -190,12 +179,11 @@ class TaskDraftVisualTest {
                 controller.onActivity { activity ->
                     assertTrue("Theme change must retain Tasks context", tasks(activity).isVisible)
                     val edit = tasks(activity).childFragmentManager.findFragmentByTag("visual-edit") as TaskDetailBottomSheet
-                    assertTrue(tasks(activity).isVisible)
-                    assertEquals(View.VISIBLE, field<View>(edit, "topBarEdit").visibility)
-                    assertEquals(title, field<EditText>(edit, "etTitle").text.toString())
-                    assertEquals(compactDue, field<TextView>(edit, "tvDueValue").text.toString())
-                    assertTrue(field<org.isoron.uhabits.activities.settings.SettingsThemePalette>(edit, "palette").isDark)
+                    assertTrue(MainTabsThemeBridge.resolve(edit.requireContext()).isDark)
                 }
+                assertTrue("Edit actions must remain visible", !device.taskControl("taskDetailEditActions").visibleBounds.isEmpty)
+                assertEquals(title, device.revealTaskDetailControl("taskDetailTitle", Direction.UP).text)
+                assertEquals(compactDue, device.revealTaskDetailControl("taskDetailDue").text)
                 screenshot("03-edit-dark-tasks")
                 device.pressBack(); idle()
                 await {
@@ -221,9 +209,33 @@ class TaskDraftVisualTest {
     private fun tasks(activity: MainActivity) = activity.supportFragmentManager.findFragmentByTag("main.tasks") as TasksFragment
     private fun sheet(activity: MainActivity) = tasks(activity).childFragmentManager.findFragmentByTag("task_detail_create") as TaskDetailBottomSheet
     private fun bounds(view: View): Rect { val xy = IntArray(2); view.getLocationOnScreen(xy); return Rect(xy[0], xy[1], xy[0] + view.width, xy[1] + view.height) }
+
+    @Suppress("DEPRECATION")
+    private fun assertContainerTextFits(chipBounds: Rect) {
+        fun findLabel(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+            if (node.viewIdResourceName == "taskDetailContainerLabel") return node
+            for (index in 0 until node.childCount) {
+                val child = node.getChild(index) ?: continue
+                findLabel(child)?.let { return it }
+            }
+            return null
+        }
+        val label = requireNotNull(findLabel(requireNotNull(instrumentation.uiAutomation.rootInActiveWindow)))
+        val key = AccessibilityNodeInfo.EXTRA_DATA_TEXT_CHARACTER_LOCATION_KEY
+        val args = Bundle().apply {
+            putInt(AccessibilityNodeInfo.EXTRA_DATA_TEXT_CHARACTER_LOCATION_ARG_START_INDEX, 0)
+            putInt(AccessibilityNodeInfo.EXTRA_DATA_TEXT_CHARACTER_LOCATION_ARG_LENGTH, sectionName.length)
+        }
+        assertTrue("Container label must expose measured text", label.refreshWithExtraData(key, args))
+        val characters = requireNotNull(label.extras.getParcelableArray(key)).filterIsInstance<RectF>()
+        assertEquals(sectionName.length, characters.size)
+        assertTrue("Long container text must remain inside its chip", characters.all { bounds ->
+            bounds.left >= chipBounds.left - 1 && bounds.right <= chipBounds.right + 1 &&
+                bounds.top >= chipBounds.top - 1 && bounds.bottom <= chipBounds.bottom + 1
+        })
+    }
+
     private fun idle() { instrumentation.waitForIdleSync(); device.waitForIdle() }
     private fun await(condition: () -> Boolean) { val until = SystemClock.uptimeMillis() + 5_000; while (SystemClock.uptimeMillis() < until) { idle(); if (condition()) return; SystemClock.sleep(50) }; error("UI condition did not settle") }
     private fun screenshot(name: String) { val file = File(context.getExternalFilesDir(null), "pr5-visual-qa/$name.png"); check(file.parentFile!!.mkdirs() || file.parentFile!!.isDirectory); check(device.takeScreenshot(file)) }
-    @Suppress("UNCHECKED_CAST") private fun <T> field(instance: Any, name: String): T = instance.javaClass.getDeclaredField(name).apply { isAccessible = true }.get(instance) as T
-    private fun invoke(instance: Any, name: String): Any? = instance.javaClass.getDeclaredMethod(name).apply { isAccessible = true }.invoke(instance)
 }

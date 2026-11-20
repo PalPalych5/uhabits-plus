@@ -45,11 +45,6 @@ class TaskRowComposeUnitTest {
     }
 
     @Test
-    fun testUseComposeTaskRowDefault() {
-        assertTrue("Modern Compose Task Row must be enabled by default", TasksAdapter.useComposeTaskRow)
-    }
-
-    @Test
     fun testTaskMetaTokensSpokenDescriptionFormat() {
         val task = UserTask(
             id = TaskId("t1"),

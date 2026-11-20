@@ -5,12 +5,12 @@ package org.isoron.uhabits.activities.tasks
 import android.content.Intent
 import android.os.SystemClock
 import android.view.View
-import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlin.math.roundToInt
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
@@ -96,35 +96,45 @@ class TaskCalendarHistoryVisualTest {
                     }
                     idle()
                     controller.onActivity { activity ->
-                        findScrollView(field<LinearLayout>(fragment(activity), "calendarPanel"))?.scrollTo(
-                            0, (scrollDp * context.resources.displayMetrics.density).toInt())
+                        scrollComposeVertically(
+                            fragment(activity).requireView(),
+                            scrollDp * context.resources.displayMetrics.density
+                        )
                     }
                     idle()
                 }
-                fun views(root: View): List<View> = listOf(root) +
-                    if (root is android.view.ViewGroup) (0 until root.childCount).flatMap { views(root.getChildAt(it)) } else emptyList()
-                fun panelViews(): List<View> {
-                    var result = emptyList<View>()
-                    controller.onActivity { result = views(field<LinearLayout>(fragment(it), "calendarPanel")) }
+                fun panelNodes(): List<Pair<SemanticsNode, View>> {
+                    var result = emptyList<Pair<SemanticsNode, View>>()
+                    controller.onActivity { result = tasksComposeNodes(fragment(it).requireView(), subtreeTag = "tasksCalendar") }
                     return result
                 }
-                fun windowViews(): List<View> {
-                    var result = emptyList<View>()
+                fun windowNodes(): List<Pair<SemanticsNode, View>> {
+                    var result = emptyList<Pair<SemanticsNode, View>>()
                     instrumentation.runOnMainSync {
-                        result = android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap { views(it) }
+                        result = android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap { tasksComposeNodes(it) }
                     }
                     return result
                 }
-                fun clickVisible(view: View, require48: Boolean = false) {
-                    val rect = android.graphics.Rect()
+                fun nodeTag(node: SemanticsNode): String? =
+                    node.config.getOrNull(SemanticsProperties.TestTag)
+                fun nodeText(node: SemanticsNode): String =
+                    node.config.getOrNull(SemanticsProperties.Text)?.joinToString("\n") { it.text }.orEmpty()
+                fun nodeScreenRect(pair: Pair<SemanticsNode, View>): android.graphics.Rect {
+                    val b = pair.first.boundsInRoot
+                    val origin = IntArray(2)
                     instrumentation.runOnMainSync {
-                        assertTrue("Target must be visible", view.getGlobalVisibleRect(rect))
-                        // getGlobalVisibleRect is relative to the ViewRoot; dialogs have an
-                        // independent window origin. Native input requires screen coordinates.
-                        val rootOrigin = IntArray(2)
-                        view.rootView.getLocationOnScreen(rootOrigin)
-                        rect.offset(rootOrigin[0], rootOrigin[1])
+                        pair.second.getLocationOnScreen(origin)
                     }
+                    return android.graphics.Rect(
+                        (b.left + origin[0]).roundToInt(),
+                        (b.top + origin[1]).roundToInt(),
+                        (b.right + origin[0]).roundToInt(),
+                        (b.bottom + origin[1]).roundToInt()
+                    )
+                }
+                fun clickVisible(pair: Pair<SemanticsNode, View>, require48: Boolean = false) {
+                    val rect = nodeScreenRect(pair)
+                    assertTrue("Target must have positive bounds", rect.width() > 0 && rect.height() > 0)
                     if (require48) {
                         val min = (48 * context.resources.displayMetrics.density).toInt()
                         assertTrue("Actual hit width ${rect.width()} < $min", rect.width() >= min)
@@ -135,27 +145,22 @@ class TaskCalendarHistoryVisualTest {
                 }
                 render(fallDay, CalendarScale.DAY, repeated)
                 // Compare rendered bounds, rather than just the projector's timestamp ordering.
-                val blocks = panelViews().filter { it.tag?.toString()?.contains("pr12_dst_") == true }
+                val blocks = panelNodes().filter { nodeTag(it.first)?.contains("pr12_dst_") == true }
                 assertEquals("Both repeated-hour records need accessible blocks", 2, blocks.size)
-                val bounds = blocks.map { view -> android.graphics.Rect().also { rect ->
-                    instrumentation.runOnMainSync { assertTrue(view.getGlobalVisibleRect(rect)) }
-                } }.sortedBy { it.top }
+                val bounds = blocks.map { nodeScreenRect(it) }.sortedBy { it.top }
                 assertTrue("Repeated local intervals must not overlap visually", bounds[0].bottom <= bounds[1].top)
-                val dayText = panelViews().filterIsInstance<TextView>().joinToString("\n") { it.text }
+                val dayText = panelNodes().joinToString("\n") { nodeText(it.first) }
                 assertTrue(dayText.contains("+02"))
                 assertTrue(dayText.contains("+01"))
                 capture("pr12_10_berlin_repeated_hour_day")
                 render(fallDay, CalendarScale.WEEK, repeated)
                 controller.onActivity { activity ->
-                    views(field<LinearLayout>(fragment(activity), "calendarPanel"))
-                        .filterIsInstance<HorizontalScrollView>().forEach { it.fullScroll(View.FOCUS_RIGHT) }
+                    scrollComposeHorizontally(fragment(activity).requireView(), 10_000f)
                 }
                 idle()
-                val weekBlocks = panelViews().filter { it.tag?.toString()?.contains("pr12_dst_") == true }
+                val weekBlocks = panelNodes().filter { nodeTag(it.first)?.contains("pr12_dst_") == true }
                 assertEquals(2, weekBlocks.size)
-                val weekBounds = weekBlocks.map { view -> android.graphics.Rect().also { rect ->
-                    instrumentation.runOnMainSync { assertTrue("DST week record must be visible", view.getGlobalVisibleRect(rect)) }
-                } }.sortedBy { it.top }
+                val weekBounds = weekBlocks.map { nodeScreenRect(it) }.sortedBy { it.top }
                 assertTrue("Repeated hour must also remain distinct in WEEK", weekBounds[0].bottom <= weekBounds[1].top)
                 capture("pr12_11_berlin_repeated_hour_week")
 
@@ -164,24 +169,24 @@ class TaskCalendarHistoryVisualTest {
                     "2026-10-26T10:00:00+01:00", "2026-10-26T11:00:00+01:00", index) }
                 for (crowdedScale in listOf(CalendarScale.DAY, CalendarScale.WEEK)) {
                 render(ordinary, crowdedScale, crowded, 9 * 56)
-                val disclosure = panelViews().firstOrNull { it.tag?.toString()?.startsWith("history_cluster:") == true }
+                val disclosure = panelNodes().firstOrNull { nodeTag(it.first)?.startsWith("history_cluster:") == true }
                     ?: error("Crowded intervals require an accessible session disclosure")
                 clickVisible(disclosure, true)
                 if (crowdedScale == CalendarScale.DAY) capture("pr12_12_four_sessions_list_narrow13")
                 // Select each row with native input, close detail, then reopen the disclosure.
                 for (index in diagnosticTasks.indices) {
-                    val row = windowViews().firstOrNull { it.tag == "history_session:pr12_overlap_$index" }
+                    val row = windowNodes().firstOrNull { nodeTag(it.first) == "history_session:pr12_overlap_$index" }
                         ?: error("Missing accessible session row $index")
                     clickVisible(row, true)
                     assertTrue("Wrong session details", device.findObject(androidx.test.uiautomator.UiSelector().text(diagnosticTasks[index].title)).exists())
                     if (index == 3 && crowdedScale == CalendarScale.DAY) capture("pr12_13_fourth_session_opened")
                     device.pressBack(); idle()
                     // Dialog implementations may retain the list or replace it.
-                    if (index != diagnosticTasks.lastIndex && windowViews().none { it.tag == "history_session:pr12_overlap_${index + 1}" }) {
+                    if (index != diagnosticTasks.lastIndex && windowNodes().none { nodeTag(it.first) == "history_session:pr12_overlap_${index + 1}" }) {
                         clickVisible(disclosure, true)
                     }
                 }
-                if (windowViews().any { it.tag == "history_session:pr12_overlap_0" }) {
+                if (windowNodes().any { nodeTag(it.first) == "history_session:pr12_overlap_0" }) {
                     device.pressBack(); idle()
                 }
                 evidence("$crowdedScale: four session rows opened by real coordinate taps; all targets >=48dp")
@@ -189,13 +194,13 @@ class TaskCalendarHistoryVisualTest {
                 val paused = session("pr12_paused_midnight", "2026-10-26T23:00:00+01:00",
                     "2026-10-27T01:00:00+01:00", 0, 60 * 60_000L)
                 render(ordinary, CalendarScale.MONTH, listOf(paused))
-                assertTrue("Month must disclose estimated day allocation", panelViews().filterIsInstance<TextView>()
-                    .any { it.text.contains("≈") || it.text.contains("оцен", ignoreCase = true) || it.text.contains("estimat", ignoreCase = true) })
+                assertTrue("Month must disclose estimated day allocation", panelNodes()
+                    .any { val t = nodeText(it.first); t.contains("≈") || t.contains("~") || t.contains("оцен", ignoreCase = true) || t.contains("estimat", ignoreCase = true) })
                 capture("pr12_14_paused_midnight_estimate")
                 render(ordinary, CalendarScale.DAY, listOf(paused), 22 * 56)
-                assertTrue("Day must disclose estimated allocation", panelViews().filterIsInstance<TextView>()
-                    .any { it.text.contains("≈") || it.text.contains("оцен", ignoreCase = true) || it.text.contains("estimat", ignoreCase = true) })
-                val pausedBlock = panelViews().first { it.tag?.toString()?.contains("pr12_paused_midnight") == true }
+                assertTrue("Day must disclose estimated allocation", panelNodes()
+                    .any { val t = nodeText(it.first); t.contains("≈") || t.contains("~") || t.contains("оцен", ignoreCase = true) || t.contains("estimat", ignoreCase = true) })
+                val pausedBlock = panelNodes().first { nodeTag(it.first)?.contains("pr12_paused_midnight") == true }
                 clickVisible(pausedBlock)
                 capture("pr12_15_original_duration_and_limitation")
                 evidence("Berlin repeated-hour block bounds distinct; real >=48dp disclosure and four row taps; fourth detail opened; paused midnight original duration=3600000ms")
@@ -203,8 +208,8 @@ class TaskCalendarHistoryVisualTest {
                 val shortPause = session("pr12_subminute_pause", "2026-10-26T23:00:00+01:00",
                     "2026-10-27T01:00:00.500+01:00", 0, 120 * 60_000L)
                 render(ordinary, CalendarScale.DAY, listOf(shortPause), 22 * 56)
-                clickVisible(panelViews().first { it.tag == "pr12_subminute_pause" })
-                val detailText = windowViews().filterIsInstance<TextView>().joinToString("\n") { it.text }
+                clickVisible(panelNodes().first { nodeTag(it.first) == "pr12_subminute_pause" })
+                val detailText = windowNodes().joinToString("\n") { nodeText(it.first) }
                 assertTrue("Even a subminute pause must disclose estimated daily allocation",
                     detailText.contains("оцен", ignoreCase = true) || detailText.contains("estimated", ignoreCase = true))
                 device.pressBack()
@@ -257,8 +262,7 @@ class TaskCalendarHistoryVisualTest {
                 // Verify Calendar panel is visible and in History mode
                 controller.onActivity { activity ->
                     val frag = fragment(activity)
-                    val panel = field<View>(frag, "calendarPanel")
-                    assertEquals(View.VISIBLE, panel.visibility)
+                    assertFalse(taskWorkspaceBounds(frag.requireView(), "tasksCalendar").isEmpty)
                     assertEquals(CalendarMode.HISTORY, field<CalendarMode>(frag, "calendarViewMode"))
                 }
 
@@ -278,8 +282,8 @@ class TaskCalendarHistoryVisualTest {
                     // Scroll day timeline to afternoon events (11:00 - 16:00)
                     controller.onActivity { activity ->
                         val frag = fragment(activity)
-                        val panel = field<LinearLayout>(frag, "calendarPanel")
-                        findScrollView(panel)?.smoothScrollTo(0, dp(600f))
+                        val panel = frag.requireView()
+                        scrollComposeVertically(panel, dp(600f).toFloat())
                     }
                     idle()
                     capture("pr12_08_narrow_13x_history")
@@ -302,8 +306,8 @@ class TaskCalendarHistoryVisualTest {
 
                     controller.onActivity { activity ->
                         val frag = fragment(activity)
-                        val panel = field<LinearLayout>(frag, "calendarPanel")
-                        findScrollView(panel)?.smoothScrollTo(0, dp(600f))
+                        val panel = frag.requireView()
+                        scrollComposeVertically(panel, dp(600f).toFloat())
                     }
                     idle()
                     capture("pr12_09_dark_amoled_history")
@@ -330,8 +334,8 @@ class TaskCalendarHistoryVisualTest {
                 // Scroll day timeline to 09:00 - 14:00
                 controller.onActivity { activity ->
                     val frag = fragment(activity)
-                    val panel = field<LinearLayout>(frag, "calendarPanel")
-                    findScrollView(panel)?.smoothScrollTo(0, dp(450f))
+                    val panel = frag.requireView()
+                    scrollComposeVertically(panel, dp(450f).toFloat())
                 }
                 idle()
                 capture("pr12_01_day_focus_sessions")
@@ -341,8 +345,8 @@ class TaskCalendarHistoryVisualTest {
                 // Scroll to 14:00 - 17:00 where overlapping sessions reside
                 controller.onActivity { activity ->
                     val frag = fragment(activity)
-                    val panel = field<LinearLayout>(frag, "calendarPanel")
-                    findScrollView(panel)?.smoothScrollTo(0, dp(750f))
+                    val panel = frag.requireView()
+                    scrollComposeVertically(panel, dp(750f).toFloat())
                 }
                 idle()
                 capture("pr12_02_day_overlapping")
@@ -352,8 +356,8 @@ class TaskCalendarHistoryVisualTest {
                 // Scroll to 22:30 - 24:00 to show session starting at 23:00 ending tomorrow
                 controller.onActivity { activity ->
                     val frag = fragment(activity)
-                    val panel = field<LinearLayout>(frag, "calendarPanel")
-                    findScrollView(panel)?.smoothScrollTo(0, dp(1200f))
+                    val panel = frag.requireView()
+                    scrollComposeVertically(panel, dp(1200f).toFloat())
                 }
                 idle()
                 capture("pr12_03_day_midnight_split")
@@ -374,8 +378,8 @@ class TaskCalendarHistoryVisualTest {
                 // Scroll week timeline to 10:00 - 16:00
                 controller.onActivity { activity ->
                     val frag = fragment(activity)
-                    val panel = field<LinearLayout>(frag, "calendarPanel")
-                    findScrollView(panel)?.smoothScrollTo(0, dp(550f))
+                    val panel = frag.requireView()
+                    scrollComposeVertically(panel, dp(550f).toFloat())
                 }
                 idle()
                 capture("pr12_04_week_intervals")
@@ -426,8 +430,8 @@ class TaskCalendarHistoryVisualTest {
                 // Scroll to top to cleanly present the control bar
                 controller.onActivity { activity ->
                     val frag = fragment(activity)
-                    val panel = field<LinearLayout>(frag, "calendarPanel")
-                    findScrollView(panel)?.smoothScrollTo(0, 0)
+                    val panel = frag.requireView()
+                    scrollComposeVertically(panel, 0f)
                 }
                 idle()
                 capture("pr12_07_mode_switcher")
@@ -548,15 +552,20 @@ class TaskCalendarHistoryVisualTest {
         idle(); waitLoad(controller)
     }
 
-    private fun findScrollView(root: View): ScrollView? {
-        if (root is ScrollView) return root
-        if (root is android.view.ViewGroup) {
-            for (i in 0 until root.childCount) {
-                val found = findScrollView(root.getChildAt(i))
-                if (found != null) return found
-            }
-        }
-        return null
+    private fun scrollComposeVertically(root: View, targetY: Float) {
+        val node = tasksComposeNodes(root, subtreeTag = "tasksCalendar").firstOrNull {
+            it.first.config.getOrNull(SemanticsProperties.TestTag) == "calendar_vertical_scroll"
+        }?.first ?: return
+        val currentY = node.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange)?.value?.invoke() ?: 0f
+        node.config.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f, targetY - currentY)
+    }
+
+    private fun scrollComposeHorizontally(root: View, targetX: Float) {
+        val node = tasksComposeNodes(root, subtreeTag = "tasksCalendar").firstOrNull {
+            it.first.config.getOrNull(SemanticsProperties.TestTag) == "calendar_horizontal_scroll"
+        }?.first ?: return
+        val currentX = node.config.getOrNull(SemanticsProperties.HorizontalScrollAxisRange)?.value?.invoke() ?: 0f
+        node.config.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(targetX - currentX, 0f)
     }
 
     private fun waitLoad(controller: CalendarQaActivityController) {

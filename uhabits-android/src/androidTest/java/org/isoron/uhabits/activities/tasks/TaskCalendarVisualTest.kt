@@ -45,6 +45,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import org.isoron.uhabits.activities.containers.ContainersActivity
 
 /** Run explicitly with TaskDraftQaRunner on an owned, offline temporary AVD. */
@@ -98,12 +101,10 @@ class TaskCalendarVisualTest {
             current { assertEquals(CalendarMode.PLANNING, it.mode) }
             var initial = false
             current { initial = it.showHabits }
-            controller.onActivity { activity -> field<View>(fragment(activity), "btnTasksOverflow").performClick() }
-            idle()
+            click(By.res("btnTasksOverflow"))
             click(By.text(Pattern.compile("Show habits|Показывать привычки")))
             current { assertEquals(!initial, it.showHabits) }
-            controller.onActivity { activity -> field<View>(fragment(activity), "btnTasksOverflow").performClick() }
-            idle()
+            click(By.res("btnTasksOverflow"))
             click(By.text(Pattern.compile("Show habits|Показывать привычки")))
             current { assertEquals(initial, it.showHabits) }
         }
@@ -627,8 +628,7 @@ class TaskCalendarVisualTest {
                 // Check Calendar panel is visible
                 controller.onActivity { activity ->
                     val frag = fragment(activity)
-                    val panel = field<View>(frag, "calendarPanel")
-                    assertEquals(View.VISIBLE, panel.visibility)
+                    assertFalse(taskWorkspaceBounds(frag.requireView(), "tasksCalendar").isEmpty)
                     assertEquals(CalendarScale.MONTH, field<CalendarScale>(frag, "calendarScale"))
                 }
 
@@ -667,8 +667,8 @@ class TaskCalendarVisualTest {
                 // Scroll week timeline down a bit
                 controller.onActivity { activity ->
                     val frag = fragment(activity)
-                    val panel = field<android.widget.LinearLayout>(frag, "calendarPanel")
-                    findScrollView(panel)?.smoothScrollTo(0, 400)
+                    val panel = frag.requireView()
+                    scrollComposeVertically(panel, 400f)
                 }
                 idle()
                 capture("02b-week-scrolled")
@@ -695,8 +695,8 @@ class TaskCalendarVisualTest {
                 // Scroll day timeline to timed events (~10:00 - 15:00)
                 controller.onActivity { activity ->
                     val frag = fragment(activity)
-                    val panel = field<android.widget.LinearLayout>(frag, "calendarPanel")
-                    findScrollView(panel)?.smoothScrollTo(0, 600)
+                    val panel = frag.requireView()
+                    scrollComposeVertically(panel, 600f)
                 }
                 idle()
                 capture("03b-day-scrolled")
@@ -856,18 +856,8 @@ class TaskCalendarVisualTest {
                     // --- Scenario 2: Week Scrolled Horizontally (Friday-Sunday visible) ---
                     controller.onActivity { activity ->
                         val frag = fragment(activity)
-                        val panel = field<android.widget.LinearLayout>(frag, "calendarPanel")
-                        val hScrolls = mutableListOf<android.widget.HorizontalScrollView>()
-                        fun findHScrolls(v: View) {
-                            if (v is android.widget.HorizontalScrollView) hScrolls.add(v)
-                            if (v is android.view.ViewGroup) {
-                                for (i in 0 until v.childCount) findHScrolls(v.getChildAt(i))
-                            }
-                        }
-                        findHScrolls(panel)
-                        for (hs in hScrolls) {
-                            hs.smoothScrollTo(dp(300f), 0)
-                        }
+                        val panel = frag.requireView()
+                        scrollComposeHorizontally(panel, dp(300f).toFloat())
                     }
                     idle()
                     capture("02-week-scrolled-horiz")
@@ -875,19 +865,9 @@ class TaskCalendarVisualTest {
                     // --- Scenario 3: Week Scrolled Vertically (Header & All-Day Stay Pinned) ---
                     controller.onActivity { activity ->
                         val frag = fragment(activity)
-                        val panel = field<android.widget.LinearLayout>(frag, "calendarPanel")
-                        val hScrolls = mutableListOf<android.widget.HorizontalScrollView>()
-                        fun findHScrolls(v: View) {
-                            if (v is android.widget.HorizontalScrollView) hScrolls.add(v)
-                            if (v is android.view.ViewGroup) {
-                                for (i in 0 until v.childCount) findHScrolls(v.getChildAt(i))
-                            }
-                        }
-                        findHScrolls(panel)
-                        for (hs in hScrolls) {
-                            hs.scrollTo(0, 0)
-                        }
-                        findScrollView(panel)?.smoothScrollTo(0, dp(400f))
+                        val panel = frag.requireView()
+                        scrollComposeHorizontally(panel, 0f)
+                        scrollComposeVertically(panel, dp(400f).toFloat())
                     }
                     idle()
                     capture("03-week-scrolled-vert")
@@ -1030,15 +1010,20 @@ class TaskCalendarVisualTest {
         idle(); waitLoad(controller)
     }
 
-    private fun findScrollView(root: View): ScrollView? {
-        if (root is ScrollView) return root
-        if (root is android.view.ViewGroup) {
-            for (i in 0 until root.childCount) {
-                val found = findScrollView(root.getChildAt(i))
-                if (found != null) return found
-            }
-        }
-        return null
+    private fun scrollComposeVertically(root: View, targetY: Float) {
+        val node = tasksComposeNodes(root, subtreeTag = "tasksCalendar").firstOrNull {
+            it.first.config.getOrNull(SemanticsProperties.TestTag) == "calendar_vertical_scroll"
+        }?.first ?: return
+        val currentY = node.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange)?.value?.invoke() ?: 0f
+        node.config.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(0f, targetY - currentY)
+    }
+
+    private fun scrollComposeHorizontally(root: View, targetX: Float) {
+        val node = tasksComposeNodes(root, subtreeTag = "tasksCalendar").firstOrNull {
+            it.first.config.getOrNull(SemanticsProperties.TestTag) == "calendar_horizontal_scroll"
+        }?.first ?: return
+        val currentX = node.config.getOrNull(SemanticsProperties.HorizontalScrollAxisRange)?.value?.invoke() ?: 0f
+        node.config.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(targetX - currentX, 0f)
     }
 
     private fun waitLoad(controller: CalendarQaActivityController) {

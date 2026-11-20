@@ -2,49 +2,45 @@
 
 package org.isoron.uhabits.activities.tasks
 
-import android.app.Dialog
-import android.graphics.drawable.ColorDrawable
 import android.view.Window
 
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Bundle
-import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.ImageButton
-import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AlertDialog
-import androidx.core.widget.doAfterTextChanged
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionOnScreen
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.ui.res.colorResource
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
-import androidx.recyclerview.widget.ItemTouchHelper
 import org.isoron.uhabits.activities.habits.show.ShowHabitActivity
 import org.isoron.uhabits.core.containers.facade.OrganizationalItem
 import org.isoron.uhabits.activities.common.dialogs.CustomDialogs
-import org.isoron.uhabits.activities.common.icons.IconPack
 import org.isoron.uhabits.activities.common.views.CompactPopupMenu
 import org.isoron.uhabits.activities.containers.CreateContainerDialog
 import org.isoron.uhabits.activities.containers.DrillDownMoveDialog
 import org.isoron.uhabits.core.containers.Container
 import org.isoron.uhabits.core.containers.IconRef
-import org.isoron.uhabits.utils.currentTheme
 import org.isoron.uhabits.core.models.Habit
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -59,6 +55,8 @@ import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.theme.MainTabsThemeBridge
 import org.isoron.uhabits.activities.main.MainNavigationHost
 import org.isoron.uhabits.activities.settings.SettingsThemePalette
+import org.isoron.uhabits.compose.UHabitComposeColors
+import org.isoron.uhabits.compose.UHabitComposeTheme
 import org.isoron.uhabits.core.containers.ContainerId
 import org.isoron.uhabits.core.containers.facade.HabitOrganizationFacade
 import org.isoron.uhabits.core.userTasks.TaskId
@@ -72,6 +70,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 class TasksFragment : Fragment() {
 
@@ -80,17 +79,27 @@ class TasksFragment : Fragment() {
         val after: UserTask,
     )
 
+    private data class InformationDialog(
+        val message: String,
+        val title: String? = null,
+        val openHabit: (() -> Unit)? = null,
+    )
+
+    private var informationDialog by mutableStateOf<InformationDialog?>(null)
+    private var quickActionMenu by mutableStateOf<UserTask?>(null)
+    private var deleteConfirmation by mutableStateOf<Pair<String, String>?>(null)
+
     private lateinit var taskRepo: UserTaskRepository
     private lateinit var taskService: UserTaskService
     private lateinit var orgFacade: HabitOrganizationFacade
     private lateinit var palette: SettingsThemePalette
     private lateinit var component: HabitsApplicationComponent
-    private var workspaceSnapshot: TasksWorkspaceSnapshot? = null
+    private var workspaceSnapshot by mutableStateOf<TasksWorkspaceSnapshot?>(null)
+    private var composePalette by mutableStateOf<SettingsThemePalette?>(null)
     private var snapshotRevision = -1L
     private var loadGeneration = 0L
     private var loadJob: Job? = null
     private var workspaceActive = false
-    private var refreshQuickLabels: (() -> Unit)? = null
     private val workspaceChanged: () -> Unit = {
         activity?.runOnUiThread { if (workspaceActive && view != null) loadTasks() }
     }
@@ -99,15 +108,15 @@ class TasksFragment : Fragment() {
     }
 
     var workspaceNavigator: ((String) -> Unit)? = null
-    private lateinit var shellRoot: FrameLayout
-    private lateinit var navigationColumn: LinearLayout
-    private lateinit var representationButton: ImageButton
-    private lateinit var calendarPanel: LinearLayout
-    private var drawerScrim: View? = null
-    private var drawerScroll: ScrollView? = null
-    private var localTreeRoot: ContainerId? = null
-    private val collapsedContainers = mutableSetOf<String>()
-    private var smartViewsExpanded = false
+    private var drawerOpen by mutableStateOf(false)
+    private var topBarCoordinates: LayoutCoordinates? = null
+    private var navigationCoordinates: LayoutCoordinates? = null
+    private var quickAddAnchor: View? = null
+    private var localTreeRoot by mutableStateOf<ContainerId?>(null)
+    private var collapsedContainers by mutableStateOf(emptySet<String>())
+    private var smartViewsExpanded by mutableStateOf(false)
+    private var navigationHiddenSections by mutableStateOf(emptySet<String>())
+
     private var calendarMode = false
     private var matrixMode = false
     private var calendarScale = CalendarScale.MONTH
@@ -124,11 +133,12 @@ class TasksFragment : Fragment() {
     private var restoredTitle: String? = null
     private var wide = false
 
-    private var quickTaskDue: TaskDue = TaskDue.None
-    private var quickContainer: ContainerId? = null
-    private var quickTagIds: Set<String> = emptySet()
+    private var quickTaskDue by mutableStateOf<TaskDue>(TaskDue.None)
+    private var quickContainer by mutableStateOf<ContainerId?>(null)
+    private var quickTagIds by mutableStateOf<Set<String>>(emptySet())
     private var quickDraftRestored = false
-    private var quickExpanded = false
+    private var quickExpanded by mutableStateOf(false)
+    private var quickTitle by mutableStateOf("")
     private var quickDraftNotes: String = ""
     private val quickDraftSubtasks = mutableListOf<TaskDraft.DraftSubtask>()
     private var activeSmartView: TaskSmartView = TaskSmartView.TODAY
@@ -138,58 +148,33 @@ class TasksFragment : Fragment() {
     private val selectedTaskIds = linkedSetOf<TaskId>()
     private val pendingActionTaskIds = linkedSetOf<TaskId>()
     private val pendingDeleteConfirmationIds = linkedSetOf<TaskId>()
-    private var deleteConfirmationDialog: AlertDialog? = null
     private var activeSnackbar: Snackbar? = null
     private var lastUndoEntries: List<TaskUndoEntry> = emptyList()
-    private lateinit var swipeCallback: TaskSwipeCallback
 
-    private lateinit var tasksHeader: LinearLayout
-    private lateinit var tasksSelectionBar: LinearLayout
-    private lateinit var btnSelectionClose: ImageButton
-    private lateinit var tvSelectionCount: TextView
-    private lateinit var btnSelectionDue: ImageButton
-    private lateinit var btnSelectionContainer: ImageButton
-    private lateinit var btnSelectionComplete: ImageButton
-    private lateinit var btnSelectionDelete: ImageButton
-    private lateinit var btnSelectionMore: ImageButton
+    private data class WorkspaceScope(
+        val smartView: TaskSmartView = TaskSmartView.TODAY,
+        val container: ContainerId? = null,
+        val tags: Set<String> = emptySet(),
+        val calendar: Boolean = false,
+        val matrix: Boolean = false,
+    )
 
-    private lateinit var tvTitle: TextView
-    private lateinit var btnTasksOverflow: ImageButton
+    // The Fragment owns and restores the filters. Publish the scope together for the screen.
+    private var workspaceScope by mutableStateOf(WorkspaceScope())
+    private var currentOverdueCount by mutableStateOf(0)
+    private var currentActiveCount by mutableStateOf(0)
+    private var showEmptyState by mutableStateOf(false)
 
-    private lateinit var layoutListInfo: LinearLayout
-    private lateinit var tvSubtitle: TextView
-    private lateinit var tvTasksTagFilter: TextView
-    private lateinit var tvTasksDate: TextView
+    internal var taskListState = LazyListState()
+        private set
+    internal var taskListContent by mutableStateOf<TasksListContent?>(null)
+        private set
+    private var listSelection by mutableStateOf(emptySet<TaskId>())
+    private var pendingListAnchor: ListAnchor? = null
 
-    private lateinit var rvTasks: RecyclerView
-    private lateinit var adapter: TasksAdapter
-    private lateinit var overdueAdapter: TasksAdapter
-    private lateinit var completedAdapter: TasksAdapter
-    private lateinit var groupedAdapter: TaskListAdapter
-    private lateinit var createGroupAdapter: () -> TasksAdapter
-    private val groupAdapters = mutableMapOf<String, Pair<TaskSectionAdapter, TasksAdapter>>()
-    private lateinit var overdueHeader: TaskSectionAdapter
-    private lateinit var activeHeader: TaskSectionAdapter
-    private lateinit var completedHeader: TaskSectionAdapter
+    private data class ListAnchor(val key: String, val index: Int, val offset: Int)
     private var overdueExpanded = true
     private var completedExpanded = false
-    private lateinit var layoutEmpty: LinearLayout
-    private lateinit var tvEmptyTitle: TextView
-    private lateinit var tvEmptyMessage: TextView
-
-    private lateinit var layoutQuickAddContainer: LinearLayout
-    private lateinit var quickAddDivider: View
-    private lateinit var layoutQuickAddCollapsed: LinearLayout
-    private lateinit var ivQuickAddIcon: ImageView
-    private lateinit var tvQuickAddCollapsedLabel: TextView
-    private lateinit var layoutQuickAddExpanded: LinearLayout
-    private lateinit var etQuickAddTitle: EditText
-    private lateinit var btnQuickAddExpand: ImageButton
-    private lateinit var btnQuickAddSubmit: ImageButton
-    private lateinit var quickAddOptions: LinearLayout
-    private lateinit var quickDueView: TextView
-    private lateinit var quickContainerView: TextView
-    private lateinit var quickTagsView: TextView
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -215,6 +200,9 @@ class TasksFragment : Fragment() {
             quickExpanded = it.getBoolean("quickExpanded", false)
             quickDraftRestored = true
             restoredTitle = it.getString("quickTitle")
+            if (!restoredTitle.isNullOrEmpty()) {
+                quickTitle = restoredTitle!!
+            }
             quickDraftNotes = it.getString("quickDraftNotes").orEmpty()
             val subTitles = it.getStringArrayList("quickDraftSubtaskTitles").orEmpty()
             val subCompleted = it.getBooleanArray("quickDraftSubtaskCompleted") ?: BooleanArray(subTitles.size)
@@ -238,7 +226,7 @@ class TasksFragment : Fragment() {
             selectedDay = LocalDate(it.getInt("selectedDay", getToday().daysSince2000))
             calendarMonth.timeInMillis = it.getLong("calendarMonth", calendarMonth.timeInMillis)
             localTreeRoot = it.getString("localTreeRoot")?.let(::ContainerId)
-            collapsedContainers.addAll(it.getStringArrayList("collapsedContainers").orEmpty())
+            collapsedContainers = it.getStringArrayList("collapsedContainers").orEmpty().toSet()
             smartViewsExpanded = it.getBoolean("smartViewsExpanded", false)
             selectedTaskIds.clear()
             it.getStringArrayList("selectedTaskIds")?.mapTo(selectedTaskIds, ::TaskId)
@@ -248,6 +236,11 @@ class TasksFragment : Fragment() {
             it.getStringArrayList("pendingDeleteConfirmationIds")?.mapTo(pendingDeleteConfirmationIds, ::TaskId)
         }
         val app = requireContext().applicationContext as HabitsApplication
+        savedInstanceState?.let { state ->
+            pendingListAnchor = state.getString("taskListAnchorKey")
+                ?.takeIf { state.getString("taskListDataset") == app.component.session.datasetId }
+                ?.let { ListAnchor(it, state.getInt("taskListAnchorIndex"), state.getInt("taskListAnchorOffset")) }
+        }
         if (::component.isInitialized && component !== app.component) {
             workspaceSnapshot = null
             snapshotRevision = -1L
@@ -255,33 +248,59 @@ class TasksFragment : Fragment() {
             pendingActionTaskIds.clear()
             pendingDeleteConfirmationIds.clear()
             lastUndoEntries = emptyList()
+            pendingListAnchor = null
         }
         component = app.component
         taskRepo = component.userTaskRepository
         taskService = app.component.userTaskService
         orgFacade = app.component.organizationFacade
         palette = MainTabsThemeBridge.resolve(requireContext())
+        composePalette = palette
 
-        val view = inflater.inflate(R.layout.fragment_tasks, container, false)
-        val headerView = view.findViewById<View>(R.id.tasksHeader)
-        val selectionBarView = view.findViewById<View>(R.id.tasksSelectionBar)
-        val topInsetListener = androidx.core.view.OnApplyWindowInsetsListener { v, insets ->
-            val statusBars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.statusBars())
-            val cutout = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.displayCutout())
-            val topInset = maxOf(statusBars.top, cutout.top)
-            v.setPadding(v.paddingLeft, topInset + dpInt(6f), v.paddingRight, v.paddingBottom)
-            insets
+        wide = resources.configuration.screenWidthDp >= 600
+        taskListState = LazyListState()
+        showEmptyState = false
+        navigationHiddenSections = hiddenSections()
+        syncWorkspaceScope()
+        listSelection = selectedTaskIds.toSet()
+
+        val calendar = createCalendarController()
+        calendarViewController = calendar
+        return inflater.inflate(R.layout.fragment_tasks, container, false).apply {
+            findViewById<ComposeView>(R.id.tasksWorkspaceComposeView).apply {
+                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+                setContent {
+                    val currentPalette = composePalette ?: return@setContent
+                    val colors = UHabitComposeColors.fromPalette(currentPalette)
+                    UHabitComposeTheme(colors = colors) {
+                        TasksWorkspaceCompose(
+                            wide = wide,
+                            drawerOpen = drawerOpen,
+                            calendarVisible = workspaceScope.calendar,
+                            onCloseDrawer = ::closeNavigation,
+                            onQuickAddAnchor = { quickAddAnchor = it },
+                            navigation = { WorkspaceNavigation(colors) },
+                            topBar = { WorkspaceTopBar(colors) },
+                            listInfo = { WorkspaceListInfo(colors) },
+                            list = {
+                                if (showEmptyState) WorkspaceEmptyState(colors)
+                                else WorkspaceList(currentPalette)
+                            },
+                            calendar = { calendar.Content() },
+                            quickAdd = { WorkspaceQuickAdd(colors) },
+                            dialogs = { WorkspaceDialogs() },
+                        )
+                    }
+                }
+            }
         }
-        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(headerView, topInsetListener)
-        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(selectionBarView, topInsetListener)
-        bindViews(view)
-        setupOverflowMenu()
-        setupSelectionBar()
-        setupRecyclerView()
-        setupQuickAdd()
-        setupAdaptiveNavigation(view)
-        applyTheme(view)
-        updateSelectionBarUi()
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        setupSelectionBarResultListeners()
+        setupQuickAddResultListeners()
+        applyWindowTheme(view)
         if (pendingDeleteConfirmationIds.isNotEmpty()) {
             view.post {
                 if (isAdded && pendingDeleteConfirmationIds.isNotEmpty()) {
@@ -289,7 +308,56 @@ class TasksFragment : Fragment() {
                 }
             }
         }
-        return shellRoot
+    }
+
+    @Composable
+    private fun WorkspaceDialogs() {
+        informationDialog?.let { dialog ->
+            TaskInformationDialog(
+                title = dialog.title,
+                message = dialog.message,
+                onDismiss = { informationDialog = null },
+                onOpenHabit = dialog.openHabit,
+            )
+        }
+        quickActionMenu?.let { task ->
+            TaskQuickActionMenu(
+                task = task,
+                isSelected = task.id in listSelection,
+                onDismiss = { quickActionMenu = null },
+                onActionSelected = { which ->
+                    when (which) {
+                        0 -> openActionDuePicker(listOf(task.id))
+                        1 -> openActionContainerPicker(listOf(task.id))
+                        2 -> {
+                            clearSelection()
+                            val sheet = TaskDetailBottomSheet.newInstance(task.id)
+                            sheet.onTaskUpdatedListener = { loadTasks() }
+                            sheet.show(childFragmentManager, "task_detail")
+                        }
+                        3 -> executeCompleteAction(listOf(task.id))
+                        4 -> toggleTaskSelection(task.id)
+                        5 -> confirmDeleteTasks(listOf(task.id))
+                    }
+                }
+            )
+        }
+        deleteConfirmation?.let { (title, message) ->
+            TaskDeleteConfirmationDialog(
+                title = title,
+                message = message,
+                onDismiss = {
+                    pendingDeleteConfirmationIds.clear()
+                    deleteConfirmation = null
+                },
+                onConfirm = {
+                    val toDelete = pendingDeleteConfirmationIds.toList()
+                    pendingDeleteConfirmationIds.clear()
+                    executeDeleteTasks(toDelete)
+                    deleteConfirmation = null
+                }
+            )
+        }
     }
 
     override fun onHiddenChanged(hidden: Boolean) {
@@ -307,11 +375,11 @@ class TasksFragment : Fragment() {
         component.workspaceReadRevision.addListener(workspaceChanged)
         component.timerSessionManager.addListener(timerListener)
         palette = MainTabsThemeBridge.resolve(requireContext())
-        view?.let { applyTheme(it) }
-        adapter.updatePalette(palette)
-        overdueAdapter.updatePalette(palette)
-        completedAdapter.updatePalette(palette)
-        if (::swipeCallback.isInitialized) swipeCallback.updatePalette(palette)
+        composePalette = palette
+        view?.let(::applyWindowTheme)
+        calendarViewController?.updatePalette(palette)
+        if (calendarMode && taskListContent != null) calendarViewController?.render()
+        if (drawerOpen) (activity as? MainNavigationHost)?.setBottomNavigationVisible(false, false)
         (childFragmentManager.findFragmentByTag("task_detail") as? TaskDetailBottomSheet)?.onTaskUpdatedListener = { if (view != null) loadTasks() }
         loadTasks()
     }
@@ -328,21 +396,32 @@ class TasksFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        pendingListAnchor = currentListAnchor() ?: pendingListAnchor
+        taskListContent = null
+        informationDialog = null
+        quickActionMenu = null
+        deleteConfirmation = null
         (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(false)
-        deleteConfirmationDialog?.setOnDismissListener(null)
-        deleteConfirmationDialog?.dismiss()
-        deleteConfirmationDialog = null
         activeSnackbar?.dismiss()
         activeSnackbar = null
         loadGeneration++
         loadJob?.cancel()
         loadJob = null
-        refreshQuickLabels = null
+        drawerOpen = false
+        topBarCoordinates = null
+        navigationCoordinates = null
+        quickAddAnchor = null
         calendarViewController = null
         super.onDestroyView()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        (currentListAnchor() ?: pendingListAnchor)?.let { anchor ->
+            outState.putString("taskListDataset", component.session.datasetId)
+            outState.putString("taskListAnchorKey", anchor.key)
+            outState.putInt("taskListAnchorIndex", anchor.index)
+            outState.putInt("taskListAnchorOffset", anchor.offset)
+        }
         outState.putBoolean("overdueExpanded", overdueExpanded)
         outState.putBoolean("completedExpanded", completedExpanded)
         outState.putInt("smartView", activeSmartView.ordinal)
@@ -363,7 +442,7 @@ class TasksFragment : Fragment() {
         outState.putString("quickContainer", quickContainer?.value)
         outState.putStringArrayList("quickTagIds", ArrayList(quickTagIds))
         outState.putBoolean("quickExpanded", quickExpanded)
-        outState.putString("quickTitle", if (::etQuickAddTitle.isInitialized) etQuickAddTitle.text?.toString() else restoredTitle)
+        outState.putString("quickTitle", quickTitle.ifEmpty { restoredTitle })
         outState.putString("quickDraftNotes", quickDraftNotes)
         outState.putStringArrayList("quickDraftSubtaskTitles", ArrayList(quickDraftSubtasks.map { it.title }))
         outState.putBooleanArray("quickDraftSubtaskCompleted", quickDraftSubtasks.map { it.isCompleted }.toBooleanArray())
@@ -400,223 +479,23 @@ class TasksFragment : Fragment() {
         }
     }
 
-    private fun bindViews(view: View) {
-        tasksHeader = view.findViewById(R.id.tasksHeader)
-        tasksSelectionBar = view.findViewById(R.id.tasksSelectionBar)
-        btnSelectionClose = view.findViewById(R.id.btnSelectionClose)
-        tvSelectionCount = view.findViewById(R.id.tvSelectionCount)
-        btnSelectionDue = view.findViewById(R.id.btnSelectionDue)
-        btnSelectionContainer = view.findViewById(R.id.btnSelectionContainer)
-        btnSelectionComplete = view.findViewById(R.id.btnSelectionComplete)
-        btnSelectionDelete = view.findViewById(R.id.btnSelectionDelete)
-        btnSelectionMore = view.findViewById(R.id.btnSelectionMore)
-
-        tvTitle = view.findViewById(R.id.tvTasksTitle)
-        btnTasksOverflow = view.findViewById(R.id.btnTasksOverflow)
-
-        layoutListInfo = view.findViewById(R.id.layoutListInfo)
-        tvSubtitle = view.findViewById(R.id.tvTasksSubtitle)
-        tvTasksTagFilter = view.findViewById(R.id.tvTasksTagFilter)
-        tvTasksDate = view.findViewById(R.id.tvTasksDate)
-
-        rvTasks = view.findViewById(R.id.rvTasks)
-        layoutEmpty = view.findViewById(R.id.layoutEmptyTasks)
-        tvEmptyTitle = view.findViewById(R.id.tvEmptyTitle)
-        tvEmptyMessage = view.findViewById(R.id.tvEmptyMessage)
-
-        layoutQuickAddContainer = view.findViewById(R.id.layoutQuickAddContainer)
-        quickAddDivider = view.findViewById(R.id.quickAddDivider)
-        layoutQuickAddCollapsed = view.findViewById(R.id.layoutQuickAddCollapsed)
-        ivQuickAddIcon = view.findViewById(R.id.ivQuickAddIcon)
-        tvQuickAddCollapsedLabel = view.findViewById(R.id.tvQuickAddCollapsedLabel)
-        layoutQuickAddExpanded = view.findViewById(R.id.layoutQuickAddExpanded)
-        etQuickAddTitle = view.findViewById(R.id.etQuickAddTitle)
-        btnQuickAddExpand = view.findViewById(R.id.btnQuickAddExpand)
-        btnQuickAddSubmit = view.findViewById(R.id.btnQuickAddSubmit)
-        quickAddOptions = view.findViewById(R.id.quickAddOptions)
-        quickDueView = view.findViewById(R.id.quickDue)
-        quickContainerView = view.findViewById(R.id.quickContainer)
-        quickTagsView = view.findViewById(R.id.quickTags)
-    }
-
-    private fun dp(value: Float): Float = TaskThemeUtils.dp(requireContext(), value)
-    private fun dpInt(value: Float): Int = TaskThemeUtils.dpInt(requireContext(), value)
-
-    private fun dangerColor(): Int = androidx.core.content.ContextCompat.getColor(
-        requireContext(),
-        if (palette.isDark) R.color.color_picker_danger_dark else R.color.color_picker_danger_light,
-    )
-
-    private fun applyTheme(view: View) {
-        view.setBackgroundColor(palette.background)
+    private fun applyWindowTheme(view: View) {
         androidx.core.view.WindowInsetsControllerCompat(requireActivity().window, view).apply {
             isAppearanceLightStatusBars = !palette.isDark
             isAppearanceLightNavigationBars = !palette.isDark
         }
-
-        tvTitle.setTextColor(palette.onSurface)
-        btnTasksOverflow.setColorFilter(palette.onSurfaceVariant)
-        tvSubtitle.setTextColor(palette.onSurfaceVariant)
-        tvTasksDate.setTextColor(palette.onSurfaceVariant)
-
-        tasksSelectionBar.setBackgroundColor(
-            MainTabsThemeBridge.withAlpha(palette.accent, if (palette.isDark) 0.14f else 0.08f)
-        )
-        btnSelectionClose.setColorFilter(palette.onSurface)
-        tvSelectionCount.setTextColor(palette.onSurface)
-        btnSelectionDue.setColorFilter(palette.onSurface)
-        btnSelectionContainer.setColorFilter(palette.onSurface)
-        btnSelectionComplete.setColorFilter(palette.accent)
-        btnSelectionDelete.setColorFilter(dangerColor())
-        btnSelectionMore.setColorFilter(palette.onSurfaceVariant)
-
-        view.findViewById<ImageView>(R.id.ivEmptyIcon).setColorFilter(palette.onSurfaceVariant)
-        tvEmptyTitle.setTextColor(palette.onSurface)
-        tvEmptyMessage.setTextColor(palette.onSurfaceVariant)
-
-        // Keep quick capture integrated seamlessly with the Tasks workspace across themes.
-        layoutQuickAddContainer.setBackgroundColor(palette.background)
-        quickAddDivider.setBackgroundColor(palette.divider)
-        ivQuickAddIcon.setColorFilter(palette.accent)
-        tvQuickAddCollapsedLabel.setTextColor(palette.onSurfaceVariant)
-        etQuickAddTitle.setTextColor(palette.onSurface)
-        etQuickAddTitle.setHintTextColor(palette.onSurfaceVariant)
-        btnQuickAddExpand.setColorFilter(palette.onSurfaceVariant)
-        btnQuickAddSubmit.setColorFilter(palette.accent)
-
-        quickDueView.setTextColor(palette.onSurfaceVariant)
-        quickContainerView.setTextColor(palette.onSurfaceVariant)
-        quickTagsView.setTextColor(palette.onSurfaceVariant)
-
-        updateSmartViewLabel()
-        updateTagFilterChip()
-        updateSelectionBarUi()
-        if (::navigationColumn.isInitialized) renderNavigation()
-        calendarViewController?.updatePalette(palette)
-        if (calendarMode) calendarViewController?.render()
     }
 
-    private fun updateTagFilterChip() {
-        if (!::tvTasksTagFilter.isInitialized) return
-        tvTasksTagFilter.visibility = View.GONE
+    private fun LayoutCoordinates?.popupBounds(): Rect? {
+        if (this == null || !isAttached) return null
+        val offset = positionOnScreen()
+        if (!offset.x.isFinite() || !offset.y.isFinite()) return null
+        val left = offset.x.roundToInt()
+        val top = offset.y.roundToInt()
+        return Rect(left, top, left + size.width, top + size.height)
     }
 
-    private fun setupOverflowMenu() {
-        tvTasksTagFilter.visibility = View.GONE
-        btnTasksOverflow.setOnClickListener {
-            val entries = mutableListOf<CompactPopupMenu.Entry>()
-            if (calendarMode) {
-                val prefs = TaskCalendarPreferences(requireContext())
-                val isShown = calendarViewController?.showHabits ?: (calendarShowHabits ?: prefs.showHabits)
-                val habitsTitle = getString(R.string.task_calendar_menu_show_habits)
-                entries += CompactPopupMenu.Entry.Item(
-                    id = 10,
-                    title = habitsTitle,
-                    iconRes = if (isShown) R.drawable.ic_tabler_check else null,
-                    selected = isShown,
-                )
-                entries += CompactPopupMenu.Entry.Divider
-                entries += CompactPopupMenu.Entry.Item(
-                    id = 3,
-                    title = getString(R.string.settings),
-                )
-            } else {
-                entries += CompactPopupMenu.Entry.Item(
-                    id = 1,
-                    title = TaskSmartView.ALL.label(requireContext()),
-                    iconRes = if (selectedContainerFilter == null && activeSmartView == TaskSmartView.ALL) R.drawable.ic_tabler_check else null,
-                    selected = selectedContainerFilter == null && activeSmartView == TaskSmartView.ALL,
-                )
-                entries += CompactPopupMenu.Entry.Item(
-                    id = 2,
-                    title = TaskSmartView.COMPLETED.label(requireContext()),
-                    iconRes = if (selectedContainerFilter == null && activeSmartView == TaskSmartView.COMPLETED) R.drawable.ic_tabler_check else null,
-                    selected = selectedContainerFilter == null && activeSmartView == TaskSmartView.COMPLETED,
-                )
-                if (selectedContainerFilter != null) {
-                    entries += CompactPopupMenu.Entry.Item(
-                        id = 4,
-                        title = getString(R.string.container_statistics_title),
-                    )
-                }
-                entries += CompactPopupMenu.Entry.Divider
-                entries += CompactPopupMenu.Entry.Item(
-                    id = 3,
-                    title = getString(R.string.settings),
-                )
-            }
-            CompactPopupMenu.show(
-                anchor = btnTasksOverflow,
-                entries = entries,
-                minWidthDp = 180,
-                maxWidthDp = 240,
-            ) { itemId ->
-                when (itemId) {
-                    10 -> {
-                        val prefs = TaskCalendarPreferences(requireContext())
-                        val current = calendarViewController?.showHabits ?: (calendarShowHabits ?: prefs.showHabits)
-                        val next = !current
-                        prefs.showHabits = next
-                        calendarShowHabits = next
-                        calendarViewController?.showHabits = next
-                        calendarViewController?.render()
-                    }
-                    1 -> {
-                        clearSelection()
-                        selectedContainerFilter = null
-                        activeSmartView = TaskSmartView.ALL
-                        updateSmartViewLabel()
-                        loadTasks()
-                    }
-                    2 -> {
-                        clearSelection()
-                        selectedContainerFilter = null
-                        activeSmartView = TaskSmartView.COMPLETED
-                        updateSmartViewLabel()
-                        loadTasks()
-                    }
-                    3 -> {
-                        clearSelection()
-                        workspaceNavigator?.invoke("Settings")
-                    }
-                    4 -> {
-                        selectedContainerFilter?.let { filter ->
-                            org.isoron.uhabits.activities.containers.statistics.ContainerStatisticsActivity.start(
-                                requireContext(),
-                                org.isoron.uhabits.core.containers.ContainerId(filter.value)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private fun setupSelectionBar() {
-        btnSelectionClose.setOnClickListener {
-            clearSelection()
-        }
-        btnSelectionDue.setOnClickListener {
-            val ids = selectedTaskIds.toList()
-            if (ids.isNotEmpty()) openActionDuePicker(ids)
-        }
-        btnSelectionContainer.setOnClickListener {
-            val ids = selectedTaskIds.toList()
-            if (ids.isNotEmpty()) openActionContainerPicker(ids)
-        }
-        btnSelectionComplete.setOnClickListener {
-            val ids = selectedTaskIds.toList()
-            if (ids.isNotEmpty()) executeCompleteAction(ids)
-        }
-        btnSelectionDelete.setOnClickListener {
-            val ids = selectedTaskIds.toList()
-            if (ids.isNotEmpty()) confirmDeleteTasks(ids)
-        }
-        btnSelectionMore.setOnClickListener {
-            val single = selectedTasksFromSnapshot().singleOrNull()
-            if (single != null) showTaskQuickMenu(single)
-        }
-
+    private fun setupSelectionBarResultListeners() {
         childFragmentManager.setFragmentResultListener(REQUEST_KEY_ACTION_DUE, viewLifecycleOwner) { _, result ->
             if (component !== HabitsApplication.component) return@setFragmentResultListener
             val targetIds = pendingActionTaskIds.toList()
@@ -635,6 +514,221 @@ class TasksFragment : Fragment() {
         }
     }
 
+    private fun showOverflowMenu() {
+        val anchor = view ?: return
+        val bounds = topBarCoordinates.popupBounds() ?: return
+        val entries = mutableListOf<CompactPopupMenu.Entry>()
+        if (calendarMode) {
+            val prefs = TaskCalendarPreferences(requireContext())
+            val isShown = calendarViewController?.showHabits ?: (calendarShowHabits ?: prefs.showHabits)
+            val habitsTitle = getString(R.string.task_calendar_menu_show_habits)
+            entries += CompactPopupMenu.Entry.Item(
+                id = 10,
+                title = habitsTitle,
+                iconRes = if (isShown) R.drawable.ic_tabler_check else null,
+                selected = isShown,
+            )
+            entries += CompactPopupMenu.Entry.Divider
+            entries += CompactPopupMenu.Entry.Item(
+                id = 3,
+                title = getString(R.string.settings),
+            )
+        } else {
+            entries += CompactPopupMenu.Entry.Item(
+                id = 1,
+                title = TaskSmartView.ALL.label(requireContext()),
+                iconRes = if (selectedContainerFilter == null && activeSmartView == TaskSmartView.ALL) R.drawable.ic_tabler_check else null,
+                selected = selectedContainerFilter == null && activeSmartView == TaskSmartView.ALL,
+            )
+            entries += CompactPopupMenu.Entry.Item(
+                id = 2,
+                title = TaskSmartView.COMPLETED.label(requireContext()),
+                iconRes = if (selectedContainerFilter == null && activeSmartView == TaskSmartView.COMPLETED) R.drawable.ic_tabler_check else null,
+                selected = selectedContainerFilter == null && activeSmartView == TaskSmartView.COMPLETED,
+            )
+            if (selectedContainerFilter != null) {
+                entries += CompactPopupMenu.Entry.Item(
+                    id = 4,
+                    title = getString(R.string.container_statistics_title),
+                )
+            }
+            entries += CompactPopupMenu.Entry.Divider
+            entries += CompactPopupMenu.Entry.Item(
+                id = 3,
+                title = getString(R.string.settings),
+            )
+        }
+        CompactPopupMenu.show(
+            anchor = anchor,
+            anchorRectOnScreen = bounds,
+            entries = entries,
+            minWidthDp = 180,
+            maxWidthDp = 240,
+        ) { itemId ->
+            when (itemId) {
+                10 -> {
+                    val prefs = TaskCalendarPreferences(requireContext())
+                    val current = calendarViewController?.showHabits ?: (calendarShowHabits ?: prefs.showHabits)
+                    val next = !current
+                    prefs.showHabits = next
+                    calendarShowHabits = next
+                    calendarViewController?.showHabits = next
+                    calendarViewController?.render()
+                }
+                1 -> {
+                    clearSelection()
+                    selectedContainerFilter = null
+                    activeSmartView = TaskSmartView.ALL
+                    syncWorkspaceScope()
+                    loadTasks()
+                }
+                2 -> {
+                    clearSelection()
+                    selectedContainerFilter = null
+                    activeSmartView = TaskSmartView.COMPLETED
+                    syncWorkspaceScope()
+                    loadTasks()
+                }
+                3 -> {
+                    clearSelection()
+                    workspaceNavigator?.invoke("Settings")
+                }
+                4 -> {
+                    selectedContainerFilter?.let { filter ->
+                        org.isoron.uhabits.activities.containers.statistics.ContainerStatisticsActivity.start(
+                            requireContext(),
+                            org.isoron.uhabits.core.containers.ContainerId(filter.value)
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun showRepresentationDialog() {
+        clearSelection()
+        val labels = listOf(
+            getString(R.string.task_view_list),
+            getString(R.string.task_view_calendar),
+            getString(R.string.task_view_matrix),
+        )
+        CustomDialogs.showSingleChoiceDialog(
+            context = requireContext(),
+            title = getString(R.string.task_view_title),
+            options = labels,
+            selectedIndex = if (matrixMode) 2 else if (calendarMode) 1 else 0,
+        ) { choice ->
+            calendarMode = choice == 1
+            matrixMode = choice == 2
+            syncWorkspaceScope()
+            loadTasks()
+        }
+    }
+
+    private fun syncWorkspaceScope() {
+        workspaceScope = WorkspaceScope(activeSmartView, selectedContainerFilter, selectedTagFilter, calendarMode, matrixMode)
+    }
+
+    private fun currentScreenTitle(scope: WorkspaceScope): String {
+        return if (scope.calendar) {
+            getString(R.string.task_view_calendar)
+        } else {
+            scope.container?.let { workspaceSnapshot?.availableContainers.orEmpty().find { item -> item.key == it.value }?.name }
+                ?: if (scope.matrix) {
+                    getString(R.string.task_view_matrix)
+                } else scope.smartView.label(requireContext())
+        }
+    }
+
+    @Composable
+    private fun WorkspaceTopBar(colors: UHabitComposeColors) {
+        val scope = workspaceScope
+        val title = currentScreenTitle(scope)
+        val selectedTasks = if (listSelection.isEmpty()) emptyList() else selectedTasksFromSnapshot()
+        val isAllSelectedCompleted = selectedTasks.isNotEmpty() && selectedTasks.all { it.isCompleted }
+        TasksTopBarCompose(
+            title = title,
+            selectedCount = listSelection.size,
+            isAllSelectedCompleted = isAllSelectedCompleted,
+            isCalendarMode = scope.calendar,
+            isWide = wide,
+            colors = colors,
+            modifier = Modifier.onGloballyPositioned { topBarCoordinates = it },
+            onOpenNavigation = { openNavigation() },
+            onTitleLongClick = if (scope.container != null) {
+                {
+                    val id = scope.container
+                    val path = workspaceSnapshot?.availableContainers.orEmpty().find { it.key == id.value }?.path
+                    informationDialog = InformationDialog(message = path ?: title)
+                }
+            } else null,
+            onSwitchRepresentation = { showRepresentationDialog() },
+            onOpenOverflowMenu = { showOverflowMenu() },
+            onCloseSelection = { clearSelection() },
+            onSelectionDue = {
+                val ids = selectedTaskIds.toList()
+                if (ids.isNotEmpty()) openActionDuePicker(ids)
+            },
+            onSelectionContainer = {
+                val ids = selectedTaskIds.toList()
+                if (ids.isNotEmpty()) openActionContainerPicker(ids)
+            },
+            onSelectionComplete = {
+                val ids = selectedTaskIds.toList()
+                if (ids.isNotEmpty()) executeCompleteAction(ids)
+            },
+            onSelectionDelete = {
+                val ids = selectedTaskIds.toList()
+                if (ids.isNotEmpty()) confirmDeleteTasks(ids)
+            },
+            onSelectionMore = {
+                val single = selectedTasksFromSnapshot().singleOrNull()
+                if (single != null) showTaskQuickMenu(single)
+            }
+        )
+    }
+
+    @Composable
+    private fun WorkspaceListInfo(colors: UHabitComposeColors) {
+        val scope = workspaceScope
+        val overdueCount = currentOverdueCount
+        val activeCount = currentActiveCount
+        val totalPending = activeCount + overdueCount
+        val countText = resources.getQuantityString(R.plurals.task_count, totalPending, totalPending)
+        val subtitleText = when {
+            !scope.matrix && scope.smartView == TaskSmartView.COMPLETED -> ""
+            scope.smartView == TaskSmartView.TODAY && overdueCount > 0 && activeCount > 0 ->
+                getString(R.string.task_overdue_with_count, countText, overdueCount)
+            scope.smartView == TaskSmartView.TODAY && overdueCount > 0 && activeCount == 0 ->
+                getString(R.string.task_overdue_count, overdueCount)
+            else ->
+                countText
+        }
+
+        val dateStr = if (!scope.matrix && scope.smartView == TaskSmartView.TODAY) {
+            val locale = TaskDueDisplayFormatter.selectedLocale(requireContext())
+            val rawDate = SimpleDateFormat("EEE, d MMMM", locale).format(Date(System.currentTimeMillis()))
+            rawDate.replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
+        } else null
+
+        val tagLabel = if (scope.tags.isNotEmpty()) {
+            scope.tags.joinToString(", ") { "#$it" }
+        } else null
+
+        TasksListInfoCompose(
+            subtitle = subtitleText,
+            dateText = dateStr,
+            tagFilterLabel = tagLabel,
+            colors = colors,
+            onTagFilterClick = if (scope.tags.isNotEmpty()) {
+                {
+                    selectedTagFilter = emptySet()
+                    loadTasks()
+                }
+            } else null
+        )
+    }
+
     private fun toggleTaskSelection(taskId: TaskId) {
         activeSnackbar?.dismiss()
         if (!selectedTaskIds.add(taskId)) {
@@ -643,23 +737,13 @@ class TasksFragment : Fragment() {
         if (selectedTaskIds.isNotEmpty() && quickExpanded) {
             collapseQuickComposerQuietly()
         }
-        syncSelectionToAdapters()
         updateSelectionBarUi()
     }
 
     internal fun clearSelection() {
         if (selectedTaskIds.isEmpty()) return
         selectedTaskIds.clear()
-        syncSelectionToAdapters()
         updateSelectionBarUi()
-    }
-
-    private fun syncSelectionToAdapters() {
-        val currentSelection = selectedTaskIds.toSet()
-        if (::adapter.isInitialized) adapter.updateSelection(currentSelection)
-        if (::overdueAdapter.isInitialized) overdueAdapter.updateSelection(currentSelection)
-        if (::completedAdapter.isInitialized) completedAdapter.updateSelection(currentSelection)
-        groupAdapters.values.forEach { (_, rows) -> rows.updateSelection(currentSelection) }
     }
 
     private fun selectedTasksFromSnapshot(): List<UserTask> {
@@ -668,44 +752,12 @@ class TasksFragment : Fragment() {
     }
 
     private fun updateSelectionBarUi() {
-        if (!::tasksHeader.isInitialized || !::tasksSelectionBar.isInitialized) return
-        val count = selectedTaskIds.size
-        if (count == 0) {
-            tasksSelectionBar.visibility = View.GONE
-            tasksHeader.visibility = View.VISIBLE
-            return
-        }
-        tasksHeader.visibility = View.GONE
-        tasksSelectionBar.visibility = View.VISIBLE
-        val compactFont = resources.configuration.screenWidthDp <= 380 && resources.configuration.fontScale > 1.15f
-        tvSelectionCount.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, if (compactFont) 14f else 16f)
-        tvSelectionCount.text = getString(R.string.task_selection_count, count)
-        tvSelectionCount.contentDescription = getString(R.string.task_selection_count_desc, count)
-        btnSelectionMore.visibility = if (count == 1) View.VISIBLE else View.GONE
-
-        val selectedTasks = selectedTasksFromSnapshot()
-        val allCompleted = selectedTasks.isNotEmpty() && selectedTasks.all { it.isCompleted }
-        if (allCompleted) {
-            btnSelectionComplete.setImageResource(R.drawable.ic_cat_refresh_cw)
-            btnSelectionComplete.contentDescription = getString(R.string.task_selection_reopen_desc)
-        } else {
-            btnSelectionComplete.setImageResource(R.drawable.ic_action_check)
-            btnSelectionComplete.contentDescription = getString(R.string.task_selection_complete_desc)
-        }
+        listSelection = selectedTaskIds.toSet()
     }
 
     private fun collapseQuickComposerQuietly() {
         if (!quickExpanded) return
-        quickExpanded = false
-        (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(false)
-        if (::layoutQuickAddExpanded.isInitialized && ::layoutQuickAddCollapsed.isInitialized) {
-            layoutQuickAddExpanded.visibility = View.GONE
-            layoutQuickAddCollapsed.visibility = View.VISIBLE
-        }
-        if (::etQuickAddTitle.isInitialized) {
-            val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            imm?.hideSoftInputFromWindow(etQuickAddTitle.windowToken, 0)
-        }
+        collapseComposer()
     }
 
     private fun openActionDuePicker(ids: List<TaskId>) {
@@ -837,8 +889,6 @@ class TasksFragment : Fragment() {
         activeSnackbar?.dismiss()
         pendingDeleteConfirmationIds.clear()
         pendingDeleteConfirmationIds.addAll(uniqueIds)
-        deleteConfirmationDialog?.setOnDismissListener(null)
-        deleteConfirmationDialog?.dismiss()
 
         val title = if (uniqueIds.size == 1) {
             getString(R.string.task_detail_delete_confirm_title)
@@ -850,23 +900,7 @@ class TasksFragment : Fragment() {
         } else {
             getString(R.string.task_delete_multi_irreversible)
         }
-        val dialog = AlertDialog.Builder(requireContext())
-            .setTitle(title)
-            .setMessage(message)
-            .setNegativeButton(getString(android.R.string.cancel)) { _, _ ->
-                pendingDeleteConfirmationIds.clear()
-            }
-            .setPositiveButton(getString(R.string.delete)) { _, _ ->
-                val toDelete = pendingDeleteConfirmationIds.toList()
-                pendingDeleteConfirmationIds.clear()
-                executeDeleteTasks(toDelete)
-            }
-            .setOnCancelListener {
-                pendingDeleteConfirmationIds.clear()
-            }
-            .create()
-        deleteConfirmationDialog = dialog
-        dialog.show()
+        deleteConfirmation = title to message
     }
 
     private fun executeDeleteTasks(ids: List<TaskId>) {
@@ -896,10 +930,8 @@ class TasksFragment : Fragment() {
         if (entries.isEmpty() || !isAdded || view == null) return
         lastUndoEntries = entries
         activeSnackbar?.dismiss()
-        val snackbar = Snackbar.make(shellRoot, message, Snackbar.LENGTH_LONG)
-        if (::layoutQuickAddContainer.isInitialized && layoutQuickAddContainer.visibility == View.VISIBLE) {
-            snackbar.anchorView = layoutQuickAddContainer
-        }
+        val snackbar = Snackbar.make(requireView(), message, Snackbar.LENGTH_LONG)
+        quickAddAnchor?.takeIf { it.isAttachedToWindow }?.let { snackbar.anchorView = it }
         val bgColor = if (palette.isDark) palette.surfaceVariant else Color.parseColor("#252B33")
         snackbar.setBackgroundTint(bgColor)
         snackbar.setTextColor(Color.WHITE)
@@ -936,302 +968,149 @@ class TasksFragment : Fragment() {
         return restoredCount
     }
 
-    private fun updateSmartViewLabel() {
-        tvTitle.text = if (calendarMode) {
-            getString(R.string.task_view_calendar)
-        } else {
-            selectedContainerFilter?.let { workspaceSnapshot?.availableContainers.orEmpty().find { item -> item.key == it.value }?.name }
-                ?: if (matrixMode) {
-                    getString(R.string.task_view_matrix)
-                } else activeSmartView.label(requireContext())
-        }
-    }
-
-    private fun setupRecyclerView() {
-        fun taskAdapter() = TasksAdapter(
-            palette = palette,
-            onTaskClicked = { task ->
-                if (selectedTaskIds.isNotEmpty()) {
-                    toggleTaskSelection(task.id)
-                } else {
-                    val sheet = TaskDetailBottomSheet.newInstance(task.id)
-                    sheet.onTaskUpdatedListener = { loadTasks() }
-                    sheet.show(childFragmentManager, "task_detail")
-                }
-            },
-            onToggleComplete = { task ->
-                if (selectedTaskIds.isNotEmpty()) {
-                    toggleTaskSelection(task.id)
-                } else {
-                    executeCompleteAction(listOf(task.id))
-                }
-            },
-            onTaskLongClicked = { task, _ ->
-                toggleTaskSelection(task.id)
-            },
-            onChangeDue = { task ->
-                openActionDuePicker(listOf(task.id))
-            },
-            onMoveContainer = { task ->
-                openActionContainerPicker(listOf(task.id))
-            },
-            onShowContextMenu = { task ->
-                showTaskQuickMenu(task)
-            },
+    @Composable
+    private fun WorkspaceList(currentPalette: SettingsThemePalette) {
+        val content = taskListContent ?: return
+        val danger = colorResource(
+            if (currentPalette.isDark) R.color.color_picker_danger_dark else R.color.color_picker_danger_light,
         )
-        adapter = taskAdapter()
-        createGroupAdapter = ::taskAdapter
-        groupAdapters.clear()
-        groupedAdapter = TaskListAdapter()
-        overdueAdapter = taskAdapter()
-        completedAdapter = taskAdapter()
-        overdueHeader = TaskSectionAdapter(getString(R.string.task_smart_overdue)) {
-            overdueExpanded = !overdueExpanded
-            workspaceSnapshot?.let(::renderTasks)
-        }
-        activeHeader = TaskSectionAdapter(getString(R.string.task_smart_today))
-        completedHeader = TaskSectionAdapter(getString(R.string.task_smart_completed)) {
-            completedExpanded = !completedExpanded
-            workspaceSnapshot?.let(::renderTasks)
-        }
-        rvTasks.layoutManager = LinearLayoutManager(requireContext())
-        rvTasks.itemAnimator = null
-        rvTasks.adapter = TaskListAdapter(
-            overdueHeader, overdueAdapter, activeHeader, groupedAdapter, completedHeader, completedAdapter
+        val warning = if (currentPalette.isDark) Color.rgb(255, 183, 77) else Color.rgb(180, 83, 9)
+        val colors = UHabitComposeColors.fromPalette(
+            currentPalette,
+            danger.toArgb(),
+            warning,
         )
-        swipeCallback = TaskSwipeCallback(
-            palette = palette,
-            isSelectionModeActive = { selectedTaskIds.isNotEmpty() },
-            onSwipeChangeDue = { task -> openActionDuePicker(listOf(task.id)) },
-            onSwipeMoveContainer = { task -> openActionContainerPicker(listOf(task.id)) },
-        )
-        val helper = ItemTouchHelper(swipeCallback)
-        swipeCallback.itemTouchHelper = helper
-        swipeCallback.attachedRecyclerView = rvTasks
-        helper.attachToRecyclerView(rvTasks)
-    }
-
-    private fun setupQuickAdd() {
-        fun updateSubmitButtonState() {
-            val hasText = !etQuickAddTitle.text.isNullOrBlank()
-            btnQuickAddSubmit.alpha = if (hasText) 1.0f else 0.45f
-            btnQuickAddSubmit.setColorFilter(if (hasText) palette.accent else palette.onSurfaceVariant)
-        }
-
-        fun refreshOptionLabels() {
-            val hasDue = quickTaskDue !is TaskDue.None
-            val dueBg = GradientDrawable().apply {
-                cornerRadius = dp(18f)
-                if (hasDue) {
-                    setColor(MainTabsThemeBridge.withAlpha(palette.accent, 0.12f))
-                    setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.accent, 0.4f))
-                } else {
-                    setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.05f))
-                    setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.2f))
-                }
-            }
-            quickDueView.background = dueBg
-
-            val dueDrawable = androidx.core.content.ContextCompat.getDrawable(requireContext(), R.drawable.ic_cat_calendar)?.mutate()
-            val dueColor = if (hasDue) palette.accent else palette.onSurfaceVariant
-            dueDrawable?.setTint(dueColor)
-            dueDrawable?.setBounds(0, 0, dpInt(16f), dpInt(16f))
-            quickDueView.setCompoundDrawablesRelative(dueDrawable, null, null, null)
-            quickDueView.compoundDrawablePadding = dpInt(6f)
-            quickDueView.setTextColor(dueColor)
-
-            val dueText = TaskDueDisplayFormatter.format(quickTaskDue, TaskDueDisplayFormatter.selectedLocale(requireContext()))
-            quickDueView.text = dueText
-
-            val hasContainer = quickContainer != null
-            val containerBg = GradientDrawable().apply {
-                cornerRadius = dp(18f)
-                setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.05f))
-                setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, if (hasContainer) 0.35f else 0.2f))
-            }
-            quickContainerView.background = containerBg
-
-            val containerDrawable = androidx.core.content.ContextCompat.getDrawable(requireContext(), R.drawable.ic_cat_folder)?.mutate()
-            containerDrawable?.setTint(palette.onSurfaceVariant)
-            containerDrawable?.setBounds(0, 0, dpInt(16f), dpInt(16f))
-            quickContainerView.setCompoundDrawablesRelative(containerDrawable, null, null, null)
-            quickContainerView.compoundDrawablePadding = dpInt(6f)
-
-            val containerItem = workspaceSnapshot?.availableContainers.orEmpty().find { it.key == quickContainer?.value }
-            val containerText = containerItem?.name ?: getString(R.string.task_smart_inbox)
-            quickContainerView.text = containerText
-            quickContainerView.setTextColor(if (hasContainer) palette.onSurface else palette.onSurfaceVariant)
-
-            val availableTags = workspaceSnapshot?.availableTags.orEmpty()
-            val selectedTagNames = availableTags.filter { it.id in quickTagIds }.map { it.name }
-            val hasTags = selectedTagNames.isNotEmpty()
-            val tagsBg = GradientDrawable().apply {
-                cornerRadius = dp(18f)
-                if (hasTags) {
-                    setColor(MainTabsThemeBridge.withAlpha(palette.accent, 0.12f))
-                    setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.accent, 0.4f))
-                } else {
-                    setColor(MainTabsThemeBridge.withAlpha(palette.onSurface, 0.05f))
-                    setStroke(dpInt(1f), MainTabsThemeBridge.withAlpha(palette.onSurfaceVariant, 0.2f))
-                }
-            }
-            quickTagsView.background = tagsBg
-            quickTagsView.setTextColor(if (hasTags) palette.accent else palette.onSurfaceVariant)
-            quickTagsView.text = if (hasTags) {
-                val firstTag = "#${selectedTagNames.first()}"
-                if (selectedTagNames.size > 1) "$firstTag +${selectedTagNames.size - 1}" else firstTag
-            } else {
-                getString(R.string.task_tags_label)
-            }
-
-            updateSubmitButtonState()
-        }
-
-        fun expandComposer() {
-            clearSelection()
-            quickExpanded = true
-            (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(true)
-            layoutQuickAddCollapsed.visibility = View.GONE
-            layoutQuickAddExpanded.visibility = View.VISIBLE
-            etQuickAddTitle.requestFocus()
-            val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            imm?.showSoftInput(etQuickAddTitle, InputMethodManager.SHOW_IMPLICIT)
-
-            if (etQuickAddTitle.text.isNullOrBlank() && !quickDraftRestored) {
-                quickTaskDue = if (activeSmartView == TaskSmartView.TODAY) {
-                    val t = getToday()
-                    TaskDue.Day(TaskDueDate.from(t))
-                } else TaskDue.None
-                quickContainer = if (activeSmartView == TaskSmartView.INBOX) null else selectedContainerFilter
-            }
-            refreshOptionLabels()
-        }
-
-        fun collapseComposer() {
-            quickExpanded = false
-            (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(false)
-            layoutQuickAddExpanded.visibility = View.GONE
-            layoutQuickAddCollapsed.visibility = View.VISIBLE
-            val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            imm?.hideSoftInputFromWindow(etQuickAddTitle.windowToken, 0)
-        }
-
-        layoutQuickAddCollapsed.setOnClickListener {
-            expandComposer()
-        }
-
-        if (quickExpanded) {
-            expandComposer()
-        } else {
-            collapseComposer()
-        }
-
-        childFragmentManager.setFragmentResultListener("quickDue", viewLifecycleOwner) { _, result ->
-            if (component !== HabitsApplication.component) return@setFragmentResultListener
-            quickTaskDue = TaskDuePickerBottomSheet.readResult(result)
-            quickDraftRestored = true
-            refreshOptionLabels()
-        }
-        childFragmentManager.setFragmentResultListener("quickContainer", viewLifecycleOwner) { _, result ->
-            if (component !== HabitsApplication.component) return@setFragmentResultListener
-            quickContainer = result.getString(TaskContainerPickerBottomSheet.RESULT_CONTAINER_ID)?.let(::ContainerId)
-            quickDraftRestored = true
-            refreshOptionLabels()
-        }
-        childFragmentManager.setFragmentResultListener("quickTags", viewLifecycleOwner) { _, result ->
-            if (component !== HabitsApplication.component) return@setFragmentResultListener
-            if (result.getBoolean(TaskTagPickerBottomSheet.RESULT_APPLIED, false)) {
-                quickTagIds = result.getStringArrayList(TaskTagPickerBottomSheet.RESULT_TAG_IDS).orEmpty().toSet()
-                quickDraftRestored = true
-            }
-            loadTasks()
-        }
-        quickDueView.setOnClickListener {
-            if (childFragmentManager.findFragmentByTag("quickDue") == null) {
-                TaskDuePickerBottomSheet.newInstance("quickDue", quickTaskDue)
-                    .show(childFragmentManager, "quickDue")
-            }
-        }
-        quickContainerView.setOnClickListener {
-            if (childFragmentManager.findFragmentByTag("quickContainer") == null) {
-                TaskContainerPickerBottomSheet.newInstance(quickContainer, "quickContainer", component.session.datasetId)
-                    .show(childFragmentManager, "quickContainer")
-            }
-        }
-        quickTagsView.setOnClickListener {
-            if (childFragmentManager.findFragmentByTag("quickTags") == null) {
-                TaskTagPickerBottomSheet.newInstance(quickTagIds, "quickTags", component.session.datasetId)
-                    .show(childFragmentManager, "quickTags")
-            }
-        }
-
-        btnQuickAddExpand.setOnClickListener {
-            val title = etQuickAddTitle.text?.toString().orEmpty()
-            val draft = TaskDraft(
-                title = title,
-                description = quickDraftNotes,
-                due = quickTaskDue,
-                containerId = quickContainer,
-                tagIds = quickTagIds,
-                important = quickImportant,
-                urgent = quickUrgent,
-                subtasks = quickDraftSubtasks.toList()
+        UHabitComposeTheme(colors) {
+            TasksListCompose(
+                content = content,
+                state = taskListState,
+                selectedIds = listSelection,
+                onDisclosure = { disclosure ->
+                    when (disclosure) {
+                        TaskListDisclosure.OVERDUE -> overdueExpanded = !overdueExpanded
+                        TaskListDisclosure.COMPLETED -> completedExpanded = !completedExpanded
+                    }
+                    workspaceSnapshot?.let(::renderTasks)
+                },
+                onClick = { task ->
+                    if (selectedTaskIds.isNotEmpty()) {
+                        toggleTaskSelection(task.id)
+                    } else {
+                        val sheet = TaskDetailBottomSheet.newInstance(task.id)
+                        sheet.onTaskUpdatedListener = { loadTasks() }
+                        sheet.show(childFragmentManager, "task_detail")
+                    }
+                },
+                onComplete = { task ->
+                    if (selectedTaskIds.isNotEmpty()) toggleTaskSelection(task.id)
+                    else executeCompleteAction(listOf(task.id))
+                },
+                onSelect = { toggleTaskSelection(it.id) },
+                onQuickMenu = ::showTaskQuickMenu,
+                onChangeDue = { openActionDuePicker(listOf(it.id)) },
+                onMoveContainer = { openActionContainerPicker(listOf(it.id)) },
+                onSwipe = ::onTaskSwiped,
             )
-            TaskDetailBottomSheet.newInstanceForCreate(draft, component.session.datasetId)
-                .show(childFragmentManager, "task_detail_create")
         }
+    }
 
-        childFragmentManager.setFragmentResultListener(TaskDetailBottomSheet.REQUEST_KEY_CREATE, viewLifecycleOwner) { _, result ->
-            if (component !== HabitsApplication.component) return@setFragmentResultListener
-            val action = result.getString(TaskDetailBottomSheet.RESULT_ACTION)
-            if (action == TaskDetailBottomSheet.ACTION_CREATED) {
-                etQuickAddTitle.text?.clear()
-                quickDraftNotes = ""
-                quickDraftSubtasks.clear()
-                quickTagIds = emptySet()
-                quickImportant = null
-                quickUrgent = null
-                quickDraftRestored = false
-                collapseComposer()
-                loadTasks()
-            } else if (action == TaskDetailBottomSheet.ACTION_COLLAPSED) {
-                val returnedDraft = TaskDraft.fromBundle(result.getBundle(TaskDetailBottomSheet.RESULT_DRAFT))
-                etQuickAddTitle.setText(returnedDraft.title)
-                etQuickAddTitle.setSelection(returnedDraft.title.length)
-                quickTaskDue = returnedDraft.due
-                quickContainer = returnedDraft.containerId
-                quickTagIds = returnedDraft.tagIds
-                quickImportant = returnedDraft.important
-                quickUrgent = returnedDraft.urgent
-                quickDraftNotes = returnedDraft.description
-                quickDraftSubtasks.clear()
-                quickDraftSubtasks.addAll(returnedDraft.subtasks)
-                quickDraftRestored = true
-                expandComposer()
-                refreshOptionLabels()
-            }
+    private fun onTaskSwiped(task: UserTask, action: TaskSwipeAction) {
+        if (!workspaceActive || calendarMode || selectedTaskIds.isNotEmpty() ||
+            component !== HabitsApplication.component || childFragmentManager.isStateSaved
+        ) return
+        if (taskListContent?.items?.none { it is TaskListItem.Row && it.task.id == task.id } != false) return
+        when (action) {
+            TaskSwipeAction.CHANGE_DUE -> openActionDuePicker(listOf(task.id))
+            TaskSwipeAction.MOVE_CONTAINER -> openActionContainerPicker(listOf(task.id))
         }
+    }
 
-        fun submitQuickAdd() {
-            if (!btnQuickAddSubmit.isEnabled) return
-            val title = etQuickAddTitle.text?.toString()?.trim().orEmpty()
-            if (title.isBlank()) return
-            btnQuickAddSubmit.isEnabled = false
+    private fun currentListAnchor(): ListAnchor? {
+        val index = taskListState.firstVisibleItemIndex
+        val item = taskListState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return null
+        return ListAnchor(item.key as String, index, taskListState.firstVisibleItemScrollOffset)
+    }
 
-            val notes = quickDraftNotes
-            val subs = quickDraftSubtasks.toList()
-            val due = quickTaskDue
-            val cid = quickContainer
-            val tagsToAssign = quickTagIds
+    private fun expandComposer() {
+        clearSelection()
+        quickExpanded = true
+        (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(true)
 
-            val created = try { component.db.runInTransaction {
+        if (quickTitle.isBlank() && !quickDraftRestored) {
+            quickTaskDue = if (activeSmartView == TaskSmartView.TODAY) {
+                val t = getToday()
+                TaskDue.Day(TaskDueDate.from(t))
+            } else TaskDue.None
+            quickContainer = if (activeSmartView == TaskSmartView.INBOX) null else selectedContainerFilter
+        }
+    }
+
+    private fun collapseComposer() {
+        quickExpanded = false
+        (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(false)
+        view?.windowToken?.let { token ->
+            val imm = requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+            imm?.hideSoftInputFromWindow(token, 0)
+        }
+    }
+
+    private fun openDetailFromQuickAdd() {
+        val draft = TaskDraft(
+            title = quickTitle,
+            description = quickDraftNotes,
+            due = quickTaskDue,
+            containerId = quickContainer,
+            tagIds = quickTagIds,
+            important = quickImportant,
+            urgent = quickUrgent,
+            subtasks = quickDraftSubtasks.toList()
+        )
+        TaskDetailBottomSheet.newInstanceForCreate(draft, component.session.datasetId)
+            .show(childFragmentManager, "task_detail_create")
+    }
+
+    private fun openDuePicker() {
+        if (childFragmentManager.findFragmentByTag("quickDue") == null) {
+            TaskDuePickerBottomSheet.newInstance("quickDue", quickTaskDue)
+                .show(childFragmentManager, "quickDue")
+        }
+    }
+
+    private fun openContainerPicker() {
+        if (childFragmentManager.findFragmentByTag("quickContainer") == null) {
+            TaskContainerPickerBottomSheet.newInstance(quickContainer, "quickContainer", component.session.datasetId)
+                .show(childFragmentManager, "quickContainer")
+        }
+    }
+
+    private fun openTagPicker() {
+        if (childFragmentManager.findFragmentByTag("quickTags") == null) {
+            TaskTagPickerBottomSheet.newInstance(quickTagIds, "quickTags", component.session.datasetId)
+                .show(childFragmentManager, "quickTags")
+        }
+    }
+
+    private fun submitQuickAdd() {
+        val title = quickTitle.trim()
+        if (title.isBlank()) return
+
+        val notes = quickDraftNotes
+        val subs = quickDraftSubtasks.toList()
+        val due = quickTaskDue
+        val cid = quickContainer
+        val tagsToAssign = quickTagIds
+        val important = quickImportant
+        val urgent = quickUrgent
+
+        val created = try {
+            component.db.runInTransaction {
                 val mainTask = taskService.createTask(
                     title = title,
                     description = notes,
                     containerId = cid,
                     due = due,
-                    important = quickImportant,
-                    urgent = quickUrgent,
+                    important = important,
+                    urgent = urgent,
                 )
                 if (tagsToAssign.isNotEmpty()) {
                     component.taskTagRepository.setTags(mainTask.id, tagsToAssign)
@@ -1249,48 +1128,125 @@ class TasksFragment : Fragment() {
                     }
                 }
                 mainTask
-            } } catch (e: Exception) {
-                android.util.Log.e("TasksFragment", "Task creation failed", e)
-                btnQuickAddSubmit.isEnabled = true
-                Toast.makeText(requireContext(), getString(R.string.task_detail_create_error), Toast.LENGTH_LONG).show()
-                return
             }
+        } catch (e: Exception) {
+            android.util.Log.e("TasksFragment", "Task creation failed", e)
+            Toast.makeText(requireContext(), getString(R.string.task_detail_create_error), Toast.LENGTH_LONG).show()
+            return
+        }
 
-            etQuickAddTitle.text?.clear()
-            quickDraftNotes = ""
-            quickDraftSubtasks.clear()
-            quickTagIds = emptySet()
-            quickImportant = null
-            quickUrgent = null
-            quickDraftRestored = false
-            btnQuickAddSubmit.isEnabled = true
-            collapseComposer()
+        quickTitle = ""
+        quickDraftNotes = ""
+        quickDraftSubtasks.clear()
+        quickTagIds = emptySet()
+        quickImportant = null
+        quickUrgent = null
+        quickDraftRestored = false
+        collapseComposer()
 
-            // Reveal the new task even when it no longer matches the current view/filter.
-            if (!activeSmartView.matches(created, getToday(), System.currentTimeMillis())) {
-                activeSmartView = TaskSmartView.ALL
-                updateSmartViewLabel()
-            }
-            if (cid != selectedContainerFilter) {
-                selectedContainerFilter = cid
-                updateSmartViewLabel()
-            }
-            if (selectedTagFilter.isNotEmpty() && !tagsToAssign.containsAll(selectedTagFilter)) {
-                selectedTagFilter = emptySet()
+        // Reveal the new task even when it no longer matches the current view/filter.
+        if (!activeSmartView.matches(created, getToday(), System.currentTimeMillis())) {
+            activeSmartView = TaskSmartView.ALL
+        }
+        if (cid != selectedContainerFilter) {
+            selectedContainerFilter = cid
+        }
+        if (selectedTagFilter.isNotEmpty() && !tagsToAssign.containsAll(selectedTagFilter)) {
+            selectedTagFilter = emptySet()
+        }
+        syncWorkspaceScope()
+        loadTasks()
+    }
+
+    private fun setupQuickAddResultListeners() {
+        childFragmentManager.setFragmentResultListener("quickDue", viewLifecycleOwner) { _, result ->
+            if (component !== HabitsApplication.component) return@setFragmentResultListener
+            quickTaskDue = TaskDuePickerBottomSheet.readResult(result)
+            quickDraftRestored = true
+        }
+        childFragmentManager.setFragmentResultListener("quickContainer", viewLifecycleOwner) { _, result ->
+            if (component !== HabitsApplication.component) return@setFragmentResultListener
+            quickContainer = result.getString(TaskContainerPickerBottomSheet.RESULT_CONTAINER_ID)?.let(::ContainerId)
+            quickDraftRestored = true
+        }
+        childFragmentManager.setFragmentResultListener("quickTags", viewLifecycleOwner) { _, result ->
+            if (component !== HabitsApplication.component) return@setFragmentResultListener
+            if (result.getBoolean(TaskTagPickerBottomSheet.RESULT_APPLIED, false)) {
+                quickTagIds = result.getStringArrayList(TaskTagPickerBottomSheet.RESULT_TAG_IDS).orEmpty().toSet()
+                quickDraftRestored = true
             }
             loadTasks()
         }
+        childFragmentManager.setFragmentResultListener(TaskDetailBottomSheet.REQUEST_KEY_CREATE, viewLifecycleOwner) { _, result ->
+            if (component !== HabitsApplication.component) return@setFragmentResultListener
+            val action = result.getString(TaskDetailBottomSheet.RESULT_ACTION)
+            if (action == TaskDetailBottomSheet.ACTION_CREATED) {
+                quickTitle = ""
+                quickDraftNotes = ""
+                quickDraftSubtasks.clear()
+                quickTagIds = emptySet()
+                quickImportant = null
+                quickUrgent = null
+                quickDraftRestored = false
+                collapseComposer()
+                loadTasks()
+            } else if (action == TaskDetailBottomSheet.ACTION_COLLAPSED) {
+                val returnedDraft = TaskDraft.fromBundle(result.getBundle(TaskDetailBottomSheet.RESULT_DRAFT))
+                quickTitle = returnedDraft.title
+                quickTaskDue = returnedDraft.due
+                quickContainer = returnedDraft.containerId
+                quickTagIds = returnedDraft.tagIds
+                quickImportant = returnedDraft.important
+                quickUrgent = returnedDraft.urgent
+                quickDraftNotes = returnedDraft.description
+                quickDraftSubtasks.clear()
+                quickDraftSubtasks.addAll(returnedDraft.subtasks)
+                quickDraftRestored = true
+                expandComposer()
+            }
+        }
 
-        btnQuickAddSubmit.setOnClickListener { submitQuickAdd() }
-        restoredTitle?.let { etQuickAddTitle.setText(it); restoredTitle = null }
-        etQuickAddTitle.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_DONE) { submitQuickAdd(); true } else false
+        if (quickExpanded) {
+            (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(true)
         }
-        etQuickAddTitle.doAfterTextChanged {
-            updateSubmitButtonState()
-        }
-        refreshQuickLabels = ::refreshOptionLabels
-        refreshOptionLabels()
+
+    }
+
+    @Composable
+    private fun WorkspaceQuickAdd(colors: UHabitComposeColors) {
+        val context = requireContext()
+        val containerItem = workspaceSnapshot?.availableContainers.orEmpty().find { it.key == quickContainer?.value }
+        val availableTags = workspaceSnapshot?.availableTags.orEmpty()
+        val selectedTagNames = availableTags.filter { it.id in quickTagIds }.map { it.name }
+        val tagLabel = if (selectedTagNames.isNotEmpty()) {
+            val firstTag = "#${selectedTagNames.first()}"
+            if (selectedTagNames.size > 1) "$firstTag +${selectedTagNames.size - 1}" else firstTag
+        } else ""
+        val dueFormatted = TaskDueDisplayFormatter.format(
+            quickTaskDue,
+            TaskDueDisplayFormatter.selectedLocale(context)
+        )
+
+        QuickAddCompose(
+            colors = colors,
+            title = quickTitle,
+            onTitleChange = { quickTitle = it },
+            expanded = quickExpanded,
+            onExpand = { expandComposer() },
+            onCollapse = { collapseComposer() },
+            onOpenDetail = { openDetailFromQuickAdd() },
+            onSubmit = { submitQuickAdd() },
+            due = quickTaskDue,
+            dueFormatted = dueFormatted,
+            container = quickContainer,
+            containerName = containerItem?.name,
+            containerColor = containerItem?.color?.let { TaskThemeUtils.resolvePaletteColor(context, it, colors.accent) },
+            tags = quickTagIds,
+            tagLabel = tagLabel,
+            onOpenDuePicker = { openDuePicker() },
+            onOpenContainerPicker = { openContainerPicker() },
+            onOpenTagPicker = { openTagPicker() }
+        )
     }
 
     fun loadTasks() {
@@ -1385,12 +1341,8 @@ class TasksFragment : Fragment() {
             containerFiltered
         }
 
-        // 3. Smart View filter
-        val viewFiltered = tagFiltered.filter { activeSmartView.matches(it, today, nowMillis) }
-        updateSmartViewLabel()
-        updateTagFilterChip()
-        refreshQuickLabels?.invoke()
-        renderNavigation()
+        syncWorkspaceScope()
+        navigationHiddenSections = hiddenSections()
         val scopeContainerIds = if (selectedContainerFilter != null) snapshot.scope(selectedContainerFilter!!) else emptySet()
         historyFocusSessions = FocusHistoryProjector.filterByContainer(
             sessions = rawSessions,
@@ -1411,296 +1363,92 @@ class TasksFragment : Fragment() {
             matrix = matrixMode,
         )
 
-        val renderedTaskIds = hashSetOf<TaskId>().apply {
-            if (!calendarMode) {
-                if (sections.groups.isEmpty()) {
-                    sections.active.forEach { add(it.id) }
-                } else {
-                    sections.groups.forEach { group -> group.tasks.forEach { add(it.id) } }
-                }
-                if (overdueExpanded) sections.overdue.forEach { add(it.id) }
-                if (completedExpanded) sections.completed.forEach { add(it.id) }
-            }
+        val items = sections.toListItems(
+            overdueTitle = getString(R.string.task_smart_overdue),
+            activeTitle = getString(if (activeSmartView == TaskSmartView.TODAY) R.string.task_smart_today else R.string.tasks_title),
+            completedTitle = getString(R.string.task_smart_completed),
+            overdueExpanded = overdueExpanded,
+            completedExpanded = completedExpanded,
+            hideContainer = selectedContainerFilter != null || activeSmartView == TaskSmartView.INBOX,
+        )
+        val renderedTaskIds = if (calendarMode) emptySet() else items.mapNotNullTo(hashSetOf()) {
+            (it as? TaskListItem.Row)?.task?.id
         }
         selectedTaskIds.retainAll(renderedTaskIds)
-        val currentSelection = selectedTaskIds.toSet()
         updateSelectionBarUi()
-
-        val containerItemMap = availableContainers.associateBy { ContainerId(it.key) }
-        val shouldHideContainer = selectedContainerFilter != null || activeSmartView == TaskSmartView.INBOX
-        adapter.hideContainerContext = shouldHideContainer
-        overdueAdapter.hideContainerContext = shouldHideContainer
-        completedAdapter.hideContainerContext = shouldHideContainer
-
-        adapter.updateData(
-            newTasks = if (sections.groups.isEmpty()) sections.active else emptyList(),
-            newSubtaskCounts = subtaskMap,
-            newContainers = containerItemMap,
-            currentToday = today,
-            currentTimeMillis = nowMillis,
-            newSelectedIds = currentSelection,
-            newTaskTags = taskTagMap,
+        taskListContent = TasksListContent(
+            items = items,
+            today = today,
+            nowMillis = nowMillis,
+            subtaskCounts = subtaskMap,
+            containers = availableContainers.associateBy { ContainerId(it.key) },
+            tags = taskTagMap,
         )
-        groupAdapters.keys.retainAll(sections.groups.map { it.key }.toSet())
-        groupedAdapter.replaceSections(if (sections.groups.isEmpty()) listOf(adapter) else
-            sections.groups.flatMap { group ->
-                val (header, rows) = groupAdapters.getOrPut(group.key) {
-                    TaskSectionAdapter(group.title) to createGroupAdapter()
-                }
-                header.update(true, true, palette, group.title)
-                rows.updatePalette(palette)
-                rows.hideContainerContext = true
-                rows.updateData(group.tasks, subtaskMap, containerItemMap, today, nowMillis, currentSelection, taskTagMap)
-                listOf(header, rows)
-            })
-        overdueAdapter.updateData(if (overdueExpanded) sections.overdue else emptyList(), subtaskMap, containerItemMap, today, nowMillis, currentSelection, taskTagMap)
-        completedAdapter.updateData(if (completedExpanded) sections.completed else emptyList(), subtaskMap, containerItemMap, today, nowMillis, currentSelection, taskTagMap)
-        overdueHeader.update(sections.overdue.isNotEmpty(), overdueExpanded, palette)
-        activeHeader.update(sections.groups.isEmpty() && sections.overdue.isNotEmpty() && sections.active.isNotEmpty(), true, palette,
-            if (activeSmartView == TaskSmartView.TODAY) getString(R.string.task_smart_today) else getString(R.string.tasks_title))
-        completedHeader.update(sections.completed.isNotEmpty(), completedExpanded, palette)
-
-        // Subtitle count and info row visibility
-        layoutListInfo.visibility = if (calendarMode) View.GONE else View.VISIBLE
-        if (!calendarMode) {
-            val overdueCount = sections.overdue.size
-            val activeCount = sections.active.size
-            val totalPending = activeCount + overdueCount
-            val countText = resources.getQuantityString(R.plurals.task_count, totalPending, totalPending)
-            tvSubtitle.text = when {
-                activeSmartView == TaskSmartView.TODAY && overdueCount > 0 && activeCount > 0 ->
-                    getString(R.string.task_overdue_with_count, countText, overdueCount)
-                activeSmartView == TaskSmartView.TODAY && overdueCount > 0 && activeCount == 0 ->
-                    getString(R.string.task_overdue_count, overdueCount)
-                else ->
-                    countText
-            }
-            tvSubtitle.visibility = if (!matrixMode && activeSmartView == TaskSmartView.COMPLETED) View.GONE else View.VISIBLE
-
-            // Date indicator on the right (shown in TODAY mode)
-            if (!matrixMode && activeSmartView == TaskSmartView.TODAY) {
-                val locale = TaskDueDisplayFormatter.selectedLocale(requireContext())
-                val dateStr = SimpleDateFormat("EEE, d MMMM", locale).format(Date(nowMillis))
-                tvTasksDate.text = dateStr.replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
-                tvTasksDate.visibility = View.VISIBLE
-            } else {
-                tvTasksDate.visibility = View.GONE
-            }
-        }
-
-        // Empty view visibility
-        val hasAnyTasks = if (matrixMode) {
-            sections.groups.any { it.tasks.isNotEmpty() }
-        } else {
-            sections.active.isNotEmpty() || sections.overdue.isNotEmpty() || sections.completed.isNotEmpty()
-        }
-        if (calendarMode) {
-            rvTasks.visibility = View.GONE
-            layoutEmpty.visibility = View.GONE
-        } else if (!hasAnyTasks) {
-            rvTasks.visibility = View.GONE
-            layoutEmpty.visibility = View.VISIBLE
-            updateEmptyMessage()
-        } else {
-            rvTasks.visibility = View.VISIBLE
-            layoutEmpty.visibility = View.GONE
-        }
-    }
-
-    private fun updateEmptyMessage() {
-        if (selectedTagFilter.isNotEmpty()) {
-            tvEmptyTitle.text = getString(R.string.task_empty_tags_title)
-            tvEmptyMessage.text = getString(R.string.task_empty_tags_message)
-            return
-        }
-        if (selectedContainerFilter != null) {
-            tvEmptyTitle.text = getString(R.string.task_empty_container_title)
-            tvEmptyMessage.text = getString(R.string.task_empty_container_message)
-            return
-        }
-        if (matrixMode) {
-            tvEmptyTitle.text = getString(R.string.task_empty_matrix_title)
-            tvEmptyMessage.text = getString(R.string.task_empty_matrix_message)
-            return
-        }
-        when (activeSmartView) {
-            TaskSmartView.TODAY -> {
-                tvEmptyTitle.text = getString(R.string.task_empty_today_title)
-                tvEmptyMessage.text = getString(R.string.task_empty_today_message)
-            }
-            TaskSmartView.OVERDUE -> {
-                tvEmptyTitle.text = getString(R.string.task_empty_overdue_title)
-                tvEmptyMessage.text = getString(R.string.task_empty_overdue_message)
-            }
-            TaskSmartView.INBOX -> {
-                tvEmptyTitle.text = getString(R.string.task_empty_inbox_title)
-                tvEmptyMessage.text = getString(R.string.task_empty_inbox_message)
-            }
-            TaskSmartView.UPCOMING -> {
-                tvEmptyTitle.text = getString(R.string.task_empty_upcoming_title)
-                tvEmptyMessage.text = getString(R.string.task_empty_upcoming_message)
-            }
-            TaskSmartView.ALL -> {
-                tvEmptyTitle.text = getString(R.string.task_empty_all_title)
-                tvEmptyMessage.text = getString(R.string.task_empty_all_message)
-            }
-            TaskSmartView.COMPLETED -> {
-                tvEmptyTitle.text = getString(R.string.task_empty_completed_title)
-                tvEmptyMessage.text = getString(R.string.task_empty_completed_message)
-            }
-        }
-    }
-
-    private fun navText(label: String, selected: Boolean = false, action: (() -> Unit)? = null): TextView = TextView(requireContext()).apply {
-        text = label
-        textSize = 15f
-        minHeight = dpInt(48f)
-        gravity = Gravity.CENTER_VERTICAL
-        setPaddingRelative(dpInt(16f), dpInt(8f), dpInt(12f), dpInt(8f))
-        setTextColor(if (selected) palette.accent else palette.onSurface)
-        if (selected) setBackgroundColor(palette.surface)
-        action?.let { callback ->
-            val value = android.util.TypedValue()
-            requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, value, true)
-            if (!selected) setBackgroundResource(value.resourceId)
-            isFocusable = true
-            setOnClickListener { callback() }
-        }
-    }
-
-    private fun setupAdaptiveNavigation(content: View) {
-        wide = resources.configuration.screenWidthDp >= 600
-        if (wide) {
-            // Phone capture is inset by the host's bottom navigation. Wide mode removes
-            // that host, so its content must own navigation-bar and keyboard clearance.
-            val initialBottom = content.paddingBottom
-            androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(content) { v, insets ->
-                val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-                val ime = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.ime())
-                v.setPadding(v.paddingLeft, v.paddingTop, v.paddingRight, initialBottom + maxOf(bars.bottom, ime.bottom))
-                insets
-            }
-        }
-        shellRoot = FrameLayout(requireContext())
-        val body = LinearLayout(requireContext()).apply { orientation = LinearLayout.HORIZONTAL }
-        shellRoot.addView(body, FrameLayout.LayoutParams(-1, -1))
-        navigationColumn = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
-        val navigationScroll = ScrollView(requireContext()).apply {
-            setBackgroundColor(palette.background)
-            addView(navigationColumn)
-            androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(this) { v, insets ->
-                val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-                v.setPadding(0, bars.top, 0, bars.bottom)
-                insets
-            }
-        }
-        if (wide) body.addView(navigationScroll, LinearLayout.LayoutParams(dpInt(280f), -1))
-        // Bound the working surface on expanded windows instead of stretching rows across a desktop.
-        val contentFrame = FrameLayout(requireContext()).apply { setBackgroundColor(palette.background) }
-        body.addView(contentFrame, LinearLayout.LayoutParams(0, -1, 1f))
-        contentFrame.addView(content, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER_HORIZONTAL))
-        contentFrame.addOnLayoutChangeListener { _, left, _, right, _, _, _, _, _ ->
-            val available = right - left
-            val width = minOf(available, dpInt(840f))
-            if (content.layoutParams.width != width) {
-                content.layoutParams = FrameLayout.LayoutParams(width, -1, Gravity.CENTER_HORIZONTAL)
-            }
-        }
-        val header = content.findViewById<LinearLayout>(R.id.tasksHeader)
-        val hamburger = ImageButton(requireContext()).apply {
-            setImageResource(R.drawable.ic_tasks_menu)
-            setColorFilter(palette.onSurfaceVariant)
-            setPadding(dpInt(12f), dpInt(12f), dpInt(12f), dpInt(12f))
-            setBackgroundResource(run {
-                val value = android.util.TypedValue()
-                requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, value, true)
-                value.resourceId
-            })
-            setOnClickListener { openNavigation() }
-            contentDescription = getString(R.string.task_nav_open_desc)
-            visibility = if (wide) View.GONE else View.VISIBLE
-        }
-        header.addView(hamburger, 0, LinearLayout.LayoutParams(dpInt(48f), dpInt(48f)))
-        representationButton = ImageButton(requireContext()).apply {
-            setPadding(dpInt(12f), dpInt(12f), dpInt(12f), dpInt(12f))
-            setBackgroundResource(run {
-                val value = android.util.TypedValue()
-                requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, value, true)
-                value.resourceId
-            })
-            setColorFilter(palette.onSurfaceVariant)
-            setOnClickListener {
-                clearSelection()
-                val labels = listOf(
-                    getString(R.string.task_view_list),
-                    getString(R.string.task_view_calendar),
-                    getString(R.string.task_view_matrix),
+        if (!calendarMode && items.isNotEmpty()) {
+            pendingListAnchor?.let { anchor ->
+                val index = items.indexOfFirst { it.key == anchor.key }
+                taskListState.requestScrollToItem(
+                    index = if (index >= 0) index else anchor.index.coerceIn(items.indices),
+                    scrollOffset = if (index >= 0) anchor.offset else 0,
                 )
-                CustomDialogs.showSingleChoiceDialog(
-                    context = requireContext(),
-                    title = getString(R.string.task_view_title),
-                    options = labels,
-                    selectedIndex = if (matrixMode) 2 else if (calendarMode) 1 else 0,
-                ) { choice ->
-                    calendarMode = choice == 1
-                    matrixMode = choice == 2
-                    updateSmartViewLabel()
-                    loadTasks()
-                }
+                pendingListAnchor = null
             }
         }
-        header.addView(representationButton, header.childCount - 1, LinearLayout.LayoutParams(dpInt(48f), dpInt(48f)))
-        tvTitle.setOnLongClickListener {
-            selectedContainerFilter?.let { id ->
-                val path = workspaceSnapshot?.availableContainers.orEmpty().find { it.key == id.value }?.path
-                AlertDialog.Builder(requireContext()).setMessage(path ?: tvTitle.text).setPositiveButton("OK", null).show()
-            }
-            true
+
+        currentOverdueCount = sections.overdue.size
+        currentActiveCount = sections.active.size
+        showEmptyState = if (matrixMode) {
+            sections.groups.none { it.tasks.isNotEmpty() }
+        } else {
+            sections.active.isEmpty() && sections.overdue.isEmpty() && sections.completed.isEmpty()
         }
-        calendarPanel = LinearLayout(requireContext()).apply { orientation = LinearLayout.VERTICAL }
-        (rvTasks.parent as ViewGroup).addView(calendarPanel, ViewGroup.LayoutParams(-1, -1))
-        if (!wide) {
-            drawerScroll = navigationScroll
-            drawerScroll?.isVerticalScrollBarEnabled = false
+    }
+
+    @Composable
+    private fun WorkspaceEmptyState(colors: UHabitComposeColors) {
+        val scope = workspaceScope
+        val (title, message) = when {
+            scope.tags.isNotEmpty() ->
+                getString(R.string.task_empty_tags_title) to getString(R.string.task_empty_tags_message)
+            scope.container != null ->
+                getString(R.string.task_empty_container_title) to getString(R.string.task_empty_container_message)
+            scope.matrix ->
+                getString(R.string.task_empty_matrix_title) to getString(R.string.task_empty_matrix_message)
+            scope.smartView == TaskSmartView.TODAY ->
+                getString(R.string.task_empty_today_title) to getString(R.string.task_empty_today_message)
+            scope.smartView == TaskSmartView.OVERDUE ->
+                getString(R.string.task_empty_overdue_title) to getString(R.string.task_empty_overdue_message)
+            scope.smartView == TaskSmartView.INBOX ->
+                getString(R.string.task_empty_inbox_title) to getString(R.string.task_empty_inbox_message)
+            scope.smartView == TaskSmartView.UPCOMING ->
+                getString(R.string.task_empty_upcoming_title) to getString(R.string.task_empty_upcoming_message)
+            scope.smartView == TaskSmartView.ALL ->
+                getString(R.string.task_empty_all_title) to getString(R.string.task_empty_all_message)
+            scope.smartView == TaskSmartView.COMPLETED ->
+                getString(R.string.task_empty_completed_title) to getString(R.string.task_empty_completed_message)
+            else ->
+                getString(R.string.task_empty_all_title) to getString(R.string.task_empty_all_message)
         }
-        renderNavigation()
+        TasksEmptyStateCompose(title = title, message = message, colors = colors)
     }
 
     fun openNavigation() {
-        if (wide || drawerScrim != null) return
-        etQuickAddTitle.clearFocus()
-        (requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
-            ?.hideSoftInputFromWindow(etQuickAddTitle.windowToken, 0)
+        if (wide || drawerOpen) return
+        collapseQuickComposerQuietly()
         (activity as? MainNavigationHost)?.setBottomNavigationVisible(false, false)
-        (shellRoot.getChildAt(0) as ViewGroup).descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
-        shellRoot.getChildAt(0).importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-        drawerScrim = View(requireContext()).apply {
-            setBackgroundColor(Color.argb(120, 0, 0, 0))
-            contentDescription = getString(R.string.task_nav_close_desc)
-            isFocusable = true
-            setOnClickListener { closeNavigation() }
-        }
-        shellRoot.addView(drawerScrim, FrameLayout.LayoutParams(-1, -1))
-        shellRoot.addView(drawerScroll, FrameLayout.LayoutParams(dpInt(300f), -1, Gravity.START))
-        drawerScroll?.isVerticalScrollBarEnabled = false
-        drawerScroll?.let { androidx.core.view.ViewCompat.requestApplyInsets(it) }
-        navigationColumn.getChildAt(0)?.requestFocus()
+        drawerOpen = true
     }
 
     fun closeNavigation() {
-        if (drawerScrim != null) (activity as? MainNavigationHost)?.setBottomNavigationVisible(true, false)
-        drawerScrim?.let { shellRoot.removeView(it) }
-        drawerScrim = null
-        (shellRoot.getChildAt(0) as ViewGroup).descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
-        shellRoot.getChildAt(0).importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
-        if (!wide) drawerScroll?.let { shellRoot.removeView(it) }
+        if (!drawerOpen) return
+        drawerOpen = false
+        (activity as? MainNavigationHost)?.setBottomNavigationVisible(true, false)
     }
 
     fun onBackPressed(): Boolean {
-        if (drawerScrim != null) {
+        if (drawerOpen) {
             if (localTreeRoot != null) {
                 localTreeRoot = workspaceSnapshot?.containers?.get(localTreeRoot!!)?.parentId
-                renderNavigation()
             } else closeNavigation()
             return true
         }
@@ -1709,463 +1457,180 @@ class TasksFragment : Fragment() {
             return true
         }
         if (quickExpanded) {
-            quickExpanded = false
-            (activity as? org.isoron.uhabits.activities.main.MainActivity)?.setTaskQuickAddActive(false)
-            layoutQuickAddExpanded.visibility = View.GONE
-            layoutQuickAddCollapsed.visibility = View.VISIBLE
-            (requireContext().getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)?.hideSoftInputFromWindow(etQuickAddTitle.windowToken, 0)
+            collapseComposer()
             return true
         }
         return false
     }
 
-    private fun navigationRow(
-        label: String,
-        icon: Int,
-        count: Int? = null,
-        selected: Boolean = false,
-        depth: Int = 0,
-        customIconRef: org.isoron.uhabits.core.containers.IconRef? = null,
-        iconTint: Int? = null,
-        longClickAction: (() -> Boolean)? = null,
-        action: () -> Unit,
-    ): LinearLayout = LinearLayout(requireContext()).apply {
-        orientation = LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        minimumHeight = dpInt(48f)
-        setPaddingRelative(dpInt(16f + depth * 12f), 0, dpInt(12f), 0)
-        val ripple = android.util.TypedValue()
-        requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
-        setBackgroundResource(ripple.resourceId)
-        if (selected) background = android.graphics.drawable.RippleDrawable(
-            android.content.res.ColorStateList.valueOf(MainTabsThemeBridge.withAlpha(palette.accent, .16f)),
-            GradientDrawable().apply { cornerRadius = dp(8f); setColor(MainTabsThemeBridge.withAlpha(palette.accent, .09f)) },
-            null,
-        )
-        isFocusable = true
-        isSelected = selected
-        setOnClickListener { action() }
-        if (longClickAction != null) {
-            setOnLongClickListener { longClickAction() }
-        }
-
-        when (customIconRef) {
-            is org.isoron.uhabits.core.containers.IconRef.Emoji -> {
-                addView(TextView(requireContext()).apply {
-                    text = customIconRef.value
-                    textSize = 15f
-                    gravity = Gravity.CENTER
-                }, LinearLayout.LayoutParams(dpInt(20f), dpInt(20f)).apply { marginEnd = dpInt(12f) })
-            }
-            is org.isoron.uhabits.core.containers.IconRef.Vector -> {
-                val res = org.isoron.uhabits.activities.common.icons.IconPack.getDrawableRes(customIconRef.key, icon)
-                addView(ImageView(requireContext()).apply {
-                    setImageResource(res)
-                    setColorFilter(iconTint ?: (if (selected) palette.accent else palette.onSurfaceVariant))
-                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                }, LinearLayout.LayoutParams(dpInt(20f), dpInt(20f)).apply { marginEnd = dpInt(12f) })
-            }
-            else -> {
-                addView(ImageView(requireContext()).apply {
-                    setImageResource(icon)
-                    setColorFilter(iconTint ?: (if (selected) palette.accent else palette.onSurfaceVariant))
-                    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                }, LinearLayout.LayoutParams(dpInt(20f), dpInt(20f)).apply { marginEnd = dpInt(12f) })
-            }
-        }
-
-        addView(TextView(requireContext()).apply {
-            text = label; textSize = 14f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
-            setTextColor(if (selected) palette.accent else palette.onSurface)
-            if (selected) typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-        count?.takeIf { it > 0 }?.let { number ->
-            addView(TextView(requireContext()).apply {
-                text = number.toString(); textSize = 12f; setTextColor(palette.onSurfaceVariant)
-                setPaddingRelative(dpInt(8f), 0, 0, 0); fontFeatureSettings = "tnum"
-            }, LinearLayout.LayoutParams(-2, -2))
-        }
-        contentDescription = label + (count?.let { ", " + resources.getQuantityString(R.plurals.task_count, it, it) } ?: "")
-    }
-
-    private fun renderNavigation() {
+    @Composable
+    private fun WorkspaceNavigation(colors: UHabitComposeColors) {
         val snapshot = workspaceSnapshot ?: return
-        navigationColumn.removeAllViews()
-        navigationColumn.setBackgroundColor(palette.background)
-        navigationColumn.setPaddingRelative(dpInt(8f), dpInt(8f), dpInt(8f), dpInt(16f))
-        fun divider() {
-            navigationColumn.addView(
-                View(requireContext()).apply { setBackgroundColor(palette.divider) },
-                LinearLayout.LayoutParams(-1, dpInt(1f)).apply { topMargin = dpInt(12f); bottomMargin = dpInt(12f) },
+        val scope = workspaceScope
+        val context = requireContext()
+        val taskVisibility = taskVisibility(snapshot, navigationHiddenSections)
+        val containerNavItems = mutableListOf<ContainerNavItem>()
+
+        fun addContainer(item: org.isoron.uhabits.core.containers.Container, depth: Int) {
+            if (!taskVisibility.isVisible(item.id.value)) return
+            val children = snapshot.children[item.id].orEmpty().filter { taskVisibility.isVisible(it.id.value) }
+            val count = snapshot.pendingCounts[item.id] ?: 0
+            val iconRef = org.isoron.uhabits.core.containers.IconRef.fromString(item.icon)
+            val itemColor = item.color?.let { TaskThemeUtils.resolvePaletteColor(context, it, colors.accent) }
+            val isSelected = (scope.container == item.id)
+            val isCollapsed = (depth >= 2 || item.id.value in collapsedContainers)
+
+            containerNavItems.add(
+                ContainerNavItem(
+                    id = item.id,
+                    name = item.name,
+                    depth = depth,
+                    hasChildren = children.isNotEmpty(),
+                    isCollapsed = isCollapsed,
+                    count = count,
+                    iconRef = iconRef,
+                    color = itemColor,
+                    isSelected = isSelected
+                )
             )
-        }
-        if (wide) {
-            listOf(
-                Triple("Habits", getString(R.string.task_nav_habits), R.drawable.ic_tasks_completed),
-                Triple("Tasks", getString(R.string.tasks_title), R.drawable.ic_cat_list_todo),
-                Triple("Statistics", getString(R.string.task_nav_statistics), R.drawable.ic_settings_statistics),
-            ).forEach { (key, name, icon) ->
-                navigationColumn.addView(navigationRow(name, icon, selected = key == "Tasks") {
-                    clearSelection()
-                    workspaceNavigator?.invoke(key)
-                })
+
+            if (depth < 2 && item.id.value !in collapsedContainers) {
+                children.forEach { addContainer(it, depth + 1) }
             }
-            divider()
-        } else navigationColumn.addView(navText(getString(R.string.tasks_title)).apply {
-            textSize = 22f; typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
-            setPaddingRelative(dpInt(16f), dpInt(8f), dpInt(16f), dpInt(12f))
-        })
-        val roots = snapshot.roots
-        val smartIcons = mapOf(
-            TaskSmartView.TODAY to R.drawable.ic_cat_calendar,
-            TaskSmartView.OVERDUE to R.drawable.ic_cat_flag,
-            TaskSmartView.INBOX to R.drawable.ic_cat_folder_open,
-            TaskSmartView.UPCOMING to R.drawable.ic_cat_calendar_clock,
-            TaskSmartView.ALL to R.drawable.ic_cat_list_todo,
-            TaskSmartView.COMPLETED to R.drawable.ic_tasks_completed,
-        )
+        }
+
+        val local = localTreeRoot?.let { snapshot.containers[it] }
+        if (local != null) {
+            addContainer(local, 0)
+        } else {
+            snapshot.children[null].orEmpty().forEach { addContainer(it, 0) }
+        }
 
         val primaryViews = listOf(TaskSmartView.TODAY, TaskSmartView.INBOX)
         val visibleSmartViews = if (smartViewsExpanded) {
             TaskSmartView.entries
         } else {
-            if (activeSmartView !in primaryViews && selectedContainerFilter == null) {
-                primaryViews + activeSmartView
+            if (scope.smartView !in primaryViews && scope.container == null) {
+                primaryViews + scope.smartView
             } else {
                 primaryViews
             }
         }
 
-        visibleSmartViews.forEach { smart ->
-            val count = roots.count { smart.matches(it, getToday(), System.currentTimeMillis()) }
-            val iconRes = smartIcons[smart] ?: R.drawable.ic_cat_list_todo
-            navigationColumn.addView(navigationRow(
-                label = smart.label(requireContext()),
-                icon = iconRes,
-                count = count.takeUnless { smart == TaskSmartView.COMPLETED },
-                selected = selectedContainerFilter == null && activeSmartView == smart,
-                action = {
-                    clearSelection()
-                    selectedContainerFilter = null
-                    activeSmartView = smart
-                    closeNavigation()
-                    loadTasks()
-                }
-            ))
+        val smartCountsMap = TaskSmartView.entries.associateWith { smart ->
+            snapshot.roots.count { smart.matches(it, getToday(), System.currentTimeMillis()) }
         }
 
-        val toggleSmartViewsRow = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dpInt(34f)
-            setPaddingRelative(dpInt(16f), 0, dpInt(16f), 0)
-            val ripple = android.util.TypedValue()
-            requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
-            setBackgroundResource(ripple.resourceId)
-            isClickable = true
-            isFocusable = true
-            setOnClickListener {
+        val localParentName = localTreeRoot?.let { id ->
+            snapshot.containers[id]?.parentId?.let { snapshot.containers[it]?.name } ?: getString(R.string.containers_root_all)
+        }
+
+        TasksNavigationCompose(
+            isWide = wide,
+            activeSmartView = scope.smartView,
+            smartViewsExpanded = smartViewsExpanded,
+            visibleSmartViews = visibleSmartViews,
+            smartViewCounts = smartCountsMap,
+            containers = containerNavItems,
+            selectedContainerFilter = scope.container,
+            localParentName = localParentName,
+            colors = colors,
+            modifier = Modifier.onGloballyPositioned { navigationCoordinates = it },
+            onSelectSmartView = { smart ->
+                clearSelection()
+                selectedContainerFilter = null
+                activeSmartView = smart
+                syncWorkspaceScope()
+                closeNavigation()
+                loadTasks()
+            },
+            onToggleSmartViewsExpanded = {
                 smartViewsExpanded = !smartViewsExpanded
-                renderNavigation()
-            }
-            addView(ImageView(requireContext()).apply {
-                setImageResource(R.drawable.ic_tabler_chevron_down)
-                rotation = if (smartViewsExpanded) 180f else 0f
-                setColorFilter(palette.onSurfaceVariant)
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            }, LinearLayout.LayoutParams(dpInt(16f), dpInt(16f)).apply { marginEnd = dpInt(8f) })
-            addView(TextView(requireContext()).apply {
-                text = getString(if (smartViewsExpanded) R.string.task_nav_less_views else R.string.task_nav_more_views)
-                textSize = 12f
-                setTextColor(palette.onSurfaceVariant)
-            }, LinearLayout.LayoutParams(0, -2, 1f))
-        }
-        navigationColumn.addView(toggleSmartViewsRow)
-        divider()
-
-        val sectionsHeader = LinearLayout(requireContext()).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dpInt(44f)
-            setPaddingRelative(dpInt(16f), 0, 0, 0)
-        }
-        sectionsHeader.addView(TextView(requireContext()).apply {
-            text = sectionString(R.string.containers_title).uppercase()
-            textSize = 12f
-            typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
-            setTextColor(palette.onSurfaceVariant)
-        }, LinearLayout.LayoutParams(0, -2, 1f))
-
-        sectionsHeader.addView(ImageButton(requireContext()).apply {
-            tag = "manage_hidden_sections_btn"
-            setImageResource(R.drawable.ic_tabler_dots_vertical)
-            setColorFilter(palette.onSurfaceVariant)
-            val ripple = android.util.TypedValue()
-            requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)
-            setBackgroundResource(ripple.resourceId)
-            setPadding(dpInt(14f), dpInt(14f), dpInt(14f), dpInt(14f))
-            contentDescription = sectionString(R.string.section_header_actions)
-            setOnClickListener {
-                CompactPopupMenu.show(this, listOf(CompactPopupMenu.Entry.Item(
-                    1, sectionString(R.string.section_hidden_sections), R.drawable.ic_tabler_eye_off
-                ))) { showSectionVisibilityDialog() }
-            }
-        }, LinearLayout.LayoutParams(dpInt(48f), dpInt(48f)))
-
-        sectionsHeader.addView(ImageButton(requireContext()).apply {
-            tag = "add_section_btn"
-            setImageResource(R.drawable.ic_tabler_plus)
-            setColorFilter(palette.onSurfaceVariant)
-            val ripple = android.util.TypedValue()
-            requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)
-            setBackgroundResource(ripple.resourceId)
-            setPadding(dpInt(14f), dpInt(14f), dpInt(14f), dpInt(14f))
-            contentDescription = sectionString(R.string.containers_create_section)
-            setOnClickListener { showCreateSectionDialog(parentId = null) }
-        }, LinearLayout.LayoutParams(dpInt(48f), dpInt(48f)))
-
-        navigationColumn.addView(sectionsHeader)
-
-        val taskVisibility = taskVisibility(snapshot)
-        if (snapshot.containers.isEmpty()) {
-            navigationColumn.addView(LinearLayout(requireContext()).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                minimumHeight = dpInt(44f)
-                setPaddingRelative(dpInt(16f), 0, dpInt(16f), 0)
-                val ripple = android.util.TypedValue()
-                requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
-                setBackgroundResource(ripple.resourceId)
-                setOnClickListener { showCreateSectionDialog(parentId = null) }
-                addView(ImageView(requireContext()).apply {
-                    setImageResource(R.drawable.ic_tabler_plus)
-                    setColorFilter(palette.accent)
-                }, LinearLayout.LayoutParams(dpInt(18f), dpInt(18f)).apply { marginEnd = dpInt(12f) })
-                addView(TextView(requireContext()).apply {
-                    text = sectionString(R.string.containers_create_section)
-                    textSize = 14f
-                    setTextColor(palette.accent)
-                })
-            })
-        } else {
-            localTreeRoot?.let { id ->
-                navigationColumn.addView(navigationRow(
-                    label = snapshot.containers[id]?.parentId?.let { snapshot.containers[it]?.name } ?: getString(R.string.containers_root_all),
-                    icon = R.drawable.ic_tasks_parent,
-                    action = { localTreeRoot = snapshot.containers[id]?.parentId; renderNavigation() }
-                ))
-            }
-            fun addContainer(item: org.isoron.uhabits.core.containers.Container, depth: Int) {
-                if (!taskVisibility.isVisible(item.id.value)) return
-                val children = snapshot.children[item.id].orEmpty().filter { taskVisibility.isVisible(it.id.value) }
-                val count = snapshot.pendingCounts[item.id] ?: 0
-                val iconRef = org.isoron.uhabits.core.containers.IconRef.fromString(item.icon)
-                val itemColor = item.color?.let { TaskThemeUtils.resolvePaletteColor(requireContext(), it, palette.accent) }
-                val isSelected = (selectedContainerFilter == item.id)
-
-                val row = LinearLayout(requireContext()).apply {
-                    tag = "container_row_" + item.id.value
-                    orientation = LinearLayout.HORIZONTAL
-                    gravity = Gravity.CENTER_VERTICAL
-                    minimumHeight = dpInt(48f)
-                    setPaddingRelative(dpInt(8f + depth * 14f), 0, dpInt(4f), 0)
-
-                    val ripple = android.util.TypedValue()
-                    requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
-                    setBackgroundResource(ripple.resourceId)
-                    if (isSelected) {
-                        background = android.graphics.drawable.RippleDrawable(
-                            android.content.res.ColorStateList.valueOf(MainTabsThemeBridge.withAlpha(palette.accent, .16f)),
-                            GradientDrawable().apply {
-                                cornerRadius = dp(8f)
-                                setColor(MainTabsThemeBridge.withAlpha(palette.accent, .09f))
-                            },
-                            null
-                        )
-                    }
-                    isFocusable = true
-                    this.isSelected = isSelected
-
-                    setOnClickListener {
-                        clearSelection()
-                        selectedContainerFilter = item.id
-                        activeSmartView = TaskSmartView.ALL
-                        closeNavigation()
-                        loadTasks()
-                    }
-                    setOnLongClickListener {
-                        showSectionContextMenu(this, item)
-                        true
-                    }
-                    androidx.core.view.ViewCompat.addAccessibilityAction(
-                        this, sectionString(R.string.section_actions_description, item.name)
-                    ) { view, _ -> showSectionContextMenu(view, item); true }
-                    contentDescription = item.name + (if (count > 0) ", " + resources.getQuantityString(R.plurals.task_count, count, count) else "")
-                }
-
-                // Chevron or spacer
-                val chevronColWidth = dpInt(32f)
-                if (children.isNotEmpty()) {
-                    val isCollapsed = (depth >= 2 || item.id.value in collapsedContainers)
-                    val expandBtn = ImageView(requireContext()).apply {
-                        setImageResource(if (isCollapsed) R.drawable.ic_tabler_chevron_right else R.drawable.ic_tabler_chevron_down)
-                        setColorFilter(palette.onSurfaceVariant)
-                        val ripple = android.util.TypedValue()
-                        requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)
-                        setBackgroundResource(ripple.resourceId)
-                        scaleType = ImageView.ScaleType.CENTER_INSIDE
-                        setPadding(dpInt(7f), dpInt(15f), dpInt(7f), dpInt(15f))
-                        contentDescription = sectionString(
-                            when {
-                                depth >= 2 -> R.string.section_open_children_description
-                                item.id.value in collapsedContainers -> R.string.section_expand_description
-                                else -> R.string.section_collapse_description
-                            }, item.name
-                        )
-                        setOnClickListener {
-                            if (depth >= 2) localTreeRoot = item.id
-                            else if (!collapsedContainers.add(item.id.value)) collapsedContainers.remove(item.id.value)
-                            renderNavigation()
-                        }
-                    }
-                    row.addView(expandBtn, LinearLayout.LayoutParams(chevronColWidth, dpInt(48f)).apply {
-                        marginEnd = dpInt(4f)
-                    })
-                } else {
-                    val indentSpacer = View(requireContext())
-                    row.addView(indentSpacer, LinearLayout.LayoutParams(chevronColWidth, dpInt(48f)).apply {
-                        marginEnd = dpInt(4f)
-                    })
-                }
-
-                // Section Icon
-                when (iconRef) {
-                    is org.isoron.uhabits.core.containers.IconRef.Emoji -> {
-                        row.addView(TextView(requireContext()).apply {
-                            text = iconRef.value
-                            textSize = 15f
-                            gravity = Gravity.CENTER
-                        }, LinearLayout.LayoutParams(dpInt(20f), dpInt(20f)).apply { marginEnd = dpInt(8f) })
-                    }
-                    is org.isoron.uhabits.core.containers.IconRef.Vector -> {
-                        val res = org.isoron.uhabits.activities.common.icons.IconPack.getDrawableRes(iconRef.key, R.drawable.ic_tabler_folder)
-                        row.addView(ImageView(requireContext()).apply {
-                            setImageResource(res)
-                            setColorFilter(itemColor ?: (if (isSelected) palette.accent else palette.onSurfaceVariant))
-                            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                        }, LinearLayout.LayoutParams(dpInt(20f), dpInt(20f)).apply { marginEnd = dpInt(8f) })
-                    }
-                    else -> {
-                        row.addView(ImageView(requireContext()).apply {
-                            setImageResource(if (depth == 0) R.drawable.ic_tabler_folder else R.drawable.ic_cat_list_todo)
-                            setColorFilter(itemColor ?: (if (isSelected) palette.accent else palette.onSurfaceVariant))
-                            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                        }, LinearLayout.LayoutParams(dpInt(20f), dpInt(20f)).apply { marginEnd = dpInt(8f) })
-                    }
-                }
-
-                // Section Title
-                row.addView(TextView(requireContext()).apply {
-                    text = item.name
-                    textSize = 14f
-                    maxLines = 2
-                    ellipsize = android.text.TextUtils.TruncateAt.END
-                    setTextColor(if (isSelected) palette.accent else palette.onSurface)
-                    if (isSelected) typeface = android.graphics.Typeface.create("sans-serif-medium", 0)
-                }, LinearLayout.LayoutParams(0, -2, 1f))
-
-                // Section task count
-                if (count > 0) {
-                    row.addView(TextView(requireContext()).apply {
-                        text = count.toString()
-                        textSize = 12f
-                        setTextColor(palette.onSurfaceVariant)
-                        fontFeatureSettings = "tnum"
-                        setPaddingRelative(dpInt(6f), 0, dpInt(4f), 0)
-                    }, LinearLayout.LayoutParams(-2, -2))
-                }
-
-                // Actions button: visible on selected row
-                val moreBtn = ImageButton(requireContext()).apply {
-                    tag = "container_more_" + item.id.value
-                    setImageResource(R.drawable.ic_tabler_dots_vertical)
-                    setColorFilter(if (isSelected) palette.accent else palette.onSurfaceVariant)
-                    val ripple = android.util.TypedValue()
-                    requireContext().theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true)
-                    setBackgroundResource(ripple.resourceId)
-                    setPadding(dpInt(14f), dpInt(14f), dpInt(14f), dpInt(14f))
-                    contentDescription = sectionString(R.string.section_actions_description, item.name)
-                    visibility = if (isSelected) View.VISIBLE else View.GONE
-                    setOnClickListener { showSectionContextMenu(this, item) }
-                }
-                row.addView(moreBtn, LinearLayout.LayoutParams(dpInt(48f), dpInt(48f)))
-
-                navigationColumn.addView(row)
-                if (depth < 2 && item.id.value !in collapsedContainers) children.forEach { addContainer(it, depth + 1) }
-            }
-            val local = localTreeRoot?.let { snapshot.containers[it] }
-            if (local != null) addContainer(local, 0) else snapshot.children[null].orEmpty().forEach { addContainer(it, 0) }
-        }
-            divider()
-            navigationColumn.addView(navigationRow(getString(R.string.settings), R.drawable.ic_nav_settings) {
+            },
+            onSelectContainer = { id ->
+                clearSelection()
+                selectedContainerFilter = id
+                activeSmartView = TaskSmartView.ALL
+                syncWorkspaceScope()
+                closeNavigation()
+                loadTasks()
+            },
+            onToggleContainerCollapse = { idStr ->
+                collapsedContainers = if (idStr in collapsedContainers) collapsedContainers - idStr else collapsedContainers + idStr
+            },
+            onOpenContainerChildren = { id ->
+                localTreeRoot = id
+            },
+            onNavigateToParent = {
+                localTreeRoot = localTreeRoot?.let { snapshot.containers[it]?.parentId }
+            },
+            onContainerLongClick = { id ->
+                snapshot.containers[id]?.let { showSectionContextMenu(it) }
+            },
+            onContainerMoreClick = { id ->
+                snapshot.containers[id]?.let { showSectionContextMenu(it) }
+            },
+            onManageHiddenSections = {
+                showSectionVisibilityDialog()
+            },
+            onCreateContainer = {
+                showCreateSectionDialog(parentId = null)
+            },
+            onOpenSettings = {
                 clearSelection()
                 closeNavigation()
                 workspaceNavigator?.invoke("Settings")
-            })
+            },
+            onWideTabSelected = { key ->
+                clearSelection()
+                workspaceNavigator?.invoke(key)
+            }
+        )
+    }
+
+    private fun createCalendarController() = TaskCalendarViewController(
+        context = requireContext(),
+        palette = palette,
+        wide = wide,
+        onTaskClicked = { task ->
+            clearSelection()
+            val sheet = TaskDetailBottomSheet.newInstance(task.id)
+            sheet.onTaskUpdatedListener = { loadTasks() }
+            sheet.show(childFragmentManager, "task_detail")
+        },
+        onTaskToggleComplete = { task ->
+            executeCompleteAction(listOf(task.id))
+        },
+        onTaskQuickMenu = { task ->
+            showTaskQuickMenu(task)
+        },
+        onHabitClicked = { plannedHabit ->
+            showPlannedHabitDialog(plannedHabit)
+        },
+        onDateChanged = { newDate ->
+            selectedDay = newDate
+            loadTasks()
+        },
+        onScaleChanged = { newScale ->
+            calendarScale = newScale
+            loadTasks()
+        },
+        onModeChanged = { newMode ->
+            calendarViewMode = newMode
+            loadTasks()
+        },
+        onShowHabitsChanged = { shown ->
+            calendarShowHabits = shown
         }
+    )
 
     private fun renderCalendar(
         tasks: List<UserTask>,
         habits: List<Habit> = activeHabits,
         sessions: List<org.isoron.uhabits.core.focus.FocusSession> = historyFocusSessions
     ) {
-        representationButton.setImageResource(if (calendarMode) R.drawable.ic_cat_list_todo else R.drawable.ic_cat_calendar)
-        val modeLabel = getString(
-            if (matrixMode) R.string.task_view_matrix
-            else if (calendarMode) R.string.task_view_calendar
-            else R.string.task_view_list
-        )
-        representationButton.contentDescription = getString(R.string.task_view_desc_format, modeLabel)
-        calendarPanel.visibility = if (calendarMode) View.VISIBLE else View.GONE
         if (!calendarMode) return
-
-        val controller = calendarViewController ?: TaskCalendarViewController(
-            context = requireContext(),
-            container = calendarPanel,
-            palette = palette,
-            wide = wide,
-            onTaskClicked = { task ->
-                clearSelection()
-                val sheet = TaskDetailBottomSheet.newInstance(task.id)
-                sheet.onTaskUpdatedListener = { loadTasks() }
-                sheet.show(childFragmentManager, "task_detail")
-            },
-            onTaskToggleComplete = { task ->
-                executeCompleteAction(listOf(task.id))
-            },
-            onTaskQuickMenu = { task ->
-                showTaskQuickMenu(task)
-            },
-            onHabitClicked = { plannedHabit ->
-                showPlannedHabitDialog(plannedHabit)
-            },
-            onDateChanged = { newDate ->
-                selectedDay = newDate
-                loadTasks()
-            },
-            onScaleChanged = { newScale ->
-                calendarScale = newScale
-                loadTasks()
-            },
-            onModeChanged = { newMode ->
-                calendarViewMode = newMode
-                loadTasks()
-            },
-            onShowHabitsChanged = { shown ->
-                calendarShowHabits = shown
-            }
-        ).also { calendarViewController = it }
-
+        val controller = calendarViewController ?: return
         calendarShowHabits?.let { controller.showHabits = it }
         controller.selectedDay = selectedDay
         controller.scale = calendarScale
@@ -2197,49 +1662,22 @@ class TasksFragment : Fragment() {
             append(getString(R.string.task_planned_habit_note))
         }
 
-        AlertDialog.Builder(requireContext())
-            .setTitle(plannedHabit.name)
-            .setMessage(details)
-            .setPositiveButton(getString(R.string.task_planned_habit_open)) { _, _ ->
+        informationDialog = InformationDialog(
+            title = plannedHabit.name,
+            message = details,
+            openHabit = {
                 if (habit != null) {
                     val intent = Intent(requireContext(), ShowHabitActivity::class.java).apply {
                         data = Uri.parse(habit.uriString)
                     }
                     startActivity(intent)
                 }
-            }
-            .setNegativeButton(getString(R.string.task_due_close), null)
-            .show()
+            },
+        )
     }
 
     internal fun showTaskQuickMenu(task: UserTask) {
-        val isSelected = task.id in selectedTaskIds
-        val actions = arrayOf(
-            getString(R.string.task_quick_menu_change_due),
-            getString(R.string.task_quick_menu_move_container),
-            getString(R.string.task_quick_menu_edit),
-            getString(if (task.isCompleted) R.string.task_quick_menu_reopen else R.string.task_quick_menu_complete),
-            getString(if (isSelected) R.string.task_quick_menu_deselect else R.string.task_quick_menu_select),
-            getString(R.string.delete),
-        )
-        AlertDialog.Builder(requireContext())
-            .setTitle(task.title)
-            .setItems(actions) { _, which ->
-                when (which) {
-                    0 -> openActionDuePicker(listOf(task.id))
-                    1 -> openActionContainerPicker(listOf(task.id))
-                    2 -> {
-                        clearSelection()
-                        val sheet = TaskDetailBottomSheet.newInstance(task.id)
-                        sheet.onTaskUpdatedListener = { loadTasks() }
-                        sheet.show(childFragmentManager, "task_detail")
-                    }
-                    3 -> executeCompleteAction(listOf(task.id))
-                    4 -> toggleTaskSelection(task.id)
-                    5 -> confirmDeleteTasks(listOf(task.id))
-                }
-            }
-            .show()
+        quickActionMenu = task
     }
 
     companion object {
@@ -2263,7 +1701,7 @@ class TasksFragment : Fragment() {
                 System.err.println("DEBUG_SECTIONS: createContainer returned res=$res")
                 if (res.isSuccess) {
                     if (parent != null) {
-                        collapsedContainers.remove(parent.value)
+                        collapsedContainers -= parent.value
                     } else {
                         res.getOrNull()?.let { selectedContainerFilter = it.id }
                     }
@@ -2309,7 +1747,7 @@ class TasksFragment : Fragment() {
             onTargetSelected = { targetId ->
                 val res = orgFacade.moveContainer(container.id, targetId)
                 if (res.isSuccess) {
-                    if (targetId != null) collapsedContainers.remove(targetId.value)
+                    if (targetId != null) collapsedContainers -= targetId.value
                     loadTasks()
                 } else {
                     Toast.makeText(requireContext(), sectionString(R.string.section_move_failed), Toast.LENGTH_SHORT).show()
@@ -2369,7 +1807,7 @@ class TasksFragment : Fragment() {
         loadTasks()
         val datasetId = component.session.datasetId
         activeSnackbar?.dismiss()
-        activeSnackbar = Snackbar.make(shellRoot, sectionString(R.string.section_hidden), Snackbar.LENGTH_LONG)
+        activeSnackbar = Snackbar.make(requireView(), sectionString(R.string.section_hidden), Snackbar.LENGTH_LONG)
             .setAction(sectionString(R.string.section_visibility_undo)) {
                 if (component.session.datasetId == datasetId &&
                     saveHiddenSections(hiddenSections() - container.id.value)) {
@@ -2451,7 +1889,10 @@ class TasksFragment : Fragment() {
         dialog.setContentView(pageRoot)
         dialog.setOnDismissListener {
             composeView.disposeComposition()
-            if (isAdded && component === HabitsApplication.component) { renderNavigation(); loadTasks() }
+            if (isAdded && component === HabitsApplication.component) {
+                navigationHiddenSections = hiddenSections()
+                loadTasks()
+            }
         }
         dialog.window?.let { androidx.core.view.WindowCompat.setDecorFitsSystemWindows(it, false) }
         dialog.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
@@ -2514,7 +1955,9 @@ class TasksFragment : Fragment() {
         }
     }
 
-    private fun showSectionContextMenu(anchor: View, container: Container) {
+    private fun showSectionContextMenu(container: Container) {
+        val anchor = view ?: return
+        val bounds = navigationCoordinates.popupBounds() ?: return
         val entries = listOf(
             CompactPopupMenu.Entry.Item(
                 id = 1,
@@ -2544,7 +1987,7 @@ class TasksFragment : Fragment() {
                 destructive = true
             )
         )
-        CompactPopupMenu.show(anchor, entries, minWidthDp = 160, maxWidthDp = 220) { actionId ->
+        CompactPopupMenu.show(anchor, entries, minWidthDp = 160, maxWidthDp = 220, anchorRectOnScreen = bounds) { actionId ->
             when (actionId) {
                 1 -> showCreateSectionDialog(parentId = container.id)
                 2 -> showEditSectionDialog(container)

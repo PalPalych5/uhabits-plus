@@ -25,8 +25,6 @@ import org.isoron.uhabits.compose.LocalUHabitComposeColors
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import android.widget.ImageView
 import org.isoron.uhabits.R
 import org.isoron.uhabits.activities.common.icons.IconPack
 import org.isoron.uhabits.core.containers.IconRef
@@ -85,11 +83,17 @@ internal fun HiddenSectionsCompose(
                         if (icon is IconRef.Emoji) {
                             BasicText(icon.value, Modifier.width(34.dp), style = TextStyle(fontSize = 18.sp))
                         } else {
-                            AndroidView(factory = { context -> ImageView(context) }, modifier = Modifier.size(24.dp), update = { view ->
-                                view.setImageResource(if (icon is IconRef.Vector) IconPack.getDrawableRes(icon.key, R.drawable.ic_tabler_folder) else R.drawable.ic_tabler_folder)
-                                view.setColorFilter(row.color)
-                                view.importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                            })
+                            val drawable = if (icon is IconRef.Vector) {
+                                IconPack.getDrawableRes(icon.key, R.drawable.ic_tabler_folder)
+                            } else {
+                                R.drawable.ic_tabler_folder
+                            }
+                            Image(
+                                painter = painterResource(drawable),
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                                colorFilter = ColorFilter.tint(Color(row.color))
+                            )
                             Spacer(Modifier.width(10.dp))
                         }
                         Column(Modifier.weight(1f)) {

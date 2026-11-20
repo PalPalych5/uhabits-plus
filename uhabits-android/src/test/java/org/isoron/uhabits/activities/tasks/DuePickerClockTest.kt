@@ -9,6 +9,18 @@ import java.time.LocalTime
 import java.time.ZoneId
 
 class DuePickerClockTest {
+    @Test fun clockInputPreservesMidnightAndNoonInEitherFormat() {
+        assertEquals(0, parseDuePickerHour("12", is24Hour = false, isPm = false))
+        assertEquals(12, parseDuePickerHour("12", is24Hour = false, isPm = true))
+        assertEquals(23, parseDuePickerHour("11", is24Hour = false, isPm = true))
+        assertEquals(0, parseDuePickerHour("00", is24Hour = true, isPm = false))
+        assertEquals(23, parseDuePickerHour("23", is24Hour = true, isPm = false))
+        assertNull(parseDuePickerHour("00", is24Hour = false, isPm = false))
+        assertNull(parseDuePickerHour("13", is24Hour = false, isPm = false))
+        assertNull(parseDuePickerHour("24", is24Hour = true, isPm = false))
+        assertNull(parseDuePickerHour("", is24Hour = true, isPm = false))
+    }
+
     @Test fun calendarDateUsesWidgetZoneAfterDeviceZoneChange() {
         val date = LocalDate.of(2026, 10, 22)
         for (zone in listOf(ZoneId.of("UTC"), ZoneId.of("Asia/Novosibirsk"), ZoneId.of("America/Los_Angeles"))) {

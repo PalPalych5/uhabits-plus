@@ -256,30 +256,46 @@ class TaskMatrixVisualTest {
         }
         idle(); waitLoad(controller)
         controller.onActivity { fragment(it).loadTasks() }; waitLoad(controller)
-        controller.onActivity { fragment(it).requireView().findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvTasks).scrollToPosition(0) }; idle()
+        controller.onActivity { fragment(it).taskListState.requestScrollToItem(0) }; idle()
     }
     private fun waitLoad(controller: TaskDraftLifecycleTest.QaActivityController) {
         await { var busy = false; controller.onActivity { busy = field<kotlinx.coroutines.Job?>(fragment(it), "loadJob")?.isActive == true }; !busy }; idle()
     }
     private fun groups(controller: TaskDraftLifecycleTest.QaActivityController): Map<String, List<UserTask>> {
-        var result = emptyMap<String, List<UserTask>>()
-        controller.onActivity { activity -> result = field<Map<String, Pair<TaskSectionAdapter, TasksAdapter>>>(fragment(activity), "groupAdapters").mapValues { field<List<UserTask>>(it.value.second, "tasks").toList() } }
+        val result = linkedMapOf<String, MutableList<UserTask>>()
+        controller.onActivity { activity ->
+            var rows: MutableList<UserTask>? = null
+            for (item in fragment(activity).taskListContent?.items.orEmpty()) {
+                when (item) {
+                    is TaskListItem.Header -> {
+                        rows = item.key.takeIf { it.startsWith("group:") }
+                            ?.let { result.getOrPut(it.removePrefix("group:")) { mutableListOf() } }
+                    }
+                    is TaskListItem.Row -> rows?.add(item.task)
+                }
+            }
+        }
         return result
     }
     private fun assertGroups(controller: TaskDraftLifecycleTest.QaActivityController, expected: Map<String, Set<TaskId>>) {
         assertEquals(expected, groups(controller).mapValues { it.value.map { task -> task.id }.toSet() })
     }
     private fun ordinaryRows(controller: TaskDraftLifecycleTest.QaActivityController): List<UserTask> {
-        val rows = groups(controller).values.flatten().toMutableList()
+        var rows = emptyList<UserTask>()
         controller.onActivity { activity ->
-            for (name in listOf("adapter", "overdueAdapter", "completedAdapter")) {
-                rows += field<List<UserTask>>(field<Any>(fragment(activity), name), "tasks")
-            }
+            rows = fragment(activity).taskListContent?.items.orEmpty()
+                .filterIsInstance<TaskListItem.Row>().map { it.task }
         }
         return rows
     }
     private fun scrollBottom(controller: TaskDraftLifecycleTest.QaActivityController) {
-        controller.onActivity { val recycler = fragment(it).requireView().findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.rvTasks); recycler.scrollToPosition(requireNotNull(recycler.adapter).itemCount - 1) }; idle()
+        controller.onActivity { activity ->
+            val fragment = fragment(activity)
+            val lastIndex = requireNotNull(fragment.taskListContent).items.lastIndex
+            check(lastIndex >= 0)
+            fragment.taskListState.requestScrollToItem(lastIndex)
+        }
+        idle()
     }
     private fun fragment(activity: MainActivity) = activity.supportFragmentManager.findFragmentByTag("main.tasks") as TasksFragment
     private fun idle() { instrumentation.waitForIdleSync(); device.waitForIdle(); SystemClock.sleep(200) }
