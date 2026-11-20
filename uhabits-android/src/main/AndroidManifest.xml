@@ -121,11 +121,6 @@
             android:exported="false" />
 
         <activity
-            android:name=".activities.today.TodayActivity"
-            android:label="@string/today_eval_title"
-            android:exported="true" />
-
-        <activity
             android:name=".activities.statistics.StatisticsActivity"
             android:label="@string/reports_title">
             <meta-data
