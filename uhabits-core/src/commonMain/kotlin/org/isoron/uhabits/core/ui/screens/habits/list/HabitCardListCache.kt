@@ -271,6 +271,7 @@ class HabitCardListCache(
         lastRefreshFailed = false
         if (currentFetchTask != null) currentFetchTask!!.cancel()
         val task = RefreshTask(++refreshGeneration)
+        logger.info("refreshAllHabits requested, gen=$refreshGeneration")
         HabitStartupTiming.mark("cache.refresh.request", refreshGeneration)
         pendingRefreshTasks.add(task)
         currentFetchTask = task
@@ -454,7 +455,8 @@ class HabitCardListCache(
             HabitStartupTiming.mark("cache.effective.end", generation)
             timingObserver?.invoke("cache.effectiveSnapshots", snapshotStarted.elapsedNow().inWholeNanoseconds / 1e6)
             val selected = candidates.filter { h ->
-                val snapshot = batch[HabitRef(requireNotNull(h.uuid))]
+                val habitUuid = h.uuid ?: "habit-${h.id}"
+                val snapshot = batch[HabitRef(habitUuid)]
                 snapshot == null || ((requestedMatcher.isCompletedAllowed || !snapshot.compatibilityCompletionOn(today).isCompleted) &&
                     (requestedMatcher.isEnteredAllowed || if (!snapshot.hasContributions) !h.isEnteredToday() else
                         (snapshot.day(today).manualEntry.value == org.isoron.uhabits.core.models.Entry.UNKNOWN &&
@@ -463,8 +465,13 @@ class HabitCardListCache(
             if (load != null && batch.values.any { it.hasContributions }) {
                 val originalPositions = candidates.withIndex().associate { it.value.id to it.index }
                 fun compare(order: Order, a: Habit, b: Habit): Int {
-                    val sa = batch.getValue(HabitRef(requireNotNull(a.uuid)))
-                    val sb = batch.getValue(HabitRef(requireNotNull(b.uuid)))
+                    val aUuid = a.uuid ?: "habit-${a.id}"
+                    val bUuid = b.uuid ?: "habit-${b.id}"
+                    val sa = batch[HabitRef(aUuid)]
+                    val sb = batch[HabitRef(bUuid)]
+                    if (sa == null || sb == null) {
+                        return originalPositions.getValue(a.id).compareTo(originalPositions.getValue(b.id))
+                    }
                     return when (order) {
                         Order.BY_SCORE_DESC, Order.BY_SCORE_ASC -> {
                             val va = sa.scoreResult.on(today); val vb = sb.scoreResult.on(today)
@@ -500,7 +507,8 @@ class HabitCardListCache(
                 if (h.id == null) continue
                 habits.add(h)
                 idToHabit[h.id] = h
-                batch[HabitRef(requireNotNull(h.uuid))]?.let { snapshots[h.id] = it }
+                val habitUuid = h.uuid ?: "habit-${h.id}"
+                batch[HabitRef(habitUuid)]?.let { snapshots[h.id] = it }
             }
             HabitStartupTiming.mark("cache.fetch.end", generation)
         }
@@ -620,13 +628,15 @@ class HabitCardListCache(
 
         @Synchronized
         override suspend fun doInBackground() {
+            logger.info("doInBackground started for gen=$generation, target=$targetId")
             try {
                 prepareInBackground()
+                logger.info("doInBackground finished prepare for gen=$generation, habits=${newData.habits.size}, bgComplete=$backgroundComplete")
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 trace("cache.failed")
                 fetchFailure = e
-                runCatching { logger.error(e) }
+                logger.error(e)
                 runner?.publishProgress(this, Int.MIN_VALUE)
                 throw e
             }
@@ -724,8 +734,16 @@ class HabitCardListCache(
         }
 
         override fun onPostExecute() = withCacheLock {
+            logger.info("onPostExecute for gen=$generation, target=$targetId, isCurrent=${isCurrent()}, bgComplete=$backgroundComplete, hasLoaded=$hasLoaded")
             finished(this)
-            if (!isCurrent()) { trace("cache.superseded"); return@withCacheLock }
+            if (!isCurrent() || !backgroundComplete) {
+                trace("cache.superseded")
+                if (!hasLoaded && !shutDown && targetId == null && currentFetchTask == null) {
+                    logger.info("Retrying refreshAllHabits because !hasLoaded")
+                    refreshAllHabits()
+                }
+                return@withCacheLock
+            }
             trace("cache.publish.begin")
             if (targetId == null) {
                 currentFetchTask = null
@@ -745,6 +763,7 @@ class HabitCardListCache(
             }
             hasLoaded = true
             trace("cache.publish.end")
+            logger.info("onPostExecute COMPLETED: gen=$generation, habits=${data.habits.size}, hasLoaded=$hasLoaded")
             listener.onRefreshFinished()
             HabitStartupTiming.mark("cache.publish.end", generation)
             timingObserver?.invoke("cache.publish", started.elapsedNow().inWholeNanoseconds / 1e6)

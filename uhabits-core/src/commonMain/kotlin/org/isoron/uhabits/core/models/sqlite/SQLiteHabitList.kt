@@ -146,7 +146,8 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
             habit.blockId = null
         }
         extensionRepository.upsert(habit.toExtensionData())
-        goalRepository.replaceAll(id, habit.normalizedGoalHistory().map { it.toGoalData(id, habit.uuid!!) }, data.updatedAt)
+        val habitUuid = habit.uuid ?: "habit-$id"
+        goalRepository.replaceAll(id, habit.normalizedGoalHistory().map { it.toGoalData(id, habitUuid) }, data.updatedAt)
         (habit.originalEntries as SQLiteEntryList).habitId = id
         (habit.originalEntries as SQLiteEntryList).habitUuid = habit.uuid
         habit.globalStatisticsStartDate = globalStatisticsStartDate
@@ -305,7 +306,8 @@ class SQLiteHabitList(private val modelFactory: ModelFactory) : HabitList() {
                 data.deletedAt = null
                 repository.update(data)
                 extensionRepository.upsert(h.toExtensionData())
-                goalRepository.replaceAll(h.id!!, h.normalizedGoalHistory().map { it.toGoalData(h.id!!, h.uuid!!) }, data.updatedAt)
+                val habitUuid = h.uuid ?: "habit-${h.id}"
+                goalRepository.replaceAll(h.id!!, h.normalizedGoalHistory().map { it.toGoalData(h.id!!, habitUuid) }, data.updatedAt)
                 h.globalStatisticsStartDate = globalStatisticsStartDate
             }
             if (scope != null) {

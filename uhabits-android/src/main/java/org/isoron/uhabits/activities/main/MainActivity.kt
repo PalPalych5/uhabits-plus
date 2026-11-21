@@ -209,7 +209,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
             return
         }
         if (isBottomTabTransitionRunning) {
-            return
+            cancelTabTransitionAnimations()
         }
         navigateFromBottomTab(destination)
     }
@@ -315,6 +315,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
             return
         }
 
+        cancelTabTransitionAnimations()
         val token = ++tabTransitionToken
         val direction = tabOrder(destination) - tabOrder(source)
         val slideDistance = if (destination == MainDestination.STATISTICS) {
@@ -369,16 +370,21 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                     cancelled = true
                     resetFragmentRoot(sourceView)
                     resetFragmentRoot(targetView)
-                    if (tabTransitionToken == token) {
-                        isBottomTabTransitionRunning = false
-                        (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionEnded()
-                        (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? UnifiedStatisticsFragment)?.onTabTransitionEnded()
-                    }
+                    isBottomTabTransitionRunning = false
+                    (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? StatisticsFragment)?.onTabTransitionEnded()
+                    (supportFragmentManager.findFragmentByTag(TAG_REPORTS) as? UnifiedStatisticsFragment)?.onTabTransitionEnded()
                 }
 
                 override fun onAnimationEnd(animation: Animator) {
                     targetView.animate().setListener(null)
-                    if (cancelled || tabTransitionToken != token || isDestroyed || supportFragmentManager.isDestroyed) return
+                    if (isDestroyed || supportFragmentManager.isDestroyed) {
+                        isBottomTabTransitionRunning = false
+                        return
+                    }
+                    if (cancelled || tabTransitionToken != token) {
+                        if (tabTransitionToken == token) isBottomTabTransitionRunning = false
+                        return
+                    }
 
                     // Animation complete, now we hide the source fragment and any other non-target fragments
                     val hideTransaction = supportFragmentManager.beginTransaction()
@@ -469,7 +475,9 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     override fun navigate(destination: MainDestination) {
         org.isoron.uhabits.utils.HabitsStartupTrace.mark("navigation.request.${destination.name}")
         if (destination == MainDestination.TASKS && !appComponent.session.isNextArchitecture) return
-        if (isBottomTabTransitionRunning) return
+        if (isBottomTabTransitionRunning) {
+            cancelTabTransitionAnimations()
+        }
         val previous = navigationState.current
         if (!navigationState.navigate(destination)) return
         if (previous == MainDestination.SETTINGS && destination == MainDestination.ARCHIVE) {
@@ -481,6 +489,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
     override fun navigateBack(): Boolean {
         if (isBottomTabTransitionRunning) {
+            cancelTabTransitionAnimations()
             if (navigationState.current == MainDestination.ARCHIVE) pendingArchiveBack = true
             return true
         }
@@ -525,6 +534,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
             return
         }
 
+        cancelTabTransitionAnimations()
         val token = ++tabTransitionToken
         val direction = if (binding.root.layoutDirection == View.LAYOUT_DIRECTION_RTL) -1f else 1f
         val width = binding.mainContent.width.toFloat()
@@ -558,7 +568,14 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
             .setListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
                     targetView.animate().setListener(null)
-                    if (tabTransitionToken != token || isDestroyed || supportFragmentManager.isDestroyed) return
+                    if (isDestroyed || supportFragmentManager.isDestroyed) {
+                        isBottomTabTransitionRunning = false
+                        return
+                    }
+                    if (tabTransitionToken != token) {
+                        if (tabTransitionToken == token) isBottomTabTransitionRunning = false
+                        return
+                    }
                     val transaction = supportFragmentManager.beginTransaction()
                     supportFragmentManager.fragments.forEach { fragment ->
                         if (fragment == target) {
@@ -583,7 +600,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
                 override fun onAnimationCancel(animation: Animator) {
                     resetFragmentRoot(sourceView)
                     resetFragmentRoot(targetView)
-                    if (tabTransitionToken == token) isBottomTabTransitionRunning = false
+                    isBottomTabTransitionRunning = false
                     (source as? SettingsSectionFragment)?.setArchiveTransitionInFlight(false)
                     (target as? SettingsSectionFragment)?.setArchiveTransitionInFlight(false)
                 }
@@ -668,6 +685,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
 
     override fun onResume() {
         super.onResume()
+        isBottomTabTransitionRunning = false
         startMidnightTimer()
         requestNotificationPermissionAndSchedule()
         appComponent.taskRunner.run {
@@ -713,6 +731,7 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
     }
 
     override fun onPause() {
+        cancelTabTransitionAnimations()
         stopMidnightTimer()
         super.onPause()
     }
@@ -859,13 +878,6 @@ class MainActivity : AppCompatActivity(), MainNavigationHost, SettingsActionHand
             }
         }
         binding.workspaceSecondaryToolbar.apply {
-            androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(this) { toolbar, insets ->
-                val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.statusBars())
-                val cutout = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.displayCutout())
-                val top = maxOf(bars.top, cutout.top)
-                toolbar.setPadding(toolbar.paddingLeft, top, toolbar.paddingRight, 0)
-                insets
-            }
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
             setContent {
                 UHabitComposeTheme(navigationColors.value) {

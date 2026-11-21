@@ -72,6 +72,7 @@ class SettingsCardMorphController(
         this.bottomNavigation = bottomNavigation
 
         overlayHost.visibility = View.INVISIBLE
+        overlayHost.isClickable = false
         overlayHost.post {
             if (state != State.PREPARING_FORWARD) return@post
             val prepared = prepareLayer(source, detailRoot, detailToolbar, detailBody, bottomNavigation)
@@ -80,6 +81,7 @@ class SettingsCardMorphController(
                 return@post
             }
             val morphLayer = checkNotNull(layer)
+            overlayHost.isClickable = true
             overlayHost.visibility = View.VISIBLE
             morphLayer.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
                 override fun onPreDraw(): Boolean {
@@ -144,6 +146,7 @@ class SettingsCardMorphController(
             ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT),
         )
         layer = morphLayer
+        overlayHost.isClickable = true
         overlayHost.visibility = View.VISIBLE
         detailRoot.alpha = 0f
         bottomNavigation.visibility = View.VISIBLE
@@ -228,6 +231,7 @@ class SettingsCardMorphController(
         }
 
         overlayHost.visibility = View.INVISIBLE
+        overlayHost.isClickable = false
         overlayHost.post {
             if (state != State.PREPARING_RETURN) return@post
             if (!prepareLayer(source, detailRoot, detailToolbar, detailBody, bottomNavigation)) {
@@ -236,6 +240,7 @@ class SettingsCardMorphController(
             }
             val morphLayer = checkNotNull(layer)
             morphLayer.setFrame(0f, SettingsMorphLayer.Direction.RETURN)
+            overlayHost.isClickable = true
             overlayHost.visibility = View.VISIBLE
             morphLayer.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
                 override fun onPreDraw(): Boolean {
@@ -501,7 +506,8 @@ class SettingsCardMorphController(
         layer?.release()
         layer = null
         overlayHost.removeAllViews()
-        overlayHost.visibility = View.INVISIBLE
+        overlayHost.visibility = View.GONE
+        overlayHost.isClickable = false
     }
 
     private fun capture(view: View): Bitmap? {
