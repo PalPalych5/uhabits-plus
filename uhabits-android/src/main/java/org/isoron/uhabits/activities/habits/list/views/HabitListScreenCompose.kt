@@ -160,7 +160,7 @@ internal fun HabitWorkspaceScreenCompose(
     val isSelectionActive = selectionMenu != null &&
         selectionMenu.selectionRevision.let { selectionMenu.selectedCount > 0 }
 
-    BoxWithConstraints(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(colors.backgroundColor)
@@ -170,7 +170,6 @@ internal fun HabitWorkspaceScreenCompose(
                 }
             }
     ) {
-        if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) return@BoxWithConstraints
         Column(modifier = Modifier.fillMaxSize()) {
             if (isSelectionActive && selectionMenu != null) {
                 HabitSelectionToolbar(selectionMenu, colors)
@@ -238,8 +237,9 @@ fun HabitListScreenCompose(
     colors: UHabitComposeColors = LocalUHabitComposeColors.current
 ) {
     val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
     val compactSearch = searchActive &&
-        LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE &&
+        configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE &&
         WindowInsets.ime.getBottom(density) > 0
     val buttonWidthDp = dimensionResource(R.dimen.checkmarkWidth)
     val buttonHeightDp = dimensionResource(R.dimen.checkmarkHeight)
@@ -247,14 +247,13 @@ fun HabitListScreenCompose(
 
     val buttonWidthPx = with(density) { buttonWidthDp.toPx() }
     val nameWidthPx = with(density) { nameWidthDp.toPx() }
+    val availableWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
 
-    BoxWithConstraints(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(colors.backgroundColor)
     ) {
-        if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) return@BoxWithConstraints
-        val availableWidthPx = constraints.maxWidth.toFloat()
         val buttonCount = remember(availableWidthPx, nameWidthPx, buttonWidthPx) {
             computeCheckmarkCount(
                 availableWidthPx = availableWidthPx,
@@ -555,20 +554,12 @@ private fun HabitRowsLazyList(
 
     val rowOrderKey = remember(state.rows) { state.rows.map { it.habitId } }
     var prevOrderKey by remember { mutableStateOf(rowOrderKey) }
-    var wasAnchoredAtTop by remember { mutableStateOf(true) }
-
-    LaunchedEffect(lazyListState.firstVisibleItemIndex, lazyListState.firstVisibleItemScrollOffset) {
-        if (rowOrderKey == prevOrderKey) {
-            wasAnchoredAtTop = lazyListState.firstVisibleItemIndex == 0 &&
-                lazyListState.firstVisibleItemScrollOffset < 8
-        }
-    }
 
     LaunchedEffect(rowOrderKey) {
         if (rowOrderKey != prevOrderKey) {
-            val anchorTop = wasAnchoredAtTop
+            val atTop = lazyListState.firstVisibleItemIndex == 0 && lazyListState.firstVisibleItemScrollOffset < 16
             prevOrderKey = rowOrderKey
-            if (anchorTop && draggingHabitId == null && rowOrderKey.isNotEmpty()) {
+            if (atTop && draggingHabitId == null && rowOrderKey.isNotEmpty()) {
                 lazyListState.scrollToItem(0)
             }
         }
@@ -607,9 +598,9 @@ private fun HabitRowsLazyList(
                     .let { mod ->
                         if (animatePlacement) {
                             mod.animateItem(
-                                fadeInSpec = tween(durationMillis = 160),
                                 placementSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-                                fadeOutSpec = tween(durationMillis = 160)
+                                fadeInSpec = null,
+                                fadeOutSpec = null
                             )
                         } else {
                             mod
